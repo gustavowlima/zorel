@@ -132,8 +132,8 @@ components:
     textColor: "{colors.text-muted}"
     typography: "{typography.body}"
     rounded: "{rounded.control}"
-    height: "{spacing.control-sm}"
-    padding: "0 8px"
+    height: "{spacing.control}"
+    padding: "0 10px"
   sidebar-item-active:
     backgroundColor: "{colors.canvas}"
     borderColor: "{colors.border-subtle}"
@@ -299,20 +299,22 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Tooltip:** raised com borda forte, 12px de texto secondary, aparece após 500ms no hover e no foco do teclado; o gatilho é um `Button`/`IconButton` (React Aria).
 - **Popover** (`Popover`): folha de 16px em raised com borda forte para conteúdo interativo (seletor de modelo, quem responde). Esc e clique fora fecham; o foco volta ao gatilho. `FieldButton` é o gatilho com cara de campo dentro de formulários.
 
-### Navigation
-- **`NavItem`:** 32px, ícone de 16px, texto secondary, hover com fundo de controle. O ativo fica no tom do canvas com borda sutil e peso 500 (como no protótipo), nunca em azul.
-- **`NavLabel`:** 11px, caixa alta, muted, com uma ação opcional à direita ("+").
-- **Árvore de projetos:** `GroupRow` (pasta aberta/fechada, nome, ações que aparecem no hover ou no foco, contagem e status agregado quando fechado, chevron) e, abertos, os chats como `TreeItem` atrás de uma linha vertical (`border-strong`). Chat com algo acontecendo mostra a segunda linha de status (girando verde, relógio azul esperando você, alerta vermelho); parado, mostra a idade à direita. Cinco por grupo, depois "Show N more"; o chat aberto nunca some.
+### Navigation (redesign "Zero — main screen", absorvido em 2026-11-03)
+- **Barra lateral:** 264px sobre a moldura, sem marca. No app desktop, uma faixa de 28px no topo guarda os botões da janela e arrasta a janela. Seções empilhadas a 18px: Projects, Chats (sem projeto), Agentes do projeto aberto; Needs you fixo acima do pé; no pé, uma barra de ícones com fio no topo: novo chat, Knowledge, Usage com a janela de limite mais cheia (aviso a partir de 80%), espaço, Settings.
+- **`NavLabel`:** 12px, peso 500, muted, caixa normal ("Projects"), 26px de altura, ação "+" de 22px à direita.
+- **`NavItem`:** 32px, cantos de 8px, ícone de 16px muted, hover em `hover` (#222 no escuro), nunca azul.
+- **Projeto:** uma linha de 32px. Seta à esquerda que gira 90° ao abrir; nome em 500 (600 aberto); à direita só o estado: ponto azul (`accent-text`) quando algum chat espera você, girando verde quando algum trabalha, nada parado. Ajustes e novo chat aparecem no hover ou foco no lugar do estado.
+- **Chat:** ocupa a largura toda da barra. Avatar de 32px (o líder, ou o logo do modelo), título e quando mexeu por último na primeira linha, e na segunda o que acontece agora (azul esperando você, girando verde trabalhando) ou, parado, o começo da última mensagem. Ordem: esperando você, trabalhando, depois o resto (ordem manual ou recência). O chat aberto é um chip elevado: fundo `surface`, anel de 1px `border-strong` e sombra `shadow-chip`. Cinco por grupo, depois "Show N more"; o chat aberto nunca some.
 
 ### Mensagem de agente
-- **Avatar:** quadrado de 32px, cantos 10px, cor de identidade, inicial em branco 13px semibold. Nome em 13px semibold, ao lado o modelo e o engine em 12px text-muted.
-- **Pílula de atividade:** 28px, fundo de superfície, ponto verde + resumo ("Read 6 files · 14 s") + chevron. Clicar abre os passos (✓ feito, ícone girando, relógio esperando você) com tempo de cada um e trecho de diff; fechada por padrão quando o turno terminou.
-- **Aviso central:** 12px text-muted, centralizado (quem respondeu como líder, passagem de tarefa, troca de modelo com quantos tokens foram reenviados).
-- **Cartão de aprovação:** fundo accent-faint, borda accent-line, "Waiting for you" em label azul, o resumo e a pasta, ações Allow (azul) e Deny (ghost), e o nome da ferramenta em código abrindo os argumentos. "Always in this chat" entra com a regra persistente (fase 4). Depois de decidido vira recibo: verde (success-faint/success-line) se permitido, neutro se negado.
-- **Recibo do turno:** 12px text-muted embaixo da última resposta: respostas, tokens e tempo.
+- **Avatar:** quadrado de 28px, cantos de 8–9px, cor de identidade, inicial em branco. Nome em 13px semibold e, na mesma linha, a pílula de atividade; modelo, tokens, conta e custo vão para a linha de rodapé em 12px.
+- **Pílula de atividade:** 24px, sem fundo (hover em `hover`), 12px muted: ponto de estado + resumo ("3 steps", "Running the tests · 14 s") + chevron. Os passos abrem na linha de baixo, num quadro de borda sutil e cantos de 12px com o tempo de cada um.
+- **Aviso central:** 12px text-muted entre dois fios (passagem de tarefa, troca de modelo).
+- **Cartão de aprovação:** uma linha só, até 520px: à esquerda o que o agente quer fazer em `accent-text` peso 500 e, embaixo, o comando em mono muted (pressionar mostra os argumentos); à direita Deny (ghost) e Allow (azul, 28px). Fundo accent-faint, borda accent-line, cantos de 12px.
+- **Decisão tomada:** uma linha de 12px muted: "Allowed" em verde (ou "Denied") · o que foi.
 
 ### Campo de mensagem
-- Cartão de cantos 16px com borda forte; texto em duas linhas que cresce até dez; embaixo, da esquerda para a direita: anexar, quem responde (avatar do líder, abre a lista do time), modelo com conta (abre o seletor com trilho de contas e logos dos providers, raciocínio embaixo), e à direita parar (só durante um turno) e enviar (32px, azul). Durante um turno, enviar acrescenta ao turno (steer). Anexos aparecem como etiquetas acima do texto; arrastar arquivos acende a borda em azul. Nível de aprovação e contexto usado entram com o workspace (fase 3).
+- Uma barra: cantos de 12px, borda forte, fundo do canvas. Da esquerda para a direita: anexar (+), o texto (uma linha que cresce com Shift+Enter até dez), quem responde e o modelo como botões discretos (muted, sem fundo), parar (só durante um turno) e enviar redondo de 32px em azul. Anexos como etiquetas acima da barra; arrastar arquivos acende a borda em azul. Durante um turno, enviar acrescenta ao turno (steer).
 
 ### Chat (componente assinatura)
 Respostas em markdown com ritmo de 0.6em entre blocos, títulos em 15px, links em signal-blue-text sublinhados, código inline em fundo de controle e blocos de código em superfície com borda sutil e cantos de 12px.

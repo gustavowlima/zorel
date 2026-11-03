@@ -8,3 +8,4 @@
 2026-11-03 | galeria /dev/ui removida | decisão do usuário: não deve existir
 2026-11-03 | sidebar desktop: só a árvore rola sem barra, linhas fixas, ações sobrepostas, % de uso só em alerta | crítica impeccable 24/40
 2026-11-03 | sidebar em React Aria Tree com drag and drop, linhas de 28px, seção Chats, barra de título do desktop | crítica 23/40 + pedido de arrastar
+2026-11-03 | redesign main screen absorvido (sidebar, chat, composer) | escolha do usuário no artifact

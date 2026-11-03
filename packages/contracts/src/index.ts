@@ -113,9 +113,12 @@ export const Chat = Schema.Struct({
   summaryUntil: Schema.Number, // `at` of the last message covered by the summary
   failover: Schema.NullOr(FailoverList), // null: the lead agent's list
   position: Schema.NullOr(Schema.Number), // manual order inside its group; null: by recent activity, above the placed ones
+  preview: Schema.NullOr(Schema.String), // start of the last message, one line (sidebar)
+  lastAt: Schema.NullOr(Schema.Number), // when the last message was written
   createdAt: Schema.Number
 })
 export type Chat = typeof Chat.Type
+export const PREVIEW_CHARS = 140
 
 // Audit log: one change, who made it and the fields it touched (before → after, secrets redacted).
 export const AuditEntry = Schema.Struct({

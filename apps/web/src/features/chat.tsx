@@ -9,7 +9,7 @@ import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } f
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { accountsAtom, agentsAtom, attachmentUrl, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
-import { agentName, chatTitle, formatCost, handleOf, modelLabel, switchText } from "../labels.ts"
+import { agentName, chatTitle, formatCost, modelLabel, switchText } from "../labels.ts"
 import { go } from "../state.ts"
 import { Composer } from "./composer.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
@@ -61,7 +61,7 @@ export function ChatView({ chat }: { chat: Chat }) {
       <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
       <Timeline chat={chat} state={state} agents={agents} onView={view} />
-      <div className="mx-auto w-full max-w-3xl px-7 pt-2 pb-6">
+      <div className="mx-auto w-full max-w-180 px-6 pt-2 pb-4.5">
         <Composer
           key={chat.id}
           autoFocus
@@ -69,7 +69,7 @@ export function ChatView({ chat }: { chat: Chat }) {
           onStop={() => void interrupt({ payload: { chatId: chat.id } })}
           onSubmit={submit}
           upload={(f) => uploadAttachment(chat.id, f)}
-          placeholder={second ? t("composer.placeholderTeam", { handle: handleOf(second) }) : t("composer.placeholder")}
+          placeholder={team[0] && second ? t("composer.placeholderTeam", { name: team[0].name }) : t("composer.placeholder")}
           tools={
             <>
               <TeamPicker chat={chat} />
@@ -134,7 +134,7 @@ function ChatHeader({
 
   return (
     <>
-      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-subtle px-7 py-3">
+      <header className="flex min-h-13 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-subtle py-2 pr-4 pl-7">
         <div className="flex min-w-0 flex-1 items-baseline gap-3">
           <h1 className="truncate text-lg font-semibold">{chatTitle(chat)}</h1>
           <Button size="sm" variant="ghost" className="-ml-2 shrink-0 text-muted" onPress={() => go(project ? { view: "project", id: project.id, tab: "overview" } : { view: "home" })}>
@@ -314,7 +314,7 @@ function Timeline({ chat, state, agents, onView }: { chat: Chat; state: ChatStat
       }}
       className="min-h-0 flex-1 overflow-auto"
     >
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-7 pt-7 pb-4">
+      <div className="mx-auto flex w-full max-w-180 flex-col gap-5.5 px-7 pt-6 pb-4">
         {chat.summary && <Summary text={chat.summary} />}
         {state.ready && items.length === 0 && !state.live && <EmptyState icon={<MessageCircle />} title={t("chat.empty")} hint={t("chat.emptyHint")} />}
         {!state.ready && (
@@ -359,7 +359,7 @@ function Summary({ text }: { text: string }) {
 
 function UserMessage({ message: m }: { message: Message }) {
   return (
-    <div className="ml-auto flex max-w-xl flex-col items-end gap-1.5">
+    <div className="ml-auto flex max-w-125 flex-col items-end gap-1.5">
       {m.attachments.length > 0 && (
         <div className="flex flex-wrap justify-end gap-1.5">
           {m.attachments.map((a) =>
@@ -387,18 +387,21 @@ function UserMessage({ message: m }: { message: Message }) {
   )
 }
 
-// Agent reply: avatar column + content (name and model, activity pill, text, how it ended, tokens).
+// Agent reply: avatar column + content (name with its activity pill, text, how it ended; model, tokens and
+// cost in the footer line).
 function Reply({ agentId, model, agents, pill, children, footer }: { agentId: string | null; model: string | null; agents: ReadonlyArray<Agent>; pill?: ReactNode; children: ReactNode; footer?: ReactNode }) {
   const agent = agents.find((a) => a.id === agentId)
   return (
-    <article className="flex gap-3.5">
-      <AuthorAvatar agent={agent} model={model} />
+    <article className="flex gap-3">
+      <AuthorAvatar agent={agent} model={model} size={28} />
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-        <div className="flex h-6 items-baseline gap-2">
-          <strong className="font-semibold">{agentName(agentId, agents)}</strong>
-          {model && <span className="truncate text-sm text-muted">{modelLabel(model)}</span>}
+        {/* The steps list of the pill wraps to its own line (basis-full) under the name. */}
+        <div className="flex min-h-7 flex-wrap items-center gap-x-2.5 gap-y-2.5">
+          <strong className="font-semibold" title={model ? modelLabel(model) : undefined}>
+            {agentName(agentId, agents)}
+          </strong>
+          {pill}
         </div>
-        {pill}
         {children}
         {footer}
       </div>
@@ -446,8 +449,9 @@ function AgentReply({ message: m, agents, accounts, onView }: { message: Message
       agents={agents}
       pill={m.steps.length > 0 && <StoredActivity steps={m.steps} />}
       footer={
-        (ending || tokens || cost) && (
+        (ending || tokens || cost || m.model) && (
           <div className="flex flex-wrap items-center gap-2 text-sm text-dim">
+            {m.model && <span>{modelLabel(m.model)}</span>}
             {ending && (
               <span className={cx("inline-flex items-center gap-1.5", ending.tone === "danger" ? "text-danger" : "text-warning")}>
                 <CircleAlert className="size-3.5" />
@@ -475,14 +479,14 @@ function StoredActivity({ steps }: { steps: Message["steps"] }) {
   const id = useId()
   const refused = steps.filter((s) => s.status === "refused").length
   const failed = steps.filter((s) => s.status === "error").length
-  const parts = [t("activity.usedTools", { count: steps.length }), refused && t("activity.refused", { count: refused }), failed && t("activity.errors", { count: failed })].filter(Boolean)
+  const parts = [t("activity.steps", { count: steps.length }), refused && t("activity.refused", { count: refused }), failed && t("activity.errors", { count: failed })].filter(Boolean)
   return (
     <>
       <DisclosurePill expanded={open} onToggle={() => setOpen(!open)} controls={id} leading={<Dot tone={failed ? "danger" : refused ? "warning" : "success"} />}>
         {parts.join(" · ")}
       </DisclosurePill>
       {open && (
-        <ol id={id} className="flex max-w-xl flex-col gap-2.5 rounded-card border border-subtle px-3.5 py-3">
+        <ol id={id} className="flex max-w-130 basis-full flex-col gap-2.5 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
           {steps.map((s, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: stored steps are immutable and may repeat a tool
             <li key={i} className="flex gap-2.5">
@@ -540,7 +544,7 @@ function LiveMessage({ live, agents, approvals, receipts }: { live: LiveTurn; ag
             {label}
           </DisclosurePill>
           {open && live.steps.length > 0 && (
-            <ol id={id} className="flex max-w-xl flex-col gap-2 rounded-card border border-subtle px-3.5 py-3">
+            <ol id={id} className="flex max-w-130 basis-full flex-col gap-2 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
               {live.steps.map((s) => (
                 <li key={s.id} className="flex items-start gap-2.5">
                   <StepIcon status={s.status} />
@@ -590,41 +594,51 @@ function ApprovalCard({ approval: a }: { approval: Approval }) {
       setError(t("chat.approvalGone"))
     })
   }
+  const command = commandOf(a)
   return (
-    <div className="flex w-full max-w-md flex-col gap-2.5 rounded-card border border-accent-line bg-accent-faint px-4 py-3.5">
-      <span className="text-xs font-semibold tracking-wide text-accent-text uppercase">{t("approval.waiting")}</span>
-      <p>
-        {a.summary || t("approval.wantsTo", { agent: agentName(a.agentId, agents), tool: a.tool })}
-        {a.cwd && <span className="text-muted">{` ${t("approval.folder", { path: a.cwd })}`}</span>}
-      </p>
-      {details && <pre className="max-h-48 overflow-auto rounded-control bg-code px-3 py-2 font-mono text-sm text-secondary">{a.args}</pre>}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="default" isPending={pending === "approved"} isDisabled={!!pending} onPress={() => choose("approved")}>
-          {t("approval.allow")}
+    <section aria-label={t("approval.waiting")} className="flex w-full max-w-130 flex-wrap items-center gap-2.5 rounded-card border border-accent-line bg-accent-faint py-2.5 pr-2.5 pl-3.5">
+      <span className="flex min-w-50 flex-1 flex-col">
+        <span className="font-medium text-accent-text">{a.summary || t("approval.wantsTo", { agent: agentName(a.agentId, agents), tool: a.tool })}</span>
+        {/* The command itself; pressing it shows every argument. */}
+        <Button variant="ghost" size="sm" aria-expanded={details} onPress={() => setDetails(!details)} className="h-auto max-w-full justify-start rounded-none bg-transparent px-0 font-mono font-normal text-muted data-hovered:bg-transparent">
+          <span className="truncate" title={command}>
+            {command}
+            {a.cwd && <span className="font-sans">{` ${t("approval.folder", { path: a.cwd })}`}</span>}
+          </span>
         </Button>
-        <Button size="sm" variant="ghost" isDisabled={!!pending} onPress={() => choose("denied")}>
-          {t("approval.deny")}
-        </Button>
-        <span className="flex-1" />
-        <Button size="sm" variant="ghost" aria-expanded={details} onPress={() => setDetails(!details)}>
-          <Code className="bg-transparent px-0">{a.tool}</Code>
-        </Button>
-      </div>
-      {error && <p className="text-sm text-danger">{error}</p>}
-    </div>
+      </span>
+      <Button size="sm" variant="ghost" isDisabled={!!pending} onPress={() => choose("denied")}>
+        {t("approval.deny")}
+      </Button>
+      <Button size="sm" variant="default" isPending={pending === "approved"} isDisabled={!!pending} onPress={() => choose("approved")}>
+        {t("approval.allow")}
+      </Button>
+      {details && <pre className="max-h-48 basis-full overflow-auto rounded-control bg-code px-3 py-2 font-mono text-sm text-secondary">{a.args}</pre>}
+      {error && <p className="basis-full text-sm text-danger">{error}</p>}
+    </section>
   )
 }
 
+// What an approval would run, in one line: the shell command or file it names, else the tool.
+function commandOf(a: Approval): string {
+  try {
+    const args = JSON.parse(a.args) as Record<string, unknown>
+    const first = [args.command, args.cmd, args.file_path, args.path].find((v) => typeof v === "string")
+    if (typeof first === "string") return first
+  } catch {
+    // not JSON: fall back to the tool's name
+  }
+  return a.tool
+}
+
+// A decision already taken: one quiet line ("Allowed · …").
 function ReceiptCard({ receipt: r }: { receipt: Receipt }) {
   const ok = r.outcome === "approved" || r.outcome === "always"
   return (
-    <div className={cx("flex max-w-md flex-col gap-1 self-start rounded-card border px-4 py-3", ok ? "border-success-line bg-success-faint" : "border-subtle bg-surface")}>
-      <span className={cx("inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase", ok ? "text-success" : "text-muted")}>
-        {ok ? <CircleCheck className="size-3.5" /> : <CircleX className="size-3.5" />}
-        {ok ? t("approval.approved") : r.outcome === "expired" ? t("approval.expired") : t("approval.denied")}
-      </span>
-      <span className="text-secondary">{r.approval.summary || r.approval.tool}</span>
-    </div>
+    <p className="text-sm text-muted">
+      <span className={ok ? "text-success" : "text-secondary"}>{ok ? t("approval.approved") : r.outcome === "expired" ? t("approval.expired") : t("approval.denied")}</span>
+      {` · ${r.approval.summary || r.approval.tool}`}
+    </p>
   )
 }
 

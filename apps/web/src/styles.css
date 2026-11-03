@@ -25,6 +25,7 @@
   --z-bg-raised: #262626;
   --z-bg-control: #232323;
   --z-bg-control-hover: #292929;
+  --z-bg-hover: #222222; /* rows and ghost controls on the frame and the canvas: a wash, not a control */
   --z-bg-control-active: #2c2c2c;
   --z-bg-code: #141414;
   --z-border: rgba(255, 255, 255, 0.06);
@@ -94,6 +95,7 @@
   --z-bg-raised: #ffffff;
   --z-bg-control: #ededed;
   --z-bg-control-hover: #e4e4e4;
+  --z-bg-hover: #e4e4e4;
   --z-bg-control-active: #dadada;
   --z-bg-code: #f6f6f6;
   --z-border: rgba(20, 20, 20, 0.08);
@@ -121,6 +123,7 @@
   --color-canvas: var(--z-bg-canvas);
   --color-sidebar: var(--z-bg-sidebar);
   --color-surface: var(--z-bg-surface);
+  --color-hover: var(--z-bg-hover);
   --color-raised: var(--z-bg-raised);
   --color-control: var(--z-bg-control);
   --color-control-hover: var(--z-bg-control-hover);
@@ -174,6 +177,8 @@
   --spacing-control: 32px;
   --spacing-control-lg: 36px;
   --radius-control: 8px;
+  /* The open chat in the sidebar: a raised chip (hairline ring + a soft drop). */
+  --shadow-chip: inset 0 0 0 1px var(--z-border-strong), 0 6px 16px -8px rgba(0, 0, 0, 0.6);
   --radius-card: 12px;
   --radius-sheet: 16px;
   /* shadcn radius scale pinned to ours: lg = control, xl = card, 2xl = sheet. */
@@ -206,7 +211,9 @@ html, body, #root { height: 100%; }
 /* Desktop-style scroll areas (the sidebar tree): no visible bar; edges get a hairline while content is hidden. */
 .scroll-quiet { scrollbar-width: none; }
 /* Desktop app: the sidebar's brand row is the title bar; the window buttons take its left 84px. */
-[data-shell="desktop"] .title-inset { padding-left: 84px; }
+/* Desktop app: a strip on top of the sidebar holds the window buttons (hidden in the browser). */
+.title-strip { display: none; }
+[data-shell="desktop"] .title-strip { display: block; }
 .scroll-quiet::-webkit-scrollbar { display: none; }
 a { text-underline-offset: 3px; }
 body {
