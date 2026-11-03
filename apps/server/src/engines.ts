@@ -12,6 +12,8 @@ import type { ModelInfo } from "@zero/contracts"
 import { Context, Effect, Layer, Queue, Redacted, Stream } from "effect"
 import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
+import { openClaudeSession } from "#server/engines/claude-sdk.ts"
+import type { EngineSession } from "#server/engines/session.ts"
 import { Secrets, type SecretStore } from "./secrets.ts"
 import { resultText, type Session, type ToolDef } from "./tools.ts"
 
@@ -343,7 +345,20 @@ const api = (secrets: SecretStore, t: Turn): Stream.Stream<EngineEvent> => {
 
 // ---------- service ----------
 
-export class Engines extends Context.Service<Engines, { readonly run: (turn: Turn) => Stream.Stream<EngineEvent> }>()("Engines") {
+export interface OpenSession {
+  readonly model: string
+  readonly system: string // stable part of the context
+  readonly cwd: string
+}
+
+export interface EnginesService {
+  // Stateless: every call gets the whole layered context (API engines, CLIs without a session, consolidation).
+  readonly run: (turn: Turn) => Stream.Stream<EngineEvent>
+  // Native session for providers that have one; undefined = use `run`; string = could not open (shown as the turn error).
+  readonly open?: (o: OpenSession) => EngineSession | string | undefined
+}
+
+export class Engines extends Context.Service<Engines, EnginesService>()("Engines") {
   static layer = Layer.effect(
     Engines,
     Effect.gen(function* () {
@@ -354,7 +369,8 @@ export class Engines extends Context.Service<Engines, { readonly run: (turn: Tur
           if (provider === "claude-cli") return cli("claude", claudeArgs(t), transcript(t.messages), t.cwd, claudeParser())
           if (provider === "codex-cli") return cli("codex", codexArgs(t), transcript(t.messages), t.cwd, codexParser())
           return api(secrets, t)
-        }
+        },
+        open: (o: OpenSession) => (splitModel(o.model).provider === "claude-cli" ? openClaudeSession(o) : undefined)
       }
     })
   )

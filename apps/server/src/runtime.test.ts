@@ -2,7 +2,7 @@
 // kill -9 mid-turn becomes `interrupted` with the partial text on the next boot.
 import { expect, test } from "bun:test"
 import type { ChatEvent } from "@zero/contracts/events"
-import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import { mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -107,3 +107,70 @@ test("kill -9 no meio do turno: na próxima subida o turno vira interrupted com 
     expect(msgs.at(-1)).toMatchObject({ role: "assistant", text: "meio caminho" })
   }))
 })
+
+// Fake native-session engine: records how many sessions opened and what each turn received.
+const sessionLog = { opened: [] as string[], prompts: [] as string[], interrupts: 0 }
+const Sessions = Layer.succeed(Engines, {
+  run: () => Stream.make<EngineEvent[]>({ type: "error", message: "should use the session" }),
+  open: (o) => {
+    sessionLog.opened.push(o.system)
+    return {
+      alive: () => true,
+      close: Effect.void,
+      turn: (input) => {
+        sessionLog.prompts.push(input.prompt)
+        if (input.prompt.includes("slow"))
+          return Stream.concat(Stream.make<EngineEvent[]>({ type: "text", delta: "parte" }), Stream.never).pipe(
+            Stream.onExit((exit) => Effect.sync(() => void (Exit.hasInterrupts(exit) && sessionLog.interrupts++)))
+          )
+        return Stream.make<EngineEvent[]>({ type: "text", delta: "ok" }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+      }
+    }
+  }
+})
+
+test("native session: opens once, later turns send only what is new, a stable-context change reopens with the checkpoint", () =>
+  runWith(":memory:", Sessions, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/haiku" })
+    const turnOnce = (text: string) =>
+      Effect.gen(function* () {
+        const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+        yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text })
+        yield* c.done
+      })
+    yield* turnOnce("primeira")
+    yield* turnOnce("segunda")
+    expect(sessionLog.opened).toHaveLength(1)
+    expect(sessionLog.prompts[0]).toContain("primeira")
+    expect(sessionLog.prompts[1]).toContain("segunda")
+    expect(sessionLog.prompts[1]).not.toContain("primeira") // the session already has it
+
+    // A new user memory changes the stable context: new session, which gets the whole checkpoint.
+    yield* store.addMemory({ scope: "user", text: "Prefere respostas curtas", state: "active", origin: "manual", chatId: null })
+    yield* turnOnce("terceira")
+    expect(sessionLog.opened).toHaveLength(2)
+    expect(sessionLog.opened[1]).toContain("Prefere respostas curtas")
+    expect(sessionLog.prompts[2]).toContain("primeira")
+    expect(sessionLog.prompts[2]).toContain("terceira")
+  })))
+
+test("native session: interrupting stops the turn but keeps the session", () =>
+  runWith(":memory:", Sessions, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/haiku" })
+    const before = sessionLog.opened.length
+    const c = yield* collect(chat.id, (e) => e._tag === "interrupted")
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "slow" })
+    while (!c.events.some((e) => e._tag === "text")) yield* Effect.sleep("10 millis")
+    yield* runtime.interrupt(chat.id)
+    yield* c.done
+    expect(sessionLog.interrupts).toBe(1)
+    const d = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "de novo" })
+    yield* d.done
+    expect(sessionLog.opened.length - before).toBe(1) // same session after the interrupt
+    expect(sessionLog.prompts.at(-1)).not.toContain("slow") // the partial reply is already in the session
+  })))
