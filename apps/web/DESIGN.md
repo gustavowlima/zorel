@@ -25,6 +25,7 @@ colors:
   danger: "#fd2f3b"
   danger-soft: "rgba(253, 47, 59, 0.16)"
   on-accent: "#ffffff"
+  overlay: "rgba(0, 0, 0, 0.5)"
 typography:
   title:
     fontFamily: "Inter Variable, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
@@ -250,6 +251,14 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Focus:** borda forte e anel de 2px azul translúcido.
 - **Disabled:** 50% de opacidade.
 - **Field:** rótulo de 12px muted acima, dica de 11px dim abaixo.
+
+### Select
+- **Gatilho:** mesmo corpo do campo (32px, ou 28px no tamanho sm) com chevron muted.
+- **Lista:** popover em raised com borda forte, cantos de 8px, sem sombra; itens de 28px, foco com control-hover, selecionado com check azul.
+
+### Dialog / Tooltip
+- **Dialog:** folha de 16px de raio em raised com borda forte sobre overlay escuro; título 15px semibold; ações à direita. Ação destrutiva sempre confirmada por diálogo (nunca `window.confirm`), com foco inicial no botão de confirmar.
+- **Tooltip:** raised com borda forte, 12px de texto secondary, aparece após 500ms no hover e no foco do teclado; o gatilho precisa ser focável.
 
 ### Navigation
 - **Sidebar item:** 28px de altura, texto muted, hover com fundo de controle. O ativo usa control-active e texto cheio.

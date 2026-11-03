@@ -149,19 +149,27 @@ function NewMemory({ onCreated }: { onCreated: () => void }) {
   return (
     <form onSubmit={submit} className="flex flex-col gap-2">
       <div className="flex gap-2">
-        <Select className="w-32" value={kind} onChange={(e) => setKind(e.target.value as Memory["kind"])} aria-label="Tipo">
-          <option value="fact">Memória</option>
-          <option value="skill">Skill</option>
-        </Select>
-        <Select className="w-56" value={scope} onChange={(e) => setScope(e.target.value)} aria-label="Escopo">
-          <option value="user">Você (todos os chats)</option>
-          {data.projects.map((p) => (
-            <option key={p.id} value={`project:${p.id}`}>{`Projeto · ${p.name}`}</option>
-          ))}
-          {data.agents.map((a) => (
-            <option key={a.id} value={`agent:${a.id}`}>{`Agente · ${a.name}`}</option>
-          ))}
-        </Select>
+        <Select
+          className="w-32"
+          value={kind}
+          onChange={(v) => setKind(v as Memory["kind"])}
+          options={[
+            { value: "fact", label: "Memória" },
+            { value: "skill", label: "Skill" }
+          ]}
+          aria-label="Tipo"
+        />
+        <Select
+          className="w-56"
+          value={scope}
+          onChange={setScope}
+          options={[
+            { value: "user", label: "Você (todos os chats)" },
+            ...data.projects.map((p) => ({ value: `project:${p.id}`, label: `Projeto · ${p.name}` })),
+            ...data.agents.map((a) => ({ value: `agent:${a.id}`, label: `Agente · ${a.name}` }))
+          ]}
+          aria-label="Escopo"
+        />
         {skill ? (
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título do procedimento" maxLength={80} />
         ) : (

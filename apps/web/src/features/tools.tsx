@@ -3,13 +3,18 @@ import type { McpServer, ToolInfo } from "@zero/contracts"
 import { useEffect, useState, type FormEvent } from "react"
 import { call } from "../api.ts"
 import { useApp } from "../state.ts"
-import { Badge, Button, Card, Field, Input, Page, Select, Textarea } from "@/ui"
+import { Badge, Button, Card, ConfirmButton, Field, Input, Page, Select, Textarea } from "@/ui"
 
 const MODES: Record<McpServer["mode"], string> = {
   read: "Só leitura",
   approve: "Tudo, escrita com aprovação",
   auto: "Tudo, sem perguntar"
 }
+const MODE_OPTIONS = Object.entries(MODES).map(([value, label]) => ({ value, label }))
+const KIND_OPTIONS = [
+  { value: "stdio", label: "Local (comando)" },
+  { value: "http", label: "Remoto (URL)" }
+]
 const CLS = { read: ["leitura", "neutral"], write: ["escrita", "warning"], sensitive: ["sensível", "danger"] } as const
 
 export function ToolsSection({ projectId }: { projectId: string | null }) {
@@ -34,7 +39,7 @@ function ServerCard({ server: s }: { server: McpServer }) {
   const { reload } = useApp()
   const [tools, setTools] = useState<{ tools: ReadonlyArray<ToolInfo>; error: string | null }>()
   const patch = (payload: { mode?: McpServer["mode"]; enabled?: boolean }) => call((c) => c.tools.update({ params: { id: s.id }, payload })).then(reload)
-  const remove = () => confirm(`Remover ${s.name}?`) && call((c) => c.tools.remove({ params: { id: s.id } })).then(reload)
+  const remove = () => call((c) => c.tools.remove({ params: { id: s.id } })).then(reload)
   const inspect = () => {
     setTools(undefined)
     call((c) => c.tools.inspect({ params: { id: s.id } })).then(setTools)
@@ -48,22 +53,16 @@ function ServerCard({ server: s }: { server: McpServer }) {
           <div className="font-medium">{s.name}</div>
           <div className="truncate text-xs text-dim">{s.url || [s.command, ...s.args].join(" ")}</div>
         </div>
-        <Select className="w-60" value={s.mode} onChange={(e) => patch({ mode: e.target.value as McpServer["mode"] })} aria-label="Modo">
-          {Object.entries(MODES).map(([v, label]) => (
-            <option key={v} value={v}>
-              {label}
-            </option>
-          ))}
-        </Select>
+        <Select className="w-60" value={s.mode} onChange={(v) => patch({ mode: v as McpServer["mode"] })} options={MODE_OPTIONS} aria-label="Modo" />
         <Button size="sm" variant="ghost" onPress={() => patch({ enabled: !s.enabled })}>
           {s.enabled ? "Desligar" : "Ligar"}
         </Button>
         <Button size="sm" variant="ghost" onPress={inspect}>
           Testar
         </Button>
-        <Button size="sm" variant="ghost" onPress={remove}>
+        <ConfirmButton size="sm" variant="ghost" title={`Remover ${s.name}?`} confirmLabel="Remover" onConfirm={remove}>
           Remover
-        </Button>
+        </ConfirmButton>
       </div>
       {!s.enabled && <Badge tone="warning">desligado</Badge>}
       {tools?.error && <div className="text-sm text-danger">Não conectou: {tools.error}</div>}
@@ -131,19 +130,10 @@ function NewServer({ projectId }: { projectId: string | null }) {
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="github" maxLength={80} required autoFocus />
           </Field>
           <Field label="Tipo">
-            <Select value={kind} onChange={(e) => setKind(e.target.value as "stdio" | "http")}>
-              <option value="stdio">Local (comando)</option>
-              <option value="http">Remoto (URL)</option>
-            </Select>
+            <Select value={kind} onChange={(v) => setKind(v as "stdio" | "http")} options={KIND_OPTIONS} aria-label="Tipo" />
           </Field>
           <Field label="Modo">
-            <Select value={mode} onChange={(e) => setMode(e.target.value as McpServer["mode"])}>
-              {Object.entries(MODES).map(([v, label]) => (
-                <option key={v} value={v}>
-                  {label}
-                </option>
-              ))}
-            </Select>
+            <Select value={mode} onChange={(v) => setMode(v as McpServer["mode"])} options={MODE_OPTIONS} aria-label="Modo" />
           </Field>
         </div>
         {kind === "stdio" ? (

@@ -32,6 +32,7 @@
   --z-danger: #fd2f3b;
   --z-danger-soft: rgba(253, 47, 59, 0.16);
   --z-on-accent: #ffffff;
+  --z-overlay: rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 
   /* Tokens semânticos do shadcn, mapeados uma vez para --z-* (o tema claro só troca --z-*).
@@ -100,6 +101,7 @@
   --color-danger: var(--z-danger);
   --color-danger-soft: var(--z-danger-soft);
   --color-on-accent: var(--z-on-accent);
+  --color-overlay: var(--z-overlay);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

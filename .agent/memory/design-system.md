@@ -10,7 +10,11 @@ updated: 2026-11-03
 - escala de controle 24/28/32/36px (control-xs/sm/control/lg), inspirada no a reference app
 - primitivas em apps/web/src/ui/ (index.tsx reexporta; button.tsx); features importam de "@/ui" e não estilizam controles na mão
 - shadcn inicializado: components.json (style aria-nova, ícones lucide, alias ui → @/ui); `bunx shadcn add X` gera em src/ui e o componente é adaptado aos tokens antes de usar
-- Button = React Aria (onPress, isDisabled; estados data-hovered/data-pressed/data-focus-visible); sem prop title (usar Tooltip quando existir; hoje um span com title marcado HACK em chat.tsx)
+- Button = React Aria (onPress, isDisabled; estados data-hovered/data-pressed/data-focus-visible); sem prop title, usar <Tooltip content>
+- primitivas React Aria em src/ui: button, input (Input, Textarea, `field` compartilhado), select (API por options; "" vira chave "v:"), tooltip, dialog (Dialog + ConfirmButton)
+- ação destrutiva usa ConfirmButton, nunca window.confirm
+- title nativo segue ok em elementos não interativos (badges, linhas); Tooltip só em gatilho focável
+- bundle web ~827 KB min / 261 KB gzip após React Aria (era 605 KB); code-split por rota se pesar
 - tokens do shadcn (background, foreground, card, popover, primary, destructive, border, input, ring, *-foreground) apontam para --z-* em :root; raio sm/md/lg/xl/2xl = 4/6/8/12/16; `dark:` = tema padrão (sem classe .dark)
 - cx = cn (pacote `cn`, merge de classes Tailwind)
 - pressable: scale(0.97), <300ms, respeita prefers-reduced-motion

@@ -6,7 +6,7 @@ import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { call, sendMessage } from "../api.ts"
 import { go, useApp } from "../state.ts"
-import { Badge, Button, Card, cx, Select, Textarea } from "@/ui"
+import { Badge, Button, Card, ConfirmButton, cx, Select, Textarea, Tooltip } from "@/ui"
 import { ModelPicker } from "./model-picker.tsx"
 
 type Live = { agentId: string | null; model: string; text: string; steps: Step[] }
@@ -95,7 +95,6 @@ export function ChatView({ chat }: { chat: Chat }) {
   }
 
   const remove = () => {
-    if (!confirm("Apagar este chat e todas as mensagens?")) return
     call((c) => c.chats.remove({ params: { id: chat.id } })).then(async () => {
       await reload()
       go(chat.projectId ? { view: "project", id: chat.projectId } : { view: "home" })
@@ -118,15 +117,14 @@ export function ChatView({ chat }: { chat: Chat }) {
           <ModelPicker className="w-60" value={chat.model} onChange={(model) => update({ model })} />
         </label>
         <div className="flex gap-1 pt-5">
-          {/* HACK: title num span até existir a primitiva Tooltip (RAC não aceita title no Button). */}
-          <span title="Resume a conversa até aqui e propõe memórias e skills">
+          <Tooltip content="Resume a conversa até aqui e propõe memórias e skills">
             <Button variant="ghost" onPress={compact} isDisabled={compacting || busy}>
               {compacting ? "Compactando…" : "Compactar"}
             </Button>
-          </span>
-          <Button variant="ghost" onPress={remove} aria-label="Apagar chat">
+          </Tooltip>
+          <ConfirmButton variant="ghost" title="Apagar este chat?" description="Todas as mensagens serão apagadas." onConfirm={remove}>
             Apagar
-          </Button>
+          </ConfirmButton>
         </div>
       </header>
 
@@ -142,14 +140,15 @@ export function ChatView({ chat }: { chat: Chat }) {
           </span>
         ))}
         {candidates.length > 0 && (
-          <Select className="h-control-sm w-40 text-sm" value="" onChange={(e) => e.target.value && update({ agentIds: [...chat.agentIds, e.target.value] })} aria-label="Adicionar agente">
-            <option value="">+ agente</option>
-            {candidates.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </Select>
+          <Select
+            size="sm"
+            className="w-40"
+            value=""
+            placeholder="+ agente"
+            onChange={(id) => update({ agentIds: [...chat.agentIds, id] })}
+            options={candidates.map((a) => ({ value: a.id, label: a.name }))}
+            aria-label="Adicionar agente"
+          />
         )}
         {team.length > 1 && <span className="text-xs text-dim">Mencione com @ para escolher quem responde; agentes passam a vez mencionando uns aos outros.</span>}
       </div>
