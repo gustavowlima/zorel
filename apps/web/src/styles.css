@@ -1,5 +1,6 @@
-/* Design system: inspired by OpenBot (dark by default, compact 24/28/32/36px scale,
-   nearly invisible borders, a single blue accent). Our own values; colors come only from these tokens. */
+/* Design system (apps/web/DESIGN.md): dark by default, as in the screen prototype; compact
+   24/28/32/36px controls, near-invisible borders, one blue accent, depth by tone (no shadows).
+   Inspired by OpenBot, our own values. Colors come only from these tokens. */
 @import "@fontsource-variable/inter";
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -11,28 +12,42 @@
 :root {
   --z-bg-frame: #0d0d0d;
   --z-bg-canvas: #1a1a1a;
-  --z-bg-sidebar: #141414;
-  --z-bg-surface: #212121;
+  --z-bg-sidebar: #0d0d0d; /* the sidebar sits on the frame; content lives in one card */
+  --z-bg-surface: #232323;
   --z-bg-raised: #262626;
-  --z-bg-control: #212121;
-  --z-bg-control-hover: #262626;
+  --z-bg-control: #232323;
+  --z-bg-control-hover: #292929;
   --z-bg-control-active: #2c2c2c;
-  --z-border: rgba(255, 255, 255, 0.05);
-  --z-border-strong: rgba(255, 255, 255, 0.09);
+  --z-bg-code: #141414;
+  --z-border: rgba(255, 255, 255, 0.06);
+  --z-border-strong: rgba(255, 255, 255, 0.1);
   --z-text: #ffffff;
   --z-text-secondary: #dcdcdc;
   --z-text-muted: #979797;
-  --z-text-dim: #6a6a6a;
+  --z-text-dim: #8a8a8a; /* 5.0:1 on canvas: the lowest grey that still passes for reading */
   --z-accent: #007cf7;
   --z-accent-hover: #1f8fff;
   --z-accent-text: #42a0ff;
   --z-accent-soft: rgba(0, 124, 247, 0.16);
+  --z-accent-faint: rgba(0, 124, 247, 0.08); /* waiting-for-you cards */
+  --z-accent-line: rgba(0, 124, 247, 0.35);
   --z-success: #31cf76;
+  --z-success-faint: rgba(49, 207, 118, 0.07); /* approved receipts */
+  --z-success-line: rgba(49, 207, 118, 0.3);
   --z-warning: #ff9412;
   --z-danger: #fd2f3b;
   --z-danger-soft: rgba(253, 47, 59, 0.16);
+  --z-diff-add: rgba(49, 207, 118, 0.1);
+  --z-diff-del: rgba(255, 107, 115, 0.1);
   --z-on-accent: #ffffff;
   --z-overlay: rgba(0, 0, 0, 0.5);
+  /* Agent identity: avatars only, never actions (the blue stays the only accent). Same in both themes. */
+  --z-agent-1: #6d5df6;
+  --z-agent-2: #12a594;
+  --z-agent-3: #e5484d;
+  --z-agent-4: #d6851e;
+  --z-agent-5: #3a8ee6;
+  --z-agent-6: #46a758;
   color-scheme: dark;
 
   /* shadcn semantic tokens, mapped once to --z-* (the light theme only swaps --z-*).
@@ -57,21 +72,29 @@
 }
 
 :root[data-theme="light"] {
-  --z-bg-frame: #e9e9e9;
+  --z-bg-frame: #ececec;
   --z-bg-canvas: #ffffff;
-  --z-bg-sidebar: #f4f4f4;
-  --z-bg-surface: #f4f4f4;
+  --z-bg-sidebar: #ececec;
+  --z-bg-surface: #f2f2f2;
   --z-bg-raised: #ffffff;
   --z-bg-control: #ededed;
   --z-bg-control-hover: #e4e4e4;
   --z-bg-control-active: #dadada;
+  --z-bg-code: #f6f6f6;
   --z-border: rgba(20, 20, 20, 0.08);
   --z-border-strong: rgba(20, 20, 20, 0.14);
   --z-text: #141414;
   --z-text-secondary: #2b2b2b;
-  --z-text-muted: rgba(20, 20, 20, 0.56);
-  --z-text-dim: rgba(20, 20, 20, 0.38);
+  --z-text-muted: #666666;
+  --z-text-dim: #757575; /* 4.6:1 on white */
   --z-accent-text: #0066cc;
+  --z-accent-faint: rgba(0, 124, 247, 0.06);
+  --z-accent-line: rgba(0, 124, 247, 0.3);
+  --z-success: #14804a;
+  --z-success-faint: rgba(26, 158, 85, 0.07);
+  --z-success-line: rgba(26, 158, 85, 0.35);
+  --z-diff-add: rgba(26, 158, 85, 0.1);
+  --z-diff-del: rgba(196, 35, 45, 0.08);
   color-scheme: light;
 }
 
@@ -100,6 +123,19 @@
   --color-warning: var(--z-warning);
   --color-danger: var(--z-danger);
   --color-danger-soft: var(--z-danger-soft);
+  --color-code: var(--z-bg-code);
+  --color-accent-faint: var(--z-accent-faint);
+  --color-accent-line: var(--z-accent-line);
+  --color-success-faint: var(--z-success-faint);
+  --color-success-line: var(--z-success-line);
+  --color-diff-add: var(--z-diff-add);
+  --color-diff-del: var(--z-diff-del);
+  --color-agent-1: var(--z-agent-1);
+  --color-agent-2: var(--z-agent-2);
+  --color-agent-3: var(--z-agent-3);
+  --color-agent-4: var(--z-agent-4);
+  --color-agent-5: var(--z-agent-5);
+  --color-agent-6: var(--z-agent-6);
   --color-on-accent: var(--z-on-accent);
   --color-overlay: var(--z-overlay);
   --color-background: var(--background);

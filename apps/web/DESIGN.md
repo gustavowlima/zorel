@@ -4,28 +4,41 @@ description: Workspace de agentes de IA para código, escuro, compacto e silenci
 colors:
   frame: "#0d0d0d"
   canvas: "#1a1a1a"
-  sidebar: "#141414"
-  surface: "#212121"
+  sidebar: "#0d0d0d"
+  surface: "#232323"
   raised: "#262626"
-  control: "#212121"
-  control-hover: "#262626"
+  control: "#232323"
+  control-hover: "#292929"
   control-active: "#2c2c2c"
-  border-subtle: "rgba(255, 255, 255, 0.05)"
-  border-strong: "rgba(255, 255, 255, 0.09)"
+  code: "#141414"
+  border-subtle: "rgba(255, 255, 255, 0.06)"
+  border-strong: "rgba(255, 255, 255, 0.1)"
   text: "#ffffff"
   text-secondary: "#dcdcdc"
   text-muted: "#979797"
-  text-dim: "#6a6a6a"
+  text-dim: "#8a8a8a"
   signal-blue: "#007cf7"
   signal-blue-hover: "#1f8fff"
   signal-blue-text: "#42a0ff"
   signal-blue-soft: "rgba(0, 124, 247, 0.16)"
+  signal-blue-faint: "rgba(0, 124, 247, 0.08)"
+  signal-blue-line: "rgba(0, 124, 247, 0.35)"
   success: "#31cf76"
+  success-faint: "rgba(49, 207, 118, 0.07)"
+  success-line: "rgba(49, 207, 118, 0.3)"
   warning: "#ff9412"
   danger: "#fd2f3b"
   danger-soft: "rgba(253, 47, 59, 0.16)"
   on-accent: "#ffffff"
   overlay: "rgba(0, 0, 0, 0.5)"
+  diff-add: "rgba(49, 207, 118, 0.1)"
+  diff-del: "rgba(255, 107, 115, 0.1)"
+  agent-violet: "#6d5df6"
+  agent-teal: "#12a594"
+  agent-rose: "#e5484d"
+  agent-amber: "#d6851e"
+  agent-sky: "#3a8ee6"
+  agent-green: "#46a758"
 typography:
   title:
     fontFamily: "Inter Variable, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
@@ -171,22 +184,30 @@ Cinzas neutros quase pretos em camadas, um azul de sinal e três cores de estado
 - **Azul de Sinal** (signal-blue): botão principal, foco, seleção e links. É a única cor de marca. Variantes: hover mais claro (signal-blue-hover), texto legível sobre fundo escuro (signal-blue-text) e fundo translúcido para badges e anéis de foco (signal-blue-soft).
 
 ### Neutral
-- **Moldura** (frame): o fundo da janela, atrás de tudo.
-- **Bancada** (canvas): a área de trabalho principal, onde fica o chat.
-- **Barra Lateral** (sidebar): navegação, um degrau mais escuro que a bancada.
+- **Moldura** (frame): o fundo da janela, atrás de tudo. A barra lateral fica direto sobre ela.
+- **Bancada** (canvas): o cartão único de conteúdo (chat, páginas), de cantos 16px.
+- **Barra Lateral** (sidebar): mesmo tom da moldura; o item ativo é um pedaço da bancada (canvas + borda sutil).
 - **Superfície** (surface) e **Elevado** (raised): cards, blocos de código e painéis por cima da bancada.
 - **Controle** (control, control-hover, control-active): fundo de botões secundários, campos e itens selecionados, em três degraus.
 - **Borda sutil** (border-subtle) e **Borda forte** (border-strong): separação mínima; a forte só em foco de campo, tabela e citação.
-- **Texto** em quatro degraus: text (títulos e conteúdo), text-secondary, text-muted (rótulos, itens inativos), text-dim (dicas, placeholders, seções).
+- **Texto** em quatro degraus: text (títulos e conteúdo), text-secondary, text-muted (rótulos, itens inativos), text-dim (dicas, placeholders, seções). Todos passam 4,5:1 sobre a bancada; o text-dim é o cinza mais baixo que ainda passa.
+- **Código** (code): blocos de código, terminal e diff, um degrau abaixo da bancada.
 
 ### Estados
 - **success**, **warning**, **danger** (com danger-soft): só para estado real (ok, atenção, erro ou ação destrutiva). Nunca decoração.
 - **Sobre o acento** (on-accent): texto branco sobre azul ou vermelho cheio; igual nos dois temas.
+- **Esperando você** (signal-blue-faint + signal-blue-line): cartão de aprovação pendente. **Aprovado** (success-faint + success-line): recibo do que você aprovou.
+- **Diff** (diff-add, diff-del): fundo das linhas adicionadas e removidas.
+
+### Identidade dos agentes
+- **Seis cores** (agent-violet, agent-teal, agent-rose, agent-amber, agent-sky, agent-green): cada agente recebe uma, na ordem em que entra no projeto. Aparecem só no avatar (quadrado com a inicial) e nunca em botão, link ou estado.
 
 ### Named Rules
 **A Regra da Voz Única.** O azul de sinal é o único acento. Se ele aparece em algo que não é ação, foco, seleção ou link, está errado.
 
 **A Regra do Token.** Nenhuma cor literal fora de `styles.css`. Uma cor literal quebra o tema claro.
+
+**A Regra do Avatar.** Cor de agente vive só no avatar. Se ela pinta um botão, um link ou um estado, está errado: isso é papel do azul e das cores de estado.
 
 ## Typography
 
@@ -208,7 +229,13 @@ Cinzas neutros quase pretos em camadas, um azul de sinal e três cores de estado
 
 ## Layout
 
-Aplicação de janela inteira em três camadas: moldura, barra lateral fixa à esquerda e bancada à direita. Páginas de configuração e listagem ficam centralizadas numa coluna de até 768px com 32px de respiro e 24px entre blocos. O ritmo interno usa a escala de 4px do Tailwind, quase sempre 4, 8 e 12px (8px é o espaçamento dominante entre elementos).
+Janela inteira em três camadas: moldura; barra lateral de 248px direto sobre ela; e um único cartão de conteúdo (bancada, cantos 16px, borda sutil) com 12px de margem da moldura. O cartão tem sempre o mesmo cabeçalho: título 15px semibold, uma descrição em text-muted ao lado e as ações à direita, com borda sutil embaixo.
+
+- **Barra lateral em árvore:** atalhos (Precisa de você, Conhecimento, Consumo), depois PROJECTS com cada projeto como pasta. O projeto aberto mostra os chats embaixo, ligados por uma linha vertical que sai do centro do ícone; o texto do chat alinha com o nome do projeto. Chats sem projeto ficam em **General**. Status do chat numa segunda linha: ícone girando (rodando), relógio azul (esperando você); parado mostra só o tempo desde a última atividade. Depois, AGENTS do projeto aberto.
+- **Chat:** mensagens numa coluna de leitura, campo de mensagem largo embaixo. Painel direito (Changes, Files) e painel inferior (Terminal, Tests, Problems, Processes, Logs) abrem e fecham, sem tirar o chat do lugar.
+- **Páginas** (configuração, conhecimento, contas) ficam numa coluna de até 720–760px, com seções em linhas separadas por borda sutil em vez de cards dentro de cards.
+
+O ritmo interno usa a escala de 4px, quase sempre 4, 8, 12 e 16px; entre mensagens, 24px.
 
 A altura dos controles segue a escala fixa: 24px (ícones e ações inline), 28px (itens de lista e da barra lateral, botões pequenos), 32px (padrão de botões e campos) e 36px (ação principal de destaque).
 
@@ -216,7 +243,7 @@ A altura dos controles segue a escala fixa: 24px (ícones e ações inline), 28p
 
 ## Elevation & Depth
 
-Sem sombras. A profundidade vem de camadas de tom: moldura → barra lateral → bancada → superfície → elevado, cada degrau um pouco mais claro no tema escuro. Bordas de 5% separam quando o tom sozinho não basta.
+Sem sombras. A profundidade vem de camadas de tom: moldura (e barra lateral) → bancada → superfície → elevado, cada degrau um pouco mais claro no tema escuro. Bordas de 6% separam quando o tom sozinho não basta; popovers e diálogos usam a borda forte.
 
 **A Regra do Plano.** Superfícies são planas. Se algo precisa se destacar, sobe um degrau de tom; não ganha sombra.
 
@@ -264,6 +291,16 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Sidebar item:** 28px de altura, texto muted, hover com fundo de controle. O ativo usa control-active e texto cheio.
 - **Section label:** 11px, caixa alta, text-dim, separando grupos da barra lateral.
 
+### Mensagem de agente
+- **Avatar:** quadrado de 32px, cantos 10px, cor de identidade, inicial em branco 13px semibold. Nome em 13px semibold, ao lado o modelo e o engine em 12px text-muted.
+- **Pílula de atividade:** 28px, fundo de superfície, ponto verde + resumo ("Read 6 files · 14 s") + chevron. Clicar abre os passos (✓ feito, ícone girando, relógio esperando você) com tempo de cada um e trecho de diff; fechada por padrão quando o turno terminou.
+- **Aviso central:** 12px text-muted, centralizado (quem respondeu como líder, passagem de tarefa, troca de modelo com quantos tokens foram reenviados).
+- **Cartão de aprovação:** "Waiting for you" em label azul, o comando em código, ações Allow (azul), Always in this chat (secundário), Deny (ghost). Depois de decidido vira recibo verde ("You approved").
+- **Recibo do turno:** 12px text-muted embaixo da última resposta: respostas, tokens e tempo.
+
+### Campo de mensagem
+- Cartão de cantos 16px com borda forte; texto em duas linhas que cresce; embaixo, da esquerda para a direita: anexar, agente (avatar), modelo com conta (abre o seletor com trilho de contas e logos dos providers), nível de aprovação, contexto usado e enviar (32px, azul). Anexos aparecem como etiquetas acima do texto.
+
 ### Chat (componente assinatura)
 Respostas em markdown com ritmo de 0.6em entre blocos, títulos em 15px, links em signal-blue-text sublinhados, código inline em fundo de controle e blocos de código em superfície com borda sutil e cantos de 12px.
 
@@ -283,5 +320,7 @@ Respostas em markdown com ritmo de 0.6em entre blocos, títulos em 15px, links e
 - **Don't** usar sombras para profundidade.
 - **Don't** criar um quinto tamanho de texto.
 - **Don't** aplicar hover em dispositivos sem ponteiro fino.
+- **Don't** pintar botão, link ou estado com cor de agente.
+- **Don't** pôr card dentro de card: dentro do cartão de conteúdo, separe por linha e espaço.
 - **Don't** copiar código ou CSS do OpenBot (licença PolyForm Noncommercial); só a direção.
 - **Don't** usar Radix nem a paleta neutra e o `--radius` padrão do shadcn; as primitivas saem do shadcn `--base aria` já mapeadas para os tokens `--z-*`.
