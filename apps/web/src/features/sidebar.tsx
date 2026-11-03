@@ -1,10 +1,9 @@
-// Sidebar (the chosen redesign, "Zero — main screen"): Needs you first, the projects as a tree with their chats,
-// the chats without a project, and a toolbar at the foot (new chat, knowledge, usage with the fullest limit window,
-// settings); a project's agents live in its settings. One line per project and two per chat: a dot or a spinner is
-// all the state a project shows; a chat shows who is in it and what is happening, and sorts by whose turn it
-// is (waiting for you, then working, then the rest). The open chat floats as a raised chip. In the desktop app
-// a 28px strip on top holds the window buttons and drags the window. Projects reorder by drag and drop; chats
-// reorder only inside their own group and never change project. Statuses come from the live stream.
+// Sidebar: the brand (the title bar in the desktop app), Needs you, then icon tabs (Chats, Projects; names in
+// tooltips) that switch the list, and a toolbar at the foot (new chat, knowledge, usage with the fullest limit
+// window, settings). Chats lists every chat, whose turn it is first (waiting for you, then working), then the
+// latest activity. Projects is the tree: one line per project (a dot or a spinner is all its state), its chats
+// under it; projects reorder by drag and drop, chats only inside their own project. A chat row shows who is in it
+// and what is happening; the open chat floats as a raised chip. Statuses come from the live stream.
 import { type Agent, type Chat, LIMIT_ALERT, type Project } from "@zero/contracts"
 import type { ChatStatus } from "@zero/contracts/events"
 import { formatAge, formatPercent, t } from "@zero/i18n"
@@ -14,13 +13,14 @@ import { agentTone, chatTitle, splitModel, statusLabel, windowLabel } from "../l
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, BookOpen, ChartColumn, cx, IconButton, Inbox, Logo, ModelAvatar, NavItem, NavLabel, NavTree, NavTreeItem, type NavKey, Plus, Settings, Spinner,
+  AgentAvatar, BookOpen, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MessageCircle, ModelAvatar, NavItem, NavTree, NavTreeItem, type NavKey, Plus, Settings, Spinner,
   SquarePen, Tooltip, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
 const EXPANDED_KEY = "zero.sidebar.expanded"
-const COLLAPSED_KEY = "zero.sidebar.collapsed" // sections the person closed: "projects", "chats"
+const TAB_KEY = "zero.sidebar.tab" // holds "projects" when that tab was the last one open
+type Tab = "chats" | "projects"
 type Statuses = Readonly<Record<string, ChatStatus>>
 
 // Tree keys carry their kind: a project, a chat, or a group's "show more" row.
@@ -53,18 +53,17 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
     onExpandedChange(new Set(expandedKeys.has(key) ? [...expandedKeys].filter((k) => k !== key) : [...expandedKeys, key]))
   }
 
-  // Sections open unless closed by hand; the choice is remembered on this computer.
-  const [collapsed, setCollapsed] = useState(() => readSet(COLLAPSED_KEY))
-  const flip = (section: string) => {
-    const next = new Set(collapsed)
-    if (!next.delete(section)) next.add(section)
-    setCollapsed(next)
-    writeSet(COLLAPSED_KEY, next)
+  // Chats or Projects; the last one open is remembered on this computer.
+  const [tab, setTab] = useState<Tab>(() => (readSet(TAB_KEY).has("projects") ? "projects" : "chats"))
+  const pick = (next: Tab) => {
+    setTab(next)
+    writeSet(TAB_KEY, new Set([next]))
   }
 
   const activeChat = route.view === "chat" ? route.id : undefined
   const groupOf = (projectId: string | null) => byTurn(ordered(chats.filter((c) => c.projectId === projectId), statuses), statuses)
-  const loose = groupOf(null)
+  // The Chats tab: every chat, whose turn it is first, then the latest activity.
+  const recent = byTurn([...chats].sort((a, b) => lastActivity(b, statuses) - lastActivity(a, statuses)), statuses)
 
   const reorderProjects = useMutation(mutations.reorderProjects)
   const reorderChats = useMutation(mutations.reorderChats)
@@ -76,11 +75,6 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
       group === "projects"
         ? reorderProjects({ payload: { ids: keys.map(idOf) }, reactivityKeys: ["projects"] })
         : reorderChats({ payload: { projectId: group, ids: keys.map(idOf) }, reactivityKeys: ["chats"] })
-  })
-  const looseDnd = useNavReorder({
-    groupOf: (key) => (key.startsWith("c:") ? "loose" : undefined),
-    orderOf: () => loose.map((c) => chatKey(c.id)),
-    save: (_, keys) => reorderChats({ payload: { projectId: null, ids: keys.map(idOf) }, reactivityKeys: ["chats"] })
   })
 
   const chatItems = (group: string, list: ReadonlyArray<Chat>) => {
@@ -112,46 +106,45 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
         </NavItem>
       </div>
 
-      <div className="scroll-quiet flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto overscroll-contain pr-2.5 pb-2">
-        <section className="flex flex-col gap-px">
-          <NavLabel action={<NewProjectButton />} expanded={!collapsed.has("projects")} onToggle={() => flip("projects")}>
-            {t("nav.projects")}
-          </NavLabel>
-          {!collapsed.has("projects") && (
-            <NavTree label={t("nav.projects")} expandedKeys={expandedKeys} onExpandedChange={onExpandedChange} dragAndDropHooks={projectDnd}>
-              {projects.map((p) => {
-                const list = groupOf(p.id)
-                return (
-                  <ProjectItem key={p.id} project={p} active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)} chats={list} statuses={statuses} onToggle={() => toggle(p.id)}>
-                    {chatItems(p.id, list)}
-                  </ProjectItem>
-                )
-              })}
-            </NavTree>
-          )}
-        </section>
-
-        {loose.length > 0 && (
-          <section className="flex flex-col gap-px">
-            <NavLabel
-              action={
-                <IconButton label={t("nav.newChatIn", { name: t("nav.chats") })} size="sm" onPress={() => go({ view: "home" })}>
-                  <Plus className="size-3.5" />
-                </IconButton>
-              }
-              expanded={!collapsed.has("chats")}
-              onToggle={() => flip("chats")}
-            >
-              {t("nav.chats")}
-            </NavLabel>
-            {!collapsed.has("chats") && (
-              <NavTree label={t("nav.chats")} dragAndDropHooks={looseDnd}>
-                {chatItems("loose", loose)}
-              </NavTree>
-            )}
-          </section>
+      {/* Icon tabs (names in tooltips) switch the list below; the action at the end creates in the open one. */}
+      <div className="mb-1.5 flex shrink-0 items-center gap-0.5 pr-2.5">
+        <FootButton label={t("nav.chats")} active={tab === "chats"} onPress={() => pick("chats")}>
+          <MessageCircle />
+        </FootButton>
+        <FootButton label={t("nav.projects")} active={tab === "projects"} onPress={() => pick("projects")}>
+          <Folder />
+        </FootButton>
+        <span className="flex-1" />
+        {tab === "projects" ? (
+          <NewProjectButton />
+        ) : (
+          <Tooltip content={t("nav.newChat")}>
+            <IconButton label={t("nav.newChat")} size="sm" onPress={() => go({ view: "home" })}>
+              <Plus className="size-3.5" />
+            </IconButton>
+          </Tooltip>
         )}
+      </div>
 
+      <div className="scroll-quiet flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pr-2.5 pb-2">
+        {tab === "chats" ? (
+          recent.length ? (
+            <NavTree key="chats" label={t("nav.chats")}>{chatItems("recent", recent)}</NavTree>
+          ) : (
+            <p className="px-2.5 py-2 text-sm text-muted">{t("nav.noChats")}</p>
+          )
+        ) : (
+          <NavTree key="projects" label={t("nav.projects")} expandedKeys={expandedKeys} onExpandedChange={onExpandedChange} dragAndDropHooks={projectDnd}>
+            {projects.map((p) => {
+              const list = groupOf(p.id)
+              return (
+                <ProjectItem key={p.id} project={p} active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)} chats={list} statuses={statuses} onToggle={() => toggle(p.id)}>
+                  {chatItems(p.id, list)}
+                </ProjectItem>
+              )
+            })}
+          </NavTree>
+        )}
       </div>
 
       {/* Tools at the foot */}
@@ -172,7 +165,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   )
 }
 
-const lastActivity = (c: Chat, statuses: Statuses) => Math.max(c.createdAt, statuses[c.id]?.updatedAt ?? 0)
+const lastActivity = (c: Chat, statuses: Statuses) => Math.max(c.createdAt, c.lastAt ?? 0, statuses[c.id]?.updatedAt ?? 0)
 
 // A group's chats: the ones never placed by hand first (newest activity on top), then the placed ones in
 // their manual order.
