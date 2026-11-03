@@ -12,6 +12,14 @@
 :root {
   --z-bg-frame: #0d0d0d;
   --z-bg-canvas: #1a1a1a;
+  /* Chart series (categorical, fixed order, validated for CVD and contrast on the canvas; see DESIGN.md Charts). */
+  --z-series-1: #3987e5;
+  --z-series-2: #d95926;
+  --z-series-3: #199e70;
+  --z-series-4: #c98500;
+  --z-series-5: #d55181;
+  --z-series-6: #008300;
+  --z-series-7: #9085e9;
   --z-bg-sidebar: #0d0d0d; /* the sidebar sits on the frame; content lives in one card */
   --z-bg-surface: #232323;
   --z-bg-raised: #262626;
@@ -74,6 +82,13 @@
 :root[data-theme="light"] {
   --z-bg-frame: #ececec;
   --z-bg-canvas: #ffffff;
+  --z-series-1: #2a78d6;
+  --z-series-2: #eb6834;
+  --z-series-3: #1baf7a;
+  --z-series-4: #eda100;
+  --z-series-5: #e87ba4;
+  --z-series-6: #008300;
+  --z-series-7: #6250d6;
   --z-bg-sidebar: #ececec;
   --z-bg-surface: #f2f2f2;
   --z-bg-raised: #ffffff;

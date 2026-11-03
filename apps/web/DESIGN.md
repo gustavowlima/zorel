@@ -245,6 +245,13 @@ A altura dos controles segue a escala fixa: 24px (ícones e ações inline), 28p
 
 **A Regra da Escala.** Nenhuma altura de controle fora de 24 / 28 / 32 / 36px.
 
+### Charts
+
+- Séries categóricas em ordem fixa (`--z-series-1..7`, uma por harness: Codex, Claude Code, Anthropic, OpenAI, OpenRouter, Ollama, LM Studio). A cor segue a entidade, nunca a posição; validadas para daltonismo e contraste nos dois temas (no claro, três ficam abaixo de 3:1, por isso todo gráfico tem legenda com valores e uma visão em tabela).
+- Linhas de 2px, área a 14% de opacidade, grade de 1px na cor da borda, eixo com valores redondos (1, 2 ou 5 × 10ⁿ). Texto nunca usa a cor da série; a identidade vem do ponto ou traço ao lado.
+- Hover e teclado: uma linha vertical acompanha o dia mais próximo e um único quadro lista todas as séries; o gráfico é um slider (setas mudam o dia).
+- Número principal (hero) ≥48px, mesma fonte, algarismos proporcionais; `tabular-nums` só em colunas.
+
 ## Elevation & Depth
 
 Sem sombras. A profundidade vem de camadas de tom: moldura (e barra lateral) → bancada → superfície → elevado, cada degrau um pouco mais claro no tema escuro. Bordas de 6% separam quando o tom sozinho não basta; popovers e diálogos usam a borda forte.
