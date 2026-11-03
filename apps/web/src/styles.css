@@ -1,11 +1,11 @@
-/* Design system: inspirado no OpenBot (dark por padrão, escala compacta 24/28/32/36px,
-   bordas quase invisíveis, um único acento azul). Valores próprios; cores só vêm destes tokens. */
+/* Design system: inspired by OpenBot (dark by default, compact 24/28/32/36px scale,
+   nearly invisible borders, a single blue accent). Our own values; colors come only from these tokens. */
 @import "@fontsource-variable/inter";
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* `dark:` vale no tema escuro, que é o padrão (não há classe .dark). */
+/* `dark:` applies in the dark theme, which is the default (there is no .dark class). */
 @custom-variant dark (&:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *));
 
 :root {
@@ -35,10 +35,10 @@
   --z-overlay: rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 
-  /* Tokens semânticos do shadcn, mapeados uma vez para --z-* (o tema claro só troca --z-*).
-     secondary, muted e accent NÃO são mapeados: esses nomes já são nossos (texto secundário,
-     texto apagado, azul). Ao adotar um componente do shadcn, troque bg-muted/bg-accent/bg-secondary
-     por bg-control-hover/bg-control. */
+  /* shadcn semantic tokens, mapped once to --z-* (the light theme only swaps --z-*).
+     secondary, muted and accent are NOT mapped: those names are already ours (secondary text,
+     dimmed text, blue). When adopting a shadcn component, replace bg-muted/bg-accent/bg-secondary
+     with bg-control-hover/bg-control. */
   --background: var(--z-bg-canvas);
   --foreground: var(--z-text);
   --card: var(--z-bg-surface);
@@ -75,7 +75,7 @@
   color-scheme: light;
 }
 
-/* Expõe os tokens como utilitários Tailwind: bg-surface, text-muted, border-subtle, h-control... */
+/* Exposes the tokens as Tailwind utilities: bg-surface, text-muted, border-subtle, h-control... */
 @theme inline {
   --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --color-frame: var(--z-bg-frame);
@@ -124,7 +124,7 @@
   --radius-control: 8px;
   --radius-card: 12px;
   --radius-sheet: 16px;
-  /* Escala de raio do shadcn presa à nossa: lg = controle, xl = card, 2xl = folha. */
+  /* shadcn radius scale pinned to ours: lg = control, xl = card, 2xl = sheet. */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
@@ -148,13 +148,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Feedback de toque igual ao OpenBot: escala 0.97, < 300ms, hover só com ponteiro fino. */
+/* Press feedback like OpenBot: scale 0.97, < 300ms, hover only with a fine pointer. */
 .pressable { transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out); }
 .pressable:active { transform: scale(0.97); }
 @media not ((hover: hover) and (pointer: fine)) { .pressable:hover { background-color: inherit; } }
 @media (prefers-reduced-motion: reduce) { .pressable { transition: none; } .pressable:active { transform: none; } }
 
-/* Markdown das respostas. */
+/* Reply markdown. */
 .prose-chat > * + * { margin-top: 0.6em; }
 .prose-chat ul { list-style: disc; padding-left: 1.4em; }
 .prose-chat ol { list-style: decimal; padding-left: 1.4em; }

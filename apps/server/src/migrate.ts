@@ -1,14 +1,14 @@
-// Antes do Drizzle: adota o banco do MVP e faz backup antes de qualquer migração pendente.
-// Roda síncrono (bun:sqlite) antes de o SqliteClient abrir o arquivo.
+// Before Drizzle: adopts the MVP database and backs up before any pending migration.
+// Runs synchronously (bun:sqlite) before SqliteClient opens the file.
 import { Database } from "bun:sqlite"
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs"
 import { dirname, join } from "node:path"
 
-// Lida na hora (não no import): o app desktop define ZERO_MIGRATIONS antes de subir o server.
+// Read at call time (not on import): the desktop app sets ZERO_MIGRATIONS before starting the server.
 export const migrationsDir = () => process.env.ZERO_MIGRATIONS ?? join(import.meta.dir, "..", "drizzle")
 
-// Migrations do MVP (SQL à mão + PRAGMA user_version). Congeladas: só servem para levar um banco
-// antigo até a versão 3, que é exatamente a linha de base do Drizzle (drizzle/*_baseline).
+// MVP migrations (hand-written SQL + PRAGMA user_version). Frozen: they only bring an old database
+// up to version 3, which is exactly the Drizzle baseline (drizzle/*_baseline).
 export const LEGACY_MIGRATIONS = [
   `CREATE TABLE projects (
     id TEXT PRIMARY KEY,
@@ -69,7 +69,7 @@ export const LEGACY_MIGRATIONS = [
     INSERT INTO memories_fts(memories_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
     INSERT INTO memories_fts(rowid, text) VALUES (new.rowid, new.text);
   END;`,
-  // Canais com vários agentes, ferramentas usadas por mensagem, skills e servidores MCP.
+  // Multi-agent channels, tools used per message, skills and MCP servers.
   `CREATE TABLE chat_members (
     chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
     agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -119,17 +119,17 @@ const backupsOf = (path: string) => {
   return existsSync(dir) ? readdirSync(dir).filter((f) => f.startsWith("zero-") && f.endsWith(".db")).sort().map((f) => join(dir, f)) : []
 }
 
-// Copia consistente (WAL incluído) para <pasta do banco>/backups/.
+// Consistent copy (WAL included) to <database folder>/backups/.
 export function backup(db: Database, path: string): string {
   const dir = join(dirname(path), "backups")
   mkdirSync(dir, { recursive: true })
   const file = join(dir, `zero-${ts()}.db`)
   db.run(`VACUUM INTO '${file.replaceAll("'", "''")}'`)
-  for (const old of backupsOf(path).slice(0, -KEEP)) rmSync(old) // nome com data ISO: ordem alfabética = cronológica
+  for (const old of backupsOf(path).slice(0, -KEEP)) rmSync(old) // name with ISO date: alphabetical order = chronological
   return file
 }
 
-// Devolve o caminho do backup quando fez um.
+// Returns the backup path when it made one.
 export function prepare(path: string, dir = migrationsDir()): string | undefined {
   if (path === ":memory:" || !existsSync(path)) return
   const db = new Database(path)
@@ -140,7 +140,7 @@ export function prepare(path: string, dir = migrationsDir()): string | undefined
     const applied = drizzle ? (db.query("SELECT count(*) AS n FROM __drizzle_migrations").get() as { n: number }).n : 0
     const local = readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).length
     if (applied >= local) {
-      // Nada a migrar: ainda assim um backup por dia (ARCHITECTURE §12).
+      // Nothing to migrate: still one backup per day (ARCHITECTURE §12).
       const last = backupsOf(path).at(-1)
       return !last || Date.now() - statSync(last).mtimeMs > DAY ? backup(db, path) : undefined
     }

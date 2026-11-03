@@ -5,7 +5,7 @@ import { mask, registerSecret } from "./observability.ts"
 test("segredos registrados nunca aparecem no log, nem dentro de JSON de MCP", async () => {
   registerSecret("sk-or-1234567890")
   registerSecret(JSON.stringify({ Authorization: "Bearer abcdef123456" }))
-  registerSecret("123") // curto demais: ignorado para não mascarar texto comum
+  registerSecret("123") // too short: ignored so common text isn't masked
   expect(mask("chave sk-or-1234567890 usada")).toBe("chave *** usada")
   expect(mask("header Bearer abcdef123456")).toBe("header ***")
   expect(mask("turno 123 ok")).toBe("turno 123 ok")

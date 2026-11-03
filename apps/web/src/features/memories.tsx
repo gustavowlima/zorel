@@ -1,4 +1,4 @@
-// Memórias e skills: o que os chats aprenderam. Nada entra no prompt sozinho: pendente só vale depois de aprovada.
+// Memories and skills: what the chats learned. Nothing enters the prompt by itself: pending only counts once approved.
 import type { Memory } from "@zero/contracts"
 import { useState, type FormEvent } from "react"
 import { call } from "../api.ts"

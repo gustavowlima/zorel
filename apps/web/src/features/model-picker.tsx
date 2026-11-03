@@ -1,5 +1,5 @@
-// Escolha de modelo: sugestões conhecidas, mas qualquer "<provider>/<modelo>" vale.
-// Confirma no Enter ou ao sair do campo; inválido volta ao valor anterior.
+// Model choice: known suggestions, but any "<provider>/<model>" works.
+// Confirms on Enter or on blur; invalid reverts to the previous value.
 import { useEffect, useId, useState } from "react"
 import { useApp } from "../state.ts"
 import { cx, Input } from "@/ui"

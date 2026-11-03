@@ -1,9 +1,9 @@
-// Processo principal do app desktop: ajusta o PATH, sobe o server do Zero numa porta livre e abre a janela.
+// Desktop app main process: fixes PATH, starts the Zero server on a free port and opens the window.
 import { BrowserWindow, PATHS } from "electrobun/main"
 import { join } from "node:path"
 import { start } from "../../../server/src/main.ts"
 
-// Apps abertos pelo Finder/Dock não herdam o PATH do shell; sem ele, `claude` e `codex` não são encontrados.
+// Apps opened from Finder/Dock don't inherit the shell PATH; without it, `claude` and `codex` aren't found.
 async function loginShellPath() {
   const shell = process.env.SHELL || "/bin/zsh"
   try {
@@ -11,7 +11,7 @@ async function loginShellPath() {
     const path = out.split("__PATH__").at(-1)?.trim()
     if (path) process.env.PATH = path
   } catch {
-    // ponytail: sem shell de login, fica o PATH padrão; o app avisa "não está instalado" por provider
+    // ponytail: without a login shell, the default PATH stays; the app reports "not installed" per provider
   }
 }
 

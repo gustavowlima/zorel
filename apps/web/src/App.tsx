@@ -1,4 +1,4 @@
-// Shell: sidebar (projetos com seus chats, chats avulsos, memórias) + card principal sobre o frame.
+// Shell: sidebar (projects with their chats, standalone chats, memories) + main card over the frame.
 import type { Chat } from "@zero/contracts"
 import { useEffect } from "react"
 import { call } from "./api.ts"
@@ -14,7 +14,7 @@ export function App() {
   const route = useRoute()
   const chat = route.view === "chat" ? data.chats.find((c) => c.id === route.id) : undefined
   const project = route.view === "project" ? data.projects.find((p) => p.id === route.id) : undefined
-  // Link para algo criado depois da última carga (outra aba, API): recarrega uma vez.
+  // Link to something created after the last load (another tab, API): reload once.
   const missing = (route.view === "chat" && !chat) || (route.view === "project" && !project) ? route.id : undefined
   useEffect(() => {
     if (missing) void reload()

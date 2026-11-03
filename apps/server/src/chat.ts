@@ -1,4 +1,4 @@
-// Contexto de um turno (camadas) e consolidação (aprendizado contínuo). O turno em si roda em runtime.ts.
+// Turn context (layers) and consolidation (continuous learning). The turn itself runs in runtime.ts.
 import type { Agent, Chat } from "@zero/contracts"
 import { Context, Data, Effect, Layer, Stream } from "effect"
 import { join } from "node:path"
@@ -11,18 +11,18 @@ import { Engines, type EngineEvent, type TurnTools } from "./engines.ts"
 export class NotFound extends Data.TaggedError("NotFound")<{}> {}
 export class Busy extends Data.TaggedError("Busy")<{}> {}
 
-// Onde as CLIs rodam: diretórios vazios por chat, dentro da pasta de dados.
+// Where the CLIs run: empty directories per chat, inside the data folder.
 export class DataDir extends Context.Service<DataDir, string>()("DataDir") {
   static layer = (dir: string) => Layer.succeed(DataDir, dir)
 }
 
-const MAX_PENDING = 20 // propostas esperando revisão; acima disso a consolidação só atualiza o resumo
+const MAX_PENDING = 20 // proposals awaiting review; above this, consolidation only updates the summary
 const consolidating = new Set<string>()
 
 export const members = (store: Repository, chat: Chat) =>
   Effect.forEach(chat.agentIds, store.agent).pipe(Effect.map((xs) => xs.filter((a): a is Agent => !!a)))
 
-// ---------- contexto ----------
+// ---------- context ----------
 
 export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined, model: string, dataDir: string, tools: TurnTools | undefined) =>
   Effect.gen(function* () {
@@ -45,15 +45,15 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
     })
   })
 
-// ---------- consolidação (aprendizado contínuo) ----------
+// ---------- consolidation (continuous learning) ----------
 
 const collect = (events: Stream.Stream<EngineEvent>) =>
   Stream.runFold(events, () => ({ text: "", error: undefined as string | undefined }), (acc, ev) =>
     ev.type === "text" ? { ...acc, text: acc.text + ev.delta } : ev.type === "error" ? { ...acc, error: ev.message } : acc
   )
 
-// Dobra o que sai da janela no resumo e propõe memórias e skills (pendentes até o usuário aprovar).
-// O escopo "agent" vai para o líder do chat. force: resume tudo até agora ("Compactar").
+// Folds what leaves the window into the summary and proposes memories and skills (pending until the user approves).
+// The "agent" scope goes to the chat leader. force: summarizes everything so far ("Compact").
 export const consolidate = Effect.fn("consolidate")(function* (chatId: string, force = false) {
   const store = yield* Store
   const engines = yield* Engines
@@ -95,7 +95,7 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, f
     }
     const scopeOf = { user: "user", project: `project:${chat.projectId}`, agent: `agent:${lead}` }
     yield* store.setSummary(chat.id, parsed.summary, chunk.at(-1)!.at)
-    // Teto de pendentes: a revisão humana é o gargalo; acima dele, propostas novas são descartadas.
+    // Pending cap: human review is the bottleneck; above it, new proposals are dropped.
     const proposals = [
       ...parsed.memories.map((m) => ({ scope: scopeOf[m.scope], kind: "fact" as const, title: "", text: m.text })),
       ...parsed.skills.map((s) => ({ scope: scopeOf[s.scope], kind: "skill" as const, title: s.title, text: s.text }))

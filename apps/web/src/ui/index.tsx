@@ -1,4 +1,4 @@
-// Primitivas do design system. Features importam daqui (@/ui); não estilizam controles na mão.
+// Design system primitives. Features import from here (@/ui); they don't style controls by hand.
 import { cn as cx } from "@/lib/utils"
 import type { ButtonHTMLAttributes, ReactNode } from "react"
 
@@ -13,7 +13,7 @@ const focus = "outline-none focus-visible:ring-2 focus-visible:ring-accent"
 
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
-    // biome-ignore lint/a11y/noLabelWithoutControl: `children` é sempre um controle (Input, Select, Textarea, ModelPicker)
+    // biome-ignore lint/a11y/noLabelWithoutControl: `children` is always a control (Input, Select, Textarea, ModelPicker)
     <label className="flex flex-col gap-1 text-sm text-muted">
       {label}
       {children}
