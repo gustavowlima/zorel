@@ -49,8 +49,6 @@ export const en = {
     showMore: { one: "Show 1 more", other: "Show {count} more" },
     showLess: "Show less",
     noMessages: "No messages yet",
-    agentsOf: "Agents · {name}",
-    agents: "Agents",
     newAgent: "New agent",
     runningIn: { one: "1 chat running", other: "{count} chats running" },
     waitingIn: { one: "1 chat waits for you", other: "{count} chats wait for you" },
