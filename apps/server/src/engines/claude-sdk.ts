@@ -7,7 +7,7 @@
 import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect, Queue, Stream } from "effect"
 import { mkdirSync } from "node:fs"
-import { claudeParser, type EngineEvent, splitModel, type TurnFile } from "#server/engines.ts"
+import { claudeParser, classifyMessage, type EngineEvent, splitModel, type TurnFile } from "#server/engines.ts"
 import type { EngineSession } from "#server/engines/session.ts"
 
 const GATEWAY = "zero"
@@ -122,7 +122,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
       }
       return Effect.gen(function* () {
         if (ended) {
-          emit([{ type: "error", message: ended }])
+          emit([{ type: "error", message: ended, failure: classifyMessage(ended) ?? { reason: "unavailable" } }])
           return yield* Queue.end(out)
         }
         // Same session, new turn: follow the effort and the model if they changed.

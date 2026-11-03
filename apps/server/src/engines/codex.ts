@@ -7,7 +7,8 @@
 // memories) never reaches Zero's agents (D8). Zero never reads the login inside it.
 import { Effect, Queue, Stream } from "effect"
 import { mkdirSync } from "node:fs"
-import { CODEX_DISABLED, type EngineEvent, splitModel, type Usage } from "#server/engines.ts"
+import type { AccountUsage, FailureReason } from "@zero/contracts"
+import { classifyMessage, CODEX_DISABLED, type EngineEvent, type EngineFailure, splitModel, toMillis, type Usage } from "#server/engines.ts"
 import type { EngineSession, SessionTurnInput } from "#server/engines/session.ts"
 
 const REQUEST_TIMEOUT_MS = 60_000
@@ -113,6 +114,29 @@ class Rpc {
   }
 }
 
+// codexErrorInfo (app-server protocol) → failover reason; content and request errors don't switch.
+const CODEX_ERRORS: Record<string, FailureReason> = {
+  usageLimitExceeded: "limit", rateLimitExceeded: "rate_limit", unauthorized: "auth",
+  serverOverloaded: "unavailable", internalServerError: "unavailable", flexUnavailable: "unavailable",
+  httpConnectionFailed: "network", responseStreamConnectionFailed: "network", responseStreamDisconnected: "network", responseTooManyFailedAttempts: "network"
+}
+const errorKey = (info: unknown) => (typeof info === "string" ? info : info && typeof info === "object" ? Object.keys(info)[0] : undefined)
+
+// The most used window of a rate-limit snapshot: its percentage and when it resets.
+export function usageOf(snapshot: Json | undefined): AccountUsage | undefined {
+  const windows = [snapshot?.primary, snapshot?.secondary].filter((w): w is Json => !!w && typeof w.usedPercent === "number")
+  const top = windows.sort((a, b) => b.usedPercent - a.usedPercent)[0]
+  return top && { usedPercent: top.usedPercent, resetsAt: typeof top.resetsAt === "number" ? toMillis(top.resetsAt) : null }
+}
+
+export function codexFailure(error: Json | undefined, usage: AccountUsage | undefined): EngineFailure | undefined {
+  const key = errorKey(error?.codexErrorInfo)
+  const reason = key ? CODEX_ERRORS[key] : undefined
+  if (reason === "limit") return { reason, until: usage?.resetsAt ?? Date.now() + 60 * 60_000 }
+  if (reason) return { reason }
+  return key ? undefined : classifyMessage(String(error?.message ?? ""))
+}
+
 const childEnv = (home: string) => {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
@@ -192,16 +216,24 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
       })
       return Effect.gen(function* () {
         threadId = yield* Effect.tryPromise({ try: () => thread, catch: (e) => (e instanceof Error ? e.message : String(e)) }).pipe(
-          Effect.catch((message) => Effect.sync(() => emit({ type: "error", message })).pipe(Effect.as("")))
+          Effect.catch((message) => Effect.sync(() => emit({ type: "error", message, failure: classifyMessage(message) ?? { reason: "unavailable" } })).pipe(Effect.as("")))
         )
         if (!threadId) return yield* Queue.end(out)
         let usage: Usage = { inputTokens: 0, outputTokens: 0 }
         let lastItem: string | undefined
+        let limits: AccountUsage | undefined
+        const readLimits = (snapshot: Json | undefined) => {
+          const u = usageOf(snapshot)
+          if (!u) return
+          limits = u
+          emit({ type: "limits", usage: u })
+        }
         listener = (method, p) => {
           if (method === "zero/exited") {
-            emit({ type: "error", message: rpc.exited ?? "codex app-server encerrou." })
+            emit({ type: "error", message: rpc.exited ?? "codex app-server encerrou.", failure: { reason: "unavailable" } })
             return finish()
           }
+          if (method === "account/rateLimits/updated") return readLimits(p.rateLimits) // account-wide, no threadId
           if (p.threadId !== threadId) return
           if (method === "item/agentMessage/delta" && typeof p.delta === "string") {
             const sep = lastItem && lastItem !== p.itemId ? "\n\n" : "" // separate messages around tool calls
@@ -213,10 +245,12 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
           } else if (method === "turn/completed") {
             const t = p.turn ?? {}
             if (t.status === "completed") emit({ type: "done", usage })
-            else emit({ type: "error", message: t.error?.message ?? (t.status === "interrupted" ? "O Codex interrompeu o turno." : "O Codex falhou neste turno.") })
+            else emit({ type: "error", message: t.error?.message ?? (t.status === "interrupted" ? "O Codex interrompeu o turno." : "O Codex falhou neste turno."), failure: t.status === "interrupted" ? undefined : codexFailure(t.error, limits) })
             finish()
           }
         }
+        // Current limits of the account, so a refused turn knows when it comes back (best effort).
+        yield* Effect.promise(() => rpc.request("account/rateLimits/read", {}, 5_000).then((r) => readLimits(r?.rateLimits), () => undefined))
         const model = modelOf(input.model)
         const effort = effortOf(input.effort)
         const started = yield* Effect.tryPromise({
@@ -231,7 +265,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
         }).pipe(
           Effect.catch((message) =>
             Effect.sync(() => {
-              emit({ type: "error", message })
+              emit({ type: "error", message, failure: classifyMessage(message) })
               return undefined
             })
           )

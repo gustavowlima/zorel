@@ -1,14 +1,14 @@
 // Local database: SQLite via Drizzle over Effect's SqliteClient (D9). Every method returns an Effect;
 // a database error is a defect (orDie): the caller can do nothing but fail the request.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import type { Agent, Attachment, Chat, Effort, McpServer, Memory, Message, Project } from "@zero/contracts"
+import type { Agent, AccountUsage, Attachment, Chat, Effort, FailoverTarget, McpServer, Memory, Message, Project, Switch } from "@zero/contracts"
 import type { Approval, ApprovalOutcome, FileChange, Turn, WorkStep } from "@zero/contracts/events"
 import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
 import { Context, Effect, Layer } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
-import { agents, approvals, attachments, chatMembers, chats, mcpServers, memories, messages, projects, providerAccounts, steps, turns } from "./schema.ts"
+import { agents, approvals, attachments, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
 
 // "Prefere PRs pequenos." and "prefere prs pequenos" are the same memory.
 export const normalize = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
@@ -109,13 +109,13 @@ export const repository = (db: Db) => {
     // ---------- agents ----------
     agents: (): Effect.Effect<Agent[]> => orDie(db.select().from(agents).orderBy(asc(agents.createdAt))),
     agent,
-    createAgent: (input: { projectId: string | null; name: string; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined }) =>
+    createAgent: (input: { projectId: string | null; name: string; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined }) =>
       Effect.gen(function* () {
-        const a: Agent = { id: crypto.randomUUID(), ...input, accountId: input.accountId ?? null, effort: input.effort ?? null, createdAt: now() }
+        const a: Agent = { id: crypto.randomUUID(), ...input, accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], createdAt: now() }
         yield* db.insert(agents).values(a)
         return a
       }).pipe(orDie),
-    updateAgent: (id: string, input: { name?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined }) =>
+    updateAgent: (id: string, input: { name?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined }) =>
       Effect.gen(function* () {
         const set = defined(input)
         if (Object.keys(set).length) yield* db.update(agents).set(set).where(eq(agents.id, id))
@@ -145,11 +145,11 @@ export const repository = (db: Db) => {
         )
         return (yield* chat(id))!
       }).pipe(orDie),
-    updateChat: (id: string, input: { title?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
+    updateChat: (id: string, input: { title?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | null | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
       Effect.gen(function* () {
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            const set = defined({ title: input.title, model: input.model, accountId: input.accountId, effort: input.effort })
+            const set = defined({ title: input.title, model: input.model, accountId: input.accountId, effort: input.effort, failover: input.failover })
             if (Object.keys(set).length) yield* tx.update(chats).set(set).where(eq(chats.id, id))
             if (input.agentIds) yield* setMembers(tx, id, input.agentIds)
           })
@@ -162,10 +162,10 @@ export const repository = (db: Db) => {
     messagesAfter: (chatId: string, at: number) =>
       withFiles(db.select().from(messages).where(and(eq(messages.chatId, chatId), gt(messages.at, at))).orderBy(asc(messages.at))),
     // attachmentIds: files uploaded to this chat beforehand; linked to the message here.
-    addMessage: (input: Omit<Message, "id" | "at" | "attachments"> & { attachmentIds?: ReadonlyArray<string> | undefined }) =>
+    addMessage: (input: Omit<Message, "id" | "at" | "attachments" | "switches"> & { attachmentIds?: ReadonlyArray<string> | undefined; switches?: ReadonlyArray<Switch> | undefined }) =>
       Effect.gen(function* () {
-        const { attachmentIds = [], ...rest } = input
-        const base = { id: crypto.randomUUID(), ...rest, at: now() }
+        const { attachmentIds = [], switches = [], ...rest } = input
+        const base = { id: crypto.randomUUID(), ...rest, switches, at: now() }
         yield* db.insert(messages).values({ ...base, steps: JSON.stringify(base.steps) })
         let files: Attachment[] = []
         if (attachmentIds.length) {
@@ -286,9 +286,9 @@ export const repository = (db: Db) => {
     accounts: () => orDie(db.select().from(providerAccounts).orderBy(asc(providerAccounts.createdAt))),
     account: (id: string) => orDie(db.select().from(providerAccounts).where(eq(providerAccounts.id, id)).pipe(Effect.map(first))),
     // Creates it only if missing (default accounts are seeded on every boot).
-    ensureAccount: (a: Omit<AccountRow, "createdAt">) =>
+    ensureAccount: (a: Omit<AccountRow, "createdAt" | "limitedUntil" | "usage">) =>
       orDie(db.insert(providerAccounts).values({ ...a, createdAt: now() }).onConflictDoNothing().pipe(Effect.asVoid)),
-    updateAccount: (id: string, set: { label?: string; identity?: string | null }) =>
+    updateAccount: (id: string, set: { label?: string; identity?: string | null; limitedUntil?: number | null; usage?: AccountUsage | null }) =>
       orDie(db.update(providerAccounts).set(defined(set)).where(eq(providerAccounts.id, id)).returning().pipe(Effect.map(first))),
     removeAccount: (id: string) =>
       orDie(
@@ -316,11 +316,11 @@ export const repository = (db: Db) => {
       orDie(db.update(turns).set({ state: "running", startedAt: now() }).where(eq(turns.id, id)).returning().pipe(Effect.map((r) => r[0]!))),
     markFirstToken: (id: string) => orDie(db.update(turns).set({ firstTokenAt: now() }).where(and(eq(turns.id, id), isNull(turns.firstTokenAt))).pipe(Effect.asVoid)),
     savePartial: (id: string, partialText: string) => orDie(db.update(turns).set({ partialText }).where(eq(turns.id, id)).pipe(Effect.asVoid)),
-    finishTurn: (id: string, end: { state: "completed" | "failed" | "interrupted"; error: string | null; messageId: string | null; usage?: { inputTokens: number; outputTokens: number; cachedTokens?: number } }) =>
+    finishTurn: (id: string, end: { state: "completed" | "failed" | "interrupted"; error: string | null; messageId: string | null; usage?: { inputTokens: number; outputTokens: number; cachedTokens?: number }; route?: { model: string; accountId: string | null; switches: ReadonlyArray<Switch> } }) =>
       orDie(
         db
           .update(turns)
-          .set({ state: end.state, error: end.error, messageId: end.messageId, endedAt: now(), ...(end.usage && { inputTokens: end.usage.inputTokens, outputTokens: end.usage.outputTokens, cachedTokens: end.usage.cachedTokens ?? 0 }) })
+          .set({ state: end.state, error: end.error, messageId: end.messageId, endedAt: now(), ...(end.route && end.route), ...(end.usage && { inputTokens: end.usage.inputTokens, outputTokens: end.usage.outputTokens, cachedTokens: end.usage.cachedTokens ?? 0 }) })
           .where(eq(turns.id, id))
           .returning()
           .pipe(Effect.map((r) => toTurn(r[0]!)))
@@ -369,6 +369,11 @@ export const repository = (db: Db) => {
           .orderBy(asc(approvals.createdAt))
           .pipe(Effect.map((r) => r.map(toApproval)))
       ),
+
+    // ---------- preferences ----------
+    preference: (key: string) => orDie(db.select().from(preferences).where(eq(preferences.key, key)).pipe(Effect.map((r) => r[0]?.value))),
+    setPreference: (key: string, value: string) =>
+      orDie(db.insert(preferences).values({ key, value }).onConflictDoUpdate({ target: preferences.key, set: { value } }).pipe(Effect.asVoid)),
 
     // ---------- usage ----------
     // Finished turns since `since`, summed per UTC day, project, agent, model and account.

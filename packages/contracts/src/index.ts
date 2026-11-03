@@ -14,6 +14,10 @@ export const ModelId = Schema.String.check(Schema.isPattern(/^[a-z-]+\/\S+$/), S
 // Provider account (ARCHITECTURE §6.1). The CLI login stays in its own folder; Zero only shows identity.
 export const AccountProvider = Schema.Literals(["claude", "codex"])
 export type AccountProvider = typeof AccountProvider.Type
+// Last limit reading of a subscription (Claude rate_limit_event, Codex account/rateLimits).
+export const AccountUsage = Schema.Struct({ usedPercent: Schema.Number, resetsAt: Schema.NullOr(Schema.Number) })
+export type AccountUsage = typeof AccountUsage.Type
+
 export const ProviderAccount = Schema.Struct({
   id: Id,
   label: Schema.String,
@@ -23,6 +27,8 @@ export const ProviderAccount = Schema.Struct({
   loggedIn: Schema.Boolean,
   identity: Schema.NullOr(Schema.String), // e-mail or plan reported by the CLI
   loggingIn: Schema.Boolean, // a login flow is open in the browser
+  limitedUntil: Schema.NullOr(Schema.Number), // hit its limit: failover skips it until then (epoch ms)
+  usage: Schema.NullOr(AccountUsage),
   createdAt: Schema.Number
 })
 export type ProviderAccount = typeof ProviderAccount.Type
@@ -33,6 +39,26 @@ export const LoginStarted = Schema.Struct({ url: Schema.NullOr(Schema.String) })
 // Reasoning effort (ARCHITECTURE §6). null = the model's default. "max" maps to each engine's top level.
 export const Effort = Schema.Literals(["low", "medium", "high", "max"])
 export type Effort = typeof Effort.Type
+
+// Failover (ARCHITECTURE §6.1): ordered alternatives { model, account } tried when the turn fails before
+// acting. Empty list: failover off.
+export const FailoverTarget = Schema.Struct({ model: ModelId, accountId: Schema.NullOr(Id) })
+export type FailoverTarget = typeof FailoverTarget.Type
+export const MAX_FAILOVER = 8
+export const FailoverList = Schema.Array(FailoverTarget).check(Schema.isMaxLength(MAX_FAILOVER))
+
+// Why a turn moved to another model/account. "limit": the subscription's window ran out (comes back at `until`).
+export const FailureReason = Schema.Literals(["limit", "rate_limit", "billing", "unavailable", "auth", "network", "timeout"])
+export type FailureReason = typeof FailureReason.Type
+export const Switch = Schema.Struct({
+  fromModel: Schema.String,
+  fromAccountId: Schema.NullOr(Id),
+  toModel: Schema.String,
+  toAccountId: Schema.NullOr(Id),
+  reason: FailureReason,
+  until: Schema.NullOr(Schema.Number) // limit: when the account comes back
+})
+export type Switch = typeof Switch.Type
 
 export const Project = Schema.Struct({
   id: Id,
@@ -50,6 +76,7 @@ export const Agent = Schema.Struct({
   model: Schema.String,
   accountId: Schema.NullOr(Id), // null: default account of the model's provider
   effort: Schema.NullOr(Effort),
+  failover: FailoverList,
   createdAt: Schema.Number
 })
 export type Agent = typeof Agent.Type
@@ -64,6 +91,7 @@ export const Chat = Schema.Struct({
   model: Schema.String, // leader's model for the next turn; other members use their own model
   summary: Schema.String, // summary of what left the window (consolidation)
   summaryUntil: Schema.Number, // `at` of the last message covered by the summary
+  failover: Schema.NullOr(FailoverList), // null: the lead agent's list
   createdAt: Schema.Number
 })
 export type Chat = typeof Chat.Type
@@ -93,6 +121,7 @@ export const Message = Schema.Struct({
   error: Schema.NullOr(Schema.String),
   steps: Schema.Array(Step), // tools used in the turn
   attachments: Schema.Array(Attachment),
+  switches: Schema.Array(Switch), // failover moves before this reply (empty when the first choice answered)
   inputTokens: Schema.Number,
   outputTokens: Schema.Number,
   at: Schema.Number
@@ -170,10 +199,10 @@ export const USAGE_DAYS = 30
 
 export const NewProject = Schema.Struct({ name: Name, brief: LongText(8000) })
 export const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: Schema.optional(LongText(8000)) })
-export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)) })
-export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)) })
+export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList) })
+export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList) })
 export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)) })
-export const ChatPatch = Schema.Struct({ title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
+export const ChatPatch = Schema.Struct({ title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000) })
 export const MemoryPatch = Schema.Struct({ state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)) })
 export const NewMcpServer = Schema.Struct({
@@ -187,6 +216,8 @@ export const NewMcpServer = Schema.Struct({
 })
 export const McpServerPatch = Schema.Struct({ mode: Schema.optional(ToolMode), enabled: Schema.optional(Schema.Boolean) })
 export const KeyInput = Schema.Struct({ value: LongText(500) }) // empty deletes
+// One-time choices recorded on the server (the failover terms warning is shown once).
+export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number) })
 
 // Turns (send, events, interrupt, approve): see events.ts (RPC over WebSocket at /rpc).
 export const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
@@ -249,5 +280,7 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.get("models", "/api/models", { success: Schema.Array(ModelInfo) }))
       .add(HttpApiEndpoint.get("keys", "/api/keys", { success: Schema.Array(KeyInfo) }))
       .add(HttpApiEndpoint.get("usage", "/api/usage", { success: Schema.Array(UsageRow) })) // last USAGE_DAYS days
+      .add(HttpApiEndpoint.get("preferences", "/api/preferences", { success: Preferences }))
+      .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))
   )

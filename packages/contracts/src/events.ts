@@ -3,7 +3,7 @@
 // handoff between agents, model switch, learning, receipt and status of each chat.
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
-import { MAX_ATTACHMENTS, Message, ModelId } from "./index.ts"
+import { MAX_ATTACHMENTS, Message, ModelId, Switch } from "./index.ts"
 
 const Id = Schema.String
 const Millis = Schema.Number // epoch or duration in ms
@@ -140,6 +140,7 @@ export const ChatEvent = Schema.TaggedUnion({
   approval: { approval: Approval },
   "approval-resolved": { approvalId: Id, outcome: ApprovalOutcome, reason: Schema.NullOr(Schema.String), by: Schema.Literals(["user", "rule", "expiry"]) },
   handoff: { turnId: Id, from: Schema.NullOr(Id), to: Schema.Array(Id), via: Schema.Literals(["mention", "send_message", "start_task"]) },
+  failover: { turnId: Id, switch: Switch }, // the turn moves to the next alternative; its partial text is dropped
   "model-switched": { turnId: Id, from: Schema.String, to: Schema.String, resentTokens: Schema.Number, fromCheckpoint: Schema.Boolean },
   learned: { pageIds: Schema.Array(Id), summary: Schema.String },
   "context-usage": { turnId: Id, usage: ContextUsage },

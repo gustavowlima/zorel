@@ -2,7 +2,7 @@
 // records: totals for the range and where it went, by project, agent, model or account. Limit windows
 // and cost per account arrive with failover (phase 2c).
 import type { UsageRow } from "@zero/contracts"
-import { formatCompact, formatDuration, formatNumber, formatPercent, t } from "@zero/i18n"
+import { formatCompact, formatDuration, formatNumber, formatPercent, formatTime, t } from "@zero/i18n"
 import { useState } from "react"
 import { accountsAtom, agentsAtom, projectsAtom, usageAtom, useList } from "../client.ts"
 import { modelLabel, splitModel } from "../labels.ts"
@@ -114,9 +114,23 @@ export function UsageView() {
             {accounts.map((a) => (
               <div key={a.id} className="flex items-center gap-3 border-b border-subtle py-3 last:border-0">
                 <ProviderIcon provider={a.provider} size={18} />
-                <span className="flex min-w-0 flex-1 flex-col">
+                <span className="flex min-w-0 flex-1 flex-col gap-1">
                   <span className="truncate font-medium">{a.label}</span>
                   <span className="truncate text-sm text-muted">{a.loggedIn ? (a.identity ?? t("accounts.signedIn")) : t("accounts.signedOut")}</span>
+                  {a.limitedUntil ? (
+                    <span className="text-sm text-warning">{t("failover.limitedUntil", { time: formatTime(a.limitedUntil) })}</span>
+                  ) : (
+                    a.usage && (
+                      <span className="flex items-center gap-3">
+                        <Meter value={a.usage.usedPercent / 100} warnAt={0.8} label={formatPercent(a.usage.usedPercent / 100)} className="w-40" />
+                        <span className="text-sm text-muted">
+                          {a.usage.resetsAt
+                            ? t("failover.usage", { percent: formatPercent(a.usage.usedPercent / 100), time: formatTime(a.usage.resetsAt) })
+                            : formatPercent(a.usage.usedPercent / 100)}
+                        </span>
+                      </span>
+                    )
+                  )}
                 </span>
                 <span className="text-sm text-muted tabular-nums">{formatCompact(inRange.filter((r) => r.accountId === a.id || (a.isDefault && !r.accountId && splitModel(r.model).provider.startsWith(a.provider))).reduce((n, r) => n + r.inputTokens + r.outputTokens, 0))}</span>
               </div>

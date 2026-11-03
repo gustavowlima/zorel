@@ -2,12 +2,12 @@
 // provider, the models of the selected one on the right, a search across all of them, and the reasoning
 // level for engines that have one. Switching keeps the whole context (the runtime resends only the delta).
 import type { Effort, ModelInfo, ProviderAccount } from "@zero/contracts"
-import { t } from "@zero/i18n"
+import { formatPercent, formatTime, t } from "@zero/i18n"
 import { type ReactNode, useMemo, useState } from "react"
 import { accountsAtom, modelsAtom, useList } from "../client.ts"
 import { ACCOUNT_OF_MODEL, modelName, modelNote, providerHint, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
-import { Button, ChevronDown, cx, FieldButton, Input, OptionButton, Popover, ProviderIcon, RailButton, Search, Tab, TabList, Tabs } from "@/ui"
+import { Button, ChevronDown, cx, FieldButton, Input, Meter, OptionButton, Popover, ProviderIcon, RailButton, Search, Tab, TabList, Tabs } from "@/ui"
 
 export interface ModelChoice {
   readonly model: string
@@ -51,7 +51,7 @@ function entriesOf(accounts: ReadonlyArray<ProviderAccount>, models: ReadonlyArr
         kind: "subscription",
         account: a,
         badge: mine.length > 1 ? a.label.trim().charAt(0).toUpperCase() : undefined,
-        available: a.loggedIn,
+        available: a.loggedIn && !a.limitedUntil,
         models: namesOf(provider)
       })
   }
@@ -197,7 +197,17 @@ function EntryPane({ entry, isSelected, pick, close }: { entry: Entry; isSelecte
         <span className="truncate font-semibold">{entry.label}</span>
         <span className="truncate text-sm text-muted">{kind}</span>
       </div>
-      {!entry.available && (
+      {entry.account?.limitedUntil ? (
+        <p className="px-1.5 text-sm text-warning">{t("failover.limitedUntil", { time: formatTime(entry.account.limitedUntil) })}</p>
+      ) : (
+        entry.account?.usage && (
+          <div className="flex items-center gap-3 px-1.5">
+            <Meter value={entry.account.usage.usedPercent / 100} warnAt={0.8} label={formatPercent(entry.account.usage.usedPercent / 100)} className="flex-1" />
+            <span className="text-sm text-muted">{formatPercent(entry.account.usage.usedPercent / 100)}</span>
+          </div>
+        )
+      )}
+      {!entry.available && !entry.account?.limitedUntil && (
         <div className="flex items-center gap-2 px-1.5 text-sm text-warning">
           <span className="flex-1">{entry.kind === "subscription" ? t("model.signedOut") : providerHint(entry.provider) || t("model.unavailable")}</span>
           {entry.kind === "subscription" && (

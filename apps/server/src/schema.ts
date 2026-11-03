@@ -1,5 +1,6 @@
 // Database schema (Drizzle). Mirrors the tables the MVP created with hand-written SQL, column by column,
 // so the existing database is adopted without copying (see migrate.ts). Changed something here? `bun run db:generate`.
+import type { AccountUsage, FailoverTarget, Switch } from "@zero/contracts"
 import { sql } from "drizzle-orm"
 import { check, index, integer, primaryKey, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
 
@@ -14,6 +15,9 @@ export const providerAccounts = sqliteTable("provider_accounts", {
   secret: text(), // api-key: keychain entry name; the value never touches the database
   baseUrl: text("base_url"),
   identity: text(),
+  // Failover (ARCHITECTURE §6.1): a subscription that hit its limit waits until this time (epoch ms).
+  limitedUntil: integer("limited_until"),
+  usage: text({ mode: "json" }).$type<AccountUsage>(), // the last limit reading
   createdAt: integer("created_at").notNull()
 })
 
@@ -32,6 +36,7 @@ export const agents = sqliteTable("agents", {
   model: text().notNull(),
   accountId: text("account_id"), // null: the default account of the model's provider
   effort: text({ enum: ["low", "medium", "high", "max"] }), // null: the model's default
+  failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>().notNull().default([]), // alternatives in order (§6.1)
   createdAt: integer("created_at").notNull()
 })
 
@@ -44,6 +49,7 @@ export const chats = sqliteTable("chats", {
   effort: text({ enum: ["low", "medium", "high", "max"] }), // the lead's; null: the model's default
   summary: text().notNull().default(""),
   summaryUntil: integer("summary_until").notNull().default(0),
+  failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>(), // null: the lead agent's list
   createdAt: integer("created_at").notNull()
 })
 
@@ -68,6 +74,7 @@ export const messages = sqliteTable(
     model: text(),
     error: text(),
     steps: text().notNull().default("[]"), // JSON of Step[]
+    switches: text({ mode: "json" }).$type<ReadonlyArray<Switch>>().notNull().default([]), // failover moves before this reply
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
     at: integer().notNull()
@@ -131,7 +138,8 @@ export const turns = sqliteTable(
     messageId: text("message_id"),
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
-    cachedTokens: integer("cached_tokens").notNull().default(0)
+    cachedTokens: integer("cached_tokens").notNull().default(0),
+    switches: text({ mode: "json" }).$type<ReadonlyArray<Switch>>().notNull().default([]) // failover moves in this turn (per-turn metrics)
   },
   (t) => [index("turns_by_chat").on(t.chatId, t.state, t.createdAt)]
 )
@@ -192,3 +200,9 @@ export const attachments = sqliteTable(
   },
   (t) => [index("attachments_by_message").on(t.messageId)]
 )
+
+// Small server-side choices the person made once (e.g. accepting the failover terms warning).
+export const preferences = sqliteTable("preferences", {
+  key: text().primaryKey(),
+  value: text().notNull()
+})

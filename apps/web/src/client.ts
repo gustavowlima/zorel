@@ -3,7 +3,7 @@
 //   no screen calls reload() by hand.
 // - Turns: AtomRpc over one WebSocket. Each chat is an atom folded from its event stream (snapshot first,
 //   then live events); reconnecting subscribes again and the next snapshot replaces the state.
-import { Api, type Attachment, MAX_ATTACHMENT_BYTES, type Message } from "@zero/contracts"
+import { Api, type Attachment, MAX_ATTACHMENT_BYTES, type Message, type Switch } from "@zero/contracts"
 import { type Approval, type ApprovalOutcome, type ChatEvent, type ChatStatus, type WorkStep, ZeroRpc } from "@zero/contracts/events"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { t } from "@zero/i18n"
@@ -26,7 +26,7 @@ export class Live extends AtomRpc.Service<Live>()("Live", {
 
 // ---------- CRUD queries (one key per resource) ----------
 
-export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals"
+export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences"
 
 export const projectsAtom = Zero.query("projects", "list", { reactivityKeys: ["projects"] })
 export const agentsAtom = Zero.query("agents", "list", { reactivityKeys: ["agents"] })
@@ -37,6 +37,7 @@ export const accountsAtom = Zero.query("accounts", "list", { reactivityKeys: ["a
 export const keysAtom = Zero.query("settings", "keys", { reactivityKeys: ["keys"] })
 export const modelsAtom = Zero.query("settings", "models", { reactivityKeys: ["models"] })
 export const usageAtom = Zero.query("settings", "usage", { reactivityKeys: ["usage"] })
+export const preferencesAtom = Zero.query("settings", "preferences", { reactivityKeys: ["preferences"] })
 export const approvalsAtom = Live.query("approvals", undefined, { reactivityKeys: ["approvals"] })
 
 // ---------- mutations ----------
@@ -62,6 +63,7 @@ export const mutations = {
   removeAccount: Zero.mutation("accounts", "remove"),
   login: Zero.mutation("accounts", "login"),
   setKey: Zero.mutation("settings", "setKey"),
+  acceptFailoverTerms: Zero.mutation("settings", "acceptFailoverTerms"),
   send: Live.mutation("send"),
   steer: Live.mutation("steer"),
   interrupt: Live.mutation("interrupt"),
@@ -116,7 +118,10 @@ export interface LiveTurn {
   readonly startedAt: number
 }
 // Things that happen between messages and aren't stored as messages (this session only).
-export type Note = { readonly at: number; readonly kind: "handoff"; readonly from: string | null; readonly to: ReadonlyArray<string> }
+export type Note =
+  | { readonly at: number; readonly kind: "handoff"; readonly from: string | null; readonly to: ReadonlyArray<string> }
+  // A failover move in the running turn; once the reply is saved, the message carries it instead.
+  | { readonly at: number; readonly kind: "failover"; readonly turnId: string; readonly switch: Switch }
 export interface Receipt {
   readonly approval: Approval
   readonly outcome: ApprovalOutcome
@@ -179,12 +184,20 @@ export function reduceChat(s: ChatState, e: ChatEvent): ChatState {
     }
     case "handoff":
       return { ...s, notes: [...s.notes, { at: Date.now(), kind: "handoff", from: e.from, to: e.to }] }
+    case "failover":
+      // The turn starts over on the next route: drop what the failed one wrote.
+      return {
+        ...s,
+        live: s.live?.turnId === e.turnId ? { ...s.live, model: e.switch.toModel, text: "", steps: [] } : s.live,
+        notes: [...s.notes, { at: Date.now(), kind: "failover", turnId: e.turnId, switch: e.switch }]
+      }
     case "turn-completed":
     case "turn-failed":
     case "interrupted": {
       const message = e.message
       const messages = message && !s.messages.some((m) => m.id === message.id) ? [...s.messages, message] : s.messages
-      return { ...s, messages, pending: Math.max(0, s.pending - 1), live: s.live?.turnId === e.turn.id ? undefined : s.live, receipts: [] }
+      const notes = s.notes.filter((n) => n.kind !== "failover" || n.turnId !== e.turn.id) // now on the message
+      return { ...s, messages, notes, pending: Math.max(0, s.pending - 1), live: s.live?.turnId === e.turn.id ? undefined : s.live, receipts: [] }
     }
     case "status":
       return { ...s, status: e.status, pending: e.status.state === "idle" ? 0 : s.pending }

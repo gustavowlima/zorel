@@ -8,7 +8,7 @@
 // CLI arguments and parsers derive from Tucano (Apache-2.0), see NOTICE.
 import { AnthropicClient, AnthropicLanguageModel } from "@effect/ai-anthropic"
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
-import type { ModelInfo } from "@zero/contracts"
+import type { AccountUsage, FailureReason, ModelInfo } from "@zero/contracts"
 import { Context, Effect, Layer, Queue, Redacted, Stream } from "effect"
 import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
@@ -55,10 +55,41 @@ export interface Usage {
   readonly cachedTokens?: number // input read from the provider's prompt cache (part of inputTokens)
 }
 
+// Why an engine failed, when failover may help (ARCHITECTURE §6.1). Absent: content or request errors,
+// which another model would repeat. `until`: a subscription limit that comes back at that time (ms).
+export interface EngineFailure {
+  readonly reason: FailureReason
+  readonly until?: number | undefined
+}
+
 export type EngineEvent =
   | { readonly type: "text"; readonly delta: string }
   | { readonly type: "done"; readonly usage: Usage }
-  | { readonly type: "error"; readonly message: string }
+  | { readonly type: "error"; readonly message: string; readonly failure?: EngineFailure | undefined }
+  // A limit reading of the account the session runs on (Claude rate_limit_event, Codex account/rateLimits).
+  | { readonly type: "limits"; readonly usage: AccountUsage }
+
+// Seconds or milliseconds → milliseconds (CLIs report epoch seconds).
+export const toMillis = (t: number) => (t < 1e12 ? t * 1000 : t)
+
+// Last resort for engines without structured errors (API SDKs, a dying process): read the message.
+export function classifyMessage(message: string): EngineFailure | undefined {
+  const m = message.toLowerCase()
+  if (/usage limit|limit reached|quota exceeded|out of credits/.test(m)) return { reason: "limit" }
+  if (/\b429\b|rate.?limit|too many requests/.test(m)) return { reason: "rate_limit" }
+  if (/\b402\b|billing|payment|insufficient (credit|balance|funds)/.test(m)) return { reason: "billing" }
+  if (/\b40[13]\b|unauthori[sz]ed|forbidden|invalid api key|authentication|not logged in|log ?in|login/.test(m)) return { reason: "auth" }
+  if (/timed? ?out|timeout/.test(m)) return { reason: "timeout" }
+  if (/econn|enotfound|network|fetch failed|socket|connection (reset|refused|closed)/.test(m)) return { reason: "network" }
+  if (/\b5\d\d\b|overloaded|unavailable|server error|not installed|exited|saiu|encerrou/.test(m)) return { reason: "unavailable" }
+  return undefined
+}
+
+// Claude SDK assistant-message error codes → failover reasons (content/request errors don't switch).
+const CLAUDE_ERRORS: Record<string, FailureReason | undefined> = {
+  authentication_failed: "auth", oauth_org_not_allowed: "auth", account_on_hold: "auth", verification_required: "auth", cloud_credential_error: "auth",
+  billing_error: "billing", rate_limit: "rate_limit", overloaded: "unavailable", server_error: "unavailable"
+}
 
 const one = (e: EngineEvent): Stream.Stream<EngineEvent> => Stream.make(e)
 export const MAX_TOOL_STEPS = 12
@@ -188,10 +219,20 @@ export function claudeParser(): Parser {
   let finished = false
   let wrote = false
   let newCall = false
+  let errorCode: string | undefined // last assistant-message error code
+  let rejectedUntil: number | undefined // the subscription refused this turn: back at this time
   return {
     line(line) {
       const ev = json(line)
       if (!ev) return []
+      if (ev.type === "assistant" && typeof ev.error === "string") errorCode = ev.error
+      if (ev.type === "rate_limit_event") {
+        const info = ev.rate_limit_info ?? {}
+        const resetsAt = typeof info.resetsAt === "number" ? toMillis(info.resetsAt) : null
+        if (info.status === "rejected") rejectedUntil = resetsAt ?? Date.now() + 60 * 60_000
+        const used = typeof info.utilization === "number" ? (info.utilization <= 1 ? info.utilization * 100 : info.utilization) : info.status === "rejected" ? 100 : undefined
+        return used === undefined ? [] : [{ type: "limits", usage: { usedPercent: used, resetsAt } }]
+      }
       if (ev.type === "stream_event") {
         const e = ev.event ?? {}
         if (e.type === "message_start") newCall = true
@@ -206,12 +247,17 @@ export function claudeParser(): Parser {
       }
       if (ev.type !== "result") return []
       finished = true
-      if (ev.is_error === true || ev.subtype !== "success") return [{ type: "error", message: (typeof ev.result === "string" && ev.result) || `Claude Code terminou com erro (${ev.subtype}).` }]
+      if (ev.is_error === true || ev.subtype !== "success") {
+        const message = (typeof ev.result === "string" && ev.result) || `Claude Code terminou com erro (${ev.subtype}).`
+        const mapped = errorCode ? CLAUDE_ERRORS[errorCode] : undefined
+        const failure: EngineFailure | undefined = rejectedUntil ? { reason: "limit", until: rejectedUntil } : mapped ? { reason: mapped } : errorCode ? undefined : classifyMessage(message)
+        return [{ type: "error", message, failure }]
+      }
       const u = ev.usage ?? {}
       return [{ type: "done", usage: { inputTokens: num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens), outputTokens: num(u.output_tokens), cachedTokens: num(u.cache_read_input_tokens) } }]
     },
     end(code, stderr) {
-      return finished ? [] : [{ type: "error", message: `Claude Code saiu sem resposta (código ${code ?? "?"}).\n${tail(stderr)}`.trim() }]
+      return finished ? [] : [{ type: "error", message: `Claude Code saiu sem resposta (código ${code ?? "?"}).\n${tail(stderr)}`.trim(), failure: classifyMessage(stderr) ?? { reason: "unavailable" } }]
     }
   }
 }
@@ -259,12 +305,13 @@ export function codexParser(): Parser {
       }
       if (ev.type === "turn.failed" || ev.type === "error") {
         finished = true
-        return [{ type: "error", message: ev.error?.message || ev.message || "Codex terminou com erro." }]
+        const message = ev.error?.message || ev.message || "Codex terminou com erro."
+        return [{ type: "error", message, failure: classifyMessage(message) }]
       }
       return []
     },
     end(code, stderr) {
-      return finished ? [] : [{ type: "error", message: `Codex saiu sem resposta (código ${code ?? "?"}).\n${tail(stderr)}`.trim() }]
+      return finished ? [] : [{ type: "error", message: `Codex saiu sem resposta (código ${code ?? "?"}).\n${tail(stderr)}`.trim(), failure: classifyMessage(stderr) ?? { reason: "unavailable" } }]
     }
   }
 }
@@ -292,8 +339,8 @@ async function* runCli(bin: string, args: string[], stdin: string, cwd: string, 
 
 const cli = (bin: string, args: string[], stdin: string, cwd: string, parser: Parser): Stream.Stream<EngineEvent> => {
   const path = Bun.which(bin)
-  if (!path) return one({ type: "error", message: `${bin} não está instalado ou não está no PATH.` })
-  return Stream.fromAsyncIterable(runCli(path, args, stdin, cwd, parser), (e) => e).pipe(Stream.catch((e) => one({ type: "error", message: String(e) })))
+  if (!path) return one({ type: "error", message: `${bin} não está instalado ou não está no PATH.`, failure: { reason: "unavailable" } })
+  return Stream.fromAsyncIterable(runCli(path, args, stdin, cwd, parser), (e) => e).pipe(Stream.catch((e) => one({ type: "error", message: String(e), failure: classifyMessage(String(e)) })))
 }
 
 // ---------- API (effect/ai) ----------
@@ -327,7 +374,7 @@ function toolkitOf(tools: TurnTools) {
 const api = (secrets: SecretStore, t: Turn): Stream.Stream<EngineEvent> => {
   const { provider, model } = splitModel(t.model)
   const layer = apiLayer(secrets, provider, model)
-  if (typeof layer === "string") return one({ type: "error", message: layer })
+  if (typeof layer === "string") return one({ type: "error", message: layer, failure: { reason: "auth" } }) // missing key
   return Stream.callback<EngineEvent>((q) =>
     Effect.gen(function* () {
       const toolkit = t.tools?.defs.length ? yield* toolkitOf(t.tools) : undefined
@@ -346,7 +393,7 @@ const api = (secrets: SecretStore, t: Turn): Stream.Stream<EngineEvent> => {
                 Queue.offerUnsafe(q, { type: "text", delta: (first && wrote ? "\n\n" : "") + part.delta })
                 first = false
                 wrote = true
-              } else if (part.type === "error") Queue.offerUnsafe(q, { type: "error", message: String(part.error) })
+              } else if (part.type === "error") Queue.offerUnsafe(q, { type: "error", message: String(part.error), failure: classifyMessage(String(part.error)) })
               else if (part.type === "finish") {
                 reason = part.reason
                 usage.inputTokens += part.usage.inputTokens.total ?? 0
@@ -364,7 +411,8 @@ const api = (secrets: SecretStore, t: Turn): Stream.Stream<EngineEvent> => {
       Effect.provide(layer),
       Effect.catch((e: any) =>
         Effect.sync(() => {
-          Queue.offerUnsafe(q, { type: "error", message: e?.message ?? String(e) })
+          const message = e?.message ?? String(e)
+          Queue.offerUnsafe(q, { type: "error", message, failure: classifyMessage(`${message} ${e?.reason?.status ?? e?.status ?? ""}`) })
           Queue.endUnsafe(q)
         })
       )

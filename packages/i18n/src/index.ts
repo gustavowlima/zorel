@@ -87,6 +87,12 @@ export function formatAge(at: number, now = Date.now()): string {
   return new Intl.DateTimeFormat(locale(), sameYear ? { month: "short", day: "numeric" } : { dateStyle: "medium" }).format(at)
 }
 
+// 14:30 today; Mar 4, 14:30 on another day.
+export function formatTime(at: number, now = Date.now()): string {
+  const sameDay = new Date(at).toDateString() === new Date(now).toDateString()
+  return new Intl.DateTimeFormat(locale(), sameDay ? { hour: "2-digit", minute: "2-digit" } : { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(at)
+}
+
 let dateFormat: Intl.DateTimeFormat | undefined
 export const formatDate = (at: number) => {
   dateFormat ??= new Intl.DateTimeFormat(locale(), { dateStyle: "medium" })

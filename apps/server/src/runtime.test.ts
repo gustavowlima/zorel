@@ -285,3 +285,103 @@ test("switching Claude → Codex → Claude: the Claude session survives and get
     expect(back).toContain("dois") // what happened on Codex
     expect(back).toContain("tres")
   })))
+
+// ---------- failover (ARCHITECTURE §6.1) ----------
+
+// Engine scripted per model: each call takes the next reply for that model ("ok" answers; anything else fails).
+type Script = Record<string, Array<"ok" | { message: string; failure?: EngineEvent extends infer E ? (E extends { type: "error"; failure?: infer F } ? F : never) : never }>>
+const scripted = (script: Script, calls: string[]) =>
+  Layer.succeed(Engines, {
+    run: (t) => {
+      calls.push(t.model)
+      const next = script[t.model]?.shift() ?? "ok"
+      return next === "ok"
+        ? Stream.make<EngineEvent[]>({ type: "text", delta: `from ${t.model}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+        : Stream.make<EngineEvent[]>({ type: "text", delta: "half" }, { type: "error", ...next })
+    }
+  })
+
+const sendAndWait = (chatId: string, text: string) =>
+  Effect.gen(function* () {
+    const runtime = yield* Runtime
+    const c = yield* collect(chatId, (e) => e._tag === "turn-completed" || e._tag === "turn-failed")
+    yield* runtime.send({ chatId, clientId: crypto.randomUUID(), text })
+    yield* c.done
+    return c.events
+  })
+
+test("failover: a provider error before acting moves the turn to the next route; the failed one is skipped for a while", () => {
+  const calls: string[] = []
+  return runWith(":memory:", scripted({ "a/m": [{ message: "529 overloaded", failure: { reason: "unavailable" } }] }, calls), Effect.gen(function* () {
+    const store = yield* Store
+    const agent = yield* store.createAgent({ projectId: null, name: "Dev", instructions: "", model: "a/m", failover: [{ model: "b/m", accountId: null }] })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [agent.id], model: "a/m" })
+
+    const events = yield* sendAndWait(chat.id, "oi")
+    expect(calls).toEqual(["a/m", "b/m"])
+    const sw = events.find((e) => e._tag === "failover")
+    expect(sw?._tag === "failover" && [sw.switch.fromModel, sw.switch.toModel, sw.switch.reason]).toEqual(["a/m", "b/m", "unavailable"])
+    const reply = (yield* store.messages(chat.id)).at(-1)!
+    expect(reply).toMatchObject({ text: "from b/m", model: "b/m", error: null }) // the partial of the failed route is dropped
+    expect(reply.switches.map((s) => s.reason)).toEqual(["unavailable"])
+
+    // Within 10 minutes the failed route is skipped without trying it.
+    yield* sendAndWait(chat.id, "de novo")
+    expect(calls).toEqual(["a/m", "b/m", "b/m"])
+  }))
+})
+
+test("failover: errors another model would repeat, or a turn without alternatives, don't switch", () => {
+  const calls: string[] = []
+  return runWith(":memory:", scripted({ "a/m": [{ message: "prompt too long" }, { message: "529", failure: { reason: "unavailable" } }] }, calls), Effect.gen(function* () {
+    const store = yield* Store
+    const agent = yield* store.createAgent({ projectId: null, name: "Dev", instructions: "", model: "a/m", failover: [{ model: "b/m", accountId: null }] })
+    const withList = yield* store.createChat({ projectId: null, agentIds: [agent.id], model: "a/m" })
+    yield* sendAndWait(withList.id, "oi")
+    expect(calls).toEqual(["a/m"]) // content error: no switch
+    expect((yield* store.messages(withList.id)).at(-1)).toMatchObject({ error: "prompt too long", switches: [] })
+
+    const noList = yield* store.createChat({ projectId: null, agentIds: [], model: "a/m" })
+    yield* sendAndWait(noList.id, "oi")
+    expect(calls).toEqual(["a/m", "a/m"]) // failover off: empty list
+  }))
+})
+
+test("failover: a subscription limit holds the account until its reset, then the primary comes back by itself", () => {
+  const calls: string[] = []
+  const until = Date.now() + 400
+  return runWith(":memory:", scripted({ "claude-cli/sonnet": [{ message: "usage limit reached", failure: { reason: "limit", until } }] }, calls), Effect.gen(function* () {
+    const store = yield* Store
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/sonnet" })
+    yield* store.updateChat(chat.id, { failover: [{ model: "b/m", accountId: null }] }) // the chat's own list
+
+    yield* sendAndWait(chat.id, "um")
+    expect(calls).toEqual(["claude-cli/sonnet", "b/m"])
+    expect((yield* store.account("claude-default"))!.limitedUntil).toBe(until)
+
+    const held = yield* sendAndWait(chat.id, "dois") // still limited: straight to the alternative
+    expect(calls).toEqual(["claude-cli/sonnet", "b/m", "b/m"])
+    const sw = held.find((e) => e._tag === "failover")
+    expect(sw?._tag === "failover" && [sw.switch.reason, sw.switch.until]).toEqual(["limit", until])
+
+    yield* Effect.sleep("450 millis")
+    yield* sendAndWait(chat.id, "três") // reset passed: back on the primary
+    expect(calls.at(-1)).toBe("claude-cli/sonnet")
+  }))
+})
+
+test("failover: when every route fails, the turn fails once and lists each attempt", () => {
+  const calls: string[] = []
+  const down = { message: "fetch failed", failure: { reason: "network" as const } }
+  return runWith(":memory:", scripted({ "a/m": [down], "b/m": [down] }, calls), Effect.gen(function* () {
+    const store = yield* Store
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "a/m" })
+    yield* store.updateChat(chat.id, { failover: [{ model: "b/m", accountId: null }] })
+    const events = yield* sendAndWait(chat.id, "oi")
+    expect(calls).toEqual(["a/m", "b/m"])
+    expect(events.filter((e) => e._tag === "turn-failed")).toHaveLength(1)
+    const error = (yield* store.messages(chat.id)).at(-1)!.error!
+    expect(error).toContain("a/m: network")
+    expect(error).toContain("b/m: network")
+  }))
+})
