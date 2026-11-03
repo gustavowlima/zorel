@@ -317,7 +317,7 @@ Compactos e diretos, com aperto físico ao pressionar.
 - Uma barra: cantos de 12px, borda forte, fundo do canvas. Da esquerda para a direita: anexar (+), o texto, o modelo (botão discreto), o medidor de contexto (anel de 20px), parar (só durante um turno) e enviar redondo de 32px em azul.
 - O texto é um editor Tiptap (uma linha que cresce com Shift+Enter; Enter envia). Gatilhos, com a lista acima da barra (setas, Enter ou Tab escolhem, Esc fecha):
   - `#` escolhe quem responde (vira o líder do chat; entra no chat se não estava) e não deixa nada no texto;
-  - `@` menciona um membro: chip azul no texto, enviado como `@handle`;
+  - `@` menciona um membro (chip azul, enviado como `@handle`) ou um arquivo do projeto (chip neutro com o caminho, enviado como `@caminho`; o agente lê com as ferramentas dele). Membros primeiro, depois os arquivos; um arquivo casa também pelo nome;
   - `$` cita uma skill: chip neutro, enviado como `$handle`, e o turno leva o passo a passo dela;
   - `/` no começo da linha roda um comando do Zero (compactar, novo chat, changes, terminal).
 - **Fila:** o que se envia durante um turno espera num cartão colado acima da barra (uma linha por mensagem: orientar agora, editar, apagar) e sai sozinho quando o chat fica livre. Fica guardada neste computador.
