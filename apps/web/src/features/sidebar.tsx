@@ -1,4 +1,4 @@
-// Sidebar: the brand (the title bar in the desktop app); the pages, fixed (Needs you, Knowledge, Settings); then,
+// Sidebar: the brand (the title bar in the desktop app) with Settings at its end; the pages, fixed (Needs you, Knowledge); then,
 // scrolling, the Chats section (chats without a project) and the Projects section (the tree), each with an icon,
 // a fold and a +; and at the foot the subscriptions' limits. Every row shares one 20px icon column (x20-40) and
 // starts its text at x50. The list fades out at the bottom while more is below, and only then does the foot draw
@@ -107,12 +107,26 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   return (
     <nav aria-label={t("nav.label")} className="flex w-66 shrink-0 flex-col overflow-hidden pt-3 pb-3 pl-2.5">
       {/* The brand; in the desktop app it is also the title bar (it drags the window, the window buttons sit on its left). */}
-      <div className="brand-row electrobun-webkit-app-region-drag mb-3 flex h-7 shrink-0 items-center gap-2.5 px-2.5">
+      <div className="brand-row electrobun-webkit-app-region-drag mb-3 flex h-7 shrink-0 items-center gap-2.5 pr-2.5 pl-2.5">
         <Logo className="size-5 shrink-0" />
-        <span className="font-semibold">{t("app.name")}</span>
+        <span className="flex-1 font-semibold">{t("app.name")}</span>
+        {/* Settings sits on the brand row, out of the way of the pages. */}
+        <span className="electrobun-webkit-app-region-no-drag">
+          <Tooltip content={t("nav.settings")}>
+            <IconButton
+              label={t("nav.settings")}
+              size="sm"
+              onPress={() => go({ view: "settings", tab: "providers" })}
+              className={cx(route.view === "settings" && "bg-hover text-fg")}
+              {...(route.view === "settings" && { "aria-current": "page" as const })}
+            >
+              <Settings className="size-4" />
+            </IconButton>
+          </Tooltip>
+        </span>
       </div>
 
-      {/* The pages, fixed: what waits for you first, then Knowledge and Settings. One 20px icon column (x20-40),
+      {/* The pages, fixed: what waits for you first, then Knowledge. One 20px icon column (x20-40),
           text from x50, shared by every row of the sidebar. */}
       <div className="mb-3 flex shrink-0 flex-col gap-px pr-2.5">
         <NavItem icon={<Inbox />} active={route.view === "inbox"} onPress={() => go({ view: "inbox" })} trailing={needsYou > 0 && <Count n={needsYou} />}>
@@ -120,9 +134,6 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
         </NavItem>
         <NavItem icon={<BookOpen />} active={route.view === "knowledge"} onPress={() => go({ view: "knowledge" })}>
           {t("nav.knowledge")}
-        </NavItem>
-        <NavItem icon={<Settings />} active={route.view === "settings"} onPress={() => go({ view: "settings", tab: "providers" })}>
-          {t("nav.settings")}
         </NavItem>
       </div>
 
