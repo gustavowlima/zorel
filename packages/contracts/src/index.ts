@@ -131,6 +131,20 @@ export const AuditEntry = Schema.Struct({
 export type AuditEntry = typeof AuditEntry.Type
 export const AUDIT_PAGE = 500 // the newest entries the log shows
 
+// Storage: Zero's data folder measured now, where it goes and what can be freed.
+export const StorageCategory = Schema.Literals(["workspaces", "attachments", "history", "backups", "runs", "accounts", "other"])
+export const StorageCleanup = Schema.Literals(["backups", "orphans"])
+export const StorageReport = Schema.Struct({
+  measuredAt: Schema.Number,
+  total: Schema.Number, // bytes
+  free: Schema.NullOr(Schema.Number), // free bytes on that disk; null when the file system doesn't say
+  categories: Schema.Array(Schema.Struct({ id: StorageCategory, bytes: Schema.Number })),
+  projects: Schema.Array(Schema.Struct({ id: Id, name: Schema.String, bytes: Schema.Number, chats: Schema.Number })),
+  chats: Schema.Array(Schema.Struct({ id: Id, title: Schema.String, projectId: Schema.NullOr(Id), bytes: Schema.Number, files: Schema.Number, messages: Schema.Number })),
+  cleanup: Schema.Array(Schema.Struct({ id: StorageCleanup, bytes: Schema.Number }))
+})
+export type StorageReport = typeof StorageReport.Type
+
 // Manual order in the sidebar: the ids in their new order. Chats only reorder inside their own group.
 export const ProjectOrder = Schema.Struct({ ids: Schema.Array(Id) })
 export const ChatOrder = Schema.Struct({ projectId: Schema.NullOr(Id), ids: Schema.Array(Id) })
@@ -383,6 +397,8 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.get("models", "/api/models", { success: Schema.Array(ModelInfo) }))
       .add(HttpApiEndpoint.get("keys", "/api/keys", { success: Schema.Array(KeyInfo) }))
       .add(HttpApiEndpoint.get("audit", "/api/audit", { success: Schema.Array(AuditEntry) })) // newest AUDIT_PAGE
+      .add(HttpApiEndpoint.get("storage", "/api/storage", { success: StorageReport }))
+      .add(HttpApiEndpoint.post("cleanStorage", "/api/storage/clean/:id", { params: { id: StorageCleanup }, success: StorageReport }))
       .add(HttpApiEndpoint.get("usage", "/api/usage", { success: Schema.Array(UsageRow) })) // last USAGE_DAYS days
       .add(HttpApiEndpoint.get("topTurns", "/api/usage/top", { query: { since: Schema.NumberFromString }, success: Schema.Array(TopTurn) }))
       .add(HttpApiEndpoint.get("preferences", "/api/preferences", { success: Preferences }))

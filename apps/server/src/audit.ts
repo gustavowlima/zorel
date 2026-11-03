@@ -29,7 +29,8 @@ export const Actions = {
   failoverTermsAccepted: action("failover_terms.accepted", "preference"),
   approvalApproved: action("approval.approved", "approval"),
   approvalDenied: action("approval.denied", "approval"),
-  turnUndone: action("turn.undone", "turn")
+  turnUndone: action("turn.undone", "turn"),
+  storageCleaned: action("storage.cleaned", "storage")
 } as const
 type Action = (typeof Actions)[keyof typeof Actions]
 

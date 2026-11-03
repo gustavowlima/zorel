@@ -355,11 +355,13 @@ export const en = {
     sections: "Settings sections",
     providers: "Providers",
     mcp: "MCP servers",
+    storage: "Storage",
     audit: "Audit log",
     skills: "Skills",
     appearance: "Appearance",
     hint: {
       providers: "Subscriptions, API keys and local servers",
+      storage: "What Zero keeps on this computer",
       audit: "Who changed what, and when",
       mcp: "Tools agents use through the gateway",
       skills: "Procedures agents follow",
@@ -411,6 +413,39 @@ export const en = {
     notRunning: "Not running",
     models: "Models"
   },
+  storage: {
+    onThisComputer: "Zero on this computer",
+    measured: "Measured {age}",
+    free: "{size} free on this disk",
+    measure: "Measure again",
+    categories: {
+      workspaces: "Workspace snapshots",
+      attachments: "Attachments",
+      history: "Chat history",
+      backups: "Database backups",
+      runs: "Chat folders",
+      accounts: "Sign-ins",
+      other: "Other"
+    },
+    projects: "Projects",
+    chatsIn: { one: "1 chat", other: "{count} chats" },
+    largestChats: "Largest chats",
+    noProject: "No project",
+    files: { one: "1 file", other: "{count} files" },
+    messages: { one: "1 message", other: "{count} messages" },
+    cleanUp: "Clean up",
+    canFree: "{size} can be freed",
+    clean: "Clean",
+    nothing: "Nothing to free",
+    cleanups: {
+      backups: "Old database backups",
+      backupsHint: "Copies made before each migration. The newest one stays.",
+      orphans: "Files of deleted chats and projects",
+      orphansHint: "Attachments, chat folders and workspace snapshots nothing uses anymore."
+    },
+    confirmTitle: "Clean {name}?",
+    confirmBody: "Deletes {size} for good. Chats and projects you still have are not touched."
+  },
   audit: {
     changes: "Changes",
     kind: "Kind of change",
@@ -439,7 +474,8 @@ export const en = {
       failover_terms_accepted: "Accepted the failover terms",
       approval_approved: "Approved: {name}",
       approval_denied: "Denied: {name}",
-      turn_undone: "Undid a turn in {name}"
+      turn_undone: "Undid a turn in {name}",
+      storage_cleaned: "Cleaned up {name}"
     },
     fields: {
       name: "Name",

@@ -61,3 +61,4 @@ updated: 2026-11-03
 - números soltos na navegação só quando acionáveis: o % de Usage aparece a partir de LIMIT_ALERT, com aria-label/title dizendo conta e janela
 - drag and drop: useNavReorder (ui/nav.tsx) sobre useDragAndDrop do React Aria; só reordena dentro de um grupo (getDropOperation cancela 'on' e outros grupos); nenhuma lib nova
 - I18nProvider com locale() do Zero em main.tsx: as strings do React Aria (arrastar, recolher) seguem o idioma da interface, não o do navegador
+- cn conhece os tokens do tema (lib/utils.ts): ao criar um token de spacing/radius novo em styles.css, adicione-o ali também

@@ -14,6 +14,7 @@ import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import { RpcClient, RpcSerialization } from "effect/rpc"
 import { Socket } from "effect/socket"
+import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DataDir } from "./chat.ts"
@@ -409,4 +410,24 @@ test("audit log: mudanças com antes → depois; chave de API só pelo nome, nun
   expect(log.some((e) => e.action === "agent.created" && e.target.name === "Auditado")).toBe(true)
   expect(log.filter((e) => e.target.id === "OPENROUTER_API_KEY").map((e) => e.action).slice(0, 2)).toEqual(["api_key.cleared", "api_key.set"]) // newest first
   expect(JSON.stringify(log)).not.toContain("sk-super-secreta")
+})
+
+test("armazenamento: mede a pasta de dados; limpar só remove pastas de chats e projetos que não existem mais", async () => {
+  const dir = join(tmpdir(), "zero-test")
+  const live = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
+  mkdirSync(join(dir, "runs", live.id), { recursive: true })
+  writeFileSync(join(dir, "runs", live.id, "notes.md"), "x".repeat(2048))
+  mkdirSync(join(dir, "runs", "chat-apagado"), { recursive: true })
+  writeFileSync(join(dir, "runs", "chat-apagado", "big.bin"), "x".repeat(4096))
+
+  const report = await api((c) => c.settings.storage())
+  expect(report.total).toBeGreaterThan(0)
+  expect(report.cleanup.find((c) => c.id === "orphans")!.bytes).toBeGreaterThanOrEqual(4096)
+  expect(report.chats.find((c) => c.id === live.id)?.bytes).toBe(2048)
+
+  const after = await api((c) => c.settings.cleanStorage({ params: { id: "orphans" } }))
+  expect(after.cleanup.find((c) => c.id === "orphans")!.bytes).toBe(0)
+  expect(existsSync(join(dir, "runs", "chat-apagado"))).toBe(false)
+  expect(existsSync(join(dir, "runs", live.id, "notes.md"))).toBe(true) // a live chat's folder stays
+  expect((await api((c) => c.settings.audit())).some((e) => e.action === "storage.cleaned" && e.target.id === "orphans")).toBe(true)
 })
