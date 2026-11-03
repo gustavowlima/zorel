@@ -1,5 +1,6 @@
 // Provider logos (claude, codex, opencode, openrouter, ollama) as inline SVG. Source: @lobehub/icons-static-svg
 // 1.102.0 (MIT, see NOTICE). Monochrome marks use currentColor, so they follow the theme.
+import { Box } from "lucide-react"
 import type { SVGProps } from "react"
 
 type Props = Omit<SVGProps<SVGSVGElement>, "children"> & { size?: number }
@@ -37,11 +38,10 @@ const Ollama = ({ size = 16, ...p }: Props) => (
 export const PROVIDER_ICONS = { claude: Claude, codex: Codex, opencode: Opencode, openrouter: Openrouter, ollama: Ollama } as const
 export type ProviderIconName = keyof typeof PROVIDER_ICONS
 
-
-// The logo for a provider or a model id prefix ("claude-cli/opus" → claude). Unknown: nothing.
+// The logo for a provider or a model id prefix ("claude-cli/opus" → claude). Unknown: a neutral box.
 const ALIASES: Record<string, ProviderIconName> = { "claude-cli": "claude", anthropic: "claude", "codex-cli": "codex", openai: "codex" }
 export function ProviderIcon({ provider, ...p }: Props & { provider: string }) {
   const key = (ALIASES[provider] ?? provider) as ProviderIconName
   const Icon = PROVIDER_ICONS[key]
-  return Icon ? <Icon {...p} /> : null
+  return Icon ? <Icon {...p} /> : <Box size={p.size ?? 16} strokeWidth={1.75} aria-hidden="true" />
 }

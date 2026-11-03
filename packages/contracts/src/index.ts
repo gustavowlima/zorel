@@ -149,6 +149,23 @@ export type ToolInfo = typeof ToolInfo.Type
 
 export const KeyInfo = Schema.Struct({ name: Schema.String, set: Schema.Boolean, fromEnv: Schema.Boolean })
 
+// Usage (ARCHITECTURE §10.2): finished turns summed per UTC day, project, agent, model and account.
+// The client groups by whichever dimension it shows. Limit windows and cost come in phase 2c.
+export const UsageRow = Schema.Struct({
+  day: Schema.Number, // start of the UTC day, epoch ms
+  projectId: Schema.NullOr(Id),
+  agentId: Schema.NullOr(Id),
+  model: Schema.String,
+  accountId: Schema.NullOr(Id),
+  turns: Schema.Number,
+  inputTokens: Schema.Number,
+  outputTokens: Schema.Number,
+  cachedTokens: Schema.Number,
+  durationMs: Schema.Number
+})
+export type UsageRow = typeof UsageRow.Type
+export const USAGE_DAYS = 30
+
 // ---------- inputs ----------
 
 export const NewProject = Schema.Struct({ name: Name, brief: LongText(8000) })
@@ -231,5 +248,6 @@ export const Api = HttpApi.make("zero")
     HttpApiGroup.make("settings")
       .add(HttpApiEndpoint.get("models", "/api/models", { success: Schema.Array(ModelInfo) }))
       .add(HttpApiEndpoint.get("keys", "/api/keys", { success: Schema.Array(KeyInfo) }))
+      .add(HttpApiEndpoint.get("usage", "/api/usage", { success: Schema.Array(UsageRow) })) // last USAGE_DAYS days
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))
   )

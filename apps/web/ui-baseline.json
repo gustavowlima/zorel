@@ -1,13 +1,1 @@
-{
-  "src/App.tsx": {
-    "raw-control": 1
-  },
-  "src/features/chat.tsx": {
-    "arbitrary-value": 1,
-    "glyph-icon": 2,
-    "raw-control": 4
-  },
-  "src/features/project.tsx": {
-    "raw-control": 1
-  }
-}
+{}

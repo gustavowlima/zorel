@@ -1,13 +1,12 @@
 import "./styles.css"
+import { RegistryProvider } from "@effect/atom-react"
 import { lazy, StrictMode, Suspense, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./App.tsx"
+import { applyTheme } from "./state.ts"
 
-// Theme follows the system (dark is the tokens' default).
-const light = matchMedia("(prefers-color-scheme: light)")
-const applyTheme = () => (document.documentElement.dataset.theme = light.matches ? "light" : "dark")
+// Theme: the saved preference, else the system (dark is the tokens' default).
 applyTheme()
-light.addEventListener("change", applyTheme)
 
 // /#/dev/ui: the primitives gallery, only in development (never part of the production build).
 const Gallery = import.meta.env.DEV ? lazy(() => import("./dev/gallery.tsx")) : undefined
@@ -30,6 +29,8 @@ function Root() {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <Root />
+    <RegistryProvider>
+      <Root />
+    </RegistryProvider>
   </StrictMode>
 )

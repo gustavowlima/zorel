@@ -123,6 +123,7 @@ async function send(chatId: string, body: { text: string; model?: string; attach
   return rpc((c) =>
     Effect.gen(function* () {
       const events: ChatEvent[] = []
+      let openWhileWaiting: ReadonlyArray<Approval> = [] // what "Needs you" lists while the turn waits
       const ready = yield* Deferred.make<void>()
       const idle = yield* Deferred.make<void>()
       let ended = 0
@@ -131,6 +132,7 @@ async function send(chatId: string, body: { text: string; model?: string; attach
           Effect.gen(function* () {
             if (e._tag === "snapshot") return yield* Deferred.succeed(ready, undefined)
             events.push(e)
+            if (e._tag === "approval") openWhileWaiting = yield* c.approvals()
             if (e._tag === "approval" && onApproval) yield* c.decide({ approvalId: e.approval.id, outcome: onApproval(e.approval) ? "approved" : "denied" })
             if (e._tag === "turn-completed" || e._tag === "turn-failed" || e._tag === "interrupted") ended++
             if (e._tag === "status" && e.status.state === "idle" && ended) yield* Deferred.succeed(idle, undefined)
@@ -142,7 +144,7 @@ async function send(chatId: string, body: { text: string; model?: string; attach
       yield* c.send({ chatId, clientId: crypto.randomUUID(), ...body })
       yield* Deferred.await(idle).pipe(Effect.timeout("5 seconds"))
       yield* Fiber.interrupt(fiber)
-      return { events }
+      return { events, openWhileWaiting }
     })
   )
 }
@@ -185,6 +187,11 @@ test("projeto → agente → chat: streaming, contexto em camadas, troca de mode
   expect(sys).toContain("- Publicar o site") // listed
   expect(sys).toContain("vercel deploy") // relevant: full step-by-step
   expect((await api((c) => c.chats.list())).find((c) => c.id === chat.id)!.title).toBe("oi")
+
+  // Usage: this chat's finished turns, summed per model.
+  const usage = (await api((c) => c.settings.usage())).filter((u) => u.projectId === project.id)
+  const byModel = Object.fromEntries(usage.map((u) => [u.model, [u.turns, u.agentId, u.inputTokens > 0]]))
+  expect(byModel).toEqual({ "claude-cli/sonnet": [1, agent.id, true], "anthropic/claude-sonnet-5-5": [3, agent.id, true] }) // the switch sticks to the chat
 })
 
 test("canal: @menção escolhe quem responde; agente passa a vez mencionando outro; limite de repasses", async () => {
@@ -230,6 +237,8 @@ test("ferramentas MCP: modo leitura esconde escrita; modo aprovação pede e res
   msg = dones(r.events)[0]!
   expect(r.events.some((e) => e._tag === "approval" && e.approval.tool === "docs__delete_page")).toBe(true)
   expect(r.events.some((e) => e._tag === "approval-resolved" && e.outcome === "denied")).toBe(true)
+  expect(r.openWhileWaiting.map((a) => [a.chatId, a.tool])).toEqual([[chat.id, "docs__delete_page"]])
+  expect(await rpc((c) => c.approvals())).toEqual([]) // decided: gone from "Needs you"
   expect(msg.text).toContain("O usuário recusou")
   expect(msg.steps.at(-1)!.status).toBe("refused")
   expect(toolCalls).toEqual(["search_docs"]) // denied one never reached the server

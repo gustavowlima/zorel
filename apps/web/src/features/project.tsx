@@ -1,219 +1,191 @@
-// Project: brief (stable context of every turn), project agents and chats.
-import type { Agent, Project } from "@zero/contracts"
-import { useEffect, useState, type FormEvent } from "react"
-import { call } from "../api.ts"
-import { DEFAULT_MODEL, go, useApp } from "../state.ts"
-import { Badge, Button, Card, ConfirmButton, Field, Input, Page, Select, SidebarItem, Textarea } from "@/ui"
-import { ModelPicker } from "./model-picker.tsx"
-import { ToolsSection } from "./tools.tsx"
+// Project: overview (name, brief: the stable context of every turn, and its chats), its agents, and the
+// MCP servers only its chats see. The chats themselves live in the sidebar tree.
+import type { Project } from "@zero/contracts"
+import { formatAge, t } from "@zero/i18n"
+import { type FormEvent, useEffect, useState } from "react"
+import { agentsAtom, chatsAtom, mutations, useList, useMutation, useStatuses } from "../client.ts"
+import { agentTone, chatTitle, modelLabel, statusLabel } from "../labels.ts"
+import { go, type ProjectTab } from "../state.ts"
+import { McpSection } from "./mcp.tsx"
+import {
+  AgentAvatar, Bot, Button, ChatStatusIcon, ChevronRight, ConfirmDialog, EmptyState, Field, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Screen, Section, Tab,
+  TabList, TabPanel, Tabs, Textarea, Trash2
+} from "@/ui"
 
 export function NewProjectView() {
-  const { reload } = useApp()
+  const create = useMutation(mutations.createProject)
   const [name, setName] = useState("")
   const [brief, setBrief] = useState("")
   const [busy, setBusy] = useState(false)
-
   const submit = (e: FormEvent) => {
     e.preventDefault()
     setBusy(true)
-    call((c) => c.projects.create({ payload: { name: name.trim(), brief } }))
-      .then(async (p) => {
-        await reload()
-        go({ view: "project", id: p.id })
-      })
+    create({ payload: { name: name.trim(), brief }, reactivityKeys: ["projects"] })
+      .then((p) => go({ view: "project", id: p.id, tab: "overview" }))
       .finally(() => setBusy(false))
   }
-
   return (
-    <Page title="Novo projeto">
-      <form onSubmit={submit} className="flex flex-col gap-4">
-        <Field label="Nome">
+    <Screen title={t("project.newTitle")}>
+      <form onSubmit={submit} className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-8 py-7">
+        <Field label={t("project.name")}>
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required autoFocus />
         </Field>
-        <Field label="Brief" hint="Contexto estável que todo agente e chat do projeto recebe: objetivo, stack, decisões, tom.">
+        <Field label={t("project.brief")} hint={t("project.briefHint")}>
           <Textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={8} maxLength={8000} />
         </Field>
-        <Button type="submit" variant="default" size="lg" isDisabled={busy || !name.trim()} className="self-start">
-          Criar projeto
+        <Button type="submit" variant="default" isPending={busy} isDisabled={busy || !name.trim()} className="self-start">
+          {t("project.create")}
         </Button>
       </form>
-    </Page>
+    </Screen>
   )
 }
 
-export function ProjectView({ project }: { project: Project }) {
-  const { data, reload } = useApp()
+export function ProjectView({ project, tab }: { project: Project; tab: ProjectTab }) {
+  const remove = useMutation(mutations.removeProject)
+  const [confirm, setConfirm] = useState(false)
+  return (
+    <Screen
+      title={project.name}
+      actions={
+        <>
+          <Button size="sm" variant="default" onPress={() => go({ view: "home", projectId: project.id })}>
+            <Plus />
+            {t("nav.newChat")}
+          </Button>
+          <Menu
+            label={t("common.more")}
+            trigger={
+              <IconButton label={t("common.more")}>
+                <MoreHorizontal />
+              </IconButton>
+            }
+          >
+            <MenuItem icon={<Trash2 />} tone="danger" onAction={() => setConfirm(true)}>
+              {t("project.deleteAction")}
+            </MenuItem>
+          </Menu>
+        </>
+      }
+    >
+      <Tabs selectedKey={tab} onSelectionChange={(k) => go({ view: "project", id: project.id, tab: k as ProjectTab })} className="mx-auto w-full max-w-2xl gap-6 px-8 py-6">
+        <TabList label={project.name}>
+          <Tab id="overview">{t("project.overview")}</Tab>
+          <Tab id="agents">{t("project.agents")}</Tab>
+          <Tab id="tools">{t("project.tools")}</Tab>
+        </TabList>
+        <TabPanel id="overview">
+          <Overview key={project.id} project={project} />
+        </TabPanel>
+        <TabPanel id="agents">
+          <Agents projectId={project.id} />
+        </TabPanel>
+        <TabPanel id="tools">
+          <McpSection projectId={project.id} />
+        </TabPanel>
+      </Tabs>
+      <ConfirmDialog
+        isOpen={confirm}
+        onOpenChange={setConfirm}
+        title={t("project.deleteTitle", { name: project.name })}
+        description={t("project.deleteBody")}
+        onConfirm={() => void remove({ params: { id: project.id }, reactivityKeys: ["projects", "agents", "chats", "memories"] }).then(() => go({ view: "home" }))}
+      />
+    </Screen>
+  )
+}
+
+function Overview({ project }: { project: Project }) {
+  const update = useMutation(mutations.updateProject)
+  const chats = useList(chatsAtom).filter((c) => c.projectId === project.id)
+  const agents = useList(agentsAtom)
+  const statuses = useStatuses()
   const [name, setName] = useState(project.name)
   const [brief, setBrief] = useState(project.brief)
-  const [newChatAgent, setNewChatAgent] = useState("")
   useEffect(() => {
     setName(project.name)
     setBrief(project.brief)
   }, [project])
-
-  const agents = data.agents.filter((a) => a.projectId === project.id)
-  const chats = data.chats.filter((c) => c.projectId === project.id)
-  const memories = data.memories.filter((m) => m.scope === `project:${project.id}`)
   const dirty = name !== project.name || brief !== project.brief
-
-  const save = (e: FormEvent) => {
-    e.preventDefault()
-    call((c) => c.projects.update({ params: { id: project.id }, payload: { name: name.trim(), brief } })).then(reload)
-  }
-  const newChat = () => {
-    // "*": channel with all project agents; the first is the leader.
-    const team = newChatAgent === "*" ? agents : agents.filter((a) => a.id === newChatAgent)
-    call((c) => c.chats.create({ payload: { projectId: project.id, agentIds: team.map((a) => a.id), model: team[0]?.model ?? DEFAULT_MODEL } })).then(async (chat) => {
-      await reload()
-      go({ view: "chat", id: chat.id })
-    })
-  }
-  const remove = () => {
-    call((c) => c.projects.remove({ params: { id: project.id } })).then(async () => {
-      await reload()
-      go({ view: "home" })
-    })
-  }
-
   return (
-    <Page title={project.name} actions={
-        <ConfirmButton variant="ghost" title={`Apagar o projeto "${project.name}"?`} description="Os agentes, chats e memórias do projeto também serão apagados." onConfirm={remove}>
-          Apagar projeto
-        </ConfirmButton>
-      }>
-      <form onSubmit={save} className="flex flex-col gap-3">
-        <Field label="Nome">
+    <div className="flex flex-col gap-8">
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void update({ params: { id: project.id }, payload: { name: name.trim(), brief }, reactivityKeys: ["projects"] })
+        }}
+      >
+        <Field label={t("project.name")}>
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
         </Field>
-        <Field label="Brief" hint="Entra no prompt de todo turno deste projeto.">
-          <Textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={6} maxLength={8000} />
+        <Field label={t("project.brief")} hint={t("project.briefHint")}>
+          <Textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={7} maxLength={8000} />
         </Field>
         {dirty && (
-          <Button type="submit" variant="default" className="self-start" isDisabled={!name.trim()}>
-            Salvar
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button type="submit" variant="default" isDisabled={!name.trim()}>
+              {t("common.save")}
+            </Button>
+            <span className="text-sm text-muted">{t("project.unsaved")}</span>
+          </div>
         )}
       </form>
-
-      <section className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Chats</h2>
-          <div className="flex gap-2">
-            <Select
-              className="w-44"
-              value={newChatAgent}
-              onChange={setNewChatAgent}
-              options={[
-                { value: "", label: "Sem agente" },
-                ...(agents.length > 1 ? [{ value: "*", label: "Canal com todos" }] : []),
-                ...agents.map((a) => ({ value: a.id, label: a.name }))
-              ]}
-              aria-label="Agente do novo chat"
-            />
-            <Button variant="default" onPress={newChat}>
-              Novo chat
-            </Button>
+      <Section title={t("project.chats")}>
+        {chats.length === 0 ? (
+          <p className="text-muted">{t("project.noChats")}</p>
+        ) : (
+          <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
+            {[...chats]
+              .sort((a, b) => b.createdAt - a.createdAt)
+              .map((c) => {
+                const s = statuses[c.id]
+                const live = s && s.state !== "idle" ? s : undefined
+                return (
+                  <Button key={c.id} variant="ghost" className="h-11 justify-start gap-3 rounded-none px-1 font-normal text-fg" onPress={() => go({ view: "chat", id: c.id })}>
+                    {live ? <ChatStatusIcon state={live.state === "idle" ? "running" : live.state} /> : <MessageCircle className="text-muted" />}
+                    <span className="min-w-0 flex-1 truncate text-left">{chatTitle(c)}</span>
+                    <span className="shrink-0 text-sm text-muted">{live ? statusLabel(live, agents) : formatAge(c.createdAt)}</span>
+                  </Button>
+                )
+              })}
           </div>
-        </div>
-        {chats.length === 0 && <p className="text-sm text-muted">Nenhum chat ainda.</p>}
-        {chats.map((c) => (
-          <SidebarItem key={c.id} onClick={() => go({ view: "chat", id: c.id })} className="h-control">
-            <span className="truncate">{c.title}</span>
-            <span className="ml-auto text-xs text-dim">{c.model}</span>
-          </SidebarItem>
-        ))}
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <h2 className="font-semibold">Agentes do projeto</h2>
-        {agents.map((a) => (
-          <AgentCard key={a.id} agent={a} />
-        ))}
-        <AgentCard projectId={project.id} />
-      </section>
-
-      <ToolsSection projectId={project.id} />
-
-      <section className="flex flex-col gap-2">
-        <h2 className="font-semibold">Memórias do projeto</h2>
-        <p className="text-sm text-muted">
-          {memories.filter((m) => m.state === "active").length} ativas, {memories.filter((m) => m.state === "pending").length} esperando revisão.{" "}
-          <button type="button" className="text-accent-text hover:underline" onClick={() => go({ view: "memories" })}>
-            Ver memórias
-          </button>
-        </p>
-      </section>
-    </Page>
+        )}
+      </Section>
+    </div>
   )
 }
 
-// Without `agent`: creation form.
-export function AgentCard({ agent, projectId = null }: { agent?: Agent; projectId?: string | null }) {
-  const { reload } = useApp()
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState(agent?.name ?? "")
-  const [instructions, setInstructions] = useState(agent?.instructions ?? "")
-  const [model, setModel] = useState(agent?.model ?? DEFAULT_MODEL)
-
-  const save = (e: FormEvent) => {
-    e.preventDefault()
-    const payload = { name: name.trim(), instructions, model }
-    const req = agent ? call((c) => c.agents.update({ params: { id: agent.id }, payload })) : call((c) => c.agents.create({ payload: { ...payload, projectId } }))
-    req.then(() => {
-      setOpen(false)
-      if (!agent) {
-        setName("")
-        setInstructions("")
-      }
-      return reload()
-    })
-  }
-  const remove = () => agent && call((c) => c.agents.remove({ params: { id: agent.id } })).then(reload)
-
-  if (!open)
-    return agent ? (
-      <Card className="flex items-center gap-3 py-3">
-        <div className="min-w-0 flex-1">
-          <div className="font-medium">{agent.name}</div>
-          <div className="truncate text-sm text-muted">{agent.instructions.split("\n")[0] || "Sem instruções"}</div>
-        </div>
-        <Badge>{agent.model}</Badge>
-        <Button variant="ghost" size="sm" onPress={() => setOpen(true)}>
-          Editar
-        </Button>
-      </Card>
-    ) : (
-      <Button className="self-start" onPress={() => setOpen(true)}>
-        + Novo agente
-      </Button>
-    )
-
+function Agents({ projectId }: { projectId: string }) {
+  const agents = useList(agentsAtom)
+  const mine = agents.filter((a) => a.projectId === projectId)
   return (
-    <Card>
-      <form onSubmit={save} className="flex flex-col gap-3">
-        <Field label="Nome">
-          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required autoFocus />
-        </Field>
-        <Field label="Modelo padrão" hint="Chats novos com este agente começam neste modelo; dá para trocar no chat.">
-          <ModelPicker value={model} onChange={setModel} />
-        </Field>
-        <Field label="Instruções" hint="Papel, jeito de trabalhar, o que evitar.">
-          <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={5} maxLength={8000} />
-        </Field>
-        <div className="flex gap-2">
-          <Button type="submit" variant="default" isDisabled={!name.trim()}>
-            {agent ? "Salvar" : "Criar agente"}
-          </Button>
-          <Button variant="ghost" onPress={() => setOpen(false)}>
-            Cancelar
-          </Button>
-          {agent && (
-            <ConfirmButton variant="destructive" className="ml-auto" title={`Apagar o agente ${agent.name}?`} description="As memórias dele também serão apagadas." onConfirm={remove}>
-              Apagar
-            </ConfirmButton>
-          )}
+    <Section
+      title={t("project.agents")}
+      action={
+        <Button size="sm" variant="secondary" onPress={() => go({ view: "new-agent", projectId })}>
+          <Plus />
+          {t("nav.newAgent")}
+        </Button>
+      }
+    >
+      {mine.length === 0 ? (
+        <EmptyState icon={<Bot />} title={t("project.noAgents")} hint={t("project.noAgentsHint")} />
+      ) : (
+        <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
+          {mine.map((a) => (
+            <Button key={a.id} variant="ghost" className="h-14 justify-start gap-3 rounded-none px-1 font-normal text-fg" onPress={() => go({ view: "agent", id: a.id })}>
+              <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={28} />
+              <span className="flex min-w-0 flex-1 flex-col text-left">
+                <span className="truncate font-medium">{a.name}</span>
+                {a.instructions.trim() && <span className="truncate text-sm text-muted">{a.instructions.trim().split("\n")[0]}</span>}
+              </span>
+              <span className="shrink-0 text-sm text-muted">{modelLabel(a.model)}</span>
+              <ChevronRight className="text-muted" />
+            </Button>
+          ))}
         </div>
-      </form>
-    </Card>
+      )}
+    </Section>
   )
 }

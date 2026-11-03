@@ -1,141 +1,122 @@
-// Shell: sidebar (projects with their chats, standalone chats, memories) + main card over the frame.
-import type { Chat } from "@zero/contracts"
-import { useEffect } from "react"
-import { call } from "./api.ts"
+// Shell: the sidebar on the frame and one card for the current screen (DESIGN.md layout). Also watches the
+// live statuses: when a chat settles, what the server changed on its own (title, proposed memories,
+// usage, open approvals) is refetched.
+import type { ChatStatus } from "@zero/contracts/events"
+import { useAtomValue } from "@effect/atom-react"
+import { t } from "@zero/i18n"
+import { AsyncResult } from "effect/reactivity"
+import { useEffect, useRef } from "react"
+import { agentsAtom, chatsAtom, projectsAtom, useInvalidate, useList, useStatuses } from "./client.ts"
+import { AgentView } from "./features/agent.tsx"
 import { ChatView } from "./features/chat.tsx"
-import { MemoriesView } from "./features/memories.tsx"
-import { AgentCard, NewProjectView, ProjectView } from "./features/project.tsx"
-import { SettingsView } from "./features/tools.tsx"
-import { DataContext, DEFAULT_MODEL, go, useApp, useData, useRoute, type Route } from "./state.ts"
-import { Badge, Page, SectionLabel, SidebarItem } from "@/ui"
+import { HomeView } from "./features/home.tsx"
+import { InboxView } from "./features/inbox.tsx"
+import { KnowledgeView } from "./features/knowledge.tsx"
+import { NewProjectView, ProjectView } from "./features/project.tsx"
+import { SettingsView } from "./features/settings.tsx"
+import { Sidebar } from "./features/sidebar.tsx"
+import { UsageView } from "./features/usage.tsx"
+import { go, type Route, useRoute } from "./state.ts"
+import { Button, CircleAlert, EmptyState, Spinner } from "@/ui"
 
 export function App() {
-  const { data, error, reload } = useData()
   const route = useRoute()
-  const chat = route.view === "chat" ? data.chats.find((c) => c.id === route.id) : undefined
-  const project = route.view === "project" ? data.projects.find((p) => p.id === route.id) : undefined
-  // Link to something created after the last load (another tab, API): reload once.
-  const missing = (route.view === "chat" && !chat) || (route.view === "project" && !project) ? route.id : undefined
-  useEffect(() => {
-    if (missing) void reload()
-  }, [missing, reload])
+  const projectsResult = useAtomValue(projectsAtom)
+  const chats = useList(chatsAtom)
+  const agents = useList(agentsAtom)
+  const chat = route.view === "chat" ? chats.find((c) => c.id === route.id) : undefined
+  const agent = route.view === "agent" ? agents.find((a) => a.id === route.id) : undefined
+  const activeProjectId =
+    route.view === "project" ? route.id : route.view === "home" ? (route.projectId ?? null) : route.view === "new-agent" ? route.projectId : (chat?.projectId ?? agent?.projectId ?? null)
+  const offline = AsyncResult.isFailure(projectsResult)
+  const loading = AsyncResult.isInitial(projectsResult)
+
+  useRefetchOnSettle()
 
   return (
-    <DataContext.Provider value={{ data, reload }}>
-      <div className="flex h-full gap-2 p-2">
-        <Sidebar route={route} openProjectId={project?.id ?? chat?.projectId ?? null} />
-        <main className="flex min-w-0 flex-1 flex-col overflow-auto rounded-sheet border border-subtle bg-canvas">
-          {error && <div className="m-4 rounded-card bg-danger-soft p-3 text-sm text-danger">{error}</div>}
-          {route.view === "home" && <Home />}
-          {route.view === "new-project" && <NewProjectView />}
-          {route.view === "memories" && <MemoriesView />}
-          {route.view === "settings" && <SettingsView />}
-          {project && <ProjectView project={project} />}
-          {chat && <ChatView key={chat.id} chat={chat} />}
-        </main>
-      </div>
-    </DataContext.Provider>
-  )
-}
-
-const newChat = (projectId: string | null, reload: () => Promise<void>) =>
-  call((c) => c.chats.create({ payload: { projectId, agentIds: [], model: DEFAULT_MODEL } })).then(async (chat) => {
-    await reload()
-    go({ view: "chat", id: chat.id })
-  })
-
-function Sidebar({ route, openProjectId }: { route: Route; openProjectId: string | null }) {
-  const { data, reload } = useApp()
-  const pending = data.memories.filter((m) => m.state === "pending").length
-  const isChat = (c: Chat) => route.view === "chat" && route.id === c.id
-
-  return (
-    <aside className="flex w-60 shrink-0 flex-col overflow-auto px-1">
-      <button type="button" onClick={() => go({ view: "home" })} className="flex h-control-lg items-center px-2 text-left text-lg font-semibold">
-        Zero
-      </button>
-      <SidebarItem active={route.view === "memories"} onClick={() => go({ view: "memories" })}>
-        Memórias e skills
-        {pending > 0 && (
-          <span className="ml-auto">
-            <Badge tone="accent">{pending}</Badge>
-          </span>
-        )}
-      </SidebarItem>
-
-      <SectionLabel>Projetos</SectionLabel>
-      {data.projects.map((p) => (
-        <div key={p.id}>
-          <SidebarItem active={route.view === "project" && route.id === p.id} onClick={() => go({ view: "project", id: p.id })}>
-            <span className="truncate">{p.name}</span>
-          </SidebarItem>
-          {openProjectId === p.id && (
-            <div className="ml-3 border-l border-subtle pl-1">
-              {data.chats
-                .filter((c) => c.projectId === p.id)
-                .map((c) => (
-                  <SidebarItem key={c.id} active={isChat(c)} onClick={() => go({ view: "chat", id: c.id })}>
-                    <span className="truncate">{c.title}</span>
-                  </SidebarItem>
-                ))}
-              <SidebarItem onClick={() => newChat(p.id, reload)} className="text-dim">
-                + Novo chat
-              </SidebarItem>
+    <div className="flex h-full bg-frame">
+      <Sidebar route={route} activeProjectId={activeProjectId} />
+      <main className="flex min-w-0 flex-1 flex-col py-3 pr-3">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-sheet border border-subtle bg-canvas">
+          {offline && (
+            <div role="alert" className="flex items-center gap-2 border-b border-subtle bg-danger-soft px-7 py-2 text-sm text-danger">
+              <CircleAlert className="size-4" /> {t("app.offline")}
             </div>
           )}
+          {loading ? (
+            <div className="flex flex-1 items-center justify-center text-muted">
+              <Spinner />
+            </div>
+          ) : (
+            <Screen route={route} />
+          )}
         </div>
-      ))}
-      <SidebarItem active={route.view === "new-project"} onClick={() => go({ view: "new-project" })} className="text-dim">
-        + Novo projeto
-      </SidebarItem>
-
-      <SectionLabel>Chats</SectionLabel>
-      {data.chats
-        .filter((c) => !c.projectId)
-        .map((c) => (
-          <SidebarItem key={c.id} active={isChat(c)} onClick={() => go({ view: "chat", id: c.id })}>
-            <span className="truncate">{c.title}</span>
-          </SidebarItem>
-        ))}
-      <SidebarItem onClick={() => newChat(null, reload)} className="text-dim">
-        + Novo chat
-      </SidebarItem>
-      <div className="mt-auto pt-4">
-        <SidebarItem active={route.view === "settings"} onClick={() => go({ view: "settings" })}>
-          Configurações
-        </SidebarItem>
-      </div>
-    </aside>
+      </main>
+    </div>
   )
 }
 
-function Home() {
-  const { data } = useApp()
-  const global = data.agents.filter((a) => a.projectId === null)
-  const subscriptions = data.models.filter((m) => m.kind === "subscription")
-  const apis = [...new Map(data.models.filter((m) => m.kind === "api").map((m) => [m.provider, m])).values()]
+function Screen({ route }: { route: Route }) {
+  const projects = useList(projectsAtom)
+  const chats = useList(chatsAtom)
+  const agents = useList(agentsAtom)
+  switch (route.view) {
+    case "home":
+      return <HomeView projectId={route.projectId} />
+    case "inbox":
+      return <InboxView />
+    case "knowledge":
+      return <KnowledgeView selected={route.id} />
+    case "usage":
+      return <UsageView />
+    case "settings":
+      return <SettingsView tab={route.tab} />
+    case "new-project":
+      return <NewProjectView />
+    case "new-agent":
+      return <AgentView projectId={route.projectId} />
+    case "project": {
+      const project = projects.find((p) => p.id === route.id)
+      return project ? <ProjectView project={project} tab={route.tab} /> : <NotFound />
+    }
+    case "agent": {
+      const agent = agents.find((a) => a.id === route.id)
+      return agent ? <AgentView agent={agent} projectId={agent.projectId} /> : <NotFound />
+    }
+    case "chat": {
+      const chat = chats.find((c) => c.id === route.id)
+      return chat ? <ChatView key={chat.id} chat={chat} /> : <NotFound />
+    }
+  }
+}
 
+function NotFound() {
   return (
-    <Page title="Início">
-      <section className="flex flex-col gap-2">
-        <h2 className="font-semibold">Modelos</h2>
-        <p className="text-sm text-muted">Assinaturas usam a CLI oficial já logada no seu computador. APIs usam a chave definida no ambiente do server.</p>
-        <div className="flex flex-wrap gap-2">
-          {[...new Map(subscriptions.map((m) => [m.provider, m])).values(), ...apis].map((m) => (
-            <span key={m.provider} title={m.hint}>
-              <Badge tone={m.available ? "accent" : "neutral"}>{`${m.provider}${m.available ? "" : " · indisponível"}`}</Badge>
-            </span>
-          ))}
-        </div>
-      </section>
-      <section className="flex flex-col gap-2">
-        <h2 className="font-semibold">Agentes globais</h2>
-        <p className="text-sm text-muted">Disponíveis em qualquer chat, com ou sem projeto.</p>
-        {global.map((a) => (
-          <AgentCard key={a.id} agent={a} />
-        ))}
-        <AgentCard />
-      </section>
-    </Page>
+    <div className="flex flex-1 items-center justify-center">
+      <EmptyState
+        title={t("notFound.title")}
+        hint={t("notFound.body")}
+        action={
+          <Button variant="secondary" onPress={() => go({ view: "home" })}>
+            {t("notFound.home")}
+          </Button>
+        }
+      />
+    </div>
   )
+}
+
+// When a chat leaves "running" (or starts waiting), refetch what the server may have changed meanwhile.
+function useRefetchOnSettle() {
+  const statuses = useStatuses()
+  const invalidate = useInvalidate()
+  const previous = useRef<Readonly<Record<string, ChatStatus>>>({})
+  useEffect(() => {
+    const before = previous.current
+    previous.current = statuses
+    const changed = Object.values(statuses).filter((s) => before[s.chatId]?.state !== s.state)
+    if (!changed.length) return
+    if (changed.some((s) => s.state === "idle" || s.state === "failed")) invalidate(["chats", "memories", "usage", "approvals"])
+    else if (changed.some((s) => s.state === "waiting")) invalidate(["approvals"])
+  }, [statuses, invalidate])
 }

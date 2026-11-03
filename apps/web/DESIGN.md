@@ -285,21 +285,23 @@ Compactos e diretos, com aperto físico ao pressionar.
 
 ### Dialog / Tooltip
 - **Dialog:** folha de 16px de raio em raised com borda forte sobre overlay escuro; título 15px semibold; ações à direita. Ação destrutiva sempre confirmada por diálogo (nunca `window.confirm`), com foco inicial no botão de confirmar.
-- **Tooltip:** raised com borda forte, 12px de texto secondary, aparece após 500ms no hover e no foco do teclado; o gatilho precisa ser focável.
+- **Tooltip:** raised com borda forte, 12px de texto secondary, aparece após 500ms no hover e no foco do teclado; o gatilho é um `Button`/`IconButton` (React Aria).
+- **Popover** (`Popover`): folha de 16px em raised com borda forte para conteúdo interativo (seletor de modelo, quem responde). Esc e clique fora fecham; o foco volta ao gatilho. `FieldButton` é o gatilho com cara de campo dentro de formulários.
 
 ### Navigation
-- **Sidebar item:** 28px de altura, texto muted, hover com fundo de controle. O ativo usa control-active e texto cheio.
-- **Section label:** 11px, caixa alta, text-dim, separando grupos da barra lateral.
+- **`NavItem`:** 32px, ícone de 16px, texto secondary, hover com fundo de controle. O ativo fica no tom do canvas com borda sutil e peso 500 (como no protótipo), nunca em azul.
+- **`NavLabel`:** 11px, caixa alta, muted, com uma ação opcional à direita ("+").
+- **Árvore de projetos:** `GroupRow` (pasta aberta/fechada, nome, ações que aparecem no hover ou no foco, contagem e status agregado quando fechado, chevron) e, abertos, os chats como `TreeItem` atrás de uma linha vertical (`border-strong`). Chat com algo acontecendo mostra a segunda linha de status (girando verde, relógio azul esperando você, alerta vermelho); parado, mostra a idade à direita. Cinco por grupo, depois "Show N more"; o chat aberto nunca some.
 
 ### Mensagem de agente
 - **Avatar:** quadrado de 32px, cantos 10px, cor de identidade, inicial em branco 13px semibold. Nome em 13px semibold, ao lado o modelo e o engine em 12px text-muted.
 - **Pílula de atividade:** 28px, fundo de superfície, ponto verde + resumo ("Read 6 files · 14 s") + chevron. Clicar abre os passos (✓ feito, ícone girando, relógio esperando você) com tempo de cada um e trecho de diff; fechada por padrão quando o turno terminou.
 - **Aviso central:** 12px text-muted, centralizado (quem respondeu como líder, passagem de tarefa, troca de modelo com quantos tokens foram reenviados).
-- **Cartão de aprovação:** "Waiting for you" em label azul, o comando em código, ações Allow (azul), Always in this chat (secundário), Deny (ghost). Depois de decidido vira recibo verde ("You approved").
+- **Cartão de aprovação:** fundo accent-faint, borda accent-line, "Waiting for you" em label azul, o resumo e a pasta, ações Allow (azul) e Deny (ghost), e o nome da ferramenta em código abrindo os argumentos. "Always in this chat" entra com a regra persistente (fase 4). Depois de decidido vira recibo: verde (success-faint/success-line) se permitido, neutro se negado.
 - **Recibo do turno:** 12px text-muted embaixo da última resposta: respostas, tokens e tempo.
 
 ### Campo de mensagem
-- Cartão de cantos 16px com borda forte; texto em duas linhas que cresce; embaixo, da esquerda para a direita: anexar, agente (avatar), modelo com conta (abre o seletor com trilho de contas e logos dos providers), nível de aprovação, contexto usado e enviar (32px, azul). Anexos aparecem como etiquetas acima do texto.
+- Cartão de cantos 16px com borda forte; texto em duas linhas que cresce até dez; embaixo, da esquerda para a direita: anexar, quem responde (avatar do líder, abre a lista do time), modelo com conta (abre o seletor com trilho de contas e logos dos providers, raciocínio embaixo), e à direita parar (só durante um turno) e enviar (32px, azul). Durante um turno, enviar acrescenta ao turno (steer). Anexos aparecem como etiquetas acima do texto; arrastar arquivos acende a borda em azul. Nível de aprovação e contexto usado entram com o workspace (fase 3).
 
 ### Chat (componente assinatura)
 Respostas em markdown com ritmo de 0.6em entre blocos, títulos em 15px, links em signal-blue-text sublinhados, código inline em fundo de controle e blocos de código em superfície com borda sutil e cantos de 12px.
@@ -312,6 +314,7 @@ Respostas em markdown com ritmo de 0.6em entre blocos, títulos em 15px, links e
 - **Galeria** em `/#/dev/ui` (só em dev): toda primitiva, em todos os estados e nos dois temas. Primitiva nova entra lá antes de ir para uma tela.
 - **`bun run check:ui`** (no CI): nas telas, fora de `src/ui`, nada de cor literal, valor arbitrário `[..]`, controle HTML cru, import direto de `lucide-react` ou `react-aria-components` ou glifo unicode como ícone. É uma catraca: a dívida antiga está em `ui-baseline.json` e só pode cair.
 - **Detector do impeccable** roda depois de cada edição de UI (hook local) e faz um passe completo ao fim da sessão.
+- **`bun run check:i18n`** (no CI): nenhum texto em JSX nem em props lidas pela pessoa fora do catálogo `packages/i18n` (`t()`). A interface é em inglês (D13); conteúdo do usuário não passa pelo catálogo.
 
 ## Do's and Don'ts
 

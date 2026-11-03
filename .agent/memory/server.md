@@ -62,6 +62,9 @@ updated: 2026-11-03
 - anexos: tabela attachments, arquivo em <dataDir>/attachments/<chat>/<id>; POST /api/chats/:id/attachments (corpo cru, x-file-name, 20 MB, 413), GET /api/attachments/:id (inline, nosniff); send/steer com attachmentIds (máx. 10); Message.attachments montado na leitura; imagens nativas (Claude base64, Codex localImage); texto ≤64 KB inline na transcrição; resto pelo nome até a fase 3; apagar chat apaga a pasta; steer com anexo vira próximo turno
 - fase 2 concluída em 2026-11-03
 
+- GET /api/usage (settings.usage): turnos terminados dos últimos USAGE_DAYS (30) somados por dia UTC, projeto, agente, modelo e conta (db.usage); RPC `approvals` lista as aprovações abertas de todos os chats ("Needs you")
+- status.label e hints de listModels ainda saem em texto; a web ignora e usa o catálogo i18n
+
 ## avoid
 
 - Bun.$ para operação simples de arquivo (mkdir etc.): abre um shell; usar node:fs

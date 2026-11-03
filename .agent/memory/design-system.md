@@ -33,6 +33,11 @@ updated: 2026-11-03
 - detector impeccable: .impeccable/config.json (hook on; ignore 9px = inicial do avatar 16px); manifest local em .claude/settings.local.json aponta para $HOME/.claude/skills/impeccable (skill é global, o instalador não achou pasta no projeto)
 - NOTICE atribui Lobe Icons (MIT)
 
+- fase UI passos 2 e 3 (2026-11-03): primitivas novas NavItem, NavLabel, GroupRow, TreeItem (nav.tsx), Popover, ConfirmDialog/Dialog controlado, FieldButton/RailButton/OptionButton (picker.tsx), DisclosurePill/Dot (pill.tsx), Screen/Column/Section/Rows/EmptyState/Meter/Code (layout.tsx), BareTextarea, pickFiles, ModelAvatar; Meter só avisa com warnAt
+- `* { border-color }` mora em @layer base: fora de layer anulava border-* do Tailwind (todas as bordas coloridas)
+- ui-baseline.json zerado: telas sem dívida de check:ui
+- token --font-mono (ui-monospace)
+
 ## avoid
 
 - bg-muted / bg-accent / bg-secondary do shadcn: esses nomes são nossos (texto apagado, azul, texto secundário). Ao adotar componente, trocar por bg-control/bg-control-hover

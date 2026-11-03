@@ -4,3 +4,4 @@
 2026-11-03 | design passa para a fase UI, depois das fases 1 e 2 | decisão do usuário: começar pela engine
 2026-11-03 | tokens e DESIGN.md pelo protótipo; paleta de agentes; contraste do text-dim | início da fase UI
 2026-11-03 | primitivas que faltavam, galeria /dev/ui, check:ui (catraca) no CI, detector ligado | fase UI passo 1
+2026-11-03 | primitivas de navegação, popover, pílula e layout; borda padrão em @layer base | fase UI passos 2 e 3

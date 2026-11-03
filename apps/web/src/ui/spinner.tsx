@@ -1,5 +1,6 @@
 // Activity indicators. The spinner takes the text color (so it fits a filled button) and rotates only
 // while motion is allowed; with "reduce motion" it is a still arc, so the state still reads.
+import { t } from "@zero/i18n"
 import { CircleAlert, Clock } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -24,8 +25,8 @@ export function Spinner({ size = 14, className, label }: { size?: number; classN
 
 // A chat's state in the sidebar and headers: working, waiting for you, failed; idle shows nothing.
 export function ChatStatusIcon({ state, size = 12 }: { state: "idle" | "running" | "waiting" | "failed"; size?: number }) {
-  if (state === "running") return <Spinner size={size} label="working" className="text-success" />
-  if (state === "waiting") return <Clock size={size} strokeWidth={2.5} className="shrink-0 text-accent-text" aria-label="waiting for you" role="img" />
-  if (state === "failed") return <CircleAlert size={size} strokeWidth={2.5} className="shrink-0 text-danger" aria-label="failed" role="img" />
+  if (state === "running") return <Spinner size={size} label={t("activity.working")} className="text-success" />
+  if (state === "waiting") return <Clock size={size} strokeWidth={2.5} className="shrink-0 text-accent-text" aria-label={t("approval.waiting")} role="img" />
+  if (state === "failed") return <CircleAlert size={size} strokeWidth={2.5} className="shrink-0 text-danger" aria-label={t("chat.failed")} role="img" />
   return null
 }

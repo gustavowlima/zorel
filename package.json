@@ -13,9 +13,11 @@
     "desktop:build": "bun run --cwd apps/desktop prebuild && bun run --cwd apps/desktop build",
     "typecheck": "tsc -p apps/server && tsc -p apps/web",
     "lint": "biome lint",
-    "check:ui": "bun scripts/check-ui.ts"
+    "check:ui": "bun scripts/check-ui.ts",
+    "check:i18n": "bun scripts/check-i18n.ts"
   },
   "devDependencies": {
+    "@babel/parser": "7.29.12",
     "@biomejs/biome": "^2.6.4",
     "@types/bun": "^1.4.4",
     "typescript": "^7.0.2"
