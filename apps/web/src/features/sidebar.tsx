@@ -13,7 +13,7 @@ import { agentTone, chatTitle, splitModel, statusLabel, type Pace, paceOf, windo
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, BookOpen, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MessageCircle, ModelAvatar, NavItem, NavTab, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, PaceBar, type PaceTone, Settings, Spinner, Tooltip, useNavReorder
+  AgentAvatar, BookOpen, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MessageCircle, ModelAvatar, NavItem, NavTab, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, BurnDown, type BurnTone, Settings, Spinner, Tooltip, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
@@ -265,8 +265,8 @@ function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatSt
 
 // An icon button of the foot toolbar; the open screen's stays lit.
 // The subscriptions at the foot, one line each (the most at risk first): the logo, the window most at risk, a
-// pace bar (fill = used, tick = time gone in the window) and, on the right, the share used or, when the burn so
-// far would empty the window before it resets, about when it runs out. Without a reading: Usage, plainly.
+// tiny burn-down of it (ui/burn-down.tsx) and, on the right, the share used or, when the burn so far would empty
+// the window before it resets, about when it runs out. Without a reading: Usage, plainly.
 const MAX_FOOT_ROWS = 3
 function UsageFoot({ active }: { active: boolean }) {
   const rows = useList(accountsAtom)
@@ -294,7 +294,7 @@ function UsageFoot({ active }: { active: boolean }) {
               <span key={r.account.id} className="flex min-w-0 items-center gap-2 text-xs">
                 <ProviderIcon provider={r.account.provider} size={14} />
                 <span className="w-12 shrink-0 truncate text-muted">{windowLabel(r.w.id)}</span>
-                <PaceBar used={r.pace.used} elapsed={r.pace.elapsed} tone={tone} className="min-w-0 flex-1" />
+                <BurnDown used={r.pace.used} elapsed={r.pace.elapsed} tone={tone} className="min-w-0 flex-1 text-fg" />
                 <span className={cx("w-11 shrink-0 text-right tabular-nums", tone === "critical" ? "text-danger" : tone === "warning" ? "text-warning" : "text-secondary")}>
                   {r.pace.runsOutAt ? `~${formatClock(r.pace.runsOutAt)}` : formatPercent(r.pace.used)}
                 </span>
@@ -309,6 +309,6 @@ function UsageFoot({ active }: { active: boolean }) {
   )
 }
 
-const toneOf = (p: Pace): PaceTone => (p.used >= 0.95 ? "critical" : p.runsOutAt || p.used >= LIMIT_ALERT ? "warning" : "ok")
+const toneOf = (p: Pace): BurnTone => (p.used >= 0.95 ? "critical" : p.runsOutAt || p.used >= LIMIT_ALERT ? "warning" : "ok")
 // Hours and minutes only (the row is narrow; the label has the full time).
 const formatClock = (at: number) => new Intl.DateTimeFormat(locale(), { hour: "numeric", minute: "2-digit" }).format(at)
