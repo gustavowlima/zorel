@@ -48,6 +48,8 @@ export interface Turn {
   readonly messages: ReadonlyArray<TurnMessage> // ends with a user message
   readonly cwd: string // empty directory: the CLI gets nobody's files
   readonly tools?: TurnTools | undefined
+  // Characters of each part of the context (the composer's context meter estimates tokens from them).
+  readonly parts?: { readonly instructions: number; readonly memories: number; readonly skills: number; readonly summary: number }
 }
 
 export interface Usage {

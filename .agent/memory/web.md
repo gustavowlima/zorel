@@ -44,3 +44,5 @@ updated: 2026-11-03
 - lib/utils.ts: cn = createCn com os tokens do tema (spacing control*, radius inline/control/card/sheet); sem isso h-control e h-auto não se anulam
 - i18n lookup: plural só quando há `one` e `other` como texto; um ramo com chave `other` é ramo
 - dev: o Vite de desenvolvimento às vezes não gera classes de arquivos novos; reiniciar resolve (o build gera)
+- composer.tsx: Tiptap (ComposerSources: # leads, @ agents, $ skills, / commands; chips viram texto @handle/$handle via renderText); queue.tsx (fila local por chat em localStorage, sai sozinha quando !busy; steer/editar/apagar); context-meter.tsx (GET /api/chats/:id/context); TeamPicker no cabeçalho
+- teste no navegador: não limpar o editor com execCommand (deixa lixo no ProseMirror); use Meta+A e Backspace

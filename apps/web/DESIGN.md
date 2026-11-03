@@ -314,7 +314,15 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Decisão tomada:** uma linha de 12px muted: "Allowed" em verde (ou "Denied") · o que foi.
 
 ### Campo de mensagem
-- Uma barra: cantos de 12px, borda forte, fundo do canvas. Da esquerda para a direita: anexar (+), o texto (uma linha que cresce com Shift+Enter até dez), quem responde e o modelo como botões discretos (muted, sem fundo), parar (só durante um turno) e enviar redondo de 32px em azul. Anexos como etiquetas acima da barra; arrastar arquivos acende a borda em azul. Durante um turno, enviar acrescenta ao turno (steer).
+- Uma barra: cantos de 12px, borda forte, fundo do canvas. Da esquerda para a direita: anexar (+), o texto, o modelo (botão discreto), o medidor de contexto (anel de 20px), parar (só durante um turno) e enviar redondo de 32px em azul.
+- O texto é um editor Tiptap (uma linha que cresce com Shift+Enter; Enter envia). Gatilhos, com a lista acima da barra (setas, Enter ou Tab escolhem, Esc fecha):
+  - `#` escolhe quem responde (vira o líder do chat; entra no chat se não estava) e não deixa nada no texto;
+  - `@` menciona um membro: chip azul no texto, enviado como `@handle`;
+  - `$` cita uma skill: chip neutro, enviado como `$handle`, e o turno leva o passo a passo dela;
+  - `/` no começo da linha roda um comando do Zero (compactar, novo chat, changes, terminal).
+- **Fila:** o que se envia durante um turno espera num cartão colado acima da barra (uma linha por mensagem: orientar agora, editar, apagar) e sai sozinho quando o chat fica livre. Fica guardada neste computador.
+- **Medidor de contexto:** o anel mostra o quanto da janela do modelo o próximo turno ocupa (aviso a partir de 80%); o popover divide em instruções, memórias, skills, resumo e mensagens (estimativa), mostra o que a última resposta leu de verdade, quando o Zero compacta sozinho, e oferece compactar agora ou novo chat.
+- Quem participa do chat (adicionar, remover, líder) fica no cabeçalho, nos avatares dos membros.
 
 ### Chat (componente assinatura)
 Respostas em markdown com ritmo de 0.6em entre blocos, títulos em 15px, links em signal-blue-text sublinhados, código inline em fundo de controle e blocos de código em superfície com borda sutil e cantos de 12px.

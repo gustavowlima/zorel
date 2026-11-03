@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { Agent, Memory, Message } from "@zero/contracts"
+import { type Agent, type Memory, type Message, namedSkills, skillHandle } from "@zero/contracts"
 import { Effect, Stream } from "effect"
 import { buildTurn, mentioned, parseConsolidation, pinned } from "./context.ts"
 import { claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, Engines, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
@@ -203,4 +203,11 @@ test("message heuristics for engines without structured errors", () => {
   expect(classifyMessage("fetch failed: ECONNREFUSED")).toEqual({ reason: "network" })
   expect(classifyMessage("503 Service Unavailable")).toEqual({ reason: "unavailable" })
   expect(classifyMessage("prompt is too long")).toBeUndefined()
+})
+
+test("skills por $handle: título vira handle; só o handle exato chama a skill", () => {
+  const skills = [{ title: "Deploy na Vercel" }, { title: "Revisar PR" }]
+  expect(skillHandle("Deploy na Vercel")).toBe("deploy-na-vercel")
+  expect(namedSkills("faça o $deploy-na-vercel agora", skills).map((s) => s.title)).toEqual(["Deploy na Vercel"])
+  expect(namedSkills("custa $5 e $deploy-na-vercelx", skills)).toEqual([])
 })

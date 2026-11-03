@@ -122,7 +122,23 @@ export const en = {
   },
   composer: {
     label: "Message",
-    placeholder: "Message · Shift+Enter adds a line",
+    placeholder: "Message · # who answers, @ mention, $ skill, / command",
+    queue: "Add to the queue",
+    agents: "Agents",
+    skills: "Skills",
+    commands: "Commands",
+    leads: "Who answers",
+    answering: "answers now",
+    command: {
+      compact: "Compact",
+      compactHint: "Fold the older messages into the summary",
+      newChat: "New chat",
+      newChatHint: "Start over in this project",
+      changes: "Changes",
+      changesHint: "Open what this chat changed",
+      terminal: "Terminal",
+      terminalHint: "Open the commands the agents ran"
+    },
     placeholderTeam: "Message {name}, or @mention a teammate",
     attach: "Attach files",
     attaching: "Attaching…",
@@ -491,6 +507,27 @@ export const en = {
       enabled: "On",
       provider: "Provider"
     }
+  },
+  queue: {
+    label: "Waiting to send",
+    steer: "Steer",
+    edit: "Edit",
+    remove: "Remove"
+  },
+  context: {
+    title: "Context",
+    used: "{percent} used",
+    tokensOnly: "{tokens} tokens",
+    reading: "Measuring…",
+    ofWindow: "{used} of {window} tokens",
+    windowUnknown: "{used} tokens (the model's window isn't known)",
+    parts: { instructions: "Instructions and project", memories: "Memories", skills: "Skills", summary: "Summary", messages: "Messages" },
+    free: "Free",
+    autoCompact: "Zero compacts on its own after {after} messages ({now} now).",
+    estimate: "The parts are estimated at about 4 characters a token; the engine adds its own prompt and tools on top.",
+    lastRead: "The last reply read {tokens} tokens, with the engine's own prompt and tools.",
+    compactNow: "Compact now",
+    newChat: "New chat"
   },
   keys: {
     intro: "Kept in the system keychain. Subscriptions don't need keys: they use the signed-in CLI.",

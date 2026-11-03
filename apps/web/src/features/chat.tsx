@@ -2,23 +2,25 @@
 // right, each agent's reply with its activity pill, approvals waiting for you, handoffs between agents),
 // and the message box. State is the chat atom: snapshot + live events, so a turn keeps going if the tab
 // closes and the screen catches up when it reopens.
-import type { Agent, Chat, FailoverTarget, Message, ProviderAccount } from "@zero/contracts"
+import { type Agent, type Chat, type FailoverTarget, type Message, type ProviderAccount, skillHandle } from "@zero/contracts"
 import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zero/contracts/events"
 import { formatCompact, formatDuration, t } from "@zero/i18n"
-import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
+import { type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { accountsAtom, agentsAtom, attachmentUrl, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
-import { agentName, chatTitle, formatCost, modelLabel, switchText } from "../labels.ts"
+import { accountsAtom, agentsAtom, attachmentUrl, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
+import { agentName, chatTitle, formatCost, handleOf, modelLabel, switchText } from "../labels.ts"
 import { go } from "../state.ts"
-import { Composer } from "./composer.tsx"
+import { Composer, type ComposerSources } from "./composer.tsx"
+import { ContextMeter } from "./context-meter.tsx"
+import { QueuePanel, useQueue } from "./queue.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { chatDelta, Delta, type Focus, TerminalPanel, TurnChanges, WorkspacePanel } from "./workspace.tsx"
 import { ModelPicker } from "./model-picker.tsx"
-import { AuthorAvatar, AvatarStack, TeamPicker } from "./people.tsx"
+import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import {
   Button, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, Input, Menu, MenuItem,
-  MenuSeparator, MessageCircle, MoreHorizontal, PanelBottom, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, Switch, Trash2
+  MenuSeparator, MessageCircle, Minimize2, MoreHorizontal, PanelBottom, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, Switch, Trash2
 } from "@/ui"
 
 export function ChatView({ chat }: { chat: Chat }) {
@@ -31,10 +33,20 @@ export function ChatView({ chat }: { chat: Chat }) {
   const team = chat.agentIds.flatMap((id) => agents.find((a) => a.id === id) ?? [])
   const busy = state.pending > 0 || !!state.live
 
+  const sendNow = useCallback(
+    (text: string, attachmentIds: ReadonlyArray<string>) =>
+      send({ payload: { chatId: chat.id, clientId: crypto.randomUUID(), text, ...(attachmentIds.length && { attachmentIds }) } }),
+    [send, chat.id]
+  )
+  // While a turn runs, a new message waits in the queue (above the box) and goes out when the chat is free.
+  const queue = useQueue(chat.id, busy, state.ready, sendNow)
   const submit = (text: string, attachmentIds: ReadonlyArray<string>) => {
-    const ids = attachmentIds.length ? { attachmentIds } : {}
-    return busy ? steer({ payload: { chatId: chat.id, text, ...ids } }) : send({ payload: { chatId: chat.id, clientId: crypto.randomUUID(), text, ...ids } })
+    if (!busy && !queue.items.length) return sendNow(text, attachmentIds)
+    queue.add(text, attachmentIds)
+    return Promise.resolve()
   }
+  // A queued message brought back to the box remounts it with that text.
+  const [draft, setDraft] = useState<{ key: number; text: string }>({ key: 0, text: "" })
   const second = team[1]
   const projects = useList(projectsAtom)
   const project = projects.find((p) => p.id === chat.projectId)
@@ -44,6 +56,33 @@ export function ChatView({ chat }: { chat: Chat }) {
   const view = (f: Focus) => {
     setFocus(f)
     setPanel("changes")
+  }
+  const consolidate = useMutation(mutations.consolidate)
+  const compact = () => void consolidate({ params: { id: chat.id }, reactivityKeys: ["chats", "memories", "context"] }).catch(() => undefined)
+  const newChat = () => go(chat.projectId ? { view: "home", projectId: chat.projectId } : { view: "home" })
+  const memories = useList(memoriesAtom)
+  // What "@", "$" and "/" offer in this chat: its agents, the skills it can use, Zero's commands.
+  const scopes = new Set(["user", ...(chat.projectId ? [`project:${chat.projectId}`] : []), ...chat.agentIds.map((id) => `agent:${id}`)])
+  // "#": every agent this chat can use; the one picked answers from now on (joins the chat if it wasn't in it).
+  const available = agents.filter((a) => a.projectId === null || a.projectId === chat.projectId)
+  const makeLead = (a: Agent) =>
+    void updateChat({ params: { id: chat.id }, payload: { agentIds: [a.id, ...chat.agentIds.filter((id) => id !== a.id)], model: a.model }, reactivityKeys: ["chats", "context"] })
+  const sources: ComposerSources = {
+    leads: available.map((a) => ({
+      id: handleOf(a),
+      label: a.name,
+      hint: a.id === chat.agentIds[0] ? t("composer.answering") : modelLabel(a.model),
+      icon: <AuthorAvatar agent={a} model={null} size={16} />,
+      run: () => makeLead(a)
+    })),
+    agents: team.map((a) => ({ id: handleOf(a), label: a.name, icon: <AuthorAvatar agent={a} model={null} size={16} /> })),
+    skills: memories.filter((m) => m.kind === "skill" && m.state === "active" && scopes.has(m.scope)).map((m) => ({ id: skillHandle(m.title), label: m.title, icon: <Sparkles className="size-4" /> })),
+    commands: [
+      { id: "compact", label: t("composer.command.compact"), hint: t("composer.command.compactHint"), icon: <Minimize2 className="size-4" />, run: compact },
+      { id: "new", label: t("composer.command.newChat"), hint: t("composer.command.newChatHint"), icon: <SquarePen className="size-4" />, run: newChat },
+      { id: "changes", label: t("composer.command.changes"), hint: t("composer.command.changesHint"), icon: <PanelRight className="size-4" />, run: () => setPanel("changes") },
+      ...(project?.path ? [{ id: "terminal", label: t("composer.command.terminal"), hint: t("composer.command.terminalHint"), icon: <PanelBottom className="size-4" />, run: () => setTerminal(true) }] : [])
+    ]
   }
 
   return (
@@ -62,9 +101,24 @@ export function ChatView({ chat }: { chat: Chat }) {
       <div className="flex min-w-0 flex-1 flex-col">
       <Timeline chat={chat} state={state} agents={agents} onView={view} />
       <div className="mx-auto w-full max-w-180 px-6 pt-2 pb-4.5">
+        <QueuePanel
+          items={queue.items}
+          canSteer={busy}
+          onSteer={(item) => {
+            queue.remove(item.id)
+            void steer({ payload: { chatId: chat.id, text: item.text, ...(item.attachmentIds.length && { attachmentIds: item.attachmentIds }) } })
+          }}
+          onEdit={(item) => {
+            queue.remove(item.id)
+            setDraft((d) => ({ key: d.key + 1, text: item.text }))
+          }}
+          onRemove={(item) => queue.remove(item.id)}
+        />
         <Composer
-          key={chat.id}
+          key={`${chat.id}:${draft.key}`}
           autoFocus
+          initialText={draft.text}
+          sources={sources}
           busy={busy}
           onStop={() => void interrupt({ payload: { chatId: chat.id } })}
           onSubmit={submit}
@@ -72,11 +126,11 @@ export function ChatView({ chat }: { chat: Chat }) {
           placeholder={team[0] && second ? t("composer.placeholderTeam", { name: team[0].name }) : t("composer.placeholder")}
           tools={
             <>
-              <TeamPicker chat={chat} />
               <ModelPicker
                 value={{ model: chat.model, accountId: chat.accountId, effort: chat.effort }}
-                onChange={(v) => void updateChat({ params: { id: chat.id }, payload: v, reactivityKeys: ["chats"] })}
+                onChange={(v) => void updateChat({ params: { id: chat.id }, payload: v, reactivityKeys: ["chats", "context"] })}
               />
+              <ContextMeter chatId={chat.id} onCompact={compact} onNewChat={newChat} />
             </>
           }
         />
@@ -159,7 +213,7 @@ function ChatHeader({
             {t("workspace.terminal")}
           </Button>
         )}
-        <AvatarStack team={team} />
+        <TeamPicker chat={chat} />
         <Menu
           label={t("common.more")}
           trigger={

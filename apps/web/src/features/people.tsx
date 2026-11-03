@@ -4,7 +4,7 @@ import type { Agent, Chat } from "@zero/contracts"
 import { t } from "@zero/i18n"
 import { agentsAtom, mutations, useList, useMutation } from "../client.ts"
 import { agentTone, handleOf, modelLabel, splitModel } from "../labels.ts"
-import { AgentAvatar, Badge, Button, ChevronDown, IconButton, ModelAvatar, Plus, Popover, X } from "@/ui"
+import { AgentAvatar, Badge, Button, IconButton, ModelAvatar, Plus, Popover, X } from "@/ui"
 
 type Size = 16 | 20 | 28 | 32
 
@@ -27,7 +27,8 @@ export function AvatarStack({ team }: { team: ReadonlyArray<Agent> }) {
   )
 }
 
-// Composer slot: the lead's avatar and name; opens the team list.
+// Header: the chat's members as overlapping avatars (or "Add an agent" when it has none); opens the team list
+// to add, remove or pick the lead. Who answers a message is picked in the text with @.
 export function TeamPicker({ chat }: { chat: Chat }) {
   const agents = useList(agentsAtom)
   const update = useMutation(mutations.updateChat)
@@ -43,11 +44,21 @@ export function TeamPicker({ chat }: { chat: Chat }) {
     <Popover
       label={t("team.title")}
       className="w-80"
+      placement="bottom end"
       trigger={
-        <Button size="sm" variant="ghost" className="max-w-48 pl-1.5 text-secondary">
-          {lead ? <AgentAvatar id={lead.id} name={lead.name} tone={agentTone(lead, agents)} size={20} /> : <ModelAvatar provider={splitModel(chat.model).provider} size={20} />}
-          <span className="truncate">{lead?.name ?? t("team.assistantOnly")}</span>
-          <ChevronDown className="size-3.5 text-muted" />
+        <Button size="sm" variant="ghost" aria-label={team.length ? t("chat.members", { names: team.map((a) => a.name).join(", ") }) : t("team.add")} className="gap-1.5 rounded-full px-1.5 text-muted">
+          {team.length ? (
+            <span className="flex">
+              {team.map((a, i) => (
+                <AgentAvatar key={a.id} id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} className={i ? "-ml-1.5 ring-2 ring-canvas" : "ring-2 ring-canvas"} />
+              ))}
+            </span>
+          ) : (
+            <>
+              <Plus className="size-3.5" />
+              {t("team.add")}
+            </>
+          )}
         </Button>
       }
     >

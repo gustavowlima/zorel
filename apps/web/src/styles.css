@@ -210,6 +210,10 @@ html, body, #root { height: 100%; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 /* Desktop-style scroll areas (the sidebar tree): no visible bar; edges get a hairline while content is hidden. */
 .scroll-quiet { scrollbar-width: none; }
+/* The composer's Tiptap editor: one line that grows, the placeholder drawn from Tiptap's data attribute. */
+.composer-editor { outline: none; max-height: 15rem; overflow-y: auto; padding: 6px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.composer-editor p { margin: 0; }
+.composer-editor p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--z-text-dim); float: left; height: 0; pointer-events: none; }
 /* Desktop app: the sidebar's brand row is the title bar; the window buttons take its left 84px. */
 /* Desktop app: a strip on top of the sidebar holds the window buttons (hidden in the browser). */
 .title-strip { display: none; }

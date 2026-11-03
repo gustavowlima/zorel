@@ -148,6 +148,23 @@ export const StorageReport = Schema.Struct({
 })
 export type StorageReport = typeof StorageReport.Type
 
+// How full the next turn's context is: what Zero puts in it, by part, estimated at ~4 characters a token
+// (the engine adds its own tool definitions on top). `windowTokens` null: the model's window isn't known.
+// Zero compacts on its own once more than `compactAfter` messages follow the summary.
+export const ContextPart = Schema.Literals(["instructions", "memories", "skills", "summary", "messages"])
+export const ContextUsage = Schema.Struct({
+  model: Schema.String,
+  windowTokens: Schema.NullOr(Schema.Number),
+  usedTokens: Schema.Number,
+  parts: Schema.Array(Schema.Struct({ id: ContextPart, tokens: Schema.Number })),
+  messagesSinceSummary: Schema.Number,
+  compactAfter: Schema.Number,
+  // What the last reply actually read (input tokens as the engine reported them, its own prompt and tools
+  // included): the measured counterpart of the estimate. Null before any reply.
+  lastInputTokens: Schema.NullOr(Schema.Number)
+})
+export type ContextUsage = typeof ContextUsage.Type
+
 // Manual order in the sidebar: the ids in their new order. Chats only reorder inside their own group.
 export const ProjectOrder = Schema.Struct({ ids: Schema.Array(Id) })
 export const ChatOrder = Schema.Struct({ projectId: Schema.NullOr(Id), ids: Schema.Array(Id) })
@@ -207,6 +224,22 @@ export const Memory = Schema.Struct({
   confirmedAt: Schema.Number
 })
 export type Memory = typeof Memory.Type
+
+// How a message names a skill: "$" + its title in lower case, accents dropped, words joined by "-"
+// ("Deploy na Vercel" -> $deploy-na-vercel). The turn then carries that skill's full steps.
+export const skillHandle = (title: string) =>
+  title
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+
+// The skills a message names with $handle.
+export const namedSkills = <S extends { readonly title: string }>(text: string, skills: ReadonlyArray<S>) => {
+  const handles = new Set([...text.matchAll(/(?:^|\s)\$([\p{L}\p{N}][\p{L}\p{N}-]*)/gu)].map((m) => m[1]))
+  return skills.filter((s) => handles.has(skillHandle(s.title)))
+}
 
 export const ModelInfo = Schema.Struct({
   id: Schema.String,
@@ -363,6 +396,7 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.delete("remove", "/api/chats/:id", { params: idParam }))
       .add(HttpApiEndpoint.put("reorder", "/api/chats/order", { payload: ChatOrder }))
       .add(HttpApiEndpoint.get("messages", "/api/chats/:id/messages", { params: idParam, success: Schema.Array(Message) }))
+      .add(HttpApiEndpoint.get("context", "/api/chats/:id/context", { params: idParam, success: ContextUsage, error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("consolidate", "/api/chats/:id/consolidate", { params: idParam, success: Chat, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
       // What one turn changed in the workspace, and undoing it (restores the files to the checkpoint before it).
       .add(HttpApiEndpoint.get("diff", "/api/turns/:id/diff", { params: idParam, success: TurnDiff, error: HttpApiError.NotFound }))

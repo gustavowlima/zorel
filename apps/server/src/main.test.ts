@@ -431,3 +431,16 @@ test("armazenamento: mede a pasta de dados; limpar só remove pastas de chats e 
   expect(existsSync(join(dir, "runs", live.id, "notes.md"))).toBe(true) // a live chat's folder stays
   expect((await api((c) => c.settings.audit())).some((e) => e.action === "storage.cleaned" && e.target.id === "orphans")).toBe(true)
 })
+
+test("contexto: estima o próximo turno parte por parte; mensagens contam", async () => {
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
+  const empty = await api((c) => c.chats.context({ params: { id: chat.id } }))
+  await rpc((c) => c.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "x".repeat(400) }))
+  for (let i = 0; i < 50 && (await api((c) => c.chats.messages({ params: { id: chat.id } }))).length < 2; i++) await Bun.sleep(20)
+  const after = await api((c) => c.chats.context({ params: { id: chat.id } }))
+  const messages = (u: typeof after) => u.parts.find((p) => p.id === "messages")!.tokens
+  expect(messages(after)).toBeGreaterThanOrEqual(messages(empty) + 100) // 400 characters ≈ 100 tokens
+  expect(after.usedTokens).toBe(after.parts.reduce((n, p) => n + p.tokens, 0))
+  expect(after.compactAfter).toBe(50)
+  expect(after.messagesSinceSummary).toBeGreaterThanOrEqual(2)
+})

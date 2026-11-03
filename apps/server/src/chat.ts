@@ -1,5 +1,5 @@
 // Turn context (layers) and consolidation (continuous learning). The turn itself runs in runtime.ts.
-import type { Agent, Chat } from "@zero/contracts"
+import { type Agent, type Chat, namedSkills } from "@zero/contracts"
 import { Context, Data, Effect, Layer, Stream } from "effect"
 import { join } from "node:path"
 import {
@@ -31,6 +31,10 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
     const fixed = pinned(yield* store.activeMemories(scopes))
     const messages = yield* store.messagesAfter(chat.id, chat.summaryUntil)
     const last = messages.at(-1)?.text ?? ""
+    const all = yield* store.activeMemories(scopes, "skill")
+    // Skills named with $handle in the message come with their steps, ahead of the ones search finds.
+    const named = namedSkills(last, all)
+    const found = yield* store.searchMemories(scopes, last, named.map((s) => s.id), SKILL_BODIES, "skill")
     return buildTurn({
       chat,
       model,
@@ -39,7 +43,7 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
       members: yield* members(store, chat),
       pinned: fixed,
       retrieved: yield* store.searchMemories(scopes, last, fixed.map((m) => m.id), RETRIEVED),
-      skills: { all: yield* store.activeMemories(scopes, "skill"), relevant: yield* store.searchMemories(scopes, last, [], SKILL_BODIES, "skill") },
+      skills: { all, relevant: [...named, ...found].slice(0, Math.max(SKILL_BODIES, named.length)) },
       messages,
       cwd,
       filesDir: join(dataDir, "attachments", chat.id),
