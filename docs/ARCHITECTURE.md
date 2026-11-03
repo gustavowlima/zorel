@@ -483,7 +483,7 @@ Referência: a reference app (`docs/architecture/agents.md` "Agent communication
 **Hoje (2026-11-03, fase 2c concluída):**
 - **Custo:** `pricing.ts` lê o catálogo do models.dev (USD por 1M de tokens), guarda em `<dataDir>/pricing.json` e atualiza uma vez por dia; offline usa a última cópia. Cada turno e mensagem grava `cost` e `account_id`. Apelidos das CLIs (`claude-cli/opus`) usam o modelo mais novo da família.
 - **Janelas de limite:** `POST /api/accounts/:id/limits` lê todas as janelas da conta pela própria CLI (Claude: `usage_EXPERIMENTAL…` do Agent SDK; Codex: `account/rateLimits/read` num app-server curto). Cache de 4 min, uma leitura por vez, falhas com espera crescente (5 a 60 min). Os eventos `limits` dos turnos também atualizam as janelas.
-- **Tela Usage** (layout inspirado no Usage do a reference app): filtros de agente, métrica (custo ou tokens) e período no cabeçalho; número principal com o total; harnesses com participação (a legenda do gráfico); área empilhada por dia e harness com leitura por hover e teclado; totais de tokens (com e sem cache); detalhamento por modelo, agente, projeto, conta ou dia; um cartão por assinatura com as janelas e o reset; "para onde foi" com custo; turnos mais caros (`GET /api/usage/top`); exportar CSV; aviso a partir de 80% (`LIMIT_ALERT`). A barra lateral mostra a janela mais cheia ao lado de Usage, e cada resposta mostra conta e custo.
+- **Tela Usage** (layout inspirado no Usage do a reference app): filtros de agente, métrica (custo ou tokens) e período no cabeçalho; número principal com o total; harnesses com participação (a legenda do gráfico); área empilhada por dia e harness com leitura por hover e teclado; totais de tokens (com e sem cache); detalhamento por modelo, agente, projeto, conta ou dia; um cartão por assinatura com as janelas e o reset; turnos mais caros (`GET /api/usage/top`); aviso a partir de 80% (`LIMIT_ALERT`). A barra lateral mostra a janela mais cheia ao lado de Usage, e cada resposta mostra conta e custo.
 - **Nomes reais dos modelos:** o seletor usa a lista que cada CLI oferece hoje (`supportedModels()` do Agent SDK, `model/list` do Codex), com nome e descrição ("Opus 5.5"). Fica em `preferences` (`cliModels`), é servida na hora e relida em segundo plano depois de 1 h; sem CLI, voltam os apelidos fixos.
 
 **Fonte dos dados:** a tabela `turns`, que a fase 1 já grava. Cada turno registra conta, modelo, harness, tokens (entrada, cache lido, cache escrito, saída), custo estimado, tempo até o primeiro token, tempo total e trocas de failover.
@@ -503,7 +503,6 @@ A leitura acontece **uma por vez, com cache de 4 min e espaçamento crescente em
 - Mês atual por agente, projeto, conta e modelo, com gráfico diário.
 - Cartão por conta de assinatura: uso das janelas e horário de reset.
 - Os turnos mais caros, com link para o chat.
-- Exportar CSV.
 
 **Alertas e orçamento** (opcionais):
 - Aviso ao atingir 80% de uma janela de assinatura ou de um orçamento mensal (por agente ou por conta de API key).
