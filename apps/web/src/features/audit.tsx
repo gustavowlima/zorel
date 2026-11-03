@@ -9,7 +9,7 @@ import { type ReactNode, useEffect, useState } from "react"
 import { agentsAtom, auditAtom, useInvalidate, useList } from "../client.ts"
 import { ReadingState } from "./reading.tsx"
 import { modelLabel } from "../labels.ts"
-import { ArrowRight, Bot, Button, ChevronRight, Folder, Input, KeyRound, Plug, Rows, Search, Section, Select, Shield, Undo2, cx } from "@/ui"
+import { ArrowRight, Bot, Button, ChevronRight, DateRangeField, Folder, Input, KeyRound, Plug, Rows, Search, Section, Select, Shield, Undo2, cx } from "@/ui"
 
 const KINDS: ReadonlyArray<AuditKind> = ["all", "providers", "projects", "tools", "approvals"]
 
@@ -126,12 +126,18 @@ export function AuditSection() {
             <Input className="pl-8" placeholder={t("audit.search")} aria-label={t("audit.search")} value={typed} onChange={(e) => setTyped(e.target.value)} />
           </label>
         </div>
-        <div className="flex items-center gap-2 text-sm text-muted">
-          <span>{t("audit.from")}</span>
-          <Input type="date" className="w-auto" aria-label={t("audit.from")} value={from} max={to || undefined} onChange={(e) => narrow(setFrom)(e.target.value)} />
-          <span>{t("audit.to")}</span>
-          <Input type="date" className="w-auto" aria-label={t("audit.to")} value={to} min={from || undefined} onChange={(e) => narrow(setTo)(e.target.value)} />
-        </div>
+        <DateRangeField
+          label={t("audit.days")}
+          clearLabel={t("audit.clearDays")}
+          openLabel={t("audit.pickDays")}
+          value={{ start: from || null, end: to || null }}
+          onChange={(r) => {
+            setFrom(r.start ?? "")
+            setTo(r.end ?? "")
+            setPage(0)
+          }}
+          className="self-start"
+        />
       </div>
       <ReadingState loading={AsyncResult.isInitial(result)} failed={AsyncResult.isFailure(result)} onRetry={() => invalidate(["audit"])} />
       {data && shown.length === 0 && <p className="text-muted">{filtered ? t("audit.noMatch") : t("audit.empty")}</p>}
