@@ -118,6 +118,13 @@ export function windowMinutes(id: string): number | null {
   return Number.isFinite(minutes) ? minutes : null
 }
 
+// A window's name in a narrow column: "5h", "7d", "30d".
+export function windowShort(id: string): string {
+  const minutes = windowMinutes(id)
+  if (minutes === null) return windowLabel(id)
+  return minutes % 1440 === 0 ? t("usage.windows.shortDays", { count: minutes / 1440 }) : t("usage.windows.shortHours", { count: Math.round(minutes / 60) })
+}
+
 // How a limit window is going at `now`: used and elapsed (0..1) and, when the burn so far would empty it before
 // it resets, roughly when. No projection in the window's first tenth: too little to go on.
 // ponytail: a straight line from the window's start; a recent-rate estimate needs readings over time.
