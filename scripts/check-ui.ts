@@ -8,8 +8,8 @@ import { relative } from "node:path"
 
 const ROOT = new URL("../apps/web/", import.meta.url).pathname
 const BASELINE = `${ROOT}ui-baseline.json`
-// The design system itself (src/ui) and the dev gallery may use what screens can't.
-const EXEMPT = [/^src\/ui\//, /^src\/dev\//]
+// The design system itself (src/ui) may use what screens can't.
+const EXEMPT = [/^src\/ui\//]
 
 interface Rule {
   readonly id: string
