@@ -28,7 +28,18 @@ updated: 2026-11-03
 - migrate.ts: antes de abrir, se houver migration pendente, faz backup (VACUUM INTO ~/.zero/backups/zero-<ts>.db); banco do MVP (sem __drizzle_migrations) sobe para user_version 3 com LEGACY_MIGRATIONS e a linha de base (IF NOT EXISTS) o adota sem cópia
 - desktop: prebuild copia apps/server/drizzle e define ZERO_MIGRATIONS (migrationsDir() lido na hora, não no import)
 
+- Bun primeiro onde há API própria (Bun.file/Bun.write, Bun.serve, bun:sqlite, Bun.secrets, Bun.spawn); node:fs para diretórios (mkdir/readdir/exists: o Bun implementa nativo e recomenda), node:path e node:os ficam (só texto/trivial)
+
+- runtime de turnos em runtime.ts (serviço Runtime): fila por chat no banco (tabela turns, um worker por chat com flag kicked contra corrida), clientId UNIQUE = idempotência, texto parcial gravado a cada lote (partial_text) para kill -9; boot: running → interrupted + mensagem com o parcial, aprovações abertas → expired, filas retomadas
+- eventos: PubSub por chat + PubSub de status; subscribeChat assina antes do snapshot (nada se perde); deltas agrupados com Stream.groupedWithin(512, 100 ms)
+- aprovações persistidas (tabela approvals), espera por Deferred com timeout de 30 min; fim do turno expira as abertas; "always" ainda aprova só a chamada (regra persistente é fase 4)
+- passos (tabela steps) emitidos como step-started/step-finished; Message.steps (legado) continua para o histórico
+- RPC: RpcServer.layerHttp em /rpc (websocket, RpcSerialization.layerJson); handlers em main.ts; steer cai na fila até a fase 2; SSE /send removido
+- encadeamento por @menção cria turnos com depth+1; no limite (MAX_DEPTH) só loga
+
 ## avoid
+
+- Bun.$ para operação simples de arquivo (mkdir etc.): abre um shell; usar node:fs
 
 - editar migration já aplicada: gerar outra com db:generate
 - tirar o IF NOT EXISTS da linha de base: quebra a adoção de bancos do MVP

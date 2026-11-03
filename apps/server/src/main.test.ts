@@ -7,10 +7,13 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
-import { Api, type SendEvent } from "@zero/contracts"
-import { Effect, Fiber, Layer, Stream } from "effect"
+import { Api, type Message } from "@zero/contracts"
+import { type Approval, type ChatEvent, ZeroRpc } from "@zero/contracts/events"
+import { Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
+import { RpcClient, RpcSerialization } from "effect/rpc"
+import { Socket } from "effect/socket"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DataDir } from "./chat.ts"
@@ -18,6 +21,7 @@ import { CONSOLIDATION_SYSTEM } from "./context.ts"
 import { Store } from "./db.ts"
 import { Engines, type EngineEvent, type Turn } from "./engines.ts"
 import { AppLive } from "./main.ts"
+import { Runtime } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
 import { Tools } from "./tools.ts"
 
@@ -89,7 +93,8 @@ let stop: () => Promise<void>
 beforeAll(async () => {
   const store = Store.layer(":memory:")
   const secrets = Layer.provideMerge(Secrets.memory(), store)
-  const services = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(FakeEngines, Tools.layer), secrets), DataDir.layer(join(tmpdir(), "zero-test")))
+  const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(FakeEngines, Tools.layer), secrets), DataDir.layer(join(tmpdir(), "zero-test")))
+  const services = Layer.provideMerge(Runtime.layer, base)
   const server = AppLive().pipe(HttpRouter.serve, Layer.provide(services), Layer.provide(BunHttpServer.layer({ port })))
   const fiber = Effect.runFork(Layer.launch(server))
   stop = () => Effect.runPromise(Fiber.interrupt(fiber)).then(() => void mcp.stop(true))
@@ -100,26 +105,46 @@ afterAll(() => stop())
 const api = <A, E>(f: (c: HttpApiClient.ForApi<typeof Api>) => Effect.Effect<A, E>) =>
   Effect.runPromise(Effect.flatMap(HttpApiClient.make(Api, { baseUrl: base }), f).pipe(Effect.provide(FetchHttpClient.layer)))
 
-// Envia e lê o SSE; `onApproval` decide pedidos de aprovação enquanto o turno espera.
-async function send(chatId: string, body: unknown, onApproval?: (e: Extract<SendEvent, { type: "approval" }>) => boolean) {
-  const res = await fetch(`${base}/api/chats/${chatId}/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-  const events: SendEvent[] = []
-  if (!res.body) return { status: res.status, events }
-  let buf = ""
-  for await (const chunk of res.body.pipeThrough(new TextDecoderStream())) {
-    buf += chunk
-    for (let i = buf.indexOf("\n\n"); i >= 0; i = buf.indexOf("\n\n")) {
-      const line = buf.slice(0, i)
-      buf = buf.slice(i + 2)
-      if (!line.startsWith("data: ")) continue
-      const ev = JSON.parse(line.slice(6)) as SendEvent
-      events.push(ev)
-      if (ev.type === "approval" && onApproval) await api((c) => c.tools.decide({ params: { id: ev.id }, payload: { approve: onApproval(ev) } }))
-    }
-  }
-  return { status: res.status, events }
+// Cliente RPC real (WebSocket em /rpc), como o web usa.
+const rpcLayer = () =>
+  RpcClient.layerProtocolSocket().pipe(
+    Layer.provide(Socket.layerWebSocket(`ws://localhost:${port}/rpc`)),
+    Layer.provide(Socket.layerWebSocketConstructorGlobal),
+    Layer.provide(RpcSerialization.layerJson)
+  )
+type Rpc = Effect.Success<ReturnType<typeof RpcClient.make<typeof ZeroRpc extends { requests: ReadonlyMap<string, infer R> } ? R : never>>>
+const rpc = <A, E>(f: (c: Rpc) => Effect.Effect<A, E>) =>
+  Effect.runPromise(Effect.scoped(Effect.flatMap(RpcClient.make(ZeroRpc), (c) => f(c as Rpc))).pipe(Effect.provide(rpcLayer())))
+
+// Assina o chat, envia e espera o chat voltar a ficar parado. `onApproval` decide pedidos enquanto o turno espera.
+async function send(chatId: string, body: { text: string; model?: string }, onApproval?: (a: Approval) => boolean) {
+  return rpc((c) =>
+    Effect.gen(function* () {
+      const events: ChatEvent[] = []
+      const ready = yield* Deferred.make<void>()
+      const idle = yield* Deferred.make<void>()
+      let ended = 0
+      const fiber = yield* c.subscribeChat({ chatId }).pipe(
+        Stream.runForEach((e) =>
+          Effect.gen(function* () {
+            if (e._tag === "snapshot") return yield* Deferred.succeed(ready, undefined)
+            events.push(e)
+            if (e._tag === "approval" && onApproval) yield* c.decide({ approvalId: e.approval.id, outcome: onApproval(e.approval) ? "approved" : "denied" })
+            if (e._tag === "turn-completed" || e._tag === "turn-failed" || e._tag === "interrupted") ended++
+            if (e._tag === "status" && e.status.state === "idle" && ended) yield* Deferred.succeed(idle, undefined)
+          })
+        ),
+        Effect.forkChild
+      )
+      yield* Deferred.await(ready)
+      yield* c.send({ chatId, clientId: crypto.randomUUID(), ...body })
+      yield* Deferred.await(idle).pipe(Effect.timeout("5 seconds"))
+      yield* Fiber.interrupt(fiber)
+      return { events }
+    })
+  )
 }
-const dones = (events: SendEvent[]) => events.flatMap((e) => (e.type === "done" ? [e.message] : []))
+const dones = (events: ChatEvent[]): Message[] => events.flatMap((e) => ((e._tag === "turn-completed" || e._tag === "turn-failed") && e.message ? [e.message] : []))
 
 test("projeto → agente → chat: streaming, contexto em camadas, troca de modelo, consolidação com memórias e skills", async () => {
   const project = await api((c) => c.projects.create({ payload: { name: "Site", brief: "Landing em Astro." } }))
@@ -128,8 +153,7 @@ test("projeto → agente → chat: streaming, contexto em camadas, troca de mode
   const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [agent.id], model: "claude-cli/sonnet" } }))
 
   const first = await send(chat.id, { text: "oi" })
-  expect(first.status).toBe(200)
-  expect(first.events.map((e) => e.type)).toEqual(["user", "start", "text", "done"])
+  expect(first.events.map((e) => e._tag)).toEqual(["message", "queued", "turn-started", "status", "text", "turn-completed", "status"])
   expect(dones(first.events)[0]).toMatchObject({ role: "assistant", agentId: agent.id, text: "eco: oi", model: "claude-cli/sonnet", inputTokens: 10 })
   const t1 = turns.at(-1)!
   for (const s of ["Landing em Astro.", "Escreve código enxuto.", "Prefere respostas curtas"]) expect(t1.system).toContain(s)
@@ -182,8 +206,7 @@ test("canal: @menção escolhe quem responde; agente passa a vez mencionando out
   mentionNext.set("Nico", "@leo de novo")
   mentionNext.set("Leo", "@nico de novo")
   r = await send(chat.id, { text: "@leo vai" })
-  expect(dones(r.events)).toHaveLength(3)
-  expect(r.events.at(-1)).toMatchObject({ type: "error" })
+  expect(dones(r.events)).toHaveLength(3) // Leo → Nico → Leo e para
   mentionNext.clear()
 })
 
@@ -203,7 +226,8 @@ test("ferramentas MCP: modo leitura esconde escrita; modo aprovação pede e res
   await api((c) => c.tools.update({ params: { id: server.id }, payload: { mode: "approve" } }))
   r = await send(chat.id, { text: "tool:docs__delete_page" }, () => false)
   msg = dones(r.events)[0]!
-  expect(r.events.some((e) => e.type === "approval" && e.tool === "docs__delete_page")).toBe(true)
+  expect(r.events.some((e) => e._tag === "approval" && e.approval.tool === "docs__delete_page")).toBe(true)
+  expect(r.events.some((e) => e._tag === "approval-resolved" && e.outcome === "denied")).toBe(true)
   expect(msg.text).toContain("O usuário recusou")
   expect(msg.steps.at(-1)!.status).toBe("refused")
   expect(toolCalls).toEqual(["search_docs"]) // recusada não chegou ao servidor
@@ -230,9 +254,12 @@ test("chaves de API: salvas pela interface, nunca devolvidas; nome desconhecido 
 
 test("erros na fronteira: entrada inválida 400, chat inexistente 404, agente de outro projeto 404", async () => {
   const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
-  expect((await send(chat.id, { text: "   " })).status).toBe(400)
-  expect((await send(chat.id, { text: "oi", model: "sem-barra" })).status).toBe(400)
-  expect((await send("nao-existe", { text: "oi" })).status).toBe(404)
+  const sendExit = (chatId: string, text: string, model?: string) =>
+    rpc((c) => Effect.exit(c.send({ chatId, clientId: crypto.randomUUID(), text, ...(model && { model }) } as never)))
+  expect(Exit.isFailure(await sendExit(chat.id, "   "))).toBe(true) // texto vazio: recusado no schema
+  expect(Exit.isFailure(await sendExit(chat.id, "oi", "sem-barra"))).toBe(true)
+  const missing = await sendExit("nao-existe", "oi")
+  expect(JSON.stringify(missing)).toContain("ChatNotFound")
 
   const other = await api((c) => c.projects.create({ payload: { name: "Outro", brief: "" } }))
   const foreign = await api((c) => c.agents.create({ payload: { projectId: other.id, name: "X", instructions: "", model: "ollama/llama3" } }))
@@ -249,12 +276,10 @@ test("só local: Host estranho (DNS rebinding) e Origin de outro site (CSRF) rec
   expect(isLocalRequest({ host: "localhost:4317", origin: "null" })).toBe(false)
   expect(isLocalRequest({})).toBe(false)
 
-  // POST "simples" (text/plain) de outra página: nunca chega a disparar um turno.
-  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
-  const before = turns.length
-  const res = await fetch(`${base}/api/chats/${chat.id}/send`, { method: "POST", headers: { "content-type": "text/plain", origin: "https://evil.example" }, body: '{"text":"oi"}' })
+  // POST "simples" (text/plain) de outra página e WebSocket de outra origem: barrados antes de qualquer efeito.
+  const res = await fetch(`${base}/api/projects`, { method: "POST", headers: { "content-type": "text/plain", origin: "https://evil.example" }, body: '{"name":"x","brief":""}' })
   expect(res.status).toBe(403)
-  expect(turns.length).toBe(before)
+  expect((await fetch(`${base}/rpc`, { headers: { origin: "https://evil.example", upgrade: "websocket", connection: "Upgrade" } })).status).toBe(403)
   expect((await fetch(`${base}/api/projects`, { headers: { origin: "https://evil.example" } })).status).toBe(403)
   expect((await fetch(`${base}/api/projects`, { headers: { origin: base } })).status).toBe(200)
 })

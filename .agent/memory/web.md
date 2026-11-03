@@ -1,7 +1,7 @@
 # web
 keywords: web, react, ui, chat, channel, sidebar, route, memories, skills, model picker, tools, settings
 status: active
-updated: 2026-11-02
+updated: 2026-11-03
 
 ## current
 
@@ -9,6 +9,8 @@ updated: 2026-11-02
 - api.ts: client tipado do contrato (call) + leitor SSE (sendMessage, abortável)
 - features/: chat.tsx (membros, resposta ao vivo por agente, cartão de aprovação, passos de ferramenta), project.tsx (+ "Canal com todos"), memories.tsx (fatos e skills), tools.tsx (servidores MCP e Configurações/chaves), model-picker.tsx
 - mensagens cobertas pelo resumo com opacidade 50%
+
+- chat consome o runtime por RPC (api.ts: ManagedRuntime com RpcClient.layerProtocolSocket + reconexão; subscribeChat refaz a assinatura e recebe novo snapshot); enviar com o chat ocupado entra na fila; Parar = interrupt
 
 ## avoid
 

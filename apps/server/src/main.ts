@@ -1,15 +1,18 @@
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, SendInput, type SendEvent, type ToolInfo } from "@zero/contracts"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { Api, type ToolInfo } from "@zero/contracts"
+import { ZeroRpc } from "@zero/contracts/events"
+import { Effect, Layer } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { RpcSerialization, RpcServer } from "effect/rpc"
 import { HttpApiBuilder, HttpApiError } from "effect/http-api"
-import { existsSync } from "node:fs"
+import { existsSync, mkdirSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, normalize, resolve } from "node:path"
-import { consolidate, DataDir, decide, send } from "./chat.ts"
+import { consolidate, DataDir } from "./chat.ts"
 import { Store, type Repository } from "./db.ts"
 import { Engines, listModels } from "./engines.ts"
 import { API_KEYS, mcpEnvName, Secrets } from "./secrets.ts"
+import { Runtime } from "./runtime.ts"
 import { Tools } from "./tools.ts"
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
@@ -102,6 +105,7 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
     const store = yield* Store
     const secrets = yield* Secrets
     const { hub } = yield* Tools
+    const runtime = yield* Runtime
     return h
       .handle("list", () => store.mcpServers())
       .handle("create", ({ payload: { env, ...input } }) =>
@@ -131,7 +135,9 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
           )
         )
       )
-      .handle("decide", ({ params, payload }) => (decide(params.id, payload.approve) ? Effect.void : notFound()))
+      .handle("decide", ({ params, payload }) =>
+        runtime.decide(params.id, payload.approve ? "approved" : "denied").pipe(Effect.catchTag("ApprovalNotFound", () => notFound()))
+      )
   })
 )
 
@@ -147,27 +153,22 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
   })
 )
 
-// Streaming (SSE) fica fora do HttpApi: POST /api/chats/:id/send → data: SendEvent\n\n
-const sse = (e: SendEvent) => `data: ${JSON.stringify(e)}\n\n`
-const SendRoute = HttpRouter.add(
-  "POST",
-  "/api/chats/:id/send",
+// Turnos: effect/rpc sobre WebSocket em /rpc (ARCHITECTURE §4). O LocalOnly global também cobre o upgrade.
+const RpcHandlers = ZeroRpc.toLayer(
   Effect.gen(function* () {
-    const { id } = yield* HttpRouter.schemaPathParams(Schema.Struct({ id: Schema.String }))
-    const input = yield* HttpServerRequest.schemaBodyJson(SendInput)
-    const events = yield* send(id, input)
-    return HttpServerResponse.stream(events.pipe(Stream.map(sse), Stream.encodeText), {
-      contentType: "text/event-stream",
-      headers: { "cache-control": "no-cache" }
-    })
-  }).pipe(
-    Effect.catchTags({
-      SchemaError: (e) => HttpServerResponse.json({ error: e.message }, { status: 400 }),
-      NotFound: () => HttpServerResponse.json({ error: "chat não encontrado" }, { status: 404 }),
-      Busy: () => HttpServerResponse.json({ error: "este chat já está respondendo" }, { status: 409 })
-    })
-  )
+    const runtime = yield* Runtime
+    return {
+      send: (p) => runtime.send(p),
+      // ponytail: sem steering nativo ainda (fase 2); a mensagem entra na fila como um envio normal.
+      steer: (p) => runtime.send({ chatId: p.chatId, clientId: crypto.randomUUID(), text: p.text }).pipe(Effect.asVoid),
+      interrupt: (p) => runtime.interrupt(p.chatId),
+      decide: (p) => runtime.decide(p.approvalId, p.outcome, p.reason),
+      subscribeChat: (p) => runtime.subscribeChat(p.chatId),
+      subscribeStatus: () => runtime.subscribeStatus
+    }
+  })
 )
+const RpcRoute = RpcServer.layerHttp({ group: ZeroRpc, path: "/rpc", protocol: "websocket" }).pipe(Layer.provide([RpcHandlers, RpcSerialization.layerJson]))
 
 // Build do web (apps/web/dist), quando existe: um processo só serve a API e a interface.
 const WebRoute = (dir: string) =>
@@ -208,7 +209,7 @@ export const AppLive = (webDir?: string) =>
   Layer.mergeAll(
     LocalOnly,
     HttpApiBuilder.layer(Api).pipe(Layer.provide([Projects, Agents, Chats, Memories, ToolsGroup, Settings])),
-    SendRoute,
+    RpcRoute,
     ...(webDir && existsSync(join(webDir, "index.html")) ? [WebRoute(webDir)] : [])
   )
 
@@ -216,7 +217,8 @@ export const AppLive = (webDir?: string) =>
 export const services = (dbPath: string, dataDir: string, secrets?: Layer.Layer<Secrets, never, Store>) => {
   const store = Store.layer(dbPath)
   const withSecrets = Layer.provideMerge(secrets ?? Secrets.layer, store)
-  return Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(Engines.layer, Tools.layer), withSecrets), DataDir.layer(dataDir))
+  const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(Engines.layer, Tools.layer), withSecrets), DataDir.layer(dataDir))
+  return Layer.provideMerge(Runtime.layer, base)
 }
 
 export interface StartOptions {
@@ -228,7 +230,7 @@ export interface StartOptions {
 // Ponto de entrada também usado pelo app desktop.
 export async function start(o: StartOptions = {}) {
   const dataDir = o.dataDir ?? process.env.ZERO_HOME ?? join(homedir(), ".zero")
-  await Bun.$`mkdir -p ${dataDir}`.quiet()
+  mkdirSync(dataDir, { recursive: true }) // não abrir um shell só para criar a pasta
   const port = o.port ?? Number(process.env.PORT ?? 4317)
   const webDir = o.webDir ?? process.env.ZERO_WEB_DIR ?? resolve(import.meta.dir, "../../web/dist")
   AppLive(resolve(webDir)).pipe(

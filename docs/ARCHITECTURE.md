@@ -97,7 +97,7 @@ RpcGroup.make(
 ```
 
 - `subscribeChat` sempre começa com um `snapshot` (mensagens desde o resumo, turno em andamento, aprovações abertas, fila) e segue com eventos ao vivo. **Reconectar é assinar de novo.**
-- `ChatEvent` (em `packages/contracts/src/events.ts`): `snapshot | queued | turn-started | text (agrupado) | reasoning | step-started | step-finished | approval | approval-resolved | handoff | model-switched | learned | context-usage | turn-completed | turn-failed | interrupted | status`. Os passos (`WorkStep`) trazem tipo, título, arquivos, duração e mudanças por arquivo: é o que a pílula de atividade do chat mostra.
+- `ChatEvent` (em `packages/contracts/src/events.ts`): `snapshot | message | queued | turn-started | text (agrupado) | reasoning | step-started | step-finished | approval | approval-resolved | handoff | model-switched | learned | context-usage | turn-completed | turn-failed | interrupted | status`. Os passos (`WorkStep`) trazem tipo, título, arquivos, duração e mudanças por arquivo: é o que a pílula de atividade do chat mostra.
 - `subscribeStatus`: status de todos os chats (rodando, esperando você, falhou), para a barra lateral e "Precisa de você".
 - **Deltas de texto agrupados a cada 100 ms** ou 8 KiB (referência: a reference app 100 ms, Zeron 120 ms).
 - `LocalOnly` cobre HTTP e WebSocket.
