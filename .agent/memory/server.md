@@ -42,6 +42,9 @@ updated: 2026-11-03
 - medição: turns.started_at, first_token_at, ended_at e tokens; erros do turno como código (ErrorCode em events.ts; isInterruption cobre o legado "interrompido")
 - backup: antes de migration pendente e um por dia; mantém os 7 mais novos em ~/.zero/backups
 
+- sessões nativas (fase 2): Engines.open(model, system estável, cwd) → EngineSession (engines/session.ts); hoje só claude-cli (engines/claude-sdk.ts, Agent SDK 0.3.317 com o `claude` instalado); runtime guarda uma por (chat, agente), marcação `seen` = at da última mensagem que a sessão tem; turno manda <context>dinâmico</context> + transcript só do que é novo; reabre se o contexto estável, provider ou sessão morta mudar; máx. 8 sessões (LRU)
+- buildTurn devolve system (estável + dinâmico, para engines sem sessão), stable e dynamic; mensagens do turno levam `at`
+
 ## avoid
 
 - Bun.$ para operação simples de arquivo (mkdir etc.): abre um shell; usar node:fs

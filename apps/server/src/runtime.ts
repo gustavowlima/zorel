@@ -7,10 +7,12 @@ import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Stream } fro
 import { consolidate, DataDir, members, prepare } from "./chat.ts"
 import { MAX_DEPTH, mentioned } from "./context.ts"
 import { Store, type Repository, type TurnRow } from "./db.ts"
-import { Engines, type TurnTools } from "./engines.ts"
+import { Engines, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
+import type { EngineSession } from "#server/engines/session.ts"
 import { exposedName, needsApproval, resultText, textResult, Tools, type Gateway, type Hub, type Session, type ToolDef } from "./tools.ts"
 
 const MAX_MENTIONS = 3
+const MAX_SESSIONS = 8 // live engine processes; the least recently used one closes first
 const APPROVAL_MS = 30 * 60_000 // ARCHITECTURE §9.2: expires in 30 min and counts as denial
 const TEXT_BATCH = Duration.millis(100) // batched deltas (a reference app 100 ms, Zeron 120 ms)
 
@@ -62,6 +64,58 @@ export const makeRuntime = Effect.gen(function* () {
 
   // ---------- in-memory state (the database is the source; this only holds fibers and waits) ----------
   const workers = new Map<string, { kicked: boolean }>()
+
+  // ---------- native engine sessions (ARCHITECTURE §6, D6) ----------
+  // One per (chat, agent). `seen` is the watermark: the `at` of the last message the session has.
+  interface Live {
+    readonly session: EngineSession
+    readonly provider: string
+    readonly stable: string
+    seen: number
+    used: number
+  }
+  const sessions = new Map<string, Live>()
+  const sessionKey = (row: TurnRow) => `${row.chatId}:${row.agentId ?? "-"}`
+  const closeSession = (key: string) =>
+    Effect.suspend(() => {
+      const live = sessions.get(key)
+      sessions.delete(key)
+      return live ? live.session.close : Effect.void
+    })
+  yield* Effect.addFinalizer(() => Effect.forEach([...sessions.keys()], closeSession, { discard: true }))
+
+  // Picks the engine for this turn. With a native session, only the dynamic context and the messages
+  // after the watermark are sent; a new session gets the whole checkpoint (summary + recent messages).
+  const engineStream = (row: TurnRow, turn: EngineTurn, onSeen: (set: (at: number) => void) => void) =>
+    Effect.gen(function* () {
+      const key = sessionKey(row)
+      const provider = splitModel(row.model).provider
+      const stable = turn.stable ?? turn.system
+      let live = sessions.get(key)
+      if (live && (!live.session.alive() || live.provider !== provider || live.stable !== stable)) {
+        yield* closeSession(key)
+        live = undefined
+      }
+      if (!live) {
+        const opened = engines.open?.({ model: row.model, system: stable, cwd: turn.cwd })
+        if (opened === undefined) return engines.run(turn)
+        if (typeof opened === "string") return Stream.make<EngineEvent[]>({ type: "error", message: opened })
+        if (sessions.size >= MAX_SESSIONS) {
+          const oldest = [...sessions.entries()].sort((a, b) => a[1].used - b[1].used)[0]
+          if (oldest) yield* closeSession(oldest[0])
+        }
+        live = { session: opened, provider, stable, seen: 0, used: Date.now() }
+        sessions.set(key, live)
+      }
+      const current = live
+      current.used = Date.now()
+      const fresh = turn.messages.filter((m) => (m.at ?? 0) > current.seen)
+      const prompt = [turn.dynamic && `<context>\n${turn.dynamic}\n</context>`, fresh.length ? transcript(fresh) : "Continue."].filter(Boolean).join("\n\n")
+      onSeen((at) => {
+        current.seen = at
+      })
+      return current.session.turn({ model: row.model, prompt, tools: turn.tools })
+    })
   const running = new Map<string, Fiber.Fiber<unknown, unknown>>()
   const waiting = new Map<string, Deferred.Deferred<ApprovalOutcome>>()
   const nameOf = (agent: Agent | undefined) => agent?.name ?? "Assistant"
@@ -154,11 +208,13 @@ export const makeRuntime = Effect.gen(function* () {
       const team = yield* members(store, chat)
       const agent = team.find((a) => a.id === row.agentId)
       const acc = { text: "", error: undefined as string | undefined, usage: { inputTokens: 0, outputTokens: 0 }, steps: [] as Step[], saved: false }
+      let markSeen: (at: number) => void = () => {}
       const save = (state: "completed" | "failed" | "interrupted", error: string | null) =>
         Effect.gen(function* () {
           if (acc.saved) return
           acc.saved = true
           const message = yield* store.addMessage({ chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model: row.model, error, steps: acc.steps, ...acc.usage })
+          markSeen(message.at) // the session has everything up to its own reply
           const turn = yield* store.finishTurn(row.id, { state, error, messageId: message.id, usage: acc.usage })
           const tag = state === "completed" ? "turn-completed" : state === "failed" ? "turn-failed" : "interrupted"
           yield* publish(chatId, ev(tag, { turn, message }))
@@ -178,7 +234,10 @@ export const makeRuntime = Effect.gen(function* () {
           })
         )
         const turn = yield* prepare(store, (yield* store.chat(chatId))!, agent, row.model, dataDir, opened.tools)
-        yield* engines.run(turn).pipe(
+        const stream = yield* engineStream(row, turn, (set) => {
+          markSeen = set
+        })
+        yield* stream.pipe(
           Stream.withSpan("engine.run", { attributes: { model: row.model } }),
           Stream.groupedWithin(512, TEXT_BATCH),
           Stream.runForEach((batch) =>

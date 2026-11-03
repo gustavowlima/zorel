@@ -145,7 +145,7 @@ interface EngineSession {
 
 | Adaptador | Base | Sessão | Observações |
 |---|---|---|---|
-| `claude-sdk` | `@anthropic-ai/claude-agent-sdk` (roda a CLI oficial) | nativa (`resume`) | `setModel` ao vivo. `canUseTool` → cartão de aprovação. Ferramentas do Zero via servidor MCP no mesmo processo. Login nunca é lido |
+| `claude-sdk` | `@anthropic-ai/claude-agent-sdk` (roda a CLI oficial **instalada**, via `pathToClaudeCodeExecutable`: o binário de ~300 MB que o pacote traz nunca é usado nem empacotado) | nativa: um processo por (chat, agente) com entrada em streaming; `persistSession: false` (retomar usa o ponto de retomada do Zero) | `setModel` ao vivo. Gateway do turno trocado com `setMcpServers`. Ferramentas próprias desligadas (`tools: []`). Login nunca é lido |
 | `codex-app-server` | `codex app-server` (JSON-RPC) | nativa (`thread/resume`) | Modelo por `turn/start`. `turn/steer`, `turn/interrupt`, `thread/compact/start`, `model/list`, `account/rateLimits/read`. Sandbox `read-only`/`workspace-write` |
 | `acp` | `effect-acp` (T3 Code, MIT) | nativa quando o agente suporta | **OpenCode** (harness de **todas** as API keys), Gemini CLI, Cursor, Kimi, Cline, Grok, Hermes |
 | `api` | `effect/ai` | `none` | **Não é agente de projeto.** Só para consolidação, títulos, roteamento, revisão de memória e conversa rápida sem workspace. Marcadores de cache, uma mensagem por bloco |
