@@ -1,0 +1,20 @@
+{
+  "name": "zero",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "test": "bun test apps/server",
+    "build": "bun run --cwd apps/web build",
+    "start": "bun run build && bun apps/server/src/main.ts",
+    "desktop": "bun run --cwd apps/desktop start",
+    "desktop:build": "bun run --cwd apps/desktop prebuild && bun run --cwd apps/desktop build",
+    "typecheck": "tsc -p apps/server && tsc -p apps/web"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "typescript": "^7.0.2"
+  }
+}
