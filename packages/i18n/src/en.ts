@@ -353,14 +353,12 @@ export const en = {
   settings: {
     title: "Settings",
     sections: "Settings sections",
-    accounts: "Accounts",
-    keys: "API keys",
+    providers: "Providers",
     mcp: "MCP servers",
     skills: "Skills",
     appearance: "Appearance",
     hint: {
-      accounts: "Subscriptions sign in with the official CLI",
-      keys: "Stored in the system keychain",
+      providers: "Subscriptions, API keys and local servers",
       mcp: "Tools agents use through the gateway",
       skills: "Procedures agents follow",
       appearance: "How Zero looks on this computer"
@@ -387,6 +385,29 @@ export const en = {
       claude: "Claude (subscription)",
       codex: "ChatGPT · Codex (subscription)"
     }
+  },
+  providers: {
+    names: { claude: "Claude", chatgpt: "ChatGPT", openrouter: "OpenRouter", ollama: "Ollama", lmstudio: "LM Studio" },
+    connected: "Connected",
+    others: "Other providers",
+    search: "Search providers",
+    breadcrumb: "Breadcrumb",
+    isConnected: "Connected",
+    notConnected: "Not connected",
+    agentsUse: { one: "1 agent uses it", other: "{count} agents use it" },
+    andMore: { one: "{name} and 1 more", other: "{name} and {count} more" },
+    signIn: "Sign-in",
+    reconnect: "Reconnect",
+    apiKey: "API key",
+    keySaved: "API key saved",
+    noKey: "No key",
+    pasteKey: "Or paste a {name} API key.",
+    addKey: "Add key",
+    replaceKey: "Replace key",
+    server: "Local server",
+    running: "Running on this computer",
+    notRunning: "Not running",
+    models: "Models"
   },
   keys: {
     intro: "Kept in the system keychain. Subscriptions don't need keys: they use the signed-in CLI.",

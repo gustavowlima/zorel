@@ -8,6 +8,7 @@ import { accountsAtom, modelsAtom, useList } from "../client.ts"
 import { ACCOUNT_OF_MODEL, modelName, modelNote, providerHint, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
 import { LimitWindows } from "./limits.tsx"
+import { providerPageOf } from "./providers.tsx"
 import { Button, ChevronDown, cx, FieldButton, Input, OptionButton, Popover, ProviderIcon, RailButton, Search, Tab, TabList, Tabs } from "@/ui"
 
 export interface ModelChoice {
@@ -179,9 +180,9 @@ function PickerBody({ entries, value, current, onChange, close }: { entries: Rea
         <span className="flex-1">{t("model.switchKeeps")}</span>
         <Button size="sm" variant="ghost" className="text-accent-text" onPress={() => {
             close()
-            go({ view: "settings", tab: "accounts" })
+            go({ view: "settings", tab: "providers" })
           }}>
-          {t("model.accounts")}
+          {t("settings.providers")}
         </Button>
       </div>
     </div>
@@ -212,7 +213,8 @@ function EntryPane({ entry, isSelected, pick, close }: { entry: Entry; isSelecte
               variant="secondary"
               onPress={() => {
                 close()
-                go({ view: "settings", tab: "accounts" })
+                const page = providerPageOf(entry.provider)
+                go({ view: "settings", tab: "providers", ...(page && { provider: page }) })
               }}
             >
               {t("model.signIn")}

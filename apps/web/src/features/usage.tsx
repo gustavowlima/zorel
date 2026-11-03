@@ -151,7 +151,7 @@ export function UsageView() {
           <Section
             title={t("usage.subscriptions")}
             action={
-              <Button size="sm" variant="ghost" onPress={() => go({ view: "settings", tab: "accounts" })}>
+              <Button size="sm" variant="ghost" onPress={() => go({ view: "settings", tab: "providers" })}>
                 {t("usage.manage")}
               </Button>
             }
