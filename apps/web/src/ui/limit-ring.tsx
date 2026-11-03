@@ -13,7 +13,7 @@ export function LimitRing({ windows, size = 44, children, className }: { windows
   const center = size / 2
   return (
     <span aria-hidden="true" className={cn("relative inline-flex shrink-0 items-center justify-center", className)} style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true" className="absolute inset-0 -rotate-90">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true" className="absolute inset-0 size-full -rotate-90">
         {windows.map((w, i) => {
           const r = (size - stroke) / 2 - i * gap
           if (r <= stroke) return null
