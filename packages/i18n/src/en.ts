@@ -86,6 +86,7 @@ export const en = {
     summaryTitle: "Earlier messages are summarized",
     summaryHint: "This is what the model sees of them now.",
     details: "Details",
+    openOriginal: "Open original",
     coveredBySummary: "Covered by the summary",
     leadAnswered: "{name} answered as lead",
     handoff: "{from} handed the turn to {to}",
