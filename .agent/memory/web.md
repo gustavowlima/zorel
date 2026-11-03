@@ -21,10 +21,12 @@ updated: 2026-11-03
 
 - failover: features/failover.tsx (FailoverEditor + useTermsPending) no agente e no diálogo "Fallbacks…" do chat; nota de troca no chat (evento failover ao vivo, message.switches gravado); uso/espera da conta em Usage e no seletor de modelo
 
-- workspace no chat: features/workspace.tsx (TurnChanges, WorkspacePanel Changes/Files, TerminalPanel), diff-view.tsx (renderizador próprio; @pierre/diffs removido porque renderizava vazio); pasta do projeto no overview e no popover de novo projeto; nível de acesso com ChoiceCards na página do agente
+- workspace no chat: features/workspace.tsx (TurnChanges, WorkspacePanel Changes/Files, TerminalPanel), diff-view.tsx (@pierre/diffs FileDiff dentro do pool de workers de diff-pool.tsx, tema por useResolvedTheme, cores dos tokens via unsafeCSS, carregado sob demanda); pasta do projeto no overview e no popover de novo projeto; nível de acesso com ChoiceCards na página do agente
 - App revalida tudo a cada 2s enquanto offline (átomos que falharam não tentam de novo sozinhos)
 
 ## avoid
+
+- @pierre/diffs sem WorkerPoolContextProvider: com StrictMode + disableFileHeader o diff fica vazio, sem erro (bug da lib)
 
 - line-clamp dentro de Button flex: altura 0; usar truncate
 - regra CSS global fora de @layer (ex.: `* { border-color }`): vence os utilitários do Tailwind v4
