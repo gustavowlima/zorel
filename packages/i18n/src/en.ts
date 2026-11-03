@@ -41,6 +41,7 @@ export const en = {
     settings: "Settings",
     projects: "Projects",
     chats: "Chats",
+    noChats: "No chats yet",
     reorder: "Reorder {name}",
     newProject: "New project",
     newChatIn: "New chat in {name}",
