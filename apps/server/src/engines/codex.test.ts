@@ -34,6 +34,7 @@ test("codex: without a Zero login the turn fails fast with the login hint", asyn
   expect(ev).toHaveLength(1)
   expect(ev[0]).toMatchObject({ type: "error" })
   expect((ev[0] as { message: string }).message).toContain("codex login")
+  expect(s.alive()).toBe(false) // next turn reopens (e.g. after logging in)
   await Effect.runPromise(s.close)
 })
 
