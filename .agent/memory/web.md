@@ -40,3 +40,7 @@ updated: 2026-11-03
 - settings: abas providers (providers.tsx: lista Connected/Other + página por provider em #/settings/providers/<id> com sign-ins, API key, servidor local, modelos), mcp, skills, appearance; links antigos #/settings/accounts|keys caem em providers; providerPageOf(harness) leva o seletor de modelo à página certa
 - i18n: nenhum ramo do catálogo pode ter uma chave `other` com texto (o lookup trata como plural); plurais só one/other em inglês
 - audit.tsx: Settings › Audit log (filtro por tipo + busca, frase por ação em audit.actions.*, campos antes → depois com rótulos de modelo e acesso); recarrega ao abrir (as mutações das outras telas não invalidam "audit")
+- storage.tsx: Settings › Storage (hero ≥48px, barra segmentada + legenda, projetos, maiores chats, limpar com confirmação)
+- lib/utils.ts: cn = createCn com os tokens do tema (spacing control*, radius inline/control/card/sheet); sem isso h-control e h-auto não se anulam
+- i18n lookup: plural só quando há `one` e `other` como texto; um ramo com chave `other` é ramo
+- dev: o Vite de desenvolvimento às vezes não gera classes de arquivos novos; reiniciar resolve (o build gera)

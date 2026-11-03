@@ -19,6 +19,7 @@ import { LoggerLive } from "./observability.ts"
 import { Runtime } from "./runtime.ts"
 import { Tools } from "./tools.ts"
 import { billingOf, Pricing } from "./pricing.ts"
+import { clean, measure } from "./storage.ts"
 import { Workspace } from "./workspace.ts"
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
@@ -297,8 +298,24 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
     const accounts = yield* Accounts
     const store = yield* Store
     const audit = yield* Audit
+    const dataDir = yield* DataDir
+    const storageReport = Effect.gen(function* () {
+      const [projects, chats, messages] = yield* Effect.all([store.projects(), store.chats(), store.messageCounts()])
+      return yield* Effect.promise(() => measure(dataDir, { projects, chats, messages }))
+    })
     return h
       .handle("audit", () => audit.list)
+      .handle("storage", () => storageReport)
+      .handle("cleanStorage", ({ params }) =>
+        Effect.gen(function* () {
+          const before = yield* storageReport
+          const [chats, projects] = yield* Effect.all([store.chats(), store.projects()])
+          const removed = clean(dataDir, params.id, new Set(chats.map((c) => c.id)), new Set(projects.map((p) => p.id)))
+          const freed = before.cleanup.find((c) => c.id === params.id)?.bytes ?? 0
+          yield* audit.record(Actions.storageCleaned, { target: { id: params.id, name: params.id }, after: { items: removed, bytes: freed } })
+          return yield* storageReport
+        })
+      )
       .handle("models", () => Effect.flatMap(accounts.cliModels, (cli) => Effect.promise(() => listModels(secrets, cli))))
       .handle("usage", () => Effect.map(store.usage(Date.now() - USAGE_DAYS * 86_400_000), (rows) => rows.map((r) => ({ ...r, billing: billingOf(r.model) }))))
       .handle("topTurns", ({ query }) =>

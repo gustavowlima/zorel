@@ -109,7 +109,7 @@ function NotFound() {
 
 // Queries that failed (server restarting, network) don't retry by themselves: while offline, refetch
 // everything every 2s until the server answers again.
-const ALL_KEYS = ["projects", "agents", "chats", "memories", "servers", "accounts", "keys", "models", "usage", "approvals", "preferences", "workspace", "audit"] as const
+const ALL_KEYS = ["projects", "agents", "chats", "memories", "servers", "accounts", "keys", "models", "usage", "approvals", "preferences", "workspace", "audit", "storage"] as const
 function useRetryWhileOffline(offline: boolean) {
   const invalidate = useInvalidate()
   useEffect(() => {

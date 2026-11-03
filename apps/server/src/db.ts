@@ -433,6 +433,16 @@ export const repository = (db: Db) => {
           .limit(limit)
       ),
 
+    // Messages per chat (Storage).
+    messageCounts: () =>
+      orDie(
+        db
+          .select({ chatId: messages.chatId, n: sql<number>`count(*)` })
+          .from(messages)
+          .groupBy(messages.chatId)
+          .pipe(Effect.map((rows) => new Map(rows.map((r) => [r.chatId, Number(r.n)]))))
+      ),
+
     // ---------- audit log ----------
     addAudit: (row: typeof auditEvents.$inferInsert) => orDie(db.insert(auditEvents).values(row)),
     // Newest first; within the same millisecond, the last inserted first.

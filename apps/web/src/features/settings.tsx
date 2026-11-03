@@ -1,5 +1,6 @@
 // Settings (prototype "Settings"): sections on the left, one at a time on the right. Providers (subscription
-// sign-ins and API keys, providers.tsx), MCP servers, skills, the audit log (audit.tsx), appearance.
+// sign-ins and API keys, providers.tsx), MCP servers, skills, storage (storage.tsx), the audit log
+// (audit.tsx), appearance.
 import { formatAge, t } from "@zero/i18n"
 import { type ReactNode, useState } from "react"
 import { agentsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation } from "../client.ts"
@@ -8,9 +9,10 @@ import { go, SETTINGS_TABS, type SettingsTab, setThemePref, themePref, type Them
 import { AuditSection } from "./audit.tsx"
 import { McpSection } from "./mcp.tsx"
 import { ProvidersSection } from "./providers.tsx"
-import { BookOpen, Button, Field, NavItem, History, Palette, Plug, Plus, Screen, Section, Select, Sparkles, Switch } from "@/ui"
+import { StorageSection } from "./storage.tsx"
+import { BookOpen, Button, Field, HardDrive, History, NavItem, Palette, Plug, Plus, Screen, Section, Select, Sparkles, Switch } from "@/ui"
 
-const ICONS: Record<SettingsTab, ReactNode> = { providers: <Sparkles />, mcp: <Plug />, skills: <BookOpen />, audit: <History />, appearance: <Palette /> }
+const ICONS: Record<SettingsTab, ReactNode> = { providers: <Sparkles />, mcp: <Plug />, skills: <BookOpen />, storage: <HardDrive />, audit: <History />, appearance: <Palette /> }
 
 export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: string | undefined }) {
   return (
@@ -25,6 +27,7 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
       <div className="min-w-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-8 py-7">
           {tab === "providers" && <ProvidersSection provider={provider} />}
+          {tab === "storage" && <StorageSection />}
           {tab === "audit" && <AuditSection />}
           {tab === "mcp" && <McpSection projectId={null} />}
           {tab === "skills" && <Skills />}

@@ -22,7 +22,9 @@ export const locale = (): string => "en"
 const lookup = (key: string): Leaf | undefined => {
   let node: Leaf | Tree | undefined = CATALOGS[locale()]
   for (const part of key.split(".")) {
-    const branch: boolean = typeof node === "object" && !("other" in node && typeof node.other === "string")
+    // A plural leaf has both "one" and "other" as text; any other object is a branch, even with an "other" key.
+    const plural: boolean = typeof node === "object" && typeof (node as Tree).one === "string" && typeof (node as Tree).other === "string"
+    const branch: boolean = typeof node === "object" && !plural
     node = branch ? (node as Tree)[part] : undefined
   }
   return node as Leaf | undefined
@@ -61,6 +63,15 @@ export const formatNumber = (n: number) => numberFormat("n", {}).format(n)
 // 1.2K, 42K, 3.4M: token counts.
 export const formatCompact = (n: number) => numberFormat("c", { notation: "compact", maximumFractionDigits: 1 }).format(n)
 export const formatPercent = (ratio: number) => numberFormat("p", { style: "percent", maximumFractionDigits: 0 }).format(ratio)
+
+// 512 B · 94 KB · 6.3 GB (decimal units, like the system's disk usage).
+const BYTE_UNITS = ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte"] as const
+export function formatBytes(bytes: number): string {
+  const i = Math.min(BYTE_UNITS.length - 1, Math.max(0, Math.floor(Math.log10(Math.max(1, bytes)) / 3)))
+  if (i === 0) return `${formatNumber(Math.round(bytes))} B` // Intl spells it "byte"
+  const u = BYTE_UNITS[i]!
+  return numberFormat(`b:${u}`, { style: "unit", unit: u, unitDisplay: "short", maximumFractionDigits: i < 2 ? 0 : 1 }).format(bytes / 1000 ** i)
+}
 
 const unit = (u: "second" | "minute" | "hour" | "day" | "week", n: number) => numberFormat(`u:${u}`, { style: "unit", unit: u, unitDisplay: "narrow" }).format(n)
 

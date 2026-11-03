@@ -4,3 +4,4 @@
 2026-11-03 | tela Usage reescrita, limites no seletor e na sidebar, nomes reais dos modelos | fase 2c
 2026-11-03 | tela Usage redesenhada (hero, harnesses, área empilhada, totais, detalhamento) | inspiração a reference app pedida pelo usuário
 2026-11-03 | Accounts + API keys viram Settings › Providers (lista e página por provider) | pedido do usuário, inspirado no a reference app
+2026-11-03 | Settings › Storage; cn com tokens do tema; lookup de plural corrigido | pedido do usuário + bugs achados

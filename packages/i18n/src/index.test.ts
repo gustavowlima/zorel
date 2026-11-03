@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { formatAge, formatCompact, formatDuration, formatPercent, t } from "./index.ts"
+import { formatAge, formatBytes, formatCompact, formatDuration, formatPercent, t } from "./index.ts"
 
 test("t: plain, placeholders and numbers formatted", () => {
   expect(t("nav.needsYou")).toBe("Needs you")
@@ -24,6 +24,8 @@ test("formatters", () => {
   expect(formatAge(now - 2 * 3_600_000, now)).toBe("2h")
   expect(formatAge(now - 3 * 86_400_000, now)).toBe("3d")
   expect(formatAge(Date.UTC(2020, 0, 15), Date.UTC(2026, 10, 3))).toBe("Jan 15, 2020")
+  expect([formatBytes(512), formatBytes(94_000), formatBytes(6_300_000_000)]).toEqual(["512 B", "94 kB", "6.3 GB"])
+  expect(t("storage.categories.other")).toBe("Other") // a branch with an "other" key is not a plural
   expect(formatAge(0, now)).toBe("") // missing timestamps from old data have no age
   expect(formatAge(1, now)).toBe("")
 })
