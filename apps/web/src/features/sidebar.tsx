@@ -1,6 +1,6 @@
-// Sidebar (the chosen redesign, "Zero — main screen"): the projects as a tree with their chats, the chats without
-// a project, the agents of the open project, then Needs you, and a toolbar at the foot (new chat, knowledge,
-// usage with the fullest limit window, settings). One line per project and two per chat: a dot or a spinner is
+// Sidebar (the chosen redesign, "Zero — main screen"): Needs you first, the projects as a tree with their chats,
+// the chats without a project, and a toolbar at the foot (new chat, knowledge, usage with the fullest limit window,
+// settings); a project's agents live in its settings. One line per project and two per chat: a dot or a spinner is
 // all the state a project shows; a chat shows who is in it and what is happening, and sorts by whose turn it
 // is (waiting for you, then working, then the rest). The open chat floats as a raised chip. In the desktop app
 // a 28px strip on top holds the window buttons and drags the window. Projects reorder by drag and drop; chats
@@ -10,7 +10,7 @@ import type { ChatStatus } from "@zero/contracts/events"
 import { formatAge, formatPercent, t } from "@zero/i18n"
 import { type ReactNode, useState } from "react"
 import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
-import { agentTone, chatTitle, modelName, splitModel, statusLabel, windowLabel } from "../labels.ts"
+import { agentTone, chatTitle, splitModel, statusLabel, windowLabel } from "../labels.ts"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
@@ -55,8 +55,6 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   const activeChat = route.view === "chat" ? route.id : undefined
   const groupOf = (projectId: string | null) => byTurn(ordered(chats.filter((c) => c.projectId === projectId), statuses), statuses)
   const loose = groupOf(null)
-  const teamProject = projects.find((p) => p.id === activeProjectId)
-  const team = agents.filter((a) => a.projectId === (teamProject?.id ?? null))
 
   const reorderProjects = useMutation(mutations.reorderProjects)
   const reorderChats = useMutation(mutations.reorderChats)
@@ -94,6 +92,13 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
       {/* Desktop app: the window buttons sit here and the strip drags the window; the sidebar starts below. */}
       <div aria-hidden="true" className="title-strip electrobun-webkit-app-region-drag mb-4.5 h-7 shrink-0" />
 
+      {/* What waits for you comes first, and stays put while the trees scroll. */}
+      <div className="mb-4.5 flex shrink-0 flex-col gap-px pr-2.5">
+        <NavItem icon={<Inbox />} active={route.view === "inbox"} onPress={() => go({ view: "inbox" })} trailing={needsYou > 0 && <Count n={needsYou} />}>
+          {t("nav.needsYou")}
+        </NavItem>
+      </div>
+
       <div className="scroll-quiet flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto overscroll-contain pr-2.5 pb-2">
         <section className="flex flex-col gap-px">
           <NavLabel action={<NewProjectButton />}>{t("nav.projects")}</NavLabel>
@@ -126,36 +131,6 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
           </section>
         )}
 
-        {team.length > 0 && (
-          <section className="flex flex-col gap-px">
-            <NavLabel
-              action={
-                <IconButton label={t("nav.newAgent")} size="sm" onPress={() => go({ view: "new-agent", projectId: teamProject?.id ?? null })}>
-                  <Plus className="size-3.5" />
-                </IconButton>
-              }
-            >
-              {teamProject ? t("nav.agentsOf", { name: teamProject.name }) : t("nav.agents")}
-            </NavLabel>
-            {team.map((a) => (
-              <NavItem
-                key={a.id}
-                active={route.view === "agent" && route.id === a.id}
-                icon={<AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} />}
-                trailing={<span className="shrink-0 text-sm text-muted">{modelName(a.model)}</span>}
-                onPress={() => go({ view: "agent", id: a.id })}
-              >
-                {a.name}
-              </NavItem>
-            ))}
-          </section>
-        )}
-      </div>
-
-      <div className="flex shrink-0 flex-col gap-px pr-2.5 pb-2">
-        <NavItem icon={<Inbox />} active={route.view === "inbox"} onPress={() => go({ view: "inbox" })} trailing={needsYou > 0 && <Count n={needsYou} />}>
-          {t("nav.needsYou")}
-        </NavItem>
       </div>
 
       {/* Tools at the foot */}
@@ -242,11 +217,14 @@ function ProjectItem({
 }
 
 // A chat across the sidebar's width: the lead's avatar (or the model's logo), the title and when it last moved,
-// then what is happening now (blue when it waits for you) or, when nothing runs, the start of the last message.
+// then, when more than one agent is in it, every member as a small overlapping avatar (the one acting first),
+// and what is happening now (blue when it waits for you) or, when nothing runs, the start of the last message.
 function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatStatus | undefined; active: boolean; agents: ReadonlyArray<Agent> }) {
   const live = status && status.state !== "idle" ? status : undefined
   const lead = agents.find((a) => a.id === (live?.agentId ?? chat.agentIds[0]))
   const at = Math.max(chat.lastAt ?? chat.createdAt, status?.updatedAt ?? 0)
+  const team = chat.agentIds.flatMap((id) => agents.find((a) => a.id === id) ?? [])
+  const members = lead ? [lead, ...team.filter((a) => a.id !== lead.id)] : team
   return (
     <NavTreeItem
       id={chatKey(chat.id)}
@@ -259,14 +237,23 @@ function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatSt
       dragLabel={t("nav.reorder", { name: chatTitle(chat) })}
       onAction={() => go({ view: "chat", id: chat.id })}
       detail={
-        live ? (
-          <span className={cx("flex min-w-0 items-center gap-1.5", live.state === "waiting" ? "text-accent-text" : live.state === "failed" ? "text-danger" : "text-muted")}>
-            {live.state === "running" && <Spinner size={10} className="shrink-0 text-success" />}
-            <span className="truncate">{statusLabel(live, agents)}</span>
-          </span>
-        ) : (
-          <span className="truncate">{chat.preview ?? t("nav.noMessages")}</span>
-        )
+        <>
+          {members.length > 1 && (
+            <span role="img" aria-label={members.map((a) => a.name).join(", ")} className="flex shrink-0 items-center pl-1">
+              {members.map((a) => (
+                <AgentAvatar key={a.id} id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} className={cx("-ml-1 rounded-full ring-2", active ? "ring-surface" : "ring-frame")} />
+              ))}
+            </span>
+          )}
+          {live ? (
+            <span className={cx("flex min-w-0 items-center gap-1.5", live.state === "waiting" ? "text-accent-text" : live.state === "failed" ? "text-danger" : "text-muted")}>
+              {live.state === "running" && <Spinner size={10} className="shrink-0 text-success" />}
+              <span className="truncate">{statusLabel(live, agents)}</span>
+            </span>
+          ) : (
+            <span className="truncate">{chat.preview ?? t("nav.noMessages")}</span>
+          )}
+        </>
       }
     />
   )

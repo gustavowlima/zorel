@@ -63,3 +63,4 @@ updated: 2026-11-03
 - I18nProvider com locale() do Zero em main.tsx: as strings do React Aria (arrastar, recolher) seguem o idioma da interface, não o do navegador
 - cn conhece os tokens do tema (lib/utils.ts): ao criar um token de spacing/radius novo em styles.css, adicione-o ali também
 - 2026-11-03: redesign "Zero — main screen" (artifact do usuário) absorvido: sidebar 264px sem marca, seções em caixa normal, projeto = seta + estado (ponto/girando), chat = linha larga com avatar 32, título+idade, status ou prévia (Chat.preview/lastAt), chip elevado (shadow-chip), barra de ícones no pé; pílula de atividade sem fundo ao lado do nome; aprovação em uma linha; composer em uma barra com envio redondo; token bg-hover (#222)
+- sidebar: Needs you primeiro e fixo; sem seção de agentes (ficam nos ajustes do projeto); chat com 2+ agentes mostra a fileira de avatares de 16px antes da prévia
