@@ -109,8 +109,20 @@ function inbox() {
   }
 }
 
-// Text plus images as content blocks (base64, read when the turn is sent).
-async function userMessage(text: string, images: ReadonlyArray<TurnFile> = []): Promise<SDKUserMessage> {
+// Claude Code's own settings (as in T3 Code): the user's, the project's and the local ones load, so the
+// CLI's slash commands, skills and CLAUDE.md files are there. Two locks keep Zero in charge: only the policy
+// tier's permission rules count (none: every tool call goes through Zero's canUseTool and access level, a
+// file's allow list or a bypass default mode never applies) and no hook runs. MCP stays strict (the gateway).
+const SETTINGS = {
+  settingSources: ["user", "project", "local"] as ["user", "project", "local"],
+  permissionMode: "default" as const,
+  managedSettings: { allowManagedPermissionRulesOnly: true, disableAllHooks: true }
+}
+
+// Text plus images as content blocks (base64, read when the turn is sent). A CLI slash command goes last, as a
+// block of its own: Claude Code expands `/name …` only when it opens the message's last text block.
+async function userMessage(text: string, images: ReadonlyArray<TurnFile> = [], command?: string): Promise<SDKUserMessage> {
+  if (command) return { type: "user", message: { role: "user", content: [...(text ? [{ type: "text" as const, text }] : []), { type: "text" as const, text: command }] }, parent_tool_use_id: null }
   if (!images.length) return { type: "user", message: { role: "user", content: text }, parent_tool_use_id: null }
   const blocks = await Promise.all(
     images.map(async (f) => ({
@@ -158,7 +170,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
       tools: NATIVE_TOOLS,
       allowedTools: [`mcp__${GATEWAY}`], // the gateway applies policy and approvals
       canUseTool: permissions(o.access, o.cwd, o.approve),
-      settingSources: [], // ignore the user's hooks, plugins and permissions
+      ...SETTINGS,
       mcpServers: { [GATEWAY]: { type: "http", url: o.gatewayUrl } },
       strictMcpConfig: true,
       persistSession: false, // Zero's context is the source of truth; resuming uses the checkpoint
@@ -213,7 +225,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
           emit([...steps(m), ...parser.line(JSON.stringify(m))]) // SDK messages are the CLI's stream-json lines
           if (m.type === "result") finish()
         }
-        box.push(yield* Effect.promise(() => userMessage(input.prompt, input.images)))
+        box.push(yield* Effect.promise(() => userMessage(input.prompt, input.images, input.command)))
         yield* Effect.promise(() => finished)
         listener = undefined
         yield* Queue.end(out)
@@ -246,11 +258,13 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
 // marks it experimental: any failure just means "no reading now" (the passive rate_limit_event remains).
 const CLAUDE_WINDOWS = ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet"] as const
 // A Claude Code session that only answers control requests (usage, models); closed afterwards.
-async function withControl<A>(configDir: string | undefined, read: (q: Query) => Promise<A>): Promise<A> {
+async function withControl<A>(configDir: string | undefined, read: (q: Query) => Promise<A>, cwd?: string): Promise<A> {
   const bin = Bun.which("claude")
   if (!bin) throw new Error("claude não está instalado ou não está no PATH.")
   const box = inbox() // never gets a message
-  const q = query({ prompt: box, options: { pathToClaudeCodeExecutable: bin, tools: [], settingSources: [], persistSession: false, env: childEnv(configDir) } })
+  // With a folder: that project's settings load too (its commands); without, none (limits, models).
+  const settings = cwd ? { ...SETTINGS, cwd } : { settingSources: [] }
+  const q = query({ prompt: box, options: { pathToClaudeCodeExecutable: bin, tools: [], persistSession: false, env: childEnv(configDir), ...settings } })
   try {
     return await Promise.race([
       read(q),
@@ -284,3 +298,40 @@ export const readClaudeModels = (configDir: string | undefined): Promise<CliMode
   withControl(configDir, async (q) =>
     (await q.supportedModels()).filter((m) => m.value !== "default").map((m) => ({ id: m.value, name: m.displayName, note: m.description }))
   )
+
+// The slash commands Claude Code offers in a folder (built-in and the user's, the project's and plugins').
+// Commands Zero does itself are left out: it compacts, switches models and measures context on its own terms.
+export interface EngineCommand {
+  readonly name: string
+  readonly description: string
+  readonly argumentHint: string | null
+}
+const ZERO_HANDLES = new Set(["compact", "clear", "context", "cost", "model", "resume", "exit", "login", "logout", "config"])
+const COMMANDS_TTL_MS = 10 * 60_000
+const commandCache = new Map<string, { at: number; list: Promise<EngineCommand[]> }>()
+
+export function claudeCommands(configDir: string | undefined, cwd: string): Promise<EngineCommand[]> {
+  const key = `${configDir ?? "-"}|${cwd}`
+  const hit = commandCache.get(key)
+  if (hit && Date.now() - hit.at < COMMANDS_TTL_MS) return hit.list
+  const list = withControl(
+    configDir,
+    async (q) =>
+      (await q.supportedCommands())
+        .filter((c) => !ZERO_HANDLES.has(c.name))
+        .map((c) => ({ name: c.name, description: c.description ?? "", argumentHint: c.argumentHint || null })),
+    cwd
+  ).catch(() => {
+    commandCache.delete(key) // not cached: the next look tries again
+    return [] as EngineCommand[]
+  })
+  commandCache.set(key, { at: Date.now(), list })
+  return list
+}
+
+// The command a message runs, when it opens with one the CLI offers ("/review the auth module" → review).
+export const commandOf = (text: string, commands: ReadonlyArray<EngineCommand>) => {
+  const name = /^\/([\w:.-]+)(?=\s|$)/.exec(text.trimStart())?.[1]
+  return name && commands.some((c) => c.name === name) ? name : undefined
+}
+

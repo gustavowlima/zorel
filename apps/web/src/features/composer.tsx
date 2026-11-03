@@ -19,7 +19,8 @@ import { attachmentUrl } from "../client.ts"
 import { ArrowUp, cx, File, IconButton, pickFiles, Plus, Spinner, Square, Tooltip, X } from "@/ui"
 
 // Something "@", "$" or "/" can pick. `id` is what the text carries after the trigger (an agent's handle, a
-// skill's handle); commands run `run` instead of leaving a chip.
+// skill's handle); commands run `run` instead of leaving a chip, and a command without `run` (the engine's own)
+// is written out as "/id " for the engine to run when the message is sent.
 export interface ComposerOption {
   readonly id: string
   readonly label: string
@@ -256,9 +257,13 @@ function suggestion(
     allowSpaces: false,
     items: ({ query }) => match(sourceOf(), query),
     command: ({ editor, range, props }) => {
-      if (ACTIONS.has(char)) {
+      if (ACTIONS.has(char) && props.run) {
         editor.chain().focus().deleteRange(range).run()
-        props.run?.()
+        props.run()
+        return
+      }
+      if (char === "/") {
+        editor.chain().focus().insertContentAt(range, `/${props.id} `).run()
         return
       }
       editor
@@ -316,8 +321,8 @@ function OptionList({ menu, onHover }: { menu: Menu; onHover: (i: number) => voi
           className={cx("flex h-control cursor-default items-center gap-2.5 rounded-control px-2.5", i === menu.selected ? "bg-hover text-fg" : "text-secondary")}
         >
           {o.icon && <span className="flex size-5 shrink-0 items-center justify-center text-muted">{o.icon}</span>}
-          <span className="truncate">{o.label}</span>
-          <span className="truncate text-sm text-muted">{o.hint ?? `${menu.trigger}${o.id}`}</span>
+          <span className="max-w-1/2 shrink-0 truncate">{o.label}</span>
+          <span className="min-w-0 truncate text-sm text-muted">{o.hint ?? `${menu.trigger}${o.id}`}</span>
         </div>
       ))}
     </div>

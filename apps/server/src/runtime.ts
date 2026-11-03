@@ -12,6 +12,7 @@ import { type EngineFailure, Engines, isImage, type NativeStep, splitModel, tran
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit } from "./audit.ts"
+import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { exposedName, type GatewayHandle, needsApproval, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
 
@@ -154,13 +155,21 @@ export const makeRuntime = Effect.gen(function* () {
       const current = live
       current.used = Date.now()
       const fresh = turn.messages.filter((m) => (m.at ?? 0) > current.seen)
-      const prompt = [turn.dynamic && `<context>\n${turn.dynamic}\n</context>`, fresh.length ? transcript(fresh) : "Continue."].filter(Boolean).join("\n\n")
+      // A new message that opens with one of Claude Code's slash commands goes on its own, last, for the CLI to
+      // expand; the context and the earlier new messages go before it.
+      const last = fresh.at(-1)
+      const command =
+        provider === "claude-cli" && last?.role === "user" && last.text.trimStart().startsWith("/") && commandOf(last.text, yield* Effect.promise(() => claudeCommands(account?.home ?? undefined, turn.cwd)))
+          ? last.text.trim()
+          : undefined
+      const told = command ? fresh.slice(0, -1) : fresh
+      const prompt = [turn.dynamic && `<context>\n${turn.dynamic}\n</context>`, told.length ? transcript(told) : command ? "" : "Continue."].filter(Boolean).join("\n\n")
       onSeen((at) => {
         current.seen = at
       })
       const steer = current.session.steer
       const images = fresh.flatMap((m) => (m.files ?? []).filter(isImage))
-      return current.session.turn({ model: row.model, prompt, tools: turn.tools, effort, images }).pipe(
+      return current.session.turn({ model: row.model, prompt, tools: turn.tools, effort, images, command }).pipe(
         Stream.onStart(Effect.sync(() => steer && steering.set(row.chatId, steer))),
         Stream.ensuring(Effect.sync(() => steering.delete(row.chatId)))
       )

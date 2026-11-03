@@ -11,6 +11,7 @@ export interface SessionTurnInput {
   readonly tools?: TurnTools | undefined
   readonly effort?: Effort | null | undefined // null: the model's default; applied live when it changes
   readonly images?: ReadonlyArray<TurnFile> | undefined // images attached to the new messages
+  readonly command?: string | undefined // the new message, when it runs one of the CLI's slash commands
 }
 
 // A native tool call that needs the person's OK (ARCHITECTURE §9.2). The runtime shows the approval card

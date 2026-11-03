@@ -10,7 +10,7 @@ import { formatCompact, formatDuration, t } from "@zero/i18n"
 import { type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { accountsAtom, agentsAtom, attachmentUrl, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
+import { accountsAtom, agentsAtom, attachmentUrl, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
 import { agentName, chatTitle, formatCost, handleOf, modelLabel, switchText } from "../labels.ts"
 import { go } from "../state.ts"
 import { Composer, type ComposerSources } from "./composer.tsx"
@@ -22,7 +22,7 @@ import { ModelPicker } from "./model-picker.tsx"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import {
   Button, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, Input, Menu, MenuItem,
-  MenuSeparator, MessageCircle, Minimize2, MoreHorizontal, PanelBottom, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, Switch, Trash2
+  MenuSeparator, MessageCircle, Minimize2, MoreHorizontal, PanelBottom, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Trash2
 } from "@/ui"
 
 export function ChatView({ chat }: { chat: Chat }) {
@@ -63,6 +63,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   const compact = () => void consolidate({ params: { id: chat.id }, reactivityKeys: ["chats", "memories", "context"] }).catch(() => undefined)
   const newChat = () => go(chat.projectId ? { view: "home", projectId: chat.projectId } : { view: "home" })
   const memories = useList(memoriesAtom)
+  const engineCommands = AsyncResult.getOrElse(useAtomValue(commandsAtom(chat.id)), () => [])
   // What "@", "$" and "/" offer in this chat: its agents, the skills it can use, Zero's commands.
   const scopes = new Set(["user", ...(chat.projectId ? [`project:${chat.projectId}`] : []), ...chat.agentIds.map((id) => `agent:${id}`)])
   // "#": every agent this chat can use; the one picked answers from now on (joins the chat if it wasn't in it).
@@ -87,7 +88,9 @@ export function ChatView({ chat }: { chat: Chat }) {
       { id: "compact", label: t("composer.command.compact"), hint: t("composer.command.compactHint"), icon: <Minimize2 className="size-4" />, run: compact },
       { id: "new", label: t("composer.command.newChat"), hint: t("composer.command.newChatHint"), icon: <SquarePen className="size-4" />, run: newChat },
       { id: "changes", label: t("composer.command.changes"), hint: t("composer.command.changesHint"), icon: <PanelRight className="size-4" />, run: () => setPanel("changes") },
-      ...(project?.path ? [{ id: "terminal", label: t("composer.command.terminal"), hint: t("composer.command.terminalHint"), icon: <PanelBottom className="size-4" />, run: () => setTerminal(true) }] : [])
+      ...(project?.path ? [{ id: "terminal", label: t("composer.command.terminal"), hint: t("composer.command.terminalHint"), icon: <PanelBottom className="size-4" />, run: () => setTerminal(true) }] : []),
+      // Then Claude Code's own (built-in, the user's, the project's): written into the message, run by the CLI.
+      ...engineCommands.map((c) => ({ id: c.name, label: `/${c.name}${c.argumentHint ? ` ${c.argumentHint}` : ""}`, hint: c.description, icon: <SquareTerminal className="size-4" /> }))
     ]
   })
 

@@ -13,7 +13,8 @@ import { MAX_AFTER } from "./context.ts"
 
 const CHARS_PER_TOKEN = 4 // rough, provider-neutral: the meter says it is an estimate
 import { Store, type Repository } from "./db.ts"
-import { Engines, listModels } from "./engines.ts"
+import { Engines, listModels, splitModel } from "./engines.ts"
+import { claudeCommands } from "./engines/claude-sdk.ts"
 import { API_KEYS, mcpEnvName, Secrets } from "./secrets.ts"
 import { Accounts } from "./accounts.ts"
 import { Actor } from "./access.ts"
@@ -150,6 +151,17 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
       )
       .handle("reorder", ({ payload }) => store.reorderChats(payload.projectId, payload.ids))
       .handle("messages", ({ params }) => store.messages(params.id))
+      // The slash commands of the chat's engine, read in the folder the agents work in (Claude Code only).
+      .handle("commands", ({ params }) =>
+        Effect.gen(function* () {
+          const chat = yield* store.chat(params.id)
+          if (!chat) return yield* notFound()
+          if (splitModel(chat.model).provider !== "claude-cli") return []
+          const project = chat.projectId ? yield* store.project(chat.projectId) : undefined
+          const account = yield* store.account(chat.accountId ?? "claude-default")
+          return yield* Effect.promise(() => claudeCommands(account?.home ?? undefined, workspace.cwdOf(chat.id, project)))
+        })
+      )
       // The next turn as the lead would get it, measured part by part.
       .handle("context", ({ params }) =>
         Effect.gen(function* () {
