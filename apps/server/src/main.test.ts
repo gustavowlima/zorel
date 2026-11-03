@@ -446,6 +446,14 @@ test("armazenamento: mede a pasta de dados; limpar só remove pastas de chats e 
   expect((await api((c) => c.settings.audit({ query: {} }))).entries.some((e) => e.action === "storage.cleaned" && e.target.id === "orphans")).toBe(true)
 })
 
+test("terminal: abrir arquivo só dentro da pasta do chat; sem shells, a lista vem vazia", async () => {
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
+  expect(await api((c) => c.chats.terminals({ params: { id: chat.id } }))).toEqual([])
+  const open = (path: string) => api((c) => Effect.exit(c.chats.openFile({ params: { id: chat.id }, payload: { path } })))
+  expect(Exit.isFailure(await open("../../../etc/hosts"))).toBe(true) // outside the chat's folder
+  expect(Exit.isFailure(await open("nao-existe.txt"))).toBe(true)
+})
+
 test("contexto: estima o próximo turno parte por parte; mensagens contam", async () => {
   const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
   const empty = await api((c) => c.chats.context({ params: { id: chat.id } }))

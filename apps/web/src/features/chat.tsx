@@ -49,6 +49,8 @@ export function ChatView({ chat }: { chat: Chat }) {
   }
   // A queued message brought back to the box remounts it with that text.
   const [draft, setDraft] = useState<{ key: number; text: string }>({ key: 0, text: "" })
+  // Text others add to the box (a terminal selection), after what is typed.
+  const insertRef = useRef<((text: string) => void) | undefined>(undefined)
   const second = team[1]
   const projects = useList(projectsAtom)
   const project = projects.find((p) => p.id === chat.projectId)
@@ -129,6 +131,7 @@ export function ChatView({ chat }: { chat: Chat }) {
               key={`${chat.id}:${draft.key}`}
               autoFocus
               initialText={draft.text}
+              insertRef={insertRef}
               sources={sourcesWith(files)}
               busy={busy}
               onStop={() => void interrupt({ payload: { chatId: chat.id } })}
@@ -148,7 +151,7 @@ export function ChatView({ chat }: { chat: Chat }) {
           )}
         </WithFiles>
       </div>
-      {terminal && <TerminalPanel chatId={chat.id} onClose={() => setTerminal(false)} />}
+      {terminal && <TerminalPanel chatId={chat.id} onClose={() => setTerminal(false)} onAddToChat={(text) => insertRef.current?.(`\`\`\`\n${text.trimEnd()}\n\`\`\``)} />}
       </div>
       {panel && (
         <WorkspacePanel chat={chat} project={project} messages={state.messages} agents={agents} tab={panel} onTab={setPanel} focus={focus} onFocus={setFocus} onClose={() => setPanel(undefined)} />

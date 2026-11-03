@@ -68,7 +68,8 @@ export function Composer({
   tools,
   sources,
   initialText = "",
-  autoFocus
+  autoFocus,
+  insertRef
 }: {
   onSubmit: (text: string, attachmentIds: ReadonlyArray<string>) => Promise<unknown>
   upload: (file: File) => Promise<Attachment>
@@ -79,6 +80,7 @@ export function Composer({
   sources?: ComposerSources
   initialText?: string // a queued message brought back to edit
   autoFocus?: boolean
+  insertRef?: { current: ((text: string) => void) | undefined } // others add text at the end (terminal output)
 }) {
   const [files, setFiles] = useState<ReadonlyArray<Attachment>>([])
   const [uploading, setUploading] = useState(0)
@@ -145,6 +147,17 @@ export function Composer({
     },
     onUpdate: ({ editor: e }) => setEmpty(e.isEmpty)
   })
+  // Text from elsewhere (a terminal selection) goes after what is already typed, on new lines, and keeps focus.
+  useEffect(() => {
+    if (!insertRef || !editor) return
+    insertRef.current = (text: string) => {
+      const blocks = textToDoc(text).content
+      editor.chain().focus("end").insertContent(editor.isEmpty ? blocks : [{ type: "paragraph" }, ...blocks]).run()
+    }
+    return () => {
+      insertRef.current = undefined
+    }
+  }, [editor, insertRef])
 
   const canSend = (!empty || files.length > 0) && uploading === 0
   const submit = () => {

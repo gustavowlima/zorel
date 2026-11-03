@@ -25,7 +25,7 @@ import { Tools } from "./tools.ts"
 import { billingOf, Pricing } from "./pricing.ts"
 import { clean, measure } from "./storage.ts"
 import { Workspace } from "./workspace.ts"
-import { TerminalSocket } from "./terminals.ts"
+import { closeTerminal, TerminalSocket, terminalsOf } from "./terminals.ts"
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
 const found = <A, E, R>(e: Effect.Effect<A | undefined, E, R>) => Effect.flatMap(e, (a) => (a === undefined ? notFound() : Effect.succeed(a)))
@@ -148,7 +148,32 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         })
       )
       .handle("remove", ({ params }) =>
-        store.removeChat(params.id).pipe(Effect.tap(() => Effect.sync(() => rmSync(join(dataDir, "attachments", params.id), { recursive: true, force: true }))))
+        store.removeChat(params.id).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              rmSync(join(dataDir, "attachments", params.id), { recursive: true, force: true })
+              for (const s of terminalsOf(params.id)) closeTerminal(s.id) // its shells end with it
+            })
+          )
+        )
+      )
+      .handle("terminals", ({ params }) => Effect.flatMap(store.chat(params.id), (chat) => (chat ? Effect.sync(() => terminalsOf(chat.id)) : notFound())))
+      .handle("closeTerminal", ({ params }) =>
+        Effect.sync(() => {
+          if (terminalsOf(params.id).some((s) => s.id === params.terminal)) closeTerminal(params.terminal)
+        })
+      )
+      // A path printed in the terminal, opened in the computer's default app; only files inside the chat's folder.
+      .handle("openFile", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const chat = yield* store.chat(params.id)
+          if (!chat) return yield* notFound()
+          const project = chat.projectId ? yield* store.project(chat.projectId) : undefined
+          const root = workspace.cwdOf(chat.id, project)
+          const file = resolve(root, payload.path)
+          if (!(file === root || file.startsWith(`${root}/`)) || !existsSync(file)) return yield* new HttpApiError.BadRequest()
+          yield* Effect.sync(() => Bun.spawn(["open", file], { stdout: "ignore", stderr: "ignore" }))
+        })
       )
       .handle("reorder", ({ payload }) => store.reorderChats(payload.projectId, payload.ids))
       .handle("messages", ({ params }) => store.messages(params.id))

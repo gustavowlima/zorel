@@ -2,18 +2,17 @@
 // with its diff and undo; the project's files marked with what this chat changed; the commands the agents
 // ran, with their output. Data comes from Zero's checkpoints, the same for every harness.
 import type { Agent, Chat, FileChange, Message, Project, WorkspaceFile } from "@zero/contracts"
-import type { WorkStep } from "@zero/contracts/events"
 import { useAtomValue } from "@effect/atom-react"
-import { formatAge, formatDuration, formatTime, t } from "@zero/i18n"
+import { formatTime, t } from "@zero/i18n"
 import { AsyncResult } from "effect/reactivity"
-import { lazy, type PointerEvent as ReactPointerEvent, Suspense, useMemo, useRef, useState } from "react"
-import { diffAtom, filesAtom, mutations, runsAtom, useMutation } from "../client.ts"
+import { lazy, type PointerEvent as ReactPointerEvent, Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { diffAtom, filesAtom, mutations, terminalsAtom, useMutation } from "../client.ts"
 import { agentName } from "../labels.ts"
 // The diff viewer and its highlighter load with the panel, not with the app.
 const DiffView = lazy(() => import("./diff-view.tsx"))
 import {
-  Button, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleX, ConfirmButton, cx, EmptyState, File, Folder, FolderOpen, IconButton, Spinner, Tab, TabList,
-  Plus, TabPanel, Tabs, Tooltip, X
+  Button, ChevronDown, ChevronRight, ConfirmButton, cx, EmptyState, File, Folder, FolderOpen, IconButton, Spinner, Tab, TabList,
+  Columns2, ConfirmDialog, Plus, Rows2, TabPanel, Tabs, Tooltip, X
 } from "@/ui"
 import { Shell } from "./shell.tsx"
 
@@ -284,44 +283,79 @@ function TreeNode({ node, depth, onOpen }: { node: Node; depth: number; onOpen: 
 
 // ---------- terminal (read-only: the commands the agents ran) ----------
 
-// The Terminal panel: a first tab with the commands the agents ran (read only), then shell tabs (Shell, a real
-// login shell in the chat's folder); + opens one, each closes on its own. The panel's height follows a drag
-// of its top edge (or the arrow keys on it) and is remembered on this computer.
+// The Terminal panel: shell tabs (the commands the agents ran show in the chat, in each reply's steps). A tab holds
+// one to four panes (split side by side or stacked), each a shell that lives on the server: closing the panel or
+// reloading only detaches, and the tabs come back from the server's list (the layout is remembered per chat).
+// Closing a pane or a tab ends its shells, asking first when something still runs in one. The panel's height
+// follows a drag of its top edge (or the arrow keys on it) and is remembered on this computer.
 const HEIGHT_KEY = "zero.terminal.height"
+const LAYOUT_KEY = (chatId: string) => `zero.terminal.layout.${chatId}`
 const MIN_HEIGHT = 160
-const readHeight = () => {
-  try {
-    return Number(localStorage.getItem(HEIGHT_KEY)) || 288
-  } catch {
-    return 288
+const MAX_PANES = 4
+type Pane = { readonly key: string; readonly session: string | undefined; readonly ended: boolean }
+type ShellTab = { readonly key: string; readonly dir: "row" | "col"; readonly panes: ReadonlyArray<Pane> }
+const store = {
+  get: (k: string) => {
+    try {
+      return localStorage.getItem(k)
+    } catch {
+      return null
+    }
+  },
+  set: (k: string, v: string) => {
+    try {
+      localStorage.setItem(k, v)
+    } catch {
+      // storage blocked: resets on reload
+    }
   }
 }
+let paneCount = 0
+const newPane = (session?: string): Pane => ({ key: `pane-${++paneCount}`, session, ended: false })
 
-export function TerminalPanel({ chatId, onClose }: { chatId: string; onClose: () => void }) {
-  const runs = AsyncResult.getOrElse(useAtomValue(runsAtom(chatId)), () => undefined)
-  const [height, setHeight] = useState(readHeight)
-  const [shells, setShells] = useState<ReadonlyArray<{ id: string; n: number; ended: boolean }>>([])
-  const [tab, setTab] = useState("agent")
-  const count = useRef(0)
+export function TerminalPanel({ chatId, onClose, onAddToChat }: { chatId: string; onClose: () => void; onAddToChat: (text: string) => void }) {
+  const sessionsResult = useAtomValue(terminalsAtom(chatId))
+  const closeTerminal = useMutation(mutations.closeTerminal)
+  const openFile = useMutation(mutations.openFile)
+  const [height, setHeight] = useState(() => Number(store.get(HEIGHT_KEY)) || 288)
+  const [tabs, setTabs] = useState<ReadonlyArray<ShellTab>>([])
+  const [tab, setTab] = useState("")
+  const [confirm, setConfirm] = useState<{ keys: ReadonlyArray<string>; tabKey?: string }>()
+  const restored = useRef(false)
+
+  // Back from the server: the shells this chat still has, in the remembered layout (others get a tab each).
+  useEffect(() => {
+    if (restored.current || !AsyncResult.isSuccess(sessionsResult)) return
+    restored.current = true
+    const alive = new Set(sessionsResult.value.map((x) => x.id))
+    const saved = JSON.parse(store.get(LAYOUT_KEY(chatId)) ?? "[]") as Array<{ dir: "row" | "col"; sessions: string[] }>
+    const placed = new Set<string>()
+    const next: ShellTab[] = []
+    for (const t of saved) {
+      const ids = t.sessions.filter((id) => alive.has(id) && !placed.has(id))
+      for (const id of ids) placed.add(id)
+      const panes = ids.map((id) => newPane(id))
+      if (panes.length) next.push({ key: `tab-${panes[0]!.key}`, dir: t.dir, panes })
+    }
+    for (const x of sessionsResult.value) if (!placed.has(x.id)) next.push({ key: `tab-${x.id}`, dir: "row", panes: [newPane(x.id)] })
+    // Opening the panel opens a shell: the chat's own when it has some, a new one otherwise.
+    if (!next.length) {
+      const pane = newPane()
+      next.push({ key: `tab-${pane.key}`, dir: "row", panes: [pane] })
+    }
+    setTabs(next)
+    setTab(next[0]!.key)
+  }, [sessionsResult, chatId])
+  // Remember the layout (which sessions share a tab, and how).
+  useEffect(() => {
+    if (restored.current) store.set(LAYOUT_KEY(chatId), JSON.stringify(tabs.map((t) => ({ dir: t.dir, sessions: t.panes.flatMap((p) => (p.session ? [p.session] : [])) }))))
+  }, [tabs, chatId])
+
   const max = () => Math.round(window.innerHeight * 0.75)
   const resize = (next: number) => {
     const h = Math.min(max(), Math.max(MIN_HEIGHT, Math.round(next)))
     setHeight(h)
-    try {
-      localStorage.setItem(HEIGHT_KEY, String(h))
-    } catch {
-      // storage blocked: the height resets on reload
-    }
-  }
-  const add = () => {
-    count.current += 1
-    const id = `shell-${count.current}`
-    setShells((s) => [...s, { id, n: count.current, ended: false }])
-    setTab(id)
-  }
-  const close = (id: string) => {
-    setShells((s) => s.filter((x) => x.id !== id))
-    if (tab === id) setTab("agent")
+    store.set(HEIGHT_KEY, String(h))
   }
   const drag = (e: ReactPointerEvent<HTMLDivElement>) => {
     const startY = e.clientY
@@ -335,6 +369,35 @@ export function TerminalPanel({ chatId, onClose }: { chatId: string; onClose: ()
     window.addEventListener("pointermove", move)
     window.addEventListener("pointerup", up)
   }
+
+  const add = () => {
+    const pane = newPane()
+    const key = `tab-${pane.key}`
+    setTabs((all) => [...all, { key, dir: "row", panes: [pane] }])
+    setTab(key)
+  }
+  const split = (dir: "row" | "col") =>
+    setTabs((all) => all.map((t) => (t.key === tab && t.panes.length < MAX_PANES ? { ...t, dir, panes: [...t.panes, newPane()] } : t)))
+  const patchPane = (paneKey: string, patch: Partial<Pane>) => setTabs((all) => all.map((t) => ({ ...t, panes: t.panes.map((p) => (p.key === paneKey ? { ...p, ...patch } : p)) })))
+  // End these panes' shells and drop them (a tab goes when its last pane does).
+  const drop = (keys: ReadonlyArray<string>) => {
+    const gone = tabs.flatMap((t) => t.panes).filter((p) => keys.includes(p.key))
+    for (const p of gone) if (p.session) void closeTerminal({ params: { id: chatId, terminal: p.session }, reactivityKeys: ["terminals"] })
+    const next = tabs.map((t) => ({ ...t, panes: t.panes.filter((p) => !keys.includes(p.key)) })).filter((t) => t.panes.length)
+    setTabs(next)
+    if (!next.length) onClose() // the last shell closed: the panel goes too
+    else if (!next.some((t) => t.key === tab)) setTab(next.at(-1)!.key)
+  }
+  // Ask first when a shell among them is running something.
+  const close = (keys: ReadonlyArray<string>) => {
+    const ids = tabs.flatMap((t) => t.panes).filter((p) => keys.includes(p.key) && p.session && !p.ended).map((p) => p.session)
+    if (!ids.length) return drop(keys)
+    void fetch(`/api/chats/${chatId}/terminals`)
+      .then((r) => r.json() as Promise<ReadonlyArray<{ id: string; busy: boolean }>>)
+      .then((list) => (list.some((x) => ids.includes(x.id) && x.busy) ? setConfirm({ keys }) : drop(keys)))
+      .catch(() => drop(keys))
+  }
+  const current = tabs.find((t) => t.key === tab)
 
   return (
     <section aria-label={t("workspace.terminal")} className="relative flex shrink-0 flex-col border-t border-subtle" style={{ height }}>
@@ -361,19 +424,35 @@ export function TerminalPanel({ chatId, onClose }: { chatId: string; onClose: ()
         {/* Delete or Backspace on a focused shell tab closes it (the × in the tab is for the pointer). */}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: listens to keys bubbling from the focused tab; no interaction of its own */}
         <div
-          className="flex items-center gap-2 px-3 py-1.5"
+          className="flex items-center gap-1 px-3 py-1.5"
           onKeyDown={(e) => {
-            if ((e.key === "Delete" || e.key === "Backspace") && tab !== "agent" && (e.target as HTMLElement).getAttribute("role") === "tab") close(tab)
+            if ((e.key === "Delete" || e.key === "Backspace") && current && (e.target as HTMLElement).getAttribute("role") === "tab") close(current.panes.map((p) => p.key))
           }}
         >
           <TabList label={t("workspace.terminal")} className="min-w-0 flex-1 flex-nowrap overflow-x-auto">
-            <Tab id="agent">{t("workspace.agentCommands")}</Tab>
-            {shells.map((s) => (
-              <Tab key={s.id} id={s.id} onClose={() => close(s.id)} closeLabel={t("workspace.closeShellNamed", { n: s.n })}>
-                <span className={cx(s.ended && "text-dim")}>{t("workspace.shell", { n: s.n })}</span>
+            {tabs.map((s, i) => (
+              <Tab key={s.key} id={s.key} onClose={() => close(s.panes.map((p) => p.key))} closeLabel={t("workspace.closeShellNamed", { n: i + 1 })}>
+                <span className={cx(s.panes.every((p) => p.ended) && "text-dim")}>
+                  {t("workspace.shell", { n: i + 1 })}
+                  {s.panes.length > 1 && <span className="text-dim">{` · ${s.panes.length}`}</span>}
+                </span>
               </Tab>
             ))}
           </TabList>
+          {current && current.panes.length < MAX_PANES && (
+            <>
+              <Tooltip content={t("workspace.splitRight")}>
+                <IconButton label={t("workspace.splitRight")} size="sm" onPress={() => split("row")}>
+                  <Columns2 className="size-3.5" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip content={t("workspace.splitDown")}>
+                <IconButton label={t("workspace.splitDown")} size="sm" onPress={() => split("col")}>
+                  <Rows2 className="size-3.5" />
+                </IconButton>
+              </Tooltip>
+            </>
+          )}
           <Tooltip content={t("workspace.newShell")}>
             <IconButton label={t("workspace.newShell")} size="sm" onPress={add}>
               <Plus className="size-3.5" />
@@ -383,41 +462,41 @@ export function TerminalPanel({ chatId, onClose }: { chatId: string; onClose: ()
             <X className="size-3.5" />
           </IconButton>
         </div>
-        <TabPanel id="agent" className="min-h-0 flex-1 overflow-y-auto bg-code px-4 py-2 font-mono text-sm">
-          {runs?.length === 0 && <p className="py-4 font-sans text-muted">{t("workspace.noRuns")}</p>}
-          {runs?.map((r) => (
-            <RunEntry key={r.id} run={r} />
-          ))}
-        </TabPanel>
-        {shells.map((s) => (
-          <TabPanel key={s.id} id={s.id} keepMounted className="flex min-h-0 flex-1 flex-col">
-            <Shell chatId={chatId} visible={tab === s.id} onExit={() => setShells((all) => all.map((x) => (x.id === s.id ? { ...x, ended: true } : x)))} />
+        {tabs.map((s) => (
+          <TabPanel key={s.key} id={s.key} keepMounted className={cx("flex min-h-0 flex-1 gap-px bg-subtle", s.dir === "row" ? "flex-row" : "flex-col")}>
+            {s.panes.map((p, i) => (
+              <div key={p.key} className="group/pane relative flex min-h-0 min-w-0 flex-1">
+                <Shell
+                  chatId={chatId}
+                  sessionId={p.session}
+                  visible={tab === s.key}
+                  onSession={(id) => patchPane(p.key, { session: id })}
+                  onEnded={() => patchPane(p.key, { ended: true })}
+                  onAddToChat={onAddToChat}
+                  onOpenFile={(path) => void openFile({ params: { id: chatId }, payload: { path } }).catch(() => undefined)}
+                />
+                {s.panes.length > 1 && (
+                  <span className="absolute right-1.5 bottom-1.5 opacity-0 transition-opacity group-hover/pane:opacity-100 focus-within:opacity-100">
+                    <IconButton label={t("workspace.closePane", { n: i + 1 })} size="sm" onPress={() => close([p.key])}>
+                      <X className="size-3.5" />
+                    </IconButton>
+                  </span>
+                )}
+              </div>
+            ))}
           </TabPanel>
         ))}
       </Tabs>
+      <ConfirmDialog
+        isOpen={!!confirm}
+        onOpenChange={(open) => !open && setConfirm(undefined)}
+        title={t("workspace.closeBusyTitle")}
+        description={t("workspace.closeBusyBody")}
+        confirmLabel={t("workspace.closeBusyAction")}
+        onConfirm={() => confirm && drop(confirm.keys)}
+      />
     </section>
   )
 }
 
-function RunEntry({ run }: { run: WorkStep }) {
-  return (
-    <div className="flex flex-col gap-1 border-b border-subtle py-2 last:border-0">
-      <div className="flex items-center gap-2">
-        <RunIcon status={run.status} />
-        <span className="text-muted">$</span>
-        <span className="min-w-0 flex-1 break-all text-fg">{run.title}</span>
-        <span className="shrink-0 font-sans text-xs text-dim">{run.durationMs !== null ? formatDuration(run.durationMs) : formatAge(run.startedAt)}</span>
-      </div>
-      {run.output && <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-secondary">{run.output}</pre>}
-    </div>
-  )
-}
-
-function RunIcon({ status }: { status: WorkStep["status"] }) {
-  if (status === "running") return <Spinner size={12} className="text-success" />
-  if (status === "ok") return <CircleCheck className="size-3.5 text-success" />
-  if (status === "refused") return <CircleAlert className="size-3.5 text-warning" />
-  if (status === "waiting") return <CircleAlert className="size-3.5 text-accent-text" />
-  return <CircleX className="size-3.5 text-danger" />
-}
 
