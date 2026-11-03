@@ -26,7 +26,7 @@ export class Live extends AtomRpc.Service<Live>()("Live", {
 
 // ---------- CRUD queries (one key per resource) ----------
 
-export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage"
+export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "context"
 
 export const projectsAtom = Zero.query("projects", "list", { reactivityKeys: ["projects"] })
 export const agentsAtom = Zero.query("agents", "list", { reactivityKeys: ["agents"] })
@@ -37,6 +37,8 @@ export const accountsAtom = Zero.query("accounts", "list", { reactivityKeys: ["a
 export const keysAtom = Zero.query("settings", "keys", { reactivityKeys: ["keys"] })
 export const auditAtom = Zero.query("settings", "audit", { reactivityKeys: ["audit"] })
 export const storageAtom = Zero.query("settings", "storage", { reactivityKeys: ["storage"] })
+// How full the next turn of a chat is (the composer's context meter); read again when the meter opens.
+export const contextAtom = (id: string) => Zero.query("chats", "context", { params: { id }, reactivityKeys: ["context"] })
 export const modelsAtom = Zero.query("settings", "models", { reactivityKeys: ["models"] })
 export const usageAtom = Zero.query("settings", "usage", { reactivityKeys: ["usage"] })
 export const preferencesAtom = Zero.query("settings", "preferences", { reactivityKeys: ["preferences"] })

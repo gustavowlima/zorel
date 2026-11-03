@@ -24,3 +24,4 @@
 2026-11-03 | consumo (custo, janelas de limite) e nomes reais dos modelos das CLIs | fase 2c
 2026-11-03 | position em projects e chats + endpoints de reordenação | drag and drop na sidebar
 2026-11-03 | audit log com evlog gravando em SQLite | pedido do usuário
+2026-11-03 | endpoint de contexto, janela no catálogo, $skill no turno | composer novo

@@ -8,7 +8,10 @@ import { HttpApiBuilder, HttpApiError } from "effect/http-api"
 import { existsSync, mkdirSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, normalize, resolve } from "node:path"
-import { consolidate, DataDir } from "./chat.ts"
+import { consolidate, DataDir, prepare } from "./chat.ts"
+import { MAX_AFTER } from "./context.ts"
+
+const CHARS_PER_TOKEN = 4 // rough, provider-neutral: the meter says it is an estimate
 import { Store, type Repository } from "./db.ts"
 import { Engines, listModels } from "./engines.ts"
 import { API_KEYS, mcpEnvName, Secrets } from "./secrets.ts"
@@ -115,6 +118,7 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
     const dataDir = yield* DataDir
     const workspace = yield* Workspace
     const audit = yield* Audit
+    const pricing = yield* Pricing
     const services = yield* Effect.context<Store | Engines | DataDir>()
     // A turn with workspace checkpoints, its project and whether its changes were undone.
     const turnWithTrees = (id: string) =>
@@ -146,6 +150,34 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
       )
       .handle("reorder", ({ payload }) => store.reorderChats(payload.projectId, payload.ids))
       .handle("messages", ({ params }) => store.messages(params.id))
+      // The next turn as the lead would get it, measured part by part.
+      .handle("context", ({ params }) =>
+        Effect.gen(function* () {
+          const chat = yield* store.chat(params.id)
+          if (!chat) return yield* notFound()
+          const lead = chat.agentIds[0] ? yield* store.agent(chat.agentIds[0]) : undefined
+          const turn = yield* prepare(store, chat, lead, chat.model, dataDir, undefined)
+          const since = yield* store.messagesAfter(chat.id, chat.summaryUntil)
+          const tokens = (chars: number) => Math.ceil(chars / CHARS_PER_TOKEN)
+          const sizes = turn.parts ?? { instructions: turn.system.length, memories: 0, skills: 0, summary: 0 }
+          const parts = [
+            { id: "instructions" as const, tokens: tokens(sizes.instructions) },
+            { id: "memories" as const, tokens: tokens(sizes.memories) },
+            { id: "skills" as const, tokens: tokens(sizes.skills) },
+            { id: "summary" as const, tokens: tokens(sizes.summary) },
+            { id: "messages" as const, tokens: tokens(turn.messages.reduce((n, m) => n + m.text.length, 0)) }
+          ]
+          return {
+            model: chat.model,
+            windowTokens: pricing.contextWindow(chat.model),
+            usedTokens: parts.reduce((n, x) => n + x.tokens, 0),
+            parts,
+            messagesSinceSummary: since.length,
+            compactAfter: MAX_AFTER,
+            lastInputTokens: since.findLast((m) => m.role === "assistant" && m.inputTokens > 0)?.inputTokens ?? null
+          }
+        })
+      )
       .handle("consolidate", ({ params }) =>
         consolidate(params.id, true).pipe(
           Effect.provide(services),

@@ -1,5 +1,6 @@
 // Estimated cost (ARCHITECTURE §10.2): token prices from the models.dev catalog (the one OpenCode uses),
 // kept on disk and refreshed once a day; offline, the last copy is used and unknown models cost null.
+// The same catalog gives each model's context window (the composer's context meter).
 // API keys pay per token. Subscriptions don't: for them the same number is shown as the "API equivalent".
 import { Context, Effect, Layer } from "effect"
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs"
@@ -17,7 +18,12 @@ export interface Price {
   readonly output: number
   readonly cacheRead: number
 }
-type Model = { readonly cost?: { input?: number; output?: number; cache_read?: number }; readonly family?: string; readonly release_date?: string }
+type Model = {
+  readonly cost?: { input?: number; output?: number; cache_read?: number }
+  readonly limit?: { context?: number }
+  readonly family?: string
+  readonly release_date?: string
+}
 export type Catalog = Partial<Record<(typeof PROVIDERS)[number], Record<string, Model>>>
 
 const priceOf = (m: Model | undefined): Price | undefined =>
@@ -29,14 +35,23 @@ const newestOf = (models: Record<string, Model> | undefined, family: string) =>
     .filter((m) => m.family === family && m.cost)
     .sort((a, b) => (b.release_date ?? "").localeCompare(a.release_date ?? ""))[0]
 
-export function priceFor(catalog: Catalog, model: string): Price | undefined {
+// The catalog entry a Zero model id runs today (subscription aliases resolve to the newest of the family).
+function entryOf(catalog: Catalog, model: string): Model | undefined {
   const { provider, model: id } = splitModel(model)
-  if (provider === "ollama" || provider === "lmstudio") return { input: 0, output: 0, cacheRead: 0 }
-  if (provider === "claude-cli") return priceOf(catalog.anthropic?.[id] ?? newestOf(catalog.anthropic, `claude-${id}`))
-  if (provider === "codex-cli") return id === "default" ? undefined : priceOf(catalog.openai?.[id])
-  if (provider === "anthropic" || provider === "openai" || provider === "openrouter") return priceOf(catalog[provider]?.[id])
+  if (provider === "claude-cli") return catalog.anthropic?.[id] ?? newestOf(catalog.anthropic, `claude-${id}`)
+  if (provider === "codex-cli") return id === "default" ? undefined : catalog.openai?.[id]
+  if (provider === "anthropic" || provider === "openai" || provider === "openrouter") return catalog[provider]?.[id]
   return undefined
 }
+
+export function priceFor(catalog: Catalog, model: string): Price | undefined {
+  const { provider } = splitModel(model)
+  if (provider === "ollama" || provider === "lmstudio") return { input: 0, output: 0, cacheRead: 0 }
+  return priceOf(entryOf(catalog, model))
+}
+
+// Context window in tokens, or null when the catalog doesn't know the model.
+export const windowFor = (catalog: Catalog, model: string): number | null => entryOf(catalog, model)?.limit?.context ?? null
 
 // Our input counts include the cached tokens (they are read at the cache price).
 export function costOf(price: Price | undefined, t: { inputTokens: number; outputTokens: number; cachedTokens: number }): number | null {
@@ -52,11 +67,13 @@ export const billingOf = (model: string): "subscription" | "api" | "local" => {
 
 export interface PricingService {
   readonly cost: (model: string, tokens: { inputTokens: number; outputTokens: number; cachedTokens: number }) => number | null
+  readonly contextWindow: (model: string) => number | null
 }
 
 export class Pricing extends Context.Service<Pricing, PricingService>()("Pricing") {
   // Tests: a fixed catalog, no network.
-  static fixed = (catalog: Catalog) => Layer.succeed(Pricing, { cost: (model, tokens) => costOf(priceFor(catalog, model), tokens) })
+  static fixed = (catalog: Catalog) =>
+    Layer.succeed(Pricing, { cost: (model, tokens) => costOf(priceFor(catalog, model), tokens), contextWindow: (model) => windowFor(catalog, model) })
 
   static layer = Layer.effect(
     Pricing,
@@ -68,19 +85,23 @@ export class Pricing extends Context.Service<Pricing, PricingService>()("Pricing
       } catch {
         catalog = {} // a broken copy is replaced on the next refresh
       }
-      const stale = !existsSync(file) || Date.now() - statSync(file).mtimeMs > MAX_AGE_MS
+      // A copy saved before windows were kept has no `limit`: read it again.
+      const hasWindows = Object.values(catalog.anthropic ?? {}).some((m) => m.limit)
+      const stale = !existsSync(file) || !hasWindows || Date.now() - statSync(file).mtimeMs > MAX_AGE_MS
       if (stale)
         yield* Effect.forkDetach(
           Effect.tryPromise(async () => {
             const all = (await (await fetch(CATALOG_URL, { signal: AbortSignal.timeout(20_000) })).json()) as Record<string, { models?: Record<string, Model> }>
             const kept: Catalog = {}
             for (const p of PROVIDERS)
-              kept[p] = Object.fromEntries(Object.entries(all[p]?.models ?? {}).map(([id, m]) => [id, { cost: m.cost, family: m.family, release_date: m.release_date } as Model]))
+              kept[p] = Object.fromEntries(
+                Object.entries(all[p]?.models ?? {}).map(([id, m]) => [id, { cost: m.cost, limit: m.limit && { context: m.limit.context }, family: m.family, release_date: m.release_date } as Model])
+              )
             writeFileSync(file, JSON.stringify(kept))
             catalog = kept
           }).pipe(Effect.catch((e) => Effect.logWarning("pricing catalog not refreshed", { error: String(e) })))
         )
-      return { cost: (model, tokens) => costOf(priceFor(catalog, model), tokens) }
+      return { cost: (model, tokens) => costOf(priceFor(catalog, model), tokens), contextWindow: (model) => windowFor(catalog, model) }
     })
   )
 }

@@ -5,3 +5,4 @@
 2026-11-03 | tela Usage redesenhada (hero, harnesses, área empilhada, totais, detalhamento) | inspiração a reference app pedida pelo usuário
 2026-11-03 | Accounts + API keys viram Settings › Providers (lista e página por provider) | pedido do usuário, inspirado no a reference app
 2026-11-03 | Settings › Storage; cn com tokens do tema; lookup de plural corrigido | pedido do usuário + bugs achados
+2026-11-03 | composer em Tiptap com # @ $ /, fila de mensagens, medidor de contexto; seletor de agente saiu do campo | pedido do usuário

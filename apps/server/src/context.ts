@@ -85,34 +85,38 @@ export function buildTurn(i: TurnInput): Turn {
     ].join("\n")
 
   // Stable: opens the native session (rarely changes; if it does, the session reopens from the resume point).
-  const stable = [
+  const instructions = [
     "Você é um assistente num workspace de projetos. Responda no idioma do usuário, de forma direta.",
     "Use o contexto abaixo quando ajudar; não invente fatos que não estão nele.",
     i.tools?.defs.length && "Você tem ferramentas. Use quando a tarefa pedir; ações que mudam algo podem esperar a aprovação do usuário.",
     i.agent && section(`Você é ${i.agent.name}`, i.agent.instructions),
-    channel && section("Canal", channel),
-    section("O que você sabe sobre o usuário", bullets(of("user"))),
+    channel && section("Canal", channel)
+  ]
+  const userMemories = section("O que você sabe sobre o usuário", bullets(of("user")))
+  const projectParts = [
     i.project && section(`Projeto: ${i.project.name}`, i.project.brief),
     i.project?.path &&
       section(
         "Workspace",
         `Você trabalha na pasta do projeto: ${i.project.path}. Leia, edite e rode comandos nela com as suas ferramentas; o Zero pede a aprovação do usuário quando o seu nível de acesso exige. Cada turno vira um ponto de restauração, e o usuário pode desfazer o que você mudou.`
-      ),
-    i.project && section("Memórias do projeto", bullets(of(`project:${i.project.id}`))),
-    i.agent && section("Suas memórias de trabalho", bullets(of(`agent:${i.agent.id}`))),
-    section("Skills disponíveis (procedimentos aprovados; siga quando a tarefa casar)", i.skills.all.slice(0, SKILL_TITLES).map((s) => `- ${s.title}`).join("\n"))
+      )
   ]
-    .filter(Boolean)
-    .join("\n\n")
+  const workMemories = [i.project && section("Memórias do projeto", bullets(of(`project:${i.project.id}`))), i.agent && section("Suas memórias de trabalho", bullets(of(`agent:${i.agent.id}`)))]
+  const skillList = section("Skills disponíveis (procedimentos aprovados; siga quando a tarefa casar)", i.skills.all.slice(0, SKILL_TITLES).map((s) => `- ${s.title}`).join("\n"))
+  const stable = [...instructions, userMemories, ...projectParts, ...workMemories, skillList].filter(Boolean).join("\n\n")
   // Dynamic: depends on the current message; in a native session it goes with the turn's message.
-  const dynamic = [
-    ...i.skills.relevant.map((s) => section(`Skill: ${s.title}`, s.text)),
-    section("Resumo do que veio antes nesta conversa", i.chat.summary),
-    section("Memórias possivelmente relevantes para a mensagem atual", bullets(i.retrieved))
-  ]
-    .filter(Boolean)
-    .join("\n\n")
+  const skillBodies = i.skills.relevant.map((s) => section(`Skill: ${s.title}`, s.text))
+  const summary = section("Resumo do que veio antes nesta conversa", i.chat.summary)
+  const retrieved = section("Memórias possivelmente relevantes para a mensagem atual", bullets(i.retrieved))
+  const dynamic = [...skillBodies, summary, retrieved].filter(Boolean).join("\n\n")
   const system = [stable, dynamic].filter(Boolean).join("\n\n")
+  const size = (xs: ReadonlyArray<unknown>) => xs.reduce<number>((n, x) => n + (typeof x === "string" ? x.length : 0), 0)
+  const parts = {
+    instructions: size([...instructions, ...projectParts]),
+    memories: size([userMemories, ...workMemories, retrieved]),
+    skills: size([skillList, ...skillBodies]),
+    summary: size([summary])
+  }
 
   const filesOf = (m: Message) => (i.filesDir ? m.attachments.map((a) => ({ name: a.name, mime: a.mime, path: join(i.filesDir!, a.id) })) : [])
   // From the replier's point of view: its own lines are "assistant"; other agents' lines arrive
@@ -128,7 +132,7 @@ export function buildTurn(i: TurnInput): Turn {
         ? { role: "user", text: `[${name(m.agentId)}]\n${text}`, at: m.at }
         : { role: m.role, text, at: m.at, files: filesOf(m) }
     })
-  return { model: i.model, system, stable, dynamic, messages, cwd: i.cwd, tools: i.tools }
+  return { model: i.model, system, stable, dynamic, messages, cwd: i.cwd, tools: i.tools, parts }
 }
 
 // ---------- consolidation (continuous learning) ----------
