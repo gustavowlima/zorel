@@ -3,6 +3,20 @@
 import { sql } from "drizzle-orm"
 import { check, index, integer, primaryKey, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
 
+// Provider accounts (ARCHITECTURE §6.1). Subscription logins live in `home` (a CLI config folder);
+// Zero never reads the token inside it. `identity` is what the CLI reports (e-mail, plan), for display.
+export const providerAccounts = sqliteTable("provider_accounts", {
+  id: text().primaryKey(),
+  label: text().notNull(),
+  kind: text({ enum: ["subscription", "api-key"] }).notNull(),
+  provider: text().notNull(), // subscription: claude | codex; api-key: anthropic | openai | openrouter…
+  home: text(), // null: the CLI's own default login (Claude only; Codex always gets a Zero-owned folder)
+  secret: text(), // api-key: keychain entry name; the value never touches the database
+  baseUrl: text("base_url"),
+  identity: text(),
+  createdAt: integer("created_at").notNull()
+})
+
 export const projects = sqliteTable("projects", {
   id: text().primaryKey(),
   name: text().notNull(),
@@ -16,6 +30,7 @@ export const agents = sqliteTable("agents", {
   name: text().notNull(),
   instructions: text().notNull().default(""),
   model: text().notNull(),
+  accountId: text("account_id"), // null: the default account of the model's provider
   createdAt: integer("created_at").notNull()
 })
 
@@ -24,6 +39,7 @@ export const chats = sqliteTable("chats", {
   projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
   title: text().notNull(),
   model: text().notNull(),
+  accountId: text("account_id"), // the lead's account; null: the default one
   summary: text().notNull().default(""),
   summaryUntil: integer("summary_until").notNull().default(0),
   createdAt: integer("created_at").notNull()

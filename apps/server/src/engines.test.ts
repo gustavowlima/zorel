@@ -35,14 +35,14 @@ test("args das CLIs: sem sessão, sem ferramentas, modelo do id", () => {
 })
 
 const mem = (text: string, confirmedAt: number, scope = "user", kind: Memory["kind"] = "fact", title = ""): Memory => ({ id: text, scope, kind, title, text, state: "active", origin: "manual", chatId: null, createdAt: 0, confirmedAt })
-const agentOf = (id: string, name: string, instructions = ""): Agent => ({ id, projectId: "p", name, instructions, model: "x/y", createdAt: 0 })
+const agentOf = (id: string, name: string, instructions = ""): Agent => ({ id, projectId: "p", name, instructions, model: "x/y", accountId: null, createdAt: 0 })
 const msg = (role: "user" | "assistant", text: string, agentId: string | null = null): Message => ({ id: text, chatId: "c", role, agentId, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0, at: 1 })
 
 test("contexto: orçamento de memórias prioriza as recentes; camadas na ordem estável → volátil", () => {
   expect(pinned([mem("velha", 1), mem("nova", 2), mem("x".repeat(50), 3)], 59).map((m) => m.id)).toEqual(["x".repeat(50)])
   const dev = agentOf("a", "Dev", "INSTR")
   const turn = buildTurn({
-    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", model: "anthropic/m", summary: "RESUMO", summaryUntil: 0, createdAt: 0 },
+    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, model: "anthropic/m", summary: "RESUMO", summaryUntil: 0, createdAt: 0 },
     model: "anthropic/m",
     project: { id: "p", name: "P", brief: "BRIEF", createdAt: 0 },
     agent: dev,

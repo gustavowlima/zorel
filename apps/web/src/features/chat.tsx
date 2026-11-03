@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm"
 import { call, decideApproval, interruptChat, sendMessage, subscribeChat } from "../api.ts"
 import { go, useApp } from "../state.ts"
 import { Badge, Button, Card, ConfirmButton, cx, Select, Textarea, Tooltip } from "@/ui"
+import { AccountSelect } from "./accounts.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 
 type Live = { turnId: string; agentId: string | null; model: string; text: string; steps: WorkStep[] }
@@ -90,7 +91,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   const candidates = data.agents.filter((a) => (a.projectId === null || a.projectId === chat.projectId) && !chat.agentIds.includes(a.id))
   const agentName = (id: string | null) => data.agents.find((a) => a.id === id)?.name ?? "Assistente"
 
-  const update = (payload: { model?: string; agentIds?: ReadonlyArray<string> }) =>
+  const update = (payload: { model?: string; accountId?: string | null; agentIds?: ReadonlyArray<string> }) =>
     call((c) => c.chats.update({ params: { id: chat.id }, payload })).then(reload, (e) => setError(String(e)))
 
   // With the chat busy, the message enters the runtime queue and is answered later.
@@ -139,6 +140,7 @@ export function ChatView({ chat }: { chat: Chat }) {
         <label className="flex flex-col gap-1 text-xs text-dim">
           {team[0] ? `Modelo de ${team[0].name}` : "Modelo"}
           <ModelPicker className="w-60" value={chat.model} onChange={(model) => update({ model })} />
+          <AccountSelect className="w-48" model={chat.model} value={chat.accountId} onChange={(accountId) => update({ accountId })} />
         </label>
         <div className="flex gap-1 pt-5">
           <Tooltip content="Resume a conversa até aqui e propõe memórias e skills">

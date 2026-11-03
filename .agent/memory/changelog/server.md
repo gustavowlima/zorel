@@ -15,3 +15,4 @@
 2026-11-03 | comentários passam a ser em inglês | pedido do usuário
 2026-11-03 | sessão nativa do Claude (Agent SDK) com marcação por sessão | fase 2, etapa 1
 2026-11-03 | sessão nativa do Codex (cliente mínimo, CODEX_HOME isolado); D16 revisada | fase 2, etapa 2
+2026-11-03 | multicontas: provider_accounts, conta por chat/agente, login/status pela CLI | fase 2, etapa 4

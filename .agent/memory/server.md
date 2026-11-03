@@ -49,6 +49,11 @@ updated: 2026-11-03
 - sessões nativas usam URL fixa do gateway (GatewayHandle.update troca as ferramentas por turno); nomes das ferramentas entram na chave do contexto estável (lista nova = sessão nova); Engines.hasSession decide
 - smoke contra o server: script precisa rodar de dentro de apps/server (bun --no-install), senão o Bun instala outro effect e o RPC trava
 
+- contas (§6.1): accounts.ts (serviço Accounts) + tabela provider_accounts; padrão claude-default (home null = login da CLI) e codex-default (home Zero); extra = <dataDir>/accounts/<id>; status pela CLI (claude auth status --json, codex login status) com cache de 30 s; login roda a CLI e devolve a URL se impressa; remover = logout + apaga a pasta (só pastas do Zero) + agentes/chats voltam à padrão
+- agents.account_id e chats.account_id (null = padrão); turns.account_id gravado no enqueue; Accounts.resolve cai na padrão se a conta é de outro provider; conta entra na chave da sessão (trocar = sessão nova)
+- web: features/accounts.tsx (AccountsSection nas configurações, AccountSelect no chat; agente ainda sem seletor de conta: fase UI)
+- server manda cache-control: no-cache no index.html e immutable nos assets com hash
+
 ## avoid
 
 - Bun.$ para operação simples de arquivo (mkdir etc.): abre um shell; usar node:fs

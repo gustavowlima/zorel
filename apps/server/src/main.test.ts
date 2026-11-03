@@ -21,6 +21,7 @@ import { CONSOLIDATION_SYSTEM } from "./context.ts"
 import { Store } from "./db.ts"
 import { Engines, type EngineEvent, type Turn } from "./engines.ts"
 import { AppLive } from "./main.ts"
+import { Accounts } from "./accounts.ts"
 import { Actor } from "./access.ts"
 import { Runtime } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
@@ -95,7 +96,7 @@ beforeAll(async () => {
   const store = Store.layer(":memory:")
   const secrets = Layer.provideMerge(Secrets.memory(), store)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(FakeEngines, Tools.layer), secrets), DataDir.layer(join(tmpdir(), "zero-test")))
-  const services = Layer.mergeAll(Layer.provideMerge(Runtime.layer, base), Actor.local)
+  const services = Layer.mergeAll(Layer.provideMerge(Runtime.layer, Layer.provideMerge(Accounts.layer, base)), Actor.local)
   const server = AppLive().pipe(HttpRouter.serve, Layer.provide(services), Layer.provide(BunHttpServer.layer({ port })))
   const fiber = Effect.runFork(Layer.launch(server))
   stop = () => Effect.runPromise(Fiber.interrupt(fiber)).then(() => void mcp.stop(true))
@@ -304,4 +305,18 @@ test("aprendizado: esquecidas vão para a consolidação e podem ser restauradas
   await api((c) => c.memories.update({ params: { id: forgotten.id }, payload: { state: "active" } }))
   await send(chat.id, { text: "e aí" })
   expect(turns.at(-1)!.system).toContain("Gosta de emojis")
+})
+
+test("contas: padrão criadas sozinhas e não removíveis; extra ganha pasta própria e some com ela", async () => {
+  const list = await api((c) => c.accounts.list())
+  expect(list.filter((a) => a.isDefault).map((a) => a.provider).sort()).toEqual(["claude", "codex"])
+  const extra = await api((c) => c.accounts.create({ payload: { provider: "codex", label: "Codex trabalho" } }))
+  expect(extra).toMatchObject({ provider: "codex", isDefault: false, loggedIn: false })
+  expect((await api((c) => c.accounts.update({ params: { id: extra.id }, payload: { label: "Codex 2" } }))).label).toBe("Codex 2")
+  const home = join(tmpdir(), "zero-test", "accounts", extra.id)
+  expect(require("node:fs").existsSync(home)).toBe(true) // each extra account gets its own login folder
+  const def = list.find((a) => a.provider === "claude" && a.isDefault)!
+  expect((await fetch(`${base}/api/accounts/${def.id}`, { method: "DELETE" })).status).toBe(409)
+  expect((await fetch(`${base}/api/accounts/${extra.id}`, { method: "DELETE" })).status).toBe(204)
+  expect(require("node:fs").existsSync(home)).toBe(false)
 })

@@ -12,6 +12,7 @@ import { consolidate, DataDir } from "./chat.ts"
 import { Store, type Repository } from "./db.ts"
 import { Engines, listModels } from "./engines.ts"
 import { API_KEYS, mcpEnvName, Secrets } from "./secrets.ts"
+import { Accounts } from "./accounts.ts"
 import { Actor } from "./access.ts"
 import { LoggerLive } from "./observability.ts"
 import { Runtime } from "./runtime.ts"
@@ -144,6 +145,26 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
   })
 )
 
+const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
+  Effect.gen(function* () {
+    const accounts = yield* Accounts
+    return h
+      .handle("list", () => accounts.list)
+      .handle("create", ({ payload }) => accounts.create(payload.provider, payload.label))
+      .handle("update", ({ params, payload }) => found(accounts.rename(params.id, payload.label)))
+      .handle("remove", ({ params }) =>
+        Effect.flatMap(accounts.remove(params.id), (r): Effect.Effect<void, HttpApiError.NotFound | HttpApiError.Conflict> =>
+          r === "ok" ? Effect.void : r === "not-found" ? notFound() : Effect.fail(new HttpApiError.Conflict())
+        )
+      )
+      .handle("login", ({ params }) =>
+        Effect.flatMap(accounts.login(params.id), (r): Effect.Effect<{ url: string | null }, HttpApiError.NotFound | HttpApiError.Conflict> =>
+          r === "not-found" ? notFound() : r === "busy" ? Effect.fail(new HttpApiError.Conflict()) : Effect.succeed(r)
+        )
+      )
+  })
+)
+
 const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
   Effect.gen(function* () {
     const secrets = yield* Secrets
@@ -178,7 +199,9 @@ const WebRoute = (dir: string) =>
   HttpRouter.add("GET", "/*", (req) => {
     const path = normalize(join(dir, decodeURIComponent(new URL(req.url, "http://x").pathname)))
     const file = path.startsWith(dir) && existsSync(path) && !path.endsWith("/") && Bun.file(path).size > 0 ? path : join(dir, "index.html")
-    return HttpServerResponse.file(file).pipe(Effect.orDie)
+    // index.html always revalidates (it points at the current build); hashed assets never change.
+    const cache = file.endsWith("index.html") ? "no-cache" : "public, max-age=31536000, immutable"
+    return HttpServerResponse.file(file).pipe(Effect.map(HttpServerResponse.setHeader("cache-control", cache)), Effect.orDie)
   })
 
 // The server is local, with no login: it only accepts clients that talk to it as local. Unlisted Host blocks DNS rebinding;
@@ -211,7 +234,7 @@ const LocalOnly = HttpRouter.middleware(
 export const AppLive = (webDir?: string) =>
   Layer.mergeAll(
     LocalOnly,
-    HttpApiBuilder.layer(Api).pipe(Layer.provide([Projects, Agents, Chats, Memories, ToolsGroup, Settings])),
+    HttpApiBuilder.layer(Api).pipe(Layer.provide([Projects, Agents, Chats, Memories, ToolsGroup, AccountsGroup, Settings])),
     RpcRoute,
     ...(webDir && existsSync(join(webDir, "index.html")) ? [WebRoute(webDir)] : [])
   )
@@ -221,7 +244,8 @@ export const services = (dbPath: string, dataDir: string, secrets?: Layer.Layer<
   const store = Store.layer(dbPath)
   const withSecrets = Layer.provideMerge(secrets ?? Secrets.layer, store)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(Engines.layer, Tools.layer), withSecrets), DataDir.layer(dataDir))
-  return Layer.mergeAll(Layer.provideMerge(Runtime.layer, base), Actor.local)
+  const withAccounts = Layer.provideMerge(Accounts.layer, base)
+  return Layer.mergeAll(Layer.provideMerge(Runtime.layer, withAccounts), Actor.local)
 }
 
 export interface StartOptions {

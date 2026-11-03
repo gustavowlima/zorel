@@ -11,6 +11,25 @@ export const ModelId = Schema.String.check(Schema.isPattern(/^[a-z-]+\/\S+$/), S
 
 // ---------- entities ----------
 
+// Provider account (ARCHITECTURE §6.1). The CLI login stays in its own folder; Zero only shows identity.
+export const AccountProvider = Schema.Literals(["claude", "codex"])
+export type AccountProvider = typeof AccountProvider.Type
+export const ProviderAccount = Schema.Struct({
+  id: Id,
+  label: Schema.String,
+  kind: Schema.Literals(["subscription", "api-key"]),
+  provider: Schema.String,
+  isDefault: Schema.Boolean, // the account used when an agent or chat doesn't pick one
+  loggedIn: Schema.Boolean,
+  identity: Schema.NullOr(Schema.String), // e-mail or plan reported by the CLI
+  loggingIn: Schema.Boolean, // a login flow is open in the browser
+  createdAt: Schema.Number
+})
+export type ProviderAccount = typeof ProviderAccount.Type
+export const NewAccount = Schema.Struct({ provider: AccountProvider, label: Name })
+export const AccountPatch = Schema.Struct({ label: Name })
+export const LoginStarted = Schema.Struct({ url: Schema.NullOr(Schema.String) }) // url: when the CLI printed one
+
 export const Project = Schema.Struct({
   id: Id,
   name: Schema.String,
@@ -25,6 +44,7 @@ export const Agent = Schema.Struct({
   name: Schema.String,
   instructions: Schema.String,
   model: Schema.String,
+  accountId: Schema.NullOr(Id), // null: default account of the model's provider
   createdAt: Schema.Number
 })
 export type Agent = typeof Agent.Type
@@ -34,6 +54,7 @@ export const Chat = Schema.Struct({
   projectId: Schema.NullOr(Id), // null: standalone chat
   agentIds: Schema.Array(Id), // members; the first is the leader (replies when no one is mentioned)
   title: Schema.String,
+  accountId: Schema.NullOr(Id), // the lead's account; null: default
   model: Schema.String, // leader's model for the next turn; other members use their own model
   summary: Schema.String, // summary of what left the window (consolidation)
   summaryUntil: Schema.Number, // `at` of the last message covered by the summary
@@ -118,10 +139,10 @@ export const KeyInfo = Schema.Struct({ name: Schema.String, set: Schema.Boolean,
 
 export const NewProject = Schema.Struct({ name: Name, brief: LongText(8000) })
 export const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: Schema.optional(LongText(8000)) })
-export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, instructions: LongText(8000), model: ModelId })
-export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId) })
-export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId })
-export const ChatPatch = Schema.Struct({ title: Schema.optional(Name), model: Schema.optional(ModelId), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
+export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)) })
+export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)) })
+export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)) })
+export const ChatPatch = Schema.Struct({ title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000) })
 export const MemoryPatch = Schema.Struct({ state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)) })
 export const NewMcpServer = Schema.Struct({
@@ -182,6 +203,15 @@ export const Api = HttpApi.make("zero")
       // Connects and lists the tools, already classified; a connection failure comes in `error`.
       .add(HttpApiEndpoint.get("inspect", "/api/mcp/:id/tools", { params: idParam, success: Schema.Struct({ tools: Schema.Array(ToolInfo), error: Schema.NullOr(Schema.String) }), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("decide", "/api/approvals/:id", { params: idParam, payload: ApprovalDecision, error: HttpApiError.NotFound }))
+  )
+  .add(
+    HttpApiGroup.make("accounts")
+      .add(HttpApiEndpoint.get("list", "/api/accounts", { success: Schema.Array(ProviderAccount) }))
+      .add(HttpApiEndpoint.post("create", "/api/accounts", { payload: NewAccount, success: ProviderAccount }))
+      .add(HttpApiEndpoint.patch("update", "/api/accounts/:id", { params: idParam, payload: AccountPatch, success: ProviderAccount, error: HttpApiError.NotFound }))
+      // Default accounts can't be removed; removing logs out and deletes the account's folder.
+      .add(HttpApiEndpoint.delete("remove", "/api/accounts/:id", { params: idParam, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
+      .add(HttpApiEndpoint.post("login", "/api/accounts/:id/login", { params: idParam, success: LoginStarted, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
   )
   .add(
     HttpApiGroup.make("settings")

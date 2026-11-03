@@ -353,6 +353,7 @@ export interface OpenSession {
   readonly cwd: string
   readonly gatewayUrl: string // stable for the session; the runtime swaps the tools behind it each turn
   readonly dataDir: string // where Zero-owned account folders live (e.g. CODEX_HOME)
+  readonly account?: { readonly id: string; readonly home: string | null } | undefined // §6.1: whose login runs this session
 }
 
 export interface EnginesService {
@@ -380,9 +381,8 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
         hasSession: (model: string) => NATIVE.has(splitModel(model).provider),
         open: (o: OpenSession) => {
           const { provider } = splitModel(o.model)
-          if (provider === "claude-cli") return openClaudeSession(o)
-          // ponytail: one Zero-owned Codex login for now; per-account homes come with provider_accounts (§6.1).
-          if (provider === "codex-cli") return openCodexSession({ ...o, home: join(o.dataDir, "accounts", "codex-default") })
+          if (provider === "claude-cli") return openClaudeSession({ ...o, configDir: o.account?.home ?? undefined })
+          if (provider === "codex-cli") return openCodexSession({ ...o, home: o.account?.home ?? join(o.dataDir, "accounts", "codex-default") })
           return undefined
         }
       }

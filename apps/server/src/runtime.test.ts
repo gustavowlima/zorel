@@ -6,6 +6,7 @@ import { Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import { mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { Accounts } from "./accounts.ts"
 import { DataDir } from "./chat.ts"
 import { Store } from "./db.ts"
 import { Engines, type EngineEvent } from "./engines.ts"
@@ -24,7 +25,7 @@ const Echo = Layer.succeed(Engines, {
 const layer = (dbPath: string, engines: Layer.Layer<Engines>) => {
   const store = Store.layer(dbPath)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(engines, Tools.layer), Layer.provideMerge(Secrets.memory(), store)), DataDir.layer(join(tmpdir(), "zero-rt")))
-  return Layer.provideMerge(Runtime.layer, base)
+  return Layer.provideMerge(Runtime.layer, Layer.provideMerge(Accounts.layer, base))
 }
 const runWith = <A, E>(dbPath: string, engines: Layer.Layer<Engines>, f: Effect.Effect<A, E, Runtime | Store>) =>
   Effect.runPromise(Effect.scoped(f).pipe(Effect.provide(layer(dbPath, engines))) as Effect.Effect<A>)
@@ -109,11 +110,13 @@ test("kill -9 no meio do turno: na próxima subida o turno vira interrupted com 
 })
 
 // Fake native-session engine: records how many sessions opened and what each turn received.
-const sessionLog = { opened: [] as string[], prompts: [] as string[], interrupts: 0 }
+const sessionLog = { opened: [] as string[], prompts: [] as string[], interrupts: 0, homes: [] as Array<string | null | undefined> }
 const Sessions = Layer.succeed(Engines, {
   run: () => Stream.make<EngineEvent[]>({ type: "error", message: "should use the session" }),
+  hasSession: () => true,
   open: (o) => {
     sessionLog.opened.push(o.system)
+    sessionLog.homes.push(o.account?.home)
     return {
       alive: () => true,
       close: Effect.void,
@@ -173,4 +176,29 @@ test("native session: interrupting stops the turn but keeps the session", () =>
     yield* d.done
     expect(sessionLog.opened.length - before).toBe(1) // same session after the interrupt
     expect(sessionLog.prompts.at(-1)).not.toContain("slow") // the partial reply is already in the session
+  })))
+
+test("accounts: the chat's account reaches the session as its login folder; switching accounts opens a new session", () =>
+  runWith(":memory:", Sessions, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    yield* store.ensureAccount({ id: "work", label: "Claude trabalho", kind: "subscription", provider: "claude", home: "/tmp/zero-acc-work", secret: null, baseUrl: null, identity: null })
+    yield* store.ensureAccount({ id: "cdx", label: "Codex 2", kind: "subscription", provider: "codex", home: "/tmp/zero-acc-cdx", secret: null, baseUrl: null, identity: null })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/haiku", accountId: "work" })
+    const turnOnce = (text: string) =>
+      Effect.gen(function* () {
+        const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+        const { turnId } = yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text })
+        yield* c.done
+        return (yield* store.turnRow(turnId))!
+      })
+    const before = sessionLog.opened.length
+    const t1 = yield* turnOnce("a")
+    expect(t1.accountId).toBe("work")
+    expect(sessionLog.homes.at(-1)).toBe("/tmp/zero-acc-work")
+    // An account of another provider doesn't apply: falls back to Claude's default (the CLI's own login).
+    yield* store.updateChat(chat.id, { accountId: "cdx" })
+    yield* turnOnce("b")
+    expect(sessionLog.opened.length - before).toBe(2) // new account, new session
+    expect(sessionLog.homes.at(-1)).toBeNull()
   })))

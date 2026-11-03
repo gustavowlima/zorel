@@ -4,9 +4,10 @@
 import type { Agent, Chat, Step } from "@zero/contracts"
 import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zero/contracts/events"
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Stream } from "effect"
+import { Accounts } from "./accounts.ts"
 import { consolidate, DataDir, members, prepare } from "./chat.ts"
 import { MAX_DEPTH, mentioned } from "./context.ts"
-import { Store, type Repository, type TurnRow } from "./db.ts"
+import { type AccountRow, Store, type Repository, type TurnRow } from "./db.ts"
 import { Engines, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
 import type { EngineSession } from "#server/engines/session.ts"
 import { exposedName, type GatewayHandle, needsApproval, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
@@ -35,6 +36,7 @@ const ev = <T extends ChatEvent["_tag"]>(_tag: T, body: Omit<Extract<ChatEvent, 
 
 export const makeRuntime = Effect.gen(function* () {
   const store = yield* Store
+  const accounts = yield* Accounts
   const engines = yield* Engines
   const dataDir = yield* DataDir
   const { hub, gateway } = yield* Tools
@@ -102,19 +104,20 @@ export const makeRuntime = Effect.gen(function* () {
 
   // Picks the engine for this turn. With a native session, only the dynamic context and the messages
   // after the watermark are sent; a new session gets the whole checkpoint (summary + recent messages).
-  const engineStream = (row: TurnRow, turn: EngineTurn, onSeen: (set: (at: number) => void) => void) =>
+  const engineStream = (row: TurnRow, turn: EngineTurn, account: AccountRow | undefined, onSeen: (set: (at: number) => void) => void) =>
     Effect.gen(function* () {
       const key = sessionKey(row)
       const provider = splitModel(row.model).provider
       // Tool names are part of the stable context: a session lists tools once, so a new set means a new session.
-      const stable = `${turn.stable ?? turn.system}\n#tools:${(turn.tools?.defs ?? []).map((d) => d.name).sort().join(",")}`
+      // The account too: switching accounts opens a new session with the checkpoint (§6.1, no shared native session).
+      const stable = `${turn.stable ?? turn.system}\n#tools:${(turn.tools?.defs ?? []).map((d) => d.name).sort().join(",")}\n#account:${account?.id ?? "-"}`
       let live = sessions.get(key)
       if (live && (!live.session.alive() || live.provider !== provider || live.stable !== stable)) {
         yield* closeSession(key)
         live = undefined
       }
       if (!live) {
-        const opened = engines.open?.({ model: row.model, system: turn.stable ?? turn.system, cwd: turn.cwd, gatewayUrl: gatewayOf(key).url, dataDir })
+        const opened = engines.open?.({ model: row.model, system: turn.stable ?? turn.system, cwd: turn.cwd, gatewayUrl: gatewayOf(key).url, dataDir, account: account && { id: account.id, home: account.home } })
         if (opened === undefined) return engines.run(turn)
         if (typeof opened === "string") return Stream.make<EngineEvent[]>({ type: "error", message: opened })
         if (sessions.size >= MAX_SESSIONS) {
@@ -260,7 +263,8 @@ export const makeRuntime = Effect.gen(function* () {
           })
         )
         const turn = yield* prepare(store, (yield* store.chat(chatId))!, agent, row.model, dataDir, opened.tools)
-        const stream = yield* engineStream(row, turn, (set) => {
+        const account = yield* accounts.resolve(row.model, row.accountId)
+        const stream = yield* engineStream(row, turn, account, (set) => {
           markSeen = set
         })
         yield* stream.pipe(
@@ -301,7 +305,7 @@ export const makeRuntime = Effect.gen(function* () {
       if (row.depth + 1 >= MAX_DEPTH) return yield* Effect.logInfo("encadeamento parado no limite", { chatId: row.chatId, depth: row.depth })
       yield* publish(row.chatId, ev("handoff", { turnId: row.id, from: done.agent?.id ?? null, to: next.map((a) => a.id), via: "mention" }))
       for (const a of next) {
-        const t = yield* store.enqueueTurn({ chatId: row.chatId, agentId: a.id, model: a.model, clientId: null, depth: row.depth + 1 })
+        const t = yield* store.enqueueTurn({ chatId: row.chatId, agentId: a.id, model: a.model, accountId: a.accountId, clientId: null, depth: row.depth + 1 })
         yield* publish(row.chatId, ev("queued", { turn: store.toTurn(t) }))
       }
     })
@@ -369,8 +373,11 @@ export const makeRuntime = Effect.gen(function* () {
         let first: string | undefined
         for (const [i, a] of targets.entries()) {
           // The leader uses the chat model (the one you picked); other members use their own.
-          const model = !a || a.id === lead?.id ? chat.model : a.model
-          const t = yield* store.enqueueTurn({ chatId: chat.id, agentId: a?.id ?? null, model, clientId: i === 0 ? input.clientId : null, depth: 0 })
+          const isLead = !a || a.id === lead?.id
+          const t = yield* store.enqueueTurn({
+            chatId: chat.id, agentId: a?.id ?? null, model: isLead ? chat.model : a.model, accountId: isLead ? chat.accountId : a.accountId,
+            clientId: i === 0 ? input.clientId : null, depth: 0
+          })
           first ??= t.id
           yield* publish(chat.id, ev("queued", { turn: store.toTurn(t) }))
         }
