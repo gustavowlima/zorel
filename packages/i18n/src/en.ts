@@ -47,6 +47,7 @@ export const en = {
     newChatIn: "New chat in {name}",
     projectSettings: "Settings of {name}",
     usageAlert: "{account} {window} limit {percent} used",
+    usageLeft: "{account} {window}: {percent} left",
     showMore: { one: "Show 1 more", other: "Show {count} more" },
     showLess: "Show less",
     noMessages: "No messages yet",
