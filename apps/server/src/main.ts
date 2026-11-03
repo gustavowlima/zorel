@@ -348,7 +348,7 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       return yield* Effect.promise(() => measure(dataDir, { projects, chats, messages }))
     })
     return h
-      .handle("audit", () => audit.list)
+      .handle("audit", ({ query }) => audit.list(query))
       .handle("storage", () => storageReport)
       .handle("cleanStorage", ({ params }) =>
         Effect.gen(function* () {

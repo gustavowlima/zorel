@@ -1,7 +1,7 @@
 // Route in the URL hash, and the theme preference. Data lives in atoms (client.ts), not here.
 import { useEffect, useState } from "react"
 
-export const SETTINGS_TABS = ["providers", "mcp", "skills", "storage", "audit", "appearance"] as const
+export const SETTINGS_TABS = ["general", "providers", "mcp", "skills", "storage", "audit"] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]
 export const PROJECT_TABS = ["overview", "agents", "tools"] as const
 export type ProjectTab = (typeof PROJECT_TABS)[number]
@@ -28,8 +28,8 @@ export function parseRoute(hash: string): Route {
     case "knowledge":
       return a ? { view, id: a } : { view }
     case "settings":
-      // Old links (#/settings/accounts, #/settings/keys) land on Providers.
-      return { view, tab: oneOf(SETTINGS_TABS, a, "providers"), ...(a === "providers" && b && { provider: b }) }
+      // Old links: #/settings/accounts and #/settings/keys land on Providers, #/settings/appearance on General.
+      return { view, tab: a === "appearance" ? "general" : a === "accounts" || a === "keys" ? "providers" : oneOf(SETTINGS_TABS, a, "general"), ...(a === "providers" && b && { provider: b }) }
     case "project":
       return a ? { view, id: a, tab: oneOf(PROJECT_TABS, b, "overview") } : { view: "home" }
     case "chat":

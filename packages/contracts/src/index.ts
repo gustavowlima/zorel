@@ -132,7 +132,20 @@ export const AuditEntry = Schema.Struct({
   changes: Schema.Array(Schema.Struct({ field: Schema.String, before: Schema.NullOr(Schema.String), after: Schema.NullOr(Schema.String) }))
 })
 export type AuditEntry = typeof AuditEntry.Type
-export const AUDIT_PAGE = 500 // the newest entries the log shows
+export const AUDIT_PAGE = 50 // entries per page of the log
+// What the log can be narrowed to: a kind of change, words in it, a span of time (ms, inclusive start,
+// exclusive end) and a page, newest first.
+export const AuditKind = Schema.Literals(["all", "providers", "projects", "tools", "approvals"])
+export type AuditKind = typeof AuditKind.Type
+export const AuditQuery = {
+  kind: Schema.optionalKey(AuditKind),
+  q: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+  from: Schema.optionalKey(Schema.NumberFromString),
+  to: Schema.optionalKey(Schema.NumberFromString),
+  page: Schema.optionalKey(Schema.NumberFromString)
+}
+export const AuditPage = Schema.Struct({ entries: Schema.Array(AuditEntry), total: Schema.Number, page: Schema.Number, pageSize: Schema.Number })
+export type AuditPage = typeof AuditPage.Type
 
 // Storage: Zero's data folder measured now, where it goes and what can be freed.
 export const StorageCategory = Schema.Literals(["workspaces", "attachments", "history", "backups", "runs", "accounts", "other"])
@@ -439,7 +452,7 @@ export const Api = HttpApi.make("zero")
     HttpApiGroup.make("settings")
       .add(HttpApiEndpoint.get("models", "/api/models", { success: Schema.Array(ModelInfo) }))
       .add(HttpApiEndpoint.get("keys", "/api/keys", { success: Schema.Array(KeyInfo) }))
-      .add(HttpApiEndpoint.get("audit", "/api/audit", { success: Schema.Array(AuditEntry) })) // newest AUDIT_PAGE
+      .add(HttpApiEndpoint.get("audit", "/api/audit", { query: AuditQuery, success: AuditPage })) // one page, newest first
       .add(HttpApiEndpoint.get("storage", "/api/storage", { success: StorageReport }))
       .add(HttpApiEndpoint.post("cleanStorage", "/api/storage/clean/:id", { params: { id: StorageCleanup }, success: StorageReport }))
       .add(HttpApiEndpoint.get("usage", "/api/usage", { success: Schema.Array(UsageRow) })) // last USAGE_DAYS days

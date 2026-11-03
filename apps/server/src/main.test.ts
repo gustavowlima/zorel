@@ -401,7 +401,7 @@ test("audit log: mudanças com antes → depois; chave de API só pelo nome, nun
   await api((c) => c.agents.update({ params: { id: agent.id }, payload: { model: "ollama/qwen" } })) // the same change again, at once: kept too
   await api((c) => c.settings.setKey({ params: { name: "OPENROUTER_API_KEY" }, payload: { value: "sk-super-secreta" } }))
   await api((c) => c.settings.setKey({ params: { name: "OPENROUTER_API_KEY" }, payload: { value: "" } }))
-  const log = await api((c) => c.settings.audit())
+  const log = (await api((c) => c.settings.audit({ query: {} }))).entries
   const updates = log.filter((e) => e.action === "agent.updated" && e.target.id === agent.id)
   expect(updates).toHaveLength(3)
   const update = updates.at(-1)!
@@ -410,6 +410,20 @@ test("audit log: mudanças com antes → depois; chave de API só pelo nome, nun
   expect(log.some((e) => e.action === "agent.created" && e.target.name === "Auditado")).toBe(true)
   expect(log.filter((e) => e.target.id === "OPENROUTER_API_KEY").map((e) => e.action).slice(0, 2)).toEqual(["api_key.cleared", "api_key.set"]) // newest first
   expect(JSON.stringify(log)).not.toContain("sk-super-secreta")
+
+  // Narrowed: by kind, by words, by time; paged with the total.
+  const providers = await api((c) => c.settings.audit({ query: { kind: "providers" } }))
+  expect(providers.entries.length).toBeGreaterThan(0)
+  expect(providers.entries.every((e) => e.action.startsWith("api_key.") || e.action.startsWith("account.") || e.action.startsWith("failover_terms."))).toBe(true)
+  const words = await api((c) => c.settings.audit({ query: { q: "Auditado" } }))
+  expect(words.entries.length).toBeGreaterThan(0)
+  expect(words.entries.every((e) => e.target.name === "Auditado")).toBe(true)
+  expect((await api((c) => c.settings.audit({ query: { q: "100%_nada" } }))).total).toBe(0) // LIKE wildcards are literal
+  expect((await api((c) => c.settings.audit({ query: { from: Date.now() + 60_000 } }))).total).toBe(0)
+  const all = await api((c) => c.settings.audit({ query: {} }))
+  expect(all.pageSize).toBe(50)
+  expect(all.total).toBeGreaterThanOrEqual(all.entries.length)
+  expect((await api((c) => c.settings.audit({ query: { page: 99 } }))).entries).toHaveLength(0)
 })
 
 test("armazenamento: mede a pasta de dados; limpar só remove pastas de chats e projetos que não existem mais", async () => {
@@ -429,7 +443,7 @@ test("armazenamento: mede a pasta de dados; limpar só remove pastas de chats e 
   expect(after.cleanup.find((c) => c.id === "orphans")!.bytes).toBe(0)
   expect(existsSync(join(dir, "runs", "chat-apagado"))).toBe(false)
   expect(existsSync(join(dir, "runs", live.id, "notes.md"))).toBe(true) // a live chat's folder stays
-  expect((await api((c) => c.settings.audit())).some((e) => e.action === "storage.cleaned" && e.target.id === "orphans")).toBe(true)
+  expect((await api((c) => c.settings.audit({ query: {} }))).entries.some((e) => e.action === "storage.cleaned" && e.target.id === "orphans")).toBe(true)
 })
 
 test("contexto: estima o próximo turno parte por parte; mensagens contam", async () => {

@@ -31,7 +31,7 @@ export function BurnDown({ used, elapsed, tone, className }: { used: number; ela
   const line = { vectorEffect: "non-scaling-stroke" as const }
   return (
     <span aria-hidden="true" className={cn("relative block h-5", className)}>
-      <svg viewBox="0 0 100 20" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible">
+      <svg aria-hidden="true" viewBox="0 0 100 20" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible">
         <line x1="0" y1={BOTTOM} x2="100" y2={BOTTOM} className="stroke-current opacity-15" strokeWidth="1" style={line} />
         <line x1="0" y1={TOP} x2="100" y2={BOTTOM} className="stroke-current opacity-30" strokeWidth="1" strokeDasharray="2 3" style={line} />
         <polygon points={`0,${BOTTOM} 0,${TOP} ${nowX},${nowY} ${nowX},${BOTTOM}`} className={cn(FILL[tone], "opacity-15")} />
