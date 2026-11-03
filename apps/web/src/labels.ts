@@ -14,7 +14,7 @@ export const splitModel = (id: string) => {
 const PROVIDERS = { "claude-cli": 1, "codex-cli": 1, anthropic: 1, openai: 1, openrouter: 1, ollama: 1, lmstudio: 1 }
 export const providerLabel = (provider: string) => (has(PROVIDERS, provider) ? t(`model.providers.${provider}` as MessageKey) : provider)
 
-// "claude-cli/opus" → "Opus"; "codex-cli/default" → "Default"; API models keep their id.
+// "claude-cli/opus" → "Opus"; "codex-cli/default" → "CLI default"; API models keep their id.
 // Names the subscription CLIs give their models today ("claude-cli/opus" → "Opus 5.5"), from the model list.
 // The shell remembers them on every render of that list, so every label below sees the same names.
 const named = new Map<string, Pick<ModelInfo, "name" | "note">>()
@@ -26,7 +26,7 @@ export function modelName(id: string): string {
   const real = named.get(id)?.name
   if (real) return real
   const { provider, model } = splitModel(id)
-  if (model === "default") return t("common.default")
+  if (model === "default") return t("model.cliDefault")
   if (provider === "claude-cli" || provider === "codex-cli") return model.charAt(0).toUpperCase() + model.slice(1)
   return model
 }

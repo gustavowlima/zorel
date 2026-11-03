@@ -237,7 +237,7 @@ Janela inteira em três camadas: moldura; barra lateral de 264px direto sobre el
 
 - **Barra lateral:** de cima para baixo, a marca, as páginas fixas (Needs you, Knowledge), as seções Chats e Projects que rolam e o consumo no pé (detalhes em Navigation).
 - **Chat:** mensagens numa coluna de leitura, campo de mensagem largo embaixo. Painel direito (Changes, Files) e painel inferior (Terminal, Tests, Problems, Processes, Logs) abrem e fecham, sem tirar o chat do lugar.
-- **Páginas** (configuração, conhecimento, contas) ficam numa coluna de até 720–760px, com seções em linhas separadas por borda sutil em vez de cards dentro de cards.
+- **Páginas** (configuração, conhecimento, contas) ficam numa coluna de até 672px colada à navegação da esquerda (não centralizada), com seções em linhas entre fios sutis direto no canvas, nunca em cartões: um botão secundário (`bg-control`) some sobre um cartão `surface`, que tem o mesmo tom. Título de seção em 12px muted, com uma dica opcional em `dim` embaixo. Cada área tem no máximo uma ação principal azul ("Add key" sem chave, "Sign in" desconectado). Uma página de detalhe abre com um link pequeno de volta ("‹ Providers") acima do cabeçalho de ícone e título (h1); não repete o título numa trilha. Enquanto a primeira leitura carrega, nada diz "não conectado": o resumo mostra "Checking…"; uma falha vira uma linha de erro com tentar de novo. Ações que apagam algo (chave, conta) pedem confirmação.
 
 O ritmo interno usa a escala de 4px, quase sempre 4, 8, 12 e 16px; entre mensagens, 24px.
 
@@ -275,7 +275,7 @@ Compactos e diretos, com aperto físico ao pressionar.
 
 ### Chips / Badges
 - **Style:** pílula de 20px, rótulo de 11px em peso 500.
-- **Tons:** neutral (controle + muted), accent (azul translúcido), warning (controle + laranja), danger (vermelho translúcido).
+- **Tons:** neutral (controle + muted), accent (azul translúcido), success (verde translúcido, só para estado: "Connected"), warning (controle + laranja), danger (vermelho translúcido).
 
 ### Cards / Containers
 - **Corner Style:** 12px.

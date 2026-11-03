@@ -1,14 +1,18 @@
-// Settings › Providers (inspired by OpenBot's Providers): every way Zero reaches a model, one place. The list
-// splits Connected from Other providers; a provider's page gathers its subscription sign-ins (the official CLI,
-// several accounts), its API key (system keychain), or whether its local server is running, and the models it
-// offers. Zero never reads or stores a CLI's login: it only shows who is connected.
+// Settings › Providers: every way Zero reaches a model, one place. The list splits Connected from Other providers
+// (row lists on the canvas, like every Settings tab; "Checking…" while the first reading loads, an error with a
+// retry when it fails). A provider's page gathers its subscription sign-ins (the official CLI, several accounts,
+// each with its limit windows), its API key (system keychain, with where to get one), or whether its local server
+// is running, and the models it offers. Zero never reads or stores a CLI's login: it only shows who is connected.
 import type { AccountProvider, KeyInfo as KeyInfoSchema, ModelInfo, ProviderAccount } from "@zero/contracts"
-import { t } from "@zero/i18n"
+import { formatTime, t } from "@zero/i18n"
+import { useAtomValue } from "@effect/atom-react"
+import { AsyncResult } from "effect/reactivity"
 import { type ReactNode, useEffect, useState } from "react"
 import { accountsAtom, agentsAtom, keysAtom, modelsAtom, mutations, useInvalidate, useList, useMutation } from "../client.ts"
+import { LimitWindows } from "./limits.tsx"
 import { modelName, modelNote, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
-import { Badge, Button, ChevronRight, ConfirmButton, Input, Plus, ProviderIcon, Search, cx } from "@/ui"
+import { Badge, Button, ChevronRight, ConfirmButton, Input, Plus, ProviderIcon, cx } from "@/ui"
 
 type KeyInfo = typeof KeyInfoSchema.Type
 
@@ -18,12 +22,13 @@ type Provider = {
   readonly account?: AccountProvider // signs in with an official CLI
   readonly key?: string // takes an API key
   readonly harnesses: ReadonlyArray<string> // model id prefixes it serves
+  readonly keyUrl?: string // where to get an API key
 }
 
 const PROVIDERS: ReadonlyArray<Provider> = [
-  { id: "claude", icon: "claude", account: "claude", key: "ANTHROPIC_API_KEY", harnesses: ["claude-cli", "anthropic"] },
-  { id: "chatgpt", icon: "codex", account: "codex", key: "OPENAI_API_KEY", harnesses: ["codex-cli", "openai"] },
-  { id: "openrouter", icon: "openrouter", key: "OPENROUTER_API_KEY", harnesses: ["openrouter"] },
+  { id: "claude", icon: "claude", account: "claude", key: "ANTHROPIC_API_KEY", harnesses: ["claude-cli", "anthropic"], keyUrl: "https://console.anthropic.com/settings/keys" },
+  { id: "chatgpt", icon: "codex", account: "codex", key: "OPENAI_API_KEY", harnesses: ["codex-cli", "openai"], keyUrl: "https://platform.openai.com/api-keys" },
+  { id: "openrouter", icon: "openrouter", key: "OPENROUTER_API_KEY", harnesses: ["openrouter"], keyUrl: "https://openrouter.ai/keys" },
   { id: "ollama", icon: "ollama", harnesses: ["ollama"] },
   { id: "lmstudio", icon: "lmstudio", harnesses: ["lmstudio"] }
 ]
@@ -32,6 +37,13 @@ const PROVIDERS: ReadonlyArray<Provider> = [
 export const providerPageOf = (harness: string) => PROVIDERS.find((p) => p.harnesses.includes(harness))?.id
 
 type State = { accounts: ReadonlyArray<ProviderAccount>; key: KeyInfo | undefined; models: ReadonlyArray<ModelInfo>; running: boolean }
+
+// The three readings a provider's state comes from, and whether they are still loading or failed: an empty list
+// must not read as "not connected" before the first answer.
+function useReadings() {
+  const results: ReadonlyArray<AsyncResult.AsyncResult<unknown, unknown>> = [useAtomValue(accountsAtom), useAtomValue(keysAtom), useAtomValue(modelsAtom)]
+  return { loading: results.some((r) => AsyncResult.isInitial(r)), failed: results.some((r) => AsyncResult.isFailure(r)) }
+}
 
 function useStates() {
   const accounts = useList(accountsAtom)
@@ -51,10 +63,15 @@ function useStates() {
 const connected = (s: State) => s.accounts.some((a) => a.loggedIn) || !!s.key?.set || s.running
 
 // One line under the name: who is signed in, that a key is saved, or what is missing.
-function summary(p: Provider, s: State) {
+function summary(p: Provider, s: State): { text: string; warning?: boolean } {
+  const limited = s.accounts.find((a) => a.limitedUntil)
+  if (limited?.limitedUntil) return { text: `${limited.identity ?? limited.label} · ${t("failover.limitedUntil", { time: formatTime(limited.limitedUntil) })}`, warning: true }
+  return { text: summaryText(p, s) }
+}
+function summaryText(p: Provider, s: State) {
   const signedIn = s.accounts.filter((a) => a.loggedIn)
   if (signedIn.length) {
-    const first = signedIn[0]!.identity ?? signedIn[0]!.label
+    const first = signedIn[0]!.identity ?? t("accounts.signedIn")
     return signedIn.length > 1 ? t("providers.andMore", { name: first, count: signedIn.length - 1 }) : first
   }
   if (s.key?.set) return t("providers.keySaved")
@@ -64,54 +81,49 @@ function summary(p: Provider, s: State) {
 
 export function ProvidersSection({ provider }: { provider: string | undefined }) {
   const page = PROVIDERS.find((p) => p.id === provider)
+  // An unknown provider in the address goes back to the list instead of keeping a wrong URL.
+  useEffect(() => {
+    if (provider && !page) go({ view: "settings", tab: "providers" })
+  }, [provider, page])
   return page ? <ProviderPage provider={page} /> : <ProviderList />
 }
 
 function ProviderList() {
   const stateOf = useStates()
-  const [query, setQuery] = useState("")
-  const shown = PROVIDERS.filter((p) => t(`providers.names.${p.id}`).toLowerCase().includes(query.trim().toLowerCase()))
-  const on = shown.filter((p) => connected(stateOf(p)))
-  const off = shown.filter((p) => !connected(stateOf(p)))
-  const group = (title: string, list: ReadonlyArray<Provider>, action?: ReactNode) =>
-    (list.length > 0 || action) && (
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-4">
-          <h2 className="text-sm font-medium text-muted">{title}</h2>
-          {action}
-        </div>
-        {list.length > 0 && (
-          <div className="flex flex-col divide-y divide-subtle overflow-hidden rounded-card bg-surface">
-            {list.map((p) => (
-              <Button
-                key={p.id}
-                variant="ghost"
-                className="h-auto justify-start gap-3.5 rounded-none px-4 py-3.5 text-left font-normal text-fg"
-                onPress={() => go({ view: "settings", tab: "providers", provider: p.id })}
-              >
-                <ProviderIcon provider={p.icon} size={20} />
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="font-medium">{t(`providers.names.${p.id}`)}</span>
-                  <span className="truncate text-sm text-muted">{summary(p, stateOf(p))}</span>
-                </span>
-                <ChevronRight className="size-4 text-muted" />
-              </Button>
-            ))}
-          </div>
-        )}
-      </section>
+  const { loading, failed } = useReadings()
+  const invalidate = useInvalidate()
+  const row = (p: Provider, hint: { text: string; warning?: boolean }) => (
+    <Button
+      key={p.id}
+      variant="ghost"
+      className="h-auto justify-start gap-3.5 rounded-control px-3 py-3 text-left font-normal text-fg"
+      onPress={() => go({ view: "settings", tab: "providers", provider: p.id })}
+    >
+      <ProviderIcon provider={p.icon} size={20} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="font-medium">{t(`providers.names.${p.id}`)}</span>
+        <span className={cx("truncate text-sm", hint.warning ? "text-warning" : "text-muted")}>{hint.text}</span>
+      </span>
+      <ChevronRight className="size-4 text-muted" />
+    </Button>
+  )
+  if (failed)
+    return (
+      <Group title={t("settings.providers")}>
+        <Row title={t("providers.loadFailed")} hint={t("providers.loadFailedHint")} tone="warning">
+          <Button size="sm" variant="secondary" onPress={() => invalidate(["accounts", "keys", "models"])}>
+            {t("common.retry")}
+          </Button>
+        </Row>
+      </Group>
     )
+  if (loading) return <Group title={t("settings.providers")}>{PROVIDERS.map((p) => row(p, { text: t("providers.checking") }))}</Group>
+  const on = PROVIDERS.filter((p) => connected(stateOf(p)))
+  const off = PROVIDERS.filter((p) => !connected(stateOf(p)))
   return (
     <>
-      {group(
-        t("providers.connected"),
-        on,
-        <label className="relative w-56">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted" />
-          <Input className="pl-8" placeholder={t("providers.search")} aria-label={t("providers.search")} value={query} onChange={(e) => setQuery(e.target.value)} />
-        </label>
-      )}
-      {group(t("providers.others"), off)}
+      {on.length > 0 && <Group title={t("providers.connected")}>{on.map((p) => row(p, summary(p, stateOf(p))))}</Group>}
+      {off.length > 0 && <Group title={t("providers.others")}>{off.map((p) => row(p, summary(p, stateOf(p))))}</Group>}
     </>
   )
 }
@@ -120,15 +132,24 @@ function ProviderPage({ provider: p }: { provider: Provider }) {
   const s = useStates()(p)
   const agents = useList(agentsAtom).filter((a) => p.harnesses.includes(splitModel(a.model).provider))
   const isConnected = connected(s)
+  const { loading } = useReadings()
+  const invalidate = useInvalidate()
+  const name = t(`providers.names.${p.id}`)
+  useEffect(() => {
+    const before = document.title
+    document.title = `${name} · ${t("app.name")}`
+    return () => {
+      document.title = before
+    }
+  }, [name])
   return (
     <>
-      <nav aria-label={t("providers.breadcrumb")} className="flex items-center gap-2 text-lg font-semibold">
-        <Button variant="ghost" className="h-auto px-0 text-lg font-semibold text-muted hover:bg-transparent" onPress={() => go({ view: "settings", tab: "providers" })}>
+      <div className="-mb-4">
+        <Button size="sm" variant="ghost" className="-ml-2.5 text-muted" onPress={() => go({ view: "settings", tab: "providers" })}>
+          <ChevronRight className="size-3.5 rotate-180" />
           {t("settings.providers")}
         </Button>
-        <ChevronRight className="size-4 text-muted" />
-        <span aria-current="page">{t(`providers.names.${p.id}`)}</span>
-      </nav>
+      </div>
 
       <div className="flex items-center gap-4">
         <span className="flex size-12 shrink-0 items-center justify-center rounded-card bg-surface">
@@ -136,32 +157,39 @@ function ProviderPage({ provider: p }: { provider: Provider }) {
         </span>
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="flex items-center gap-2.5">
-            <span className="text-lg font-semibold">{t(`providers.names.${p.id}`)}</span>
-            <Badge tone={isConnected ? "success" : "neutral"}>{isConnected ? t("providers.isConnected") : t("providers.notConnected")}</Badge>
+            <h1 className="text-lg font-semibold">{name}</h1>
+            {!loading && <Badge tone={isConnected ? "success" : "neutral"}>{isConnected ? t("providers.isConnected") : t("providers.notConnected")}</Badge>}
           </span>
           <span className="text-sm text-muted">{t("providers.agentsUse", { count: agents.length })}</span>
         </span>
       </div>
 
       {p.account && <SignIns provider={p.account} accounts={s.accounts} />}
-      {s.key && <ApiKey info={s.key} name={t(`providers.names.${p.id}`)} />}
+      {s.key && <ApiKey info={s.key} name={name} url={p.keyUrl} alternative={!!p.account} />}
       {!p.account && !p.key && (
         <Group title={t("providers.server")}>
-          <Row title={s.running ? t("providers.running") : t("providers.notRunning")} hint={t(`model.hints.${p.id === "ollama" ? "ollama" : "lmstudio"}`)} />
+          <Row title={s.running ? t("providers.running") : t("providers.notRunning")} hint={t(`model.hints.${p.id === "ollama" ? "ollama" : "lmstudio"}`)}>
+            <Button size="sm" variant="secondary" onPress={() => invalidate(["models"])}>
+              {t("providers.checkAgain")}
+            </Button>
+          </Row>
         </Group>
       )}
-      <Models models={s.models} />
+      <Models models={s.models} keySet={!!s.key?.set} />
     </>
   )
 }
 
-const Group = ({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) => (
+const Group = ({ title, hint, action, children }: { title: string; hint?: string; action?: ReactNode; children: ReactNode }) => (
   <section className="flex flex-col gap-3">
-    <div className="flex items-center justify-between gap-4">
-      <h2 className="text-sm font-medium text-muted">{title}</h2>
+    <div className="flex items-end justify-between gap-4">
+      <span className="flex min-w-0 flex-col gap-1">
+        <h2 className="text-sm font-medium text-muted">{title}</h2>
+        {hint && <p className="text-sm text-dim">{hint}</p>}
+      </span>
       {action}
     </div>
-    <div className="flex flex-col divide-y divide-subtle rounded-card bg-surface px-4">{children}</div>
+    <div className="flex flex-col divide-y divide-subtle border-y border-subtle">{children}</div>
   </section>
 )
 
@@ -182,6 +210,7 @@ function SignIns({ provider, accounts }: { provider: AccountProvider; accounts: 
   const login = useMutation(mutations.login)
   const [adding, setAdding] = useState(false)
   const [label, setLabel] = useState("")
+  const [error, setError] = useState<string>()
 
   // A sign-in finishes in the browser; poll until the CLI reports it.
   const pending = accounts.some((a) => a.loggingIn)
@@ -194,6 +223,7 @@ function SignIns({ provider, accounts }: { provider: AccountProvider; accounts: 
   return (
     <Group
       title={t("providers.signIn")}
+      hint={t("accounts.intro")}
       action={
         !adding && (
           <Button size="sm" variant="ghost" onPress={() => setAdding(true)}>
@@ -211,12 +241,15 @@ function SignIns({ provider, accounts }: { provider: AccountProvider; accounts: 
           className="flex flex-wrap items-center gap-3 py-3.5"
           onSubmit={(e) => {
             e.preventDefault()
-            void create({ payload: { provider, label: label.trim() }, reactivityKeys: ["accounts"] }).then((a) => {
-              setLabel("")
-              setAdding(false)
-              // The CLI opens the provider's sign-in page in the browser.
-              return login({ params: { id: a.id }, reactivityKeys: ["accounts"] })
-            })
+            setError(undefined)
+            void create({ payload: { provider, label: label.trim() }, reactivityKeys: ["accounts"] })
+              .then((a) => {
+                setLabel("")
+                setAdding(false)
+                // The CLI opens the provider's sign-in page in the browser.
+                return login({ params: { id: a.id }, reactivityKeys: ["accounts"] })
+              })
+              .catch(() => setError(t("accounts.addFailed")))
           }}
         >
           <Input
@@ -236,7 +269,7 @@ function SignIns({ provider, accounts }: { provider: AccountProvider; accounts: 
           </Button>
         </form>
       )}
-      <p className="py-3 text-sm text-muted">{t("accounts.intro")}</p>
+      {error && <p className="py-3 text-sm text-danger">{error}</p>}
     </Group>
   )
 }
@@ -259,7 +292,7 @@ function AccountRow({ account: a }: { account: ProviderAccount }) {
       <div className="flex flex-wrap items-center gap-3">
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex items-center gap-2">
-            <span className="truncate font-medium">{a.loggedIn ? (a.identity ?? a.label) : a.label}</span>
+            <span className="truncate font-medium">{a.loggedIn ? (a.identity ?? t("accounts.signedIn")) : a.label}</span>
             {a.isDefault && <Badge>{t("accounts.default")}</Badge>}
           </span>
           <span className={cx("truncate text-sm", a.loggedIn ? "text-muted" : "text-warning")}>{a.loggedIn ? a.label : status}</span>
@@ -280,6 +313,11 @@ function AccountRow({ account: a }: { account: ProviderAccount }) {
           </ConfirmButton>
         )}
       </div>
+      {a.loggedIn && (
+        <div className="pt-1.5">
+          <LimitWindows account={a} compact />
+        </div>
+      )}
       {link && a.loggingIn && (
         <a className="text-sm text-accent-text underline" href={link} target="_blank" rel="noreferrer">
           {t("accounts.openLogin")}
@@ -291,15 +329,21 @@ function AccountRow({ account: a }: { account: ProviderAccount }) {
 }
 
 // The provider's API key, kept in the system keychain (or set in the server's environment).
-function ApiKey({ info, name }: { info: KeyInfo; name: string }) {
+function ApiKey({ info, name, url, alternative }: { info: KeyInfo; name: string; url: string | undefined; alternative: boolean }) {
   const setKey = useMutation(mutations.setKey)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState("")
-  const save = (value: string) =>
-    void setKey({ params: { name: info.name }, payload: { value }, reactivityKeys: ["keys", "models"] }).then(() => {
-      setDraft("")
-      setEditing(false)
-    })
+  const [error, setError] = useState<string>()
+  const save = (value: string) => {
+    setError(undefined)
+    void setKey({ params: { name: info.name }, payload: { value }, reactivityKeys: ["keys", "models"] }).then(
+      () => {
+        setDraft("")
+        setEditing(false)
+      },
+      () => setError(t("keys.saveFailed"))
+    )
+  }
   return (
     <Group title={t("providers.apiKey")}>
       {info.fromEnv ? (
@@ -330,23 +374,43 @@ function ApiKey({ info, name }: { info: KeyInfo; name: string }) {
           </Button>
         </form>
       ) : (
-        <Row title={info.set ? t("providers.keySaved") : t("providers.noKey")} hint={info.set ? t("keys.intro") : t("providers.pasteKey", { name })}>
-          <Button size="sm" variant="secondary" onPress={() => setEditing(true)}>
+        <Row
+          title={info.set ? t("providers.keySaved") : t("providers.noKey")}
+          hint={
+            info.set ? (
+              t("keys.intro")
+            ) : (
+              <>
+                {alternative ? t("providers.keyInstead", { name }) : t("providers.pasteKey", { name })}
+                {url && (
+                  <>
+                    {" "}
+                    <a className="text-accent-text underline" href={url} target="_blank" rel="noreferrer">
+                      {t("providers.getKey")}
+                    </a>
+                  </>
+                )}
+              </>
+            )
+          }
+        >
+          <Button size="sm" variant={info.set ? "secondary" : "default"} onPress={() => setEditing(true)}>
             {info.set ? t("providers.replaceKey") : t("providers.addKey")}
           </Button>
           {info.set && (
-            <Button size="sm" variant="ghost" onPress={() => save("")}>
+            <ConfirmButton size="sm" variant="ghost" title={t("keys.clearTitle", { name })} description={t("keys.clearBody")} confirmLabel={t("keys.clear")} onConfirm={() => save("")}>
               {t("keys.clear")}
-            </Button>
+            </ConfirmButton>
           )}
         </Row>
       )}
+      {error && <p className="py-3 text-sm text-danger">{error}</p>}
     </Group>
   )
 }
 
 // The models the provider offers today, by harness (Claude Code and the Anthropic API are both Claude).
-function Models({ models }: { models: ReadonlyArray<ModelInfo> }) {
+function Models({ models, keySet }: { models: ReadonlyArray<ModelInfo>; keySet: boolean }) {
   const harnesses = [...new Set(models.map((m) => m.provider))]
   if (!models.length) return null
   return (
@@ -357,12 +421,13 @@ function Models({ models }: { models: ReadonlyArray<ModelInfo> }) {
           <div key={h} className="flex flex-col gap-2 py-3.5">
             <span className="flex items-center gap-2 text-sm text-muted">
               {providerLabel(h)}
-              {!list.some((m) => m.available) && <Badge>{t("model.unavailable")}</Badge>}
+              {!list.some((m) => m.available) && <Badge>{list[0]?.kind === "api" && !keySet ? t("providers.needsKey") : t("model.unavailable")}</Badge>}
             </span>
-            <ul className="flex flex-wrap gap-x-6 gap-y-2">
+            <ul className="grid grid-cols-2 gap-x-6 gap-y-2">
               {list.map((m) => (
-                <li key={m.id} className="flex flex-col" title={modelNote(m.id) || undefined}>
-                  <span>{modelName(m.id)}</span>
+                <li key={m.id} className="flex min-w-0 flex-col">
+                  <span className="truncate">{modelName(m.id)}</span>
+                  {modelNote(m.id) && <span className="truncate text-sm text-muted">{modelNote(m.id)}</span>}
                 </li>
               ))}
             </ul>
