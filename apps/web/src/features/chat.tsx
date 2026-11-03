@@ -6,7 +6,7 @@ import { type Agent, type Chat, type FailoverTarget, type Message, type Provider
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zero/contracts/events"
-import { formatCompact, formatDuration, t } from "@zero/i18n"
+import { formatCompact, formatDuration, formatTime, t } from "@zero/i18n"
 import { type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -21,8 +21,8 @@ import { chatDelta, Delta, type Focus, TerminalPanel, TurnChanges, WorkspacePane
 import { ModelPicker } from "./model-picker.tsx"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import {
-  Button, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, Input, Menu, MenuItem,
-  MenuSeparator, MessageCircle, Minimize2, MoreHorizontal, PanelBottom, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Trash2
+  Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, Info, Input, Menu, MenuItem,
+  MenuSeparator, MessageCircle, Minimize2, MoreHorizontal, PanelBottom, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
 } from "@/ui"
 
 export function ChatView({ chat }: { chat: Chat }) {
@@ -389,7 +389,7 @@ function Timeline({ chat, state, agents, onView }: { chat: Chat; state: ChatStat
       }}
       className="min-h-0 flex-1 overflow-auto"
     >
-      <div className="mx-auto flex w-full max-w-180 flex-col gap-5.5 px-7 pt-6 pb-4">
+      <div className="mx-auto flex w-full max-w-180 flex-col gap-7 px-7 pt-6 pb-8">
         {chat.summary && <Summary text={chat.summary} />}
         {state.ready && items.length === 0 && !state.live && <EmptyState icon={<MessageCircle />} title={t("chat.empty")} hint={t("chat.emptyHint")} />}
         {!state.ready && (
@@ -397,10 +397,18 @@ function Timeline({ chat, state, agents, onView }: { chat: Chat; state: ChatStat
             <Spinner />
           </div>
         )}
-        {items.map((item) =>
+        {items.map((item, i) =>
           "message" in item ? (
-            <div key={item.message.id} className={cx(item.message.at <= chat.summaryUntil && "opacity-55")} title={item.message.at <= chat.summaryUntil ? t("chat.coveredBySummary") : undefined}>
-              {item.message.role === "user" ? <UserMessage message={item.message} /> : <AgentMessage message={item.message} agents={agents} onView={onView} />}
+            <div
+              key={item.message.id}
+              className={cx(item.message.at <= chat.summaryUntil && "opacity-55")}
+              title={item.message.at <= chat.summaryUntil ? t("chat.coveredBySummary") : undefined}
+            >
+              {item.message.role === "user" ? (
+                <UserMessage message={item.message} />
+              ) : (
+                <AgentMessage message={item.message} agents={agents} onView={onView} continued={continues(items[i - 1], item.message)} />
+              )}
             </div>
           ) : (
             <TimelineNote key={`${item.note.kind}-${item.note.at}`} note={item.note} agents={agents} />
@@ -413,6 +421,18 @@ function Timeline({ chat, state, agents, onView }: { chat: Chat; state: ChatStat
     </div>
   )
 }
+
+// A reply that follows one from the same agent within a few minutes (no note between) joins its run: no new
+// avatar and name.
+const RUN_GAP_MS = 5 * 60_000
+const continues = (prev: Item | undefined, m: Message) =>
+  m.role !== "user" &&
+  !m.switches.length &&
+  !!prev &&
+  "message" in prev &&
+  prev.message.role !== "user" &&
+  prev.message.agentId === m.agentId &&
+  m.at - prev.message.at < RUN_GAP_MS
 
 function Summary({ text }: { text: string }) {
   const [open, setOpen] = useState(false)
@@ -434,7 +454,7 @@ function Summary({ text }: { text: string }) {
 
 function UserMessage({ message: m }: { message: Message }) {
   return (
-    <div className="ml-auto flex max-w-125 flex-col items-end gap-1.5">
+    <div className="group/msg relative ml-auto flex max-w-125 flex-col items-end gap-1.5">
       {m.attachments.length > 0 && (
         <div className="flex flex-wrap justify-end gap-1.5">
           {m.attachments.map((a) =>
@@ -458,25 +478,76 @@ function UserMessage({ message: m }: { message: Message }) {
         </div>
       )}
       <div className="rounded-sheet bg-surface px-4 py-2.5 whitespace-pre-wrap">{m.text}</div>
+      <MessageActions text={m.text} at={m.at} align="end" />
+    </div>
+  )
+}
+
+// Under a message, shown on hover or focus (always on touch): copy, when it was written and, for a reply, the
+// details (model, tokens, account, cost) in a tooltip. Quiet, so a conversation reads as text.
+function MessageActions({ text, at, details, align = "start" }: { text: string; at: number; details?: ReactNode; align?: "start" | "end" }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () =>
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    })
+  return (
+    <div
+      className={cx(
+        // Laid over the gap below the message, so it takes no height of its own.
+        "absolute top-full z-10 flex h-6 items-center gap-0.5 text-sm text-dim opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none",
+        align === "end" ? "right-0" : "-left-1.5"
+      )}
+    >
+      {text && (
+        <Tooltip content={copied ? t("common.copied") : t("common.copy")}>
+          <IconButton label={t("common.copy")} size="sm" onPress={copy}>
+            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+          </IconButton>
+        </Tooltip>
+      )}
+      {details && (
+        <Tooltip content={details}>
+          <IconButton label={t("chat.details")} size="sm">
+            <Info className="size-3.5" />
+          </IconButton>
+        </Tooltip>
+      )}
+      <time className="px-1.5 tabular-nums" dateTime={new Date(at).toISOString()} title={new Date(at).toLocaleString()}>
+        {formatTime(at)}
+      </time>
     </div>
   )
 }
 
 // Agent reply: avatar column + content (name with its activity pill, text, how it ended; model, tokens and
 // cost in the footer line).
-function Reply({ agentId, model, agents, pill, children, footer }: { agentId: string | null; model: string | null; agents: ReadonlyArray<Agent>; pill?: ReactNode; children: ReactNode; footer?: ReactNode }) {
+function Reply({
+  agentId,
+  model,
+  agents,
+  pill,
+  children,
+  footer,
+  continued = false
+}: { agentId: string | null; model: string | null; agents: ReadonlyArray<Agent>; pill?: ReactNode; children: ReactNode; footer?: ReactNode; continued?: boolean }) {
   const agent = agents.find((a) => a.id === agentId)
   return (
-    <article className="flex gap-3">
-      <AuthorAvatar agent={agent} model={model} size={28} />
-      <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+    <article className="group/msg flex gap-3" aria-label={continued ? agentName(agentId, agents) : undefined}>
+      {continued ? <span aria-hidden="true" className="w-7 shrink-0" /> : <AuthorAvatar agent={agent} model={model} size={28} />}
+      <div className="relative flex min-w-0 flex-1 flex-col gap-2">
         {/* The steps list of the pill wraps to its own line (basis-full) under the name. */}
-        <div className="flex min-h-7 flex-wrap items-center gap-x-2.5 gap-y-2.5">
-          <strong className="font-semibold" title={model ? modelLabel(model) : undefined}>
-            {agentName(agentId, agents)}
-          </strong>
-          {pill}
-        </div>
+        {(!continued || pill) && (
+          <div className="flex min-h-7 flex-wrap items-center gap-x-2.5 gap-y-2.5">
+            {!continued && (
+              <strong className="font-semibold" title={model ? modelLabel(model) : undefined}>
+                {agentName(agentId, agents)}
+              </strong>
+            )}
+            {pill}
+          </div>
+        )}
         {children}
         {footer}
       </div>
@@ -498,7 +569,7 @@ function endingOf(error: string | null): { tone: "warning" | "danger"; text: str
   return { tone: "danger", text: error }
 }
 
-function AgentMessage({ message: m, agents, onView }: { message: Message; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void }) {
+function AgentMessage({ message: m, agents, onView, continued }: { message: Message; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; continued: boolean }) {
   const accounts = useList(accountsAtom)
   return (
     <div className="flex flex-col gap-6">
@@ -506,12 +577,18 @@ function AgentMessage({ message: m, agents, onView }: { message: Message; agents
         // biome-ignore lint/suspicious/noArrayIndexKey: a saved message's switches never change
         <Separator key={i}>{switchText(sw, accounts)}</Separator>
       ))}
-      <AgentReply message={m} agents={agents} accounts={accounts} onView={onView} />
+      <AgentReply message={m} agents={agents} accounts={accounts} onView={onView} continued={continued} />
     </div>
   )
 }
 
-function AgentReply({ message: m, agents, accounts, onView }: { message: Message; agents: ReadonlyArray<Agent>; accounts: ReadonlyArray<ProviderAccount>; onView: (f: Focus) => void }) {
+function AgentReply({
+  message: m,
+  agents,
+  accounts,
+  onView,
+  continued
+}: { message: Message; agents: ReadonlyArray<Agent>; accounts: ReadonlyArray<ProviderAccount>; onView: (f: Focus) => void; continued: boolean }) {
   const ending = endingOf(m.error)
   const tokens = m.inputTokens || m.outputTokens ? t("chat.tokens", { input: formatCompact(m.inputTokens), output: formatCompact(m.outputTokens) }) : null
   // Which account answered and what it cost; a subscription shows the API equivalent, not a charge.
@@ -522,22 +599,31 @@ function AgentReply({ message: m, agents, accounts, onView }: { message: Message
       agentId={m.agentId}
       model={m.model}
       agents={agents}
+      continued={continued}
       pill={m.steps.length > 0 && <StoredActivity steps={m.steps} />}
       footer={
-        (ending || tokens || cost || m.model) && (
-          <div className="flex flex-wrap items-center gap-2 text-sm text-dim">
-            {m.model && <span>{modelLabel(m.model)}</span>}
-            {ending && (
-              <span className={cx("inline-flex items-center gap-1.5", ending.tone === "danger" ? "text-danger" : "text-warning")}>
-                <CircleAlert className="size-3.5" />
-                {ending.tone === "danger" ? t("chat.failed") : ending.text}
-              </span>
-            )}
-            {tokens && <span>{tokens}</span>}
-            {account && <span>{account.label}</span>}
-            {cost && <span title={t("usage.costHint")}>{cost}</span>}
-          </div>
-        )
+        <>
+          {ending && (
+            <span className={cx("inline-flex items-center gap-1.5 text-sm", ending.tone === "danger" ? "text-danger" : "text-warning")}>
+              <CircleAlert className="size-3.5" />
+              {ending.tone === "danger" ? t("chat.failed") : ending.text}
+            </span>
+          )}
+          <MessageActions
+            text={m.text}
+            at={m.at}
+            details={
+              (m.model || tokens || account || cost) && (
+                <span className="flex flex-col gap-0.5">
+                  {m.model && <span className="text-fg">{modelLabel(m.model)}</span>}
+                  {tokens && <span>{tokens}</span>}
+                  {account && <span>{account.label}</span>}
+                  {cost && <span>{cost}</span>}
+                </span>
+              )
+            }
+          />
+        </>
       }
     >
       {m.text && prose(m.text)}
