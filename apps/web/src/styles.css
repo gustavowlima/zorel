@@ -190,6 +190,8 @@ html, body, #root { height: 100%; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 /* Desktop-style scroll areas (the sidebar tree): no visible bar; edges get a hairline while content is hidden. */
 .scroll-quiet { scrollbar-width: none; }
+/* Desktop app: the sidebar's brand row is the title bar; the window buttons take its left 84px. */
+[data-shell="desktop"] .title-inset { padding-left: 84px; }
 .scroll-quiet::-webkit-scrollbar { display: none; }
 a { text-underline-offset: 3px; }
 body {

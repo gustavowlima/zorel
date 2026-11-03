@@ -112,9 +112,14 @@ export const Chat = Schema.Struct({
   summary: Schema.String, // summary of what left the window (consolidation)
   summaryUntil: Schema.Number, // `at` of the last message covered by the summary
   failover: Schema.NullOr(FailoverList), // null: the lead agent's list
+  position: Schema.NullOr(Schema.Number), // manual order inside its group; null: by recent activity, above the placed ones
   createdAt: Schema.Number
 })
 export type Chat = typeof Chat.Type
+
+// Manual order in the sidebar: the ids in their new order. Chats only reorder inside their own group.
+export const ProjectOrder = Schema.Struct({ ids: Schema.Array(Id) })
+export const ChatOrder = Schema.Struct({ projectId: Schema.NullOr(Id), ids: Schema.Array(Id) })
 
 export const Step = Schema.Struct({
   tool: Schema.String,
@@ -310,6 +315,7 @@ export const Api = HttpApi.make("zero")
       // Files of the workspace (up to MAX_WORKSPACE_FILES), marked with what changed since the project's first checkpoint in this chat.
       .add(HttpApiEndpoint.get("files", "/api/projects/:id/files", { params: idParam, query: { chatId: Schema.optionalKey(Id) }, success: Schema.Array(WorkspaceFile), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("remove", "/api/projects/:id", { params: idParam }))
+      .add(HttpApiEndpoint.put("reorder", "/api/projects/order", { payload: ProjectOrder }))
   )
   .add(
     HttpApiGroup.make("agents")
@@ -324,6 +330,7 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.post("create", "/api/chats", { payload: NewChat, success: Chat, error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.patch("update", "/api/chats/:id", { params: idParam, payload: ChatPatch, success: Chat, error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("remove", "/api/chats/:id", { params: idParam }))
+      .add(HttpApiEndpoint.put("reorder", "/api/chats/order", { payload: ChatOrder }))
       .add(HttpApiEndpoint.get("messages", "/api/chats/:id/messages", { params: idParam, success: Schema.Array(Message) }))
       .add(HttpApiEndpoint.post("consolidate", "/api/chats/:id/consolidate", { params: idParam, success: Chat, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
       // What one turn changed in the workspace, and undoing it (restores the files to the checkpoint before it).

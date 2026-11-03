@@ -27,4 +27,6 @@ process.env.ZERO_MIGRATIONS = join(PATHS.VIEWS_FOLDER, "..", "drizzle")
 const url = await start({ port: freePort(), webDir: join(PATHS.VIEWS_FOLDER, "..", "web") })
 for (let i = 0; i < 100 && !(await fetch(`${url}/api/models`).catch(() => null)); i++) await Bun.sleep(50)
 
-new BrowserWindow({ title: "Zero", url, frame: { width: 1280, height: 820 }, titleBarStyle: "hiddenInset" })
+// The web app makes its sidebar brand row the title bar (drag region) and leaves room for the window buttons,
+// which sit centered on that row.
+new BrowserWindow({ title: "Zero", url: `${url}/?shell=desktop`, frame: { width: 1280, height: 820 }, titleBarStyle: "hiddenInset", trafficLightOffset: { x: 18, y: 24 } })

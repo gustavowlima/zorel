@@ -95,3 +95,4 @@ updated: 2026-11-03
 - reaproveitar sessão nativa da CLI: quebra a troca de modelo e o contexto otimizado (decisão central)
 - dar ferramentas às CLIs por fora do gateway: perde política e aprovação
 - valores de segredo no banco: só nomes (envKeys); valores no chaveiro
+- ordem da sidebar: projects.position e chats.position (null = ainda não posicionado: no topo, por recência); PUT /api/projects/order e /api/chats/order gravam a ordem do grupo; reorderChats só atualiza chats do mesmo projectId (nunca muda de projeto)

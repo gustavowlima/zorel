@@ -372,3 +372,22 @@ test("anexos: upload, mensagem com arquivos, o engine recebe caminhos; texto inl
   await api((c) => c.chats.remove({ params: { id: chat.id } }))
   expect(require("node:fs").existsSync(dir)).toBe(false)
 })
+
+test("ordem da barra lateral: projetos na ordem dada (novos no topo); chats só reordenam dentro do próprio grupo", async () => {
+  const a = await api((c) => c.projects.create({ payload: { name: "A", brief: "" } }))
+  const b = await api((c) => c.projects.create({ payload: { name: "B", brief: "" } }))
+  await api((c) => c.projects.reorder({ payload: { ids: [a.id, b.id] } }))
+  const fresh = await api((c) => c.projects.create({ payload: { name: "Novo", brief: "" } }))
+  const ids = (await api((c) => c.projects.list())).map((p) => p.id)
+  expect(ids.indexOf(fresh.id)).toBeLessThan(ids.indexOf(a.id)) // not placed yet: on top
+  expect(ids.indexOf(a.id)).toBeLessThan(ids.indexOf(b.id))
+
+  const inA = await api((c) => c.chats.create({ payload: { projectId: a.id, agentIds: [], model: "ollama/llama3" } }))
+  const inB = await api((c) => c.chats.create({ payload: { projectId: b.id, agentIds: [], model: "ollama/llama3" } }))
+  await api((c) => c.chats.reorder({ payload: { projectId: a.id, ids: [inB.id, inA.id] } }))
+  const chats = await api((c) => c.chats.list())
+  const after = (id: string) => chats.find((x) => x.id === id)!
+  expect(after(inA.id).position).toBe(1)
+  expect(after(inB.id).position).toBeNull() // another project's chat is ignored
+  expect(after(inB.id).projectId).toBe(b.id) // and never moves
+})
