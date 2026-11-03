@@ -42,13 +42,13 @@ export function NavSegment<K extends string>({ label, options, value, onChange }
         const next = [...keys][0]
         if (next !== undefined) onChange(String(next) as K)
       }}
-      className="flex min-w-0 flex-1 gap-0.5 rounded-control bg-control p-0.5"
+      className="flex min-w-0 flex-1 items-center gap-1"
     >
       {options.map((o) => (
         <ToggleButton
           key={o.id}
           id={o.id}
-          className="flex h-6 min-w-0 flex-1 cursor-default items-center justify-center gap-1.5 rounded-control text-sm text-muted outline-none transition-colors duration-150 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:text-fg data-selected:bg-surface data-selected:font-medium data-selected:text-fg motion-reduce:transition-none [&_svg]:size-3.5 [&_svg]:shrink-0"
+          className="flex h-control-sm min-w-0 cursor-default items-center gap-1.5 rounded-full border border-transparent px-3 text-sm text-muted outline-none transition-colors duration-150 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:text-fg data-selected:border-subtle data-selected:bg-surface data-selected:text-fg motion-reduce:transition-none [&_svg]:size-3.5 [&_svg]:shrink-0"
         >
           {o.icon}
           <span className="truncate">{o.label}</span>
