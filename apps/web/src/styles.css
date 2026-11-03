@@ -216,16 +216,8 @@ html, body, #root { height: 100%; }
 .composer-editor p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--z-text-dim); float: left; height: 0; pointer-events: none; }
 /* Desktop app: the sidebar's brand row is the title bar; the window buttons take its left 84px. */
 /* Desktop app: a strip on top of the sidebar holds the window buttons (hidden in the browser). */
-/* Sidebar icon tabs: the selected one's name slides out and pushes the next tabs. */
-.nav-tab-label {
-  display: grid;
-  grid-template-columns: 0fr;
-  opacity: 0;
-  transition: grid-template-columns 240ms cubic-bezier(0.2, 0, 0, 1), margin-left 240ms cubic-bezier(0.2, 0, 0, 1), opacity 180ms ease-out;
-}
-.nav-tab-label > span { overflow: hidden; white-space: nowrap; }
-.nav-tab[data-active] .nav-tab-label { grid-template-columns: 1fr; margin-left: 6px; opacity: 1; }
-@media (prefers-reduced-motion: reduce) { .nav-tab-label { transition: none; } }
+/* A scrolling list with more below fades out over its last 24px instead of ending on a cut row. */
+.fade-bottom { mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
 
 /* Desktop app: the brand row moves right of the window buttons. */
 [data-shell="desktop"] .brand-row { padding-left: 76px; }
