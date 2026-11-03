@@ -13,7 +13,7 @@ export { BareTextarea, Input, Textarea } from "./input"
 export { Code, Column, EmptyState, Meter, Rows, Screen, Section } from "./layout"
 export { Logo } from "./logo"
 export { Menu, MenuItem, MenuSeparator } from "./menu"
-export { NavItem, NavLabel, NavTree, NavTreeItem, type NavKey, useNavReorder } from "./nav"
+export { NavItem, NavLabel, NavTab, NavTree, NavTreeItem, type NavKey, useNavReorder } from "./nav"
 export { I18nProvider } from "react-aria-components" // React Aria's own strings follow Zero's language
 export { FieldButton, OptionButton, RailButton } from "./picker"
 export { DisclosurePill, Dot } from "./pill"

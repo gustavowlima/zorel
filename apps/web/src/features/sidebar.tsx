@@ -13,7 +13,7 @@ import { agentTone, chatTitle, splitModel, statusLabel, windowLabel } from "../l
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, BookOpen, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MessageCircle, ModelAvatar, NavItem, NavTree, NavTreeItem, type NavKey, Plus, Settings, Spinner,
+  AgentAvatar, BookOpen, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MessageCircle, ModelAvatar, NavItem, NavTab, NavTree, NavTreeItem, type NavKey, Plus, Settings, Spinner,
   SquarePen, Tooltip, useNavReorder
 } from "@/ui"
 
@@ -108,12 +108,8 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
 
       {/* Icon tabs (names in tooltips) switch the list below; the action at the end creates in the open one. */}
       <div className="mb-1.5 flex shrink-0 items-center gap-0.5 pr-2.5">
-        <FootButton label={t("nav.chats")} active={tab === "chats"} onPress={() => pick("chats")}>
-          <MessageCircle />
-        </FootButton>
-        <FootButton label={t("nav.projects")} active={tab === "projects"} onPress={() => pick("projects")}>
-          <Folder />
-        </FootButton>
+        <NavTab label={t("nav.chats")} icon={<MessageCircle />} active={tab === "chats"} onPress={() => pick("chats")} />
+        <NavTab label={t("nav.projects")} icon={<Folder />} active={tab === "projects"} onPress={() => pick("projects")} />
         <span className="flex-1" />
         {tab === "projects" ? (
           <NewProjectButton />
