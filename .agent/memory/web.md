@@ -36,3 +36,4 @@ updated: 2026-11-03
 - dias de uso são UTC: o mês começa em Date.UTC e o rótulo do dia usa meio-dia (dayLabel) para não voltar um dia no fuso local
 - useReadOnOpen lê os limites uma conta por vez: o átomo de mutação é compartilhado e uma segunda chamada aborta a primeira (499)
 - labels.rememberModels (chamado no App) guarda os nomes reais dos modelos; modelName/modelNote usam e caem nos apelidos
+- usage.tsx (2026-11-03, inspirado no OpenBot): hero do total (custo ou tokens), lista de harness = legenda, AreaChart (SVG próprio, sem lib; slider por teclado), Totals, Breakdown (aba Day = gráfico em tabela); cores das séries em --z-series-N por harness em ordem fixa (HARNESSES)
