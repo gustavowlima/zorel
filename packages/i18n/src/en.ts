@@ -413,6 +413,35 @@ export const en = {
     dark: "Dark",
     light: "Light"
   },
+  failover: {
+    title: "Fallbacks",
+    menu: "Fallbacks…",
+    intro: "When the model fails before doing anything, the turn moves to the next one here, in order. The context comes along. Empty: no fallback.",
+    chatIntro: "Overrides the lead agent's list for this chat.",
+    useAgent: "Use the agent's list",
+    add: "Add fallback",
+    remove: "Remove",
+    moveUp: "Move up",
+    moveDown: "Move down",
+    empty: "No fallbacks: when the model fails, the turn fails.",
+    perToken: "Charged per token",
+    max: "Up to {max} fallbacks",
+    termsTitle: "Two subscriptions of the same provider",
+    termsBody: "Switching subscription accounts to get around limits may break the provider's terms and get the account blocked. The risk is yours.",
+    termsAccept: "I understand",
+    switched: "{from} {why}, continuing with {to}",
+    why: {
+      limit: "hit its limit until {time}",
+      rate_limit: "is rate limited",
+      billing: "has a billing problem",
+      unavailable: "is unavailable",
+      auth: "isn't signed in",
+      network: "couldn't be reached",
+      timeout: "timed out"
+    },
+    limitedUntil: "Limit reached · back at {time}",
+    usage: "{percent} used · resets {time}"
+  },
   notFound: {
     title: "Not found",
     body: "It may have been deleted.",

@@ -7,7 +7,7 @@ import { Button, type ButtonProps } from "./button"
 
 const overlay =
   "fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4 data-entering:animate-in data-entering:fade-in-0 data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none"
-const sheet = "w-full max-w-sm rounded-sheet border border-strong bg-raised p-5 text-fg outline-none data-entering:animate-in data-entering:zoom-in-95 motion-reduce:animate-none"
+const sheet = "w-full rounded-sheet border border-strong bg-raised p-5 text-fg outline-none data-entering:animate-in data-entering:zoom-in-95 motion-reduce:animate-none"
 
 type Body = (close: () => void) => ReactNode
 
@@ -26,10 +26,10 @@ function Content({ title, children }: { title: string; children: Body }) {
   )
 }
 
-export function Dialog({ title, children, isOpen, onOpenChange }: { title: string; children: Body; isOpen?: boolean; onOpenChange?: (open: boolean) => void }) {
+export function Dialog({ title, children, isOpen, onOpenChange, size = "sm" }: { title: string; children: Body; isOpen?: boolean; onOpenChange?: (open: boolean) => void; size?: "sm" | "lg" }) {
   return (
     <ModalOverlay isDismissable className={overlay} {...(isOpen !== undefined && { isOpen })} {...(onOpenChange && { onOpenChange })}>
-      <Modal className={sheet}>
+      <Modal className={`${sheet} ${size === "lg" ? "max-w-xl" : "max-w-sm"}`}>
         <Content title={title}>{children}</Content>
       </Modal>
     </ModalOverlay>

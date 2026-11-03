@@ -1,8 +1,8 @@
 // Readable labels derived from data: model and provider names, memory scopes, chat titles, live status,
 // and each agent's identity tone (its position among its teammates, so colors don't repeat).
-import type { Agent, Chat, Project } from "@zero/contracts"
+import type { Agent, Chat, Project, ProviderAccount, Switch } from "@zero/contracts"
 import type { ChatStatus } from "@zero/contracts/events"
-import { type MessageKey, t } from "@zero/i18n"
+import { formatTime, type MessageKey, t } from "@zero/i18n"
 
 const has = <K extends string>(map: Record<K, unknown>, k: string): k is K => k in map
 
@@ -71,3 +71,17 @@ export const handleOf = (a: Pick<Agent, "name">) =>
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-|-$/g, "")
+
+// A failover route for people: "Claude · work · Opus" for a subscription account, "Anthropic · claude-…" otherwise.
+export function routeLabel(model: string, accountId: string | null, accounts: ReadonlyArray<ProviderAccount>): string {
+  const provider = ACCOUNT_OF_MODEL[splitModel(model).provider]
+  const mine = provider ? accounts.filter((a) => a.provider === provider) : []
+  const account = mine.find((a) => a.id === accountId) ?? mine.find((a) => a.isDefault)
+  return account && mine.length > 1 ? `${account.label} · ${modelName(model)}` : modelLabel(model)
+}
+
+// "Claude · personal · Opus hit its limit until 14:30, continuing with Codex · Default"
+export function switchText(sw: Switch, accounts: ReadonlyArray<ProviderAccount>): string {
+  const why = sw.reason === "limit" ? t("failover.why.limit", { time: sw.until ? formatTime(sw.until) : "?" }) : t(`failover.why.${sw.reason}`)
+  return t("failover.switched", { from: routeLabel(sw.fromModel, sw.fromAccountId, accounts), why, to: routeLabel(sw.toModel, sw.toAccountId, accounts) })
+}

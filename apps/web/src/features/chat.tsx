@@ -2,21 +2,22 @@
 // right, each agent's reply with its activity pill, approvals waiting for you, handoffs between agents),
 // and the message box. State is the chat atom: snapshot + live events, so a turn keeps going if the tab
 // closes and the screen catches up when it reopens.
-import type { Agent, Chat, Message } from "@zero/contracts"
+import type { Agent, Chat, FailoverTarget, Message } from "@zero/contracts"
 import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zero/contracts/events"
 import { formatCompact, formatDuration, t } from "@zero/i18n"
 import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { agentsAtom, attachmentUrl, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
-import { agentName, chatTitle, handleOf, modelLabel } from "../labels.ts"
+import { accountsAtom, agentsAtom, attachmentUrl, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
+import { agentName, chatTitle, handleOf, modelLabel, switchText } from "../labels.ts"
 import { go } from "../state.ts"
 import { Composer } from "./composer.tsx"
+import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { AuthorAvatar, AvatarStack, TeamPicker } from "./people.tsx"
 import {
   Button, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, Input, Menu, MenuItem,
-  MenuSeparator, MessageCircle, MoreHorizontal, Pencil, Shield, Sparkles, Spinner, Trash2
+  MenuSeparator, MessageCircle, MoreHorizontal, Pencil, Shield, Shuffle, Sparkles, Spinner, Switch, Trash2
 } from "@/ui"
 
 export function ChatView({ chat }: { chat: Chat }) {
@@ -71,7 +72,7 @@ function ChatHeader({ chat, team }: { chat: Chat; team: ReadonlyArray<Agent> }) 
   const update = useMutation(mutations.updateChat)
   const remove = useMutation(mutations.removeChat)
   const consolidate = useMutation(mutations.consolidate)
-  const [dialog, setDialog] = useState<"rename" | "delete">()
+  const [dialog, setDialog] = useState<"rename" | "delete" | "failover">()
   const [note, setNote] = useState<{ tone: "ok" | "error"; text: string }>()
   const [compacting, setCompacting] = useState(false)
 
@@ -115,6 +116,9 @@ function ChatHeader({ chat, team }: { chat: Chat; team: ReadonlyArray<Agent> }) 
           <MenuItem icon={<Sparkles />} onAction={compact}>
             {t("chat.compact")}
           </MenuItem>
+          <MenuItem icon={<Shuffle />} onAction={() => setDialog("failover")}>
+            {t("failover.menu")}
+          </MenuItem>
           <MenuSeparator />
           <MenuItem icon={<Trash2 />} tone="danger" onAction={() => setDialog("delete")}>
             {t("common.delete")}
@@ -131,6 +135,7 @@ function ChatHeader({ chat, team }: { chat: Chat; team: ReadonlyArray<Agent> }) 
           )}
         </div>
       )}
+      <FailoverDialog isOpen={dialog === "failover"} onClose={() => setDialog(undefined)} chat={chat} lead={team[0]} />
       <RenameDialog isOpen={dialog === "rename"} onClose={() => setDialog(undefined)} title={chatTitle(chat)} onSave={(title) => void update({ params: { id: chat.id }, payload: { title }, reactivityKeys: ["chats"] })} />
       <ConfirmDialog
         isOpen={dialog === "delete"}
@@ -142,6 +147,53 @@ function ChatHeader({ chat, team }: { chat: Chat; team: ReadonlyArray<Agent> }) 
         }
       />
     </>
+  )
+}
+
+// The chat's own fallbacks for its lead, or the lead agent's list (chat.failover null).
+function FailoverDialog({ isOpen, onClose, chat, lead }: { isOpen: boolean; onClose: () => void; chat: Chat; lead: Agent | undefined }) {
+  const update = useMutation(mutations.updateChat)
+  const [own, setOwn] = useState(chat.failover !== null || !lead)
+  const [list, setList] = useState<ReadonlyArray<FailoverTarget>>(chat.failover ?? lead?.failover ?? [])
+  const primary = { model: chat.model, accountId: chat.accountId }
+  const pending = useTermsPending(primary, own ? list : [])
+  useEffect(() => {
+    if (!isOpen) return
+    setOwn(chat.failover !== null || !lead)
+    setList(chat.failover ?? lead?.failover ?? [])
+  }, [isOpen, chat.failover, lead])
+  return (
+    <Dialog title={t("failover.title")} size="lg" isOpen={isOpen} onOpenChange={(open) => !open && onClose()}>
+      {(close) => (
+        <div className="flex flex-col gap-4">
+          <p className="text-muted">{t("failover.intro")}</p>
+          {lead && (
+            <Switch isSelected={!own} onChange={(useAgent) => setOwn(!useAgent)}>
+              {t("failover.useAgent")}
+            </Switch>
+          )}
+          {own ? <FailoverEditor primary={primary} value={list} onChange={setList} /> : <FailoverEditor primary={primary} value={lead?.failover ?? []} onChange={(v) => {
+                setOwn(true)
+                setList(v)
+              }} />}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onPress={close}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="default"
+              isDisabled={pending}
+              onPress={() => {
+                void update({ params: { id: chat.id }, payload: { failover: own ? list : null }, reactivityKeys: ["chats"] })
+                close()
+              }}
+            >
+              {t("common.save")}
+            </Button>
+          </div>
+        </div>
+      )}
+    </Dialog>
   )
 }
 
@@ -218,7 +270,7 @@ function Timeline({ chat, state, agents }: { chat: Chat; state: ChatState; agent
               {item.message.role === "user" ? <UserMessage message={item.message} /> : <AgentMessage message={item.message} agents={agents} />}
             </div>
           ) : (
-            <HandoffNote key={`${item.note.at}`} note={item.note} agents={agents} />
+            <TimelineNote key={`${item.note.kind}-${item.note.at}`} note={item.note} agents={agents} />
           )
         )}
         {state.live && <LiveMessage live={state.live} agents={agents} approvals={state.approvals} receipts={state.receipts} />}
@@ -311,6 +363,19 @@ function endingOf(error: string | null): { tone: "warning" | "danger"; text: str
 }
 
 function AgentMessage({ message: m, agents }: { message: Message; agents: ReadonlyArray<Agent> }) {
+  const accounts = useList(accountsAtom)
+  return (
+    <div className="flex flex-col gap-6">
+      {m.switches.map((sw, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: a saved message's switches never change
+        <Separator key={i}>{switchText(sw, accounts)}</Separator>
+      ))}
+      <AgentReply message={m} agents={agents} />
+    </div>
+  )
+}
+
+function AgentReply({ message: m, agents }: { message: Message; agents: ReadonlyArray<Agent> }) {
   const ending = endingOf(m.error)
   const tokens = m.inputTokens || m.outputTokens ? t("chat.tokens", { input: formatCompact(m.inputTokens), output: formatCompact(m.outputTokens) }) : null
   return (
@@ -496,12 +561,19 @@ function ReceiptCard({ receipt: r }: { receipt: Receipt }) {
   )
 }
 
-function HandoffNote({ note, agents }: { note: Note; agents: ReadonlyArray<Agent> }) {
+function TimelineNote({ note, agents }: { note: Note; agents: ReadonlyArray<Agent> }) {
+  const accounts = useList(accountsAtom)
+  if (note.kind === "failover") return <Separator>{switchText(note.switch, accounts)}</Separator>
   const to = note.to.map((id) => agentName(id, agents)).join(", ")
+  return <Separator>{t("chat.handoff", { from: agentName(note.from, agents), to })}</Separator>
+}
+
+// A centered line in the timeline (handoffs, failover moves).
+function Separator({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-center gap-3 text-sm text-muted">
       <span aria-hidden="true" className="h-px flex-1 bg-subtle" />
-      {t("chat.handoff", { from: agentName(note.from, agents), to })}
+      <span className="max-w-xl text-center">{children}</span>
       <span aria-hidden="true" className="h-px flex-1 bg-subtle" />
     </div>
   )

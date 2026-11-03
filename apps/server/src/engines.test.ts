@@ -2,7 +2,8 @@ import { expect, test } from "bun:test"
 import type { Agent, Memory, Message } from "@zero/contracts"
 import { Effect, Stream } from "effect"
 import { buildTurn, mentioned, parseConsolidation, pinned } from "./context.ts"
-import { claudeArgs, claudeParser, codexArgs, codexParser, Engines, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
+import { claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, Engines, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
+import { codexFailure, usageOf } from "./engines/codex.ts"
 import { Secrets } from "./secrets.ts"
 import { classify, exposedName, needsApproval } from "./tools.ts"
 
@@ -35,14 +36,14 @@ test("args das CLIs: sem sessão, sem ferramentas, modelo do id", () => {
 })
 
 const mem = (text: string, confirmedAt: number, scope = "user", kind: Memory["kind"] = "fact", title = ""): Memory => ({ id: text, scope, kind, title, text, state: "active", origin: "manual", chatId: null, createdAt: 0, confirmedAt })
-const agentOf = (id: string, name: string, instructions = ""): Agent => ({ id, projectId: "p", name, instructions, model: "x/y", accountId: null, effort: null, createdAt: 0 })
-const msg = (role: "user" | "assistant", text: string, agentId: string | null = null): Message => ({ id: text, chatId: "c", role, agentId, text, model: null, error: null, steps: [], attachments: [], inputTokens: 0, outputTokens: 0, at: 1 })
+const agentOf = (id: string, name: string, instructions = ""): Agent => ({ id, projectId: "p", name, instructions, model: "x/y", accountId: null, effort: null, failover: [], createdAt: 0 })
+const msg = (role: "user" | "assistant", text: string, agentId: string | null = null): Message => ({ id: text, chatId: "c", role, agentId, text, model: null, error: null, steps: [], attachments: [], switches: [], inputTokens: 0, outputTokens: 0, at: 1 })
 
 test("contexto: orçamento de memórias prioriza as recentes; camadas na ordem estável → volátil", () => {
   expect(pinned([mem("velha", 1), mem("nova", 2), mem("x".repeat(50), 3)], 59).map((m) => m.id)).toEqual(["x".repeat(50)])
   const dev = agentOf("a", "Dev", "INSTR")
   const turn = buildTurn({
-    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, effort: null, model: "anthropic/m", summary: "RESUMO", summaryUntil: 0, createdAt: 0 },
+    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, effort: null, model: "anthropic/m", summary: "RESUMO", summaryUntil: 0, failover: null, createdAt: 0 },
     model: "anthropic/m",
     project: { id: "p", name: "P", brief: "BRIEF", createdAt: 0 },
     agent: dev,
@@ -159,4 +160,44 @@ test("engine de API com ferramentas: modelo pede a ferramenta, o Zero executa e 
     server.stop()
     delete process.env.OLLAMA_URL
   }
+})
+
+// ---------- failover signals (ARCHITECTURE §6.1) ----------
+
+test("claude: a rejected rate_limit_event turns the failed result into a limit with its reset; readings become limits", () => {
+  const p = claudeParser()
+  const line = (v: object) => p.line(JSON.stringify(v))
+  expect(line({ type: "rate_limit_event", rate_limit_info: { status: "allowed_warning", utilization: 0.82, resetsAt: 1_900_000_000 } })).toEqual([
+    { type: "limits", usage: { usedPercent: 82, resetsAt: 1_900_000_000_000 } }
+  ])
+  line({ type: "rate_limit_event", rate_limit_info: { status: "rejected", resetsAt: 1_900_000_600 } })
+  const [err] = line({ type: "result", subtype: "error_during_execution", is_error: true, result: "limit" })
+  expect(err).toMatchObject({ type: "error", failure: { reason: "limit", until: 1_900_000_600_000 } })
+})
+
+test("claude: assistant error codes map to reasons; request errors don't switch", () => {
+  const run = (error: string) => {
+    const p = claudeParser()
+    p.line(JSON.stringify({ type: "assistant", error, message: {} }))
+    return p.line(JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "x" }))[0]
+  }
+  expect(run("overloaded")).toMatchObject({ failure: { reason: "unavailable" } })
+  expect(run("authentication_failed")).toMatchObject({ failure: { reason: "auth" } })
+  expect(run("invalid_request")).toMatchObject({ failure: undefined })
+})
+
+test("codex: codexErrorInfo maps to reasons; a usage limit comes back when the top window resets", () => {
+  const usage = usageOf({ primary: { usedPercent: 100, resetsAt: 1_900_000_000 }, secondary: { usedPercent: 40, resetsAt: 1_900_500_000 } })
+  expect(usage).toEqual({ usedPercent: 100, resetsAt: 1_900_000_000_000 })
+  expect(codexFailure({ message: "x", codexErrorInfo: "usageLimitExceeded" }, usage)).toEqual({ reason: "limit", until: 1_900_000_000_000 })
+  expect(codexFailure({ message: "x", codexErrorInfo: { httpConnectionFailed: { httpStatusCode: null } } }, undefined)).toEqual({ reason: "network" })
+  expect(codexFailure({ message: "x", codexErrorInfo: "contextWindowExceeded" }, undefined)).toBeUndefined()
+})
+
+test("message heuristics for engines without structured errors", () => {
+  expect(classifyMessage("429 Too Many Requests")).toEqual({ reason: "rate_limit" })
+  expect(classifyMessage("Invalid API key")).toEqual({ reason: "auth" })
+  expect(classifyMessage("fetch failed: ECONNREFUSED")).toEqual({ reason: "network" })
+  expect(classifyMessage("503 Service Unavailable")).toEqual({ reason: "unavailable" })
+  expect(classifyMessage("prompt is too long")).toBeUndefined()
 })

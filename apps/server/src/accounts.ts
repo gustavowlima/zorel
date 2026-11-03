@@ -1,7 +1,7 @@
 // Provider accounts (ARCHITECTURE §6.1): several logins per provider, each in its own CLI folder.
 // Zero runs the official login/status/logout commands with that folder and only keeps what the CLI
 // reports for display (e-mail, plan). It never reads or stores the token.
-import type { AccountProvider, ProviderAccount } from "@zero/contracts"
+import type { AccountProvider, AccountUsage, ProviderAccount } from "@zero/contracts"
 import { Context, Effect, Layer } from "effect"
 import { existsSync, mkdirSync, rmSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
@@ -65,6 +65,9 @@ export interface AccountsService {
   readonly login: (id: string) => Effect.Effect<{ url: string | null } | "not-found" | "busy">
   // The account a turn runs on: the chosen one if it serves this model, otherwise the provider's default.
   readonly resolve: (model: string, accountId: string | null) => Effect.Effect<AccountRow | undefined>
+  // Failover (§6.1): a subscription that hit its limit waits until `until`; the last limit reading is kept.
+  readonly hold: (id: string, until: number) => Effect.Effect<void>
+  readonly observe: (id: string, usage: AccountUsage) => Effect.Effect<void>
 }
 
 export class Accounts extends Context.Service<Accounts, AccountsService>()("Accounts") {
@@ -92,7 +95,8 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
       const toPublic = (a: AccountRow) =>
         Effect.map(status(a), (s): ProviderAccount => ({
           id: a.id, label: a.label, kind: a.kind, provider: a.provider, isDefault: a.id === defaultId(a.provider as AccountProvider),
-          loggedIn: s.loggedIn, identity: s.identity ?? a.identity, loggingIn: logins.has(a.id), createdAt: a.createdAt
+          loggedIn: s.loggedIn, identity: s.identity ?? a.identity, loggingIn: logins.has(a.id),
+          limitedUntil: a.limitedUntil && a.limitedUntil > Date.now() ? a.limitedUntil : null, usage: a.usage ?? null, createdAt: a.createdAt
         }))
       // Only folders Zero created can be deleted.
       const owned = (home: string | null) => !!home && resolve(home).startsWith(root + sep)
@@ -159,7 +163,9 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
             if (!provider) return undefined
             const chosen = accountId ? yield* store.account(accountId) : undefined
             return chosen?.provider === provider ? chosen : yield* store.account(defaultId(provider))
-          })
+          }),
+        hold: (id, until) => Effect.asVoid(store.updateAccount(id, { limitedUntil: until })),
+        observe: (id, usage) => Effect.asVoid(store.updateAccount(id, { usage }))
       }
       return service
     })

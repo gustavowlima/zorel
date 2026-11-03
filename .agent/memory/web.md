@@ -19,6 +19,8 @@ updated: 2026-11-03
 
 - novo projeto: popover no "+" da barra lateral (NewProjectButton em project.tsx: nome + brief opcional), não página; ao criar vai para o overview
 
+- failover: features/failover.tsx (FailoverEditor + useTermsPending) no agente e no diálogo "Fallbacks…" do chat; nota de troca no chat (evento failover ao vivo, message.switches gravado); uso/espera da conta em Usage e no seletor de modelo
+
 ## avoid
 
 - line-clamp dentro de Button flex: altura 0; usar truncate

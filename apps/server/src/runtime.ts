@@ -1,20 +1,21 @@
 // Turn runtime (ARCHITECTURE §5): per-chat queue in the database, one turn at a time, live events per chat.
 // The turn doesn't depend on the client: closing the tab stops nothing; reconnect = subscribe again (snapshot + events).
 // Chaining: a reply that mentions another member queues that member's turn (up to MAX_DEPTH without a message from you).
-import type { Agent, Chat, Effort, Step } from "@zero/contracts"
+import type { Agent, Chat, Effort, FailoverTarget, FailureReason, Step, Switch } from "@zero/contracts"
 import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zero/contracts/events"
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
 import { consolidate, DataDir, members, prepare } from "./chat.ts"
 import { MAX_DEPTH, mentioned } from "./context.ts"
 import { type AccountRow, Store, type Repository, type TurnRow } from "./db.ts"
-import { Engines, isImage, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
+import { type EngineFailure, Engines, isImage, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
 import type { EngineSession } from "#server/engines/session.ts"
 import { exposedName, type GatewayHandle, needsApproval, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
 
 const MAX_MENTIONS = 3
 const MAX_SESSIONS = 8 // live engine processes; the least recently used one closes first
 const APPROVAL_MS = 30 * 60_000 // ARCHITECTURE §9.2: expires in 30 min and counts as denial
+const SKIP_MS = 10 * 60_000 // §6.1: a route that failed (not a limit) is skipped this long
 const TEXT_BATCH = Duration.millis(100) // batched deltas (a reference app 100 ms, Zeron 120 ms)
 
 export interface SendInput {
@@ -156,8 +157,9 @@ export const makeRuntime = Effect.gen(function* () {
 
   // ---------- turn tools: steps and approvals persisted and published ----------
   // `fixed`: a native session's gateway (one URL for the whole session); without it, one URL per turn.
-  const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, legacy: Step[], fixed?: GatewayHandle) => {
-    const routes = new Map<string, { server: string; tool: string; approve: boolean }>()
+  // `onWrite`: a tool that writes (or is sensitive) is about to run; the turn has acted, so failover won't repeat it.
+  const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, legacy: Step[], onWrite: () => void, fixed?: GatewayHandle) => {
+    const routes = new Map<string, { server: string; tool: string; approve: boolean; writes: boolean }>()
     const defs: ToolDef[] = []
     const step = (title: string, tool: string) => run(store.addStep({ turnId: row.id, kind: "tool", title, tool, files: [], status: "running" }).pipe(Effect.tap((s) => publish(chat.id, ev("step-started", { step: s })))))
     const finish = (s: WorkStep, status: WorkStep["status"], output = "") =>
@@ -172,7 +174,7 @@ export const makeRuntime = Effect.gen(function* () {
       for (const t of listed) {
         if (s.mode === "read" && t.cls !== "read") continue
         const name = exposedName(s.name, t.name)
-        routes.set(name, { server: s.id, tool: t.name, approve: needsApproval(s.mode, t.cls) })
+        routes.set(name, { server: s.id, tool: t.name, approve: needsApproval(s.mode, t.cls), writes: t.cls !== "read" })
         defs.push({ name, description: t.description, inputSchema: t.inputSchema })
       }
     }
@@ -195,6 +197,7 @@ export const makeRuntime = Effect.gen(function* () {
           return textResult("O usuário recusou esta ação. Não tente de novo sem pedir.", true)
         }
       }
+      if (route.writes) onWrite() // even a failed call may have changed something
       const r = await run(
         Effect.promise(() => hub.call(server, route.tool, args).catch((e: unknown) => textResult(String(e instanceof Error ? e.message : e), true))).pipe(
           Effect.withSpan("tool.call", { attributes: { tool: name, server: server.name, turnId: row.id } })
@@ -240,6 +243,27 @@ export const makeRuntime = Effect.gen(function* () {
       Effect.as<ApprovalOutcome>("expired")
     )
 
+  // ---------- failover (ARCHITECTURE §6.1) ----------
+  // A route is { model, account }. The turn starts on the first ready one; when it fails before acting
+  // and the reason is one failover helps with, it moves to the next. A limit holds the account until its
+  // reset (persisted, so the primary comes back by itself); other errors skip the route for 10 min.
+  const skipped = new Map<string, { until: number; reason: FailureReason }>()
+  const routeKey = (model: string, account: AccountRow | undefined) => (account ? `account:${account.id}` : `provider:${splitModel(model).provider}`)
+  // Why this route can't be used now, and until when (undefined: ready).
+  const held = (model: string, account: AccountRow | undefined): { until: number; reason: FailureReason } | undefined => {
+    const now = Date.now()
+    if (account?.limitedUntil && account.limitedUntil > now) return { until: account.limitedUntil, reason: "limit" }
+    const skip = skipped.get(routeKey(model, account))
+    return skip && skip.until > now ? skip : undefined
+  }
+  // Routes of this turn: its own model first, then the alternatives (the chat's list for the lead, when set;
+  // otherwise the agent's). Each route at most once.
+  const routesOf = (row: TurnRow, chat: Chat, agent: Agent | undefined, lead: boolean): FailoverTarget[] => {
+    const list = (lead ? (chat.failover ?? agent?.failover) : agent?.failover) ?? []
+    const all = [{ model: row.model, accountId: row.accountId }, ...list]
+    return all.filter((r, i) => all.findIndex((x) => x.model === r.model && x.accountId === r.accountId) === i)
+  }
+
   // ---------- one turn ----------
   const runTurn = (row: TurnRow) =>
     Effect.gen(function* () {
@@ -248,15 +272,20 @@ export const makeRuntime = Effect.gen(function* () {
       if (!chat) return yield* store.finishTurn(row.id, { state: "failed", error: ErrorCode.chatRemoved, messageId: null }).pipe(Effect.as(undefined))
       const team = yield* members(store, chat)
       const agent = team.find((a) => a.id === row.agentId)
+      const lead = !agent || agent.id === team[0]?.id
+      // The lead follows the chat's effort; other members, their own.
+      const effort = lead ? chat.effort : (agent?.effort ?? null)
       const acc = { text: "", error: undefined as string | undefined, usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0 }, steps: [] as Step[], saved: false }
+      const route = { model: row.model, accountId: row.accountId }
+      const switches: Switch[] = []
       let markSeen: (at: number) => void = () => {}
       const save = (state: "completed" | "failed" | "interrupted", error: string | null) =>
         Effect.gen(function* () {
           if (acc.saved) return
           acc.saved = true
-          const message = yield* store.addMessage({ chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model: row.model, error, steps: acc.steps, inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens })
+          const message = yield* store.addMessage({ chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model: route.model, error, steps: acc.steps, switches, inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens })
           markSeen(message.at) // the session has everything up to its own reply
-          const turn = yield* store.finishTurn(row.id, { state, error, messageId: message.id, usage: acc.usage })
+          const turn = yield* store.finishTurn(row.id, { state, error, messageId: message.id, usage: acc.usage, route: { ...route, switches } })
           const tag = state === "completed" ? "turn-completed" : state === "failed" ? "turn-failed" : "interrupted"
           yield* publish(chatId, ev(tag, { turn, message }))
         })
@@ -265,47 +294,98 @@ export const makeRuntime = Effect.gen(function* () {
       yield* publish(chatId, ev("turn-started", { turn: store.toTurn(started) }))
       yield* setStatus(chatId, "running", agent?.id ?? null, `${nameOf(agent)} is working`)
 
-      yield* Effect.gen(function* () {
-        const native = engines.hasSession?.(row.model) ?? false
-        const opened = yield* Effect.promise(() => openTools(chat, row, agent, acc.steps, native ? gatewayOf(sessionKey(row)) : undefined))
-        yield* Effect.addFinalizer(() =>
-          Effect.gen(function* () {
-            opened.close()
-            // Turn ended: its open requests become denials.
-            for (const a of yield* store.openApprovals(chatId)) if (a.turnId === row.id) yield* expire(chatId, a.id)
-          })
-        )
-        const turn = yield* prepare(store, (yield* store.chat(chatId))!, agent, row.model, dataDir, opened.tools)
-        const account = yield* accounts.resolve(row.model, row.accountId)
-        // The lead follows the chat's effort; other members, their own.
-        const effort = !agent || agent.id === team[0]?.id ? chat.effort : agent.effort
-        const stream = yield* engineStream(row, turn, account, effort, (set) => {
-          markSeen = set
-        })
-        yield* stream.pipe(
-          Stream.withSpan("engine.run", { attributes: { model: row.model } }),
-          Stream.groupedWithin(512, TEXT_BATCH),
-          Stream.runForEach((batch) =>
+      // One attempt on one route: tools, context, engine stream. Returns the failure, if any.
+      const attempt = (model: string, account: AccountRow | undefined) =>
+        Effect.gen(function* () {
+          const attemptRow: TurnRow = { ...row, model, accountId: account?.id ?? null }
+          const native = engines.hasSession?.(model) ?? false
+          let acted = false
+          let failure: EngineFailure | undefined
+          const opened = yield* Effect.promise(() =>
+            openTools(chat, attemptRow, agent, acc.steps, () => {
+              acted = true
+            }, native ? gatewayOf(sessionKey(attemptRow)) : undefined)
+          )
+          yield* Effect.addFinalizer(() =>
             Effect.gen(function* () {
-              let delta = ""
-              for (const e of batch) {
-                if (e.type === "text") delta += e.delta
-                else if (e.type === "done") acc.usage = { cachedTokens: 0, ...e.usage }
-                else acc.error = e.message
-              }
-              if (!delta) return
-              if (!acc.text) yield* store.markFirstToken(row.id)
-              acc.text += delta
-              yield* publish(chatId, ev("text", { turnId: row.id, delta }))
-              yield* store.savePartial(row.id, acc.text)
+              opened.close()
+              // Turn ended: its open requests become denials.
+              for (const a of yield* store.openApprovals(chatId)) if (a.turnId === row.id) yield* expire(chatId, a.id)
             })
           )
-        )
-        yield* save(acc.error ? "failed" : "completed", acc.error ?? null)
-      }).pipe(
-        Effect.scoped,
-        Effect.onExit((exit) => (exit._tag === "Failure" ? save("interrupted", acc.error ?? ErrorCode.interrupted) : Effect.void))
-      )
+          const turn = yield* prepare(store, (yield* store.chat(chatId))!, agent, model, dataDir, opened.tools)
+          const stream = yield* engineStream(attemptRow, turn, account, effort, (set) => {
+            markSeen = set
+          })
+          yield* stream.pipe(
+            Stream.withSpan("engine.run", { attributes: { model } }),
+            Stream.groupedWithin(512, TEXT_BATCH),
+            Stream.runForEach((batch) =>
+              Effect.gen(function* () {
+                let delta = ""
+                for (const e of batch) {
+                  if (e.type === "text") delta += e.delta
+                  else if (e.type === "done") acc.usage = { cachedTokens: 0, ...e.usage }
+                  else if (e.type === "limits") {
+                    if (account) yield* accounts.observe(account.id, e.usage)
+                  } else {
+                    acc.error = e.message
+                    failure = e.failure
+                  }
+                }
+                if (!delta) return
+                if (!acc.text) yield* store.markFirstToken(row.id)
+                acc.text += delta
+                yield* publish(chatId, ev("text", { turnId: row.id, delta }))
+                yield* store.savePartial(row.id, acc.text)
+              })
+            )
+          )
+          return { failure, acted }
+        }).pipe(Effect.scoped)
+
+      yield* Effect.gen(function* () {
+        const routes = routesOf(row, chat, agent, lead)
+        const tried: string[] = []
+        for (let i = 0; i < routes.length; i++) {
+          const r = routes[i]!
+          const account = yield* accounts.resolve(r.model, r.accountId)
+          const last = i === routes.length - 1
+          // Held or recently failed: go straight to the next one (unless nothing else is left).
+          const wait = held(r.model, account)
+          if (wait && !last) {
+            const next = routes[i + 1]!
+            const sw: Switch = { fromModel: r.model, fromAccountId: account?.id ?? r.accountId, toModel: next.model, toAccountId: next.accountId, reason: wait.reason, until: wait.until }
+            switches.push(sw)
+            yield* publish(chatId, ev("failover", { turnId: row.id, switch: sw }))
+            tried.push(`${r.model}: ${sw.reason}`)
+            continue
+          }
+          route.model = r.model
+          route.accountId = account?.id ?? r.accountId
+          acc.error = undefined
+          const result = yield* attempt(r.model, account)
+          const error = acc.error as string | undefined // set by the attempt's stream
+          if (!error) return
+          const f = result.failure
+          tried.push(`${r.model}: ${f?.reason ?? "error"} (${error.split("\n")[0]})`)
+          if (!f || result.acted || last) break
+          // Failed before acting, for a reason another route can avoid: remember it and move on.
+          if (f.reason === "limit" && account) yield* accounts.hold(account.id, f.until ?? Date.now() + 60 * 60_000)
+          else skipped.set(routeKey(r.model, account), { until: Date.now() + SKIP_MS, reason: f.reason })
+          const next = routes[i + 1]!
+          const sw: Switch = { fromModel: r.model, fromAccountId: route.accountId, toModel: next.model, toAccountId: next.accountId, reason: f.reason, until: f.reason === "limit" ? (f.until ?? null) : null }
+          switches.push(sw)
+          yield* publish(chatId, ev("failover", { turnId: row.id, switch: sw }))
+          yield* Effect.logInfo("failover", { from: r.model, to: next.model, reason: f.reason })
+          acc.text = "" // nothing was acted on: the next route starts the reply over
+          acc.steps.length = 0
+          yield* store.savePartial(row.id, "")
+        }
+        // Several routes tried and all failed: say what happened on each.
+        if (acc.error && tried.length > 1) acc.error = `${acc.error}\n\n${tried.join("\n")}`
+      }).pipe(Effect.onExit((exit) => (exit._tag === "Failure" ? save("interrupted", acc.error ?? ErrorCode.interrupted) : Effect.void)))
+      yield* save(acc.error ? "failed" : "completed", acc.error ?? null)
       return acc.error ? undefined : { text: acc.text, agent, team }
     }).pipe(
       Effect.withSpan("turn", { attributes: { chatId: row.chatId, turnId: row.id, agentId: row.agentId ?? "", model: row.model } }),

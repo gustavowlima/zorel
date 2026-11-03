@@ -168,6 +168,11 @@ const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
   })
 )
 
+// The failover terms warning (§6.1) is accepted once and remembered here.
+const FAILOVER_TERMS = "failover_terms_accepted_at"
+const preferencesOf = (store: Repository) =>
+  Effect.map(store.preference(FAILOVER_TERMS), (v) => ({ failoverTermsAcceptedAt: v ? Number(v) : null }))
+
 const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
   Effect.gen(function* () {
     const secrets = yield* Secrets
@@ -175,6 +180,8 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
     return h
       .handle("models", () => Effect.promise(() => listModels(secrets)))
       .handle("usage", () => store.usage(Date.now() - USAGE_DAYS * 86_400_000))
+      .handle("preferences", () => preferencesOf(store))
+      .handle("acceptFailoverTerms", () => Effect.andThen(store.setPreference(FAILOVER_TERMS, String(Date.now())), preferencesOf(store)))
       .handle("keys", () => Effect.sync(() => API_KEYS.map((name) => ({ name, set: !!secrets.get(name), fromEnv: secrets.fromEnv(name) }))))
       .handle("setKey", ({ params, payload }) =>
         (API_KEYS as ReadonlyArray<string>).includes(params.name) ? Effect.promise(() => secrets.set(params.name, payload.value.trim())) : notFound()

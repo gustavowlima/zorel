@@ -328,7 +328,7 @@ test("contas: padrão criadas sozinhas e não removíveis; extra ganha pasta pr�
   expect((await fetch(`${base}/api/accounts/${def.id}`, { method: "DELETE" })).status).toBe(409)
   expect((await fetch(`${base}/api/accounts/${extra.id}`, { method: "DELETE" })).status).toBe(204)
   expect(require("node:fs").existsSync(home)).toBe(false)
-})
+}, 20_000) // runs the real claude/codex status commands, whose latency depends on the machine
 
 test("anexos: upload, mensagem com arquivos, o engine recebe caminhos; texto inline, imagem pelo nome; apagar o chat apaga os arquivos", async () => {
   const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))

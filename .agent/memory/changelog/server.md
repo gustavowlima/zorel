@@ -19,3 +19,4 @@
 2026-11-03 | steering real no Codex, nível de raciocínio, tokens de cache por turno | fase 2, etapa 5
 2026-11-03 | anexos e imagens; sessão por provider (volta ao Claude manda só o delta); fase 2 concluída | §12, §13
 2026-11-03 | GET /api/usage e RPC approvals | telas Usage e Needs you
+2026-11-03 | failover por agente/chat, espera por limite, leitura de uso por conta | fase 2b
