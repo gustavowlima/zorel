@@ -81,7 +81,17 @@ export const repository = (db: Db) => {
 
   return {
     // ---------- projects ----------
-    projects: (): Effect.Effect<Project[]> => orDie(db.select().from(projects).orderBy(desc(projects.createdAt))),
+    // Placed projects in their manual order; new ones (no position yet) first, newest on top.
+    projects: (): Effect.Effect<Project[]> =>
+      orDie(
+        db
+          .select({ id: projects.id, name: projects.name, brief: projects.brief, path: projects.path, createdAt: projects.createdAt })
+          .from(projects)
+          .orderBy(sql`${projects.position} is not null`, asc(projects.position), desc(projects.createdAt))
+      ),
+    // Positions follow the given order; ids that aren't projects are ignored.
+    reorderProjects: (ids: ReadonlyArray<string>) =>
+      orDie(db.transaction((tx) => Effect.forEach(ids, (id, i) => tx.update(projects).set({ position: i }).where(eq(projects.id, id)), { discard: true }))),
     project,
     createProject: (input: { name: string; brief: string; path?: string | null | undefined }) =>
       Effect.gen(function* () {
@@ -133,6 +143,17 @@ export const repository = (db: Db) => {
 
     // ---------- chats and messages ----------
     chats: () => orDie(db.select().from(chats).orderBy(desc(chats.createdAt)).pipe(Effect.flatMap(withMembers))),
+    // Only chats already in that group move: a chat never changes project by reordering.
+    reorderChats: (projectId: string | null, ids: ReadonlyArray<string>) =>
+      orDie(
+        db.transaction((tx) =>
+          Effect.forEach(
+            ids,
+            (id, i) => tx.update(chats).set({ position: i }).where(and(eq(chats.id, id), projectId === null ? isNull(chats.projectId) : eq(chats.projectId, projectId))),
+            { discard: true }
+          )
+        )
+      ),
     chat,
     createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined }) =>
       Effect.gen(function* () {

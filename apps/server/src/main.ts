@@ -58,6 +58,7 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
           yield* store.removeProject(params.id)
         })
       )
+      .handle("reorder", ({ payload }) => store.reorderProjects(payload.ids))
   })
 )
 
@@ -106,6 +107,7 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
       .handle("remove", ({ params }) =>
         store.removeChat(params.id).pipe(Effect.tap(() => Effect.sync(() => rmSync(join(dataDir, "attachments", params.id), { recursive: true, force: true }))))
       )
+      .handle("reorder", ({ payload }) => store.reorderChats(payload.projectId, payload.ids))
       .handle("messages", ({ params }) => store.messages(params.id))
       .handle("consolidate", ({ params }) =>
         consolidate(params.id, true).pipe(

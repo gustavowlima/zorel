@@ -7,3 +7,4 @@
 2026-11-03 | primitivas de navegação, popover, pílula e layout; borda padrão em @layer base | fase UI passos 2 e 3
 2026-11-03 | galeria /dev/ui removida | decisão do usuário: não deve existir
 2026-11-03 | sidebar desktop: só a árvore rola sem barra, linhas fixas, ações sobrepostas, % de uso só em alerta | crítica impeccable 24/40
+2026-11-03 | sidebar em React Aria Tree com drag and drop, linhas de 28px, seção Chats, barra de título do desktop | crítica 23/40 + pedido de arrastar

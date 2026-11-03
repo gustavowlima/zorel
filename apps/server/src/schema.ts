@@ -26,6 +26,7 @@ export const projects = sqliteTable("projects", {
   name: text().notNull(),
   brief: text().notNull().default(""),
   path: text(), // workspace folder on disk (ARCHITECTURE §9.1); null: agents work in an empty Zero folder
+  position: integer(), // manual order in the sidebar; null: not placed yet (newest first, above the placed ones)
   createdAt: integer("created_at").notNull()
 })
 
@@ -52,6 +53,7 @@ export const chats = sqliteTable("chats", {
   summary: text().notNull().default(""),
   summaryUntil: integer("summary_until").notNull().default(0),
   failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>(), // null: the lead agent's list
+  position: integer(), // manual order inside its group (project or General); null: by recent activity, above the placed ones
   createdAt: integer("created_at").notNull()
 })
 

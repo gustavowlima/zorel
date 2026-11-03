@@ -1,23 +1,31 @@
-// Sidebar (prototype "Sidebar"): Needs you / Knowledge / Usage, then projects as a tree with their chats
-// (live status under the title), General for chats without a project, the agents of the open project,
-// and Settings at the bottom. Like a desktop sidebar, the brand, the top rows and Settings stay put and only
-// the tree scrolls, with no visible bar: a hairline marks an edge while content is hidden past it.
+// Sidebar (prototype "Sidebar"): Needs you / Knowledge / Usage, then the projects as a tree with their chats
+// (live status under the title), the chats without a project, the agents of the open project, and Settings at
+// the bottom. Like a desktop sidebar, the brand (also the window's drag region), the top rows and Settings stay
+// put and only the trees scroll, with no visible bar: a hairline marks an edge while content is hidden past it.
+// Projects reorder by drag and drop; chats reorder only inside their own group and never change project.
 // Statuses come from the live stream; everything else from the atoms.
 import { type Agent, type Chat, LIMIT_ALERT, type Project } from "@zero/contracts"
 import type { ChatStatus } from "@zero/contracts/events"
 import { formatAge, formatPercent, t } from "@zero/i18n"
-import { type ReactNode, type UIEvent, useLayoutEffect, useRef, useState } from "react"
-import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, projectsAtom, useList, useStatuses } from "../client.ts"
+import { type ReactNode, type UIEvent, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
 import { agentTone, chatTitle, modelName, statusLabel, windowLabel } from "../labels.ts"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, BookOpen, ChartColumn, ChatStatusIcon, ChevronDown, ChevronRight, cx, Folder, FolderOpen, GroupRow, IconButton, Inbox, MessageCircle, NavItem, NavLabel, Plus,
-  Settings, SquarePen, TreeItem
+  AgentAvatar, BookOpen, ChartColumn, ChatStatusIcon, cx, Folder, FolderOpen, IconButton, Inbox, NavItem, NavLabel, NavTree, NavTreeItem, type NavKey, Plus,
+  Settings, SquarePen, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
 const EXPANDED_KEY = "zero.sidebar.expanded"
+type Statuses = Readonly<Record<string, ChatStatus>>
+
+// Tree keys carry their kind: a project, a chat, or a group's "show more" row.
+const projectKey = (id: string) => `p:${id}`
+const chatKey = (id: string) => `c:${id}`
+const moreKey = (group: string) => `m:${group}`
+const idOf = (key: NavKey) => String(key).slice(2)
 
 export function Sidebar({ route, activeProjectId }: { route: Route; activeProjectId: string | null }) {
   const projects = useList(projectsAtom)
@@ -29,32 +37,67 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   const needsYou = approvals.length + memories.filter((m) => m.state === "pending").length
 
   const [expanded, setExpanded] = useState(() => readSet(EXPANDED_KEY))
-  const toggle = (id: string) => {
-    const next = new Set(expanded)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
+  const [all, setAll] = useState<ReadonlySet<string>>(new Set()) // groups showing every chat
+  const toggleAll = (group: string) => setAll((s) => (s.has(group) ? new Set([...s].filter((g) => g !== group)) : new Set([...s, group])))
+  // The active project stays open.
+  const expandedKeys = new Set([...expanded, ...(activeProjectId ? [activeProjectId] : [])].map(projectKey))
+  const onExpandedChange = (keys: Set<NavKey>) => {
+    const next = new Set([...keys].map(idOf))
     setExpanded(next)
     writeSet(EXPANDED_KEY, next)
   }
-  const isOpen = (id: string) => expanded.has(id) || id === activeProjectId
 
-  const byNewest = [...chats].sort((a, b) => lastActivity(b, statuses) - lastActivity(a, statuses))
-  const general = byNewest.filter((c) => !c.projectId)
   const activeChat = route.view === "chat" ? route.id : undefined
+  const groupOf = (projectId: string | null) => ordered(chats.filter((c) => c.projectId === projectId), statuses)
+  const loose = groupOf(null)
   const teamProject = projects.find((p) => p.id === activeProjectId)
   const team = agents.filter((a) => a.projectId === (teamProject?.id ?? null))
   const { tree, edges, onScroll } = useScrollEdges()
 
+  const reorderProjects = useMutation(mutations.reorderProjects)
+  const reorderChats = useMutation(mutations.reorderChats)
+  const projectDnd = useNavReorder({
+    // Projects move among projects; a chat moves only among the chats of its own project.
+    groupOf: (key) => (key.startsWith("p:") ? "projects" : key.startsWith("c:") ? (chats.find((c) => c.id === idOf(key))?.projectId ?? undefined) : undefined),
+    orderOf: (group) => (group === "projects" ? projects.map((p) => projectKey(p.id)) : groupOf(group).map((c) => chatKey(c.id))),
+    save: (group, keys) =>
+      group === "projects"
+        ? reorderProjects({ payload: { ids: keys.map(idOf) }, reactivityKeys: ["projects"] })
+        : reorderChats({ payload: { projectId: group, ids: keys.map(idOf) }, reactivityKeys: ["chats"] })
+  })
+  const looseDnd = useNavReorder({
+    groupOf: (key) => (key.startsWith("c:") ? "loose" : undefined),
+    orderOf: () => loose.map((c) => chatKey(c.id)),
+    save: (_, keys) => reorderChats({ payload: { projectId: null, ids: keys.map(idOf) }, reactivityKeys: ["chats"] })
+  })
+
+  const chatItems = (group: string, list: ReadonlyArray<Chat>) => {
+    const showAll = all.has(group)
+    // The open chat always stays visible, even past the fold.
+    const visible = showAll ? list : list.filter((c, i) => i < VISIBLE || c.id === activeChat)
+    const hidden = list.length - visible.length
+    const label = showAll ? t("nav.showLess") : t("nav.showMore", { count: hidden })
+    return [
+      ...visible.map((c) => <ChatItem key={c.id} chat={c} status={statuses[c.id]} active={c.id === activeChat} agents={agents} />),
+      ...((hidden > 0 || showAll) && list.length > VISIBLE
+        ? [<NavTreeItem key="more" id={moreKey(group)} textValue={label} title={<span className="text-muted">{label}</span>} onAction={() => toggleAll(group)} />]
+        : [])
+    ]
+  }
+
   return (
     <nav aria-label={t("nav.label")} className="flex w-62 shrink-0 flex-col overflow-hidden pt-4 pb-3">
-      <div className="mb-3 flex h-control shrink-0 items-center gap-2.5 px-5">
+      {/* The brand row is the window's title bar in the desktop app (the traffic lights sit on its left). */}
+      <div className="title-inset electrobun-webkit-app-region-drag mb-3 flex h-control shrink-0 items-center gap-2.5 px-5">
         <span aria-hidden="true" className="flex size-6 items-center justify-center rounded-control bg-fg text-sm font-semibold text-frame">
           Z
         </span>
         <span className="flex-1 text-lg font-semibold">{t("app.name")}</span>
-        <IconButton label={t("nav.newChat")} onPress={() => go({ view: "home" })}>
-          <SquarePen />
-        </IconButton>
+        <span className="electrobun-webkit-app-region-no-drag">
+          <IconButton label={t("nav.newChat")} onPress={() => go({ view: "home" })}>
+            <SquarePen />
+          </IconButton>
+        </span>
       </div>
 
       <div className={cx("flex shrink-0 flex-col gap-0.5 border-b px-3 pb-1 transition-colors duration-120", edges.top ? "border-subtle" : "border-transparent")}>
@@ -67,39 +110,43 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
         <UsageItem active={route.view === "usage"} />
       </div>
 
-      <div ref={tree} onScroll={onScroll} className="scroll-quiet flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-2">
-        <NavLabel
-          action={
-            <NewProjectButton />
-          }
-        >
-          {t("nav.projects")}
-        </NavLabel>
-        {projects.map((p) => (
-          <ProjectGroup
-            key={p.id}
-            project={p}
-            chats={byNewest.filter((c) => c.projectId === p.id)}
-            open={isOpen(p.id)}
-            onToggle={() => toggle(p.id)}
-            active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)}
-            activeChat={activeChat}
-            statuses={statuses}
-            agents={agents}
-          />
-        ))}
-        <Group
-          icon={<MessageCircle />}
-          name={t("common.general")}
-          open={isOpen("general")}
-          onToggle={() => toggle("general")}
-          onNewChat={() => go({ view: "home" })}
-          newChatLabel={t("nav.newChat")}
-          chats={general}
-          activeChat={activeChat}
-          statuses={statuses}
-          agents={agents}
-        />
+      <div ref={tree} onScroll={onScroll} className="scroll-quiet flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 pb-2">
+        <NavLabel action={<NewProjectButton />}>{t("nav.projects")}</NavLabel>
+        <NavTree label={t("nav.projects")} expandedKeys={expandedKeys} onExpandedChange={onExpandedChange} dragAndDropHooks={projectDnd}>
+          {projects.map((p) => {
+            const list = groupOf(p.id)
+            return (
+              <ProjectItem
+                key={p.id}
+                project={p}
+                open={expandedKeys.has(projectKey(p.id))}
+                active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)}
+                chats={list}
+                statuses={statuses}
+                onToggle={() => onExpandedChange(new Set([...expandedKeys].filter((k) => k !== projectKey(p.id)).concat(expandedKeys.has(projectKey(p.id)) ? [] : [projectKey(p.id)])))}
+              >
+                {chatItems(p.id, list)}
+              </ProjectItem>
+            )
+          })}
+        </NavTree>
+
+        {loose.length > 0 && (
+          <>
+            <NavLabel
+              action={
+                <IconButton label={t("nav.newChatIn", { name: t("nav.chats") })} size="sm" onPress={() => go({ view: "home" })}>
+                  <Plus className="size-3.5" />
+                </IconButton>
+              }
+            >
+              {t("nav.chats")}
+            </NavLabel>
+            <NavTree label={t("nav.chats")} dragAndDropHooks={looseDnd}>
+              {chatItems("loose", loose)}
+            </NavTree>
+          </>
+        )}
 
         {team.length > 0 && (
           <>
@@ -135,133 +182,83 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   )
 }
 
-const lastActivity = (c: Chat, statuses: Readonly<Record<string, ChatStatus>>) => Math.max(c.createdAt, statuses[c.id]?.updatedAt ?? 0)
+const lastActivity = (c: Chat, statuses: Statuses) => Math.max(c.createdAt, statuses[c.id]?.updatedAt ?? 0)
+
+// A group's chats: the ones never placed by hand first (newest activity on top), then the placed ones in
+// their manual order.
+const ordered = (chats: ReadonlyArray<Chat>, statuses: Statuses) => [
+  ...chats.filter((c) => c.position === null).sort((a, b) => lastActivity(b, statuses) - lastActivity(a, statuses)),
+  ...chats.filter((c) => c.position !== null).sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+]
 
 const Count = ({ n }: { n: number }) => (
   <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-semibold text-on-accent tabular-nums">{n}</span>
 )
 
-function ProjectGroup({
+function ProjectItem({
   project,
-  chats,
   open,
-  onToggle,
   active,
-  activeChat,
+  chats,
   statuses,
-  agents
+  onToggle,
+  children
 }: {
   project: Project
-  chats: ReadonlyArray<Chat>
   open: boolean
-  onToggle: () => void
   active: boolean
-  activeChat: string | undefined
-  statuses: Readonly<Record<string, ChatStatus>>
-  agents: ReadonlyArray<Agent>
-}) {
-  return (
-    <Group
-      icon={open ? <FolderOpen /> : <Folder />}
-      name={project.name}
-      open={open}
-      onToggle={onToggle}
-      active={active}
-      onSettings={() => go({ view: "project", id: project.id, tab: "overview" })}
-      onNewChat={() => go({ view: "home", projectId: project.id })}
-      newChatLabel={t("nav.newChatIn", { name: project.name })}
-      chats={chats}
-      activeChat={activeChat}
-      statuses={statuses}
-      agents={agents}
-    />
-  )
-}
-
-function Group({
-  icon,
-  name,
-  open,
-  onToggle,
-  active,
-  onSettings,
-  onNewChat,
-  newChatLabel,
-  chats,
-  activeChat,
-  statuses,
-  agents
-}: {
-  icon: ReactNode
-  name: string
-  open: boolean
-  onToggle: () => void
-  active?: boolean
-  onSettings?: () => void
-  onNewChat: () => void
-  newChatLabel: string
   chats: ReadonlyArray<Chat>
-  activeChat: string | undefined
-  statuses: Readonly<Record<string, ChatStatus>>
-  agents: ReadonlyArray<Agent>
+  statuses: Statuses
+  onToggle: () => void
+  children: ReactNode
 }) {
-  const [all, setAll] = useState(false)
   const running = chats.filter((c) => statuses[c.id]?.state === "running").length
   const waiting = chats.filter((c) => statuses[c.id]?.state === "waiting").length
-  // The open chat always stays visible, even past the fold.
-  const visible = all ? chats : chats.filter((c, i) => i < VISIBLE || c.id === activeChat)
-  const hidden = chats.length - visible.length
-
   return (
-    <div className="flex flex-col gap-0.5">
-      <GroupRow
-        icon={icon}
-        name={name}
-        expanded={open}
-        active={!!active}
-        onToggle={onToggle}
-        actions={
-          <>
-            {onSettings && (
-              <IconButton label={t("nav.projectSettings", { name })} size="sm" onPress={onSettings}>
-                <Settings className="size-3.5" />
-              </IconButton>
-            )}
-            <IconButton label={newChatLabel} size="sm" onPress={onNewChat}>
-              <Plus className="size-3.5" />
-            </IconButton>
-          </>
-        }
-        trailing={
-          <span className="flex shrink-0 items-center gap-1.5 pr-1.5 text-sm text-muted">
-            {!open && waiting > 0 && <ChatStatusIcon state="waiting" />}
-            {!open && running > 0 && waiting === 0 && <ChatStatusIcon state="running" />}
-            {!open && chats.length > 0 && <span className="tabular-nums">{chats.length}</span>}
-            {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+    <NavTreeItem
+      id={projectKey(project.id)}
+      textValue={project.name}
+      active={active}
+      glyph={open ? <FolderOpen /> : <Folder />}
+      title={project.name}
+      dragLabel={t("nav.reorder", { name: project.name })}
+      onAction={onToggle}
+      trailing={
+        !open &&
+        chats.length > 0 && (
+          <span className="flex items-center gap-1.5" role="img" aria-label={t("nav.chatCount", { count: chats.length })}>
+            {waiting > 0 ? <ChatStatusIcon state="waiting" /> : running > 0 && <ChatStatusIcon state="running" />}
+            {chats.length}
           </span>
-        }
-      />
-      {open && chats.length > 0 && (
-        <div className="ml-4.5 flex flex-col gap-0.5 border-l border-strong pl-1.5">
-          {visible.map((c) => (
-            <ChatRow key={c.id} chat={c} status={statuses[c.id]} active={c.id === activeChat} agents={agents} />
-          ))}
-          {(hidden > 0 || all) && chats.length > VISIBLE && (
-            <TreeItem title={<span className="text-muted">{all ? t("nav.showLess") : t("nav.showMore", { count: hidden })}</span>} onPress={() => setAll(!all)} />
-          )}
-        </div>
-      )}
-    </div>
+        )
+      }
+      actions={
+        <>
+          <IconButton label={t("nav.projectSettings", { name: project.name })} size="sm" onPress={() => go({ view: "project", id: project.id, tab: "overview" })}>
+            <Settings className="size-3.5" />
+          </IconButton>
+          <IconButton label={t("nav.newChatIn", { name: project.name })} size="sm" onPress={() => go({ view: "home", projectId: project.id })}>
+            <Plus className="size-3.5" />
+          </IconButton>
+        </>
+      }
+    >
+      {children}
+    </NavTreeItem>
   )
 }
 
-function ChatRow({ chat, status, active, agents }: { chat: Chat; status: ChatStatus | undefined; active: boolean; agents: ReadonlyArray<Agent> }) {
+function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatStatus | undefined; active: boolean; agents: ReadonlyArray<Agent> }) {
   const live = status && status.state !== "idle" ? status : undefined
+  const age = formatAge(Math.max(chat.createdAt, status?.updatedAt ?? 0))
   return (
-    <TreeItem
+    <NavTreeItem
+      id={chatKey(chat.id)}
+      textValue={chatTitle(chat)}
       active={active}
       title={chatTitle(chat)}
-      onPress={() => go({ view: "chat", id: chat.id })}
+      dragLabel={t("nav.reorder", { name: chatTitle(chat) })}
+      onAction={() => go({ view: "chat", id: chat.id })}
       detail={
         live && (
           <span className={cx("flex min-w-0 items-center gap-1.5", live.state === "waiting" && "text-accent-text", live.state === "failed" && "text-danger")}>
@@ -270,11 +267,10 @@ function ChatRow({ chat, status, active, agents }: { chat: Chat; status: ChatSta
           </span>
         )
       }
-      trailing={!live && <span className="shrink-0 text-sm font-normal text-muted">{formatAge(Math.max(chat.createdAt, status?.updatedAt ?? 0))}</span>}
+      trailing={!live && age}
     />
   )
 }
-
 
 // Usage, with the fullest limit window once it reaches 80%: below that a number next to the row is noise.
 // The row's label names the account and window, so the percentage never stands alone.
@@ -305,22 +301,23 @@ function UsageItem({ active }: { active: boolean }) {
 }
 
 // Which edges of a scroll area have content past them, to draw the hairlines.
+const edgesOf = (el: HTMLElement) => ({ top: el.scrollTop > 0, bottom: el.scrollTop + el.clientHeight < el.scrollHeight - 1 })
+const sameEdges = (a: { top: boolean; bottom: boolean }, b: { top: boolean; bottom: boolean }) => (a.top === b.top && a.bottom === b.bottom ? a : b)
+
 function useScrollEdges() {
   const tree = useRef<HTMLDivElement>(null)
   const [edges, setEdges] = useState({ top: false, bottom: false })
-  const measure = (el: HTMLElement) => {
-    const top = el.scrollTop > 0
-    const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 1
-    setEdges((e) => (e.top === top && e.bottom === bottom ? e : { top, bottom }))
-  }
+  const measure = (el: HTMLElement) => setEdges((e) => sameEdges(e, edgesOf(el)))
+  // Content changes re-render the sidebar, so measure after each render; the observer covers window resizes.
   useLayoutEffect(() => {
+    if (tree.current) measure(tree.current)
+  })
+  useEffect(() => {
     const el = tree.current
     if (!el) return
-    measure(el)
-    const observer = new ResizeObserver(() => measure(el))
+    const observer = new ResizeObserver(() => setEdges((e) => sameEdges(e, edgesOf(el))))
     observer.observe(el)
-    for (const child of el.children) observer.observe(child)
     return () => observer.disconnect()
-  })
+  }, [])
   return { tree, edges, onScroll: (e: UIEvent<HTMLElement>) => measure(e.currentTarget) }
 }

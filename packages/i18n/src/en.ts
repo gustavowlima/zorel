@@ -40,6 +40,8 @@ export const en = {
     usage: "Usage",
     settings: "Settings",
     projects: "Projects",
+    chats: "Chats",
+    reorder: "Reorder {name}",
     newProject: "New project",
     newChatIn: "New chat in {name}",
     projectSettings: "Settings of {name}",
@@ -63,7 +65,7 @@ export const en = {
     title: "What are we working on?",
     subtitle: "Pick a project and an agent, or just start typing.",
     project: "Project",
-    noProject: "General · no project",
+    noProject: "No project",
     agent: "Agent",
     noAgent: "No agent"
   },

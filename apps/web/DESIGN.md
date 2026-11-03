@@ -135,7 +135,8 @@ components:
     height: "{spacing.control-sm}"
     padding: "0 8px"
   sidebar-item-active:
-    backgroundColor: "{colors.control-active}"
+    backgroundColor: "{colors.canvas}"
+    borderColor: "{colors.border-subtle}"
     textColor: "{colors.text}"
   badge-neutral:
     backgroundColor: "{colors.control}"
@@ -187,6 +188,9 @@ Cinzas neutros quase pretos em camadas, um azul de sinal e três cores de estado
 - **Moldura** (frame): o fundo da janela, atrás de tudo. A barra lateral fica direto sobre ela.
 - **Bancada** (canvas): o cartão único de conteúdo (chat, páginas), de cantos 16px.
 - **Barra Lateral** (sidebar): mesmo tom da moldura; o item ativo é um pedaço da bancada (canvas + borda sutil).
+  - Comporta-se como a barra lateral de um app de desktop: marca (que é a barra de título no app, região de arrastar a janela, com espaço para os botões dela), atalhos do topo e Settings ficam fixos; só as árvores rolam, sem barra visível, com um fio sutil na borda que tem conteúdo escondido.
+  - Projetos e chats são uma árvore do React Aria (um Tab, setas, busca por digitação, `aria-level`). Projetos reordenam arrastando; chats só dentro do próprio grupo, nunca de projeto. Os sem projeto ficam na seção **Chats**.
+  - Ações da linha (novo chat, ajustes) aparecem no hover ou foco no lugar da contagem, nunca sobre o nome ou a seta, e não recebem clique enquanto escondidas.
 - **Superfície** (surface) e **Elevado** (raised): cards, blocos de código e painéis por cima da bancada.
 - **Controle** (control, control-hover, control-active): fundo de botões secundários, campos e itens selecionados, em três degraus.
 - **Borda sutil** (border-subtle) e **Borda forte** (border-strong): separação mínima; a forte só em foco de campo, tabela e citação.

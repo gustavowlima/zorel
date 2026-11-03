@@ -58,6 +58,8 @@ export const mutations = {
   removeAgent: Zero.mutation("agents", "remove"),
   createChat: Zero.mutation("chats", "create"),
   updateChat: Zero.mutation("chats", "update"),
+  reorderChats: Zero.mutation("chats", "reorder"),
+  reorderProjects: Zero.mutation("projects", "reorder"),
   removeChat: Zero.mutation("chats", "remove"),
   consolidate: Zero.mutation("chats", "consolidate"),
   createMemory: Zero.mutation("memories", "create"),

@@ -57,6 +57,7 @@ updated: 2026-11-03
 - check:ui no CI (literais, escala, botão/diálogo à mão, import direto de headless/ícones); nem Storybook nem galeria
 - shadcn (CLI 4.x) como GERADOR das primitivas: `shadcn init --base aria` (React Aria Components; Radix e Base UI NÃO, decisão do usuário 2026-11-03), código copiado para src/ui e nosso; tokens semânticos do shadcn mapeados uma vez para --z-*; nada da paleta neutra/--radius padrão; alturas na escala 24/28/32/36
 - scrollbars: nada de scrollbar-color/scrollbar-width no :root (herda e faz o Chrome/WebKit ignorar ::-webkit-scrollbar); só em @supports not selector(::-webkit-scrollbar). Áreas estilo desktop usam .scroll-quiet (sem barra) + hairline nas bordas com conteúdo escondido
-- sidebar: marca, Needs you/Knowledge/Usage e Settings fixos; só a árvore rola; linhas shrink-0 (nunca encolhem); ações do GroupRow sobrepõem o trailing no hover/foco, sem ocupar largura
+- sidebar: marca (= barra de título no desktop: classe electrobun-webkit-app-region-drag, .title-inset dá 84px aos botões da janela com data-shell=desktop), Needs you/Knowledge/Usage e Settings fixos; só as árvores rolam; linhas de 28px (h-control-sm) e shrink-0; projetos/chats são NavTree/NavTreeItem (React Aria Tree); ações sobrepõem a contagem no hover/foco com pointer-events-none quando escondidas; chats sem projeto na seção Chats
 - números soltos na navegação só quando acionáveis: o % de Usage aparece a partir de LIMIT_ALERT, com aria-label/title dizendo conta e janela
-
+- drag and drop: useNavReorder (ui/nav.tsx) sobre useDragAndDrop do React Aria; só reordena dentro de um grupo (getDropOperation cancela 'on' e outros grupos); nenhuma lib nova
+- I18nProvider com locale() do Zero em main.tsx: as strings do React Aria (arrastar, recolher) seguem o idioma da interface, não o do navegador
