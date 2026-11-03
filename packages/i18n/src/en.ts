@@ -306,7 +306,6 @@ export const en = {
     },
     topTurns: "Most expensive turns",
     noTopTurns: "No priced turns in this range",
-    exportCsv: "Export CSV",
     subscription: "subscription",
     looseChats: "No project",
     noAgent: "No agent",

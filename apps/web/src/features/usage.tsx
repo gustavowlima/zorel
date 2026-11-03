@@ -12,7 +12,7 @@ import { accountsAtom, agentsAtom, mutations, projectsAtom, topTurnsAtom, usageA
 import { chatTitle, formatCost, fullest, modelLabel, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
 import { LimitWindows } from "./limits.tsx"
-import { Button, ChartColumn, CircleAlert, EmptyState, File, IconButton, ProviderIcon, Screen, Section, Select, Tab, TabList, Tabs } from "@/ui"
+import { Button, ChartColumn, CircleAlert, EmptyState, IconButton, ProviderIcon, Screen, Section, Select, Tab, TabList, Tabs } from "@/ui"
 
 type Range = "month" | "7" | "30"
 type Metric = "cost" | "tokens"
@@ -38,7 +38,6 @@ const startOf = (range: Range) => {
 
 export function UsageView() {
   const rows = useList(usageAtom)
-  const projects = useList(projectsAtom)
   const agents = useList(agentsAtom)
   const accounts = useList(accountsAtom)
   const [range, setRange] = useState<Range>("month")
@@ -61,32 +60,6 @@ export function UsageView() {
     const mine = inRange.filter((r) => splitModel(r.model).provider === h)
     return { id: h, value: mine.reduce((n, r) => n + value(r), 0), tokens: mine.reduce((n, r) => n + tokensOf(r), 0), cost: mine.reduce((n, r) => n + (r.cost ?? 0), 0), rows: mine.length }
   }).filter((h) => h.rows > 0)
-
-  const exportCsv = () => {
-    const header = ["day", "project", "agent", "model", "account", "billing", "turns", "input_tokens", "output_tokens", "cached_tokens", "cost_usd"]
-    const lines = inRange.map((r) =>
-      [
-        new Date(r.day).toISOString().slice(0, 10),
-        projects.find((p) => p.id === r.projectId)?.name ?? "",
-        agents.find((a) => a.id === r.agentId)?.name ?? "",
-        r.model,
-        accounts.find((a) => a.id === r.accountId)?.label ?? "",
-        r.billing,
-        r.turns,
-        r.inputTokens,
-        r.outputTokens,
-        r.cachedTokens,
-        r.cost?.toFixed(6) ?? ""
-      ]
-        .map((v) => `"${String(v).replaceAll('"', '""')}"`)
-        .join(",")
-    )
-    const a = document.createElement("a")
-    a.href = URL.createObjectURL(new Blob([[header.join(","), ...lines].join("\n")], { type: "text/csv" }))
-    a.download = `zero-usage-${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(a.href)
-  }
 
   return (
     <Screen
@@ -122,9 +95,6 @@ export function UsageView() {
               { value: "30", label: t("usage.days", { count: 30 }) }
             ]}
           />
-          <IconButton label={t("usage.exportCsv")} isDisabled={!inRange.length} onPress={exportCsv}>
-            <File />
-          </IconButton>
         </>
       }
     >
