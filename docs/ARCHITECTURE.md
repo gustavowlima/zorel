@@ -33,6 +33,7 @@ Revisado em 2026-11-03.
 | D16 | **Projeto próprio, sem fork do T3 Code**. Do T3 Code (MIT) **copiamos** `packages/effect-acp` e `packages/effect-codex-app-server`, que são inteiros e não dependem de nada interno dele, com atribuição no `NOTICE`. Os adaptadores do Claude e do OpenCode, os leitores de uso e o padrão de átomos e RPC servem de **referência** | O diferencial do Zero (contexto, memória, equipe) fica no centro do desenho, e não enxertado em 94 mil linhas de orquestração. O trabalho de código é feito pelos harnesses, então a interface de código que precisamos é moderada. O server em Bun é enxuto e vira binário único para hospedar | Fork rígido do T3 Code: traria git, terminal e acesso remoto prontos, mas também Node + pnpm + Electron, ~600 mil linhas para manter e nenhum i18n. **Critério para rever:** se a experiência completa de git dele (worktrees, PRs, revisão, terminal) virar prioridade de curto prazo |
 | D17 | **Portas abertas para hospedar**, sem construir a hospedagem agora: (1) toda requisição resolve um `Actor` (hoje, sempre o dono local; `LocalOnly` vira uma forma de acesso); (2) banco via `@effect/sql` + Drizzle (D9); (3) segredos só pelo serviço `Secrets` (chaveiro agora, cofre no banco depois); (4) serviço `Workspace` (pasta local + sandbox do harness agora, container depois); (5) memória com **de quem é** e **quem ouve** desde a primeira migration; (6) agente como dado versionado; (7) motores atrás da interface `Engine` (um runtime leve para automação entra depois como mais um motor) | Cada item custa pouco agora e muito depois, principalmente dados (memória sem dono/público, banco preso ao driver) | Construir a hospedagem já (login, equipe, cofre, Postgres, containers): fica para a fase 8. Ignorar a hospedagem: obrigaria a reescrever acesso, banco e memória |
 | D18 | **Conhecimento aprendido, no modelo do ai-memory**: **captura → consolida → recupera → passa o bastão**. Um único modelo, a **página de conhecimento** (fato, decisão, como-fazer, armadilha, referência, sessão), substitui as tabelas de memórias e skills. A captura sai do próprio runtime; a consolidação funciona **sem LLM** (página de sessão extraída dos passos) e, opcionalmente, com uma chamada de modelo barato; a recuperação é um **resumo de entrada curto** no contexto + busca FTS sob demanda | O agente continua o trabalho sem reexplicações: o que foi decidido, o que falhou, como se faz aqui. Um modelo só é mais simples que memórias + skills + base de documentos. Sem LLM obrigatório, sem serviço externo (D0) | RAG de documentos por upload (fica no backlog). mem0 (grava sem controle, exige banco vetorial externo no SDK TS; disponível via MCP para quem quiser). Grafo, entidades e tiers de decaimento (backlog) |
+| D19 | **Design system próprio inspirado no a reference app, mantido com a skill impeccable**: `DESIGN.md` (tokens + regras) e `PRODUCT.md` (verdade do produto) na raiz do app web como autoridade; tokens `--z-*` como única fonte de cor, tamanho, raio e duração; primitivas em `apps/web/src/ui/` como a única API visual das telas; detector do impeccable ligado nas edições de UI e `audit` + `polish` ao fechar cada fase | Consistência que não depende de memória de quem codifica: o padrão está escrito (DESIGN.md), é verificado mecanicamente (detector e `check:ui`) e é refinado em passes curtos e com limite. As regras de fundação do a reference app (escala de controles, só tokens, interações) são boas e testadas | Copiar CSS ou componentes do a reference app (licença: só ideias). Biblioteca visual pronta (shadcn, MUI) como aparência: viraria a cara de todo app. Storybook (peso; uma página de galeria em dev basta) |
 
 ---
 
@@ -398,7 +399,41 @@ Referência: a reference app (`docs/architecture/agents.md` "Agent communication
 - **Runtime da página:** `ZeroClient = AtomHttpApi.Service(...)` + `AtomRpc` sobre WebSocket com reconexão.
 - **CRUD:** `ZeroClient.query(..., { reactivityKeys })` + `Atom.swr`. Mutations com as mesmas chaves revalidam sozinhas, e o `reload()` some.
 - **Chat:** `Atom.family(chatId → subscribeChat)`. O componente lê o estado (snapshot + eventos) e renderiza a resposta ao vivo agrupada.
-- **Design system:** sem mudança (`styles.css` + `ui.tsx`).
+- **Design system:** ver 10.3.
+
+## 10.3 Design system (D19)
+
+**Fundação (regras inspiradas no `ui-foundation.md` do a reference app, implementação nossa):**
+- **Escala de controles:** 24 px (apoio), 28 px (barras), **32 px (padrão)**, 36 px (ação importante). Já existe em `styles.css` (`--spacing-control-*`).
+- **Tema:** dark por padrão, light por `data-theme`, seguindo o sistema. O tema light só **troca valores** de tokens, nunca cria tokens.
+- **Só tokens:** cor, tamanho de texto, raio, sombra e duração vêm dos tokens `--z-*`. Literal de cor fora do arquivo de tokens é erro.
+- **Interação:** hover só com ponteiro fino (`@media (hover: hover) and (pointer: fine)`); pressionar = `scale(0.97)`; animações abaixo de 300 ms e respeitando `prefers-reduced-motion`.
+- **Estados obrigatórios** em todo componente: padrão, hover, `focus-visible`, ativo, desabilitado, carregando/vazio quando se aplica. Teclado completo e rótulo acessível (`IconButton` sempre com `label`).
+
+**Primitivas** (`apps/web/src/ui/`, a única API visual das telas):
+- **Simples:** `Text`, `Heading`, `Button` (`default` para a ação principal do contexto, `secondary`, `ghost` em barras, `destructive`, `link`), `IconButton`, `Badge`, `Card`, `Separator`, `Spinner`, `Skeleton`, `Kbd`.
+- **Formulário:** `Field` (rótulo, descrição, erro, `aria-describedby`) envolvendo `Input`, `Textarea` e `Select`. `Switch` só para mudança imediata.
+- **Complexos, sobre uma biblioteca headless acessível** (Base UI ou Radix, escolhida no bloco 4 da fase 1 consultando a documentação atual): `Dialog`, `AlertDialog`, `DropdownMenu`, `Popover`, `Tooltip`, `Tabs`, `RadioGroup`, `Combobox`. As telas **nunca importam a biblioteca headless nem os ícones direto**, só as primitivas. Assim, trocar ou atualizar a biblioteca não toca nenhuma tela (mesmo princípio do a reference app com o Kobalte).
+- **Do Zero:** bolha de mensagem, bloco de passos de ferramenta, cartão de aprovação, cartão de proposta, chip de membro, seletor de modelo e conta, inspetor "o que o modelo viu".
+
+**Artefatos do impeccable** (na raiz de `apps/web`):
+- **`PRODUCT.md`** (`/impeccable init`): o que é o Zero, para quem, modo **Operate** (app de trabalho: legibilidade, consistência e expectativas nativas acima de expressão; a marca vive nos detalhes) e tom.
+- **`DESIGN.md`** (`/impeccable document`): os tokens em YAML e as regras acima, gerados do código atual. É a referência que todo agente (e todo dev) consulta antes de criar tela.
+
+**Fluxo por tela ou fase:**
+
+| Momento | Comando | Saída |
+|---|---|---|
+| Antes de uma tela ou fluxo novo | `/impeccable shape` | Plano de UX/UI antes do código |
+| Durante as edições de UI | detector ligado (`/impeccable hooks on`) | Problemas mecânicos na hora: contraste, overflow, literais, fontes |
+| Ao terminar a tela | `/impeccable audit` | Acessibilidade, desempenho, responsivo |
+| Ao fechar a fase | `/impeccable polish` (um passe, com limite) | Acabamento final |
+| Textos, erros e i18n | `/impeccable harden` e `clarify` | Estados de erro, casos de borda, textos curtos e claros |
+| Componente repetido em 2+ telas | `/impeccable extract` | Vira primitiva |
+
+**Verificação mecânica no CI:** `check:ui` falha com cor literal fora dos tokens, tamanho, raio ou duração fora da escala, `<button>` ou diálogo feito à mão nas telas, ou import direto da biblioteca headless ou de ícones fora de `ui/`. É o equivalente leve do `check:ui` do a reference app.
+
+**Galeria:** a rota `/dev/ui`, só em desenvolvimento, mostra cada primitiva em todos os estados e nos dois temas. Ela substitui o Storybook.
 
 ---
 
@@ -501,11 +536,11 @@ No CI rodam lint, typecheck, i18n e as camadas 1 e 2. **Cada migration tem teste
 
 ## 13. Fases
 
-Cada fase termina com lint, typecheck e testes verdes, mais um teste real com Claude Code e Codex.
+Cada fase termina com lint, typecheck, `check:ui`, i18n e testes verdes, um teste real com Claude Code e Codex e, nas telas que mudaram, **detector limpo + `/impeccable audit` + um passe de `/impeccable polish`**.
 
 | Fase | Entrega | Pronto quando |
 |---|---|---|
-| **1. Runtime** | **Banco migrado para Drizzle + `@effect/sql-sqlite-bun`, com a migração dos dados atuais e backup** (seção 12); logs com mascaramento e spans; testes nas camadas 1 e 2 no CI; (com dono/público nas tabelas que guardam conhecimento), **`Actor`**, `turns`, fila, `ZeroRpc` + `subscribeChat`, interrupt, recuperação no boot, deltas agrupados, **átomos no chat e no CRUD** (a migração de i18n já reescreve todos os componentes), medição por turno gravada em `turns`, **`packages/i18n` (en) com a interface migrada para `t()` e erros do server como código** | Fechar a aba no meio de um turno e reabrir mostra o turno continuando. `kill -9` no server marca o turno `interrupted` com o texto parcial. Reenviar o mesmo `clientId` não duplica. Nenhum texto literal em JSX fora do catálogo (`check:i18n` verde) |
+| **1. Runtime** | **Design system: `PRODUCT.md` (init), `DESIGN.md` (document), primitivas em `ui/` com a biblioteca headless, `check:ui` no CI, detector ligado, galeria `/dev/ui`**; **banco migrado para Drizzle + `@effect/sql-sqlite-bun`, com a migração dos dados atuais e backup** (seção 12); logs com mascaramento e spans; testes nas camadas 1 e 2 no CI; (com dono/público nas tabelas que guardam conhecimento), **`Actor`**, `turns`, fila, `ZeroRpc` + `subscribeChat`, interrupt, recuperação no boot, deltas agrupados, **átomos no chat e no CRUD** (a migração de i18n já reescreve todos os componentes), medição por turno gravada em `turns`, **`packages/i18n` (en) com a interface migrada para `t()` e erros do server como código** | Fechar a aba no meio de um turno e reabrir mostra o turno continuando. `kill -9` no server marca o turno `interrupted` com o texto parcial. Reenviar o mesmo `clientId` não duplica. Nenhum texto literal em JSX fora do catálogo (`check:i18n` verde) |
 | **2. Engines vivos** | Claude Agent SDK + Codex App Server com sessão, marcação por sessão, steering, `setModel`, esforço de raciocínio, imagens. **Só assinaturas** (API keys são da fase 5). **Multicontas de assinatura** (`provider_accounts`, login dentro do Zero, `accountId` em agente e chat); **anexos e imagens** (seção 12) | O segundo turno no mesmo chat não sobe processo. Trocar Claude → Codex → Claude envia só o delta ao voltar. Os números de latência e cache estão registrados |
 | **2b. Failover** | Lista de alternativas por agente e chat, classificação de erros por adaptador, espera por limite com retorno automático, regra "só se ainda não agiu", aviso de termos, leitura de uso por conta, trocas visíveis no chat | Com a conta principal em limite, o turno continua na alternativa e volta sozinho após o reset. Um erro depois de uma ferramenta de escrita não repete o turno. Sem lista configurada, nada troca |
 | **2c. Consumo** | Área de consumo (seção 10.2): agregados por agente, projeto, conta e modelo; custo estimado; janelas de limite por conta; alertas | A tela mostra o consumo do mês por agente e o quanto falta de cada assinatura com o horário de reset. Um alerta de 80% aparece antes do limite |
