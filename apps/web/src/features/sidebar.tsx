@@ -14,7 +14,7 @@ import { agentTone, chatTitle, splitModel, statusLabel, windowLabel } from "../l
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, BookOpen, ChartColumn, cx, IconButton, Inbox, ModelAvatar, NavItem, NavLabel, NavTree, NavTreeItem, type NavKey, Plus, Settings, Spinner,
+  AgentAvatar, BookOpen, ChartColumn, cx, IconButton, Inbox, Logo, ModelAvatar, NavItem, NavLabel, NavTree, NavTreeItem, type NavKey, Plus, Settings, Spinner,
   SquarePen, Tooltip, useNavReorder
 } from "@/ui"
 
@@ -99,8 +99,11 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
 
   return (
     <nav aria-label={t("nav.label")} className="flex w-66 shrink-0 flex-col overflow-hidden pt-3 pb-3 pl-2.5">
-      {/* Desktop app: the window buttons sit here and the strip drags the window; the sidebar starts below. */}
-      <div aria-hidden="true" className="title-strip electrobun-webkit-app-region-drag mb-4.5 h-7 shrink-0" />
+      {/* The brand; in the desktop app it is also the title bar (it drags the window, the window buttons sit on its left). */}
+      <div className="brand-row electrobun-webkit-app-region-drag mb-4.5 flex h-7 shrink-0 items-center gap-2 px-2.5">
+        <Logo className="size-5" />
+        <span className="font-semibold">{t("app.name")}</span>
+      </div>
 
       {/* What waits for you comes first, and stays put while the trees scroll. */}
       <div className="mb-4.5 flex shrink-0 flex-col gap-px pr-2.5">
