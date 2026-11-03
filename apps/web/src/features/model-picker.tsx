@@ -64,6 +64,8 @@ function entriesOf(accounts: ReadonlyArray<ProviderAccount>, models: ReadonlyArr
     // in (a key is set): otherwise the rail would show a second, dimmed Claude or Codex.
     const twin = SAME_LOGO[provider]
     if (!available && twin && entries.some((e) => e.provider === twin)) continue
+    // A local server (Ollama, LM Studio) shows only while it is running.
+    if (!available && LOCAL.has(provider)) continue
     entries.push({
       key: provider,
       provider,
