@@ -43,7 +43,7 @@ test("contexto: orçamento de memórias prioriza as recentes; camadas na ordem e
   expect(pinned([mem("velha", 1), mem("nova", 2), mem("x".repeat(50), 3)], 59).map((m) => m.id)).toEqual(["x".repeat(50)])
   const dev = agentOf("a", "Dev", "INSTR")
   const turn = buildTurn({
-    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, effort: null, model: "anthropic/m", summary: "RESUMO", summaryUntil: 0, failover: null, position: null, createdAt: 0 },
+    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, effort: null, model: "anthropic/m", summary: "RESUMO", summaryUntil: 0, failover: null, position: null, preview: null, lastAt: null, createdAt: 0 },
     model: "anthropic/m",
     project: { id: "p", name: "P", brief: "BRIEF", path: null, createdAt: 0 },
     agent: dev,

@@ -1,11 +1,11 @@
-// Message box (DESIGN.md "Campo de mensagem"): a 16px card with a growing text area, attachments as chips
-// above the text, and one toolbar: attach, the slots the screen passes (agent, model), then stop and send.
+// Message box (the chosen redesign): one bar — attach, the text (one line that grows with Shift+Enter), the
+// slots the screen passes (agent, model), then stop and a round send. Attachments sit as chips above the bar.
 // While a turn runs, sending adds the text to that turn when the engine can (steer), else it queues.
 import { type Attachment, MAX_ATTACHMENTS } from "@zero/contracts"
 import { t } from "@zero/i18n"
 import { type ReactNode, useRef, useState } from "react"
 import { attachmentUrl } from "../client.ts"
-import { ArrowUp, BareTextarea, cx, File, IconButton, Paperclip, pickFiles, Spinner, Square, Tooltip, X } from "@/ui"
+import { ArrowUp, BareTextarea, cx, File, IconButton, pickFiles, Plus, Spinner, Square, Tooltip, X } from "@/ui"
 
 const MAX_ROWS = 10
 
@@ -62,7 +62,7 @@ export function Composer({
     box.current?.focus()
   }
 
-  const rows = Math.min(MAX_ROWS, Math.max(2, text.split("\n").length))
+  const rows = Math.min(MAX_ROWS, Math.max(1, text.split("\n").length))
 
   return (
     <form
@@ -85,7 +85,7 @@ export function Composer({
         attach(e.dataTransfer.files)
       }}
       className={cx(
-        "relative flex flex-col gap-2 rounded-sheet border bg-canvas px-2.5 pt-3.5 pb-2.5 transition-colors duration-150 ease-out motion-reduce:transition-none",
+        "relative flex flex-col gap-1.5 rounded-card border bg-canvas p-1.5 pl-2 transition-colors duration-150 ease-out motion-reduce:transition-none",
         dragging ? "border-accent-line bg-accent-faint" : "border-strong"
       )}
     >
@@ -101,40 +101,40 @@ export function Composer({
           )}
         </div>
       )}
-      <BareTextarea
-        ref={box}
-        value={text}
-        rows={rows}
-        onChange={(e) => setText(e.target.value)}
-        onPaste={(e) => {
-          if (!e.clipboardData.files.length) return
-          e.preventDefault()
-          attach(e.clipboardData.files)
-        }}
-        onKeyDown={(e) => {
-          if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return
-          e.preventDefault()
-          submit()
-        }}
-        placeholder={dragging ? t("composer.dropHere") : placeholder}
-        aria-label={t("composer.label")}
-        {...(autoFocus && { autoFocus })}
-      />
-      <div className="flex flex-wrap items-center gap-1">
-        <IconButton label={t("composer.attach")} isDisabled={files.length >= MAX_ATTACHMENTS} onPress={() => void pickFiles().then(attach)}>
-          <Paperclip />
+      <div className="flex items-end gap-1">
+        <IconButton label={t("composer.attach")} className="size-control" isDisabled={files.length >= MAX_ATTACHMENTS} onPress={() => void pickFiles().then(attach)}>
+          <Plus />
         </IconButton>
-        {tools}
-        <span className="flex-1" />
+        <BareTextarea
+          ref={box}
+          value={text}
+          rows={rows}
+          className="min-w-0 flex-1 self-center px-1.5 py-1.5"
+          onChange={(e) => setText(e.target.value)}
+          onPaste={(e) => {
+            if (!e.clipboardData.files.length) return
+            e.preventDefault()
+            attach(e.clipboardData.files)
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return
+            e.preventDefault()
+            submit()
+          }}
+          placeholder={dragging ? t("composer.dropHere") : placeholder}
+          aria-label={t("composer.label")}
+          {...(autoFocus && { autoFocus })}
+        />
+        <span className="flex shrink-0 items-center gap-0.5">{tools}</span>
         {busy && onStop && (
           <Tooltip content={t("composer.stop")}>
-            <IconButton label={t("composer.stop")} variant="secondary" onPress={onStop}>
+            <IconButton label={t("composer.stop")} variant="secondary" className="size-control rounded-full" onPress={onStop}>
               <Square className="size-3 fill-current" />
             </IconButton>
           </Tooltip>
         )}
         <Tooltip content={busy ? t("composer.steer") : t("composer.send")}>
-          <IconButton label={busy ? t("composer.steer") : t("composer.send")} variant="default" type="submit" isDisabled={!canSend}>
+          <IconButton label={busy ? t("composer.steer") : t("composer.send")} variant="default" type="submit" className="size-control rounded-full" isDisabled={!canSend}>
             <ArrowUp />
           </IconButton>
         </Tooltip>

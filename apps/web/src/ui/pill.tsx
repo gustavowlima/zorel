@@ -11,7 +11,7 @@ export function DisclosurePill({ expanded, onToggle, leading, children, controls
       onPress={onToggle}
       aria-expanded={expanded}
       {...(controls && { "aria-controls": controls })}
-      className="inline-flex h-control-sm max-w-full cursor-default items-center gap-2 self-start rounded-full bg-surface pr-2.5 pl-3 text-sm text-secondary outline-none transition-colors duration-120 ease-out data-hovered:bg-control-hover data-hovered:text-fg data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none"
+      className="inline-flex h-control-xs max-w-full cursor-default items-center gap-1.5 self-start rounded-full px-2 text-sm text-muted outline-none transition-colors duration-120 ease-out data-hovered:bg-hover data-hovered:text-fg data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none"
     >
       {leading}
       <span className="truncate">{children}</span>

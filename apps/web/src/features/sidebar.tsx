@@ -1,20 +1,21 @@
-// Sidebar (prototype "Sidebar"): Needs you / Knowledge / Usage, then the projects as a tree with their chats
-// (live status under the title), the chats without a project, the agents of the open project, and Settings at
-// the bottom. Like a desktop sidebar, the brand (also the window's drag region), the top rows and Settings stay
-// put and only the trees scroll, with no visible bar: a hairline marks an edge while content is hidden past it.
-// Projects reorder by drag and drop; chats reorder only inside their own group and never change project.
-// Statuses come from the live stream; everything else from the atoms.
+// Sidebar (the chosen redesign, "Zero — main screen"): the projects as a tree with their chats, the chats without
+// a project, the agents of the open project, then Needs you, and a toolbar at the foot (new chat, knowledge,
+// usage with the fullest limit window, settings). One line per project and two per chat: a dot or a spinner is
+// all the state a project shows; a chat shows who is in it and what is happening, and sorts by whose turn it
+// is (waiting for you, then working, then the rest). The open chat floats as a raised chip. In the desktop app
+// a 28px strip on top holds the window buttons and drags the window. Projects reorder by drag and drop; chats
+// reorder only inside their own group and never change project. Statuses come from the live stream.
 import { type Agent, type Chat, LIMIT_ALERT, type Project } from "@zero/contracts"
 import type { ChatStatus } from "@zero/contracts/events"
 import { formatAge, formatPercent, t } from "@zero/i18n"
-import { type ReactNode, type UIEvent, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { type ReactNode, useState } from "react"
 import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
-import { agentTone, chatTitle, modelName, statusLabel, windowLabel } from "../labels.ts"
+import { agentTone, chatTitle, modelName, splitModel, statusLabel, windowLabel } from "../labels.ts"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, BookOpen, ChartColumn, ChatStatusIcon, cx, Folder, FolderOpen, IconButton, Inbox, NavItem, NavLabel, NavTree, NavTreeItem, type NavKey, Plus,
-  Settings, SquarePen, useNavReorder
+  AgentAvatar, BookOpen, ChartColumn, cx, IconButton, Inbox, ModelAvatar, NavItem, NavLabel, NavTree, NavTreeItem, type NavKey, Plus, Settings, Spinner,
+  SquarePen, Tooltip, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
@@ -46,13 +47,16 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
     setExpanded(next)
     writeSet(EXPANDED_KEY, next)
   }
+  const toggle = (id: string) => {
+    const key = projectKey(id)
+    onExpandedChange(new Set(expandedKeys.has(key) ? [...expandedKeys].filter((k) => k !== key) : [...expandedKeys, key]))
+  }
 
   const activeChat = route.view === "chat" ? route.id : undefined
-  const groupOf = (projectId: string | null) => ordered(chats.filter((c) => c.projectId === projectId), statuses)
+  const groupOf = (projectId: string | null) => byTurn(ordered(chats.filter((c) => c.projectId === projectId), statuses), statuses)
   const loose = groupOf(null)
   const teamProject = projects.find((p) => p.id === activeProjectId)
   const team = agents.filter((a) => a.projectId === (teamProject?.id ?? null))
-  const { tree, edges, onScroll } = useScrollEdges()
 
   const reorderProjects = useMutation(mutations.reorderProjects)
   const reorderChats = useMutation(mutations.reorderChats)
@@ -86,53 +90,27 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   }
 
   return (
-    <nav aria-label={t("nav.label")} className="flex w-62 shrink-0 flex-col overflow-hidden pt-4 pb-3">
-      {/* The brand row is the window's title bar in the desktop app (the traffic lights sit on its left). */}
-      <div className="title-inset electrobun-webkit-app-region-drag mb-3 flex h-control shrink-0 items-center gap-2.5 px-5">
-        <span aria-hidden="true" className="flex size-6 items-center justify-center rounded-control bg-fg text-sm font-semibold text-frame">
-          Z
-        </span>
-        <span className="flex-1 text-lg font-semibold">{t("app.name")}</span>
-        <span className="electrobun-webkit-app-region-no-drag">
-          <IconButton label={t("nav.newChat")} onPress={() => go({ view: "home" })}>
-            <SquarePen />
-          </IconButton>
-        </span>
-      </div>
+    <nav aria-label={t("nav.label")} className="flex w-66 shrink-0 flex-col overflow-hidden pt-3 pb-3 pl-2.5">
+      {/* Desktop app: the window buttons sit here and the strip drags the window; the sidebar starts below. */}
+      <div aria-hidden="true" className="title-strip electrobun-webkit-app-region-drag mb-4.5 h-7 shrink-0" />
 
-      <div className={cx("flex shrink-0 flex-col gap-0.5 border-b px-3 pb-1 transition-colors duration-120", edges.top ? "border-subtle" : "border-transparent")}>
-        <NavItem icon={<Inbox />} active={route.view === "inbox"} onPress={() => go({ view: "inbox" })} trailing={needsYou > 0 && <Count n={needsYou} />}>
-          {t("nav.needsYou")}
-        </NavItem>
-        <NavItem icon={<BookOpen />} active={route.view === "knowledge"} onPress={() => go({ view: "knowledge" })}>
-          {t("nav.knowledge")}
-        </NavItem>
-        <UsageItem active={route.view === "usage"} />
-      </div>
-
-      <div ref={tree} onScroll={onScroll} className="scroll-quiet flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 pb-2">
-        <NavLabel action={<NewProjectButton />}>{t("nav.projects")}</NavLabel>
-        <NavTree label={t("nav.projects")} expandedKeys={expandedKeys} onExpandedChange={onExpandedChange} dragAndDropHooks={projectDnd}>
-          {projects.map((p) => {
-            const list = groupOf(p.id)
-            return (
-              <ProjectItem
-                key={p.id}
-                project={p}
-                open={expandedKeys.has(projectKey(p.id))}
-                active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)}
-                chats={list}
-                statuses={statuses}
-                onToggle={() => onExpandedChange(new Set([...expandedKeys].filter((k) => k !== projectKey(p.id)).concat(expandedKeys.has(projectKey(p.id)) ? [] : [projectKey(p.id)])))}
-              >
-                {chatItems(p.id, list)}
-              </ProjectItem>
-            )
-          })}
-        </NavTree>
+      <div className="scroll-quiet flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto overscroll-contain pr-2.5 pb-2">
+        <section className="flex flex-col gap-px">
+          <NavLabel action={<NewProjectButton />}>{t("nav.projects")}</NavLabel>
+          <NavTree label={t("nav.projects")} expandedKeys={expandedKeys} onExpandedChange={onExpandedChange} dragAndDropHooks={projectDnd}>
+            {projects.map((p) => {
+              const list = groupOf(p.id)
+              return (
+                <ProjectItem key={p.id} project={p} active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)} chats={list} statuses={statuses} onToggle={() => toggle(p.id)}>
+                  {chatItems(p.id, list)}
+                </ProjectItem>
+              )
+            })}
+          </NavTree>
+        </section>
 
         {loose.length > 0 && (
-          <>
+          <section className="flex flex-col gap-px">
             <NavLabel
               action={
                 <IconButton label={t("nav.newChatIn", { name: t("nav.chats") })} size="sm" onPress={() => go({ view: "home" })}>
@@ -145,11 +123,11 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
             <NavTree label={t("nav.chats")} dragAndDropHooks={looseDnd}>
               {chatItems("loose", loose)}
             </NavTree>
-          </>
+          </section>
         )}
 
         {team.length > 0 && (
-          <>
+          <section className="flex flex-col gap-px">
             <NavLabel
               action={
                 <IconButton label={t("nav.newAgent")} size="sm" onPress={() => go({ view: "new-agent", projectId: teamProject?.id ?? null })}>
@@ -170,13 +148,29 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
                 {a.name}
               </NavItem>
             ))}
-          </>
+          </section>
         )}
       </div>
-      <div className={cx("shrink-0 border-t px-3 pt-1 transition-colors duration-120", edges.bottom ? "border-subtle" : "border-transparent")}>
-        <NavItem icon={<Settings />} active={route.view === "settings"} onPress={() => go({ view: "settings", tab: "providers" })}>
-          {t("nav.settings")}
+
+      <div className="flex shrink-0 flex-col gap-px pr-2.5 pb-2">
+        <NavItem icon={<Inbox />} active={route.view === "inbox"} onPress={() => go({ view: "inbox" })} trailing={needsYou > 0 && <Count n={needsYou} />}>
+          {t("nav.needsYou")}
         </NavItem>
+      </div>
+
+      {/* Tools at the foot */}
+      <div className="mr-2.5 flex shrink-0 items-center gap-0.5 border-t border-subtle pt-2.5">
+        <FootButton label={t("nav.newChat")} active={route.view === "home" && !route.projectId} onPress={() => go({ view: "home" })}>
+          <SquarePen />
+        </FootButton>
+        <FootButton label={t("nav.knowledge")} active={route.view === "knowledge"} onPress={() => go({ view: "knowledge" })}>
+          <BookOpen />
+        </FootButton>
+        <UsageButton active={route.view === "usage"} />
+        <span className="flex-1" />
+        <FootButton label={t("nav.settings")} active={route.view === "settings"} onPress={() => go({ view: "settings", tab: "providers" })}>
+          <Settings />
+        </FootButton>
       </div>
     </nav>
   )
@@ -190,14 +184,17 @@ const ordered = (chats: ReadonlyArray<Chat>, statuses: Statuses) => [
   ...chats.filter((c) => c.position === null).sort((a, b) => lastActivity(b, statuses) - lastActivity(a, statuses)),
   ...chats.filter((c) => c.position !== null).sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
 ]
+// Whose turn it is comes first: waiting for you, then working, then the rest (each keeps the order above).
+const rank = (s: ChatStatus | undefined) => (s?.state === "waiting" ? 0 : s?.state === "running" ? 1 : 2)
+const byTurn = (chats: ReadonlyArray<Chat>, statuses: Statuses) => [...chats].sort((a, b) => rank(statuses[a.id]) - rank(statuses[b.id]))
 
 const Count = ({ n }: { n: number }) => (
-  <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-semibold text-on-accent tabular-nums">{n}</span>
+  <span className="flex h-4.5 min-w-4.5 shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-semibold text-on-accent tabular-nums">{n}</span>
 )
 
+// A project: one line. Waiting for you → a dot; working → a spinner; nothing otherwise.
 function ProjectItem({
   project,
-  open,
   active,
   chats,
   statuses,
@@ -205,32 +202,28 @@ function ProjectItem({
   children
 }: {
   project: Project
-  open: boolean
   active: boolean
   chats: ReadonlyArray<Chat>
   statuses: Statuses
   onToggle: () => void
   children: ReactNode
 }) {
-  const running = chats.filter((c) => statuses[c.id]?.state === "running").length
-  const waiting = chats.filter((c) => statuses[c.id]?.state === "waiting").length
+  const waiting = chats.some((c) => statuses[c.id]?.state === "waiting")
+  const running = !waiting && chats.some((c) => statuses[c.id]?.state === "running")
   return (
     <NavTreeItem
       id={projectKey(project.id)}
       textValue={project.name}
       active={active}
-      glyph={open ? <FolderOpen /> : <Folder />}
       title={project.name}
       dragLabel={t("nav.reorder", { name: project.name })}
       onAction={onToggle}
       trailing={
-        !open &&
-        chats.length > 0 && (
-          <span className="flex items-center gap-1.5" role="img" aria-label={t("nav.chatCount", { count: chats.length })}>
-            {waiting > 0 ? <ChatStatusIcon state="waiting" /> : running > 0 && <ChatStatusIcon state="running" />}
-            {chats.length}
-          </span>
-        )
+        waiting ? (
+          <span role="img" aria-label={t("nav.waitingIn", { count: 1 })} className="size-2 rounded-full bg-accent-text" />
+        ) : running ? (
+          <Spinner size={11} className="text-success" label={t("nav.runningIn", { count: 1 })} />
+        ) : undefined
       }
       actions={
         <>
@@ -248,76 +241,67 @@ function ProjectItem({
   )
 }
 
+// A chat across the sidebar's width: the lead's avatar (or the model's logo), the title and when it last moved,
+// then what is happening now (blue when it waits for you) or, when nothing runs, the start of the last message.
 function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatStatus | undefined; active: boolean; agents: ReadonlyArray<Agent> }) {
   const live = status && status.state !== "idle" ? status : undefined
-  const age = formatAge(Math.max(chat.createdAt, status?.updatedAt ?? 0))
+  const lead = agents.find((a) => a.id === (live?.agentId ?? chat.agentIds[0]))
+  const at = Math.max(chat.lastAt ?? chat.createdAt, status?.updatedAt ?? 0)
   return (
     <NavTreeItem
       id={chatKey(chat.id)}
       textValue={chatTitle(chat)}
       active={active}
+      strong={live?.state === "waiting"}
+      leading={lead ? <AgentAvatar id={lead.id} name={lead.name} tone={agentTone(lead, agents)} size={32} /> : <ModelAvatar provider={splitModel(chat.model).provider} size={32} />}
       title={chatTitle(chat)}
+      trailing={formatAge(at)}
       dragLabel={t("nav.reorder", { name: chatTitle(chat) })}
       onAction={() => go({ view: "chat", id: chat.id })}
       detail={
-        live && (
-          <span className={cx("flex min-w-0 items-center gap-1.5", live.state === "waiting" && "text-accent-text", live.state === "failed" && "text-danger")}>
-            <ChatStatusIcon state={live.state === "idle" ? "running" : live.state} />
+        live ? (
+          <span className={cx("flex min-w-0 items-center gap-1.5", live.state === "waiting" ? "text-accent-text" : live.state === "failed" ? "text-danger" : "text-muted")}>
+            {live.state === "running" && <Spinner size={10} className="shrink-0 text-success" />}
             <span className="truncate">{statusLabel(live, agents)}</span>
           </span>
+        ) : (
+          <span className="truncate">{chat.preview ?? t("nav.noMessages")}</span>
         )
       }
-      trailing={!live && age}
     />
   )
 }
 
-// Usage, with the fullest limit window once it reaches 80%: below that a number next to the row is noise.
-// The row's label names the account and window, so the percentage never stands alone.
-function UsageItem({ active }: { active: boolean }) {
-  const accounts = useList(accountsAtom).filter((a) => a.kind === "subscription")
-  const worst = accounts
-    .flatMap((a) => (a.usage?.windows ?? []).map((w) => ({ account: a.label, window: windowLabel(w.id), used: w.usedPercent / 100 })))
-    .sort((a, b) => b.used - a.used)[0]
-  const alert = worst && worst.used >= LIMIT_ALERT ? worst : undefined
-  const detail = alert && t("nav.usageAlert", { account: alert.account, window: alert.window, percent: formatPercent(alert.used) })
+// An icon button of the foot toolbar; the open screen's stays lit.
+function FootButton({ label, active, onPress, children }: { label: string; active: boolean; onPress: () => void; children: ReactNode }) {
   return (
-    <NavItem
-      icon={<ChartColumn />}
-      active={active}
-      onPress={() => go({ view: "usage" })}
-      {...(detail && { "aria-label": `${t("nav.usage")}, ${detail}` })}
-      trailing={
-        alert && (
-          <span title={detail} className="shrink-0 text-sm text-warning tabular-nums">
-            {formatPercent(alert.used)}
-          </span>
-        )
-      }
-    >
-      {t("nav.usage")}
-    </NavItem>
+    <Tooltip content={label}>
+      <IconButton label={label} onPress={onPress} className={cx(active && "bg-hover text-fg")} {...(active && { "aria-current": "page" as const })}>
+        {children}
+      </IconButton>
+    </Tooltip>
   )
 }
 
-// Which edges of a scroll area have content past them, to draw the hairlines.
-const edgesOf = (el: HTMLElement) => ({ top: el.scrollTop > 0, bottom: el.scrollTop + el.clientHeight < el.scrollHeight - 1 })
-const sameEdges = (a: { top: boolean; bottom: boolean }, b: { top: boolean; bottom: boolean }) => (a.top === b.top && a.bottom === b.bottom ? a : b)
-
-function useScrollEdges() {
-  const tree = useRef<HTMLDivElement>(null)
-  const [edges, setEdges] = useState({ top: false, bottom: false })
-  const measure = (el: HTMLElement) => setEdges((e) => sameEdges(e, edgesOf(el)))
-  // Content changes re-render the sidebar, so measure after each render; the observer covers window resizes.
-  useLayoutEffect(() => {
-    if (tree.current) measure(tree.current)
-  })
-  useEffect(() => {
-    const el = tree.current
-    if (!el) return
-    const observer = new ResizeObserver(() => setEdges((e) => sameEdges(e, edgesOf(el))))
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
-  return { tree, edges, onScroll: (e: UIEvent<HTMLElement>) => measure(e.currentTarget) }
+// Usage, with the fullest limit window next to it; warning from 80%. Its label names the account and window.
+function UsageButton({ active }: { active: boolean }) {
+  const worst = useList(accountsAtom)
+    .filter((a) => a.kind === "subscription")
+    .flatMap((a) => (a.usage?.windows ?? []).map((w) => ({ account: a.label, window: windowLabel(w.id), used: w.usedPercent / 100 })))
+    .sort((a, b) => b.used - a.used)[0]
+  const detail = worst && t("nav.usageAlert", { account: worst.account, window: worst.window, percent: formatPercent(worst.used) })
+  const label = detail ? `${t("nav.usage")}: ${detail}` : t("nav.usage")
+  return (
+    <Tooltip content={label}>
+      <IconButton
+        label={label}
+        onPress={() => go({ view: "usage" })}
+        className={cx("h-control-sm w-auto gap-1.5 px-2 text-sm", active && "bg-hover text-fg", worst && worst.used >= LIMIT_ALERT && "text-warning")}
+        {...(active && { "aria-current": "page" as const })}
+      >
+        <ChartColumn />
+        {worst && <span className="tabular-nums">{formatPercent(worst.used)}</span>}
+      </IconButton>
+    </Tooltip>
+  )
 }

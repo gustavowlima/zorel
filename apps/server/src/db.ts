@@ -1,7 +1,7 @@
 // Local database: SQLite via Drizzle over Effect's SqliteClient (D9). Every method returns an Effect;
 // a database error is a defect (orDie): the caller can do nothing but fail the request.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import type { Access, Agent, AccountUsage, Attachment, Chat, Effort, FailoverTarget, FileChange, McpServer, Memory, Message, Project, Switch } from "@zero/contracts"
+import { type Access, type Agent, type AccountUsage, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type Switch } from "@zero/contracts"
 import type { Approval, ApprovalOutcome, Turn, WorkStep } from "@zero/contracts/events"
 import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
@@ -51,12 +51,25 @@ export const repository = (db: Db) => {
   const orDie = <A, E>(e: Effect.Effect<A, E>) => Effect.orDie(e)
   const first = <A>(rows: ReadonlyArray<A>) => rows[0]
 
-  // Members in order: the first is the leader.
+  // Members in order (the first is the leader), and the last message as a one-line preview.
   const withMembers = (rows: ReadonlyArray<typeof chats.$inferSelect>) =>
     Effect.gen(function* () {
       if (!rows.length) return [] as Chat[]
-      const ms = yield* db.select().from(chatMembers).where(inArray(chatMembers.chatId, rows.map((c) => c.id))).orderBy(asc(chatMembers.position))
-      return rows.map((c): Chat => ({ ...c, agentIds: ms.filter((m) => m.chatId === c.id).map((m) => m.agentId) }))
+      const ids = rows.map((c) => c.id)
+      const ms = yield* db.select().from(chatMembers).where(inArray(chatMembers.chatId, ids)).orderBy(asc(chatMembers.position))
+      const last = yield* db
+        .select({ chatId: messages.chatId, text: messages.text, at: messages.at })
+        .from(messages)
+        .where(and(inArray(messages.chatId, ids), sql`${messages.at} = (select max(m2.at) from messages m2 where m2.chat_id = ${messages.chatId})`))
+      return rows.map((c): Chat => {
+        const l = last.find((m) => m.chatId === c.id)
+        return {
+          ...c,
+          agentIds: ms.filter((m) => m.chatId === c.id).map((m) => m.agentId),
+          preview: l ? l.text.replace(/\s+/g, " ").trim().slice(0, PREVIEW_CHARS) || null : null,
+          lastAt: l?.at ?? null
+        }
+      })
     })
   const chat = (id: string) => orDie(db.select().from(chats).where(eq(chats.id, id)).pipe(Effect.flatMap(withMembers), Effect.map(first)))
   const setMembers = (tx: Pick<Db, "delete" | "insert">, chatId: string, agentIds: ReadonlyArray<string>) =>

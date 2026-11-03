@@ -9,7 +9,7 @@ import { ACCOUNT_OF_MODEL, modelName, modelNote, providerHint, providerLabel, sp
 import { go } from "../state.ts"
 import { LimitWindows } from "./limits.tsx"
 import { providerPageOf } from "./providers.tsx"
-import { Button, ChevronDown, cx, FieldButton, Input, OptionButton, Popover, ProviderIcon, RailButton, Search, Tab, TabList, Tabs } from "@/ui"
+import { Button, cx, FieldButton, Input, OptionButton, Popover, ProviderIcon, RailButton, Search, Tab, TabList, Tabs } from "@/ui"
 
 export interface ModelChoice {
   readonly model: string
@@ -103,9 +103,8 @@ export function ModelPicker({ value, onChange, variant = "chip", className }: { 
         {face}
       </FieldButton>
     ) : (
-      <Button size="sm" variant="secondary" aria-label={t("model.choose")} className={cx("max-w-60", className)}>
+      <Button size="sm" variant="ghost" aria-label={t("model.choose")} className={cx("max-w-60 font-normal text-muted", className)}>
         {face}
-        <ChevronDown className="size-3.5 text-muted" />
       </Button>
     )
 
