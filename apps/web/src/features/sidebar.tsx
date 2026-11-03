@@ -101,14 +101,14 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   return (
     <nav aria-label={t("nav.label")} className="flex w-66 shrink-0 flex-col overflow-hidden pt-3 pb-3 pl-2.5">
       {/* The brand; in the desktop app it is also the title bar (it drags the window, the window buttons sit on its left). */}
-      <div className="brand-row electrobun-webkit-app-region-drag mb-4 flex h-7 shrink-0 items-center gap-2.5 px-2.5">
+      <div className="brand-row electrobun-webkit-app-region-drag mb-3 flex h-7 shrink-0 items-center gap-2.5 px-2.5">
         <Logo className="size-5 shrink-0" />
         <span className="font-semibold">{t("app.name")}</span>
       </div>
 
       {/* The pages, fixed: what waits for you first, then Knowledge and Settings. One 20px icon column (x20-40),
           text from x50, shared by every row of the sidebar. */}
-      <div className="mb-4 flex shrink-0 flex-col gap-px pr-2.5">
+      <div className="mb-3 flex shrink-0 flex-col gap-px pr-2.5">
         <NavItem icon={<Inbox />} active={route.view === "inbox"} onPress={() => go({ view: "inbox" })} trailing={needsYou > 0 && <Count n={needsYou} />}>
           {t("nav.needsYou")}
         </NavItem>
@@ -240,50 +240,37 @@ function ProjectItem({
   )
 }
 
-// A chat across the sidebar's width: the lead's avatar (or the model's logo), the title and when it last moved,
-// then, when more than one agent is in it, every member as a small overlapping avatar (the one acting first),
-// and what is happening now (blue when it waits for you) or, when nothing runs, the start of the last message.
+// A chat on one 32px line: the lead's avatar (or the model's logo) in the icon column, the title, and on the
+// right what matters now: a spinner while it runs, a blue dot when it waits for you, a red one when the last
+// turn failed, otherwise how long ago it last moved. The status in words is in the row's accessible name.
 function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatStatus | undefined; active: boolean; agents: ReadonlyArray<Agent> }) {
   const live = status && status.state !== "idle" ? status : undefined
   const lead = agents.find((a) => a.id === (live?.agentId ?? chat.agentIds[0]))
   const at = Math.max(chat.lastAt ?? chat.createdAt, status?.updatedAt ?? 0)
-  const team = chat.agentIds.flatMap((id) => agents.find((a) => a.id === id) ?? [])
-  const members = lead ? [lead, ...team.filter((a) => a.id !== lead.id)] : team
+  const said = live ? statusLabel(live, agents) : undefined
   return (
     <NavTreeItem
       id={chatKey(chat.id)}
-      textValue={chatTitle(chat)}
+      textValue={said ? `${chatTitle(chat)}, ${said}` : chatTitle(chat)}
       active={active}
       strong={live?.state === "waiting"}
-      leading={lead ? <AgentAvatar id={lead.id} name={lead.name} tone={agentTone(lead, agents)} size={32} /> : <ModelAvatar provider={splitModel(chat.model).provider} size={32} />}
+      leading={lead ? <AgentAvatar id={lead.id} name={lead.name} tone={agentTone(lead, agents)} size={20} /> : <ModelAvatar provider={splitModel(chat.model).provider} size={20} />}
       title={chatTitle(chat)}
-      trailing={formatAge(at)}
+      trailing={
+        live?.state === "running" ? (
+          <Spinner size={11} className="text-success" label={said ?? ""} />
+        ) : live?.state === "waiting" || live?.state === "failed" ? (
+          <span role="img" aria-label={said} className={cx("size-2 rounded-full", live.state === "waiting" ? "bg-accent-text" : "bg-danger")} />
+        ) : (
+          formatAge(at)
+        )
+      }
       dragLabel={t("nav.reorder", { name: chatTitle(chat) })}
       onAction={() => go({ view: "chat", id: chat.id })}
-      detail={
-        <>
-          {members.length > 1 && (
-            <span role="img" aria-label={members.map((a) => a.name).join(", ")} className="flex shrink-0 items-center pl-1">
-              {members.map((a) => (
-                <AgentAvatar key={a.id} id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} className={cx("-ml-1 rounded-full ring-2", active ? "ring-surface" : "ring-frame")} />
-              ))}
-            </span>
-          )}
-          {live ? (
-            <span className={cx("flex min-w-0 items-center gap-1.5", live.state === "waiting" ? "text-accent-text" : live.state === "failed" ? "text-danger" : "text-muted")}>
-              {live.state === "running" && <Spinner size={10} className="shrink-0 text-success" />}
-              <span className="truncate">{statusLabel(live, agents)}</span>
-            </span>
-          ) : (
-            <span className="truncate">{chat.preview ?? t("nav.noMessages")}</span>
-          )}
-        </>
-      }
     />
   )
 }
 
-// An icon button of the foot toolbar; the open screen's stays lit.
 // The subscriptions at the foot (the most at risk first): one line per limit window, shortest first ("5h", "7d",
 // "30d"), each a bar of the share used and that share; the logo opens each account's group (its windows sit tight, accounts apart). Hovering (or focusing) shows the rest: every window with when it
 // resets, and the one at risk as a tiny burn-down (ui/burn-down.tsx) with where the pace so far leads.
