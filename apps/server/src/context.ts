@@ -126,6 +126,7 @@ export function consolidationPrompt(o: {
   chunk: ReadonlyArray<Message>
   existing: ReadonlyArray<Memory>
   skills: ReadonlyArray<Memory>
+  forgotten: ReadonlyArray<Memory>
   hasProject: boolean
   hasAgent: boolean
   names: (agentId: string | null) => string
@@ -135,6 +136,7 @@ export function consolidationPrompt(o: {
     `Resumo atual:\n${o.summary || "(vazio)"}`,
     `Memórias existentes:\n${o.existing.map((m) => `- ${m.text}`).join("\n") || "(nenhuma)"}`,
     `Skills existentes:\n${o.skills.map((s) => `- ${s.title}`).join("\n") || "(nenhuma)"}`,
+    `O que a pessoa mandou esquecer (não proponha de novo, nem com outras palavras):\n${o.forgotten.map((m) => `- ${m.title || m.text}`).join("\n") || "(nada)"}`,
     `Trecho que sai da janela:\n${o.chunk.map((m) => `[${m.role === "user" ? "usuário" : o.names(m.agentId)}] ${m.text}`).join("\n\n")}`
   ].join("\n\n")
 }

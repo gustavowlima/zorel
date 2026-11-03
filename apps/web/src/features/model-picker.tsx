@@ -27,7 +27,11 @@ export function ModelPicker({ value, onChange, className }: { value: string; onC
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
-        onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), commit())}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return
+          e.preventDefault()
+          commit()
+        }}
         placeholder="provider/modelo"
         aria-label="Modelo"
         spellCheck={false}

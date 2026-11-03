@@ -113,7 +113,7 @@ export function open(path: string): Database {
   db.run("PRAGMA busy_timeout = 5000")
   const { user_version } = db.query<{ user_version: number }, []>("PRAGMA user_version").get()!
   db.transaction(() => {
-    MIGRATIONS.slice(user_version).forEach((sql) => db.run(sql))
+    for (const sql of MIGRATIONS.slice(user_version)) db.run(sql)
     db.run(`PRAGMA user_version = ${MIGRATIONS.length}`)
   })()
   return db
@@ -164,7 +164,7 @@ export function repository(db: Database) {
   const in_ = (xs: ReadonlyArray<unknown>) => xs.map(() => "?").join(",") || "''"
   const setMembers = (chatId: string, agentIds: ReadonlyArray<string>) => {
     db.query("DELETE FROM chat_members WHERE chat_id = ?").run(chatId)
-    ;[...new Set(agentIds)].forEach((a, i) => db.query("INSERT INTO chat_members (chat_id, agent_id, position) VALUES (?, ?, ?)").run(chatId, a, i))
+    for (const [i, a] of [...new Set(agentIds)].entries()) db.query("INSERT INTO chat_members (chat_id, agent_id, position) VALUES (?, ?, ?)").run(chatId, a, i)
   }
 
   return {
@@ -241,7 +241,13 @@ export function repository(db: Database) {
     },
 
     // ---------- memórias e skills ----------
-    memories: () => all("SELECT * FROM memories WHERE state != 'forgotten' ORDER BY state = 'active', confirmed_at DESC", memory),
+    // Todas, inclusive as esquecidas (a interface oferece restaurar): pendentes, ativas, esquecidas.
+    memories: () => all("SELECT * FROM memories ORDER BY state = 'forgotten', state = 'active', confirmed_at DESC", memory),
+    // O que a pessoa mandou esquecer, para a consolidação não propor de novo (nem parafraseado).
+    forgottenMemories: (scopes: ReadonlyArray<string>, limit = 50) =>
+      all(`SELECT * FROM memories WHERE state = 'forgotten' AND scope IN (${in_(scopes)}) ORDER BY confirmed_at DESC LIMIT ?`, memory, ...scopes, limit),
+    pendingCount: (scopes: ReadonlyArray<string>) =>
+      (db.query(`SELECT count(*) AS n FROM memories WHERE state = 'pending' AND scope IN (${in_(scopes)})`).get(...scopes) as { n: number }).n,
     memory: (id: string) => get("SELECT * FROM memories WHERE id = ?", memory, id),
     activeMemories: (scopes: ReadonlyArray<string>, kind: Memory["kind"] = "fact") =>
       all(`SELECT * FROM memories WHERE state = 'active' AND kind = ? AND scope IN (${in_(scopes)}) ORDER BY confirmed_at DESC`, memory, kind, ...scopes),

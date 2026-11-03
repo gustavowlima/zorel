@@ -17,7 +17,10 @@ export function NewProjectView() {
     e.preventDefault()
     setBusy(true)
     call((c) => c.projects.create({ payload: { name: name.trim(), brief } }))
-      .then(async (p) => (await reload(), go({ view: "project", id: p.id })))
+      .then(async (p) => {
+        await reload()
+        go({ view: "project", id: p.id })
+      })
       .finally(() => setBusy(false))
   }
 
@@ -43,7 +46,10 @@ export function ProjectView({ project }: { project: Project }) {
   const [name, setName] = useState(project.name)
   const [brief, setBrief] = useState(project.brief)
   const [newChatAgent, setNewChatAgent] = useState("")
-  useEffect(() => (setName(project.name), setBrief(project.brief)), [project])
+  useEffect(() => {
+    setName(project.name)
+    setBrief(project.brief)
+  }, [project])
 
   const agents = data.agents.filter((a) => a.projectId === project.id)
   const chats = data.chats.filter((c) => c.projectId === project.id)
@@ -64,7 +70,10 @@ export function ProjectView({ project }: { project: Project }) {
   }
   const remove = () => {
     if (!confirm(`Apagar o projeto "${project.name}" com seus agentes, chats e memórias?`)) return
-    call((c) => c.projects.remove({ params: { id: project.id } })).then(async () => (await reload(), go({ view: "home" })))
+    call((c) => c.projects.remove({ params: { id: project.id } })).then(async () => {
+      await reload()
+      go({ view: "home" })
+    })
   }
 
   return (
@@ -147,7 +156,10 @@ export function AgentCard({ agent, projectId = null }: { agent?: Agent; projectI
     const req = agent ? call((c) => c.agents.update({ params: { id: agent.id }, payload })) : call((c) => c.agents.create({ payload: { ...payload, projectId } }))
     req.then(() => {
       setOpen(false)
-      if (!agent) (setName(""), setInstructions(""))
+      if (!agent) {
+        setName("")
+        setInstructions("")
+      }
       return reload()
     })
   }

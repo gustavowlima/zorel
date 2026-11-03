@@ -244,8 +244,7 @@ async function* runCli(bin: string, args: string[], stdin: string, cwd: string, 
     let buf = ""
     for await (const chunk of proc.stdout.pipeThrough(new TextDecoderStream())) {
       buf += chunk
-      let nl: number
-      while ((nl = buf.indexOf("\n")) >= 0) {
+      for (let nl = buf.indexOf("\n"); nl >= 0; nl = buf.indexOf("\n")) {
         yield* parser.line(buf.slice(0, nl))
         buf = buf.slice(nl + 1)
       }
@@ -267,7 +266,7 @@ const cli = (bin: string, args: string[], stdin: string, cwd: string, parser: Pa
 
 function apiLayer(secrets: SecretStore, provider: string, model: string): Layer.Layer<LanguageModel.LanguageModel> | string {
   const p = PROVIDERS[provider]
-  if (!p || p.kind !== "api") return `Provider desconhecido: ${provider}.`
+  if (p?.kind !== "api") return `Provider desconhecido: ${provider}.`
   const key = p.key ? secrets.get(p.key) : undefined
   if (p.key && !key) return `Defina ${p.key} (em Configurações ou no ambiente) para usar ${provider}.`
   if (provider === "anthropic")
@@ -329,7 +328,12 @@ const api = (secrets: SecretStore, t: Turn): Stream.Stream<EngineEvent> => {
       yield* Queue.end(q)
     }).pipe(
       Effect.provide(layer),
-      Effect.catch((e: any) => Effect.sync(() => (Queue.offerUnsafe(q, { type: "error", message: e?.message ?? String(e) }), Queue.endUnsafe(q))))
+      Effect.catch((e: any) =>
+        Effect.sync(() => {
+          Queue.offerUnsafe(q, { type: "error", message: e?.message ?? String(e) })
+          Queue.endUnsafe(q)
+        })
+      )
     )
   )
 }

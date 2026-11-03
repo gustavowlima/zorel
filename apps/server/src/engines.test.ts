@@ -94,7 +94,7 @@ function mockOpenAi(scripts: object[][]) {
     port: 0,
     async fetch(req) {
       sent.push(await req.json())
-      const body = (scripts[sent.length - 1] ?? []).map(chunk).join("") + "data: [DONE]\n\n"
+      const body = `${(scripts[sent.length - 1] ?? []).map(chunk).join("")}data: [DONE]\n\n`
       return new Response(body, { headers: { "content-type": "text/event-stream" } })
     }
   })
@@ -144,7 +144,10 @@ test("engine de API com ferramentas: modelo pede a ferramenta, o Zero executa e 
       tools: {
         url: "http://unused",
         defs: [{ name: "docs__search", description: "busca", inputSchema: { type: "object", properties: { q: { type: "string" } } } }],
-        call: async (name, args) => (calls.push([name, args]), { content: [{ type: "text", text: "deploy na Vercel" }] })
+        call: async (name, args) => {
+          calls.push([name, args])
+          return { content: [{ type: "text", text: "deploy na Vercel" }] }
+        }
       }
     })
     expect(calls).toEqual([["docs__search", { q: "deploy" }]])

@@ -33,6 +33,7 @@ export function ChatView({ chat }: { chat: Chat }) {
     call((c) => c.chats.messages({ params: { id: chat.id } })).then((m) => setMessages([...m]), (e) => setError(String(e)))
     return () => abort.current?.abort()
   }, [chat.id])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: as dependências são o gatilho (rolar quando chega conteúdo)
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" }) // em Chromes novos devolve Promise: não pode virar o cleanup
   }, [messages, live, approvals])
@@ -192,7 +193,11 @@ export function ChatView({ chat }: { chat: Chat }) {
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && (e.preventDefault(), void submit())}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return
+            e.preventDefault()
+            void submit()
+          }}
           rows={Math.min(8, Math.max(2, text.split("\n").length))}
           placeholder={team.length > 1 ? `Mensagem (@${handle(team[1]!)} para chamar alguém específico)` : "Mensagem (Enter envia, Shift+Enter quebra linha)"}
           aria-label="Mensagem"
@@ -222,6 +227,7 @@ function Bubble({ message: m, author, multi, live }: { message: Pick<Message, "r
       {m.steps.length > 0 && (
         <div className="flex flex-col gap-1">
           {m.steps.map((s, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: passos de uma mensagem são imutáveis e podem repetir a mesma ferramenta
             <details key={i} className="text-xs text-muted">
               <summary className="cursor-pointer">
                 <Badge tone={stepTone[s.status]}>{s.status === "ok" ? "usou" : s.status === "refused" ? "recusada" : "falhou"}</Badge> <code>{s.tool}</code>

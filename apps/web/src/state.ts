@@ -50,7 +50,10 @@ export function useData() {
   const reload = useCallback(
     () =>
       call((c) => Effect.all({ projects: c.projects.list(), agents: c.agents.list(), chats: c.chats.list(), memories: c.memories.list(), models: c.settings.models(), servers: c.tools.list() }, { concurrency: "unbounded" }))
-        .then((d) => (setData(d), setError(undefined)))
+        .then((d) => {
+          setData(d)
+          setError(undefined)
+        })
         .catch((e) => setError(`Não consegui falar com o server: ${e}`)),
     []
   )

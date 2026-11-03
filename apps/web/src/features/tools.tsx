@@ -108,7 +108,10 @@ function NewServer({ projectId }: { projectId: string | null }) {
     call((c) => c.tools.create({ payload }))
       .then(async () => {
         setOpen(false)
-        setName(""), setCommand(""), setUrl(""), setEnv("")
+        setName("")
+        setCommand("")
+        setUrl("")
+        setEnv("")
         await reload()
       })
       .catch((err) => setError(String(err)))
@@ -174,6 +177,7 @@ export function SettingsView() {
   const [keys, setKeys] = useState<ReadonlyArray<{ name: string; set: boolean; fromEnv: boolean }>>([])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const load = () => call((c) => c.settings.keys()).then(setKeys)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: carrega uma vez ao abrir a página
   useEffect(() => void load(), [])
 
   const save = (name: string, value: string) =>

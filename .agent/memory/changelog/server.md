@@ -1,2 +1,9 @@
 2026-11-02 | adicionados agentes, chats, mensagens, memórias (FTS5), engines CLI/API, contexto em camadas, consolidação | MVP
 2026-11-02 | canais (chat_members, @menção, repasse até 3), skills (memories.kind), MCP (hub + gateway + aprovação), chaves no chaveiro (Bun.secrets), índice FTS próprio com título | pedido "implemente tudo"
+2026-11-03 | guarda LocalOnly (Host\/Origin), esquecidas na consolidação + teto de pendentes, restaurar memória | auditoria de boas práticas das referências
+2026-11-03 | D5 revista: API key vira credencial de harness (Claude SDK, Codex, OpenCode ACP); effect/ai só interno | loop próprio sobre effect/ai é fraco frente a harnesses como OpenCode
+2026-11-03 | API key de qualquer provider (inclusive Anthropic/OpenAI) → OpenCode; assinatura → harness do dono | um caminho só para chaves, comportamento igual entre modelos
+2026-11-03 | failover automático de conta\/modelo passa a ser suportado, opcional e com aviso de termos (fase 2b) | pedido do usuário; antes era só troca manual
+2026-11-03 | banco: bun:sqlite direto → Drizzle 1.0 rc sobre @effect/sql (fase 1) | integração nativa Effect 4, portabilidade SQLite→Postgres, migrations geradas
+2026-11-03 | driver local: @effect/sql-sqlite-bun → @effect/sql-libsql; RAG entra no desenho (D18) | vetores nativos sem extensão; pedido do usuário
+2026-11-03 | memórias+skills → páginas de conhecimento aprendido; RAG por upload e libSQL saem; driver volta a sqlite-bun | pedido: leve, simples, eficiente; base de conhecimento = aprendizado (ai-memory)

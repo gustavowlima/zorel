@@ -46,6 +46,7 @@ bun run dev            # server em :4317 e web em http://localhost:5173
 bun run start          # build do web + um processo só em http://127.0.0.1:4317
 bun run desktop        # app desktop (Electrobun) em modo dev
 bun run desktop:build  # gera .app, .dmg e pacote de atualização em apps/desktop/artifacts
+bun run lint            # Biome
 bun run test
 bun run typecheck
 ```
@@ -94,6 +95,14 @@ apps/desktop         Electrobun: processo principal em Bun sobe o server e abre 
 ## Distribuição
 
 O CI (`.github/workflows/ci.yml`) roda typecheck, testes e build em todo push e PR. Num push na `main`, ele também gera o app macOS como artefato. A assinatura e a notarização ligam sozinhas quando estes segredos existem no repositório: `ELECTROBUN_DEVELOPER_ID`, `ELECTROBUN_APPLEID`, `ELECTROBUN_APPLEIDPASS` e `ELECTROBUN_TEAMID`. Sem eles, o app sai sem assinatura e serve para uso local. O app estável é um autoextrator: na primeira execução ele se instala no lugar onde está. Rode-o a partir de `/Applications` (arraste pelo `.dmg`). Rodado de dentro de um volume externo, a instalação falha. O ícone tem como fonte `apps/desktop/assets/icon.svg`, e `bun run --cwd apps/desktop icons` gera os tamanhos.
+
+## Arquitetura
+
+Decisões, estado atual, alvo e fases: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Referências
+
+O que foi aproveitado do Tucano, do T3 Code e do OpenBot, onde está e como é verificado: [docs/references.md](docs/references.md).
 
 ## Licença
 

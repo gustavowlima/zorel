@@ -30,6 +30,7 @@ export const Select = ({ className, ...p }: SelectHTMLAttributes<HTMLSelectEleme
 
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
+    // biome-ignore lint/a11y/noLabelWithoutControl: `children` é sempre um controle (Input, Select, Textarea, ModelPicker)
     <label className="flex flex-col gap-1 text-sm text-muted">
       {label}
       {children}
