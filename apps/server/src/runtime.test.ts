@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Accounts } from "./accounts.ts"
+import { Audit } from "./audit.ts"
 import { DataDir } from "./chat.ts"
 import { Store } from "./db.ts"
 import { Engines, type EngineEvent } from "./engines.ts"
@@ -30,7 +31,7 @@ const Echo = Layer.succeed(Engines, {
 const layer = (dbPath: string, engines: Layer.Layer<Engines>) => {
   const store = Store.layer(dbPath)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(engines, Tools.layer), Layer.provideMerge(Secrets.memory(), store)), DataDir.layer(join(tmpdir(), "zero-rt")))
-  return Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.fixed(PRICES)), base))
+  return Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.fixed(PRICES), Audit.layer), base))
 }
 const runWith = <A, E>(dbPath: string, engines: Layer.Layer<Engines>, f: Effect.Effect<A, E, Runtime | Store>) =>
   Effect.runPromise(Effect.scoped(f).pipe(Effect.provide(layer(dbPath, engines))) as Effect.Effect<A>)

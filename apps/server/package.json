@@ -15,7 +15,8 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "@zero/contracts": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5",
-    "effect": "4.1.2"
+    "effect": "4.1.2",
+    "evlog": "2.34.0"
   },
   "devDependencies": {
     "@types/bun": "^1.4.4",

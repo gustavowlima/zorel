@@ -96,3 +96,4 @@ updated: 2026-11-03
 - dar ferramentas às CLIs por fora do gateway: perde política e aprovação
 - valores de segredo no banco: só nomes (envKeys); valores no chaveiro
 - ordem da sidebar: projects.position e chats.position (null = ainda não posicionado: no topo, por recência); PUT /api/projects/order e /api/chats/order gravam a ordem do grupo; reorderChats só atualiza chats do mesmo projectId (nunca muda de projeto)
+- audit log: audit.ts (Audit service, Actions via defineAuditAction do evlog, record(action, {target, before, after, reason, actor}); changed(before, after, keys) guarda só o que mudou); tabela audit_events com id próprio (a idempotencyKey do evlog colide para duas mudanças iguais no mesmo instante); GET /api/audit = últimas 500; aprovações gravadas em runtime.decide (HTTP e RPC passam por ali); chaves de API só pelo nome

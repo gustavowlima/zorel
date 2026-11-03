@@ -23,3 +23,4 @@
 2026-11-03 | workspace com git sombra, acesso por agente, ferramentas nativas, diff/desfazer, vigia de turno | fase 3
 2026-11-03 | consumo (custo, janelas de limite) e nomes reais dos modelos das CLIs | fase 2c
 2026-11-03 | position em projects e chats + endpoints de reordenação | drag and drop na sidebar
+2026-11-03 | audit log com evlog gravando em SQLite | pedido do usuário
