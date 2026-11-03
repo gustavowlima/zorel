@@ -3,7 +3,7 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./App.tsx"
 
-// Tema segue o sistema (dark é o padrão dos tokens).
+// Theme follows the system (dark is the tokens' default).
 const light = matchMedia("(prefers-color-scheme: light)")
 const applyTheme = () => (document.documentElement.dataset.theme = light.matches ? "light" : "dark")
 applyTheme()

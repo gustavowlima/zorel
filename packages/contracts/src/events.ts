@@ -1,24 +1,24 @@
-// Contrato dos turnos: o que a engine emite e o que a interface desenha (ARCHITECTURE §4 e §5).
-// O protótipo das telas é a especificação: passos com tempo, aprovação pendente/decidida,
-// passagem entre agentes, troca de modelo, aprendizado, recibo e status de cada chat.
+// Turn contract: what the engine emits and what the UI draws (ARCHITECTURE §4 and §5).
+// The screen prototype is the spec: timed steps, pending/decided approval,
+// handoff between agents, model switch, learning, receipt and status of each chat.
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
 import { Message, ModelId } from "./index.ts"
 
 const Id = Schema.String
-const Millis = Schema.Number // epoch ou duração em ms
+const Millis = Schema.Number // epoch or duration in ms
 
-// ---------- turno ----------
+// ---------- turn ----------
 
-// Erros do server como código: a interface traduz (i18n, fase UI). Erro do engine continua texto livre.
+// Server errors as codes: the UI translates (i18n, UI phase). Engine errors stay free text.
 export const ErrorCode = {
-  interrupted: "interrupted", // você parou
-  cancelled: "cancelled", // estava na fila quando você parou
-  serverRestarted: "server_restarted", // o server caiu no meio; o parcial foi guardado
+  interrupted: "interrupted", // you stopped
+  cancelled: "cancelled", // was queued when you stopped
+  serverRestarted: "server_restarted", // the server went down midway; the partial was saved
   chatRemoved: "chat_removed"
 } as const
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode]
-// Mensagens antigas guardavam "interrompido" em texto.
+// Old messages stored "interrompido" as text.
 export const isInterruption = (error: string | null) =>
   !!error && (error === ErrorCode.interrupted || error === ErrorCode.cancelled || error === ErrorCode.serverRestarted || error.startsWith("interrompido"))
 
@@ -37,24 +37,24 @@ export const Turn = Schema.Struct({
   chatId: Id,
   agentId: Schema.NullOr(Id),
   model: Schema.String,
-  accountId: Schema.NullOr(Id), // conta do provider usada (multicontas, D14)
-  clientId: Schema.NullOr(Id), // idempotência do `send`; turnos encadeados não têm
+  accountId: Schema.NullOr(Id), // provider account used (multi-account, D14)
+  clientId: Schema.NullOr(Id), // `send` idempotency; chained turns have none
   state: TurnState,
   startedAt: Schema.NullOr(Millis),
   endedAt: Schema.NullOr(Millis),
-  firstTokenAt: Schema.NullOr(Millis), // latência até o primeiro texto
-  error: Schema.NullOr(Schema.String), // ErrorCode ou a mensagem do engine
+  firstTokenAt: Schema.NullOr(Millis), // latency to first text
+  error: Schema.NullOr(Schema.String), // ErrorCode or the engine message
   usage: Usage
 })
 export type Turn = typeof Turn.Type
 
-// ---------- passos (a pílula de atividade e o detalhe expandido) ----------
+// ---------- steps (the activity pill and the expanded detail) ----------
 
 export const StepKind = Schema.Literals(["read", "edit", "run", "search", "tool", "delegate"])
 export type StepKind = typeof StepKind.Type
 
 export const FileChange = Schema.Struct({
-  path: Schema.String, // relativo à pasta do projeto
+  path: Schema.String, // relative to the project folder
   added: Schema.Number,
   removed: Schema.Number,
   status: Schema.Literals(["added", "modified", "deleted"])
@@ -65,18 +65,18 @@ export const WorkStep = Schema.Struct({
   id: Id,
   turnId: Id,
   kind: StepKind,
-  title: Schema.String, // curto e legível: "Read context.ts", "Run bun test apps/server"
-  tool: Schema.NullOr(Schema.String), // nome da ferramenta MCP ou nativa
+  title: Schema.String, // short and readable: "Read context.ts", "Run bun test apps/server"
+  tool: Schema.NullOr(Schema.String), // MCP or native tool name
   files: Schema.Array(Schema.String),
-  status: Schema.Literals(["running", "waiting", "ok", "error", "refused"]), // waiting: aprovação pendente
+  status: Schema.Literals(["running", "waiting", "ok", "error", "refused"]), // waiting: approval pending
   startedAt: Millis,
   durationMs: Schema.NullOr(Schema.Number),
-  changes: Schema.Array(FileChange), // edições feitas neste passo; o patch completo vem do Workspace (fase 3)
-  output: Schema.String // começo do resultado, truncado
+  changes: Schema.Array(FileChange), // edits made in this step; the full patch comes from Workspace (phase 3)
+  output: Schema.String // start of the result, truncated
 })
 export type WorkStep = typeof WorkStep.Type
 
-// ---------- aprovações (ARCHITECTURE §9.2) ----------
+// ---------- approvals (ARCHITECTURE §9.2) ----------
 
 export const ApprovalKind = Schema.Literals(["command", "edit", "tool", "network"])
 export const Approval = Schema.Struct({
@@ -88,7 +88,7 @@ export const Approval = Schema.Struct({
   kind: ApprovalKind,
   tool: Schema.String,
   summary: Schema.String, // "Run bun test apps/server in the project folder"
-  args: Schema.String, // JSON com segredos mascarados
+  args: Schema.String, // JSON with masked secrets
   cwd: Schema.NullOr(Schema.String),
   createdAt: Millis,
   expiresAt: Millis
@@ -98,11 +98,11 @@ export type Approval = typeof Approval.Type
 export const ApprovalOutcome = Schema.Literals(["approved", "always", "denied", "expired"])
 export type ApprovalOutcome = typeof ApprovalOutcome.Type
 
-// ---------- status de cada chat (barra lateral) ----------
+// ---------- status of each chat (sidebar) ----------
 
 export const ChatStatus = Schema.Struct({
   chatId: Id,
-  state: Schema.Literals(["idle", "running", "waiting", "failed"]), // waiting: precisa de você
+  state: Schema.Literals(["idle", "running", "waiting", "failed"]), // waiting: needs you
   agentId: Schema.NullOr(Id),
   label: Schema.String, // "Architect is writing migrations", "Coder waits for your OK"
   unread: Schema.Boolean,
@@ -110,30 +110,30 @@ export const ChatStatus = Schema.Struct({
 })
 export type ChatStatus = typeof ChatStatus.Type
 
-// ---------- contexto do turno (o "18k context" e o inspetor) ----------
+// ---------- turn context (the "18k context" and the inspector) ----------
 
 export const ContextLayer = Schema.Struct({ id: Schema.String, label: Schema.String, tokens: Schema.Number })
 export const ContextUsage = Schema.Struct({ layers: Schema.Array(ContextLayer), total: Schema.Number, limit: Schema.Number })
 export type ContextUsage = typeof ContextUsage.Type
 
-// ---------- eventos de um chat ----------
+// ---------- chat events ----------
 
 export const ChatSnapshot = Schema.Struct({
-  messages: Schema.Array(Message), // desde o resumo
-  turns: Schema.Array(Turn), // em andamento e na fila
-  partial: Schema.Array(Schema.Struct({ turnId: Id, text: Schema.String })), // texto até agora dos que estão rodando
-  steps: Schema.Array(WorkStep), // dos turnos em andamento
-  approvals: Schema.Array(Approval), // abertas
+  messages: Schema.Array(Message), // since the summary
+  turns: Schema.Array(Turn), // in progress and queued
+  partial: Schema.Array(Schema.Struct({ turnId: Id, text: Schema.String })), // text so far of the running ones
+  steps: Schema.Array(WorkStep), // of the turns in progress
+  approvals: Schema.Array(Approval), // open
   status: ChatStatus
 })
 export type ChatSnapshot = typeof ChatSnapshot.Type
 
 export const ChatEvent = Schema.TaggedUnion({
-  snapshot: { snapshot: ChatSnapshot }, // sempre o primeiro; reconectar = assinar de novo
-  message: { message: Message }, // mensagem nova sua (a do agente chega no turn-completed)
+  snapshot: { snapshot: ChatSnapshot }, // always first; reconnect = subscribe again
+  message: { message: Message }, // your new message (the agent's arrives in turn-completed)
   queued: { turn: Turn },
   "turn-started": { turn: Turn },
-  text: { turnId: Id, delta: Schema.String }, // agrupado a cada 100 ms ou 8 KiB
+  text: { turnId: Id, delta: Schema.String }, // batched every 100 ms or 8 KiB
   reasoning: { turnId: Id, delta: Schema.String },
   "step-started": { step: WorkStep },
   "step-finished": { step: WorkStep },
@@ -145,15 +145,15 @@ export const ChatEvent = Schema.TaggedUnion({
   "context-usage": { turnId: Id, usage: ContextUsage },
   "turn-completed": { turn: Turn, message: Message },
   "turn-failed": { turn: Turn, message: Schema.NullOr(Message) },
-  interrupted: { turn: Turn, message: Schema.NullOr(Message) }, // texto parcial preservado
+  interrupted: { turn: Turn, message: Schema.NullOr(Message) }, // partial text preserved
   status: { status: ChatStatus }
 })
 export type ChatEvent = typeof ChatEvent.Type
 
-// ---------- RPC sobre WebSocket em /rpc ----------
+// ---------- RPC over WebSocket at /rpc ----------
 
 export class ChatNotFound extends Schema.TaggedError<ChatNotFound>()("ChatNotFound", { chatId: Id }) {}
-export class ApprovalNotFound extends Schema.TaggedError<ApprovalNotFound>()("ApprovalNotFound", { approvalId: Id }) {} // já decidida ou expirada
+export class ApprovalNotFound extends Schema.TaggedError<ApprovalNotFound>()("ApprovalNotFound", { approvalId: Id }) {} // already decided or expired
 
 export const SendPayload = {
   chatId: Id,
@@ -168,5 +168,5 @@ export const ZeroRpc = RpcGroup.make(
   Rpc.make("interrupt", { payload: { chatId: Id } }),
   Rpc.make("decide", { payload: { approvalId: Id, outcome: Schema.Literals(["approved", "always", "denied"]), reason: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))) }, error: ApprovalNotFound }),
   Rpc.make("subscribeChat", { payload: { chatId: Id }, success: ChatEvent, error: ChatNotFound, stream: true }),
-  Rpc.make("subscribeStatus", { success: ChatStatus, stream: true }) // todos os chats: barra lateral e "Precisa de você"
+  Rpc.make("subscribeStatus", { success: ChatStatus, stream: true }) // all chats: sidebar and "Precisa de você"
 )

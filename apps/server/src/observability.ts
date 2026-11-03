@@ -1,20 +1,20 @@
-// Logs estruturados que nunca vazam segredo (ARCHITECTURE §12): todo valor guardado pelo `Secrets`
-// é registrado aqui, e o logger troca qualquer ocorrência por *** antes de escrever (ideia do
-// registerSecretValue do a reference app). Spans: Effect.withSpan em turno, engine e ferramenta.
+// Structured logs that never leak secrets (ARCHITECTURE §12): every value stored by `Secrets`
+// is registered here, and the logger replaces any occurrence with *** before writing (idea from
+// a reference app's registerSecretValue). Spans: Effect.withSpan on turn, engine and tool.
 import { Logger } from "effect"
 
 const sensitive = new Set<string>()
-const MIN = 6 // valores curtos demais (ex.: "1") mascarariam texto comum
+const MIN = 6 // values that are too short (e.g. "1") would mask common text
 
 export function registerSecret(value: string | undefined) {
   if (!value || value.length < MIN) return
   sensitive.add(value)
-  // Variáveis e cabeçalhos de MCP chegam como JSON: registra cada valor também.
+  // MCP variables and headers arrive as JSON: register each value too.
   try {
     const parsed = JSON.parse(value)
     if (parsed && typeof parsed === "object") for (const v of Object.values(parsed)) if (typeof v === "string") registerSecret(v)
   } catch {
-    // não é JSON: só o valor inteiro
+    // not JSON: only the whole value
   }
 }
 
@@ -24,6 +24,6 @@ export const mask = (text: string) => {
   return out
 }
 
-// Logfmt numa linha, mascarado.
+// Single-line logfmt, masked.
 export const maskedLogger = Logger.formatLogFmt.pipe(Logger.map(mask), Logger.withConsoleLog)
 export const LoggerLive = Logger.layer([maskedLogger])

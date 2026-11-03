@@ -1,4 +1,4 @@
-// Projeto: brief (contexto estável de todo turno), agentes do projeto e chats.
+// Project: brief (stable context of every turn), project agents and chats.
 import type { Agent, Project } from "@zero/contracts"
 import { useEffect, useState, type FormEvent } from "react"
 import { call } from "../api.ts"
@@ -61,7 +61,7 @@ export function ProjectView({ project }: { project: Project }) {
     call((c) => c.projects.update({ params: { id: project.id }, payload: { name: name.trim(), brief } })).then(reload)
   }
   const newChat = () => {
-    // "*": canal com todos os agentes do projeto; o primeiro é o líder.
+    // "*": channel with all project agents; the first is the leader.
     const team = newChatAgent === "*" ? agents : agents.filter((a) => a.id === newChatAgent)
     call((c) => c.chats.create({ payload: { projectId: project.id, agentIds: team.map((a) => a.id), model: team[0]?.model ?? DEFAULT_MODEL } })).then(async (chat) => {
       await reload()
@@ -147,7 +147,7 @@ export function ProjectView({ project }: { project: Project }) {
   )
 }
 
-// Sem `agent`: formulário de criação.
+// Without `agent`: creation form.
 export function AgentCard({ agent, projectId = null }: { agent?: Agent; projectId?: string | null }) {
   const { reload } = useApp()
   const [open, setOpen] = useState(false)

@@ -1,6 +1,6 @@
--- Linha de base: o banco do MVP já tem estas tabelas (criadas por SQL à mão, PRAGMA user_version 3).
--- Tudo aqui usa IF NOT EXISTS para o mesmo arquivo servir a um banco novo e a um existente, sem cópia.
--- Editado à mão depois do drizzle-kit: IF NOT EXISTS e o índice de busca (FTS5 + gatilhos), que o Drizzle não modela.
+-- Baseline: the MVP database already has these tables (created by hand-written SQL, PRAGMA user_version 3).
+-- Everything here uses IF NOT EXISTS so the same file serves a new and an existing database, without copying.
+-- Hand-edited after drizzle-kit: IF NOT EXISTS and the search index (FTS5 + triggers), which Drizzle doesn't model.
 CREATE TABLE IF NOT EXISTS `agents` (
 	`id` text PRIMARY KEY,
 	`project_id` text,

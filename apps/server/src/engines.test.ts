@@ -66,7 +66,7 @@ test("contexto: orçamento de memórias prioriza as recentes; camadas na ordem e
 test("menções: por handle sem acento, na ordem, ignorando código", () => {
   const a = [agentOf("1", "Léo"), agentOf("2", "Ana Paula"), agentOf("3", "Nico")]
   expect(mentioned("@ana-paula e @leo, vejam; `@nico` não", a).map((x) => x.id)).toEqual(["2", "1"])
-  expect(mentioned("email@nico.com", a).map((x) => x.id)).toEqual(["3"]) // ponytail: heurística simples, igual ao a reference app
+  expect(mentioned("email@nico.com", a).map((x) => x.id)).toEqual(["3"]) // ponytail: simple heuristic, same as a reference app
 })
 
 test("política de ferramentas: anotação > nome; sensível vence leitura", () => {
@@ -86,7 +86,7 @@ test("consolidação: aceita JSON com texto em volta, filtra escopos não permit
   expect(parseConsolidation('{"summary":""}', ["user"])).toBeUndefined()
 })
 
-// Mock OpenAI-compatível: responde cada requisição com o próximo roteiro de chunks.
+// OpenAI-compatible mock: answers each request with the next chunk script.
 function mockOpenAi(scripts: object[][]) {
   const sent: any[] = []
   const chunk = (o: object) => `data: ${JSON.stringify({ id: "1", object: "chat.completion.chunk", created: 0, model: "m", ...o })}\n\n`
@@ -152,7 +152,7 @@ test("engine de API com ferramentas: modelo pede a ferramenta, o Zero executa e 
     })
     expect(calls).toEqual([["docs__search", { q: "deploy" }]])
     expect(sent[0].tools.map((t: any) => t.function.name)).toEqual(["docs__search"])
-    expect(JSON.stringify(sent[1].messages)).toContain("deploy na Vercel") // resultado voltou ao modelo
+    expect(JSON.stringify(sent[1].messages)).toContain("deploy na Vercel") // result went back to the model
     expect(events.filter((e) => e.type === "text").map((e: any) => e.delta).join("")).toBe("Achei: Vercel.")
     expect(events.at(-1)).toEqual({ type: "done", usage: { inputTokens: 14, outputTokens: 4 } })
   } finally {

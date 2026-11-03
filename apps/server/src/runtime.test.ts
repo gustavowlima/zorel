@@ -1,5 +1,5 @@
-// Critérios da fase 1 (ARCHITECTURE §13): reenvio não duplica, interromper guarda o parcial,
-// kill -9 no meio de um turno vira `interrupted` com o texto parcial na próxima subida.
+// Phase 1 criteria (ARCHITECTURE §13): resend doesn't duplicate, interrupt keeps the partial,
+// kill -9 mid-turn becomes `interrupted` with the partial text on the next boot.
 import { expect, test } from "bun:test"
 import type { ChatEvent } from "@zero/contracts/events"
 import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
@@ -13,7 +13,7 @@ import { Runtime } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
 import { Tools } from "./tools.ts"
 
-// Engine que manda "parte" e depois fica pendurado: dá tempo de interromper.
+// Engine that sends "parte" and then hangs: leaves time to interrupt.
 const Hanging = Layer.succeed(Engines, {
   run: () => Stream.concat(Stream.make<EngineEvent[]>({ type: "text", delta: "parte" }), Stream.never)
 })
@@ -29,7 +29,7 @@ const layer = (dbPath: string, engines: Layer.Layer<Engines>) => {
 const runWith = <A, E>(dbPath: string, engines: Layer.Layer<Engines>, f: Effect.Effect<A, E, Runtime | Store>) =>
   Effect.runPromise(Effect.scoped(f).pipe(Effect.provide(layer(dbPath, engines))) as Effect.Effect<A>)
 
-// Coleta eventos do chat até `until` dizer que basta.
+// Collects chat events until `until` says enough.
 const collect = (chatId: string, until: (e: ChatEvent) => boolean) =>
   Effect.gen(function* () {
     const runtime = yield* Runtime
@@ -57,7 +57,7 @@ test("reenviar o mesmo clientId devolve o mesmo turno e não duplica a mensagem"
     yield* c.done
     const msgs = yield* store.messages(chat.id)
     expect(msgs.map((m) => [m.role, m.text])).toEqual([["user", "oi"], ["assistant", "eco: oi"]])
-    // medição por turno: início, primeiro texto e fim gravados, em ordem
+    // per-turn metrics: start, first text and end recorded, in order
     const t = (yield* store.turnRow(a.turnId))!
     expect(t.startedAt! <= t.firstTokenAt! && t.firstTokenAt! <= t.endedAt!).toBe(true)
   })))
@@ -69,7 +69,7 @@ test("interromper guarda o texto parcial e emite interrupted", () =>
     const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
     const c = yield* collect(chat.id, (e) => e._tag === "interrupted")
     yield* runtime.send({ chatId: chat.id, clientId: "client-456", text: "oi" })
-    // espera o primeiro texto chegar antes de interromper
+    // waits for the first text before interrupting
     while (!c.events.some((e) => e._tag === "text")) yield* Effect.sleep("10 millis")
     yield* runtime.interrupt(chat.id)
     yield* c.done
@@ -84,7 +84,7 @@ test("kill -9 no meio do turno: na próxima subida o turno vira interrupted com 
   const dir = join(tmpdir(), `zero-rt-${crypto.randomUUID()}`)
   mkdirSync(dir)
   const path = join(dir, "zero.db")
-  // Primeira vida: um turno fica `running` com texto parcial gravado (como se o processo morresse aqui).
+  // First life: a turn stays `running` with partial text saved (as if the process died here).
   const chatId = await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -97,7 +97,7 @@ test("kill -9 no meio do turno: na próxima subida o turno vira interrupted com 
       })
     ).pipe(Effect.provide(Store.layer(path)))
   )
-  // Segunda vida: o runtime sobe e recupera.
+  // Second life: the runtime boots and recovers.
   await runWith(path, Echo, Effect.gen(function* () {
     const store = yield* Store
     expect(yield* store.turnsIn("running")).toEqual([])

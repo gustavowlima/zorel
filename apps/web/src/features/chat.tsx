@@ -1,5 +1,5 @@
-// Chat/canal: segue os eventos do runtime (snapshot + ao vivo), então o turno continua se a aba fechar e reabrir.
-// Respostas uma por agente, aprovação de ferramentas no meio do turno, troca de modelo e membros, compactação manual.
+// Chat/channel: follows runtime events (snapshot + live), so the turn continues if the tab closes and reopens.
+// One reply per agent, mid-turn tool approval, model and member switching, manual compaction.
 import type { Agent, Chat, Message } from "@zero/contracts"
 import { type Approval, type ChatEvent, isInterruption, type WorkStep } from "@zero/contracts/events"
 import { useEffect, useRef, useState, type FormEvent } from "react"
@@ -37,7 +37,7 @@ export function ChatView({ chat }: { chat: Chat }) {
         case "snapshot": {
           const s = ev.snapshot
           const running = s.turns.find((t) => t.state === "running")
-          setError(undefined) // (re)conectou: some o aviso de conexão caída
+          setError(undefined) // (re)connected: the dropped-connection notice goes away
           setMessages([...s.messages])
           setApprovals(s.approvals)
           setBusy(s.turns.length > 0)
@@ -69,20 +69,20 @@ export function ChatView({ chat }: { chat: Chat }) {
         case "interrupted": {
           const message = ev.message
           setLive((l) => (l?.turnId === ev.turn.id ? undefined : l))
-          if (message) setMessages((m) => [...m, message]) // erro do engine vem dentro da mensagem salva
+          if (message) setMessages((m) => [...m, message]) // engine error comes inside the saved message
           return
         }
         case "status":
           setBusy(ev.status.state !== "idle")
-          if (ev.status.state === "idle") void reloadRef.current() // título, consolidação e memórias pendentes podem ter mudado
+          if (ev.status.state === "idle") void reloadRef.current() // title, consolidation and pending memories may have changed
           return
       }
     }
     return subscribeChat(chat.id, onEvent, (e) => setError(String(e)))
   }, [chat.id])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: as dependências são o gatilho (rolar quando chega conteúdo)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the dependencies are the trigger (scroll when content arrives)
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" }) // em Chromes novos devolve Promise: não pode virar o cleanup
+    bottom.current?.scrollIntoView({ block: "end" }) // in newer Chromes returns a Promise: must not become the cleanup
   }, [messages, live, approvals])
 
   const project = data.projects.find((p) => p.id === chat.projectId)
@@ -93,7 +93,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   const update = (payload: { model?: string; agentIds?: ReadonlyArray<string> }) =>
     call((c) => c.chats.update({ params: { id: chat.id }, payload })).then(reload, (e) => setError(String(e)))
 
-  // Com o chat ocupado, a mensagem entra na fila do runtime e é respondida depois.
+  // With the chat busy, the message enters the runtime queue and is answered later.
   const submit = (e?: FormEvent) => {
     e?.preventDefault()
     const input = text.trim()
@@ -187,7 +187,7 @@ export function ChatView({ chat }: { chat: Chat }) {
           )}
           {messages.length === 0 && !busy && <div className="py-16 text-center text-muted">Comece a conversa. Você pode trocar o modelo a qualquer momento.</div>}
           {messages.map((m) => (
-            // Já coberta pelo resumo: o modelo não vê mais o texto literal.
+            // Already covered by the summary: the model no longer sees the verbatim text.
             <div key={m.id} className={cx("flex flex-col", m.at <= chat.summaryUntil && "opacity-50")} title={m.at <= chat.summaryUntil ? "Coberta pelo resumo" : undefined}>
               <Bubble message={m} author={agentName(m.agentId)} multi={team.length > 1} />
             </div>
@@ -267,7 +267,7 @@ function Bubble({ message: m, author, multi, live }: { message: Pick<Message, "r
       {m.steps.length > 0 && (
         <div className="flex flex-col gap-1">
           {m.steps.map((s, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: passos de uma mensagem são imutáveis e podem repetir a mesma ferramenta
+            // biome-ignore lint/suspicious/noArrayIndexKey: a message's steps are immutable and may repeat the same tool
             <details key={i} className="text-xs text-muted">
               <summary className="cursor-pointer">
                 <Badge tone={stepTone[s.status]}>{s.status === "ok" ? "usou" : s.status === "refused" ? "recusada" : "falhou"}</Badge> <code>{s.tool}</code>

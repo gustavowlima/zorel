@@ -1,9 +1,9 @@
-// Input e Textarea: React Aria (mesma API do elemento nativo) com os tokens do Zero.
+// Input and Textarea: React Aria (same API as the native element) with Zero's tokens.
 import type { ComponentProps } from "react"
 import { Input as InputPrimitive, TextArea as TextAreaPrimitive } from "react-aria-components"
 import { cn } from "@/lib/utils"
 
-// Também usado pelo gatilho do Select, para campos e seletores terem o mesmo corpo.
+// Also used by the Select trigger, so fields and selects share the same body.
 export const field =
   "w-full rounded-control border border-subtle bg-control px-3 text-base text-fg outline-none placeholder:text-dim transition-colors data-hovered:border-strong data-focused:border-strong data-focus-visible:ring-2 data-focus-visible:ring-accent-soft data-disabled:opacity-50"
 

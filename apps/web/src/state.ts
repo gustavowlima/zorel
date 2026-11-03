@@ -1,4 +1,4 @@
-// Estado global mínimo: listas carregadas do server (são pequenas) e a rota no hash da URL.
+// Minimal global state: lists loaded from the server (they're small) and the route in the URL hash.
 import type { Agent, Chat, McpServer, Memory, ModelInfo, Project } from "@zero/contracts"
 import { Effect } from "effect"
 import { createContext, useCallback, useContext, useEffect, useState } from "react"
@@ -64,7 +64,7 @@ export function useData() {
 export const DataContext = createContext<{ data: Data; reload: () => Promise<void> }>({ data: empty, reload: async () => {} })
 export const useApp = () => useContext(DataContext)
 
-// Rótulo legível de um escopo de memória.
+// Readable label for a memory scope.
 export function scopeLabel(scope: string, data: Data): string {
   if (scope === "user") return "Você"
   const [kind, id] = scope.split(":")

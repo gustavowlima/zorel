@@ -23,7 +23,7 @@ test("memórias: dedupe por texto normalizado, busca FTS por escopo, exclui as j
       expect((yield* r.searchMemories(scopes, "como faço o deploy?", [], 5)).map((m) => m.id)).toEqual([a.id])
       expect(yield* r.searchMemories(scopes, "como faço o deploy?", [a.id], 5)).toEqual([])
       expect((yield* r.searchMemories(scopes, "respostas", [], 5)).map((m) => m.id)).toEqual([b.id])
-      expect(yield* r.pendingCount([])).toBe(0) // lista vazia não quebra o IN
+      expect(yield* r.pendingCount([])).toBe(0) // empty list doesn't break the IN
 
       yield* r.updateMemory(a.id, { text: "Deploy é feito no Netlify" })
       expect((yield* r.searchMemories(scopes, "netlify", [], 5)).map((m) => m.id)).toEqual([a.id])
@@ -74,7 +74,7 @@ test("banco do MVP (user_version 2) é adotado: backup feito, dados mantidos, mi
   expect(backups).toHaveLength(1)
   expect(new Database(join(dir, "backups", backups[0]!)).query("SELECT count(*) AS n FROM chats").get()).toEqual({ n: 1 })
 
-  // Segunda abertura: nada pendente, nenhum backup novo.
+  // Second open: nothing pending, no new backup.
   await run(path, (r) => r.projects())
   expect(readdirSync(join(dir, "backups"))).toHaveLength(1)
   rmSync(dir, { recursive: true })
@@ -85,8 +85,8 @@ test("backup: um por dia mesmo sem migration pendente, e só os 7 mais novos fic
   const dir = join(tmpdir(), `zero-bk-${crypto.randomUUID()}`)
   const path = join(dir, "zero.db")
   require("node:fs").mkdirSync(join(dir, "backups"), { recursive: true })
-  await run(path, (r) => r.projects()) // banco novo: nada a fazer
-  // 8 backups antigos (mais de um dia): o próximo boot faz o do dia e apaga os excedentes
+  await run(path, (r) => r.projects()) // new database: nothing to do
+  // 8 old backups (over a day old): the next boot makes today's and deletes the excess
   const old = new Date(Date.now() - 3 * 24 * 60 * 60_000)
   for (let i = 0; i < 8; i++) {
     const f = join(dir, "backups", `zero-2020-01-0${i + 1}T00-00-00-000Z.db`)
@@ -110,7 +110,7 @@ test("memória sobre a pessoa só o dono ouve; a do projeto, o projeto", async (
       yield* r.addMemory({ scope: "project:p", text: "Deploy na Vercel", state: "active", origin: "manual", chatId: null })
     })
   )
-  // owner/audience ainda não estão no contrato público (portas da D17): conferir direto no banco
+  // owner/audience aren't in the public contract yet (D17 seams): check directly in the database
   const rows = new Database(path, { readonly: true }).query("SELECT scope, owner, audience FROM memories ORDER BY scope").all()
   expect(rows).toEqual([
     { scope: "project:p", owner: "local", audience: "project" },

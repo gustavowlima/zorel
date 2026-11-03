@@ -1,8 +1,8 @@
-// Ferramentas dos agentes via MCP.
-// - Hub: conexões com os servidores MCP configurados (stdio ou http), reaproveitadas entre turnos.
-// - Gateway: um servidor MCP local; cada turno abre uma sessão com URL secreta e só as ferramentas
-//   permitidas. É a única fonte de ferramentas de qualquer engine (CLI ou API): quem decide é o Zero.
-// Classificação e modelo de gateway por turno derivam do a reference app (Apache-2.0), ver NOTICE.
+// Agent tools via MCP.
+// - Hub: connections to the configured MCP servers (stdio or http), reused across turns.
+// - Gateway: a local MCP server; each turn opens a session with a secret URL and only the allowed
+//   tools. It's the only tool source for any engine (CLI or API): Zero decides.
+// Classification and the per-turn gateway model derive from a reference app (Apache-2.0), see NOTICE.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
@@ -17,14 +17,14 @@ const CONNECT_MS = 20_000
 const CALL_MS = 5 * 60_000
 export const MAX_RESULT_CHARS = 40_000
 
-// ---------- política ----------
+// ---------- policy ----------
 
 const READ = new Set(["get", "list", "search", "read", "find", "fetch", "query", "describe", "show", "view", "count", "lookup", "retrieve"])
 const SENSITIVE = new Set(["delete", "remove", "merge", "deploy", "send", "publish", "transfer", "pay", "destroy", "drop", "revoke", "post", "email"])
 const words = (name: string) => name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
 
-// Anotações primeiro; depois o nome. Uma palavra sensível em qualquer posição vence um verbo de leitura,
-// porque classificar errado como "read" pularia a aprovação.
+// Annotations first; then the name. A sensitive word in any position beats a read verb,
+// because misclassifying as "read" would skip approval.
 export function classify(tool: { name: string; annotations?: { readOnlyHint?: boolean | undefined; destructiveHint?: boolean | undefined } | undefined }): ToolInfo["cls"] {
   if (tool.annotations?.readOnlyHint === true) return "read"
   if (tool.annotations?.destructiveHint === true) return "sensitive"
@@ -59,7 +59,7 @@ export class Hub {
       const client = new Client({ name: "zero", version: "0.1.0" })
       const env = mcpEnv(this.secrets, s.id)
       const transport = s.url
-        ? new StreamableHTTPClientTransport(new URL(s.url), { requestInit: { headers: env } }) // http: variáveis viram cabeçalhos (ex.: Authorization)
+        ? new StreamableHTTPClientTransport(new URL(s.url), { requestInit: { headers: env } }) // http: variables become headers (e.g. Authorization)
         : new StdioClientTransport({ command: s.command, args: [...s.args], env: { ...getDefaultEnvironment(), ...env }, stderr: "ignore" })
       await client.connect(transport, { timeout: CONNECT_MS })
       return client
@@ -98,7 +98,7 @@ export class Hub {
 // ---------- gateway ----------
 
 export interface ToolDef {
-  readonly name: string // nome exposto ao modelo: <servidor>__<ferramenta>
+  readonly name: string // name exposed to the model: <server>__<tool>
   readonly description: string
   readonly inputSchema: Record<string, unknown>
 }
@@ -119,7 +119,7 @@ export class Gateway {
     this.server?.stop(true)
   }
 
-  // URL entregue ao engine e a função que a revoga.
+  // URL handed to the engine and the function that revokes it.
   open(session: Session): { url: string; close: () => void } {
     const token = Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString("hex")
     this.sessions.set(token, session)
@@ -130,15 +130,15 @@ export class Gateway {
     const token = /^\/mcp\/([a-f0-9]{48})$/.exec(new URL(req.url).pathname)?.[1]
     const session = token ? this.sessions.get(token) : undefined
     if (!session) return new Response(null, { status: 404 })
-    // Sem estado: um servidor MCP por requisição, preso às ferramentas desta sessão.
+    // Stateless: one MCP server per request, bound to this session's tools.
     const server = new Server({ name: "zero", version: "0.1.0" }, { capabilities: { tools: {} } })
     server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: session.tools.map((t) => ({ ...t, inputSchema: { type: "object" as const, ...t.inputSchema } })) }))
     server.setRequestHandler(CallToolRequestSchema, async (r) => {
-      // Defesa em profundidade: ferramenta fora da lista do turno nunca roda.
+      // Defense in depth: a tool outside the turn's list never runs.
       if (!session.tools.some((t) => t.name === r.params.name)) return textResult(`Ferramenta não permitida: ${r.params.name}`, true)
       return session.call(r.params.name, (r.params.arguments ?? {}) as Record<string, unknown>)
     })
-    const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true }) // sem sessionIdGenerator: modo sem estado
+    const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true }) // no sessionIdGenerator: stateless mode
     await server.connect(transport)
     try {
       return await transport.handleRequest(req)
@@ -148,7 +148,7 @@ export class Gateway {
   }
 }
 
-// Nome exposto: só [a-zA-Z0-9_-], até 64 caracteres (limite comum dos providers).
+// Exposed name: only [a-zA-Z0-9_-], up to 64 characters (common provider limit).
 export const exposedName = (server: string, tool: string) => `${server}__${tool}`.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 64)
 
 export class Tools extends Context.Service<Tools, { readonly hub: Hub; readonly gateway: Gateway }>()("Tools") {

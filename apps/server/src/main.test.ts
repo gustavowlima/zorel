@@ -1,5 +1,5 @@
-// Ponta a ponta pelo contrato: server real (Bun) + client tipado, com um engine falso que grava os turnos
-// e, quando pedido, chama ferramentas pela URL do gateway MCP — exatamente como uma CLI faria.
+// End to end through the contract: real server (Bun) + typed client, with a fake engine that records turns
+// and, when asked, calls tools through the MCP gateway URL — exactly like a CLI would.
 import { afterAll, beforeAll, expect, test } from "bun:test"
 import { BunHttpServer } from "@effect/platform-bun"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -26,7 +26,7 @@ import { Runtime } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
 import { Tools } from "./tools.ts"
 
-// ---------- servidor MCP de teste ----------
+// ---------- test MCP server ----------
 const toolCalls: string[] = []
 const mcp = Bun.serve({
   port: 0,
@@ -48,10 +48,10 @@ const mcp = Bun.serve({
   }
 })
 
-// ---------- engine falso ----------
+// ---------- fake engine ----------
 const turns: Turn[] = []
-const mentionNext = new Map<string, string>() // texto da resposta por nome de agente (para testar repasse)
-let manyMemories = 0 // > 0: a consolidação falsa propõe tantas memórias de usuário
+const mentionNext = new Map<string, string>() // reply text per agent name (to test handoff)
+let manyMemories = 0 // > 0: the fake consolidation proposes this many user memories
 
 async function useTool(t: Turn, name: string, args: Record<string, unknown>) {
   const client = new Client({ name: "fake-cli", version: "1" })
@@ -106,7 +106,7 @@ afterAll(() => stop())
 const api = <A, E>(f: (c: HttpApiClient.ForApi<typeof Api>) => Effect.Effect<A, E>) =>
   Effect.runPromise(Effect.flatMap(HttpApiClient.make(Api, { baseUrl: base }), f).pipe(Effect.provide(FetchHttpClient.layer)))
 
-// Cliente RPC real (WebSocket em /rpc), como o web usa.
+// Real RPC client (WebSocket at /rpc), as the web uses it.
 const rpcLayer = () =>
   RpcClient.layerProtocolSocket().pipe(
     Layer.provide(Socket.layerWebSocket(`ws://localhost:${port}/rpc`)),
@@ -117,7 +117,7 @@ type Rpc = Effect.Success<ReturnType<typeof RpcClient.make<typeof ZeroRpc extend
 const rpc = <A, E>(f: (c: Rpc) => Effect.Effect<A, E>) =>
   Effect.runPromise(Effect.scoped(Effect.flatMap(RpcClient.make(ZeroRpc), (c) => f(c as Rpc))).pipe(Effect.provide(rpcLayer())))
 
-// Assina o chat, envia e espera o chat voltar a ficar parado. `onApproval` decide pedidos enquanto o turno espera.
+// Subscribes to the chat, sends and waits for the chat to go idle again. `onApproval` decides requests while the turn waits.
 async function send(chatId: string, body: { text: string; model?: string }, onApproval?: (a: Approval) => boolean) {
   return rpc((c) =>
     Effect.gen(function* () {
@@ -174,15 +174,15 @@ test("projeto → agente → chat: streaming, contexto em camadas, troca de mode
 
   await send(chat.id, { text: "como publico?" })
   expect(turns.at(-1)!.system).toContain("Falaram de deploy.")
-  expect(turns.at(-1)!.system).not.toContain("Deploy é na Vercel") // pendente não entra
+  expect(turns.at(-1)!.system).not.toContain("Deploy é na Vercel") // pending doesn't get in
   expect(turns.at(-1)!.messages.map((m) => m.text)).toEqual(["como publico?"])
 
   for (const m of pending) await api((c) => c.memories.update({ params: { id: m.id }, payload: { state: "active" } }))
   await send(chat.id, { text: "e para publicar o site?" })
   const sys = turns.at(-1)!.system
   expect(sys).toContain("Deploy é na Vercel")
-  expect(sys).toContain("- Publicar o site") // listada
-  expect(sys).toContain("vercel deploy") // relevante: passo a passo inteiro
+  expect(sys).toContain("- Publicar o site") // listed
+  expect(sys).toContain("vercel deploy") // relevant: full step-by-step
   expect((await api((c) => c.chats.list())).find((c) => c.id === chat.id)!.title).toBe("oi")
 })
 
@@ -192,22 +192,22 @@ test("canal: @menção escolhe quem responde; agente passa a vez mencionando out
   const [lia, leo, nico] = [await mk("Lia", "claude-cli/haiku"), await mk("Leo", "codex-cli/default"), await mk("Nico", "ollama/llama3")]
   const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [lia.id, leo.id, nico.id], model: "claude-cli/sonnet" } }))
 
-  // sem menção: líder (Lia) com o modelo do chat
+  // no mention: leader (Lia) with the chat model
   let r = await send(chat.id, { text: "bom dia" })
   expect(dones(r.events).map((m) => [m.agentId, m.model])).toEqual([[lia.id, "claude-cli/sonnet"]])
   expect(turns.at(-1)!.system).toContain("@leo (Leo)")
 
-  // menção direta: Leo com o modelo dele; Leo passa para @nico, que vê a fala do Leo com nome
+  // direct mention: Leo with his model; Leo hands off to @nico, who sees Leo's line with his name
   mentionNext.set("Leo", "achei o bug, @nico revisa?")
   r = await send(chat.id, { text: "@leo investiga o erro" })
   expect(dones(r.events).map((m) => [m.agentId, m.model])).toEqual([[leo.id, "codex-cli/default"], [nico.id, "ollama/llama3"]])
   expect(turns.at(-1)!.messages.at(-1)).toMatchObject({ role: "user", text: "[Leo]\nachei o bug, @nico revisa?" })
 
-  // ping-pong para no limite
+  // ping-pong stops at the limit
   mentionNext.set("Nico", "@leo de novo")
   mentionNext.set("Leo", "@nico de novo")
   r = await send(chat.id, { text: "@leo vai" })
-  expect(dones(r.events)).toHaveLength(3) // Leo → Nico → Leo e para
+  expect(dones(r.events)).toHaveLength(3) // Leo → Nico → Leo and stops
   mentionNext.clear()
 })
 
@@ -221,7 +221,7 @@ test("ferramentas MCP: modo leitura esconde escrita; modo aprovação pede e res
   const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [], model: "claude-cli/sonnet" } }))
   let r = await send(chat.id, { text: "tool:docs__search_docs" })
   let msg = dones(r.events)[0]!
-  expect(msg.text).toBe("docs__search_docs => resultado de search_docs") // só a de leitura listada
+  expect(msg.text).toBe("docs__search_docs => resultado de search_docs") // only the read one listed
   expect(msg.steps).toEqual([{ tool: "docs__search_docs", args: '{"q":"deploy"}', status: "ok", result: "resultado de search_docs" }])
 
   await api((c) => c.tools.update({ params: { id: server.id }, payload: { mode: "approve" } }))
@@ -231,13 +231,13 @@ test("ferramentas MCP: modo leitura esconde escrita; modo aprovação pede e res
   expect(r.events.some((e) => e._tag === "approval-resolved" && e.outcome === "denied")).toBe(true)
   expect(msg.text).toContain("O usuário recusou")
   expect(msg.steps.at(-1)!.status).toBe("refused")
-  expect(toolCalls).toEqual(["search_docs"]) // recusada não chegou ao servidor
+  expect(toolCalls).toEqual(["search_docs"]) // denied one never reached the server
 
   r = await send(chat.id, { text: "tool:docs__delete_page" }, () => true)
   expect(dones(r.events)[0]!.text).toContain("resultado de delete_page")
   expect(toolCalls).toEqual(["search_docs", "delete_page"])
 
-  // chat fora do projeto não enxerga o servidor
+  // chat outside the project doesn't see the server
   const other = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "claude-cli/sonnet" } }))
   await send(other.id, { text: "oi" })
   expect(turns.at(-1)!.tools).toBeUndefined()
@@ -257,7 +257,7 @@ test("erros na fronteira: entrada inválida 400, chat inexistente 404, agente de
   const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
   const sendExit = (chatId: string, text: string, model?: string) =>
     rpc((c) => Effect.exit(c.send({ chatId, clientId: crypto.randomUUID(), text, ...(model && { model }) } as never)))
-  expect(Exit.isFailure(await sendExit(chat.id, "   "))).toBe(true) // texto vazio: recusado no schema
+  expect(Exit.isFailure(await sendExit(chat.id, "   "))).toBe(true) // empty text: rejected by the schema
   expect(Exit.isFailure(await sendExit(chat.id, "oi", "sem-barra"))).toBe(true)
   const missing = await sendExit("nao-existe", "oi")
   expect(JSON.stringify(missing)).toContain("ChatNotFound")
@@ -277,7 +277,7 @@ test("só local: Host estranho (DNS rebinding) e Origin de outro site (CSRF) rec
   expect(isLocalRequest({ host: "localhost:4317", origin: "null" })).toBe(false)
   expect(isLocalRequest({})).toBe(false)
 
-  // POST "simples" (text/plain) de outra página e WebSocket de outra origem: barrados antes de qualquer efeito.
+  // "Simple" POST (text/plain) from another page and WebSocket from another origin: blocked before any effect.
   const res = await fetch(`${base}/api/projects`, { method: "POST", headers: { "content-type": "text/plain", origin: "https://evil.example" }, body: '{"name":"x","brief":""}' })
   expect(res.status).toBe(403)
   expect((await fetch(`${base}/rpc`, { headers: { origin: "https://evil.example", upgrade: "websocket", connection: "Upgrade" } })).status).toBe(403)
@@ -299,7 +299,7 @@ test("aprendizado: esquecidas vão para a consolidação e podem ser restauradas
   const pending = (await api((c) => c.memories.list())).filter((m) => m.state === "pending" && m.scope === "user")
   expect(pending.length).toBe(Math.max(before, 20))
 
-  // via de volta: a esquecida continua listada e volta a ativa
+  // way back: the forgotten one stays listed and becomes active again
   expect((await api((c) => c.memories.list())).find((m) => m.id === forgotten.id)!.state).toBe("forgotten")
   await api((c) => c.memories.update({ params: { id: forgotten.id }, payload: { state: "active" } }))
   await send(chat.id, { text: "e aí" })

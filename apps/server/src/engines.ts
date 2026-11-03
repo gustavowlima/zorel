@@ -1,11 +1,11 @@
-// Engines: quem executa um turno. Duas famílias atrás da mesma interface:
-// - assinatura: a CLI oficial do usuário (Claude Code, Codex), sem sessão própria
-//   (--no-session-persistence / --ephemeral): o contexto é sempre montado por nós.
-//   Nunca lemos nem guardamos o login OAuth dessas CLIs (termos dos providers).
-// - api: chamada direta com token via effect/ai (Anthropic, OpenAI, OpenRouter, Ollama…).
-// Como o contexto é nosso, trocar de modelo entre turnos não exige handoff.
-// Ferramentas chegam sempre pelo gateway MCP do Zero (tools.ts); as CLIs não recebem nenhuma outra.
-// Argumentos e parsers das CLIs derivam do a reference app (Apache-2.0), ver NOTICE.
+// Engines: what runs a turn. Two families behind the same interface:
+// - subscription: the user's official CLI (Claude Code, Codex), without its own session
+//   (--no-session-persistence / --ephemeral): the context is always built by us.
+//   We never read or store these CLIs' OAuth login (provider terms).
+// - api: direct call with a token via effect/ai (Anthropic, OpenAI, OpenRouter, Ollama…).
+// Since the context is ours, switching models between turns needs no handoff.
+// Tools always come through Zero's MCP gateway (tools.ts); the CLIs get no others.
+// CLI arguments and parsers derive from a reference app (Apache-2.0), see NOTICE.
 import { AnthropicClient, AnthropicLanguageModel } from "@effect/ai-anthropic"
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
 import type { ModelInfo } from "@zero/contracts"
@@ -18,22 +18,22 @@ import { resultText, type Session, type ToolDef } from "./tools.ts"
 export interface TurnMessage {
   readonly role: "user" | "assistant"
   readonly text: string
-  readonly at?: number // ordem no chat: a marcação da sessão nativa compara por aqui
+  readonly at?: number // order in the chat: the native session marker compares by this
 }
 
 export interface TurnTools {
-  readonly url: string // sessão do gateway MCP para as CLIs
+  readonly url: string // MCP gateway session for the CLIs
   readonly defs: ReadonlyArray<ToolDef>
-  readonly call: Session["call"] // o mesmo caminho, chamado direto pelo engine de API
+  readonly call: Session["call"] // the same path, called directly by the API engine
 }
 
 export interface Turn {
-  readonly model: string // "<provider>/<modelo>"
-  readonly system: string // stable + dynamic: o que um engine sem sessão recebe
-  readonly stable?: string // parte que abre uma sessão nativa
-  readonly dynamic?: string // parte que vai junto da mensagem a cada turno numa sessão nativa
-  readonly messages: ReadonlyArray<TurnMessage> // termina numa mensagem do usuário
-  readonly cwd: string // diretório vazio: a CLI não recebe arquivos de ninguém
+  readonly model: string // "<provider>/<model>"
+  readonly system: string // stable + dynamic: what a sessionless engine receives
+  readonly stable?: string // part that opens a native session
+  readonly dynamic?: string // part sent with the message each turn in a native session
+  readonly messages: ReadonlyArray<TurnMessage> // ends with a user message
+  readonly cwd: string // empty directory: the CLI gets nobody's files
   readonly tools?: TurnTools | undefined
 }
 
@@ -56,12 +56,12 @@ type Provider = {
   readonly kind: "subscription" | "api"
   readonly hint: string
   readonly suggestions: ReadonlyArray<string>
-  readonly key?: string // nome da chave de API (env ou chaveiro)
-  readonly bin?: string // CLI de assinatura
-  readonly local?: true // servidor local: disponível só se responder, e os modelos vêm dele
+  readonly key?: string // API key name (env or keychain)
+  readonly bin?: string // subscription CLI
+  readonly local?: true // local server: available only if it responds, and models come from it
 }
 
-// Bases OpenAI-compatíveis. Ollama/LM Studio rodam local e não pedem chave.
+// OpenAI-compatible base URLs. Ollama/LM Studio run locally and need no key.
 const COMPAT: Record<string, () => string> = {
   openai: () => process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
   openrouter: () => "https://openrouter.ai/api/v1",
@@ -84,7 +84,7 @@ export function splitModel(id: string): { provider: string; model: string } {
   return { provider: id.slice(0, i), model: id.slice(i + 1) }
 }
 
-// Modelos que um servidor OpenAI-compatível local lista; undefined se não responde.
+// Models a local OpenAI-compatible server lists; undefined if it doesn't respond.
 async function probe(url: string): Promise<string[] | undefined> {
   try {
     const r = await fetch(`${url}/models`, { signal: AbortSignal.timeout(500) })
@@ -96,7 +96,7 @@ async function probe(url: string): Promise<string[] | undefined> {
   }
 }
 
-// Sugestões conhecidas (ou as que o servidor local lista) + "<provider>/…" livre: qualquer modelo pode ser digitado.
+// Known suggestions (or those the local server lists) + free "<provider>/…": any model can be typed.
 export async function listModels(secrets: SecretStore): Promise<ModelInfo[]> {
   const entries = Object.entries(PROVIDERS)
   const found = await Promise.all(entries.map(([id, p]) => (p.local ? probe(COMPAT[id]!()) : Promise.resolve(undefined))))
@@ -126,7 +126,7 @@ const json = (line: string): Record<string, any> | undefined => {
 }
 const tail = (s: string) => s.trim().split("\n").slice(-5).join("\n")
 
-// Histórico vira transcrição: a CLI recebe um único prompt por turno.
+// History becomes a transcript: the CLI gets a single prompt per turn.
 export function transcript(messages: ReadonlyArray<TurnMessage>): string {
   const last = messages.at(-1)!
   const before = messages.slice(0, -1)
@@ -144,12 +144,12 @@ export const claudeArgs = (t: Turn) => [
   "--include-partial-messages",
   "--model", splitModel(t.model).model,
   "--system-prompt", t.system,
-  "--tools", "", // sem shell nem arquivos: só conversa e as ferramentas do gateway
+  "--tools", "", // no shell or files: only chat and the gateway tools
   "--strict-mcp-config",
-  "--setting-sources", "", // ignora hooks, plugins e permissões do usuário
+  "--setting-sources", "", // ignores the user's hooks, plugins and permissions
   "--no-session-persistence",
   ...(t.tools
-    ? ["--mcp-config", JSON.stringify({ mcpServers: { [GATEWAY]: { type: "http", url: t.tools.url } } }), "--allowedTools", `mcp__${GATEWAY}`] // o gateway decide
+    ? ["--mcp-config", JSON.stringify({ mcpServers: { [GATEWAY]: { type: "http", url: t.tools.url } } }), "--allowedTools", `mcp__${GATEWAY}`] // the gateway decides
     : [])
 ]
 
@@ -166,7 +166,7 @@ export function claudeParser(): Parser {
         if (e.type === "message_start") newCall = true
         const d = e.delta
         if (e.type === "content_block_delta" && d?.type === "text_delta" && typeof d.text === "string") {
-          const sep = newCall && wrote ? "\n\n" : "" // texto antes/depois de ferramentas vira parágrafo
+          const sep = newCall && wrote ? "\n\n" : "" // text before/after tools becomes a paragraph
           newCall = false
           wrote = true
           return [{ type: "text", delta: sep + d.text }]
@@ -185,7 +185,7 @@ export function claudeParser(): Parser {
   }
 }
 
-// Codex sem ferramentas próprias, sem config/regras do usuário e sem sessão salva.
+// Codex without its own tools, without user config/rules and without a saved session.
 const CODEX_DISABLED = ["shell_tool", "unified_exec", "apps", "plugins", "browser_use", "computer_use", "image_generation", "multi_agent", "view_image", "hooks", "memories"]
 export const codexArgs = (t: Turn) => {
   const { model } = splitModel(t.model)
@@ -201,8 +201,8 @@ export const codexArgs = (t: Turn) => {
     ...(t.tools
       ? [
           "-c", `mcp_servers.${GATEWAY}.url=${JSON.stringify(t.tools.url)}`,
-          "-c", `mcp_servers.${GATEWAY}.default_tools_approval_mode="approve"`, // o gateway decide
-          "-c", `mcp_servers.${GATEWAY}.tool_timeout_sec=900` // aprovação humana pode demorar
+          "-c", `mcp_servers.${GATEWAY}.default_tools_approval_mode="approve"`, // the gateway decides
+          "-c", `mcp_servers.${GATEWAY}.tool_timeout_sec=900` // human approval can take a while
         ]
       : []),
     "-"
@@ -238,7 +238,7 @@ export function codexParser(): Parser {
   }
 }
 
-// Roda a CLI e transforma cada linha do stdout em eventos. Interromper o stream mata o processo.
+// Runs the CLI and turns each stdout line into events. Interrupting the stream kills the process.
 async function* runCli(bin: string, args: string[], stdin: string, cwd: string, parser: Parser): AsyncGenerator<EngineEvent> {
   await Bun.$`mkdir -p ${cwd}`.quiet()
   const proc = Bun.spawn([bin, ...args], { cwd, stdin: new Blob([stdin]), stdout: "pipe", stderr: "pipe" })
@@ -283,7 +283,7 @@ function apiLayer(secrets: SecretStore, provider: string, model: string): Layer.
   )
 }
 
-// Ferramentas do gateway como toolkit do effect/ai; o handler passa pelo mesmo `call` (política e aprovação).
+// Gateway tools as an effect/ai toolkit; the handler goes through the same `call` (policy and approval).
 function toolkitOf(tools: TurnTools) {
   const kit = Toolkit.make(...tools.defs.map((d) => Tool.dynamic(d.name, { description: d.description, parameters: { type: "object", ...d.inputSchema } as any })))
   const handlers = Object.fromEntries(
@@ -292,7 +292,7 @@ function toolkitOf(tools: TurnTools) {
   return (kit as any).pipe(Effect.provide(kit.toLayer(handlers as any))) as Effect.Effect<any>
 }
 
-// Loop de ferramentas: enquanto o modelo pedir ferramenta, roda e devolve o resultado, até MAX_TOOL_STEPS.
+// Tool loop: while the model asks for a tool, run it and return the result, up to MAX_TOOL_STEPS.
 const api = (secrets: SecretStore, t: Turn): Stream.Stream<EngineEvent> => {
   const { provider, model } = splitModel(t.model)
   const layer = apiLayer(secrets, provider, model)
@@ -341,7 +341,7 @@ const api = (secrets: SecretStore, t: Turn): Stream.Stream<EngineEvent> => {
   )
 }
 
-// ---------- serviço ----------
+// ---------- service ----------
 
 export class Engines extends Context.Service<Engines, { readonly run: (turn: Turn) => Stream.Stream<EngineEvent> }>()("Engines") {
   static layer = Layer.effect(

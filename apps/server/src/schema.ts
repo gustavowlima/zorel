@@ -1,5 +1,5 @@
-// Schema do banco (Drizzle). Espelha as tabelas que o MVP criou com SQL à mão, coluna por coluna,
-// para o banco existente ser adotado sem cópia (ver migrate.ts). Mudou algo aqui? `bun run db:generate`.
+// Database schema (Drizzle). Mirrors the tables the MVP created with hand-written SQL, column by column,
+// so the existing database is adopted without copying (see migrate.ts). Changed something here? `bun run db:generate`.
 import { sql } from "drizzle-orm"
 import { check, index, integer, primaryKey, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
 
@@ -49,7 +49,7 @@ export const messages = sqliteTable(
     text: text().notNull(),
     model: text(),
     error: text(),
-    steps: text().notNull().default("[]"), // JSON de Step[]
+    steps: text().notNull().default("[]"), // JSON of Step[]
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
     at: integer().notNull()
@@ -71,7 +71,7 @@ export const memories = sqliteTable(
     chatId: text("chat_id"),
     createdAt: integer("created_at").notNull(),
     confirmedAt: integer("confirmed_at").notNull(),
-    // Portas da D17 para hospedar: de quem é e quem ouve. Hoje sempre o dono local.
+    // D17 seams for hosting: who owns it and who hears it. Today always the local owner.
     owner: text().notNull().default("local"),
     audience: text({ enum: ["owner", "project", "workspace"] }).notNull().default("project")
   },
@@ -83,15 +83,15 @@ export const mcpServers = sqliteTable("mcp_servers", {
   projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
   name: text().notNull(),
   command: text().notNull().default(""),
-  args: text().notNull().default("[]"), // JSON de string[]
+  args: text().notNull().default("[]"), // JSON of string[]
   url: text().notNull().default(""),
-  envKeys: text("env_keys").notNull().default("[]"), // JSON de string[]; os valores ficam no chaveiro
+  envKeys: text("env_keys").notNull().default("[]"), // JSON of string[]; the values live in the keychain
   mode: text({ enum: ["read", "approve", "auto"] }).notNull(),
   enabled: integer({ mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at").notNull()
 })
 
-// ---------- runtime de turnos (ARCHITECTURE §5) ----------
+// ---------- turn runtime (ARCHITECTURE §5) ----------
 
 export const turns = sqliteTable(
   "turns",
@@ -101,15 +101,15 @@ export const turns = sqliteTable(
     agentId: text("agent_id"),
     model: text().notNull(),
     accountId: text("account_id"),
-    clientId: text("client_id").unique(), // idempotência do `send`; turnos encadeados não têm
+    clientId: text("client_id").unique(), // `send` idempotency; chained turns have none
     state: text({ enum: ["queued", "running", "completed", "failed", "interrupted"] }).notNull(),
-    depth: integer().notNull().default(0), // respostas seguidas entre agentes sem mensagem sua
+    depth: integer().notNull().default(0), // consecutive agent replies without a message from you
     createdAt: integer("created_at").notNull(),
     startedAt: integer("started_at"),
     endedAt: integer("ended_at"),
-    firstTokenAt: integer("first_token_at"), // latência até o primeiro texto (medição por turno)
-    error: text(), // código (ErrorCode) ou a mensagem do engine
-    partialText: text("partial_text").notNull().default(""), // texto até agora: um kill -9 não perde o que já veio
+    firstTokenAt: integer("first_token_at"), // latency to first text (per-turn metrics)
+    error: text(), // code (ErrorCode) or the engine message
+    partialText: text("partial_text").notNull().default(""), // text so far: a kill -9 doesn't lose what already arrived
     messageId: text("message_id"),
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
@@ -126,11 +126,11 @@ export const steps = sqliteTable(
     kind: text({ enum: ["read", "edit", "run", "search", "tool", "delegate"] }).notNull(),
     title: text().notNull(),
     tool: text(),
-    files: text().notNull().default("[]"), // JSON de string[]
+    files: text().notNull().default("[]"), // JSON of string[]
     status: text({ enum: ["running", "waiting", "ok", "error", "refused"] }).notNull(),
     startedAt: integer("started_at").notNull(),
     durationMs: integer("duration_ms"),
-    changes: text().notNull().default("[]"), // JSON de FileChange[]
+    changes: text().notNull().default("[]"), // JSON of FileChange[]
     output: text().notNull().default("")
   },
   (t) => [index("steps_by_turn").on(t.turnId, t.startedAt)]
@@ -147,11 +147,11 @@ export const approvals = sqliteTable(
     kind: text({ enum: ["command", "edit", "tool", "network"] }).notNull(),
     tool: text().notNull(),
     summary: text().notNull(),
-    args: text().notNull(), // JSON com segredos mascarados
+    args: text().notNull(), // JSON with masked secrets
     cwd: text(),
     createdAt: integer("created_at").notNull(),
     expiresAt: integer("expires_at").notNull(),
-    outcome: text({ enum: ["approved", "always", "denied", "expired"] }), // null: aberta
+    outcome: text({ enum: ["approved", "always", "denied", "expired"] }), // null: open
     reason: text(),
     decidedBy: text("decided_by", { enum: ["user", "rule", "expiry"] }),
     decidedAt: integer("decided_at")

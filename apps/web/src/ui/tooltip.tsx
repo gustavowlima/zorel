@@ -1,4 +1,4 @@
-// Tooltip: React Aria. O gatilho precisa ser focável (Button, link…), assim o texto também aparece no foco pelo teclado.
+// Tooltip: React Aria. The trigger must be focusable (Button, link…), so the text also shows on keyboard focus.
 import type { ReactNode } from "react"
 import { Focusable, Tooltip as TooltipPrimitive, TooltipTrigger } from "react-aria-components"
 

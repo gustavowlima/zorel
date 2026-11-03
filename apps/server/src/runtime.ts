@@ -1,6 +1,6 @@
-// Runtime de turnos (ARCHITECTURE §5): fila por chat no banco, um turno por vez, eventos ao vivo por chat.
-// O turno não depende do cliente: fechar a aba não para nada; reconectar = assinar de novo (snapshot + eventos).
-// Encadeamento: a resposta que menciona outro membro enfileira o turno dele (até MAX_DEPTH sem mensagem sua).
+// Turn runtime (ARCHITECTURE §5): per-chat queue in the database, one turn at a time, live events per chat.
+// The turn doesn't depend on the client: closing the tab stops nothing; reconnect = subscribe again (snapshot + events).
+// Chaining: a reply that mentions another member queues that member's turn (up to MAX_DEPTH without a message from you).
 import type { Agent, Chat, Step } from "@zero/contracts"
 import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zero/contracts/events"
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Stream } from "effect"
@@ -11,8 +11,8 @@ import { Engines, type TurnTools } from "./engines.ts"
 import { exposedName, needsApproval, resultText, textResult, Tools, type Gateway, type Hub, type Session, type ToolDef } from "./tools.ts"
 
 const MAX_MENTIONS = 3
-const APPROVAL_MS = 30 * 60_000 // ARCHITECTURE §9.2: expira em 30 min e vale como recusa
-const TEXT_BATCH = Duration.millis(100) // deltas agrupados (a reference app 100 ms, Zeron 120 ms)
+const APPROVAL_MS = 30 * 60_000 // ARCHITECTURE §9.2: expires in 30 min and counts as denial
+const TEXT_BATCH = Duration.millis(100) // batched deltas (a reference app 100 ms, Zeron 120 ms)
 
 export interface SendInput {
   readonly chatId: string
@@ -38,7 +38,7 @@ export const makeRuntime = Effect.gen(function* () {
   const { hub, gateway } = yield* Tools
   const services = yield* Effect.context<Store | Engines | DataDir>()
 
-  // ---------- eventos ----------
+  // ---------- events ----------
   const hubs = new Map<string, PubSub.PubSub<ChatEvent>>()
   const hubOf = (chatId: string) => {
     let h = hubs.get(chatId)
@@ -60,14 +60,14 @@ export const makeRuntime = Effect.gen(function* () {
       yield* publish(chatId, ev("status", { status }))
     })
 
-  // ---------- estado em memória (o banco é a fonte; isto só guarda fibras e esperas) ----------
+  // ---------- in-memory state (the database is the source; this only holds fibers and waits) ----------
   const workers = new Map<string, { kicked: boolean }>()
   const running = new Map<string, Fiber.Fiber<unknown, unknown>>()
   const waiting = new Map<string, Deferred.Deferred<ApprovalOutcome>>()
   const nameOf = (agent: Agent | undefined) => agent?.name ?? "Assistant"
   const run = <A>(e: Effect.Effect<A>) => Effect.runPromise(e)
 
-  // ---------- ferramentas do turno: passos e aprovações persistidos e publicados ----------
+  // ---------- turn tools: steps and approvals persisted and published ----------
   const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, legacy: Step[]) => {
     const routes = new Map<string, { server: string; tool: string; approve: boolean }>()
     const defs: ToolDef[] = []
@@ -145,7 +145,7 @@ export const makeRuntime = Effect.gen(function* () {
       Effect.as<ApprovalOutcome>("expired")
     )
 
-  // ---------- um turno ----------
+  // ---------- one turn ----------
   const runTurn = (row: TurnRow) =>
     Effect.gen(function* () {
       const chatId = row.chatId
@@ -173,7 +173,7 @@ export const makeRuntime = Effect.gen(function* () {
         yield* Effect.addFinalizer(() =>
           Effect.gen(function* () {
             opened.close()
-            // Turno acabou: pedidos abertos dele viram recusa.
+            // Turn ended: its open requests become denials.
             for (const a of yield* store.openApprovals(chatId)) if (a.turnId === row.id) yield* expire(chatId, a.id)
           })
         )
@@ -208,7 +208,7 @@ export const makeRuntime = Effect.gen(function* () {
       Effect.annotateLogs({ chatId: row.chatId, turnId: row.id })
     )
 
-  // Menções na resposta enfileiram os colegas (encadeamento, até MAX_DEPTH respostas seguidas).
+  // Mentions in the reply queue the teammates (chaining, up to MAX_DEPTH consecutive replies).
   const chain = (row: TurnRow, done: { text: string; agent: Agent | undefined; team: Agent[] }) =>
     Effect.gen(function* () {
       const next = mentioned(done.text, done.team.filter((a) => a.id !== done.agent?.id)).slice(0, MAX_MENTIONS)
@@ -221,7 +221,7 @@ export const makeRuntime = Effect.gen(function* () {
       }
     })
 
-  // ---------- worker por chat ----------
+  // ---------- per-chat worker ----------
   const worker = (chatId: string): Effect.Effect<void> =>
     Effect.gen(function* () {
       const self = workers.get(chatId)!
@@ -256,8 +256,8 @@ export const makeRuntime = Effect.gen(function* () {
       return Effect.forkDetach(worker(chatId)).pipe(Effect.asVoid)
     })
 
-  // ---------- recuperação no boot ----------
-  // Turno `running` sem processo vira `interrupted` com o texto parcial; nunca repete efeito colateral incerto.
+  // ---------- boot recovery ----------
+  // A `running` turn with no process becomes `interrupted` with the partial text; never repeats an uncertain side effect.
   for (const row of yield* store.turnsIn("running")) {
     const message = yield* store.addMessage({ chatId: row.chatId, role: "assistant", agentId: row.agentId, text: row.partialText, model: row.model, error: ErrorCode.serverRestarted, steps: [], inputTokens: 0, outputTokens: 0 })
     yield* store.finishTurn(row.id, { state: "interrupted", error: ErrorCode.serverRestarted, messageId: message.id })
@@ -270,7 +270,7 @@ export const makeRuntime = Effect.gen(function* () {
     send: (input) =>
       Effect.gen(function* () {
         const existing = yield* store.turnByClientId(input.clientId)
-        if (existing) return { turnId: existing.id } // reenvio do mesmo clientId não duplica
+        if (existing) return { turnId: existing.id } // resending the same clientId doesn't duplicate
         let chat = yield* store.chat(input.chatId)
         if (!chat) return yield* new ChatNotFound({ chatId: input.chatId })
         if (input.model && input.model !== chat.model) chat = (yield* store.updateChat(chat.id, { model: input.model }))!
@@ -283,7 +283,7 @@ export const makeRuntime = Effect.gen(function* () {
         if (!targets.length) targets.push(lead)
         let first: string | undefined
         for (const [i, a] of targets.entries()) {
-          // O líder usa o modelo do chat (o que você escolheu); os outros membros usam o deles.
+          // The leader uses the chat model (the one you picked); other members use their own.
           const model = !a || a.id === lead?.id ? chat.model : a.model
           const t = yield* store.enqueueTurn({ chatId: chat.id, agentId: a?.id ?? null, model, clientId: i === 0 ? input.clientId : null, depth: 0 })
           first ??= t.id
@@ -307,7 +307,7 @@ export const makeRuntime = Effect.gen(function* () {
       Effect.gen(function* () {
         const a = yield* store.resolveApproval(approvalId, outcome, reason ?? null, "user")
         if (!a) return yield* new ApprovalNotFound({ approvalId })
-        // ponytail: "always" aprova só esta chamada; a regra persistente "sempre permitir" é da fase 4.
+        // ponytail: "always" approves only this call; the persistent "always allow" rule is phase 4.
         const d = waiting.get(approvalId)
         if (d) yield* Deferred.succeed(d, outcome)
         yield* publish(a.chatId, ev("approval-resolved", { approvalId, outcome, reason: reason ?? null, by: "user" }))
@@ -318,7 +318,7 @@ export const makeRuntime = Effect.gen(function* () {
         Effect.gen(function* () {
           const chat = yield* store.chat(chatId)
           if (!chat) return yield* new ChatNotFound({ chatId })
-          // Assina antes do snapshot: nenhum evento cai no intervalo.
+          // Subscribe before the snapshot: no event falls in the gap.
           const sub = yield* PubSub.subscribe(hubOf(chatId))
           const turns = yield* store.activeTurns(chatId)
           const runningIds = turns.filter((t) => t.state === "running").map((t) => t.id)

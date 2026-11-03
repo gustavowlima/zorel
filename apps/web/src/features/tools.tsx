@@ -1,4 +1,4 @@
-// Ferramentas (servidores MCP) de um projeto ou globais, e a página de Configurações (chaves de API).
+// Tools (MCP servers) of a project or global, and the Settings page (API keys).
 import type { McpServer, ToolInfo } from "@zero/contracts"
 import { useEffect, useState, type FormEvent } from "react"
 import { call } from "../api.ts"
@@ -79,7 +79,7 @@ function ServerCard({ server: s }: { server: McpServer }) {
   )
 }
 
-// KEY=valor por linha.
+// KEY=value per line.
 const parseEnv = (text: string) =>
   Object.fromEntries(
     text
@@ -102,7 +102,7 @@ function NewServer({ projectId }: { projectId: string | null }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    const [cmd = "", ...args] = command.trim().split(/\s+/) // ponytail: sem aspas; argumento com espaço exige editar a mão
+    const [cmd = "", ...args] = command.trim().split(/\s+/) // ponytail: no quoting; an argument with spaces needs hand editing
     const payload = { projectId, name: name.trim(), command: kind === "stdio" ? cmd : "", args: kind === "stdio" ? args : [], url: kind === "http" ? url.trim() : "", env: parseEnv(env), mode }
     call((c) => c.tools.create({ payload }))
       .then(async () => {
@@ -167,7 +167,7 @@ export function SettingsView() {
   const [keys, setKeys] = useState<ReadonlyArray<{ name: string; set: boolean; fromEnv: boolean }>>([])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const load = () => call((c) => c.settings.keys()).then(setKeys)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: carrega uma vez ao abrir a página
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loads once when the page opens
   useEffect(() => void load(), [])
 
   const save = (name: string, value: string) =>

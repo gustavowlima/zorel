@@ -1,5 +1,5 @@
-// Quem faz a requisição (porta da D17). Hoje é sempre o dono local: o LocalOnly já barra quem não é.
-// No modo hospedado (fase 8), um middleware de login resolve o Actor real por requisição.
+// Who makes the request (D17 seam). Today it's always the local owner: LocalOnly already blocks anyone else.
+// In hosted mode (phase 8), a login middleware resolves the real Actor per request.
 import { Context, Layer } from "effect"
 
 export interface ActorInfo {

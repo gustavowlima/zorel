@@ -1,20 +1,20 @@
-// Monta o que um turno envia ao engine. Nada fica acumulado na sessão da CLI: a cada turno
-// o contexto é recomposto em camadas, da mais estável para a mais volátil (bom para cache de prompt):
-//   base → agente → canal → memórias do usuário → projeto (brief + memórias) → memórias do agente
-//   → skills → resumo do chat → memórias recuperadas pela mensagem atual → últimas mensagens.
-// Cada camada tem orçamento; o que não cabe fica pesquisável (FTS) e volta quando é relevante.
-// Modelo de resumo contínuo + memórias + skills propostas derivado do a reference app (Apache-2.0), ver NOTICE.
+// Builds what a turn sends to the engine. Nothing accumulates in the CLI session: every turn
+// the context is rebuilt in layers, from most stable to most volatile (good for prompt caching):
+//   base → agent → channel → user memories → project (brief + memories) → agent memories
+//   → skills → chat summary → memories retrieved by the current message → latest messages.
+// Each layer has a budget; what doesn't fit stays searchable (FTS) and comes back when relevant.
+// Rolling summary + memories + proposed skills model derived from a reference app (Apache-2.0), see NOTICE.
 import type { Agent, Chat, Memory, Message, Project } from "@zero/contracts"
 import { normalize } from "./db.ts"
 import type { Turn, TurnMessage, TurnTools } from "./engines.ts"
 
-export const WINDOW = 30 // mensagens mantidas literais depois de uma consolidação
-export const MAX_AFTER = 50 // mais que isso desde o resumo dispara uma consolidação
-export const MEMORY_BUDGET = 8_000 // caracteres de memórias fixas no prompt
-export const RETRIEVED = 5 // memórias trazidas por busca a cada turno
-export const SKILL_TITLES = 30 // skills listadas pelo título
-export const SKILL_BODIES = 2 // skills com o passo a passo inteiro, as mais relevantes para a mensagem
-export const MAX_DEPTH = 3 // respostas seguidas entre agentes sem mensagem humana no meio
+export const WINDOW = 30 // messages kept verbatim after a consolidation
+export const MAX_AFTER = 50 // more than this since the summary triggers a consolidation
+export const MEMORY_BUDGET = 8_000 // characters of pinned memories in the prompt
+export const RETRIEVED = 5 // memories retrieved by search each turn
+export const SKILL_TITLES = 30 // skills listed by title
+export const SKILL_BODIES = 2 // skills with the full step-by-step, the most relevant to the message
+export const MAX_DEPTH = 3 // consecutive agent-to-agent replies with no human message in between
 
 export const scopesOf = (chat: Pick<Chat, "projectId">, agentId: string | null): string[] => [
   "user",
@@ -25,14 +25,14 @@ export const scopesOf = (chat: Pick<Chat, "projectId">, agentId: string | null):
 // "Copywriter Sênior" → "copywriter-senior"
 export const handleOf = (a: Pick<Agent, "name">) => normalize(a.name).replace(/ /g, "-")
 
-// Agentes mencionados (@handle) na ordem em que aparecem; código entre crases não conta.
+// Mentioned agents (@handle) in order of appearance; code in backticks doesn't count.
 export function mentioned(text: string, agents: ReadonlyArray<Agent>): Agent[] {
   const plain = text.replace(/```[\s\S]*?```|`[^`]*`/g, " ")
   const handles = [...plain.matchAll(/@([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu)].map((m) => normalize(m[1]!).replace(/ /g, "-"))
   return [...new Set(handles)].flatMap((h) => agents.filter((a) => handleOf(a) === h))
 }
 
-// As mais recentemente confirmadas primeiro, até o orçamento; o resto fica para a busca.
+// Most recently confirmed first, up to the budget; the rest is left to search.
 export function pinned(active: ReadonlyArray<Memory>, budget = MEMORY_BUDGET): Memory[] {
   let used = 0
   const out: Memory[] = []
@@ -51,12 +51,12 @@ export interface TurnInput {
   readonly chat: Chat
   readonly model: string
   readonly project: Project | undefined
-  readonly agent: Agent | undefined // quem responde agora
-  readonly members: ReadonlyArray<Agent> // todos os agentes do chat
+  readonly agent: Agent | undefined // who replies now
+  readonly members: ReadonlyArray<Agent> // all agents in the chat
   readonly pinned: ReadonlyArray<Memory>
   readonly retrieved: ReadonlyArray<Memory>
   readonly skills: { readonly all: ReadonlyArray<Memory>; readonly relevant: ReadonlyArray<Memory> }
-  readonly messages: ReadonlyArray<Message> // desde o resumo, em ordem; a última é do usuário ou de outro agente
+  readonly messages: ReadonlyArray<Message> // since the summary, in order; the last is from the user or another agent
   readonly cwd: string
   readonly tools?: TurnTools | undefined
 }
@@ -73,7 +73,7 @@ export function buildTurn(i: TurnInput): Turn {
       "Para passar parte do trabalho a um deles, mencione @handle na resposta: ele responde em seguida. Mencione só quando precisar; para só citar alguém, escreva o nome sem @."
     ].join("\n")
 
-  // Estável: abre a sessão nativa (muda pouco; se mudar, a sessão reabre com o ponto de retomada).
+  // Stable: opens the native session (rarely changes; if it does, the session reopens from the resume point).
   const stable = [
     "Você é um assistente num workspace de projetos. Responda no idioma do usuário, de forma direta.",
     "Use o contexto abaixo quando ajudar; não invente fatos que não estão nele.",
@@ -88,7 +88,7 @@ export function buildTurn(i: TurnInput): Turn {
   ]
     .filter(Boolean)
     .join("\n\n")
-  // Dinâmico: depende da mensagem atual; numa sessão nativa vai junto da mensagem do turno.
+  // Dynamic: depends on the current message; in a native session it goes with the turn's message.
   const dynamic = [
     ...i.skills.relevant.map((s) => section(`Skill: ${s.title}`, s.text)),
     section("Resumo do que veio antes nesta conversa", i.chat.summary),
@@ -98,8 +98,8 @@ export function buildTurn(i: TurnInput): Turn {
     .join("\n\n")
   const system = [stable, dynamic].filter(Boolean).join("\n\n")
 
-  // Do ponto de vista de quem responde: as próprias falas são "assistant"; as de outros agentes chegam
-  // como "user" com o nome, para não parecer que ele mesmo disse.
+  // From the replier's point of view: its own lines are "assistant"; other agents' lines arrive
+  // as "user" with the name, so they don't look like its own.
   const messages: TurnMessage[] = i.messages
     .slice(-MAX_AFTER)
     .filter((m) => m.text.trim())
@@ -111,7 +111,7 @@ export function buildTurn(i: TurnInput): Turn {
   return { model: i.model, system, stable, dynamic, messages, cwd: i.cwd, tools: i.tools }
 }
 
-// ---------- consolidação (aprendizado contínuo) ----------
+// ---------- consolidation (continuous learning) ----------
 
 export const CONSOLIDATION_SYSTEM = [
   "Você mantém a memória de um chat entre uma pessoa e agentes de IA.",
@@ -155,7 +155,7 @@ export interface Consolidation {
   readonly skills: ReadonlyArray<{ scope: Scope; title: string; text: string }>
 }
 
-// Tolera texto em volta do JSON; descarta itens fora dos escopos permitidos ou longos demais.
+// Tolerates text around the JSON; drops items outside the allowed scopes or too long.
 export function parseConsolidation(text: string, allowed: ReadonlyArray<string>): Consolidation | undefined {
   const start = text.indexOf("{")
   const end = text.lastIndexOf("}")

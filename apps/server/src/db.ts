@@ -1,5 +1,5 @@
-// Banco local: SQLite via Drizzle sobre o SqliteClient do Effect (D9). Cada método devolve um Effect;
-// erro de banco é defeito (orDie): não há o que o chamador faça além de falhar o pedido.
+// Local database: SQLite via Drizzle over Effect's SqliteClient (D9). Every method returns an Effect;
+// a database error is a defect (orDie): the caller can do nothing but fail the request.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import type { Agent, Chat, McpServer, Memory, Message, Project } from "@zero/contracts"
 import type { Approval, ApprovalOutcome, FileChange, Turn, WorkStep } from "@zero/contracts/events"
@@ -10,10 +10,10 @@ import { Context, Effect, Layer } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
 import { agents, approvals, chatMembers, chats, mcpServers, memories, messages, projects, steps, turns } from "./schema.ts"
 
-// "Prefere PRs pequenos." e "prefere prs pequenos" são a mesma memória.
+// "Prefere PRs pequenos." and "prefere prs pequenos" are the same memory.
 export const normalize = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
 
-// Relógio monotônico: duas mensagens no mesmo ms ainda ficam em ordem (o resumo corta por `at`).
+// Monotonic clock: two messages in the same ms still stay ordered (the summary cuts by `at`).
 let last = 0
 const now = () => (last = Math.max(Date.now(), last + 1))
 
@@ -24,7 +24,7 @@ const toMemory = (r: typeof memories.$inferSelect): Memory => {
   const { normalized: _, owner: _o, audience: _a, ...m } = r
   return m
 }
-// Linha crua (SQL à mão, colunas snake_case) da busca FTS.
+// Raw row (hand-written SQL, snake_case columns) from the FTS search.
 const memoryRow = (r: Row): Memory => ({
   id: r.id, scope: r.scope, kind: r.kind, title: r.title, text: r.text, state: r.state, origin: r.origin, chatId: r.chat_id,
   createdAt: r.created_at, confirmedAt: r.confirmed_at
@@ -49,7 +49,7 @@ export const repository = (db: Db) => {
   const orDie = <A, E>(e: Effect.Effect<A, E>) => Effect.orDie(e)
   const first = <A>(rows: ReadonlyArray<A>) => rows[0]
 
-  // Membros em ordem: o primeiro é o líder.
+  // Members in order: the first is the leader.
   const withMembers = (rows: ReadonlyArray<typeof chats.$inferSelect>) =>
     Effect.gen(function* () {
       if (!rows.length) return [] as Chat[]
@@ -69,7 +69,7 @@ export const repository = (db: Db) => {
   const agent = (id: string) => orDie(db.select().from(agents).where(eq(agents.id, id)).pipe(Effect.map(first)))
 
   return {
-    // ---------- projetos ----------
+    // ---------- projects ----------
     projects: (): Effect.Effect<Project[]> => orDie(db.select().from(projects).orderBy(desc(projects.createdAt))),
     project,
     createProject: (input: { name: string; brief: string }) =>
@@ -90,12 +90,12 @@ export const repository = (db: Db) => {
           Effect.gen(function* () {
             const own = yield* tx.select({ id: agents.id }).from(agents).where(eq(agents.projectId, id))
             yield* tx.delete(memories).where(inArray(memories.scope, [`project:${id}`, ...own.map((a) => `agent:${a.id}`)]))
-            yield* tx.delete(projects).where(eq(projects.id, id)) // agentes, chats e servidores MCP caem em cascata
+            yield* tx.delete(projects).where(eq(projects.id, id)) // agents, chats and MCP servers cascade
           })
         )
       ),
 
-    // ---------- agentes ----------
+    // ---------- agents ----------
     agents: (): Effect.Effect<Agent[]> => orDie(db.select().from(agents).orderBy(asc(agents.createdAt))),
     agent,
     createAgent: (input: { projectId: string | null; name: string; instructions: string; model: string }) =>
@@ -120,7 +120,7 @@ export const repository = (db: Db) => {
         )
       ),
 
-    // ---------- chats e mensagens ----------
+    // ---------- chats and messages ----------
     chats: () => orDie(db.select().from(chats).orderBy(desc(chats.createdAt)).pipe(Effect.flatMap(withMembers))),
     chat,
     createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string }) =>
@@ -157,8 +157,8 @@ export const repository = (db: Db) => {
         return m
       }).pipe(orDie),
 
-    // ---------- memórias e skills ----------
-    // Todas, inclusive as esquecidas (a interface oferece restaurar): pendentes, ativas, esquecidas.
+    // ---------- memories and skills ----------
+    // All, including forgotten ones (the UI offers restore): pending, active, forgotten.
     memories: () =>
       orDie(
         db
@@ -167,7 +167,7 @@ export const repository = (db: Db) => {
           .orderBy(sql`${memories.state} = 'forgotten'`, sql`${memories.state} = 'active'`, desc(memories.confirmedAt))
           .pipe(Effect.map((r) => r.map(toMemory)))
       ),
-    // O que a pessoa mandou esquecer, para a consolidação não propor de novo (nem parafraseado).
+    // What the person asked to forget, so consolidation doesn't propose it again (not even paraphrased).
     forgottenMemories: (scopes: ReadonlyArray<string>, limit = 50) =>
       orDie(
         db
@@ -190,8 +190,8 @@ export const repository = (db: Db) => {
           .orderBy(desc(memories.confirmedAt))
           .pipe(Effect.map((r) => r.map(toMemory)))
       ),
-    // Já existente (mesmo texto normalizado no escopo): devolve undefined e não duplica, nem ressuscita uma esquecida.
-    // owner: o Actor que criou (ou o dono do chat, na consolidação). Sobre a pessoa (escopo user): só o dono ouve.
+    // Already exists (same normalized text in scope): returns undefined and doesn't duplicate or revive a forgotten one.
+    // owner: the Actor who created it (or the chat owner, in consolidation). About the person (user scope): only the owner hears.
     addMemory: (input: { scope: string; kind?: Memory["kind"]; title?: string; text: string; state: Memory["state"]; origin: Memory["origin"]; chatId: string | null; owner?: string }) =>
       Effect.gen(function* () {
         const at = now()
@@ -207,7 +207,7 @@ export const repository = (db: Db) => {
         yield* db.update(memories).set(set).where(eq(memories.id, id))
         return yield* memory(id)
       }).pipe(orDie),
-    // BM25 (FTS5) entre as ativas dos escopos, fora das já no prompt. Skills também casam pelo título.
+    // BM25 (FTS5) among active ones in the scopes, excluding those already in the prompt. Skills also match by title.
     searchMemories: (scopes: ReadonlyArray<string>, query: string, exclude: ReadonlyArray<string>, limit: number, kind: Memory["kind"] = "fact") => {
       const terms = normalize(query).split(" ").filter((t) => t.length > 2).map((t) => `"${t}"*`)
       if (!terms.length) return Effect.succeed([] as Memory[])
@@ -223,10 +223,10 @@ export const repository = (db: Db) => {
       )
     },
 
-    // ---------- servidores MCP ----------
+    // ---------- MCP servers ----------
     mcpServers: () => orDie(db.select().from(mcpServers).orderBy(asc(mcpServers.createdAt)).pipe(Effect.map((r) => r.map(toMcpServer)))),
     mcpServer,
-    // Os habilitados que um chat enxerga: globais + os do projeto dele.
+    // The enabled ones a chat sees: global + its project's.
     mcpServersFor: (projectId: string | null) =>
       orDie(
         db
@@ -250,7 +250,7 @@ export const repository = (db: Db) => {
       }).pipe(orDie),
     removeMcpServer: (id: string) => orDie(db.delete(mcpServers).where(eq(mcpServers.id, id)).pipe(Effect.asVoid)),
 
-    // ---------- turnos (fila por chat) ----------
+    // ---------- turns (per-chat queue) ----------
     turnRow: (id: string) => orDie(db.select().from(turns).where(eq(turns.id, id)).pipe(Effect.map(first))),
     turnByClientId: (clientId: string) => orDie(db.select().from(turns).where(eq(turns.clientId, clientId)).pipe(Effect.map(first))),
     enqueueTurn: (input: { chatId: string; agentId: string | null; model: string; clientId: string | null; depth: number }) =>
@@ -275,7 +275,7 @@ export const repository = (db: Db) => {
       ),
     toTurn: (r: TurnRow) => toTurn(r),
 
-    // ---------- passos ----------
+    // ---------- steps ----------
     addStep: (input: Omit<WorkStep, "id" | "startedAt" | "durationMs" | "changes" | "output"> & { changes?: ReadonlyArray<FileChange> }) =>
       Effect.gen(function* () {
         const step: WorkStep = { id: crypto.randomUUID(), startedAt: now(), durationMs: null, output: "", ...input, changes: input.changes ?? [] }
@@ -291,14 +291,14 @@ export const repository = (db: Db) => {
     stepsOf: (turnIds: ReadonlyArray<string>) =>
       orDie(db.select().from(steps).where(inArray(steps.turnId, [...turnIds])).orderBy(asc(steps.startedAt)).pipe(Effect.map((r) => r.map(toStep)))),
 
-    // ---------- aprovações ----------
+    // ---------- approvals ----------
     addApproval: (input: Omit<Approval, "id" | "createdAt">) =>
       Effect.gen(function* () {
         const a: Approval = { id: crypto.randomUUID(), createdAt: now(), ...input }
         yield* db.insert(approvals).values(a)
         return a
       }).pipe(orDie),
-    // Só fecha uma aberta: devolve undefined se já foi decidida ou não existe.
+    // Only closes an open one: returns undefined if already decided or missing.
     resolveApproval: (id: string, outcome: ApprovalOutcome, reason: string | null, by: "user" | "rule" | "expiry") =>
       orDie(
         db
@@ -322,7 +322,7 @@ export const repository = (db: Db) => {
 
 export type Repository = ReturnType<typeof repository>
 
-// Abre o banco: adota/backup (sync), liga as chaves estrangeiras e aplica as migrations pendentes.
+// Opens the database: adopt/backup (sync), enables foreign keys and applies pending migrations.
 export const openDb = Effect.gen(function* () {
   const db = yield* makeDb
   yield* db.run(sql`PRAGMA foreign_keys = ON`)
@@ -334,7 +334,7 @@ export class Store extends Context.Service<Store, Repository>()("Store") {
   static layer = (path: string) =>
     Layer.effect(Store, Effect.map(Effect.orDie(openDb), repository)).pipe(
       Layer.provide(Layer.orDie(Layer.suspend(() => {
-        prepare(path) // banco do MVP: backup e adoção antes de o SqliteClient abrir o arquivo
+        prepare(path) // MVP database: backup and adoption before SqliteClient opens the file
         return SqliteClient.layer({ filename: path })
       })))
     )
