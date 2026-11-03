@@ -3,7 +3,7 @@ import type { Agent, Project } from "@zero/contracts"
 import { useEffect, useState, type FormEvent } from "react"
 import { call } from "../api.ts"
 import { DEFAULT_MODEL, go, useApp } from "../state.ts"
-import { Badge, Button, Card, Field, Input, Page, Select, SidebarItem, Textarea } from "../ui.tsx"
+import { Badge, Button, Card, Field, Input, Page, Select, SidebarItem, Textarea } from "@/ui"
 import { ModelPicker } from "./model-picker.tsx"
 import { ToolsSection } from "./tools.tsx"
 
@@ -33,7 +33,7 @@ export function NewProjectView() {
         <Field label="Brief" hint="Contexto estável que todo agente e chat do projeto recebe: objetivo, stack, decisões, tom.">
           <Textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={8} maxLength={8000} />
         </Field>
-        <Button type="submit" variant="default" size="lg" disabled={busy || !name.trim()} className="self-start">
+        <Button type="submit" variant="default" size="lg" isDisabled={busy || !name.trim()} className="self-start">
           Criar projeto
         </Button>
       </form>
@@ -77,7 +77,7 @@ export function ProjectView({ project }: { project: Project }) {
   }
 
   return (
-    <Page title={project.name} actions={<Button variant="ghost" onClick={remove}>Apagar projeto</Button>}>
+    <Page title={project.name} actions={<Button variant="ghost" onPress={remove}>Apagar projeto</Button>}>
       <form onSubmit={save} className="flex flex-col gap-3">
         <Field label="Nome">
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
@@ -86,7 +86,7 @@ export function ProjectView({ project }: { project: Project }) {
           <Textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={6} maxLength={8000} />
         </Field>
         {dirty && (
-          <Button type="submit" variant="default" className="self-start" disabled={!name.trim()}>
+          <Button type="submit" variant="default" className="self-start" isDisabled={!name.trim()}>
             Salvar
           </Button>
         )}
@@ -105,7 +105,7 @@ export function ProjectView({ project }: { project: Project }) {
                 </option>
               ))}
             </Select>
-            <Button variant="default" onClick={newChat}>
+            <Button variant="default" onPress={newChat}>
               Novo chat
             </Button>
           </div>
@@ -173,12 +173,12 @@ export function AgentCard({ agent, projectId = null }: { agent?: Agent; projectI
           <div className="truncate text-sm text-muted">{agent.instructions.split("\n")[0] || "Sem instruções"}</div>
         </div>
         <Badge>{agent.model}</Badge>
-        <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
+        <Button variant="ghost" size="sm" onPress={() => setOpen(true)}>
           Editar
         </Button>
       </Card>
     ) : (
-      <Button className="self-start" onClick={() => setOpen(true)}>
+      <Button className="self-start" onPress={() => setOpen(true)}>
         + Novo agente
       </Button>
     )
@@ -196,14 +196,14 @@ export function AgentCard({ agent, projectId = null }: { agent?: Agent; projectI
           <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={5} maxLength={8000} />
         </Field>
         <div className="flex gap-2">
-          <Button type="submit" variant="default" disabled={!name.trim()}>
+          <Button type="submit" variant="default" isDisabled={!name.trim()}>
             {agent ? "Salvar" : "Criar agente"}
           </Button>
-          <Button variant="ghost" onClick={() => setOpen(false)}>
+          <Button variant="ghost" onPress={() => setOpen(false)}>
             Cancelar
           </Button>
           {agent && (
-            <Button variant="destructive" className="ml-auto" onClick={remove}>
+            <Button variant="destructive" className="ml-auto" onPress={remove}>
               Apagar
             </Button>
           )}

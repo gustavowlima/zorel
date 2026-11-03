@@ -3,7 +3,7 @@ import type { Memory } from "@zero/contracts"
 import { useState, type FormEvent } from "react"
 import { call } from "../api.ts"
 import { scopeLabel, useApp } from "../state.ts"
-import { Badge, Button, Card, Input, Page, Select, Textarea } from "../ui.tsx"
+import { Badge, Button, Card, Input, Page, Select, Textarea } from "@/ui"
 
 export function MemoriesView() {
   const { data, reload } = useApp()
@@ -87,7 +87,7 @@ function MemoryRow({ memory: m, label, onChange }: { memory: Memory; label?: str
         >
           {skill && <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} aria-label="Título" />}
           {skill ? <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} maxLength={4000} autoFocus /> : <Input value={text} onChange={(e) => setText(e.target.value)} maxLength={500} autoFocus />}
-          <Button type="submit" size="sm" className="self-start" disabled={!text.trim() || (skill && !title.trim())}>
+          <Button type="submit" size="sm" className="self-start" isDisabled={!text.trim() || (skill && !title.trim())}>
             Salvar
           </Button>
         </form>
@@ -107,22 +107,22 @@ function MemoryRow({ memory: m, label, onChange }: { memory: Memory; label?: str
         </div>
       )}
       {m.state === "pending" && (
-        <Button size="sm" variant="default" onClick={() => patch({ state: "active" })}>
+        <Button size="sm" variant="default" onPress={() => patch({ state: "active" })}>
           Aprovar
         </Button>
       )}
       {m.state === "forgotten" ? (
-        <Button size="sm" variant="ghost" onClick={() => patch({ state: "active" })}>
+        <Button size="sm" variant="ghost" onPress={() => patch({ state: "active" })}>
           Restaurar
         </Button>
       ) : (
         <>
           {!editing && (
-            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+            <Button size="sm" variant="ghost" onPress={() => setEditing(true)}>
               Editar
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={() => patch({ state: "forgotten" })}>
+          <Button size="sm" variant="ghost" onPress={() => patch({ state: "forgotten" })}>
             {m.state === "pending" ? "Descartar" : "Esquecer"}
           </Button>
         </>
@@ -167,7 +167,7 @@ function NewMemory({ onCreated }: { onCreated: () => void }) {
         ) : (
           <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Escrever uma memória…" maxLength={500} />
         )}
-        <Button type="submit" disabled={!text.trim() || (skill && !title.trim())}>
+        <Button type="submit" isDisabled={!text.trim() || (skill && !title.trim())}>
           Adicionar
         </Button>
       </div>

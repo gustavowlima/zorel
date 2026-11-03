@@ -6,7 +6,7 @@ import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { call, sendMessage } from "../api.ts"
 import { go, useApp } from "../state.ts"
-import { Badge, Button, Card, cx, Select, Textarea } from "../ui.tsx"
+import { Badge, Button, Card, cx, Select, Textarea } from "@/ui"
 import { ModelPicker } from "./model-picker.tsx"
 
 type Live = { agentId: string | null; model: string; text: string; steps: Step[] }
@@ -118,10 +118,13 @@ export function ChatView({ chat }: { chat: Chat }) {
           <ModelPicker className="w-60" value={chat.model} onChange={(model) => update({ model })} />
         </label>
         <div className="flex gap-1 pt-5">
-          <Button variant="ghost" onClick={compact} disabled={compacting || busy} title="Resume a conversa até aqui e propõe memórias e skills">
-            {compacting ? "Compactando…" : "Compactar"}
-          </Button>
-          <Button variant="ghost" onClick={remove} aria-label="Apagar chat">
+          {/* HACK: title num span até existir a primitiva Tooltip (RAC não aceita title no Button). */}
+          <span title="Resume a conversa até aqui e propõe memórias e skills">
+            <Button variant="ghost" onPress={compact} isDisabled={compacting || busy}>
+              {compacting ? "Compactando…" : "Compactar"}
+            </Button>
+          </span>
+          <Button variant="ghost" onPress={remove} aria-label="Apagar chat">
             Apagar
           </Button>
         </div>
@@ -174,10 +177,10 @@ export function ChatView({ chat }: { chat: Chat }) {
               </div>
               <pre className="max-h-48 overflow-auto rounded-control bg-control p-2 text-xs">{a.args}</pre>
               <div className="flex gap-2">
-                <Button variant="default" size="sm" onClick={() => decide(a, true)}>
+                <Button variant="default" size="sm" onPress={() => decide(a, true)}>
                   Aprovar
                 </Button>
-                <Button variant="destructive" size="sm" onClick={() => decide(a, false)}>
+                <Button variant="destructive" size="sm" onPress={() => decide(a, false)}>
                   Recusar
                 </Button>
               </div>
@@ -204,11 +207,11 @@ export function ChatView({ chat }: { chat: Chat }) {
           autoFocus
         />
         {busy ? (
-          <Button size="lg" onClick={() => abort.current?.abort()}>
+          <Button size="lg" onPress={() => abort.current?.abort()}>
             Parar
           </Button>
         ) : (
-          <Button type="submit" variant="default" size="lg" disabled={!text.trim()}>
+          <Button type="submit" variant="default" size="lg" isDisabled={!text.trim()}>
             Enviar
           </Button>
         )}

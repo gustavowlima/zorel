@@ -3,7 +3,7 @@ import type { McpServer, ToolInfo } from "@zero/contracts"
 import { useEffect, useState, type FormEvent } from "react"
 import { call } from "../api.ts"
 import { useApp } from "../state.ts"
-import { Badge, Button, Card, Field, Input, Page, Select, Textarea } from "../ui.tsx"
+import { Badge, Button, Card, Field, Input, Page, Select, Textarea } from "@/ui"
 
 const MODES: Record<McpServer["mode"], string> = {
   read: "Só leitura",
@@ -55,13 +55,13 @@ function ServerCard({ server: s }: { server: McpServer }) {
             </option>
           ))}
         </Select>
-        <Button size="sm" variant="ghost" onClick={() => patch({ enabled: !s.enabled })}>
+        <Button size="sm" variant="ghost" onPress={() => patch({ enabled: !s.enabled })}>
           {s.enabled ? "Desligar" : "Ligar"}
         </Button>
-        <Button size="sm" variant="ghost" onClick={inspect}>
+        <Button size="sm" variant="ghost" onPress={inspect}>
           Testar
         </Button>
-        <Button size="sm" variant="ghost" onClick={remove}>
+        <Button size="sm" variant="ghost" onPress={remove}>
           Remover
         </Button>
       </div>
@@ -119,7 +119,7 @@ function NewServer({ projectId }: { projectId: string | null }) {
 
   if (!open)
     return (
-      <Button className="self-start" onClick={() => setOpen(true)}>
+      <Button className="self-start" onPress={() => setOpen(true)}>
         + Servidor MCP
       </Button>
     )
@@ -160,10 +160,10 @@ function NewServer({ projectId }: { projectId: string | null }) {
         </Field>
         {error && <div className="text-sm text-danger">{error}</div>}
         <div className="flex gap-2">
-          <Button type="submit" variant="default" disabled={!name.trim()}>
+          <Button type="submit" variant="default" isDisabled={!name.trim()}>
             Adicionar
           </Button>
-          <Button variant="ghost" onClick={() => setOpen(false)}>
+          <Button variant="ghost" onPress={() => setOpen(false)}>
             Cancelar
           </Button>
         </div>
@@ -199,11 +199,11 @@ export function SettingsView() {
             ) : (
               <>
                 <Input type="password" autoComplete="off" placeholder={k.set ? "•••••••• (salva)" : "cole a chave"} value={drafts[k.name] ?? ""} onChange={(e) => setDrafts((d) => ({ ...d, [k.name]: e.target.value }))} />
-                <Button size="sm" variant="default" disabled={!drafts[k.name]?.trim()} onClick={() => save(k.name, drafts[k.name]!.trim())}>
+                <Button size="sm" variant="default" isDisabled={!drafts[k.name]?.trim()} onPress={() => save(k.name, drafts[k.name]!.trim())}>
                   Salvar
                 </Button>
                 {k.set && (
-                  <Button size="sm" variant="ghost" onClick={() => save(k.name, "")}>
+                  <Button size="sm" variant="ghost" onPress={() => save(k.name, "")}>
                     Apagar
                   </Button>
                 )}

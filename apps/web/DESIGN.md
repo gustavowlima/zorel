@@ -24,6 +24,7 @@ colors:
   warning: "#ff9412"
   danger: "#fd2f3b"
   danger-soft: "rgba(253, 47, 59, 0.16)"
+  on-accent: "#ffffff"
 typography:
   title:
     fontFamily: "Inter Variable, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
@@ -69,7 +70,7 @@ spacing:
 components:
   button-default:
     backgroundColor: "{colors.signal-blue}"
-    textColor: "{colors.text}"
+    textColor: "{colors.on-accent}"
     typography: "{typography.body-medium}"
     rounded: "{rounded.control}"
     height: "{spacing.control}"
@@ -105,7 +106,7 @@ components:
     padding: "0 12px"
   button-destructive-hover:
     backgroundColor: "{colors.danger}"
-    textColor: "{colors.text}"
+    textColor: "{colors.on-accent}"
   input:
     backgroundColor: "{colors.control}"
     textColor: "{colors.text}"
@@ -179,6 +180,7 @@ Cinzas neutros quase pretos em camadas, um azul de sinal e três cores de estado
 
 ### Estados
 - **success**, **warning**, **danger** (com danger-soft): só para estado real (ok, atenção, erro ou ação destrutiva). Nunca decoração.
+- **Sobre o acento** (on-accent): texto branco sobre azul ou vermelho cheio; igual nos dois temas.
 
 ### Named Rules
 **A Regra da Voz Única.** O azul de sinal é o único acento. Se ele aparece em algo que não é ação, foco, seleção ou link, está errado.
@@ -230,7 +232,7 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Secondary (padrão):** fundo de controle, com degraus em hover e ao pressionar.
 - **Ghost:** só texto muted; ganha fundo de controle e texto cheio no hover.
 - **Destructive:** fundo vermelho translúcido com texto vermelho; vira vermelho cheio no hover.
-- **Estados:** foco visível com anel de 2px azul; desabilitado com 50% de opacidade e sem clique; `scale(0.97)` ao pressionar em 120ms; hover só com ponteiro fino.
+- **Estados:** foco visível com anel de 2px azul; desabilitado com 50% de opacidade e sem clique; `scale(0.97)` ao pressionar em 120ms; hover só com ponteiro (o React Aria não dispara hover no toque).
 
 ### Chips / Badges
 - **Style:** pílula de 20px, rótulo de 11px em peso 500.

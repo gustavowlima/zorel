@@ -2,6 +2,11 @@
    bordas quase invisíveis, um único acento azul). Valores próprios; cores só vêm destes tokens. */
 @import "@fontsource-variable/inter";
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* `dark:` vale no tema escuro, que é o padrão (não há classe .dark). */
+@custom-variant dark (&:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *));
 
 :root {
   --z-bg-frame: #0d0d0d;
@@ -26,7 +31,28 @@
   --z-warning: #ff9412;
   --z-danger: #fd2f3b;
   --z-danger-soft: rgba(253, 47, 59, 0.16);
+  --z-on-accent: #ffffff;
   color-scheme: dark;
+
+  /* Tokens semânticos do shadcn, mapeados uma vez para --z-* (o tema claro só troca --z-*).
+     secondary, muted e accent NÃO são mapeados: esses nomes já são nossos (texto secundário,
+     texto apagado, azul). Ao adotar um componente do shadcn, troque bg-muted/bg-accent/bg-secondary
+     por bg-control-hover/bg-control. */
+  --background: var(--z-bg-canvas);
+  --foreground: var(--z-text);
+  --card: var(--z-bg-surface);
+  --card-foreground: var(--z-text);
+  --popover: var(--z-bg-raised);
+  --popover-foreground: var(--z-text);
+  --primary: var(--z-accent);
+  --primary-foreground: var(--z-on-accent);
+  --secondary-foreground: var(--z-text);
+  --muted-foreground: var(--z-text-muted);
+  --accent-foreground: var(--z-text);
+  --destructive: var(--z-danger);
+  --border: var(--z-border);
+  --input: var(--z-border-strong);
+  --ring: var(--z-accent);
 }
 
 :root[data-theme="light"] {
@@ -73,6 +99,22 @@
   --color-warning: var(--z-warning);
   --color-danger: var(--z-danger);
   --color-danger-soft: var(--z-danger-soft);
+  --color-on-accent: var(--z-on-accent);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
   --spacing-control-xs: 24px;
   --spacing-control-sm: 28px;
   --spacing-control: 32px;
@@ -80,6 +122,12 @@
   --radius-control: 8px;
   --radius-card: 12px;
   --radius-sheet: 16px;
+  /* Escala de raio do shadcn presa à nossa: lg = controle, xl = card, 2xl = folha. */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
   --text-xs: 11px;
   --text-sm: 12px;
   --text-base: 13px;
@@ -87,6 +135,7 @@
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+* { border-color: var(--z-border); }
 html, body, #root { height: 100%; }
 body {
   margin: 0;

@@ -1,26 +1,11 @@
-// Primitivas do design system. Features importam daqui; não estilizam controles na mão.
+// Primitivas do design system. Features importam daqui (@/ui); não estilizam controles na mão.
+import { cn as cx } from "@/lib/utils"
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react"
 
-export const cx = (...c: Array<string | false | null | undefined>) => c.filter(Boolean).join(" ")
+export { cn as cx } from "@/lib/utils"
+export { Button, type ButtonProps } from "./button"
 
-const variants = {
-  default: "bg-accent text-white hover:bg-accent-hover",
-  secondary: "bg-control text-fg hover:bg-control-hover active:bg-control-active",
-  ghost: "text-muted hover:bg-control-hover hover:text-fg",
-  destructive: "bg-danger-soft text-danger hover:bg-danger hover:text-white"
-}
-const sizes = { sm: "h-control-sm px-2.5 text-sm", md: "h-control px-3 text-base", lg: "h-control-lg px-4 text-base" }
 const focus = "outline-none focus-visible:ring-2 focus-visible:ring-accent"
-
-export function Button({ variant = "secondary", size = "md", className, type = "button", ...p }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: keyof typeof variants; size?: keyof typeof sizes }) {
-  return (
-    <button
-      type={type}
-      {...p}
-      className={cx("pressable inline-flex shrink-0 items-center justify-center gap-1.5 rounded-control font-medium disabled:pointer-events-none disabled:opacity-50", focus, variants[variant], sizes[size], className)}
-    />
-  )
-}
 
 const field = "w-full rounded-control border border-subtle bg-control px-3 text-base text-fg placeholder:text-dim outline-none focus:border-strong focus-visible:ring-2 focus-visible:ring-accent-soft disabled:opacity-50"
 

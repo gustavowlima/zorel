@@ -2,7 +2,7 @@
 // Confirma no Enter ou ao sair do campo; inválido volta ao valor anterior.
 import { useEffect, useId, useState } from "react"
 import { useApp } from "../state.ts"
-import { cx, Input } from "../ui.tsx"
+import { cx, Input } from "@/ui"
 
 const VALID = /^[a-z-]+\/\S+$/
 
