@@ -1,9 +1,9 @@
-// Sidebar: the brand (the title bar in the desktop app); the pages, fixed (Needs you, Knowledge, Settings); a
-// named switch between the Chats and Projects lists with a + that creates in the open one; the list; and at the
-// foot the subscriptions' limits. Every row shares one 20px icon column (x20-40) and starts its text at x50; chat
-// rows add their 32px avatar as a second, deliberate column. The list fades out at the bottom while more is
-// below, and only then does the foot draw its hairline. Chats lists every chat, whose turn it is first, then the
-// latest activity. Projects is the tree; projects reorder by drag and drop, chats only inside their own project.
+// Sidebar: the brand (the title bar in the desktop app); the pages, fixed (Needs you, Knowledge, Settings); then,
+// scrolling, the Chats section (chats without a project) and the Projects section (the tree), each with an icon,
+// a fold and a +; and at the foot the subscriptions' limits. Every row shares one 20px icon column (x20-40) and
+// starts its text at x50. The list fades out at the bottom while more is below, and only then does the foot draw
+// its hairline. Chats sort by whose turn it is, then manual order and recency; projects reorder by drag and drop,
+// chats only inside their own group.
 import { type AccountWindow, type Agent, type Chat, LIMIT_ALERT, type Project, type ProviderAccount } from "@zero/contracts"
 import type { ChatStatus } from "@zero/contracts/events"
 import { formatAge, formatPercent, formatTime, t } from "@zero/i18n"
@@ -13,13 +13,12 @@ import { agentTone, chatTitle, splitModel, statusLabel, type Pace, paceOf, windo
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, BookOpen, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MessageCircle, ModelAvatar, NavItem, NavSegment, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, BurnDown, type BurnTone, Settings, Spinner, Tooltip, useNavReorder
+  AgentAvatar, BookOpen, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MessageCircle, ModelAvatar, NavItem, NavLabel, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, BurnDown, type BurnTone, Settings, Spinner, Tooltip, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
 const EXPANDED_KEY = "zero.sidebar.expanded"
-const TAB_KEY = "zero.sidebar.tab" // holds "projects" when that tab was the last one open
-type Tab = "chats" | "projects"
+const COLLAPSED_KEY = "zero.sidebar.collapsed" // sections closed by hand: "chats", "projects"
 type Statuses = Readonly<Record<string, ChatStatus>>
 
 // Tree keys carry their kind: a project, a chat, or a group's "show more" row.
@@ -52,11 +51,13 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
     onExpandedChange(new Set(expandedKeys.has(key) ? [...expandedKeys].filter((k) => k !== key) : [...expandedKeys, key]))
   }
 
-  // Chats or Projects; the last one open is remembered on this computer.
-  const [tab, setTab] = useState<Tab>(() => (readSet(TAB_KEY).has("projects") ? "projects" : "chats"))
-  const pick = (next: Tab) => {
-    setTab(next)
-    writeSet(TAB_KEY, new Set([next]))
+  // Sections open unless closed by hand; the choice is remembered on this computer.
+  const [collapsed, setCollapsed] = useState(() => readSet(COLLAPSED_KEY))
+  const flip = (section: string) => {
+    const next = new Set(collapsed)
+    if (!next.delete(section)) next.add(section)
+    setCollapsed(next)
+    writeSet(COLLAPSED_KEY, next)
   }
   // More of the list below the fold: the list fades out and the foot draws its hairline (DESIGN.md).
   const listRef = useRef<HTMLDivElement>(null)
@@ -69,8 +70,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
 
   const activeChat = route.view === "chat" ? route.id : undefined
   const groupOf = (projectId: string | null) => byTurn(ordered(chats.filter((c) => c.projectId === projectId), statuses), statuses)
-  // The Chats tab: every chat, whose turn it is first, then the latest activity.
-  const recent = byTurn([...chats].sort((a, b) => lastActivity(b, statuses) - lastActivity(a, statuses)), statuses)
+  const loose = groupOf(null) // the chats without a project
 
   const reorderProjects = useMutation(mutations.reorderProjects)
   const reorderChats = useMutation(mutations.reorderChats)
@@ -82,6 +82,12 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
       group === "projects"
         ? reorderProjects({ payload: { ids: keys.map(idOf) }, reactivityKeys: ["projects"] })
         : reorderChats({ payload: { projectId: group, ids: keys.map(idOf) }, reactivityKeys: ["chats"] })
+  })
+
+  const looseDnd = useNavReorder({
+    groupOf: (key) => (key.startsWith("c:") ? "loose" : undefined),
+    orderOf: () => loose.map((c) => chatKey(c.id)),
+    save: (_, keys) => reorderChats({ payload: { projectId: null, ids: keys.map(idOf) }, reactivityKeys: ["chats"] })
   })
 
   const chatItems = (group: string, list: ReadonlyArray<Chat>) => {
@@ -120,51 +126,50 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
         </NavItem>
       </div>
 
-      {/* Which list shows below: Chats or Projects, both named; the + creates in the open one. */}
-      <div className="mb-2 flex shrink-0 items-center gap-1.5 pr-2.5 pl-1.5">
-        <NavSegment
-          label={t("nav.lists")}
-          value={tab}
-          onChange={pick}
-          options={[
-            { id: "chats", label: t("nav.chats"), icon: <MessageCircle /> },
-            { id: "projects", label: t("nav.projects"), icon: <Folder /> }
-          ]}
-        />
-        {tab === "projects" ? (
-          <NewProjectButton />
-        ) : (
-          <Tooltip content={t("nav.newChat")}>
-            <IconButton label={t("nav.newChat")} size="sm" onPress={() => go({ view: "home" })}>
-              <Plus className="size-3.5" />
-            </IconButton>
-          </Tooltip>
-        )}
-      </div>
+      {/* Chats (without a project) first, then Projects; each section folds, and the list scrolls under the pages. */}
+      <div ref={listRef} onScroll={measure} className={cx("scroll-quiet flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain pr-2.5 pb-2", more && "fade-bottom")}>
+        <section className="flex flex-col gap-px">
+          <NavLabel
+            icon={<MessageCircle />}
+            expanded={!collapsed.has("chats")}
+            onToggle={() => flip("chats")}
+            action={
+              <Tooltip content={t("nav.newChat")}>
+                <IconButton label={t("nav.newChat")} size="sm" onPress={() => go({ view: "home" })}>
+                  <Plus className="size-3.5" />
+                </IconButton>
+              </Tooltip>
+            }
+          >
+            {t("nav.chats")}
+          </NavLabel>
+          {!collapsed.has("chats") &&
+            (loose.length ? (
+              <NavTree label={t("nav.chats")} dragAndDropHooks={looseDnd}>
+                {chatItems("loose", loose)}
+              </NavTree>
+            ) : (
+              <p className="py-1 pl-12.5 text-sm text-muted">{t("nav.noChats")}</p>
+            ))}
+        </section>
 
-      <div ref={listRef} onScroll={measure} className={cx("scroll-quiet flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pr-2.5 pb-2", more && "fade-bottom")}>
-        {tab === "chats" ? (
-          recent.length ? (
-            <NavTree key="chats" label={t("nav.chats")}>
-              {recent.map((c) => (
-                <ChatItem key={c.id} chat={c} status={statuses[c.id]} active={c.id === activeChat} agents={agents} />
-              ))}
+        <section className="flex flex-col gap-px">
+          <NavLabel icon={<Folder />} expanded={!collapsed.has("projects")} onToggle={() => flip("projects")} action={<NewProjectButton />}>
+            {t("nav.projects")}
+          </NavLabel>
+          {!collapsed.has("projects") && (
+            <NavTree label={t("nav.projects")} expandedKeys={expandedKeys} onExpandedChange={onExpandedChange} dragAndDropHooks={projectDnd}>
+              {projects.map((p) => {
+                const list = groupOf(p.id)
+                return (
+                  <ProjectItem key={p.id} project={p} active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)} chats={list} statuses={statuses} onToggle={() => toggle(p.id)}>
+                    {chatItems(p.id, list)}
+                  </ProjectItem>
+                )
+              })}
             </NavTree>
-          ) : (
-            <p className="px-2.5 py-2 text-sm text-muted">{t("nav.noChats")}</p>
-          )
-        ) : (
-          <NavTree key="projects" label={t("nav.projects")} expandedKeys={expandedKeys} onExpandedChange={onExpandedChange} dragAndDropHooks={projectDnd}>
-            {projects.map((p) => {
-              const list = groupOf(p.id)
-              return (
-                <ProjectItem key={p.id} project={p} active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)} chats={list} statuses={statuses} onToggle={() => toggle(p.id)}>
-                  {chatItems(p.id, list)}
-                </ProjectItem>
-              )
-            })}
-          </NavTree>
-        )}
+          )}
+        </section>
       </div>
 
       {/* The subscriptions' pace at the foot; it opens Usage. */}

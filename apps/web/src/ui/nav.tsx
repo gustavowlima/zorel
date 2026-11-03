@@ -12,8 +12,6 @@ import {
   DropIndicator,
   type DropTarget,
   type Key,
-  ToggleButton,
-  ToggleButtonGroup,
   Tree,
   TreeItem,
   TreeItemContent,
@@ -28,35 +26,6 @@ const state = (active: boolean | undefined) => (active ? "border-subtle bg-canva
 // The open chat: a raised chip on the frame, apart from the card.
 const chip = "border-transparent bg-surface text-fg shadow-chip"
 const glyphBox = "flex size-5 shrink-0 items-center justify-center text-muted [&_svg]:size-4"
-
-// A two-way switch with both names always visible (Chats | Projects): React Aria's toggle group, so it is one Tab
-// stop, the arrow keys move between the options and the selected one is announced.
-export function NavSegment<K extends string>({ label, options, value, onChange }: { label: string; options: ReadonlyArray<{ id: K; label: string; icon: ReactNode }>; value: K; onChange: (id: K) => void }) {
-  return (
-    <ToggleButtonGroup
-      aria-label={label}
-      selectionMode="single"
-      disallowEmptySelection
-      selectedKeys={[value]}
-      onSelectionChange={(keys) => {
-        const next = [...keys][0]
-        if (next !== undefined) onChange(String(next) as K)
-      }}
-      className="flex min-w-0 flex-1 items-center gap-1"
-    >
-      {options.map((o) => (
-        <ToggleButton
-          key={o.id}
-          id={o.id}
-          className="flex h-control-sm min-w-0 cursor-default items-center gap-1.5 rounded-full border border-transparent px-3 text-sm text-muted outline-none transition-colors duration-150 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:text-fg data-selected:border-subtle data-selected:bg-surface data-selected:text-fg motion-reduce:transition-none [&_svg]:size-3.5 [&_svg]:shrink-0"
-        >
-          {o.icon}
-          <span className="truncate">{o.label}</span>
-        </ToggleButton>
-      ))}
-    </ToggleButtonGroup>
-  )
-}
 
 export function NavItem({
   active,
@@ -97,9 +66,10 @@ export function NavItem({
 
 // Section title in sentence case with an optional action (e.g. "+" next to Projects). With `onToggle`, the
 // title is a button that collapses and expands the section; its arrow points down while open.
-export function NavLabel({ children, action, expanded, onToggle }: { children: ReactNode; action?: ReactNode; expanded?: boolean; onToggle?: () => void }) {
+export function NavLabel({ children, icon, action, expanded, onToggle }: { children: ReactNode; icon?: ReactNode; action?: ReactNode; expanded?: boolean; onToggle?: () => void }) {
   return (
-    <div className="flex h-6.5 shrink-0 items-center pr-0.5 pl-2.5 text-sm font-medium text-muted">
+    <div className="flex h-7 shrink-0 items-center gap-2.5 pr-0.5 pl-2.5 text-sm font-medium text-muted">
+      {icon && <span className={cn(glyphBox, "[&_svg]:size-3.5")}>{icon}</span>}
       {onToggle ? (
         <span className="flex min-w-0 flex-1">
           <Button

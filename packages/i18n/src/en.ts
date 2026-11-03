@@ -34,7 +34,6 @@ export const en = {
   },
   nav: {
     label: "Workspace",
-    lists: "Show",
     newChat: "New chat",
     needsYou: "Needs you",
     knowledge: "Knowledge",
