@@ -19,6 +19,9 @@ updated: 2026-11-02
 - secrets.ts: Bun.secrets (service dev.zero.app); env tem precedência; variáveis MCP em "mcp:<id>" como JSON
 - testes: main.test.ts (E2E: canal, MCP real via gateway com aprovação, skills, chaves), engines.test.ts (parsers, args, contexto, menções, política, API com tool loop contra mock), db.test.ts (FTS, migração 2→3)
 
+- contrato de turnos em packages/contracts/src/events.ts (import "@zero/contracts/events", não reexportado no index para evitar import circular): Turn, WorkStep, Approval, ChatStatus, ChatEvent (TaggedUnion por _tag), ZeroRpc (send, steer, interrupt, decide, subscribeChat, subscribeStatus)
+- WorkStep é a fonte da pílula de atividade: kind read/edit/run/search/tool/delegate, título curto, arquivos, duração, mudanças por arquivo; status waiting = aprovação pendente
+
 ## avoid
 
 - Zod ou segundo lib de schema: só Effect Schema

@@ -23,6 +23,10 @@ updated: 2026-11-03
 - regras nomeadas: Voz Única (só um acento azul), Token, Quatro Tamanhos (11/12/13/15px), Escala (24/28/32/36), Plano (sem sombras, profundidade por tom)
 - mudou token em styles.css → atualizar DESIGN.md e o sidecar juntos
 
+- protótipo das telas (canvas): https://claude.ai/artifact/ERkKURix2bnKAqzi97emmw — moldura + cartão raio 16, barra lateral em árvore (pasta, linha de árvore sem fundo, status em 2ª linha com ícone girando/relógio), General = chats sem projeto, pílula de atividade expansível, aprovação pendente/recibo, seletor de modelo com trilho de contas e logos (@lobehub/icons-static-svg 1.102.0, MIT), painel direito Changes/Files (@pierre/diffs), painel de baixo Terminal/Tests/Problems/Processes/Logs, configurações com conectores/MCP/skills
+- decisões em aberto (fase UI): tema claro neutro ou quente; paleta de identidade dos agentes como exceção ao acento único; text-dim #6a6a6a reprova contraste; seção Agents da barra lateral = projeto aberto ou todos
+- DESIGN.md ainda descreve o MVP; atualizar na fase UI
+
 ## avoid
 
 - bg-muted / bg-accent / bg-secondary do shadcn: esses nomes são nossos (texto apagado, azul, texto secundário). Ao adotar componente, trocar por bg-control/bg-control-hover
