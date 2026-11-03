@@ -19,6 +19,7 @@ import {
 } from "react-aria-components"
 import { cn } from "@/lib/utils"
 import { ChevronRight, GripVertical } from "./icons"
+import { Tooltip } from "./tooltip"
 
 const row =
   "flex w-full min-w-0 shrink-0 cursor-default items-center gap-2.5 rounded-control border text-left text-base outline-none transition-colors duration-120 ease-out motion-reduce:transition-none"
@@ -26,6 +27,29 @@ const state = (active: boolean | undefined) => (active ? "border-subtle bg-canva
 // The open chat: a raised chip on the frame, apart from the card.
 const chip = "border-transparent bg-surface text-fg shadow-chip"
 const glyphBox = "flex size-5 shrink-0 items-center justify-center text-muted [&_svg]:size-4"
+
+// An icon tab: just the icon (its name in a tooltip) until selected; then the name slides out beside the icon in
+// the light text and pushes the tabs after it (styles.css: .nav-tab-label).
+export function NavTab({ label, icon, active, onPress }: { label: string; icon: ReactNode; active: boolean; onPress: () => void }) {
+  return (
+    <Tooltip content={label} disabled={active}>
+      <Button
+        onPress={onPress}
+        data-active={active || undefined}
+        {...(active && { "aria-current": "page" as const })}
+        className={cn(
+          "nav-tab inline-flex h-control-sm shrink-0 cursor-default items-center rounded-control px-2 text-sm outline-none transition-colors duration-200 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none [&_svg]:size-4 [&_svg]:shrink-0",
+          active ? "bg-hover font-medium text-fg" : "text-muted data-hovered:text-fg"
+        )}
+      >
+        {icon}
+        <span className="nav-tab-label">
+          <span>{label}</span>
+        </span>
+      </Button>
+    </Tooltip>
+  )
+}
 
 export function NavItem({
   active,

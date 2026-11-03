@@ -2,9 +2,9 @@
 import type { ReactNode } from "react"
 import { Tooltip as TooltipPrimitive, TooltipTrigger } from "react-aria-components"
 
-export function Tooltip({ content, children }: { content: ReactNode; children: ReactNode }) {
+export function Tooltip({ content, children, disabled }: { content: ReactNode; children: ReactNode; disabled?: boolean }) {
   return (
-    <TooltipTrigger delay={500}>
+    <TooltipTrigger delay={500} isDisabled={disabled ?? false}>
       {children}
       <TooltipPrimitive
         offset={6}
