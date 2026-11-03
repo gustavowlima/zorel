@@ -1,0 +1,117 @@
+/* Design system: inspirado no a reference app (dark por padrão, escala compacta 24/28/32/36px,
+   bordas quase invisíveis, um único acento azul). Valores próprios; cores só vêm destes tokens. */
+@import "@fontsource-variable/inter";
+@import "tailwindcss";
+
+:root {
+  --z-bg-frame: #0d0d0d;
+  --z-bg-canvas: #1a1a1a;
+  --z-bg-sidebar: #141414;
+  --z-bg-surface: #212121;
+  --z-bg-raised: #262626;
+  --z-bg-control: #212121;
+  --z-bg-control-hover: #262626;
+  --z-bg-control-active: #2c2c2c;
+  --z-border: rgba(255, 255, 255, 0.05);
+  --z-border-strong: rgba(255, 255, 255, 0.09);
+  --z-text: #ffffff;
+  --z-text-secondary: #dcdcdc;
+  --z-text-muted: #979797;
+  --z-text-dim: #6a6a6a;
+  --z-accent: #007cf7;
+  --z-accent-hover: #1f8fff;
+  --z-accent-text: #42a0ff;
+  --z-accent-soft: rgba(0, 124, 247, 0.16);
+  --z-success: #31cf76;
+  --z-warning: #ff9412;
+  --z-danger: #fd2f3b;
+  --z-danger-soft: rgba(253, 47, 59, 0.16);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --z-bg-frame: #e9e9e9;
+  --z-bg-canvas: #ffffff;
+  --z-bg-sidebar: #f4f4f4;
+  --z-bg-surface: #f4f4f4;
+  --z-bg-raised: #ffffff;
+  --z-bg-control: #ededed;
+  --z-bg-control-hover: #e4e4e4;
+  --z-bg-control-active: #dadada;
+  --z-border: rgba(20, 20, 20, 0.08);
+  --z-border-strong: rgba(20, 20, 20, 0.14);
+  --z-text: #141414;
+  --z-text-secondary: #2b2b2b;
+  --z-text-muted: rgba(20, 20, 20, 0.56);
+  --z-text-dim: rgba(20, 20, 20, 0.38);
+  --z-accent-text: #0066cc;
+  color-scheme: light;
+}
+
+/* Expõe os tokens como utilitários Tailwind: bg-surface, text-muted, border-subtle, h-control... */
+@theme inline {
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --color-frame: var(--z-bg-frame);
+  --color-canvas: var(--z-bg-canvas);
+  --color-sidebar: var(--z-bg-sidebar);
+  --color-surface: var(--z-bg-surface);
+  --color-raised: var(--z-bg-raised);
+  --color-control: var(--z-bg-control);
+  --color-control-hover: var(--z-bg-control-hover);
+  --color-control-active: var(--z-bg-control-active);
+  --color-subtle: var(--z-border);
+  --color-strong: var(--z-border-strong);
+  --color-fg: var(--z-text);
+  --color-secondary: var(--z-text-secondary);
+  --color-muted: var(--z-text-muted);
+  --color-dim: var(--z-text-dim);
+  --color-accent: var(--z-accent);
+  --color-accent-hover: var(--z-accent-hover);
+  --color-accent-text: var(--z-accent-text);
+  --color-accent-soft: var(--z-accent-soft);
+  --color-success: var(--z-success);
+  --color-warning: var(--z-warning);
+  --color-danger: var(--z-danger);
+  --color-danger-soft: var(--z-danger-soft);
+  --spacing-control-xs: 24px;
+  --spacing-control-sm: 28px;
+  --spacing-control: 32px;
+  --spacing-control-lg: 36px;
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-sheet: 16px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-lg: 15px;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--z-bg-frame);
+  color: var(--z-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Feedback de toque igual ao a reference app: escala 0.97, < 300ms, hover só com ponteiro fino. */
+.pressable { transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out); }
+.pressable:active { transform: scale(0.97); }
+@media not ((hover: hover) and (pointer: fine)) { .pressable:hover { background-color: inherit; } }
+@media (prefers-reduced-motion: reduce) { .pressable { transition: none; } .pressable:active { transform: none; } }
+
+/* Markdown das respostas. */
+.prose-chat > * + * { margin-top: 0.6em; }
+.prose-chat ul { list-style: disc; padding-left: 1.4em; }
+.prose-chat ol { list-style: decimal; padding-left: 1.4em; }
+.prose-chat a { color: var(--z-accent-text); text-decoration: underline; }
+.prose-chat h1, .prose-chat h2, .prose-chat h3 { font-weight: 600; font-size: 15px; }
+.prose-chat code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--z-bg-control); border-radius: 4px; padding: 1px 4px; }
+.prose-chat pre { background: var(--z-bg-surface); border: 1px solid var(--z-border); border-radius: 12px; padding: 12px; overflow-x: auto; }
+.prose-chat pre code { background: none; padding: 0; }
+.prose-chat table { border-collapse: collapse; }
+.prose-chat th, .prose-chat td { border: 1px solid var(--z-border-strong); padding: 4px 8px; }
+.prose-chat blockquote { border-left: 2px solid var(--z-border-strong); padding-left: 10px; color: var(--z-text-muted); }
