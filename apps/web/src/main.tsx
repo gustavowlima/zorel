@@ -13,6 +13,13 @@ applyTheme()
 // window buttons.
 if (new URLSearchParams(location.search).get("shell") === "desktop") document.documentElement.dataset.shell = "desktop"
 
+// No browser right-click menu over the app: Zero's own menus open where it has one (ContextMenu). Text fields and
+// the terminal keep the native one, for copy and paste.
+document.addEventListener("contextmenu", (e) => {
+  const el = e.target instanceof Element ? e.target : null
+  if (!el?.closest("input, textarea, [contenteditable='true'], .xterm")) e.preventDefault()
+})
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RegistryProvider>
