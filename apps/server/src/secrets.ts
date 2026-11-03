@@ -19,7 +19,7 @@ export class Secrets extends Context.Service<Secrets, SecretStore>()("Secrets") 
     Secrets,
     Effect.gen(function* () {
       const store = yield* Store
-      const names = [...API_KEYS, ...store.mcpServers().map((s) => mcpEnvName(s.id))]
+      const names = [...API_KEYS, ...(yield* store.mcpServers()).map((s) => mcpEnvName(s.id))]
       return yield* Effect.promise(async () => {
         const cache = new Map<string, string>()
         await Promise.all(

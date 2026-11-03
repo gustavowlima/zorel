@@ -77,8 +77,10 @@ As assinaturas sempre rodam a **CLI oficial** que você já tem logada. O Zero n
 
 ```
 packages/contracts   API e entidades (Effect Schema): fonte única de tipos do server e do web
-apps/server          Bun + Effect HttpApi + bun:sqlite
-  db.ts              migrations, repositório, índice FTS5 de memórias e skills
+apps/server          Bun + Effect HttpApi + Drizzle sobre SQLite (@effect/sql-sqlite-bun)
+  schema.ts          tabelas (Drizzle); `bun run --cwd apps/server db:generate` gera a migration em drizzle/
+  migrate.ts         adoção do banco do MVP e backup em ~/.zero/backups antes de migrar
+  db.ts              repositório (Effect), índice FTS5 de memórias e skills
   engines.ts         engines de CLI (Claude Code, Codex) e de API (effect/ai, com loop de ferramentas)
   context.ts         montagem do turno em camadas, menções, prompt e parser da consolidação
   chat.ts            turno com streaming, canal (encadeamento), ferramentas com aprovação, consolidação

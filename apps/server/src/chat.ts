@@ -37,7 +37,8 @@ export function decide(id: string, approve: boolean): boolean {
   return !!resolve
 }
 
-const members = (store: Repository, chat: Chat) => chat.agentIds.flatMap((id) => store.agent(id) ?? [])
+const members = (store: Repository, chat: Chat) =>
+  Effect.forEach(chat.agentIds, store.agent).pipe(Effect.map((xs) => xs.filter((a): a is Agent => !!a)))
 
 // ---------- ferramentas do turno ----------
 
@@ -58,7 +59,7 @@ async function openTools(store: Repository, hub: Hub, gateway: Gateway, chat: Ch
   const pendingHere = new Set<string>()
   const routes = new Map<string, { server: string; tool: string; approve: boolean }>()
   const defs: ToolDef[] = []
-  for (const s of store.mcpServersFor(chat.projectId)) {
+  for (const s of await Effect.runPromise(store.mcpServersFor(chat.projectId))) {
     const listed = await hub.tools(s).catch((e: unknown) => {
       record({ tool: s.name, args: "", status: "error", result: `Não conectou: ${e instanceof Error ? e.message : e}` })
       return []
@@ -74,7 +75,7 @@ async function openTools(store: Repository, hub: Hub, gateway: Gateway, chat: Ch
 
   const call: Session["call"] = async (name, args) => {
     const route = routes.get(name)
-    const server = route && store.mcpServer(route.server)
+    const server = route && (await Effect.runPromise(store.mcpServer(route.server)))
     if (!route || !server) return textResult(`Ferramenta não permitida: ${name}`, true)
     const shown = JSON.stringify(args).slice(0, 300)
     if (route.approve) {
@@ -109,25 +110,26 @@ async function openTools(store: Repository, hub: Hub, gateway: Gateway, chat: Ch
 
 // ---------- contexto ----------
 
-function prepare(store: Repository, chat: Chat, agent: Agent | undefined, model: string, dataDir: string, tools: TurnTools | undefined) {
-  const scopes = scopesOf(chat, agent?.id ?? null)
-  const fixed = pinned(store.activeMemories(scopes))
-  const messages = store.messagesAfter(chat.id, chat.summaryUntil)
-  const last = messages.at(-1)?.text ?? ""
-  return buildTurn({
-    chat,
-    model,
-    project: chat.projectId ? store.project(chat.projectId) : undefined,
-    agent,
-    members: members(store, chat),
-    pinned: fixed,
-    retrieved: store.searchMemories(scopes, last, fixed.map((m) => m.id), RETRIEVED),
-    skills: { all: store.activeMemories(scopes, "skill"), relevant: store.searchMemories(scopes, last, [], SKILL_BODIES, "skill") },
-    messages,
-    cwd: join(dataDir, "runs", chat.id),
-    tools
+const prepare = (store: Repository, chat: Chat, agent: Agent | undefined, model: string, dataDir: string, tools: TurnTools | undefined) =>
+  Effect.gen(function* () {
+    const scopes = scopesOf(chat, agent?.id ?? null)
+    const fixed = pinned(yield* store.activeMemories(scopes))
+    const messages = yield* store.messagesAfter(chat.id, chat.summaryUntil)
+    const last = messages.at(-1)?.text ?? ""
+    return buildTurn({
+      chat,
+      model,
+      project: chat.projectId ? yield* store.project(chat.projectId) : undefined,
+      agent,
+      members: yield* members(store, chat),
+      pinned: fixed,
+      retrieved: yield* store.searchMemories(scopes, last, fixed.map((m) => m.id), RETRIEVED),
+      skills: { all: yield* store.activeMemories(scopes, "skill"), relevant: yield* store.searchMemories(scopes, last, [], SKILL_BODIES, "skill") },
+      messages,
+      cwd: join(dataDir, "runs", chat.id),
+      tools
+    })
   })
-}
 
 // ---------- consolidação (aprendizado contínuo) ----------
 
@@ -142,10 +144,10 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, f
   const store = yield* Store
   const engines = yield* Engines
   const dataDir = yield* DataDir
-  const chat = store.chat(chatId)
+  const chat = yield* store.chat(chatId)
   if (!chat) return yield* new NotFound()
   if (consolidating.has(chatId)) return yield* new Busy()
-  const after = store.messagesAfter(chat.id, chat.summaryUntil).filter((m) => m.text.trim())
+  const after = (yield* store.messagesAfter(chat.id, chat.summaryUntil)).filter((m) => m.text.trim())
   const chunk = force ? after : after.length > MAX_AFTER ? after.slice(0, after.length - WINDOW) : []
   if (!chunk.length) return chat
 
@@ -153,7 +155,10 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, f
   return yield* Effect.gen(function* () {
     const lead = chat.agentIds[0] ?? null
     const scopes = scopesOf(chat, lead)
-    const agents = members(store, chat)
+    const agents = yield* members(store, chat)
+    const existing = yield* store.activeMemories(scopes)
+    const skills = yield* store.activeMemories(scopes, "skill")
+    const forgotten = yield* store.forgottenMemories(scopes)
     const result = yield* collect(
       engines.run({
         model: process.env.ZERO_MEMORY_MODEL || chat.model,
@@ -161,7 +166,7 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, f
         messages: [{
           role: "user",
           text: consolidationPrompt({
-            summary: chat.summary, chunk, existing: store.activeMemories(scopes), skills: store.activeMemories(scopes, "skill"), forgotten: store.forgottenMemories(scopes),
+            summary: chat.summary, chunk, existing, skills, forgotten,
             hasProject: !!chat.projectId, hasAgent: !!lead, names: (id) => agents.find((a) => a.id === id)?.name ?? "assistente"
           })
         }],
@@ -175,16 +180,16 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, f
       return chat
     }
     const scopeOf = { user: "user", project: `project:${chat.projectId}`, agent: `agent:${lead}` }
-    store.setSummary(chat.id, parsed.summary, chunk.at(-1)!.at)
+    yield* store.setSummary(chat.id, parsed.summary, chunk.at(-1)!.at)
     // Teto de pendentes: a revisão humana é o gargalo; acima dele, propostas novas são descartadas.
     const proposals = [
       ...parsed.memories.map((m) => ({ scope: scopeOf[m.scope], kind: "fact" as const, title: "", text: m.text })),
       ...parsed.skills.map((s) => ({ scope: scopeOf[s.scope], kind: "skill" as const, title: s.title, text: s.text }))
     ]
-    const room = Math.max(0, MAX_PENDING - store.pendingCount(scopes))
+    const room = Math.max(0, MAX_PENDING - (yield* store.pendingCount(scopes)))
     if (proposals.length > room) yield* Effect.logInfo("propostas acima do teto de pendentes; excedentes descartadas", { room, proposed: proposals.length })
-    for (const p of proposals.slice(0, room)) store.addMemory({ ...p, state: "pending", origin: "auto", chatId: chat.id })
-    return store.chat(chat.id)!
+    for (const p of proposals.slice(0, room)) yield* store.addMemory({ ...p, state: "pending", origin: "auto", chatId: chat.id })
+    return (yield* store.chat(chat.id))!
   }).pipe(Effect.ensuring(Effect.sync(() => consolidating.delete(chatId))))
 })
 
@@ -196,39 +201,44 @@ export const send = Effect.fn("send")(function* (chatId: string, input: SendInpu
   const dataDir = yield* DataDir
   const { hub, gateway } = yield* Tools
   const services = yield* Effect.context<Store | Engines | DataDir>()
-  let chat = store.chat(chatId)
+  let chat = yield* store.chat(chatId)
   if (!chat) return yield* new NotFound()
   if (turning.has(chatId)) return yield* new Busy()
-
-  if (input.model && input.model !== chat.model) chat = store.updateChat(chatId, { model: input.model })!
-  if (chat.title === "Novo chat") chat = store.updateChat(chatId, { title: input.text.replace(/\s+/g, " ").slice(0, 60) })!
-  const user = store.addMessage({ chatId, role: "user", agentId: null, text: input.text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 })
-  const current = chat
-  const team = members(store, current)
-  const lead = team[0]
-  // Daqui até o return é síncrono: ninguém entra entre o has() acima e o add(). Libera no fim do stream.
+  // ponytail: trava em memória antes do primeiro yield de escrita; o runtime de turnos (fila no banco) substitui.
   turning.add(chatId)
+
+  if (input.model && input.model !== chat.model) chat = (yield* store.updateChat(chatId, { model: input.model }))!
+  if (chat.title === "Novo chat") chat = (yield* store.updateChat(chatId, { title: input.text.replace(/\s+/g, " ").slice(0, 60) }))!
+  const user = yield* store.addMessage({ chatId, role: "user", agentId: null, text: input.text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 })
+  const current = chat
+  const team = yield* members(store, current)
+  const lead = team[0]
 
   // Uma resposta de um agente (ou do assistente sem agente). `onText` recebe o texto final, para o encadeamento.
   // O líder usa o modelo do chat (o que o usuário escolheu); os outros membros usam o modelo deles.
   const reply = (agent: Agent | undefined, onText: (text: string) => void) =>
     Stream.callback<SendEvent>((q) => {
       const emit = (e: SendEvent) => void Queue.offerUnsafe(q, e)
-      const model = agent && agent.id !== lead?.id ? agent.model : store.chat(chatId)!.model
+      let model = agent?.model ?? current.model
       const acc = { text: "", error: undefined as string | undefined, usage: { inputTokens: 0, outputTokens: 0 }, steps: [] as Step[], saved: false }
-      const save = () => {
-        if (acc.saved) return
+      const save = Effect.suspend(() => {
+        if (acc.saved) return Effect.void
         acc.saved = true
-        const message = store.addMessage({ chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model, error: acc.error ?? null, steps: acc.steps, ...acc.usage })
-        onText(acc.text)
-        emit({ type: "done", message })
-      }
+        return store.addMessage({ chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model, error: acc.error ?? null, steps: acc.steps, ...acc.usage }).pipe(
+          Effect.map((message) => {
+            onText(acc.text)
+            emit({ type: "done", message })
+            return message
+          })
+        )
+      })
       return Effect.gen(function* () {
+        if (!agent || agent.id === lead?.id) model = (yield* store.chat(chatId))!.model
         emit({ type: "start", agentId: agent?.id ?? null, model })
         const opened = yield* Effect.promise(() => openTools(store, hub, gateway, current, emit))
         acc.steps = opened.steps
         yield* Effect.addFinalizer(() => Effect.sync(opened.close))
-        const turn = prepare(store, store.chat(chatId)!, agent, model, dataDir, opened.tools)
+        const turn = yield* prepare(store, (yield* store.chat(chatId))!, agent, model, dataDir, opened.tools)
         yield* engines.run(turn).pipe(
           Stream.runForEach((ev) =>
             Effect.sync(() => {
@@ -241,17 +251,15 @@ export const send = Effect.fn("send")(function* (chatId: string, input: SendInpu
             })
           )
         )
-        save()
+        yield* save
         yield* Queue.end(q)
       }).pipe(
         // Cliente desconectou ou algo quebrou no meio: guarda o que já veio.
-        Effect.onExit((exit) =>
-          Effect.sync(() => {
-            if (exit._tag !== "Failure") return
-            acc.error ??= "interrompido"
-            save()
-          })
-        )
+        Effect.onExit((exit) => {
+          if (exit._tag !== "Failure") return Effect.void
+          acc.error ??= "interrompido"
+          return save
+        })
       )
     })
 

@@ -9,3 +9,4 @@
 2026-11-03 | memórias+skills → páginas de conhecimento aprendido; RAG por upload e libSQL saem; driver volta a sqlite-bun | pedido: leve, simples, eficiente; base de conhecimento = aprendizado (ai-memory)
 2026-11-03 | base headless do shadcn: React Aria (--base aria), não Radix nem Base UI | decisão do usuário; a11y e i18n embutidos
 2026-11-03 | contrato de eventos dos turnos (events.ts) e subscribeStatus | engine primeiro; protótipo vira especificação dos eventos
+2026-11-03 | banco migrado para Drizzle (effect-sqlite-bun), repositório em Effect, adoção do banco do MVP com backup | D9, fase 1

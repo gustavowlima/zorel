@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prebuild": "bun run --cwd ../web build && rm -rf web && cp -R ../web/dist web",
+    "prebuild": "bun run --cwd ../web build && rm -rf web drizzle && cp -R ../web/dist web && cp -R ../server/drizzle drizzle",
     "icons": "sh scripts/icons.sh",
     "build": "electrobun build --env=stable",
     "start": "bun run prebuild && electrobun dev"
