@@ -263,3 +263,25 @@ test("effort: the chat's level reaches the session on every turn", () =>
     yield* c.done
     expect(sessionLog.efforts.at(-1)).toBe("high")
   })))
+
+test("switching Claude → Codex → Claude: the Claude session survives and gets only what is new on return", () =>
+  runWith(":memory:", Sessions, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/haiku" })
+    const turnOnce = (text: string, model: string) =>
+      Effect.gen(function* () {
+        const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+        yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text, model })
+        yield* c.done
+      })
+    const before = sessionLog.opened.length
+    yield* turnOnce("um", "claude-cli/haiku")
+    yield* turnOnce("dois", "codex-cli/default")
+    yield* turnOnce("tres", "claude-cli/haiku")
+    expect(sessionLog.opened.length - before).toBe(2) // Claude once, Codex once
+    const back = sessionLog.prompts.at(-1)!
+    expect(back).not.toContain("um") // Claude already has it
+    expect(back).toContain("dois") // what happened on Codex
+    expect(back).toContain("tres")
+  })))

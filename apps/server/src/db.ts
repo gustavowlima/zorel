@@ -1,14 +1,14 @@
 // Local database: SQLite via Drizzle over Effect's SqliteClient (D9). Every method returns an Effect;
 // a database error is a defect (orDie): the caller can do nothing but fail the request.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import type { Agent, Chat, Effort, McpServer, Memory, Message, Project } from "@zero/contracts"
+import type { Agent, Attachment, Chat, Effort, McpServer, Memory, Message, Project } from "@zero/contracts"
 import type { Approval, ApprovalOutcome, FileChange, Turn, WorkStep } from "@zero/contracts/events"
 import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
 import { Context, Effect, Layer } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
-import { agents, approvals, chatMembers, chats, mcpServers, memories, messages, projects, providerAccounts, steps, turns } from "./schema.ts"
+import { agents, approvals, attachments, chatMembers, chats, mcpServers, memories, messages, projects, providerAccounts, steps, turns } from "./schema.ts"
 
 // "Prefere PRs pequenos." and "prefere prs pequenos" are the same memory.
 export const normalize = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
@@ -18,7 +18,8 @@ let last = 0
 const now = () => (last = Math.max(Date.now(), last + 1))
 
 type Row = Record<string, any>
-const toMessage = (r: typeof messages.$inferSelect): Message => ({ ...r, steps: JSON.parse(r.steps) })
+const toMessage = (r: typeof messages.$inferSelect, files: ReadonlyArray<Attachment> = []): Message => ({ ...r, steps: JSON.parse(r.steps), attachments: files })
+export type AttachmentRow = typeof attachments.$inferSelect
 const toMcpServer = (r: typeof mcpServers.$inferSelect): McpServer => ({ ...r, args: JSON.parse(r.args), envKeys: JSON.parse(r.envKeys) })
 const toMemory = (r: typeof memories.$inferSelect): Memory => {
   const { normalized: _, owner: _o, audience: _a, ...m } = r
@@ -64,6 +65,15 @@ export const repository = (db: Db) => {
       const unique = [...new Set(agentIds)]
       if (unique.length) yield* tx.insert(chatMembers).values(unique.map((agentId, position) => ({ chatId, agentId, position })))
     })
+  // Messages with their attachments (one extra query per page of messages).
+  const withFiles = <E>(q: Effect.Effect<ReadonlyArray<typeof messages.$inferSelect>, E>) =>
+    orDie(
+      Effect.gen(function* () {
+        const rows = yield* q
+        const files = rows.length ? yield* db.select().from(attachments).where(inArray(attachments.messageId, rows.map((r) => r.id))).orderBy(asc(attachments.createdAt)) : []
+        return rows.map((r) => toMessage(r, files.filter((f) => f.messageId === r.id).map(({ id, name, mime, size }) => ({ id, name, mime, size }))))
+      })
+    )
   const memory = (id: string) => orDie(db.select().from(memories).where(eq(memories.id, id)).pipe(Effect.map((r) => (r[0] ? toMemory(r[0]) : undefined))))
   const mcpServer = (id: string) => orDie(db.select().from(mcpServers).where(eq(mcpServers.id, id)).pipe(Effect.map((r) => (r[0] ? toMcpServer(r[0]) : undefined))))
   const project = (id: string) => orDie(db.select().from(projects).where(eq(projects.id, id)).pipe(Effect.map(first)))
@@ -148,15 +158,36 @@ export const repository = (db: Db) => {
       }).pipe(orDie),
     setSummary: (id: string, summary: string, until: number) => orDie(db.update(chats).set({ summary, summaryUntil: until }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
     removeChat: (id: string) => orDie(db.delete(chats).where(eq(chats.id, id)).pipe(Effect.asVoid)),
-    messages: (chatId: string) => orDie(db.select().from(messages).where(eq(messages.chatId, chatId)).orderBy(asc(messages.at)).pipe(Effect.map((r) => r.map(toMessage)))),
+    messages: (chatId: string) => withFiles(db.select().from(messages).where(eq(messages.chatId, chatId)).orderBy(asc(messages.at))),
     messagesAfter: (chatId: string, at: number) =>
-      orDie(db.select().from(messages).where(and(eq(messages.chatId, chatId), gt(messages.at, at))).orderBy(asc(messages.at)).pipe(Effect.map((r) => r.map(toMessage)))),
-    addMessage: (input: Omit<Message, "id" | "at">) =>
+      withFiles(db.select().from(messages).where(and(eq(messages.chatId, chatId), gt(messages.at, at))).orderBy(asc(messages.at))),
+    // attachmentIds: files uploaded to this chat beforehand; linked to the message here.
+    addMessage: (input: Omit<Message, "id" | "at" | "attachments"> & { attachmentIds?: ReadonlyArray<string> | undefined }) =>
       Effect.gen(function* () {
-        const m: Message = { id: crypto.randomUUID(), ...input, at: now() }
-        yield* db.insert(messages).values({ ...m, steps: JSON.stringify(m.steps) })
-        return m
+        const { attachmentIds = [], ...rest } = input
+        const base = { id: crypto.randomUUID(), ...rest, at: now() }
+        yield* db.insert(messages).values({ ...base, steps: JSON.stringify(base.steps) })
+        let files: Attachment[] = []
+        if (attachmentIds.length) {
+          const linked = yield* db
+            .update(attachments)
+            .set({ messageId: base.id })
+            .where(and(inArray(attachments.id, [...attachmentIds]), eq(attachments.chatId, base.chatId), isNull(attachments.messageId)))
+            .returning()
+          files = linked.map(({ id, name, mime, size }) => ({ id, name, mime, size }))
+        }
+        return { ...base, attachments: files } satisfies Message
       }).pipe(orDie),
+
+    // ---------- attachments ----------
+    addAttachment: (input: Omit<AttachmentRow, "id" | "messageId" | "createdAt"> & { id: string }) =>
+      Effect.gen(function* () {
+        yield* db.insert(attachments).values({ ...input, messageId: null, createdAt: now() })
+        return { id: input.id, name: input.name, mime: input.mime, size: input.size } satisfies Attachment
+      }).pipe(orDie),
+    attachment: (id: string) => orDie(db.select().from(attachments).where(eq(attachments.id, id)).pipe(Effect.map(first))),
+    attachmentsOf: (messageIds: ReadonlyArray<string>) =>
+      orDie(db.select().from(attachments).where(inArray(attachments.messageId, [...messageIds])).orderBy(asc(attachments.createdAt))),
 
     // ---------- memories and skills ----------
     // All, including forgotten ones (the UI offers restore): pending, active, forgotten.

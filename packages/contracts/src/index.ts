@@ -76,6 +76,13 @@ export const Step = Schema.Struct({
 })
 export type Step = typeof Step.Type
 
+// A file sent with a message (ARCHITECTURE §12). Images go to the engine as images; other files as text
+// (small text files) or by name until the workspace phase gives agents file tools.
+export const Attachment = Schema.Struct({ id: Id, name: Schema.String, mime: Schema.String, size: Schema.Number })
+export type Attachment = typeof Attachment.Type
+export const MAX_ATTACHMENTS = 10
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
 export const Message = Schema.Struct({
   id: Id,
   chatId: Id,
@@ -85,6 +92,7 @@ export const Message = Schema.Struct({
   model: Schema.NullOr(Schema.String),
   error: Schema.NullOr(Schema.String),
   steps: Schema.Array(Step), // tools used in the turn
+  attachments: Schema.Array(Attachment),
   inputTokens: Schema.Number,
   outputTokens: Schema.Number,
   at: Schema.Number

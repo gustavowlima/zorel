@@ -176,3 +176,19 @@ export const approvals = sqliteTable(
   },
   (t) => [index("approvals_open").on(t.outcome, t.chatId)]
 )
+
+// Files sent with messages (ARCHITECTURE §12). Uploaded first (message_id null), linked when sent.
+export const attachments = sqliteTable(
+  "attachments",
+  {
+    id: text().primaryKey(),
+    chatId: text("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+    messageId: text("message_id"),
+    name: text().notNull(),
+    mime: text().notNull(),
+    size: integer().notNull(),
+    path: text().notNull(), // under <dataDir>/attachments/<chat>
+    createdAt: integer("created_at").notNull()
+  },
+  (t) => [index("attachments_by_message").on(t.messageId)]
+)

@@ -220,7 +220,13 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
         const model = modelOf(input.model)
         const effort = effortOf(input.effort)
         const started = yield* Effect.tryPromise({
-          try: () => rpc.request("turn/start", { threadId, input: [{ type: "text", text: input.prompt, text_elements: [] }], ...(model && { model }), ...(effort && { effort }) }),
+          try: () =>
+            rpc.request("turn/start", {
+              threadId,
+              input: [{ type: "text", text: input.prompt, text_elements: [] }, ...(input.images ?? []).map((f) => ({ type: "localImage", path: f.path }))],
+              ...(model && { model }),
+              ...(effort && { effort })
+            }),
           catch: (e) => (e instanceof Error ? e.message : String(e))
         }).pipe(
           Effect.catch((message) =>

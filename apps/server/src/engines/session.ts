@@ -3,13 +3,14 @@
 // seen yet (watermark), and closes it when the stable context, the provider or the account changes.
 import type { Effect, Stream } from "effect"
 import type { Effort } from "@zero/contracts"
-import type { EngineEvent, TurnTools } from "#server/engines.ts"
+import type { EngineEvent, TurnFile, TurnTools } from "#server/engines.ts"
 
 export interface SessionTurnInput {
   readonly model: string // may differ from the open model: the session switches live
   readonly prompt: string // what this turn adds: dynamic context + messages after the watermark
   readonly tools?: TurnTools | undefined
   readonly effort?: Effort | null | undefined // null: the model's default; applied live when it changes
+  readonly images?: ReadonlyArray<TurnFile> | undefined // images attached to the new messages
 }
 
 export interface EngineSession {

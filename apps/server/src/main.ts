@@ -1,11 +1,11 @@
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, type ToolInfo } from "@zero/contracts"
+import { Api, MAX_ATTACHMENT_BYTES, type ToolInfo } from "@zero/contracts"
 import { ZeroRpc } from "@zero/contracts/events"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
 import { HttpApiBuilder, HttpApiError } from "effect/http-api"
-import { existsSync, mkdirSync } from "node:fs"
+import { existsSync, mkdirSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, normalize, resolve } from "node:path"
 import { consolidate, DataDir } from "./chat.ts"
@@ -60,6 +60,7 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
 const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
+    const dataDir = yield* DataDir
     const services = yield* Effect.context<Store | Engines | DataDir>()
     return h
       .handle("list", () => store.chats())
@@ -76,7 +77,9 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           return yield* found(store.updateChat(params.id, payload))
         })
       )
-      .handle("remove", ({ params }) => store.removeChat(params.id))
+      .handle("remove", ({ params }) =>
+        store.removeChat(params.id).pipe(Effect.tap(() => Effect.sync(() => rmSync(join(dataDir, "attachments", params.id), { recursive: true, force: true }))))
+      )
       .handle("messages", ({ params }) => store.messages(params.id))
       .handle("consolidate", ({ params }) =>
         consolidate(params.id, true).pipe(
@@ -183,7 +186,7 @@ const RpcHandlers = ZeroRpc.toLayer(
     const runtime = yield* Runtime
     return {
       send: (p) => runtime.send(p),
-      steer: (p) => runtime.steer(p.chatId, p.text),
+      steer: (p) => runtime.steer(p.chatId, p.text, p.attachmentIds),
       interrupt: (p) => runtime.interrupt(p.chatId),
       decide: (p) => runtime.decide(p.approvalId, p.outcome, p.reason),
       subscribeChat: (p) => runtime.subscribeChat(p.chatId),
@@ -194,6 +197,43 @@ const RpcHandlers = ZeroRpc.toLayer(
 const RpcRoute = RpcServer.layerHttp({ group: ZeroRpc, path: "/rpc", protocol: "websocket" }).pipe(Layer.provide([RpcHandlers, RpcSerialization.layerJson]))
 
 // Web build (apps/web/dist), when present: a single process serves the API and the UI.
+// Attachments (ARCHITECTURE §12): raw body upload, outside HttpApi like the RPC route. The file goes to
+// <dataDir>/attachments/<chat>/<id>; the name travels in x-file-name (URI-encoded).
+const AttachmentUpload = HttpRouter.add(
+  "POST",
+  "/api/chats/:id/attachments",
+  Effect.gen(function* () {
+    const { id: chatId } = yield* HttpRouter.schemaPathParams(Schema.Struct({ id: Schema.String }))
+    const req = yield* HttpServerRequest.HttpServerRequest
+    const store = yield* Store
+    const dataDir = yield* DataDir
+    if (!(yield* store.chat(chatId))) return HttpServerResponse.jsonUnsafe({ error: "chat_not_found" }, { status: 404 })
+    const declared = Number(req.headers["content-length"] ?? 0)
+    if (declared > MAX_ATTACHMENT_BYTES) return HttpServerResponse.jsonUnsafe({ error: "too_large" }, { status: 413 })
+    const body = new Uint8Array(yield* req.arrayBuffer)
+    if (!body.length || body.length > MAX_ATTACHMENT_BYTES) return HttpServerResponse.jsonUnsafe({ error: body.length ? "too_large" : "empty" }, { status: body.length ? 413 : 400 })
+    const name = decodeURIComponent(req.headers["x-file-name"] ?? "arquivo").replace(/[/\\]/g, "_").slice(0, 200) || "arquivo"
+    const mime = (req.headers["content-type"] ?? "application/octet-stream").split(";")[0]!.trim().slice(0, 100)
+    const id = crypto.randomUUID()
+    const dir = join(dataDir, "attachments", chatId)
+    mkdirSync(dir, { recursive: true })
+    yield* Effect.promise(() => Bun.write(join(dir, id), body))
+    return HttpServerResponse.jsonUnsafe(yield* store.addAttachment({ id, chatId, name, mime, size: body.length, path: join(dir, id) }))
+  }).pipe(Effect.catchTag("SchemaError", () => Effect.succeed(HttpServerResponse.jsonUnsafe({ error: "bad_request" }, { status: 400 }))), Effect.orDie)
+)
+const AttachmentFile = HttpRouter.add(
+  "GET",
+  "/api/attachments/:id",
+  Effect.gen(function* () {
+    const { id } = yield* HttpRouter.schemaPathParams(Schema.Struct({ id: Schema.String }))
+    const a = yield* (yield* Store).attachment(id)
+    if (!a || !existsSync(a.path)) return HttpServerResponse.empty({ status: 404 })
+    return yield* HttpServerResponse.file(a.path).pipe(
+      Effect.map(HttpServerResponse.setHeaders({ "content-type": a.mime, "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(a.name)}`, "x-content-type-options": "nosniff" }))
+    )
+  }).pipe(Effect.orDie)
+)
+
 const WebRoute = (dir: string) =>
   HttpRouter.add("GET", "/*", (req) => {
     const path = normalize(join(dir, decodeURIComponent(new URL(req.url, "http://x").pathname)))
@@ -235,6 +275,8 @@ export const AppLive = (webDir?: string) =>
     LocalOnly,
     HttpApiBuilder.layer(Api).pipe(Layer.provide([Projects, Agents, Chats, Memories, ToolsGroup, AccountsGroup, Settings])),
     RpcRoute,
+    AttachmentUpload,
+    AttachmentFile,
     ...(webDir && existsSync(join(webDir, "index.html")) ? [WebRoute(webDir)] : [])
   )
 

@@ -7,7 +7,7 @@
 import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect, Queue, Stream } from "effect"
 import { mkdirSync } from "node:fs"
-import { claudeParser, type EngineEvent, splitModel } from "#server/engines.ts"
+import { claudeParser, type EngineEvent, splitModel, type TurnFile } from "#server/engines.ts"
 import type { EngineSession } from "#server/engines/session.ts"
 
 const GATEWAY = "zero"
@@ -44,7 +44,17 @@ function inbox() {
   }
 }
 
-const userMessage = (text: string): SDKUserMessage => ({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null })
+// Text plus images as content blocks (base64, read when the turn is sent).
+async function userMessage(text: string, images: ReadonlyArray<TurnFile> = []): Promise<SDKUserMessage> {
+  if (!images.length) return { type: "user", message: { role: "user", content: text }, parent_tool_use_id: null }
+  const blocks = await Promise.all(
+    images.map(async (f) => ({
+      type: "image" as const,
+      source: { type: "base64" as const, media_type: f.mime as "image/png" | "image/jpeg" | "image/gif" | "image/webp", data: Buffer.from(await Bun.file(f.path).arrayBuffer()).toString("base64") }
+    }))
+  )
+  return { type: "user", message: { role: "user", content: [{ type: "text", text }, ...blocks] }, parent_tool_use_id: null }
+}
 
 // The SDK replaces the child env entirely: copy ours, minus undefined values.
 const childEnv = (configDir: string | undefined) => {
@@ -135,7 +145,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
           emit(parser.line(JSON.stringify(m))) // SDK messages are the CLI's stream-json lines
           if (m.type === "result") finish()
         }
-        box.push(userMessage(input.prompt))
+        box.push(yield* Effect.promise(() => userMessage(input.prompt, input.images)))
         yield* Effect.promise(() => finished)
         listener = undefined
         yield* Queue.end(out)
