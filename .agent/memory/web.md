@@ -4,7 +4,7 @@ status: active
 updated: 2026-11-03
 
 ## current
-- sidebar (2026-11-03): marca, páginas fixas (Needs you/Knowledge/Settings), chave Chats|Projects (ToggleButtonGroup, só troca a lista), lista com fade + fio no pé só quando há mais embaixo, pé = consumo por janela (paceOf em labels.ts, cartão no hover); uma coluna de ícone 20px x20–40 e texto em x50 para todas as linhas
+- sidebar (2026-11-03): marca, páginas fixas (Needs you/Knowledge/Settings), seções empilhadas Chats (sem projeto) e Projects com ícone, dobra e +, sem abas (usuário pediu); chats em 1 linha de 32px; lista com fade + fio no pé só quando há mais embaixo; pé = consumo por janela (paceOf em labels.ts, cartão no hover); uma coluna de ícone 20px x20–40 e texto em x50
 
 - fase UI concluída (2026-11-03): todas as telas reescritas pelo protótipo, em inglês, com átomos
 - rotas no hash (state.ts): #/ (home = novo chat), #/new/:projectId, #/chat/:id, #/project/:id[/agents|tools], #/agent/:id, #/agent/new/:projectId|global, #/knowledge[/:id], #/inbox, #/usage, #/settings/:tab
