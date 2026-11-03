@@ -12,6 +12,8 @@ import {
   DropIndicator,
   type DropTarget,
   type Key,
+  ToggleButton,
+  ToggleButtonGroup,
   Tree,
   TreeItem,
   TreeItemContent,
@@ -19,7 +21,6 @@ import {
 } from "react-aria-components"
 import { cn } from "@/lib/utils"
 import { ChevronRight, GripVertical } from "./icons"
-import { Tooltip } from "./tooltip"
 
 const row =
   "flex w-full min-w-0 shrink-0 cursor-default items-center gap-2.5 rounded-control border text-left text-base outline-none transition-colors duration-120 ease-out motion-reduce:transition-none"
@@ -28,26 +29,32 @@ const state = (active: boolean | undefined) => (active ? "border-subtle bg-canva
 const chip = "border-transparent bg-surface text-fg shadow-chip"
 const glyphBox = "flex size-5 shrink-0 items-center justify-center text-muted [&_svg]:size-4"
 
-// An icon tab: just the icon (its name in a tooltip) until selected; then the name slides out beside the icon in
-// the light text and pushes the tabs after it (styles.css: .nav-tab-label).
-export function NavTab({ label, icon, active, onPress }: { label: string; icon: ReactNode; active: boolean; onPress: () => void }) {
+// A two-way switch with both names always visible (Chats | Projects): React Aria's toggle group, so it is one Tab
+// stop, the arrow keys move between the options and the selected one is announced.
+export function NavSegment<K extends string>({ label, options, value, onChange }: { label: string; options: ReadonlyArray<{ id: K; label: string; icon: ReactNode }>; value: K; onChange: (id: K) => void }) {
   return (
-    <Tooltip content={label} disabled={active}>
-      <Button
-        onPress={onPress}
-        data-active={active || undefined}
-        {...(active && { "aria-current": "page" as const })}
-        className={cn(
-          "nav-tab inline-flex h-control-sm shrink-0 cursor-default items-center rounded-control px-2 text-sm outline-none transition-colors duration-200 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none [&_svg]:size-4 [&_svg]:shrink-0",
-          active ? "bg-hover font-medium text-fg" : "text-muted data-hovered:text-fg"
-        )}
-      >
-        {icon}
-        <span className="nav-tab-label">
-          <span>{label}</span>
-        </span>
-      </Button>
-    </Tooltip>
+    <ToggleButtonGroup
+      aria-label={label}
+      selectionMode="single"
+      disallowEmptySelection
+      selectedKeys={[value]}
+      onSelectionChange={(keys) => {
+        const next = [...keys][0]
+        if (next !== undefined) onChange(String(next) as K)
+      }}
+      className="flex min-w-0 flex-1 gap-0.5 rounded-control bg-control p-0.5"
+    >
+      {options.map((o) => (
+        <ToggleButton
+          key={o.id}
+          id={o.id}
+          className="flex h-6 min-w-0 flex-1 cursor-default items-center justify-center gap-1.5 rounded-control text-sm text-muted outline-none transition-colors duration-150 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:text-fg data-selected:bg-surface data-selected:font-medium data-selected:text-fg motion-reduce:transition-none [&_svg]:size-3.5 [&_svg]:shrink-0"
+        >
+          {o.icon}
+          <span className="truncate">{o.label}</span>
+        </ToggleButton>
+      ))}
+    </ToggleButtonGroup>
   )
 }
 
@@ -192,7 +199,7 @@ export function NavTreeItem({
             className={cn(
               row,
               "relative",
-              hasChildItems ? "h-control gap-2 pr-2.5 pl-2" : detail ? "gap-3 rounded-card px-2.5 py-2" : "h-control px-2.5",
+              hasChildItems ? "h-control gap-2 pr-2.5 pl-2" : detail ? "h-13.5 gap-3 rounded-card px-2.5" : "h-control px-2.5",
               hasChildItems ? cn("border-transparent text-secondary", isExpanded ? "font-semibold" : "font-medium") : active ? chip : "border-transparent",
               !active && (isHovered || isFocusVisible) && "bg-hover text-fg",
               !active && isPressed && "bg-control-active",
