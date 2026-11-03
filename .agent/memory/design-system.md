@@ -1,7 +1,7 @@
 # design-system
 keywords: ui, tailwind, tokens, theme, button, css
 status: active
-updated: 2026-11-02
+updated: 2026-11-03
 
 ## current
 
@@ -10,6 +10,10 @@ updated: 2026-11-02
 - escala de controle 24/28/32/36px (control-xs/sm/control/lg), inspirada no OpenBot
 - primitivas em apps/web/src/ui.tsx (Button, Input, Textarea, SidebarItem, SectionLabel); features não estilizam controles na mão
 - pressable: scale(0.97), <300ms, respeita prefers-reduced-motion
+
+- apps/web/DESIGN.md escrito (/impeccable document, scan): north star "A Bancada Noturna"; frontmatter YAML é normativo (valores do tema escuro); sidecar em apps/web/.impeccable/design.json
+- regras nomeadas: Voz Única (só um acento azul), Token, Quatro Tamanhos (11/12/13/15px), Escala (24/28/32/36), Plano (sem sombras, profundidade por tom)
+- mudou token em styles.css → atualizar DESIGN.md e o sidecar juntos
 
 ## avoid
 
