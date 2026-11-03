@@ -169,7 +169,13 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
     })
     return String(started.thread.id)
   })()
-  thread.catch(() => undefined) // reported by the first turn
+  // Reported by the first turn; a failed start (e.g. no login yet) makes the session dead, so the runtime
+  // opens a fresh one next turn instead of repeating a stale failure.
+  let startFailed = false
+  thread.catch(() => {
+    startFailed = true
+    rpc.kill()
+  })
 
   const turn = (input: SessionTurnInput): Stream.Stream<EngineEvent> =>
     Stream.callback<EngineEvent>((out) => {
@@ -243,7 +249,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
 
   return {
     turn,
-    alive: () => !rpc.exited,
+    alive: () => !rpc.exited && !startFailed,
     close: Effect.sync(() => rpc.kill())
   }
 }
