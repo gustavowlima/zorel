@@ -1,5 +1,5 @@
 # project
-updated: 2026-11-02
+updated: 2026-11-03
 
 ## summary
 
@@ -43,3 +43,9 @@ usando assinaturas (CLI oficial: Claude Code, Codex, ACP) ou token de API (effec
 - arquitetura fechada (2026-11-03): seção 12 Transversal (observabilidade com mascaramento, testes em 3 camadas, migração dos dados atuais + backup VACUUM INTO, exportar/importar workspace sem segredos, notificações, anexos 10×20 MB, atualização do app com canais e espera de turnos); seção 13 Fases; agente padrão por projeto; arquivos de contexto inject/link no backlog
 - D20: sem Rust como stack principal; só peças pontuais com limite medido (2026-11-03)
 - PRODUCT.md (apps/web, impeccable init 2026-11-03): usuários = dev + pequena equipe (2–5); diferenciais = contexto é do Zero, aprende trabalhando, equipe de agentes, usa o que você já paga; nome DEFINITIVO "Zero" (colisão com gitlawb/zero aceita); Apache-2.0; tom direto/técnico; visual inspirado no OpenBot; DECISÃO EM ABERTO: como a equipe compartilha antes do hospedado (server na rede da equipe vs adiantar login/papéis da fase 8)
+
+## ordem (2026-11-03)
+
+- engine primeiro: fase 1 (runtime) e fase 2 (engines) antes da interface; a fase UI redesenha tudo uma vez, com i18n e átomos, a partir do protótipo
+- protótipo das telas: https://claude.ai/artifact/ERkKURix2bnKAqzi97emmw (privado do dono)
+- novas fases: 3c painel de execução (terminal, tests, problems, processes, logs); catálogo de conectores com OAuth na fase 4
