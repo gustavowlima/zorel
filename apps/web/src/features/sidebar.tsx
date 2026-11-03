@@ -14,7 +14,7 @@ import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, BookOpen, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, ModelAvatar, NavItem, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, BurnDown, type BurnTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
+  AgentAvatar, BookOpen, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, ModelAvatar, NavItem, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
@@ -370,7 +370,7 @@ function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatSt
 
 // The subscriptions at the foot (the most at risk first): one line per limit window, shortest first ("5h", "7d",
 // "30d"), each a bar of the share used and that share, grouped by account: the logo in the icon column, centred on its bars. Hovering (or focusing) shows the rest: every window with when it
-// resets, and the one at risk as a tiny burn-down (ui/burn-down.tsx) with where the pace so far leads.
+// resets, the account's windows as rings (ui/limit-ring.tsx) and where the pace so far leads.
 const MAX_FOOT_ROWS = 3
 const TONE_TEXT = { ok: "text-secondary", warning: "text-warning", critical: "text-danger" } as const
 const TONE_BG = { ok: "bg-success", warning: "bg-warning", critical: "bg-danger" } as const
@@ -434,8 +434,8 @@ function UsageFoot({ active }: { active: boolean }) {
   )
 }
 
-// The hover card: per account, every window (share used, when it resets) and, for the one at risk, its burn-down
-// and where the pace so far leads.
+// The hover card: per account, its windows as concentric rings with the logo inside, where the pace so far leads,
+// and every window with its share used and when it resets.
 function UsageDetail({ rows }: { rows: ReadonlyArray<{ account: ProviderAccount; windows: ReadonlyArray<{ w: AccountWindow; pace: Pace }>; w: AccountWindow; pace: Pace }> }) {
   return (
     <span className="flex w-64 flex-col gap-3 py-0.5">
@@ -443,18 +443,27 @@ function UsageDetail({ rows }: { rows: ReadonlyArray<{ account: ProviderAccount;
         const tone = toneOf(r.pace)
         const leftAtReset = r.pace.elapsed && r.pace.elapsed >= 0.1 ? 1 - r.pace.used / r.pace.elapsed : null
         return (
-          <span key={r.account.id} className="flex flex-col gap-1.5">
-            <span className="flex items-center gap-2 font-medium text-fg">
-              <ProviderIcon provider={r.account.provider} size={14} />
-              {r.account.label}
-            </span>
-            <BurnDown used={r.pace.used} elapsed={r.pace.elapsed} tone={tone} className="text-fg" />
-            <span className={cx("text-xs", TONE_TEXT[tone])}>
+          <span key={r.account.id} className="flex flex-col gap-2">
+            <span className="flex items-center gap-3">
+              {/* One ring per window (the longest outside), as the rows below in words. */}
+              <LimitRing
+                windows={r.windows
+                  .filter(({ w }) => windowMinutes(w.id) !== null)
+                  .sort((x, y) => (windowMinutes(y.w.id) ?? 0) - (windowMinutes(x.w.id) ?? 0))
+                  .map(({ pace }) => ({ used: pace.used, tone: toneOf(pace) }))}
+              >
+                <ProviderIcon provider={r.account.provider} size={16} />
+              </LimitRing>
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="font-medium text-fg">{r.account.label}</span>
+                <span className={cx("text-xs", TONE_TEXT[tone])}>
               {r.pace.runsOutAt
                 ? t("nav.usageRunsOut", { window: windowLabel(r.w.id), time: formatTime(r.pace.runsOutAt) })
                 : leftAtReset !== null
                   ? t("nav.usageOnPace", { window: windowLabel(r.w.id), percent: formatPercent(leftAtReset) })
                   : t("nav.usageEarly", { window: windowLabel(r.w.id), percent: formatPercent(r.pace.used) })}
+                </span>
+              </span>
             </span>
             {r.windows.map(({ w, pace }) => (
               <span key={w.id} className="flex items-baseline justify-between gap-3 text-xs">
@@ -472,4 +481,4 @@ function UsageDetail({ rows }: { rows: ReadonlyArray<{ account: ProviderAccount;
   )
 }
 
-const toneOf = (p: Pace): BurnTone => (p.used >= 0.95 ? "critical" : p.runsOutAt || p.used >= LIMIT_ALERT ? "warning" : "ok")
+const toneOf = (p: Pace): RingTone => (p.used >= 0.95 ? "critical" : p.runsOutAt || p.used >= LIMIT_ALERT ? "warning" : "ok")
