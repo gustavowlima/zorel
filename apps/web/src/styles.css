@@ -216,8 +216,8 @@ html, body, #root { height: 100%; }
 .composer-editor p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--z-text-dim); float: left; height: 0; pointer-events: none; }
 /* Desktop app: the sidebar's brand row is the title bar; the window buttons take its left 84px. */
 /* Desktop app: a strip on top of the sidebar holds the window buttons (hidden in the browser). */
-.title-strip { display: none; }
-[data-shell="desktop"] .title-strip { display: block; }
+/* Desktop app: the brand row moves right of the window buttons. */
+[data-shell="desktop"] .brand-row { padding-left: 76px; }
 .scroll-quiet::-webkit-scrollbar { display: none; }
 a { text-underline-offset: 3px; }
 body {
