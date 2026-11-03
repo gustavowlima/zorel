@@ -1,19 +1,19 @@
 // Sidebar: the brand (the title bar in the desktop app), Needs you, then icon tabs (the selected one shows its
 // name): Chats and Projects switch the list below, Knowledge and Settings open their page. At the foot, the
-// subscriptions' limits as rings (it opens Usage). Chats lists every chat, whose turn it is first (waiting for
+// subscriptions' pace (it opens Usage). Chats lists every chat, whose turn it is first (waiting for
 // you, then working), then the latest activity. Projects is the tree: one line per project (a dot or a spinner is
 // all its state), its chats under it; projects reorder by drag and drop, chats only inside their own project. A
 // chat row shows who is in it and what is happening; the open chat floats as a raised chip.
 import { type Agent, type Chat, LIMIT_ALERT, type Project } from "@zero/contracts"
 import type { ChatStatus } from "@zero/contracts/events"
-import { formatAge, formatPercent, formatTime, t } from "@zero/i18n"
+import { formatAge, formatPercent, formatTime, locale, t } from "@zero/i18n"
 import { type ReactNode, useState } from "react"
 import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
-import { agentTone, chatTitle, splitModel, statusLabel, windowLabel, windowMinutes } from "../labels.ts"
+import { agentTone, chatTitle, splitModel, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, BookOpen, ChartColumn, cx, Folder, IconButton, Inbox, LimitRing, Logo, MessageCircle, ModelAvatar, NavItem, NavTab, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, type RingTone, Settings, Spinner, Tooltip, useNavReorder
+  AgentAvatar, BookOpen, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MessageCircle, ModelAvatar, NavItem, NavTab, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, PaceBar, type PaceTone, Settings, Spinner, Tooltip, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
@@ -147,7 +147,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
         )}
       </div>
 
-      {/* The subscriptions' limits at the foot; it opens Usage. */}
+      {/* The subscriptions' pace at the foot; it opens Usage. */}
       <div className="mr-2.5 shrink-0 border-t border-subtle pt-2">
         <UsageFoot active={route.view === "usage"} />
       </div>
@@ -264,46 +264,43 @@ function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatSt
 }
 
 // An icon button of the foot toolbar; the open screen's stays lit.
-// The subscriptions' limits, as in a reference app's rail: the rings of the two accounts with the least left (the
-// first over the second, then "+N"), then the tightest window in words. Without a reading: Usage, plainly.
+// The subscriptions at the foot, one line each (the most at risk first): the logo, the window most at risk, a
+// pace bar (fill = used, tick = time gone in the window) and, on the right, the share used or, when the burn so
+// far would empty the window before it resets, about when it runs out. Without a reading: Usage, plainly.
+const MAX_FOOT_ROWS = 3
 function UsageFoot({ active }: { active: boolean }) {
   const rows = useList(accountsAtom)
-    .filter((a) => a.kind === "subscription" && a.usage?.windows.length)
-    .map((a) => {
-      const windows = (a.usage?.windows ?? [])
-        .filter((w) => windowMinutes(w.id) !== null)
-        .sort((x, y) => (windowMinutes(y.id) ?? 0) - (windowMinutes(x.id) ?? 0))
-        .map((w) => ({ ...w, left: 1 - w.usedPercent / 100, tone: toneOf(w.usedPercent / 100) }))
-      const tightest = [...windows].sort((x, y) => x.left - y.left)[0]
-      return { account: a, windows, tightest }
+    .filter((a) => a.kind === "subscription")
+    .flatMap((a) => {
+      const windows = (a.usage?.windows ?? []).filter((w) => windowMinutes(w.id) !== null).map((w) => ({ w, pace: paceOf(w) }))
+      const worst = windows.sort((x, y) => y.pace.risk - x.pace.risk)[0]
+      return worst ? [{ account: a, ...worst }] : []
     })
-    .filter((r) => r.tightest)
-    .sort((x, y) => (x.tightest?.left ?? 1) - (y.tightest?.left ?? 1))
-  const first = rows[0]
-  const tight = first?.tightest
-  const detail = first && tight && t("nav.usageLeft", { account: first.account.label, window: windowLabel(tight.id), percent: formatPercent(Math.max(0, tight.left)) })
+    .sort((x, y) => y.pace.risk - x.pace.risk)
+  const sentence = (r: (typeof rows)[number]) => {
+    const window = windowLabel(r.w.id)
+    return r.pace.runsOutAt
+      ? t("nav.usageOut", { account: r.account.label, window, time: formatTime(r.pace.runsOutAt) })
+      : t("nav.usageUsed", { account: r.account.label, window, percent: formatPercent(r.pace.used) })
+  }
+  const label = rows.length ? `${t("nav.usage")}: ${rows.map(sentence).join("; ")}` : t("nav.usage")
   return (
-    <NavItem
-      active={active}
-      onPress={() => go({ view: "usage" })}
-      aria-label={detail ? `${t("nav.usage")}: ${detail}` : t("nav.usage")}
-      {...(!first && { icon: <ChartColumn /> })}
-      className={cx(first && "h-auto py-1.5")}
-      trailing={rows.length > 2 && <span className="text-xs text-muted tabular-nums">+{rows.length - 2}</span>}
-    >
-      {first && tight ? (
-        <span className="flex min-w-0 items-center gap-2.5">
-          <span className="flex shrink-0 items-center">
-            {rows.slice(0, 2).map((r, i) => (
-              <LimitRing key={r.account.id} windows={r.windows} size={30} className={cx("rounded-full bg-frame text-fg", i === 0 ? "z-10 ring-2 ring-frame" : "-ml-2.5")}>
-                <ProviderIcon provider={r.account.provider} size={11} />
-              </LimitRing>
-            ))}
-          </span>
-        <span className="flex min-w-0 flex-col leading-tight">
-          <span className={cx("truncate text-sm tabular-nums", tight.tone === "critical" ? "text-danger" : tight.tone === "warning" ? "text-warning" : "text-fg")}>{detail}</span>
-          {tight.resetsAt && <span className="truncate text-xs text-muted">{t("usage.resets", { time: formatTime(tight.resetsAt) })}</span>}
-        </span>
+    <NavItem active={active} onPress={() => go({ view: "usage" })} aria-label={label} {...(!rows.length && { icon: <ChartColumn /> })} className={cx(rows.length > 0 && "h-auto py-2")}>
+      {rows.length ? (
+        <span className="flex min-w-0 flex-1 flex-col gap-2">
+          {rows.slice(0, MAX_FOOT_ROWS).map((r) => {
+            const tone = toneOf(r.pace)
+            return (
+              <span key={r.account.id} className="flex min-w-0 items-center gap-2 text-xs">
+                <ProviderIcon provider={r.account.provider} size={14} />
+                <span className="w-12 shrink-0 truncate text-muted">{windowLabel(r.w.id)}</span>
+                <PaceBar used={r.pace.used} elapsed={r.pace.elapsed} tone={tone} className="min-w-0 flex-1" />
+                <span className={cx("w-11 shrink-0 text-right tabular-nums", tone === "critical" ? "text-danger" : tone === "warning" ? "text-warning" : "text-secondary")}>
+                  {r.pace.runsOutAt ? `~${formatClock(r.pace.runsOutAt)}` : formatPercent(r.pace.used)}
+                </span>
+              </span>
+            )
+          })}
         </span>
       ) : (
         t("nav.usage")
@@ -312,4 +309,6 @@ function UsageFoot({ active }: { active: boolean }) {
   )
 }
 
-const toneOf = (used: number): RingTone => (used >= 0.95 ? "critical" : used >= LIMIT_ALERT ? "warning" : "ok")
+const toneOf = (p: Pace): PaceTone => (p.used >= 0.95 ? "critical" : p.runsOutAt || p.used >= LIMIT_ALERT ? "warning" : "ok")
+// Hours and minutes only (the row is narrow; the label has the full time).
+const formatClock = (at: number) => new Intl.DateTimeFormat(locale(), { hour: "numeric", minute: "2-digit" }).format(at)
