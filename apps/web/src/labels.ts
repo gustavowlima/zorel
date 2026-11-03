@@ -110,6 +110,14 @@ export function windowLabel(id: string): string {
   return minutes % 1440 === 0 ? t("usage.windows.days", { count: minutes / 1440 }) : t("usage.windows.hours", { count: Math.round(minutes / 60) })
 }
 
+// How long a window lasts, in minutes (null for one scoped to a model), to order windows longest first.
+const WINDOW_MINUTES: Record<string, number> = { five_hour: 300, seven_day: 10080, seven_day_opus: 10080, seven_day_sonnet: 10080, seven_day_oauth_apps: 10080 }
+export function windowMinutes(id: string): number | null {
+  if (id.startsWith("model:")) return null
+  const minutes = WINDOW_MINUTES[id] ?? Number(id.replace(/m$/, ""))
+  return Number.isFinite(minutes) ? minutes : null
+}
+
 // The fullest window of an account (0..1), for alerts and compact meters.
 export const fullest = (a: Pick<ProviderAccount, "usage">) => Math.max(0, ...(a.usage?.windows ?? []).map((w) => w.usedPercent / 100))
 
