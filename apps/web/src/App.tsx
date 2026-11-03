@@ -7,7 +7,7 @@ import { MemoriesView } from "./features/memories.tsx"
 import { AgentCard, NewProjectView, ProjectView } from "./features/project.tsx"
 import { SettingsView } from "./features/tools.tsx"
 import { DataContext, DEFAULT_MODEL, go, useApp, useData, useRoute, type Route } from "./state.ts"
-import { Badge, Page, SectionLabel, SidebarItem } from "./ui.tsx"
+import { Badge, Page, SectionLabel, SidebarItem } from "@/ui"
 
 export function App() {
   const { data, error, reload } = useData()

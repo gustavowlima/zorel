@@ -8,7 +8,11 @@ updated: 2026-11-03
 - tokens --z-* em apps/web/src/styles.css; dark padrão, light via [data-theme="light"]
 - @theme inline expõe tokens como utilitários (bg-surface, text-muted, border-subtle, h-control*)
 - escala de controle 24/28/32/36px (control-xs/sm/control/lg), inspirada no a reference app
-- primitivas em apps/web/src/ui.tsx (Button, Input, Textarea, SidebarItem, SectionLabel); features não estilizam controles na mão
+- primitivas em apps/web/src/ui/ (index.tsx reexporta; button.tsx); features importam de "@/ui" e não estilizam controles na mão
+- shadcn inicializado: components.json (style aria-nova, ícones lucide, alias ui → @/ui); `bunx shadcn add X` gera em src/ui e o componente é adaptado aos tokens antes de usar
+- Button = React Aria (onPress, isDisabled; estados data-hovered/data-pressed/data-focus-visible); sem prop title (usar Tooltip quando existir; hoje um span com title marcado HACK em chat.tsx)
+- tokens do shadcn (background, foreground, card, popover, primary, destructive, border, input, ring, *-foreground) apontam para --z-* em :root; raio sm/md/lg/xl/2xl = 4/6/8/12/16; `dark:` = tema padrão (sem classe .dark)
+- cx = cn (pacote `cn`, merge de classes Tailwind)
 - pressable: scale(0.97), <300ms, respeita prefers-reduced-motion
 
 - apps/web/DESIGN.md escrito (/impeccable document, scan): north star "A Bancada Noturna"; frontmatter YAML é normativo (valores do tema escuro); sidecar em apps/web/.impeccable/design.json
@@ -16,6 +20,9 @@ updated: 2026-11-03
 - mudou token em styles.css → atualizar DESIGN.md e o sidecar juntos
 
 ## avoid
+
+- bg-muted / bg-accent / bg-secondary do shadcn: esses nomes são nossos (texto apagado, azul, texto secundário). Ao adotar componente, trocar por bg-control/bg-control-hover
+- fonte Geist e paleta neutra do preset Nova: removidas; a fonte é Inter
 
 - cor literal fora de styles.css: quebra tema light
 - copiar CSS/código do a reference app: licença PolyForm Noncommercial

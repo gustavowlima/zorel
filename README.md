@@ -86,7 +86,7 @@ apps/server          Bun + Effect HttpApi + bun:sqlite
   secrets.ts         chaves e variáveis no chaveiro do sistema
   main.ts            rotas (HttpApi + SSE em POST /api/chats/:id/send) e serviço do build web
 apps/web             Vite + React 19 + Tailwind v4
-  styles.css, ui.tsx design system (tokens --z-*, primitivas)
+  styles.css, ui/     design system (tokens --z-*, primitivas sobre React Aria via shadcn)
   state.ts           dados, rota (hash) e contexto
   features/          chat/canal, projeto e agentes, memórias e skills, ferramentas e configurações, seletor de modelo
 apps/desktop         Electrobun: processo principal em Bun sobe o server e abre a janela nativa

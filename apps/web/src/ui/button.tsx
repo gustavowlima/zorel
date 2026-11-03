@@ -1,0 +1,32 @@
+// Button: gerado pelo shadcn (--base aria, React Aria Components) e adaptado aos tokens do Zero.
+// Estados vêm do React Aria: data-hovered só dispara com ponteiro (não no toque), data-pressed no aperto.
+import { cva, type VariantProps } from "class-variance-authority"
+import { Button as ButtonPrimitive, type ButtonProps as ButtonPrimitiveProps } from "react-aria-components"
+import { cn } from "@/lib/utils"
+
+const buttonVariants = cva(
+  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-control font-medium whitespace-nowrap outline-none select-none transition-[transform,background-color,color] duration-120 ease-out data-pressed:scale-[0.97] motion-reduce:transition-none motion-reduce:data-pressed:scale-100 data-focus-visible:ring-2 data-focus-visible:ring-accent data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  {
+    variants: {
+      variant: {
+        default: "bg-accent text-on-accent data-hovered:bg-accent-hover",
+        secondary: "bg-control text-fg data-hovered:bg-control-hover data-pressed:bg-control-active",
+        ghost: "text-muted data-hovered:bg-control-hover data-hovered:text-fg",
+        destructive: "bg-danger-soft text-danger data-hovered:bg-danger data-hovered:text-on-accent"
+      },
+      size: {
+        sm: "h-control-sm px-2.5 text-sm",
+        md: "h-control px-3 text-base",
+        lg: "h-control-lg px-4 text-base",
+        icon: "size-control-xs"
+      }
+    },
+    defaultVariants: { variant: "secondary", size: "md" }
+  }
+)
+
+export type ButtonProps = Omit<ButtonPrimitiveProps, "className"> & VariantProps<typeof buttonVariants> & { className?: string }
+
+export function Button({ className, variant, size, ...props }: ButtonProps) {
+  return <ButtonPrimitive data-slot="button" className={cn(buttonVariants({ variant, size }), className)} {...props} />
+}
