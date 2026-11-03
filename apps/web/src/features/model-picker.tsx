@@ -29,6 +29,7 @@ interface Entry {
 }
 
 const LOCAL = new Set(["ollama", "lmstudio"])
+const SAME_LOGO: Record<string, string> = { anthropic: "claude-cli", openai: "codex-cli" } // API provider → subscription with its logo
 const EFFORT_PROVIDERS = new Set(["claude-cli", "codex-cli"])
 const EFFORTS = ["default", "low", "medium", "high", "max"] as const
 const VALID_ID = /^[a-z-]+\/\S+$/
@@ -57,7 +58,12 @@ function entriesOf(accounts: ReadonlyArray<ProviderAccount>, models: ReadonlyArr
         models: namesOf(provider)
       })
   }
-  for (const provider of [...new Set(models.filter((m) => m.kind === "api").map((m) => m.provider))])
+  for (const provider of [...new Set(models.filter((m) => m.kind === "api").map((m) => m.provider))]) {
+    const available = !!models.find((m) => m.provider === provider)?.available
+    // An API provider with a subscription's logo (Anthropic, OpenAI) shows only when it is really another way
+    // in (a key is set): otherwise the rail would show a second, dimmed Claude or Codex.
+    const twin = SAME_LOGO[provider]
+    if (!available && twin && entries.some((e) => e.provider === twin)) continue
     entries.push({
       key: provider,
       provider,
@@ -65,9 +71,10 @@ function entriesOf(accounts: ReadonlyArray<ProviderAccount>, models: ReadonlyArr
       kind: LOCAL.has(provider) ? "local" : "api",
       account: undefined,
       badge: undefined,
-      available: !!models.find((m) => m.provider === provider)?.available,
+      available,
       models: namesOf(provider)
     })
+  }
   return entries
 }
 
