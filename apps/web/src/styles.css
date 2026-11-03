@@ -11,7 +11,7 @@
 
 :root {
   --z-bg-frame: #0d0d0d;
-  --z-bg-canvas: #1a1a1a;
+  --z-bg-canvas: #171717;
   /* Chart series (categorical, fixed order, validated for CVD and contrast on the canvas; see DESIGN.md Charts). */
   --z-series-1: #3987e5;
   --z-series-2: #d95926;
@@ -33,7 +33,7 @@
   --z-text: #ffffff;
   --z-text-secondary: #dcdcdc;
   --z-text-muted: #979797;
-  --z-text-dim: #8a8a8a; /* 5.0:1 on canvas: the lowest grey that still passes for reading */
+  --z-text-dim: #8a8a8a; /* 5.3:1 on canvas: the lowest grey that still passes for reading */
   --z-accent: #007cf7;
   --z-accent-hover: #1f8fff;
   --z-accent-text: #42a0ff;
