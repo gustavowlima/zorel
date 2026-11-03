@@ -12,7 +12,7 @@ import { ChatView } from "./features/chat.tsx"
 import { HomeView } from "./features/home.tsx"
 import { InboxView } from "./features/inbox.tsx"
 import { KnowledgeView } from "./features/knowledge.tsx"
-import { NewProjectView, ProjectView } from "./features/project.tsx"
+import { ProjectView } from "./features/project.tsx"
 import { SettingsView } from "./features/settings.tsx"
 import { Sidebar } from "./features/sidebar.tsx"
 import { UsageView } from "./features/usage.tsx"
@@ -71,8 +71,6 @@ function Screen({ route }: { route: Route }) {
       return <UsageView />
     case "settings":
       return <SettingsView tab={route.tab} />
-    case "new-project":
-      return <NewProjectView />
     case "new-agent":
       return <AgentView projectId={route.projectId} />
     case "project": {

@@ -6,7 +6,7 @@ updated: 2026-11-03
 ## current
 
 - fase UI concluída (2026-11-03): todas as telas reescritas pelo protótipo, em inglês, com átomos
-- rotas no hash (state.ts): #/ (home = novo chat), #/new/:projectId, #/chat/:id, #/project/:id[/agents|tools], #/agent/:id, #/agent/new/:projectId|global, #/knowledge[/:id], #/inbox, #/usage, #/settings/:tab, #/new-project
+- rotas no hash (state.ts): #/ (home = novo chat), #/new/:projectId, #/chat/:id, #/project/:id[/agents|tools], #/agent/:id, #/agent/new/:projectId|global, #/knowledge[/:id], #/inbox, #/usage, #/settings/:tab
 - dados = átomos (client.ts, D4): `Zero` (AtomHttpApi) e `Live` (AtomRpc). Query por recurso com reactivityKey; mutation passa `reactivityKeys` e refaz as queries. `useList(atom)` dá array; `useMutation(atom)` dá promise
 - chat = Atom.family(subscribeChat) + Stream.scan(reduceChat); NÃO usar a query de stream do AtomRpc (acumula em lotes PullResult)
 - status ao vivo: statusAtom (keepAlive) sobre subscribeStatus; App invalida chats/memories/usage/approvals quando um chat sai de running (o server muda título e memórias sozinho)
@@ -16,6 +16,8 @@ updated: 2026-11-03
 - texto só por t() de @zero/i18n; check:i18n (AST com @babel/parser) no CI
 - tema: preferência em localStorage "zero.theme" (system/dark/light), Settings › Appearance
 - vite dev faz proxy de /api e /rpc (ws) para 4317
+
+- novo projeto: popover no "+" da barra lateral (NewProjectButton em project.tsx: nome + brief opcional), não página; ao criar vai para o overview
 
 ## avoid
 

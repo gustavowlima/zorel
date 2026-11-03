@@ -8,36 +8,62 @@ import { agentTone, chatTitle, modelLabel, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
 import {
-  AgentAvatar, Bot, Button, ChatStatusIcon, ChevronRight, ConfirmDialog, EmptyState, Field, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Screen, Section, Tab,
+  AgentAvatar, Bot, Button, ChatStatusIcon, ChevronRight, ConfirmDialog, EmptyState, Field, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Popover, Screen, Section, Tab,
   TabList, TabPanel, Tabs, Textarea, Trash2
 } from "@/ui"
 
-export function NewProjectView() {
+// New project: a small popover from the sidebar's "+" (name and an optional brief), not a page.
+// The brief can be written later in the project's overview.
+export function NewProjectButton() {
   const create = useMutation(mutations.createProject)
   const [name, setName] = useState("")
   const [brief, setBrief] = useState("")
   const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
   const submit = (e: FormEvent) => {
     e.preventDefault()
+    if (!name.trim()) return
     setBusy(true)
     create({ payload: { name: name.trim(), brief }, reactivityKeys: ["projects"] })
-      .then((p) => go({ view: "project", id: p.id, tab: "overview" }))
+      .then((p) => {
+        setOpen(false)
+        setName("")
+        setBrief("")
+        go({ view: "project", id: p.id, tab: "overview" })
+      })
       .finally(() => setBusy(false))
   }
   return (
-    <Screen title={t("project.newTitle")}>
-      <form onSubmit={submit} className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-8 py-7">
+    <Popover
+      label={t("project.newTitle")}
+      placement="bottom start"
+      className="w-80"
+      isOpen={open}
+      onOpenChange={setOpen}
+      trigger={
+        <IconButton label={t("nav.newProject")} size="sm">
+          <Plus className="size-3.5" />
+        </IconButton>
+      }
+    >
+      <form onSubmit={submit} className="flex flex-col gap-3 p-4">
+        <p className="font-semibold">{t("project.newTitle")}</p>
         <Field label={t("project.name")}>
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required autoFocus />
         </Field>
-        <Field label={t("project.brief")} hint={t("project.briefHint")}>
-          <Textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={8} maxLength={8000} />
+        <Field label={t("project.brief")} hint={t("project.briefHintShort")}>
+          <Textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={3} maxLength={8000} />
         </Field>
-        <Button type="submit" variant="default" isPending={busy} isDisabled={busy || !name.trim()} className="self-start">
-          {t("project.create")}
-        </Button>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onPress={() => setOpen(false)}>
+            {t("common.cancel")}
+          </Button>
+          <Button type="submit" variant="default" isPending={busy} isDisabled={busy || !name.trim()}>
+            {t("project.create")}
+          </Button>
+        </div>
       </form>
-    </Screen>
+    </Popover>
   )
 }
 

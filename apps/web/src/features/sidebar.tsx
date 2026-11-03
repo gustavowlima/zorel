@@ -7,6 +7,7 @@ import { formatAge, t } from "@zero/i18n"
 import { type ReactNode, useState } from "react"
 import { agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, projectsAtom, useList, useStatuses } from "../client.ts"
 import { agentTone, chatTitle, modelName, statusLabel } from "../labels.ts"
+import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
   AgentAvatar, BookOpen, ChartColumn, ChatStatusIcon, ChevronDown, ChevronRight, cx, Folder, FolderOpen, GroupRow, IconButton, Inbox, MessageCircle, NavItem, NavLabel, Plus,
@@ -65,9 +66,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
 
       <NavLabel
         action={
-          <IconButton label={t("nav.newProject")} size="sm" onPress={() => go({ view: "new-project" })}>
-            <Plus className="size-3.5" />
-          </IconButton>
+          <NewProjectButton />
         }
       >
         {t("nav.projects")}
