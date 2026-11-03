@@ -4,9 +4,9 @@
 // you, then working), then the latest activity. Projects is the tree: one line per project (a dot or a spinner is
 // all its state), its chats under it; projects reorder by drag and drop, chats only inside their own project. A
 // chat row shows who is in it and what is happening; the open chat floats as a raised chip.
-import { type Agent, type Chat, LIMIT_ALERT, type Project } from "@zero/contracts"
+import { type AccountWindow, type Agent, type Chat, LIMIT_ALERT, type Project, type ProviderAccount } from "@zero/contracts"
 import type { ChatStatus } from "@zero/contracts/events"
-import { formatAge, formatPercent, formatTime, locale, t } from "@zero/i18n"
+import { formatAge, formatPercent, formatTime, t } from "@zero/i18n"
 import { type ReactNode, useState } from "react"
 import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
 import { agentTone, chatTitle, splitModel, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
@@ -264,17 +264,19 @@ function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatSt
 }
 
 // An icon button of the foot toolbar; the open screen's stays lit.
-// The subscriptions at the foot, one line each (the most at risk first): the logo, the window most at risk, a
-// tiny burn-down of it (ui/burn-down.tsx) and, on the right, the share used or, when the burn so far would empty
-// the window before it resets, about when it runs out. Without a reading: Usage, plainly.
+// The subscriptions at the foot, one line each (the most at risk first): the logo, a bar of the share used of
+// its window most at risk, and that share. Hovering (or focusing) shows the rest: every window with when it
+// resets, and the one at risk as a tiny burn-down (ui/burn-down.tsx) with where the pace so far leads.
 const MAX_FOOT_ROWS = 3
+const TONE_TEXT = { ok: "text-secondary", warning: "text-warning", critical: "text-danger" } as const
+const TONE_BG = { ok: "bg-success", warning: "bg-warning", critical: "bg-danger" } as const
 function UsageFoot({ active }: { active: boolean }) {
   const rows = useList(accountsAtom)
     .filter((a) => a.kind === "subscription")
     .flatMap((a) => {
-      const windows = (a.usage?.windows ?? []).filter((w) => windowMinutes(w.id) !== null).map((w) => ({ w, pace: paceOf(w) }))
-      const worst = windows.sort((x, y) => y.pace.risk - x.pace.risk)[0]
-      return worst ? [{ account: a, ...worst }] : []
+      const windows = (a.usage?.windows ?? []).map((w) => ({ w, pace: paceOf(w) }))
+      const worst = windows.filter((x) => windowMinutes(x.w.id) !== null).sort((x, y) => y.pace.risk - x.pace.risk)[0]
+      return worst ? [{ account: a, windows, ...worst }] : []
     })
     .sort((x, y) => y.pace.risk - x.pace.risk)
   const sentence = (r: (typeof rows)[number]) => {
@@ -284,31 +286,70 @@ function UsageFoot({ active }: { active: boolean }) {
       : t("nav.usageUsed", { account: r.account.label, window, percent: formatPercent(r.pace.used) })
   }
   const label = rows.length ? `${t("nav.usage")}: ${rows.map(sentence).join("; ")}` : t("nav.usage")
+  if (!rows.length)
+    return (
+      <NavItem active={active} onPress={() => go({ view: "usage" })} icon={<ChartColumn />}>
+        {t("nav.usage")}
+      </NavItem>
+    )
   return (
-    <NavItem active={active} onPress={() => go({ view: "usage" })} aria-label={label} {...(!rows.length && { icon: <ChartColumn /> })} className={cx(rows.length > 0 && "h-auto py-2")}>
-      {rows.length ? (
+    <Tooltip content={<UsageDetail rows={rows} />}>
+      <NavItem active={active} onPress={() => go({ view: "usage" })} aria-label={label} className="h-auto py-2">
         <span className="flex min-w-0 flex-1 flex-col gap-2">
           {rows.slice(0, MAX_FOOT_ROWS).map((r) => {
             const tone = toneOf(r.pace)
             return (
-              <span key={r.account.id} className="flex min-w-0 items-center gap-2 text-xs">
+              <span key={r.account.id} className="flex min-w-0 items-center gap-2.5 text-xs">
                 <ProviderIcon provider={r.account.provider} size={14} />
-                <span className="w-12 shrink-0 truncate text-muted">{windowLabel(r.w.id)}</span>
-                <BurnDown used={r.pace.used} elapsed={r.pace.elapsed} tone={tone} className="min-w-0 flex-1 text-fg" />
-                <span className={cx("w-11 shrink-0 text-right tabular-nums", tone === "critical" ? "text-danger" : tone === "warning" ? "text-warning" : "text-secondary")}>
-                  {r.pace.runsOutAt ? `~${formatClock(r.pace.runsOutAt)}` : formatPercent(r.pace.used)}
+                <span className="relative h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-control">
+                  <span className={cx("absolute inset-y-0 left-0 rounded-full transition-all duration-500 ease-out motion-reduce:transition-none", TONE_BG[tone])} style={{ width: `${Math.min(1, r.pace.used) * 100}%` }} />
                 </span>
+                <span className={cx("w-9 shrink-0 text-right tabular-nums", TONE_TEXT[tone])}>{formatPercent(r.pace.used)}</span>
               </span>
             )
           })}
         </span>
-      ) : (
-        t("nav.usage")
-      )}
-    </NavItem>
+      </NavItem>
+    </Tooltip>
+  )
+}
+
+// The hover card: per account, every window (share used, when it resets) and, for the one at risk, its burn-down
+// and where the pace so far leads.
+function UsageDetail({ rows }: { rows: ReadonlyArray<{ account: ProviderAccount; windows: ReadonlyArray<{ w: AccountWindow; pace: Pace }>; w: AccountWindow; pace: Pace }> }) {
+  return (
+    <span className="flex w-64 flex-col gap-3 py-0.5">
+      {rows.map((r) => {
+        const tone = toneOf(r.pace)
+        const leftAtReset = r.pace.elapsed && r.pace.elapsed >= 0.1 ? 1 - r.pace.used / r.pace.elapsed : null
+        return (
+          <span key={r.account.id} className="flex flex-col gap-1.5">
+            <span className="flex items-center gap-2 font-medium text-fg">
+              <ProviderIcon provider={r.account.provider} size={14} />
+              {r.account.label}
+            </span>
+            <BurnDown used={r.pace.used} elapsed={r.pace.elapsed} tone={tone} className="text-fg" />
+            <span className={cx("text-xs", TONE_TEXT[tone])}>
+              {r.pace.runsOutAt
+                ? t("nav.usageRunsOut", { window: windowLabel(r.w.id), time: formatTime(r.pace.runsOutAt) })
+                : leftAtReset !== null
+                  ? t("nav.usageOnPace", { window: windowLabel(r.w.id), percent: formatPercent(leftAtReset) })
+                  : t("nav.usageEarly", { window: windowLabel(r.w.id), percent: formatPercent(r.pace.used) })}
+            </span>
+            {r.windows.map(({ w, pace }) => (
+              <span key={w.id} className="flex items-baseline justify-between gap-3 text-xs">
+                <span className="truncate text-secondary">{windowLabel(w.id)}</span>
+                <span className="shrink-0 text-muted tabular-nums">
+                  {formatPercent(pace.used)}
+                  {w.resetsAt ? ` · ${t("usage.resets", { time: formatTime(w.resetsAt) })}` : ""}
+                </span>
+              </span>
+            ))}
+          </span>
+        )
+      })}
+    </span>
   )
 }
 
 const toneOf = (p: Pace): BurnTone => (p.used >= 0.95 ? "critical" : p.runsOutAt || p.used >= LIMIT_ALERT ? "warning" : "ok")
-// Hours and minutes only (the row is narrow; the label has the full time).
-const formatClock = (at: number) => new Intl.DateTimeFormat(locale(), { hour: "numeric", minute: "2-digit" }).format(at)
