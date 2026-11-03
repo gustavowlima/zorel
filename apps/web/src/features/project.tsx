@@ -3,7 +3,7 @@ import type { Agent, Project } from "@zero/contracts"
 import { useEffect, useState, type FormEvent } from "react"
 import { call } from "../api.ts"
 import { DEFAULT_MODEL, go, useApp } from "../state.ts"
-import { Badge, Button, Card, Field, Input, Page, Select, SidebarItem, Textarea } from "@/ui"
+import { Badge, Button, Card, ConfirmButton, Field, Input, Page, Select, SidebarItem, Textarea } from "@/ui"
 import { ModelPicker } from "./model-picker.tsx"
 import { ToolsSection } from "./tools.tsx"
 
@@ -69,7 +69,6 @@ export function ProjectView({ project }: { project: Project }) {
     })
   }
   const remove = () => {
-    if (!confirm(`Apagar o projeto "${project.name}" com seus agentes, chats e memórias?`)) return
     call((c) => c.projects.remove({ params: { id: project.id } })).then(async () => {
       await reload()
       go({ view: "home" })
@@ -77,7 +76,11 @@ export function ProjectView({ project }: { project: Project }) {
   }
 
   return (
-    <Page title={project.name} actions={<Button variant="ghost" onPress={remove}>Apagar projeto</Button>}>
+    <Page title={project.name} actions={
+        <ConfirmButton variant="ghost" title={`Apagar o projeto "${project.name}"?`} description="Os agentes, chats e memórias do projeto também serão apagados." onConfirm={remove}>
+          Apagar projeto
+        </ConfirmButton>
+      }>
       <form onSubmit={save} className="flex flex-col gap-3">
         <Field label="Nome">
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
@@ -96,15 +99,17 @@ export function ProjectView({ project }: { project: Project }) {
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Chats</h2>
           <div className="flex gap-2">
-            <Select className="w-44" value={newChatAgent} onChange={(e) => setNewChatAgent(e.target.value)} aria-label="Agente do novo chat">
-              <option value="">Sem agente</option>
-              {agents.length > 1 && <option value="*">Canal com todos</option>}
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </Select>
+            <Select
+              className="w-44"
+              value={newChatAgent}
+              onChange={setNewChatAgent}
+              options={[
+                { value: "", label: "Sem agente" },
+                ...(agents.length > 1 ? [{ value: "*", label: "Canal com todos" }] : []),
+                ...agents.map((a) => ({ value: a.id, label: a.name }))
+              ]}
+              aria-label="Agente do novo chat"
+            />
             <Button variant="default" onPress={newChat}>
               Novo chat
             </Button>
@@ -163,7 +168,7 @@ export function AgentCard({ agent, projectId = null }: { agent?: Agent; projectI
       return reload()
     })
   }
-  const remove = () => agent && confirm(`Apagar o agente ${agent.name} e as memórias dele?`) && call((c) => c.agents.remove({ params: { id: agent.id } })).then(reload)
+  const remove = () => agent && call((c) => c.agents.remove({ params: { id: agent.id } })).then(reload)
 
   if (!open)
     return agent ? (
@@ -203,9 +208,9 @@ export function AgentCard({ agent, projectId = null }: { agent?: Agent; projectI
             Cancelar
           </Button>
           {agent && (
-            <Button variant="destructive" className="ml-auto" onPress={remove}>
+            <ConfirmButton variant="destructive" className="ml-auto" title={`Apagar o agente ${agent.name}?`} description="As memórias dele também serão apagadas." onConfirm={remove}>
               Apagar
-            </Button>
+            </ConfirmButton>
           )}
         </div>
       </form>

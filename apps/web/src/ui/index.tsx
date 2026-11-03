@@ -1,17 +1,15 @@
 // Primitivas do design system. Features importam daqui (@/ui); não estilizam controles na mão.
 import { cn as cx } from "@/lib/utils"
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react"
+import type { ButtonHTMLAttributes, ReactNode } from "react"
 
 export { cn as cx } from "@/lib/utils"
 export { Button, type ButtonProps } from "./button"
+export { ConfirmButton, Dialog } from "./dialog"
+export { Input, Textarea } from "./input"
+export { Select, type SelectOption } from "./select"
+export { Tooltip } from "./tooltip"
 
 const focus = "outline-none focus-visible:ring-2 focus-visible:ring-accent"
-
-const field = "w-full rounded-control border border-subtle bg-control px-3 text-base text-fg placeholder:text-dim outline-none focus:border-strong focus-visible:ring-2 focus-visible:ring-accent-soft disabled:opacity-50"
-
-export const Input = ({ className, ...p }: InputHTMLAttributes<HTMLInputElement>) => <input {...p} className={cx(field, "h-control", className)} />
-export const Textarea = ({ className, ...p }: TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...p} className={cx(field, "resize-none py-2", className)} />
-export const Select = ({ className, ...p }: SelectHTMLAttributes<HTMLSelectElement>) => <select {...p} className={cx(field, "h-control pr-8", className)} />
 
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (

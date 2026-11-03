@@ -1,0 +1,60 @@
+// Dialog: React Aria (modal com foco preso, Esc fecha, foco volta ao gatilho). Gerado pelo shadcn e reduzido.
+import type { ReactNode } from "react"
+import { Dialog as DialogPrimitive, DialogTrigger, Heading, Modal, ModalOverlay } from "react-aria-components"
+import { Button, type ButtonProps } from "./button"
+
+export function Dialog({ title, children }: { title: string; children: (close: () => void) => ReactNode }) {
+  return (
+    <ModalOverlay isDismissable className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4 data-entering:animate-in data-entering:fade-in-0 data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none">
+      <Modal className="w-full max-w-sm rounded-sheet border border-strong bg-raised p-5 text-fg outline-none data-entering:animate-in data-entering:zoom-in-95 motion-reduce:animate-none">
+        <DialogPrimitive className="flex flex-col gap-4 outline-none">
+          {({ close }) => (
+            <>
+              <Heading slot="title" className="text-lg font-semibold">
+                {title}
+              </Heading>
+              {children(close)}
+            </>
+          )}
+        </DialogPrimitive>
+      </Modal>
+    </ModalOverlay>
+  )
+}
+
+// Botão que pede confirmação antes de uma ação destrutiva (substitui window.confirm).
+export function ConfirmButton({
+  title,
+  description,
+  confirmLabel = "Apagar",
+  onConfirm,
+  ...button
+}: Omit<ButtonProps, "onPress"> & { title: string; description?: ReactNode; confirmLabel?: string; onConfirm: () => void }) {
+  return (
+    <DialogTrigger>
+      <Button {...button} />
+      <Dialog title={title}>
+        {(close) => (
+          <>
+            {description && <p className="text-base text-muted">{description}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onPress={close}>
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                autoFocus
+                onPress={() => {
+                  close()
+                  onConfirm()
+                }}
+              >
+                {confirmLabel}
+              </Button>
+            </div>
+          </>
+        )}
+      </Dialog>
+    </DialogTrigger>
+  )
+}
