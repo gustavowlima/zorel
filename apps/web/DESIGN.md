@@ -314,6 +314,9 @@ Compactos e diretos, com aperto físico ao pressionar.
 - Abas em pílula: a primeira, "Agent commands", é o registro (só leitura) dos comandos que os agentes rodaram; o + abre um shell de verdade ("Shell 1", "Shell 2"…), um shell de login num PTY na pasta onde os agentes do chat trabalham. Cada aba de shell tem um × (e Delete/Backspace na aba focada) que a fecha e encerra o shell; trocar de aba não derruba o shell. Um shell que terminou mostra "The shell ended." e o rótulo apagado.
 - xterm.js com as cores dos tokens (fundo `code`, texto secundário, seleção accent-soft) e a fonte mono; o tamanho segue o painel.
 
+### Menu de contexto
+- O menu nativo do navegador não aparece no app (só em campos de texto e no terminal, para copiar e colar). Onde há ações, o clique direito (ou a tecla Menu / Shift+F10) abre o `ContextMenu` do Zero, o mesmo visual do menu ⋯, ancorado no ponteiro (ou sob o item focado). Na barra lateral: chat → Open, Rename, Delete; projeto → Open, New chat in…, Settings of…, Delete project. Excluir sempre confirma.
+
 ### Seletor de modelo
 - Popover com um trilho de ícones à esquerda (uma conta de assinatura ou provedor por botão) e, à direita, a busca em todos os modelos, os limites da conta escolhida e a lista dela.
 - O trilho só mostra o que é de fato um caminho: cada conta de assinatura (com a inicial quando há mais de uma do mesmo provedor), provedores de API com chave e servidores locais (Ollama, LM Studio) só enquanto rodam. Um provedor de API com o logo de uma assinatura (Anthropic ↔ Claude, OpenAI ↔ Codex) só aparece com chave, para não parecer uma segunda conta.

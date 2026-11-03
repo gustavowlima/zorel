@@ -330,7 +330,7 @@ function FailoverDialog({ isOpen, onClose, chat, lead }: { isOpen: boolean; onCl
   )
 }
 
-function RenameDialog({ isOpen, onClose, title, onSave }: { isOpen: boolean; onClose: () => void; title: string; onSave: (title: string) => void }) {
+export function RenameDialog({ isOpen, onClose, title, onSave }: { isOpen: boolean; onClose: () => void; title: string; onSave: (title: string) => void }) {
   const [value, setValue] = useState(title)
   useEffect(() => {
     if (isOpen) setValue(title)

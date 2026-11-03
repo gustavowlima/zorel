@@ -10,10 +10,11 @@ import { formatAge, formatPercent, formatTime, t } from "@zero/i18n"
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
 import { agentTone, chatTitle, splitModel, statusLabel, type Pace, paceOf, windowLabel, windowMinutes, windowShort } from "../labels.ts"
+import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, BookOpen, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MessageCircle, ModelAvatar, NavItem, NavLabel, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, BurnDown, type BurnTone, Settings, Spinner, Tooltip, useNavReorder
+  AgentAvatar, BookOpen, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, ModelAvatar, NavItem, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, BurnDown, type BurnTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
@@ -71,6 +72,51 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   const activeChat = route.view === "chat" ? route.id : undefined
   const groupOf = (projectId: string | null) => byTurn(ordered(chats.filter((c) => c.projectId === projectId), statuses), statuses)
   const loose = groupOf(null) // the chats without a project
+
+  // Right-click menus: a chat (open, rename, delete) or a project (open, new chat in it, delete).
+  const removeChat = useMutation(mutations.removeChat)
+  const updateChat = useMutation(mutations.updateChat)
+  const removeProject = useMutation(mutations.removeProject)
+  const [dialog, setDialog] = useState<{ kind: "rename" | "deleteChat"; chat: Chat } | { kind: "deleteProject"; project: Project }>()
+  const menuFor = (target: HTMLElement) => {
+    const key = target.closest("[role=row]")?.getAttribute("data-key") ?? ""
+    const chat = key.startsWith("c:") ? chats.find((c) => c.id === idOf(key)) : undefined
+    const project = key.startsWith("p:") ? projects.find((p) => p.id === idOf(key)) : undefined
+    if (chat)
+      return (
+        <>
+          <MenuItem icon={<MessageCircle />} onAction={() => go({ view: "chat", id: chat.id })}>
+            {t("common.open")}
+          </MenuItem>
+          <MenuItem icon={<Pencil />} onAction={() => setDialog({ kind: "rename", chat })}>
+            {t("common.rename")}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem icon={<Trash2 />} tone="danger" onAction={() => setDialog({ kind: "deleteChat", chat })}>
+            {t("common.delete")}
+          </MenuItem>
+        </>
+      )
+    if (project)
+      return (
+        <>
+          <MenuItem icon={<Folder />} onAction={() => go({ view: "project", id: project.id, tab: "overview" })}>
+            {t("common.open")}
+          </MenuItem>
+          <MenuItem icon={<Plus />} onAction={() => go({ view: "home", projectId: project.id })}>
+            {t("nav.newChatIn", { name: project.name })}
+          </MenuItem>
+          <MenuItem icon={<Settings />} onAction={() => go({ view: "project", id: project.id, tab: "overview" })}>
+            {t("nav.projectSettings", { name: project.name })}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem icon={<Trash2 />} tone="danger" onAction={() => setDialog({ kind: "deleteProject", project })}>
+            {t("project.deleteAction")}
+          </MenuItem>
+        </>
+      )
+    return undefined
+  }
 
   const reorderProjects = useMutation(mutations.reorderProjects)
   const reorderChats = useMutation(mutations.reorderChats)
@@ -137,7 +183,9 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
         </NavItem>
       </div>
 
-      {/* Chats (without a project) first, then Projects; each section folds, and the list scrolls under the pages. */}
+      {/* Chats (without a project) first, then Projects; each section folds, and the list scrolls under the pages.
+          Right-click (or the Menu key) on a chat or a project opens its menu. */}
+      <ContextMenu label={t("common.more")} menuFor={menuFor} className="flex min-h-0 flex-1 flex-col">
       <div ref={listRef} onScroll={measure} className={cx("scroll-quiet flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain pr-2.5 pb-2", more && "fade-bottom")}>
         <section className="flex flex-col gap-px">
           <NavLabel
@@ -183,10 +231,43 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
         </section>
       </div>
 
+      </ContextMenu>
+
       {/* The subscriptions' pace at the foot; it opens Usage. */}
       <div className={cx("mr-2.5 shrink-0 border-t pt-2 transition-colors duration-150", more ? "border-subtle" : "border-transparent")}>
         <UsageFoot active={route.view === "usage"} />
       </div>
+      {dialog?.kind === "rename" && (
+        <RenameDialog
+          isOpen
+          onClose={() => setDialog(undefined)}
+          title={chatTitle(dialog.chat)}
+          onSave={(title) => void updateChat({ params: { id: dialog.chat.id }, payload: { title }, reactivityKeys: ["chats"] })}
+        />
+      )}
+      <ConfirmDialog
+        isOpen={dialog?.kind === "deleteChat"}
+        onOpenChange={(open) => !open && setDialog(undefined)}
+        title={t("chat.deleteTitle")}
+        description={t("chat.deleteBody")}
+        onConfirm={() => {
+          if (dialog?.kind !== "deleteChat") return
+          const { chat } = dialog
+          void removeChat({ params: { id: chat.id }, reactivityKeys: ["chats"] }).then(() => activeChat === chat.id && go({ view: "home" }))
+        }}
+      />
+      <ConfirmDialog
+        isOpen={dialog?.kind === "deleteProject"}
+        onOpenChange={(open) => !open && setDialog(undefined)}
+        title={dialog?.kind === "deleteProject" ? t("project.deleteTitle", { name: dialog.project.name }) : ""}
+        description={t("project.deleteBody")}
+        confirmLabel={t("project.deleteAction")}
+        onConfirm={() => {
+          if (dialog?.kind !== "deleteProject") return
+          const { project } = dialog
+          void removeProject({ params: { id: project.id }, reactivityKeys: ["projects", "chats", "agents", "memories"] }).then(() => activeProjectId === project.id && go({ view: "home" }))
+        }}
+      />
     </nav>
   )
 }
