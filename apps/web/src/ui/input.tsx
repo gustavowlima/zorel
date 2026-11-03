@@ -12,3 +12,8 @@ type Props<T> = Omit<T, "className"> & { className?: string }
 export const Input = ({ className, ...p }: Props<ComponentProps<typeof InputPrimitive>>) => <InputPrimitive data-slot="input" {...p} className={cn(field, "h-control", className)} />
 
 export const Textarea = ({ className, ...p }: Props<ComponentProps<typeof TextAreaPrimitive>>) => <TextAreaPrimitive data-slot="textarea" {...p} className={cn(field, "resize-none py-2", className)} />
+
+// Textarea without a frame, for surfaces that draw their own (the message box).
+export const BareTextarea = ({ className, ...p }: Props<ComponentProps<typeof TextAreaPrimitive>>) => (
+  <TextAreaPrimitive data-slot="textarea" {...p} className={cn("w-full resize-none border-0 bg-transparent px-2 py-0 text-base leading-relaxed text-fg outline-none placeholder:text-dim", className)} />
+)

@@ -2,8 +2,9 @@
 // (ARCHITECTURE §10.3). New primitive in src/ui? Add it here before using it in a screen.
 import { type ReactNode, useState } from "react"
 import {
-  AgentAvatar, ArrowUp, Badge, Button, Card, ChatStatusIcon, ConfirmButton, Field, IconButton, Input, Menu, MenuItem, MenuSeparator,
-  MoreHorizontal, Paperclip, Pencil, ProviderIcon, Select, Spinner, Switch, Tab, TabList, TabPanel, Tabs, Textarea, Tooltip, Trash2
+  AgentAvatar, ArrowUp, Badge, BookOpen, Button, Card, ChatStatusIcon, Check, ConfirmButton, DisclosurePill, Dot, EmptyState, Field, FieldButton, Folder, GroupRow, IconButton,
+  Inbox, Input, Menu, MenuItem, MenuSeparator, Meter, ModelAvatar, MoreHorizontal, NavItem, NavLabel, OptionButton, Paperclip, Pencil, Plus, Popover, ProviderIcon, RailButton,
+  Select, Spinner, Switch, Tab, TabList, TabPanel, Tabs, Textarea, Tooltip, Trash2, TreeItem
 } from "@/ui"
 
 function Row({ title, children }: { title: string; children: ReactNode }) {
@@ -159,9 +160,96 @@ export default function Gallery() {
           </span>
         </Row>
 
+        <Row title="NavItem, NavLabel, GroupRow, TreeItem">
+          <div className="flex w-62 flex-col gap-0.5 rounded-card bg-frame p-3">
+            <NavItem icon={<Inbox />} active onPress={() => {}} trailing={<Badge tone="accent">3</Badge>}>
+              Needs you
+            </NavItem>
+            <NavItem icon={<BookOpen />} onPress={() => {}}>
+              Knowledge
+            </NavItem>
+            <NavLabel
+              action={
+                <IconButton label="Novo" size="sm">
+                  <Plus className="size-3.5" />
+                </IconButton>
+              }
+            >
+              Projects
+            </NavLabel>
+            <GroupRow icon={<Folder />} name="core" expanded onToggle={() => {}} trailing={<span className="pr-1.5 text-sm text-muted">2</span>} />
+            <div className="ml-4.5 flex flex-col gap-0.5 border-l border-strong pl-1.5">
+              <TreeItem
+                active
+                title="Context builder"
+                detail={
+                  <span className="flex items-center gap-1.5 text-accent-text">
+                    <ChatStatusIcon state="waiting" /> Coder waits for your OK
+                  </span>
+                }
+                onPress={() => {}}
+              />
+              <TreeItem title="Approvals UX" trailing={<span className="text-sm text-muted">2d</span>} onPress={() => {}} />
+            </div>
+          </div>
+        </Row>
+
+        <Row title="DisclosurePill, Dot, Meter, ModelAvatar">
+          <DisclosurePill expanded={false} onToggle={() => {}} leading={<Dot tone="success" />}>
+            Used 3 tools · 14s
+          </DisclosurePill>
+          <DisclosurePill expanded onToggle={() => {}} leading={<Spinner size={12} className="text-success" />}>
+            Run bun test · 4s
+          </DisclosurePill>
+          <Meter value={0.42} label="42%" className="w-40" />
+          <Meter value={0.9} warnAt={0.8} label="90%" className="w-40" />
+          <ModelAvatar provider="claude-cli" size={32} />
+          <ModelAvatar provider="codex-cli" size={32} />
+        </Row>
+
+        <Row title="Popover, RailButton, OptionButton, FieldButton">
+          <Popover
+            label="Modelo"
+            placement="bottom start"
+            className="w-80"
+            trigger={
+              <Button size="sm">
+                <ProviderIcon provider="claude" size={14} /> Sonnet
+              </Button>
+            }
+          >
+            <div className="flex">
+              <div className="flex flex-col gap-1.5 border-r border-subtle p-2.5">
+                <RailButton selected label="Claude" onPress={() => {}}>
+                  <ProviderIcon provider="claude" size={20} />
+                </RailButton>
+                <RailButton selected={false} label="Codex" badge="W" onPress={() => {}}>
+                  <ProviderIcon provider="codex" size={20} />
+                </RailButton>
+              </div>
+              <div className="flex flex-1 flex-col gap-0.5 p-2.5">
+                <OptionButton selected title="Sonnet" note="Balanced" onPress={() => {}} />
+                <OptionButton selected={false} title="Opus" note="Deepest reasoning" onPress={() => {}} />
+              </div>
+            </div>
+          </Popover>
+          <div className="w-64">
+            <FieldButton aria-label="Modelo">
+              <ProviderIcon provider="claude" size={14} /> Opus
+            </FieldButton>
+          </div>
+        </Row>
+
+        <Row title="EmptyState">
+          <div className="w-full rounded-card border border-subtle">
+            <EmptyState icon={<Check />} title="Nada precisa de você" hint="Pedidos e memórias propostas aparecem aqui." />
+          </div>
+        </Row>
+
         <Row title="Badge">
           <Badge>neutral</Badge>
           <Badge tone="accent">accent</Badge>
+          <Badge tone="success">success</Badge>
           <Badge tone="warning">warning</Badge>
           <Badge tone="danger">danger</Badge>
         </Row>

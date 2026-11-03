@@ -402,6 +402,7 @@ Referência: OpenBot (`docs/architecture/agents.md` "Agent communication policy"
 - **Runtime da página:** `ZeroClient = AtomHttpApi.Service(...)` + `AtomRpc` sobre WebSocket com reconexão.
 - **CRUD:** `ZeroClient.query(..., { reactivityKeys })` + `Atom.swr`. Mutations com as mesmas chaves revalidam sozinhas, e o `reload()` some.
 - **Chat:** `Atom.family(chatId → subscribeChat)`. O componente lê o estado (snapshot + eventos) e renderiza a resposta ao vivo agrupada.
+- **Como ficou (2026-11-03, `apps/web/src/client.ts`):** `Zero` (`AtomHttpApi`) e `Live` (`AtomRpc`, um WebSocket). Uma query por recurso com a chave dele (`projects`, `agents`, `chats`, `memories`, `servers`, `accounts`, `keys`, `models`, `usage`, `approvals`). O chat é `Atom.family` sobre `subscribeChat` dobrado por `reduceChat` com `Stream.scan`; não usa a query de stream do `AtomRpc` porque ela acumula em lotes (`PullResult`). Os status de todos os chats vêm de um átomo mantido vivo sobre `subscribeStatus`. Quando um chat sai de "rodando", o `App` invalida `chats`, `memories`, `usage` e `approvals`, porque o server muda título, memórias propostas e consumo sozinho. Sem `Atom.swr` por enquanto: a invalidação por chave basta.
 - **Design system:** ver 10.3.
 
 ## 10.3 Design system (D19)
@@ -446,7 +447,7 @@ Referência: OpenBot (`docs/architecture/agents.md` "Agent communication policy"
 
 ## 10.1 Internacionalização (D13)
 
-**Hoje:** a interface tem ~60 textos fixos em português, e os textos que o server mostra (erros, avisos) também são fixos.
+**Hoje (2026-11-03):** feito na web. `packages/i18n` tem o catálogo `en.ts`, `t()` com plural por `Intl.PluralRules` e formatadores (números, porcentagem, duração, idade, data). O `check:i18n` (`scripts/check-i18n.ts`) lê a AST de cada `.tsx` com `@babel/parser` e falha com texto em JSX ou em props lidas pela pessoa (`placeholder`, `aria-label`, `title`…). Falta no server: as dicas de modelo (`listModels`) e o rótulo do status ainda saem como texto; a web ignora os dois e monta o texto pelo catálogo.
 
 **Alvo:**
 
@@ -462,6 +463,8 @@ Referência: OpenBot (`docs/architecture/agents.md` "Agent communication policy"
 - **Verificação:** um script no CI acusa texto literal em JSX (`check:i18n`, como o `i18n-check` do OpenBot), com exceções explícitas.
 
 ## 10.2 Área de consumo (D15)
+
+**Hoje (2026-11-03):** a tela Usage existe com o que a tabela `turns` já registra: `GET /api/usage` soma os turnos terminados dos últimos 30 dias por dia (UTC), projeto, agente, modelo e conta; a web mostra totais (turnos, tokens, cache) e "para onde foi" agrupado. Custo, janelas de limite e alertas continuam na fase 2c.
 
 **Fonte dos dados:** a tabela `turns`, que a fase 1 já grava. Cada turno registra conta, modelo, harness, tokens (entrada, cache lido, cache escrito, saída), custo estimado, tempo até o primeiro token, tempo total e trocas de failover.
 
@@ -549,7 +552,7 @@ No CI rodam lint, typecheck, i18n e as camadas 1 e 2. **Cada migration tem teste
 |---|---|---|
 | **1. Runtime** (concluída em 2026-11-03) | **Contrato de eventos** (`ChatEvent`, `ZeroRpc`, feito); **banco migrado para Drizzle + `@effect/sql-sqlite-bun`, com a migração dos dados atuais e backup** (seção 12); logs com mascaramento e spans; testes nas camadas 1 e 2 no CI; (com dono/público nas tabelas que guardam conhecimento), **`Actor`**, `turns`, fila, `ZeroRpc` + `subscribeChat`, interrupt, recuperação no boot, deltas agrupados, medição por turno gravada em `turns`, erros do server como código. **A tela de chat atual só passa a consumir o `subscribeChat`** (sem redesenho) | Fechar a aba no meio de um turno e reabrir mostra o turno continuando. `kill -9` no server marca o turno `interrupted` com o texto parcial. Reenviar o mesmo `clientId` não duplica |
 | **2. Engines vivos** (concluída em 2026-11-03) | Claude Agent SDK + Codex App Server com sessão, marcação por sessão, steering, `setModel`, esforço de raciocínio, imagens. **Só assinaturas** (API keys são da fase 5). **Multicontas de assinatura** (`provider_accounts`, login dentro do Zero, `accountId` em agente e chat); **anexos e imagens** (seção 12) | O segundo turno no mesmo chat não sobe processo. Trocar Claude → Codex → Claude envia só o delta ao voltar. Os números de latência e cache estão registrados |
-| **UI. Interface nova** (depois da fase 2) | Design system completo: `DESIGN.md` atualizado pelo protótipo, tokens, primitivas que faltam, galeria `/dev/ui`, `check:ui` no CI, detector ligado; estrutura do app (barra lateral em árvore com status ao vivo) e **todas as telas reescritas uma vez**, já com **`packages/i18n` (en) e `t()`** e **átomos no chat e no CRUD**; pílula de atividade expansível, cartões de aprovação, seletor de modelo com contas | Nenhum texto literal em JSX fora do catálogo (`check:i18n` verde), `check:ui` verde, detector limpo e `/impeccable audit` em cada tela |
+| **UI. Interface nova** (concluída em 2026-11-03) | Design system completo: `DESIGN.md` atualizado pelo protótipo, tokens, primitivas que faltam, galeria `/dev/ui`, `check:ui` no CI, detector ligado; estrutura do app (barra lateral em árvore com status ao vivo) e **todas as telas reescritas uma vez**, já com **`packages/i18n` (en) e `t()`** e **átomos no chat e no CRUD**; pílula de atividade expansível, cartões de aprovação, seletor de modelo com contas | Nenhum texto literal em JSX fora do catálogo (`check:i18n` verde), `check:ui` verde, detector limpo e `/impeccable audit` em cada tela |
 | **2b. Failover** | Lista de alternativas por agente e chat, classificação de erros por adaptador, espera por limite com retorno automático, regra "só se ainda não agiu", aviso de termos, leitura de uso por conta, trocas visíveis no chat | Com a conta principal em limite, o turno continua na alternativa e volta sozinho após o reset. Um erro depois de uma ferramenta de escrita não repete o turno. Sem lista configurada, nada troca |
 | **2c. Consumo** | Área de consumo (seção 10.2): agregados por agente, projeto, conta e modelo; custo estimado; janelas de limite por conta; alertas | A tela mostra o consumo do mês por agente e o quanto falta de cada assinatura com o horário de reset. Um alerta de 80% aparece antes do limite |
 | **3. Workspace de código** (fase central) | `projects.path`, serviço `Workspace`, `cwd` do projeto, níveis de acesso, aprovação das ferramentas nativas, **diff das mudanças de cada turno** no painel direito (Changes e Files, com `@pierre/diffs`) e o terminal só leitura com os comandos dos agentes, **checkpoint e desfazer** (`rewindFiles` no Claude, git nos outros), passos de trabalho e handoff tipado | Um agente lê, edita e roda os testes do projeto com aprovação. O diff do turno aparece no chat e dá para desfazer. Depois de trocar de provider, o novo agente sabe o que foi feito |

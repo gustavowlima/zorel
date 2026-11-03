@@ -1,369 +1,508 @@
-// Chat/channel: follows runtime events (snapshot + live), so the turn continues if the tab closes and reopens.
-// One reply per agent, mid-turn tool approval, model and member switching, manual compaction.
-import { type Agent, type Attachment, type Chat, type Effort, MAX_ATTACHMENTS, type Message } from "@zero/contracts"
-import { type Approval, type ChatEvent, isInterruption, type WorkStep } from "@zero/contracts/events"
-import { useEffect, useRef, useState, type FormEvent } from "react"
+// Chat (prototype "Main"): header with the team, the conversation as a timeline (your messages on the
+// right, each agent's reply with its activity pill, approvals waiting for you, handoffs between agents),
+// and the message box. State is the chat atom: snapshot + live events, so a turn keeps going if the tab
+// closes and the screen catches up when it reopens.
+import type { Agent, Chat, Message } from "@zero/contracts"
+import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zero/contracts/events"
+import { formatCompact, formatDuration, t } from "@zero/i18n"
+import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { call, decideApproval, interruptChat, sendMessage, steerChat, subscribeChat, uploadAttachment } from "../api.ts"
-import { go, useApp } from "../state.ts"
-import { Badge, Button, Card, ConfirmButton, cx, Select, Textarea, Tooltip } from "@/ui"
-import { AccountSelect, accountProviderOf } from "./accounts.tsx"
+import { agentsAtom, attachmentUrl, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
+import { agentName, chatTitle, handleOf, modelLabel } from "../labels.ts"
+import { go } from "../state.ts"
+import { Composer } from "./composer.tsx"
 import { ModelPicker } from "./model-picker.tsx"
-
-type Live = { turnId: string; agentId: string | null; model: string; text: string; steps: WorkStep[] }
-
-const handle = (a: Agent) => a.name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "")
+import { AuthorAvatar, AvatarStack, TeamPicker } from "./people.tsx"
+import {
+  Button, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, Input, Menu, MenuItem,
+  MenuSeparator, MessageCircle, MoreHorizontal, Pencil, Shield, Sparkles, Spinner, Trash2
+} from "@/ui"
 
 export function ChatView({ chat }: { chat: Chat }) {
-  const { data, reload } = useApp()
-  const [messages, setMessages] = useState<Message[]>([])
-  const [live, setLive] = useState<Live>()
-  const [busy, setBusy] = useState(false)
-  const [approvals, setApprovals] = useState<ReadonlyArray<Approval>>([])
-  const [text, setText] = useState("")
-  const [files, setFiles] = useState<ReadonlyArray<Attachment>>([]) // uploaded, waiting to be sent
-  const [uploading, setUploading] = useState(0)
-  const picker = useRef<HTMLInputElement>(null)
-  const [error, setError] = useState<string>()
+  const state = useChat(chat.id)
+  const agents = useList(agentsAtom)
+  const send = useMutation(mutations.send)
+  const steer = useMutation(mutations.steer)
+  const interrupt = useMutation(mutations.interrupt)
+  const updateChat = useMutation(mutations.updateChat)
+  const team = chat.agentIds.flatMap((id) => agents.find((a) => a.id === id) ?? [])
+  const busy = state.pending > 0 || !!state.live
+
+  const submit = (text: string, attachmentIds: ReadonlyArray<string>) => {
+    const ids = attachmentIds.length ? { attachmentIds } : {}
+    return busy ? steer({ payload: { chatId: chat.id, text, ...ids } }) : send({ payload: { chatId: chat.id, clientId: crypto.randomUUID(), text, ...ids } })
+  }
+  const second = team[1]
+
+  return (
+    <section aria-label={t("chat.label")} className="flex h-full min-h-0 flex-col">
+      <ChatHeader chat={chat} team={team} />
+      <Timeline chat={chat} state={state} agents={agents} />
+      <div className="mx-auto w-full max-w-3xl px-7 pt-2 pb-6">
+        <Composer
+          key={chat.id}
+          autoFocus
+          busy={busy}
+          onStop={() => void interrupt({ payload: { chatId: chat.id } })}
+          onSubmit={submit}
+          upload={(f) => uploadAttachment(chat.id, f)}
+          placeholder={second ? t("composer.placeholderTeam", { handle: handleOf(second) }) : t("composer.placeholder")}
+          tools={
+            <>
+              <TeamPicker chat={chat} />
+              <ModelPicker
+                value={{ model: chat.model, accountId: chat.accountId, effort: chat.effort }}
+                onChange={(v) => void updateChat({ params: { id: chat.id }, payload: v, reactivityKeys: ["chats"] })}
+              />
+            </>
+          }
+        />
+      </div>
+    </section>
+  )
+}
+
+// ---------- header ----------
+
+function ChatHeader({ chat, team }: { chat: Chat; team: ReadonlyArray<Agent> }) {
+  const projects = useList(projectsAtom)
+  const project = projects.find((p) => p.id === chat.projectId)
+  const update = useMutation(mutations.updateChat)
+  const remove = useMutation(mutations.removeChat)
+  const consolidate = useMutation(mutations.consolidate)
+  const [dialog, setDialog] = useState<"rename" | "delete">()
+  const [note, setNote] = useState<{ tone: "ok" | "error"; text: string }>()
   const [compacting, setCompacting] = useState(false)
-  const bottom = useRef<HTMLDivElement>(null)
-  const reloadRef = useRef(reload)
-  reloadRef.current = reload
-
-  useEffect(() => {
-    setMessages([])
-    setLive(undefined)
-    setApprovals([])
-    setError(undefined)
-    const onEvent = (ev: ChatEvent) => {
-      switch (ev._tag) {
-        case "snapshot": {
-          const s = ev.snapshot
-          const running = s.turns.find((t) => t.state === "running")
-          setError(undefined) // (re)connected: the dropped-connection notice goes away
-          setMessages([...s.messages])
-          setApprovals(s.approvals)
-          setBusy(s.turns.length > 0)
-          setLive(
-            running && {
-              turnId: running.id, agentId: running.agentId, model: running.model,
-              text: s.partial.find((p) => p.turnId === running.id)?.text ?? "", steps: s.steps.filter((x) => x.turnId === running.id)
-            }
-          )
-          return
-        }
-        case "message":
-          return setMessages((m) => [...m, ev.message])
-        case "queued":
-          return setBusy(true)
-        case "turn-started":
-          return setLive({ turnId: ev.turn.id, agentId: ev.turn.agentId, model: ev.turn.model, text: "", steps: [] })
-        case "text":
-          return setLive((l) => (l?.turnId === ev.turnId ? { ...l, text: l.text + ev.delta } : l))
-        case "step-started":
-        case "step-finished":
-          return setLive((l) => (l?.turnId === ev.step.turnId ? { ...l, steps: [...l.steps.filter((x) => x.id !== ev.step.id), ev.step] } : l))
-        case "approval":
-          return setApprovals((a) => [...a, ev.approval])
-        case "approval-resolved":
-          return setApprovals((a) => a.filter((x) => x.id !== ev.approvalId))
-        case "turn-completed":
-        case "turn-failed":
-        case "interrupted": {
-          const message = ev.message
-          setLive((l) => (l?.turnId === ev.turn.id ? undefined : l))
-          if (message) setMessages((m) => [...m, message]) // engine error comes inside the saved message
-          return
-        }
-        case "status":
-          setBusy(ev.status.state !== "idle")
-          if (ev.status.state === "idle") void reloadRef.current() // title, consolidation and pending memories may have changed
-          return
-      }
-    }
-    return subscribeChat(chat.id, onEvent, (e) => setError(String(e)))
-  }, [chat.id])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the dependencies are the trigger (scroll when content arrives)
-  useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" }) // in newer Chromes returns a Promise: must not become the cleanup
-  }, [messages, live, approvals])
-
-  const project = data.projects.find((p) => p.id === chat.projectId)
-  const team = chat.agentIds.flatMap((id) => data.agents.find((a) => a.id === id) ?? [])
-  const candidates = data.agents.filter((a) => (a.projectId === null || a.projectId === chat.projectId) && !chat.agentIds.includes(a.id))
-  const agentName = (id: string | null) => data.agents.find((a) => a.id === id)?.name ?? "Assistente"
-
-  const update = (payload: { model?: string; accountId?: string | null; effort?: Effort | null; agentIds?: ReadonlyArray<string> }) =>
-    call((c) => c.chats.update({ params: { id: chat.id }, payload })).then(reload, (e) => setError(String(e)))
-
-  // With the chat busy, the message enters the runtime queue and is answered later.
-  const submit = (e?: FormEvent) => {
-    e?.preventDefault()
-    const input = text.trim() || (files.length ? "Veja os anexos." : "")
-    if (!input || uploading) return
-    const ids = files.map((f) => f.id)
-    setText("")
-    setFiles([])
-    setError(undefined)
-    // While the agent works, the message corrects it (or waits in the queue if the engine can't).
-    ;(busy ? steerChat(chat.id, input, ids) : sendMessage(chat.id, input, ids)).catch((err) => {
-      setError(String(err instanceof Error ? err.message : err))
-      setText((t) => t || input)
-    })
-  }
-
-  const attach = (list: Iterable<File>) => {
-    const picked = [...list].slice(0, MAX_ATTACHMENTS - files.length)
-    for (const f of picked) {
-      setUploading((n) => n + 1)
-      uploadAttachment(chat.id, f)
-        .then((a) => setFiles((x) => [...x, a]), (e) => setError(String(e instanceof Error ? e.message : e)))
-        .finally(() => setUploading((n) => n - 1))
-    }
-  }
-
-  const decide = (a: Approval, approve: boolean) => {
-    setApprovals((list) => list.filter((x) => x.id !== a.id))
-    decideApproval(a.id, approve ? "approved" : "denied").catch(() => setError("Esse pedido já expirou."))
-  }
 
   const compact = () => {
     setCompacting(true)
-    call((c) => c.chats.consolidate({ params: { id: chat.id } }))
-      .then(reload, () => setError("Não deu para compactar agora (já está compactando ou o modelo falhou)."))
+    setNote(undefined)
+    consolidate({ params: { id: chat.id }, reactivityKeys: ["chats", "memories"] })
+      .then(
+        () => setNote({ tone: "ok", text: t("chat.compacted") }),
+        () => setNote({ tone: "error", text: t("chat.compactFailed") })
+      )
       .finally(() => setCompacting(false))
   }
 
-  const remove = () => {
-    call((c) => c.chats.remove({ params: { id: chat.id } })).then(async () => {
-      await reload()
-      go(chat.projectId ? { view: "project", id: chat.projectId } : { view: "home" })
-    })
-  }
+  return (
+    <>
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-subtle px-7 py-3">
+        <div className="flex min-w-0 flex-1 items-baseline gap-3">
+          <h1 className="truncate text-lg font-semibold">{chatTitle(chat)}</h1>
+          <Button size="sm" variant="ghost" className="-ml-2 shrink-0 text-muted" onPress={() => go(project ? { view: "project", id: project.id, tab: "overview" } : { view: "home" })}>
+            {project?.name ?? t("common.general")}
+          </Button>
+        </div>
+        {compacting && (
+          <span className="inline-flex items-center gap-1.5 text-sm text-muted">
+            <Spinner size={12} /> {t("chat.compacting")}
+          </span>
+        )}
+        <AvatarStack team={team} />
+        <Menu
+          label={t("common.more")}
+          trigger={
+            <IconButton label={t("common.more")}>
+              <MoreHorizontal />
+            </IconButton>
+          }
+        >
+          <MenuItem icon={<Pencil />} onAction={() => setDialog("rename")}>
+            {t("common.rename")}
+          </MenuItem>
+          <MenuItem icon={<Sparkles />} onAction={compact}>
+            {t("chat.compact")}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem icon={<Trash2 />} tone="danger" onAction={() => setDialog("delete")}>
+            {t("common.delete")}
+          </MenuItem>
+        </Menu>
+      </header>
+      {note && (
+        <div className={cx("flex items-center justify-center gap-3 border-b border-subtle px-7 py-2 text-sm", note.tone === "ok" ? "text-secondary" : "text-danger")}>
+          <span>{note.text}</span>
+          {note.tone === "ok" && (
+            <Button size="sm" variant="secondary" onPress={() => go({ view: "inbox" })}>
+              {t("chat.review")}
+            </Button>
+          )}
+        </div>
+      )}
+      <RenameDialog isOpen={dialog === "rename"} onClose={() => setDialog(undefined)} title={chatTitle(chat)} onSave={(title) => void update({ params: { id: chat.id }, payload: { title }, reactivityKeys: ["chats"] })} />
+      <ConfirmDialog
+        isOpen={dialog === "delete"}
+        onOpenChange={(open) => !open && setDialog(undefined)}
+        title={t("chat.deleteTitle")}
+        description={t("chat.deleteBody")}
+        onConfirm={() =>
+          void remove({ params: { id: chat.id }, reactivityKeys: ["chats"] }).then(() => go(chat.projectId ? { view: "home", projectId: chat.projectId } : { view: "home" }))
+        }
+      />
+    </>
+  )
+}
+
+function RenameDialog({ isOpen, onClose, title, onSave }: { isOpen: boolean; onClose: () => void; title: string; onSave: (title: string) => void }) {
+  const [value, setValue] = useState(title)
+  useEffect(() => {
+    if (isOpen) setValue(title)
+  }, [isOpen, title])
+  return (
+    <Dialog title={t("chat.renameTitle")} isOpen={isOpen} onOpenChange={(open) => !open && onClose()}>
+      {(close) => (
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!value.trim()) return
+            onSave(value.trim())
+            close()
+          }}
+        >
+          <Field label={t("chat.titleField")}>
+            <Input value={value} onChange={(e) => setValue(e.target.value)} maxLength={80} autoFocus />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onPress={close}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="submit" variant="default" isDisabled={!value.trim()}>
+              {t("common.save")}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Dialog>
+  )
+}
+
+// ---------- timeline ----------
+
+type Item = { at: number; message: Message } | { at: number; note: Note }
+
+function Timeline({ chat, state, agents }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent> }) {
+  const scroller = useRef<HTMLDivElement>(null)
+  const pinned = useRef(true) // follow new content only while the reader is at the bottom
+  const items: Item[] = [...state.messages.map((m) => ({ at: m.at, message: m })), ...state.notes.map((n) => ({ at: n.at, note: n }))].sort((a, b) => a.at - b.at)
+  const multi = chat.agentIds.length > 1
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the content is the trigger
+  useLayoutEffect(() => {
+    const el = scroller.current
+    if (el && pinned.current) el.scrollTop = el.scrollHeight
+  }, [items.length, state.live?.text, state.live?.steps.length, state.approvals.length])
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-start gap-2 border-b border-subtle px-4 py-3">
-        <div className="mr-auto min-w-0 pt-1.5">
-          <div className="truncate font-semibold">{chat.title}</div>
-          {project && (
-            <button type="button" onClick={() => go({ view: "project", id: project.id })} className="text-sm text-muted hover:text-fg">
-              {project.name}
-            </button>
-          )}
-        </div>
-        <label className="flex flex-col gap-1 text-xs text-dim">
-          {team[0] ? `Modelo de ${team[0].name}` : "Modelo"}
-          <ModelPicker className="w-60" value={chat.model} onChange={(model) => update({ model })} />
-          <AccountSelect className="w-48" model={chat.model} value={chat.accountId} onChange={(accountId) => update({ accountId })} />
-          {accountProviderOf(chat.model) && (
-            <Select
-              className="w-40"
-              value={chat.effort ?? ""}
-              onChange={(v) => update({ effort: (v || null) as Effort | null })}
-              options={[{ value: "", label: "Raciocínio padrão" }, { value: "low", label: "Raciocínio baixo" }, { value: "medium", label: "Raciocínio médio" }, { value: "high", label: "Raciocínio alto" }, { value: "max", label: "Raciocínio máximo" }]}
-              aria-label="Nível de raciocínio"
-            />
-          )}
-        </label>
-        <div className="flex gap-1 pt-5">
-          <Tooltip content="Resume a conversa até aqui e propõe memórias e skills">
-            <Button variant="ghost" onPress={compact} isDisabled={compacting || busy}>
-              {compacting ? "Compactando…" : "Compactar"}
-            </Button>
-          </Tooltip>
-          <ConfirmButton variant="ghost" title="Apagar este chat?" description="Todas as mensagens serão apagadas." onConfirm={remove}>
-            Apagar
-          </ConfirmButton>
-        </div>
-      </header>
-
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-subtle px-4 py-2 text-sm">
-        <span className="text-dim">Membros:</span>
-        {team.length === 0 && <span className="text-muted">nenhum agente (assistente padrão)</span>}
-        {team.map((a, i) => (
-          <span key={a.id} className="inline-flex items-center gap-1 rounded-full bg-control py-0.5 pr-1 pl-2.5" title={i === 0 ? "Líder: responde quando ninguém é mencionado" : a.model}>
-            {i === 0 && <span className="text-accent-text">★</span>}@{handle(a)}
-            <button type="button" aria-label={`Tirar ${a.name}`} className="rounded-full px-1 text-dim hover:text-fg" onClick={() => update({ agentIds: chat.agentIds.filter((x) => x !== a.id) })}>
-              ×
-            </button>
-          </span>
-        ))}
-        {candidates.length > 0 && (
-          <Select
-            size="sm"
-            className="w-40"
-            value=""
-            placeholder="+ agente"
-            onChange={(id) => update({ agentIds: [...chat.agentIds, id] })}
-            options={candidates.map((a) => ({ value: a.id, label: a.name }))}
-            aria-label="Adicionar agente"
-          />
-        )}
-        {team.length > 1 && <span className="text-xs text-dim">Mencione com @ para escolher quem responde; agentes passam a vez mencionando uns aos outros.</span>}
-      </div>
-
-      <div className="flex-1 overflow-auto">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6">
-          {chat.summary && (
-            <details className="rounded-card border border-subtle bg-surface px-3 py-2 text-sm text-secondary">
-              <summary className="cursor-pointer text-muted">Resumo do que veio antes (é isso que o modelo vê das mensagens antigas)</summary>
-              <p className="mt-2 whitespace-pre-wrap">{chat.summary}</p>
-            </details>
-          )}
-          {messages.length === 0 && !busy && <div className="py-16 text-center text-muted">Comece a conversa. Você pode trocar o modelo a qualquer momento.</div>}
-          {messages.map((m) => (
-            // Already covered by the summary: the model no longer sees the verbatim text.
-            <div key={m.id} className={cx("flex flex-col", m.at <= chat.summaryUntil && "opacity-50")} title={m.at <= chat.summaryUntil ? "Coberta pelo resumo" : undefined}>
-              <Bubble message={m} author={agentName(m.agentId)} multi={team.length > 1} />
-            </div>
-          ))}
-          {live && (
-            <div className="flex flex-col gap-1">
-              {live.steps.map((s) => (
-                <div key={s.id} className="text-xs text-muted">
-                  <Badge tone={s.status === "ok" ? "neutral" : s.status === "error" ? "danger" : s.status === "refused" || s.status === "waiting" ? "warning" : "accent"}>{s.status}</Badge> <code>{s.title}</code>
-                </div>
-              ))}
-              <Bubble message={{ role: "assistant", text: live.text || "…", model: live.model, error: null, steps: [] }} author={agentName(live.agentId)} multi={team.length > 1} live />
-            </div>
-          )}
-          {approvals.map((a) => (
-            <Card key={a.id} className="flex flex-col gap-2 border-strong">
-              <div className="text-sm">
-                <span className="font-medium">{agentName(a.agentId)}</span> quer usar <code className="text-accent-text">{a.tool}</code>
-              </div>
-              <pre className="max-h-48 overflow-auto rounded-control bg-control p-2 text-xs">{a.args}</pre>
-              <div className="flex gap-2">
-                <Button variant="default" size="sm" onPress={() => decide(a, true)}>
-                  Aprovar
-                </Button>
-                <Button variant="destructive" size="sm" onPress={() => decide(a, false)}>
-                  Recusar
-                </Button>
-              </div>
-            </Card>
-          ))}
-          {error && <div className="rounded-card bg-danger-soft p-3 text-sm text-danger">{error}</div>}
-          <div ref={bottom} />
-        </div>
-      </div>
-
-      <form
-        onSubmit={submit}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault()
-          attach(e.dataTransfer.files)
-        }}
-        className="mx-auto flex w-full max-w-3xl flex-wrap items-end gap-2 px-4 pb-4"
-      >
-        {(files.length > 0 || uploading > 0) && (
-          <div className="flex w-full flex-wrap gap-1.5">
-            {files.map((f) => (
-              <span key={f.id} className="inline-flex items-center gap-1 rounded-full bg-control py-0.5 pr-1 pl-2.5 text-sm">
-                {f.name}
-                <button type="button" aria-label={`Tirar ${f.name}`} className="rounded-full px-1 text-dim hover:text-fg" onClick={() => setFiles((x) => x.filter((y) => y.id !== f.id))}>
-                  ×
-                </button>
-              </span>
-            ))}
-            {uploading > 0 && <span className="text-sm text-muted">anexando…</span>}
+    <div
+      ref={scroller}
+      onScroll={(e) => {
+        const el = e.currentTarget
+        pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+      }}
+      className="min-h-0 flex-1 overflow-auto"
+    >
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-7 pt-7 pb-4">
+        {chat.summary && <Summary text={chat.summary} />}
+        {state.ready && items.length === 0 && !state.live && <EmptyState icon={<MessageCircle />} title={t("chat.empty")} hint={t("chat.emptyHint")} />}
+        {!state.ready && (
+          <div className="flex justify-center py-16 text-muted">
+            <Spinner />
           </div>
         )}
-        <input ref={picker} type="file" multiple hidden onChange={(e) => e.target.files && attach(e.target.files)} />
-        <Button size="lg" variant="ghost" aria-label="Anexar arquivos" onPress={() => picker.current?.click()}>
-          Anexar
-        </Button>
-        <Textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onPaste={(e) => {
-            if (e.clipboardData.files.length) {
-              e.preventDefault()
-              attach(e.clipboardData.files)
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return
-            e.preventDefault()
-            void submit()
-          }}
-          rows={Math.min(8, Math.max(2, text.split("\n").length))}
-          placeholder={team.length > 1 ? `Mensagem (@${handle(team[1]!)} para chamar alguém específico)` : "Mensagem (Enter envia, Shift+Enter quebra linha)"}
-          aria-label="Mensagem"
-          autoFocus
-        />
-        {busy ? (
-          <>
-            <Button type="submit" variant="secondary" size="lg" isDisabled={!text.trim()}>
-              Corrigir
-            </Button>
-            <Button size="lg" onPress={() => void interruptChat(chat.id).catch((e) => setError(String(e)))}>
-              Parar
-            </Button>
-          </>
-        ) : (
-          <Button type="submit" variant="default" size="lg" isDisabled={(!text.trim() && !files.length) || uploading > 0}>
-            Enviar
-          </Button>
+        {items.map((item) =>
+          "message" in item ? (
+            <div key={item.message.id} className={cx(item.message.at <= chat.summaryUntil && "opacity-55")} title={item.message.at <= chat.summaryUntil ? t("chat.coveredBySummary") : undefined}>
+              {item.message.role === "user" ? <UserMessage message={item.message} /> : <AgentMessage message={item.message} agents={agents} />}
+            </div>
+          ) : (
+            <HandoffNote key={`${item.note.at}`} note={item.note} agents={agents} />
+          )
         )}
-      </form>
+        {state.live && <LiveMessage live={state.live} agents={agents} approvals={state.approvals} receipts={state.receipts} />}
+        {!state.live && state.approvals.map((a) => <ApprovalCard key={a.id} approval={a} />)}
+        {multi && state.ready && items.length === 0 && <p className="text-center text-sm text-dim">{t("team.mentionHint")}</p>}
+      </div>
     </div>
   )
 }
 
-const interrupted = isInterruption
-const stepTone = { ok: "neutral", error: "danger", refused: "warning" } as const
-
-function Bubble({ message: m, author, multi, live }: { message: Pick<Message, "role" | "text" | "model" | "error" | "steps"> & Partial<Message>; author: string; multi: boolean; live?: boolean }) {
-  if (m.role === "user")
-    return (
-      <div className="flex max-w-[85%] flex-col items-end gap-1.5 self-end">
-        {m.attachments && m.attachments.length > 0 && (
-          <div className="flex flex-wrap justify-end gap-1.5">
-            {m.attachments.map((a) =>
-              a.mime.startsWith("image/") ? (
-                <a key={a.id} href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer">
-                  <img src={`/api/attachments/${a.id}`} alt={a.name} className="h-24 rounded-control border border-subtle object-cover" />
-                </a>
-              ) : (
-                <a key={a.id} href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer" className="rounded-control bg-control px-2 py-1 text-sm text-accent-text">
-                  {a.name}
-                </a>
-              )
-            )}
-          </div>
-        )}
-        <div className="whitespace-pre-wrap rounded-card bg-surface px-3 py-2">{m.text}</div>
-      </div>
-    )
+function Summary({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
   return (
-    <div className="flex flex-col gap-1">
-      {multi && <div className="text-sm font-medium text-accent-text">{author}</div>}
-      {m.steps.length > 0 && (
-        <div className="flex flex-col gap-1">
-          {m.steps.map((s, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: a message's steps are immutable and may repeat the same tool
-            <details key={i} className="text-xs text-muted">
-              <summary className="cursor-pointer">
-                <Badge tone={stepTone[s.status]}>{s.status === "ok" ? "usou" : s.status === "refused" ? "recusada" : "falhou"}</Badge> <code>{s.tool}</code>
-              </summary>
-              <pre className="mt-1 overflow-auto rounded-control bg-control p-2">{`${s.args}\n→ ${s.result}`}</pre>
-            </details>
-          ))}
+    <div className="flex flex-col gap-2">
+      <DisclosurePill expanded={open} onToggle={() => setOpen(!open)} controls={id} leading={<Sparkles className="size-3.5 text-muted" />}>
+        {t("chat.summaryTitle")}
+      </DisclosurePill>
+      {open && (
+        <div id={id} className="flex flex-col gap-1.5 rounded-card border border-subtle px-4 py-3">
+          <p className="text-sm text-dim">{t("chat.summaryHint")}</p>
+          <p className="whitespace-pre-wrap text-secondary">{text}</p>
         </div>
       )}
-      <div className={cx("prose-chat leading-relaxed", live && "opacity-90")}>
-        <Markdown remarkPlugins={[remarkGfm]}>{m.text}</Markdown>
+    </div>
+  )
+}
+
+function UserMessage({ message: m }: { message: Message }) {
+  return (
+    <div className="ml-auto flex max-w-xl flex-col items-end gap-1.5">
+      {m.attachments.length > 0 && (
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {m.attachments.map((a) =>
+            a.mime.startsWith("image/") ? (
+              <a key={a.id} href={attachmentUrl(a.id)} target="_blank" rel="noreferrer" className="rounded-card outline-none focus-visible:ring-2 focus-visible:ring-accent">
+                <img src={attachmentUrl(a.id)} alt={a.name} className="h-28 max-w-60 rounded-card border border-subtle object-cover" />
+              </a>
+            ) : (
+              <a
+                key={a.id}
+                href={attachmentUrl(a.id)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-control-sm max-w-60 items-center gap-1.5 rounded-full bg-surface px-3 text-sm text-secondary outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <File className="size-3.5 shrink-0 text-muted" />
+                <span className="truncate">{a.name}</span>
+              </a>
+            )
+          )}
+        </div>
+      )}
+      <div className="rounded-sheet bg-surface px-4 py-2.5 whitespace-pre-wrap">{m.text}</div>
+    </div>
+  )
+}
+
+// Agent reply: avatar column + content (name and model, activity pill, text, how it ended, tokens).
+function Reply({ agentId, model, agents, pill, children, footer }: { agentId: string | null; model: string | null; agents: ReadonlyArray<Agent>; pill?: ReactNode; children: ReactNode; footer?: ReactNode }) {
+  const agent = agents.find((a) => a.id === agentId)
+  return (
+    <article className="flex gap-3.5">
+      <AuthorAvatar agent={agent} model={model} />
+      <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+        <div className="flex h-6 items-baseline gap-2">
+          <strong className="font-semibold">{agentName(agentId, agents)}</strong>
+          {model && <span className="truncate text-sm text-muted">{modelLabel(model)}</span>}
+        </div>
+        {pill}
+        {children}
+        {footer}
       </div>
-      <div className="flex items-center gap-2 text-xs text-dim">
-        {m.model && <span>{m.model}</span>}
-        {!live && m.inputTokens ? <span>{`${m.inputTokens.toLocaleString()} → ${m.outputTokens?.toLocaleString()} tokens`}</span> : null}
-        {m.error && <Badge tone={interrupted(m.error) ? "warning" : "danger"}>{interrupted(m.error) ? "interrompido" : "erro"}</Badge>}
+    </article>
+  )
+}
+
+const prose = (text: string) => (
+  <div className="prose-chat leading-relaxed">
+    <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
+  </div>
+)
+
+function endingOf(error: string | null): { tone: "warning" | "danger"; text: string } | undefined {
+  if (!error) return undefined
+  if (error === ErrorCode.cancelled) return { tone: "warning", text: t("chat.cancelled") }
+  if (error === ErrorCode.serverRestarted) return { tone: "warning", text: t("chat.serverRestarted") }
+  if (isInterruption(error)) return { tone: "warning", text: t("chat.interrupted") }
+  return { tone: "danger", text: error }
+}
+
+function AgentMessage({ message: m, agents }: { message: Message; agents: ReadonlyArray<Agent> }) {
+  const ending = endingOf(m.error)
+  const tokens = m.inputTokens || m.outputTokens ? t("chat.tokens", { input: formatCompact(m.inputTokens), output: formatCompact(m.outputTokens) }) : null
+  return (
+    <Reply
+      agentId={m.agentId}
+      model={m.model}
+      agents={agents}
+      pill={m.steps.length > 0 && <StoredActivity steps={m.steps} />}
+      footer={
+        (ending || tokens) && (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-dim">
+            {ending && (
+              <span className={cx("inline-flex items-center gap-1.5", ending.tone === "danger" ? "text-danger" : "text-warning")}>
+                <CircleAlert className="size-3.5" />
+                {ending.tone === "danger" ? t("chat.failed") : ending.text}
+              </span>
+            )}
+            {tokens && <span>{tokens}</span>}
+          </div>
+        )
+      }
+    >
+      {m.text && prose(m.text)}
+      {ending?.tone === "danger" && <pre className="overflow-auto rounded-control bg-code px-3 py-2 font-mono text-sm whitespace-pre-wrap text-danger">{ending.text}</pre>}
+    </Reply>
+  )
+}
+
+// ---------- activity ----------
+
+function StoredActivity({ steps }: { steps: Message["steps"] }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  const refused = steps.filter((s) => s.status === "refused").length
+  const failed = steps.filter((s) => s.status === "error").length
+  const parts = [t("activity.usedTools", { count: steps.length }), refused && t("activity.refused", { count: refused }), failed && t("activity.errors", { count: failed })].filter(Boolean)
+  return (
+    <>
+      <DisclosurePill expanded={open} onToggle={() => setOpen(!open)} controls={id} leading={<Dot tone={failed ? "danger" : refused ? "warning" : "success"} />}>
+        {parts.join(" · ")}
+      </DisclosurePill>
+      {open && (
+        <ol id={id} className="flex max-w-xl flex-col gap-2.5 rounded-card border border-subtle px-3.5 py-3">
+          {steps.map((s, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: stored steps are immutable and may repeat a tool
+            <li key={i} className="flex gap-2.5">
+              <StepIcon status={s.status} />
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <Code className="self-start">{s.tool}</Code>
+                {s.args && s.args !== "{}" && <pre className="overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{s.args}</pre>}
+                {s.result && <p className="line-clamp-3 text-sm text-muted">{s.result}</p>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </>
+  )
+}
+
+function StepIcon({ status }: { status: WorkStep["status"] }) {
+  const cls = "mt-0.5 size-4 shrink-0"
+  if (status === "running") return <Spinner size={16} className={cx(cls, "text-success")} />
+  if (status === "waiting") return <Clock className={cx(cls, "text-accent-text")} />
+  if (status === "refused") return <Shield className={cx(cls, "text-warning")} />
+  if (status === "error") return <CircleX className={cx(cls, "text-danger")} />
+  return <CircleCheck className={cx(cls, "text-success")} />
+}
+
+// Re-renders every second while mounted (live elapsed time).
+function useNow(active: boolean) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (!active) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [active])
+  return now
+}
+
+function LiveMessage({ live, agents, approvals, receipts }: { live: LiveTurn; agents: ReadonlyArray<Agent>; approvals: ReadonlyArray<Approval>; receipts: ReadonlyArray<Receipt> }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  const now = useNow(true)
+  const current = [...live.steps].reverse().find((s) => s.status === "running" || s.status === "waiting")
+  const label = [current?.title ?? t("activity.working"), formatDuration(now - live.startedAt)].join(" · ")
+  return (
+    <Reply
+      agentId={live.agentId}
+      model={live.model}
+      agents={agents}
+      pill={
+        <>
+          <DisclosurePill expanded={open} onToggle={() => setOpen(!open)} controls={id} leading={current?.status === "waiting" ? <Clock className="size-3.5 text-accent-text" /> : <Spinner size={12} className="text-success" />}>
+            {label}
+          </DisclosurePill>
+          {open && live.steps.length > 0 && (
+            <ol id={id} className="flex max-w-xl flex-col gap-2 rounded-card border border-subtle px-3.5 py-3">
+              {live.steps.map((s) => (
+                <li key={s.id} className="flex items-start gap-2.5">
+                  <StepIcon status={s.status} />
+                  <span className="min-w-0 flex-1 text-secondary">
+                    {s.title}
+                    {s.status === "waiting" && <span className="text-accent-text">{` · ${t("activity.waiting")}`}</span>}
+                  </span>
+                  {s.durationMs !== null && <span className="shrink-0 text-sm text-muted">{formatDuration(s.durationMs)}</span>}
+                </li>
+              ))}
+            </ol>
+          )}
+        </>
+      }
+    >
+      {live.text ? prose(live.text) : <TypingDots />}
+      {receipts.map((r) => (
+        <ReceiptCard key={r.approval.id} receipt={r} />
+      ))}
+      {approvals.map((a) => (
+        <ApprovalCard key={a.id} approval={a} />
+      ))}
+    </Reply>
+  )
+}
+
+const TypingDots = () => (
+  <span role="status" className="inline-flex h-6 items-center gap-1" aria-label={t("activity.working")}>
+    {[0, 1, 2].map((i) => (
+      <span key={i} className="size-1.5 animate-pulse rounded-full bg-dim motion-reduce:animate-none" style={{ animationDelay: `${i * 180}ms` }} />
+    ))}
+  </span>
+)
+
+// ---------- approvals ----------
+
+function ApprovalCard({ approval: a }: { approval: Approval }) {
+  const decide = useMutation(mutations.decide)
+  const agents = useList(agentsAtom)
+  const [pending, setPending] = useState<"approved" | "denied">()
+  const [error, setError] = useState<string>()
+  const [details, setDetails] = useState(false)
+  const choose = (outcome: "approved" | "denied") => {
+    setPending(outcome)
+    decide({ payload: { approvalId: a.id, outcome }, reactivityKeys: ["approvals"] }).catch(() => {
+      setPending(undefined)
+      setError(t("chat.approvalGone"))
+    })
+  }
+  return (
+    <div className="flex w-full max-w-md flex-col gap-2.5 rounded-card border border-accent-line bg-accent-faint px-4 py-3.5">
+      <span className="text-xs font-semibold tracking-wide text-accent-text uppercase">{t("approval.waiting")}</span>
+      <p>
+        {a.summary || t("approval.wantsTo", { agent: agentName(a.agentId, agents), tool: a.tool })}
+        {a.cwd && <span className="text-muted">{` ${t("approval.folder", { path: a.cwd })}`}</span>}
+      </p>
+      {details && <pre className="max-h-48 overflow-auto rounded-control bg-code px-3 py-2 font-mono text-sm text-secondary">{a.args}</pre>}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="default" isPending={pending === "approved"} isDisabled={!!pending} onPress={() => choose("approved")}>
+          {t("approval.allow")}
+        </Button>
+        <Button size="sm" variant="ghost" isDisabled={!!pending} onPress={() => choose("denied")}>
+          {t("approval.deny")}
+        </Button>
+        <span className="flex-1" />
+        <Button size="sm" variant="ghost" aria-expanded={details} onPress={() => setDetails(!details)}>
+          <Code className="bg-transparent px-0">{a.tool}</Code>
+        </Button>
       </div>
-      {m.error && !interrupted(m.error) && <div className="whitespace-pre-wrap text-sm text-danger">{m.error}</div>}
+      {error && <p className="text-sm text-danger">{error}</p>}
+    </div>
+  )
+}
+
+function ReceiptCard({ receipt: r }: { receipt: Receipt }) {
+  const ok = r.outcome === "approved" || r.outcome === "always"
+  return (
+    <div className={cx("flex max-w-md flex-col gap-1 self-start rounded-card border px-4 py-3", ok ? "border-success-line bg-success-faint" : "border-subtle bg-surface")}>
+      <span className={cx("inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase", ok ? "text-success" : "text-muted")}>
+        {ok ? <CircleCheck className="size-3.5" /> : <CircleX className="size-3.5" />}
+        {ok ? t("approval.approved") : r.outcome === "expired" ? t("approval.expired") : t("approval.denied")}
+      </span>
+      <span className="text-secondary">{r.approval.summary || r.approval.tool}</span>
+    </div>
+  )
+}
+
+function HandoffNote({ note, agents }: { note: Note; agents: ReadonlyArray<Agent> }) {
+  const to = note.to.map((id) => agentName(id, agents)).join(", ")
+  return (
+    <div className="flex items-center gap-3 text-sm text-muted">
+      <span aria-hidden="true" className="h-px flex-1 bg-subtle" />
+      {t("chat.handoff", { from: agentName(note.from, agents), to })}
+      <span aria-hidden="true" className="h-px flex-1 bg-subtle" />
     </div>
   )
 }

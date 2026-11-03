@@ -172,5 +172,6 @@ export const ZeroRpc = RpcGroup.make(
   Rpc.make("interrupt", { payload: { chatId: Id } }),
   Rpc.make("decide", { payload: { approvalId: Id, outcome: Schema.Literals(["approved", "always", "denied"]), reason: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))) }, error: ApprovalNotFound }),
   Rpc.make("subscribeChat", { payload: { chatId: Id }, success: ChatEvent, error: ChatNotFound, stream: true }),
-  Rpc.make("subscribeStatus", { success: ChatStatus, stream: true }) // all chats: sidebar and "Precisa de você"
+  Rpc.make("subscribeStatus", { success: ChatStatus, stream: true }), // all chats: sidebar and "Needs you"
+  Rpc.make("approvals", { success: Schema.Array(Approval) }) // open approvals of every chat ("Needs you")
 )

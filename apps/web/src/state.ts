@@ -1,26 +1,72 @@
-// Minimal global state: lists loaded from the server (they're small) and the route in the URL hash.
-import type { Agent, Chat, McpServer, Memory, ModelInfo, Project } from "@zero/contracts"
-import { Effect } from "effect"
-import { createContext, useCallback, useContext, useEffect, useState } from "react"
-import { call } from "./api.ts"
+// Route in the URL hash, and the theme preference. Data lives in atoms (client.ts), not here.
+import { useEffect, useState } from "react"
+
+export const SETTINGS_TABS = ["accounts", "keys", "mcp", "skills", "appearance"] as const
+export type SettingsTab = (typeof SETTINGS_TABS)[number]
+export const PROJECT_TABS = ["overview", "agents", "tools"] as const
+export type ProjectTab = (typeof PROJECT_TABS)[number]
 
 export type Route =
-  | { view: "home" }
+  | { view: "home"; projectId?: string }
+  | { view: "inbox" }
+  | { view: "knowledge"; id?: string }
+  | { view: "usage" }
+  | { view: "settings"; tab: SettingsTab }
   | { view: "new-project" }
-  | { view: "memories" }
-  | { view: "settings" }
-  | { view: "project"; id: string }
+  | { view: "project"; id: string; tab: ProjectTab }
   | { view: "chat"; id: string }
+  | { view: "agent"; id: string }
+  | { view: "new-agent"; projectId: string | null }
+
+const oneOf = <T extends string>(list: ReadonlyArray<T>, v: string | undefined, fallback: T): T => (list.includes(v as T) ? (v as T) : fallback)
 
 export function parseRoute(hash: string): Route {
-  const [, view, id] = hash.replace(/^#/, "").split("/")
-  if ((view === "project" || view === "chat") && id) return { view, id }
-  if (view === "new-project" || view === "memories" || view === "settings") return { view }
-  return { view: "home" }
+  const [, view, a, b] = hash.replace(/^#/, "").split("/")
+  switch (view) {
+    case "inbox":
+    case "usage":
+    case "new-project":
+      return { view }
+    case "knowledge":
+      return a ? { view, id: a } : { view }
+    case "settings":
+      return { view, tab: oneOf(SETTINGS_TABS, a, "accounts") }
+    case "project":
+      return a ? { view, id: a, tab: oneOf(PROJECT_TABS, b, "overview") } : { view: "home" }
+    case "chat":
+      return a ? { view, id: a } : { view: "home" }
+    case "agent":
+      if (a === "new") return { view: "new-agent", projectId: b && b !== "global" ? b : null }
+      return a ? { view, id: a } : { view: "home" }
+    case "new":
+      return a ? { view: "home", projectId: a } : { view: "home" }
+    default:
+      return { view: "home" }
+  }
+}
+
+export const hrefOf = (r: Route): string => {
+  switch (r.view) {
+    case "home":
+      return r.projectId ? `#/new/${r.projectId}` : "#/"
+    case "knowledge":
+      return r.id ? `#/knowledge/${r.id}` : "#/knowledge"
+    case "settings":
+      return `#/settings/${r.tab}`
+    case "project":
+      return r.tab === "overview" ? `#/project/${r.id}` : `#/project/${r.id}/${r.tab}`
+    case "chat":
+    case "agent":
+      return `#/${r.view}/${r.id}`
+    case "new-agent":
+      return `#/agent/new/${r.projectId ?? "global"}`
+    default:
+      return `#/${r.view}`
+  }
 }
 
 export const go = (r: Route) => {
-  location.hash = r.view === "project" || r.view === "chat" ? `/${r.view}/${r.id}` : r.view === "home" ? "" : `/${r.view}`
+  location.hash = hrefOf(r)
 }
 
 export function useRoute(): Route {
@@ -33,43 +79,51 @@ export function useRoute(): Route {
   return route
 }
 
-export interface Data {
-  projects: ReadonlyArray<Project>
-  agents: ReadonlyArray<Agent>
-  chats: ReadonlyArray<Chat>
-  memories: ReadonlyArray<Memory>
-  models: ReadonlyArray<ModelInfo>
-  servers: ReadonlyArray<McpServer>
+// ---------- theme: system (default), dark or light; per browser ----------
+
+export type ThemePref = "system" | "dark" | "light"
+const THEME_KEY = "zero.theme"
+const prefersLight = matchMedia("(prefers-color-scheme: light)")
+
+export function themePref(): ThemePref {
+  try {
+    const v = localStorage.getItem(THEME_KEY)
+    return v === "dark" || v === "light" ? v : "system"
+  } catch {
+    return "system" // storage blocked: follow the system
+  }
 }
 
-const empty: Data = { projects: [], agents: [], chats: [], memories: [], models: [], servers: [] }
-
-export function useData() {
-  const [data, setData] = useState<Data>(empty)
-  const [error, setError] = useState<string>()
-  const reload = useCallback(
-    () =>
-      call((c) => Effect.all({ projects: c.projects.list(), agents: c.agents.list(), chats: c.chats.list(), memories: c.memories.list(), models: c.settings.models(), servers: c.tools.list() }, { concurrency: "unbounded" }))
-        .then((d) => {
-          setData(d)
-          setError(undefined)
-        })
-        .catch((e) => setError(`Não consegui falar com o server: ${e}`)),
-    []
-  )
-  useEffect(() => void reload(), [reload])
-  return { data, error, reload }
+export function applyTheme() {
+  const pref = themePref()
+  document.documentElement.dataset.theme = pref === "system" ? (prefersLight.matches ? "light" : "dark") : pref
 }
 
-export const DataContext = createContext<{ data: Data; reload: () => Promise<void> }>({ data: empty, reload: async () => {} })
-export const useApp = () => useContext(DataContext)
-
-// Readable label for a memory scope.
-export function scopeLabel(scope: string, data: Data): string {
-  if (scope === "user") return "Você"
-  const [kind, id] = scope.split(":")
-  if (kind === "project") return `Projeto · ${data.projects.find((p) => p.id === id)?.name ?? "?"}`
-  return `Agente · ${data.agents.find((a) => a.id === id)?.name ?? "?"}`
+export function setThemePref(pref: ThemePref) {
+  try {
+    if (pref === "system") localStorage.removeItem(THEME_KEY)
+    else localStorage.setItem(THEME_KEY, pref)
+  } catch {
+    // storage blocked: the choice lasts until the page reloads
+  }
+  applyTheme()
 }
 
-export const DEFAULT_MODEL = "claude-cli/sonnet"
+prefersLight.addEventListener("change", applyTheme)
+
+// ---------- small per-browser UI memory (expanded projects) ----------
+
+export function readSet(key: string): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(key) ?? "[]") as string[])
+  } catch {
+    return new Set()
+  }
+}
+export function writeSet(key: string, set: ReadonlySet<string>) {
+  try {
+    localStorage.setItem(key, JSON.stringify([...set]))
+  } catch {
+    // storage blocked: it resets on reload
+  }
+}

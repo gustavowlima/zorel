@@ -368,7 +368,33 @@ export const repository = (db: Db) => {
           .where(chatId ? and(isNull(approvals.outcome), eq(approvals.chatId, chatId)) : isNull(approvals.outcome))
           .orderBy(asc(approvals.createdAt))
           .pipe(Effect.map((r) => r.map(toApproval)))
+      ),
+
+    // ---------- usage ----------
+    // Finished turns since `since`, summed per UTC day, project, agent, model and account.
+    usage: (since: number) => {
+      const day = sql<number>`(${turns.createdAt} / 86400000) * 86400000`
+      return orDie(
+        db
+          .select({
+            day,
+            projectId: chats.projectId,
+            agentId: turns.agentId,
+            model: turns.model,
+            accountId: turns.accountId,
+            turns: sql<number>`count(*)`,
+            inputTokens: sql<number>`sum(${turns.inputTokens})`,
+            outputTokens: sql<number>`sum(${turns.outputTokens})`,
+            cachedTokens: sql<number>`sum(${turns.cachedTokens})`,
+            durationMs: sql<number>`coalesce(sum(${turns.endedAt} - ${turns.startedAt}), 0)`
+          })
+          .from(turns)
+          .innerJoin(chats, eq(chats.id, turns.chatId))
+          .where(and(gt(turns.createdAt, since), inArray(turns.state, ["completed", "failed", "interrupted"])))
+          .groupBy(day, chats.projectId, turns.agentId, turns.model, turns.accountId)
+          .orderBy(asc(day))
       )
+    }
   }
 }
 

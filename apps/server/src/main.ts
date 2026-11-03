@@ -1,5 +1,5 @@
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, MAX_ATTACHMENT_BYTES, type ToolInfo } from "@zero/contracts"
+import { Api, MAX_ATTACHMENT_BYTES, type ToolInfo, USAGE_DAYS } from "@zero/contracts"
 import { ZeroRpc } from "@zero/contracts/events"
 import { Effect, Layer, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -171,8 +171,10 @@ const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
 const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
   Effect.gen(function* () {
     const secrets = yield* Secrets
+    const store = yield* Store
     return h
       .handle("models", () => Effect.promise(() => listModels(secrets)))
+      .handle("usage", () => store.usage(Date.now() - USAGE_DAYS * 86_400_000))
       .handle("keys", () => Effect.sync(() => API_KEYS.map((name) => ({ name, set: !!secrets.get(name), fromEnv: secrets.fromEnv(name) }))))
       .handle("setKey", ({ params, payload }) =>
         (API_KEYS as ReadonlyArray<string>).includes(params.name) ? Effect.promise(() => secrets.set(params.name, payload.value.trim())) : notFound()
@@ -184,13 +186,15 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
 const RpcHandlers = ZeroRpc.toLayer(
   Effect.gen(function* () {
     const runtime = yield* Runtime
+    const store = yield* Store
     return {
       send: (p) => runtime.send(p),
       steer: (p) => runtime.steer(p.chatId, p.text, p.attachmentIds),
       interrupt: (p) => runtime.interrupt(p.chatId),
       decide: (p) => runtime.decide(p.approvalId, p.outcome, p.reason),
       subscribeChat: (p) => runtime.subscribeChat(p.chatId),
-      subscribeStatus: () => runtime.subscribeStatus
+      subscribeStatus: () => runtime.subscribeStatus,
+      approvals: () => store.openApprovals()
     }
   })
 )

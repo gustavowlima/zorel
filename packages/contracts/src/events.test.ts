@@ -22,6 +22,6 @@ describe("ChatEvent", () => {
   })
 
   test("o grupo RPC tem os procedimentos da arquitetura", () => {
-    expect([...ZeroRpc.requests.keys()].sort()).toEqual(["decide", "interrupt", "send", "steer", "subscribeChat", "subscribeStatus"])
+    expect([...ZeroRpc.requests.keys()].sort()).toEqual(["approvals", "decide", "interrupt", "send", "steer", "subscribeChat", "subscribeStatus"])
   })
 })
