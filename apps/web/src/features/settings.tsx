@@ -25,7 +25,7 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
         ))}
       </nav>
       <div className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-8 py-7">
+        <div className="flex w-full max-w-2xl flex-col gap-8 px-8 py-7">
           {tab === "providers" && <ProvidersSection provider={provider} />}
           {tab === "storage" && <StorageSection />}
           {tab === "audit" && <AuditSection />}
