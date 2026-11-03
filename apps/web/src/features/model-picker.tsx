@@ -2,12 +2,13 @@
 // provider, the models of the selected one on the right, a search across all of them, and the reasoning
 // level for engines that have one. Switching keeps the whole context (the runtime resends only the delta).
 import type { Effort, ModelInfo, ProviderAccount } from "@zero/contracts"
-import { formatPercent, formatTime, t } from "@zero/i18n"
+import { t } from "@zero/i18n"
 import { type ReactNode, useMemo, useState } from "react"
 import { accountsAtom, modelsAtom, useList } from "../client.ts"
 import { ACCOUNT_OF_MODEL, modelName, modelNote, providerHint, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
-import { Button, ChevronDown, cx, FieldButton, Input, Meter, OptionButton, Popover, ProviderIcon, RailButton, Search, Tab, TabList, Tabs } from "@/ui"
+import { LimitWindows } from "./limits.tsx"
+import { Button, ChevronDown, cx, FieldButton, Input, OptionButton, Popover, ProviderIcon, RailButton, Search, Tab, TabList, Tabs } from "@/ui"
 
 export interface ModelChoice {
   readonly model: string
@@ -197,15 +198,10 @@ function EntryPane({ entry, isSelected, pick, close }: { entry: Entry; isSelecte
         <span className="truncate font-semibold">{entry.label}</span>
         <span className="truncate text-sm text-muted">{kind}</span>
       </div>
-      {entry.account?.limitedUntil ? (
-        <p className="px-1.5 text-sm text-warning">{t("failover.limitedUntil", { time: formatTime(entry.account.limitedUntil) })}</p>
-      ) : (
-        entry.account?.usage && (
-          <div className="flex items-center gap-3 px-1.5">
-            <Meter value={entry.account.usage.usedPercent / 100} warnAt={0.8} label={formatPercent(entry.account.usage.usedPercent / 100)} className="flex-1" />
-            <span className="text-sm text-muted">{formatPercent(entry.account.usage.usedPercent / 100)}</span>
-          </div>
-        )
+      {entry.account && (
+        <div className="px-1.5">
+          <LimitWindows account={entry.account} compact />
+        </div>
       )}
       {!entry.available && !entry.account?.limitedUntil && (
         <div className="flex items-center gap-2 px-1.5 text-sm text-warning">
@@ -226,7 +222,7 @@ function EntryPane({ entry, isSelected, pick, close }: { entry: Entry; isSelecte
       )}
       <div className="flex max-h-72 flex-col gap-0.5 overflow-auto">
         {entry.models.map((m) => (
-          <OptionButton key={m} selected={isSelected(entry, m)} title={modelName(`${entry.provider}/${m}`)} note={modelNote(m)} onPress={() => pick(entry, m)} />
+          <OptionButton key={m} selected={isSelected(entry, m)} title={modelName(`${entry.provider}/${m}`)} note={modelNote(`${entry.provider}/${m}`)} onPress={() => pick(entry, m)} />
         ))}
       </div>
       {entry.kind !== "subscription" && (

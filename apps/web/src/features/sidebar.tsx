@@ -1,12 +1,12 @@
 // Sidebar (prototype "Sidebar"): Needs you / Knowledge / Usage, then projects as a tree with their chats
 // (live status under the title), General for chats without a project, the agents of the open project,
 // and Settings at the bottom. Statuses come from the live stream; everything else from the atoms.
-import type { Agent, Chat, Project } from "@zero/contracts"
+import { type Agent, type Chat, LIMIT_ALERT, type Project } from "@zero/contracts"
 import type { ChatStatus } from "@zero/contracts/events"
-import { formatAge, t } from "@zero/i18n"
+import { formatAge, formatPercent, t } from "@zero/i18n"
 import { type ReactNode, useState } from "react"
-import { agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, projectsAtom, useList, useStatuses } from "../client.ts"
-import { agentTone, chatTitle, modelName, statusLabel } from "../labels.ts"
+import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, projectsAtom, useList, useStatuses } from "../client.ts"
+import { agentTone, chatTitle, fullest, modelName, statusLabel } from "../labels.ts"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
@@ -60,7 +60,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
       <NavItem icon={<BookOpen />} active={route.view === "knowledge"} onPress={() => go({ view: "knowledge" })}>
         {t("nav.knowledge")}
       </NavItem>
-      <NavItem icon={<ChartColumn />} active={route.view === "usage"} onPress={() => go({ view: "usage" })}>
+      <NavItem icon={<ChartColumn />} active={route.view === "usage"} onPress={() => go({ view: "usage" })} trailing={<FullestLimit />}>
         {t("nav.usage")}
       </NavItem>
 
@@ -274,3 +274,10 @@ function ChatRow({ chat, status, active, agents }: { chat: Chat; status: ChatSta
   )
 }
 
+
+// The fullest limit window across subscriptions, next to Usage; warning from 80%.
+function FullestLimit() {
+  const used = Math.max(0, ...useList(accountsAtom).filter((a) => a.kind === "subscription").map(fullest))
+  if (!used) return null
+  return <span className={cx("text-sm tabular-nums", used >= LIMIT_ALERT ? "text-warning" : "text-dim")}>{formatPercent(used)}</span>
+}

@@ -13,7 +13,11 @@ import { Engines, type EngineEvent } from "./engines.ts"
 import { Runtime } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
 import { Tools } from "./tools.ts"
+import { Pricing } from "./pricing.ts"
 import { Workspace } from "./workspace.ts"
+
+// Prices for tests (USD per million tokens): no network.
+const PRICES = { anthropic: { "claude-sonnet-5-5": { cost: { input: 2, output: 10, cache_read: 0.1 }, family: "claude-sonnet", release_date: "2026-09-28" } } }
 
 // Engine that sends "parte" and then hangs: leaves time to interrupt.
 const Hanging = Layer.succeed(Engines, {
@@ -26,7 +30,7 @@ const Echo = Layer.succeed(Engines, {
 const layer = (dbPath: string, engines: Layer.Layer<Engines>) => {
   const store = Store.layer(dbPath)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(engines, Tools.layer), Layer.provideMerge(Secrets.memory(), store)), DataDir.layer(join(tmpdir(), "zero-rt")))
-  return Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer), base))
+  return Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.fixed(PRICES)), base))
 }
 const runWith = <A, E>(dbPath: string, engines: Layer.Layer<Engines>, f: Effect.Effect<A, E, Runtime | Store>) =>
   Effect.runPromise(Effect.scoped(f).pipe(Effect.provide(layer(dbPath, engines))) as Effect.Effect<A>)

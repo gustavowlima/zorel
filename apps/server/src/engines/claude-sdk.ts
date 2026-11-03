@@ -5,12 +5,12 @@
 // (ARCHITECTURE §9.2); `canUseTool` applies the agent's access level and asks the person through Zero.
 // The SDK runs the user's installed `claude` (pathToClaudeCodeExecutable): its bundled binary is never
 // used and never shipped, and Zero never reads the CLI login (CLAUDE_CONFIG_DIR only picks the account).
-import { type CanUseTool, query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { Access } from "@zero/contracts"
+import { type CanUseTool, type Query, query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { Access, AccountWindow } from "@zero/contracts"
 import { Effect, Queue, Stream } from "effect"
 import { mkdirSync } from "node:fs"
 import { relative } from "node:path"
-import { claudeParser, classifyMessage, type EngineEvent, type NativeStep, splitModel, type TurnFile } from "#server/engines.ts"
+import { type CliModel, claudeParser, classifyMessage, type EngineEvent, type NativeStep, splitModel, type TurnFile } from "#server/engines.ts"
 import { approvalFor, decideCommand, decideEdit, decideRead } from "#server/engines/policy.ts"
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
 
@@ -241,3 +241,46 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
     })
   }
 }
+
+// Reads the subscription's limit windows on demand (Usage screen), through the SDK's /usage data. The SDK
+// marks it experimental: any failure just means "no reading now" (the passive rate_limit_event remains).
+const CLAUDE_WINDOWS = ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet"] as const
+// A Claude Code session that only answers control requests (usage, models); closed afterwards.
+async function withControl<A>(configDir: string | undefined, read: (q: Query) => Promise<A>): Promise<A> {
+  const bin = Bun.which("claude")
+  if (!bin) throw new Error("claude não está instalado ou não está no PATH.")
+  const box = inbox() // never gets a message
+  const q = query({ prompt: box, options: { pathToClaudeCodeExecutable: bin, tools: [], settingSources: [], persistSession: false, env: childEnv(configDir) } })
+  try {
+    return await Promise.race([
+      read(q),
+      Bun.sleep(20_000).then(() => {
+        throw new Error("Claude Code não respondeu.")
+      })
+    ])
+  } finally {
+    box.close()
+    q.close()
+  }
+}
+
+export const readClaudeLimits = (configDir: string | undefined): Promise<AccountWindow[]> =>
+  withControl(configDir, async (q) => {
+    const usage = await q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
+    const limits = usage.rate_limits
+    if (!usage.rate_limits_available || !limits) return []
+    const at = (iso: string | null) => (iso ? Date.parse(iso) : null)
+    const windows: AccountWindow[] = []
+    for (const id of CLAUDE_WINDOWS) {
+      const w = limits[id]
+      if (w?.utilization !== null && w?.utilization !== undefined) windows.push({ id, usedPercent: w.utilization, resetsAt: at(w.resets_at) })
+    }
+    for (const w of limits.model_scoped ?? []) if (w.utilization !== null) windows.push({ id: `model:${w.display_name}`, usedPercent: w.utilization, resetsAt: at(w.resets_at) })
+    return windows
+  })
+
+// The aliases this login offers ("opus" → "Opus 5.5"); "default" is left out, Zero picks a model explicitly.
+export const readClaudeModels = (configDir: string | undefined): Promise<CliModel[]> =>
+  withControl(configDir, async (q) =>
+    (await q.supportedModels()).filter((m) => m.value !== "default").map((m) => ({ id: m.value, name: m.displayName, note: m.description }))
+  )

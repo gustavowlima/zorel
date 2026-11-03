@@ -65,6 +65,9 @@ updated: 2026-11-03
 - GET /api/usage (settings.usage): turnos terminados dos últimos USAGE_DAYS (30) somados por dia UTC, projeto, agente, modelo e conta (db.usage); RPC `approvals` lista as aprovações abertas de todos os chats ("Needs you")
 - status.label e hints de listModels ainda saem em texto; a web ignora e usa o catálogo i18n
 
+- consumo (fase 2c, 2026-11-03): pricing.ts (models.dev → <dataDir>/pricing.json, diário; Pricing.fixed nos testes); runtime.save grava cost + account_id em message e turn; billingOf(model) = subscription | api | local
+- limites: accounts.refreshLimits(id) lê pela CLI (readClaudeLimits / readCodexLimits), cache 4 min, semáforo, backoff 5→60 min; AccountUsage = { windows[{id, usedPercent, resetsAt}], readAt }; ids five_hour, seven_day, model:<Nome>, <n>m
+- nomes de modelo: accounts.cliModels → readClaudeModels (supportedModels, sem "default") + readCodexModels (model/list); guardado em preferences "cliModels", stale-while-revalidate 1 h, falha tenta de novo em 5 min; listModels(secrets, cli) usa a lista quando existe
 - failover (fase 2b, 2026-11-03): runtime.ts runTurn é um laço de rotas (primária + agents.failover ou chats.failover); troca só com EngineFailure e sem ação de escrita (onWrite do gateway); limit → accounts.hold (limited_until persistido), outros → skipped 10 min em memória; cada rota uma vez; todas falham → erro lista as tentativas
 - EngineEvent ganhou `failure` no erro e o evento `limits` (uso da conta → accounts.observe); classificação: claudeParser (rate_limit_event, error das mensagens), codexFailure/usageOf (codexErrorInfo, account/rateLimits), classifyMessage (heurística)
 - preferences (tabela chave/valor): failover_terms_accepted_at; GET /api/preferences, POST /api/preferences/failover-terms

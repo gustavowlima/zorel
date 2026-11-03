@@ -2,7 +2,7 @@
 // so the existing database is adopted without copying (see migrate.ts). Changed something here? `bun run db:generate`.
 import type { AccountUsage, FailoverTarget, FileChange, Switch } from "@zero/contracts"
 import { sql } from "drizzle-orm"
-import { check, index, integer, primaryKey, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
+import { check, index, integer, primaryKey, real, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
 
 // Provider accounts (ARCHITECTURE §6.1). Subscription logins live in `home` (a CLI config folder);
 // Zero never reads the token inside it. `identity` is what the CLI reports (e-mail, plan), for display.
@@ -80,6 +80,8 @@ export const messages = sqliteTable(
     turnId: text("turn_id"), // the turn that wrote this reply (its workspace changes and checkpoint)
     changes: text({ mode: "json" }).$type<ReadonlyArray<FileChange>>().notNull().default([]), // files the turn changed
     revertedAt: integer("reverted_at"), // the turn's changes were undone
+    accountId: text("account_id"), // the account that answered
+    cost: real(), // estimated USD (subscriptions: the API equivalent)
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
     at: integer().notNull()
@@ -146,6 +148,7 @@ export const turns = sqliteTable(
     cachedTokens: integer("cached_tokens").notNull().default(0),
     switches: text({ mode: "json" }).$type<ReadonlyArray<Switch>>().notNull().default([]), // failover moves in this turn (per-turn metrics)
     // Workspace checkpoints (git trees in Zero's shadow repo of the project): before and after the turn.
+    cost: real(), // estimated USD at the time (ARCHITECTURE §10.2)
     treeBefore: text("tree_before"),
     treeAfter: text("tree_after")
   },

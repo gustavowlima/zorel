@@ -1,6 +1,6 @@
 // Readable labels derived from data: model and provider names, memory scopes, chat titles, live status,
 // and each agent's identity tone (its position among its teammates, so colors don't repeat).
-import type { Agent, Chat, Project, ProviderAccount, Switch } from "@zero/contracts"
+import type { Agent, Chat, ModelInfo, Project, ProviderAccount, Switch } from "@zero/contracts"
 import type { ChatStatus } from "@zero/contracts/events"
 import { formatTime, type MessageKey, t } from "@zero/i18n"
 
@@ -15,7 +15,16 @@ const PROVIDERS = { "claude-cli": 1, "codex-cli": 1, anthropic: 1, openai: 1, op
 export const providerLabel = (provider: string) => (has(PROVIDERS, provider) ? t(`model.providers.${provider}` as MessageKey) : provider)
 
 // "claude-cli/opus" → "Opus"; "codex-cli/default" → "Default"; API models keep their id.
+// Names the subscription CLIs give their models today ("claude-cli/opus" → "Opus 5.5"), from the model list.
+// The shell remembers them on every render of that list, so every label below sees the same names.
+const named = new Map<string, Pick<ModelInfo, "name" | "note">>()
+export function rememberModels(models: ReadonlyArray<ModelInfo>) {
+  for (const m of models) if (m.name) named.set(m.id, m)
+}
+
 export function modelName(id: string): string {
+  const real = named.get(id)?.name
+  if (real) return real
   const { provider, model } = splitModel(id)
   if (model === "default") return t("common.default")
   if (provider === "claude-cli" || provider === "codex-cli") return model.charAt(0).toUpperCase() + model.slice(1)
@@ -25,7 +34,12 @@ export function modelName(id: string): string {
 export const modelLabel = (id: string) => `${providerLabel(splitModel(id).provider)} · ${modelName(id)}`
 
 const NOTES = { opus: 1, sonnet: 1, haiku: 1, default: 1 }
-export const modelNote = (model: string) => (has(NOTES, model) ? t(`model.notes.${model}` as MessageKey) : "")
+export function modelNote(id: string): string {
+  const real = named.get(id)?.note
+  if (real) return real
+  const { model } = splitModel(id)
+  return has(NOTES, model) ? t(`model.notes.${model}` as MessageKey) : ""
+}
 
 const HINTS = { "claude-cli": 1, "codex-cli": 1, anthropic: 1, openai: 1, openrouter: 1, ollama: 1, lmstudio: 1 }
 export const providerHint = (provider: string) => (has(HINTS, provider) ? t(`model.hints.${provider}` as MessageKey) : "")
@@ -84,4 +98,24 @@ export function routeLabel(model: string, accountId: string | null, accounts: Re
 export function switchText(sw: Switch, accounts: ReadonlyArray<ProviderAccount>): string {
   const why = sw.reason === "limit" ? t("failover.why.limit", { time: sw.until ? formatTime(sw.until) : "?" }) : t(`failover.why.${sw.reason}`)
   return t("failover.switched", { from: routeLabel(sw.fromModel, sw.fromAccountId, accounts), why, to: routeLabel(sw.toModel, sw.toAccountId, accounts) })
+}
+
+// A limit window's name: "5-hour", "Weekly", "Weekly · Opus", "30-day", or the model a window is scoped to.
+const NAMED_WINDOWS = { five_hour: 1, seven_day: 1, seven_day_opus: 1, seven_day_sonnet: 1, seven_day_oauth_apps: 1 }
+export function windowLabel(id: string): string {
+  if (has(NAMED_WINDOWS, id)) return t(`usage.windows.${id}` as MessageKey)
+  if (id.startsWith("model:")) return id.slice(6)
+  const minutes = Number(id.replace(/m$/, ""))
+  if (!Number.isFinite(minutes)) return id
+  return minutes % 1440 === 0 ? t("usage.windows.days", { count: minutes / 1440 }) : t("usage.windows.hours", { count: Math.round(minutes / 60) })
+}
+
+// The fullest window of an account (0..1), for alerts and compact meters.
+export const fullest = (a: Pick<ProviderAccount, "usage">) => Math.max(0, ...(a.usage?.windows ?? []).map((w) => w.usedPercent / 100))
+
+let money: Intl.NumberFormat | undefined
+// $0.0042 for small amounts, $1.24 otherwise.
+export function formatCost(usd: number): string {
+  money ??= new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
+  return usd > 0 && usd < 0.01 ? `$${usd.toPrecision(2)}` : money.format(usd)
 }
