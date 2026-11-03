@@ -1,0 +1,49 @@
+import { expect, test } from "bun:test"
+import { Effect, Fiber, Stream } from "effect"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import type { EngineEvent } from "#server/engines.ts"
+import { openCodexSession } from "#server/engines/codex.ts"
+import type { EngineSession } from "#server/engines/session.ts"
+
+const fake = join(import.meta.dir, "fixtures", "fake-codex-app-server.ts")
+const open = (env?: string) => {
+  if (env) process.env.FAKE_CODEX = env
+  else delete process.env.FAKE_CODEX
+  const s = openCodexSession({
+    model: "codex-cli/default", system: "S", cwd: join(tmpdir(), "zero-codex-test"), home: join(tmpdir(), "zero-codex-home"),
+    gatewayUrl: "http://127.0.0.1:9/mcp", command: [process.execPath, fake]
+  })
+  if (typeof s === "string") throw new Error(s)
+  return s
+}
+const turn = (s: EngineSession, prompt: string) => Effect.runPromise(Stream.runCollect(s.turn({ model: "codex-cli/default", prompt }))) as Promise<EngineEvent[]>
+
+test("codex: one process, text across messages, usage and completion per turn", async () => {
+  const s = open()
+  const a = await turn(s, "oi")
+  expect(a).toEqual([{ type: "text", delta: "eco 1" }, { type: "text", delta: "\n\nfim" }, { type: "done", usage: { inputTokens: 10, outputTokens: 2 } }])
+  const b = await turn(s, "de novo")
+  expect(b[0]).toEqual({ type: "text", delta: "eco 2" }) // same thread, same process
+  await Effect.runPromise(s.close)
+})
+
+test("codex: without a Zero login the turn fails fast with the login hint", async () => {
+  const s = open("nologin")
+  const ev = await turn(s, "oi")
+  expect(ev).toHaveLength(1)
+  expect(ev[0]).toMatchObject({ type: "error" })
+  expect((ev[0] as { message: string }).message).toContain("codex login")
+  await Effect.runPromise(s.close)
+})
+
+test("codex: interrupting asks Codex to stop and the session stays usable; a dead process fails the turn", async () => {
+  const s = open()
+  const fiber = Effect.runFork(Stream.runCollect(s.turn({ model: "codex-cli/default", prompt: "hang" })))
+  await Bun.sleep(300)
+  await Effect.runPromise(Fiber.interrupt(fiber))
+  expect((await turn(s, "depois"))[0]).toEqual({ type: "text", delta: "eco 2" })
+  const died = await turn(s, "die")
+  expect(died.at(-1)).toMatchObject({ type: "error" })
+  expect(s.alive()).toBe(false)
+})

@@ -9,7 +9,7 @@ import { MAX_DEPTH, mentioned } from "./context.ts"
 import { Store, type Repository, type TurnRow } from "./db.ts"
 import { Engines, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
 import type { EngineSession } from "#server/engines/session.ts"
-import { exposedName, needsApproval, resultText, textResult, Tools, type Gateway, type Hub, type Session, type ToolDef } from "./tools.ts"
+import { exposedName, type GatewayHandle, needsApproval, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
 
 const MAX_MENTIONS = 3
 const MAX_SESSIONS = 8 // live engine processes; the least recently used one closes first
@@ -75,14 +75,30 @@ export const makeRuntime = Effect.gen(function* () {
     used: number
   }
   const sessions = new Map<string, Live>()
+  // ponytail: one gateway URL per (chat, agent), closed only when the server stops; drop on chat delete if it grows.
+  const gateways = new Map<string, GatewayHandle>()
   const sessionKey = (row: TurnRow) => `${row.chatId}:${row.agentId ?? "-"}`
+  const gatewayOf = (key: string) => {
+    let g = gateways.get(key)
+    if (!g) {
+      g = gateway.open(NO_TOOLS)
+      gateways.set(key, g)
+    }
+    return g
+  }
   const closeSession = (key: string) =>
     Effect.suspend(() => {
       const live = sessions.get(key)
       sessions.delete(key)
       return live ? live.session.close : Effect.void
     })
-  yield* Effect.addFinalizer(() => Effect.forEach([...sessions.keys()], closeSession, { discard: true }))
+  yield* Effect.addFinalizer(() =>
+    Effect.forEach([...sessions.keys()], closeSession, { discard: true }).pipe(Effect.andThen(
+        Effect.sync(() => {
+          for (const g of gateways.values()) g.close()
+        })
+      ))
+  )
 
   // Picks the engine for this turn. With a native session, only the dynamic context and the messages
   // after the watermark are sent; a new session gets the whole checkpoint (summary + recent messages).
@@ -90,14 +106,15 @@ export const makeRuntime = Effect.gen(function* () {
     Effect.gen(function* () {
       const key = sessionKey(row)
       const provider = splitModel(row.model).provider
-      const stable = turn.stable ?? turn.system
+      // Tool names are part of the stable context: a session lists tools once, so a new set means a new session.
+      const stable = `${turn.stable ?? turn.system}\n#tools:${(turn.tools?.defs ?? []).map((d) => d.name).sort().join(",")}`
       let live = sessions.get(key)
       if (live && (!live.session.alive() || live.provider !== provider || live.stable !== stable)) {
         yield* closeSession(key)
         live = undefined
       }
       if (!live) {
-        const opened = engines.open?.({ model: row.model, system: stable, cwd: turn.cwd })
+        const opened = engines.open?.({ model: row.model, system: turn.stable ?? turn.system, cwd: turn.cwd, gatewayUrl: gatewayOf(key).url, dataDir })
         if (opened === undefined) return engines.run(turn)
         if (typeof opened === "string") return Stream.make<EngineEvent[]>({ type: "error", message: opened })
         if (sessions.size >= MAX_SESSIONS) {
@@ -122,7 +139,8 @@ export const makeRuntime = Effect.gen(function* () {
   const run = <A>(e: Effect.Effect<A>) => Effect.runPromise(e)
 
   // ---------- turn tools: steps and approvals persisted and published ----------
-  const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, legacy: Step[]) => {
+  // `fixed`: a native session's gateway (one URL for the whole session); without it, one URL per turn.
+  const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, legacy: Step[], fixed?: GatewayHandle) => {
     const routes = new Map<string, { server: string; tool: string; approve: boolean }>()
     const defs: ToolDef[] = []
     const step = (title: string, tool: string) => run(store.addStep({ turnId: row.id, kind: "tool", title, tool, files: [], status: "running" }).pipe(Effect.tap((s) => publish(chat.id, ev("step-started", { step: s })))))
@@ -142,7 +160,10 @@ export const makeRuntime = Effect.gen(function* () {
         defs.push({ name, description: t.description, inputSchema: t.inputSchema })
       }
     }
-    if (!defs.length) return { tools: undefined as TurnTools | undefined, close: () => {} }
+    if (!defs.length) {
+      fixed?.update(NO_TOOLS)
+      return { tools: undefined as TurnTools | undefined, close: () => {} }
+    }
 
     const call: Session["call"] = async (name, args) => {
       const route = routes.get(name)
@@ -167,6 +188,10 @@ export const makeRuntime = Effect.gen(function* () {
       legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, 300) })
       await finish(s, r.isError ? "error" : "ok", out)
       return r
+    }
+    if (fixed) {
+      fixed.update({ tools: defs, call })
+      return { tools: { url: fixed.url, defs, call } as TurnTools, close: () => fixed.update(NO_TOOLS) }
     }
     const session = gateway.open({ tools: defs, call })
     return { tools: { url: session.url, defs, call } as TurnTools, close: () => session.close() }
@@ -225,7 +250,8 @@ export const makeRuntime = Effect.gen(function* () {
       yield* setStatus(chatId, "running", agent?.id ?? null, `${nameOf(agent)} is working`)
 
       yield* Effect.gen(function* () {
-        const opened = yield* Effect.promise(() => openTools(chat, row, agent, acc.steps))
+        const native = engines.hasSession?.(row.model) ?? false
+        const opened = yield* Effect.promise(() => openTools(chat, row, agent, acc.steps, native ? gatewayOf(sessionKey(row)) : undefined))
         yield* Effect.addFinalizer(() =>
           Effect.gen(function* () {
             opened.close()
