@@ -18,7 +18,7 @@ import {
   useDragAndDrop
 } from "react-aria-components"
 import { cn } from "@/lib/utils"
-import { ChevronRight, GripVertical } from "./icons"
+import { ChevronRight, Folder, FolderOpen, GripVertical } from "./icons"
 
 const row =
   "flex w-full min-w-0 shrink-0 cursor-default items-center gap-2.5 rounded-control border text-left text-base outline-none transition-colors duration-120 ease-out motion-reduce:transition-none"
@@ -140,6 +140,7 @@ export function NavTreeItem({
   actions,
   onAction,
   dragLabel,
+  nested = false,
   children
 }: {
   id: Key
@@ -153,6 +154,7 @@ export function NavTreeItem({
   actions?: ReactNode
   onAction: () => void
   dragLabel?: string
+  nested?: boolean // a row inside a group (a project's chat): indented under its name, on the group's guide line
   children?: ReactNode
 }) {
   return (
@@ -169,7 +171,7 @@ export function NavTreeItem({
             className={cn(
               row,
               "relative",
-              hasChildItems ? "h-control gap-2 pr-2.5 pl-2" : detail ? "h-13.5 gap-3 rounded-card px-2.5" : "h-control px-2.5",
+              hasChildItems ? "h-control gap-2.5 px-2.5" : detail ? "h-13.5 gap-3 rounded-card px-2.5" : nested ? "h-control pr-2.5 pl-10" : "h-control px-2.5",
               hasChildItems ? cn("border-transparent text-secondary", isExpanded ? "font-semibold" : "font-medium") : active ? chip : "border-transparent",
               !active && (isHovered || isFocusVisible) && "bg-hover text-fg",
               !active && isPressed && "bg-control-active",
@@ -181,9 +183,12 @@ export function NavTreeItem({
                 <GripVertical className="size-3.5" />
               </Button>
             )}
+            {/* A group's rows hang from a hairline under the group's icon (the icon column's centre). */}
+            {nested && <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-[19.5px] w-px bg-subtle" />}
+            {/* A group (a project): its folder, open or closed, sits in the icon column and opens or closes it. */}
             {hasChildItems && (
-              <Button slot="chevron" className="flex size-4 shrink-0 items-center justify-center rounded-control text-muted outline-none data-hovered:text-fg">
-                <ChevronRight className={cn("size-3 transition-transform duration-150 ease-out motion-reduce:transition-none", isExpanded && "rotate-90")} />
+              <Button slot="chevron" className="flex size-5 shrink-0 items-center justify-center rounded-control text-muted outline-none data-hovered:text-fg [&_svg]:size-4">
+                {isExpanded ? <FolderOpen /> : <Folder />}
               </Button>
             )}
             {leading}

@@ -143,9 +143,9 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
     const hidden = list.length - visible.length
     const label = showAll ? t("nav.showLess") : t("nav.showMore", { count: hidden })
     return [
-      ...visible.map((c) => <ChatItem key={c.id} chat={c} status={statuses[c.id]} active={c.id === activeChat} agents={agents} />),
+      ...visible.map((c) => <ChatItem key={c.id} chat={c} status={statuses[c.id]} active={c.id === activeChat} agents={agents} nested={group !== "loose"} />),
       ...((hidden > 0 || showAll) && list.length > VISIBLE
-        ? [<NavTreeItem key="more" id={moreKey(group)} textValue={label} title={<span className="text-muted">{label}</span>} onAction={() => toggleAll(group)} />]
+        ? [<NavTreeItem key="more" id={moreKey(group)} textValue={label} title={<span className="text-muted">{label}</span>} onAction={() => toggleAll(group)} nested={group !== "loose"} />]
         : [])
     ]
   }
@@ -340,7 +340,7 @@ function ProjectItem({
 // A chat on one 32px line: the lead's avatar (or the model's logo) in the icon column, the title, and on the
 // right what matters now: a spinner while it runs, a blue dot when it waits for you, a red one when the last
 // turn failed, otherwise how long ago it last moved. The status in words is in the row's accessible name.
-function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatStatus | undefined; active: boolean; agents: ReadonlyArray<Agent> }) {
+function ChatItem({ chat, status, active, agents, nested = false }: { chat: Chat; status: ChatStatus | undefined; active: boolean; agents: ReadonlyArray<Agent>; nested?: boolean }) {
   const live = status && status.state !== "idle" ? status : undefined
   const lead = agents.find((a) => a.id === (live?.agentId ?? chat.agentIds[0]))
   const at = Math.max(chat.lastAt ?? chat.createdAt, status?.updatedAt ?? 0)
@@ -362,6 +362,7 @@ function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatSt
           formatAge(at)
         )
       }
+      nested={nested}
       dragLabel={t("nav.reorder", { name: chatTitle(chat) })}
       onAction={() => go({ view: "chat", id: chat.id })}
     />
