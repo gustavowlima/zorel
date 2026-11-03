@@ -1,12 +1,14 @@
 // Sidebar (prototype "Sidebar"): Needs you / Knowledge / Usage, then projects as a tree with their chats
 // (live status under the title), General for chats without a project, the agents of the open project,
-// and Settings at the bottom. Statuses come from the live stream; everything else from the atoms.
+// and Settings at the bottom. Like a desktop sidebar, the brand, the top rows and Settings stay put and only
+// the tree scrolls, with no visible bar: a hairline marks an edge while content is hidden past it.
+// Statuses come from the live stream; everything else from the atoms.
 import { type Agent, type Chat, LIMIT_ALERT, type Project } from "@zero/contracts"
 import type { ChatStatus } from "@zero/contracts/events"
 import { formatAge, formatPercent, t } from "@zero/i18n"
-import { type ReactNode, useState } from "react"
+import { type ReactNode, type UIEvent, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, projectsAtom, useList, useStatuses } from "../client.ts"
-import { agentTone, chatTitle, fullest, modelName, statusLabel } from "../labels.ts"
+import { agentTone, chatTitle, modelName, statusLabel, windowLabel } from "../labels.ts"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
@@ -41,10 +43,11 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   const activeChat = route.view === "chat" ? route.id : undefined
   const teamProject = projects.find((p) => p.id === activeProjectId)
   const team = agents.filter((a) => a.projectId === (teamProject?.id ?? null))
+  const { tree, edges, onScroll } = useScrollEdges()
 
   return (
-    <nav aria-label={t("nav.label")} className="flex w-62 shrink-0 flex-col gap-0.5 overflow-y-auto px-3 pt-4 pb-3">
-      <div className="mb-3 flex h-control items-center gap-2.5 px-2">
+    <nav aria-label={t("nav.label")} className="flex w-62 shrink-0 flex-col overflow-hidden pt-4 pb-3">
+      <div className="mb-3 flex h-control shrink-0 items-center gap-2.5 px-5">
         <span aria-hidden="true" className="flex size-6 items-center justify-center rounded-control bg-fg text-sm font-semibold text-frame">
           Z
         </span>
@@ -54,79 +57,80 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
         </IconButton>
       </div>
 
-      <NavItem icon={<Inbox />} active={route.view === "inbox"} onPress={() => go({ view: "inbox" })} trailing={needsYou > 0 && <Count n={needsYou} />}>
-        {t("nav.needsYou")}
-      </NavItem>
-      <NavItem icon={<BookOpen />} active={route.view === "knowledge"} onPress={() => go({ view: "knowledge" })}>
-        {t("nav.knowledge")}
-      </NavItem>
-      <NavItem icon={<ChartColumn />} active={route.view === "usage"} onPress={() => go({ view: "usage" })} trailing={<FullestLimit />}>
-        {t("nav.usage")}
-      </NavItem>
+      <div className={cx("flex shrink-0 flex-col gap-0.5 border-b px-3 pb-1 transition-colors duration-120", edges.top ? "border-subtle" : "border-transparent")}>
+        <NavItem icon={<Inbox />} active={route.view === "inbox"} onPress={() => go({ view: "inbox" })} trailing={needsYou > 0 && <Count n={needsYou} />}>
+          {t("nav.needsYou")}
+        </NavItem>
+        <NavItem icon={<BookOpen />} active={route.view === "knowledge"} onPress={() => go({ view: "knowledge" })}>
+          {t("nav.knowledge")}
+        </NavItem>
+        <UsageItem active={route.view === "usage"} />
+      </div>
 
-      <NavLabel
-        action={
-          <NewProjectButton />
-        }
-      >
-        {t("nav.projects")}
-      </NavLabel>
-      {projects.map((p) => (
-        <ProjectGroup
-          key={p.id}
-          project={p}
-          chats={byNewest.filter((c) => c.projectId === p.id)}
-          open={isOpen(p.id)}
-          onToggle={() => toggle(p.id)}
-          active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)}
+      <div ref={tree} onScroll={onScroll} className="scroll-quiet flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-2">
+        <NavLabel
+          action={
+            <NewProjectButton />
+          }
+        >
+          {t("nav.projects")}
+        </NavLabel>
+        {projects.map((p) => (
+          <ProjectGroup
+            key={p.id}
+            project={p}
+            chats={byNewest.filter((c) => c.projectId === p.id)}
+            open={isOpen(p.id)}
+            onToggle={() => toggle(p.id)}
+            active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)}
+            activeChat={activeChat}
+            statuses={statuses}
+            agents={agents}
+          />
+        ))}
+        <Group
+          icon={<MessageCircle />}
+          name={t("common.general")}
+          open={isOpen("general")}
+          onToggle={() => toggle("general")}
+          onNewChat={() => go({ view: "home" })}
+          newChatLabel={t("nav.newChat")}
+          chats={general}
           activeChat={activeChat}
           statuses={statuses}
           agents={agents}
         />
-      ))}
-      <Group
-        icon={<MessageCircle />}
-        name={t("common.general")}
-        hint={t("nav.noProject")}
-        open={isOpen("general")}
-        onToggle={() => toggle("general")}
-        onNewChat={() => go({ view: "home" })}
-        newChatLabel={t("nav.newChat")}
-        chats={general}
-        activeChat={activeChat}
-        statuses={statuses}
-        agents={agents}
-      />
 
-      {team.length > 0 && (
-        <>
-          <NavLabel
-            action={
-              <IconButton label={t("nav.newAgent")} size="sm" onPress={() => go({ view: "new-agent", projectId: teamProject?.id ?? null })}>
-                <Plus className="size-3.5" />
-              </IconButton>
-            }
-          >
-            {teamProject ? t("nav.agentsOf", { name: teamProject.name }) : t("nav.agents")}
-          </NavLabel>
-          {team.map((a) => (
-            <NavItem
-              key={a.id}
-              active={route.view === "agent" && route.id === a.id}
-              icon={<AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} />}
-              trailing={<span className="shrink-0 text-sm text-muted">{modelName(a.model)}</span>}
-              onPress={() => go({ view: "agent", id: a.id })}
+        {team.length > 0 && (
+          <>
+            <NavLabel
+              action={
+                <IconButton label={t("nav.newAgent")} size="sm" onPress={() => go({ view: "new-agent", projectId: teamProject?.id ?? null })}>
+                  <Plus className="size-3.5" />
+                </IconButton>
+              }
             >
-              {a.name}
-            </NavItem>
-          ))}
-        </>
-      )}
-
-      <div className="min-h-4 flex-1" />
-      <NavItem icon={<Settings />} active={route.view === "settings"} onPress={() => go({ view: "settings", tab: "accounts" })}>
-        {t("nav.settings")}
-      </NavItem>
+              {teamProject ? t("nav.agentsOf", { name: teamProject.name }) : t("nav.agents")}
+            </NavLabel>
+            {team.map((a) => (
+              <NavItem
+                key={a.id}
+                active={route.view === "agent" && route.id === a.id}
+                icon={<AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} />}
+                trailing={<span className="shrink-0 text-sm text-muted">{modelName(a.model)}</span>}
+                onPress={() => go({ view: "agent", id: a.id })}
+              >
+                {a.name}
+              </NavItem>
+            ))}
+          </>
+        )}
+      </div>
+      <div className={cx("shrink-0 border-t px-3 pt-1 transition-colors duration-120", edges.bottom ? "border-subtle" : "border-transparent")}>
+        <NavItem icon={<Settings />} active={route.view === "settings"} onPress={() => go({ view: "settings", tab: "accounts" })}>
+          {t("nav.settings")}
+        </NavItem>
+      </div>
     </nav>
   )
 }
@@ -177,7 +181,6 @@ function ProjectGroup({
 function Group({
   icon,
   name,
-  hint,
   open,
   onToggle,
   active,
@@ -191,7 +194,6 @@ function Group({
 }: {
   icon: ReactNode
   name: string
-  hint?: string
   open: boolean
   onToggle: () => void
   active?: boolean
@@ -235,7 +237,6 @@ function Group({
             {!open && waiting > 0 && <ChatStatusIcon state="waiting" />}
             {!open && running > 0 && waiting === 0 && <ChatStatusIcon state="running" />}
             {!open && chats.length > 0 && <span className="tabular-nums">{chats.length}</span>}
-            {open && hint && <span>{hint}</span>}
             {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
           </span>
         }
@@ -275,9 +276,51 @@ function ChatRow({ chat, status, active, agents }: { chat: Chat; status: ChatSta
 }
 
 
-// The fullest limit window across subscriptions, next to Usage; warning from 80%.
-function FullestLimit() {
-  const used = Math.max(0, ...useList(accountsAtom).filter((a) => a.kind === "subscription").map(fullest))
-  if (!used) return null
-  return <span className={cx("text-sm tabular-nums", used >= LIMIT_ALERT ? "text-warning" : "text-dim")}>{formatPercent(used)}</span>
+// Usage, with the fullest limit window once it reaches 80%: below that a number next to the row is noise.
+// The row's label names the account and window, so the percentage never stands alone.
+function UsageItem({ active }: { active: boolean }) {
+  const accounts = useList(accountsAtom).filter((a) => a.kind === "subscription")
+  const worst = accounts
+    .flatMap((a) => (a.usage?.windows ?? []).map((w) => ({ account: a.label, window: windowLabel(w.id), used: w.usedPercent / 100 })))
+    .sort((a, b) => b.used - a.used)[0]
+  const alert = worst && worst.used >= LIMIT_ALERT ? worst : undefined
+  const detail = alert && t("nav.usageAlert", { account: alert.account, window: alert.window, percent: formatPercent(alert.used) })
+  return (
+    <NavItem
+      icon={<ChartColumn />}
+      active={active}
+      onPress={() => go({ view: "usage" })}
+      {...(detail && { "aria-label": `${t("nav.usage")}, ${detail}` })}
+      trailing={
+        alert && (
+          <span title={detail} className="shrink-0 text-sm text-warning tabular-nums">
+            {formatPercent(alert.used)}
+          </span>
+        )
+      }
+    >
+      {t("nav.usage")}
+    </NavItem>
+  )
+}
+
+// Which edges of a scroll area have content past them, to draw the hairlines.
+function useScrollEdges() {
+  const tree = useRef<HTMLDivElement>(null)
+  const [edges, setEdges] = useState({ top: false, bottom: false })
+  const measure = (el: HTMLElement) => {
+    const top = el.scrollTop > 0
+    const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 1
+    setEdges((e) => (e.top === top && e.bottom === bottom ? e : { top, bottom }))
+  }
+  useLayoutEffect(() => {
+    const el = tree.current
+    if (!el) return
+    measure(el)
+    const observer = new ResizeObserver(() => measure(el))
+    observer.observe(el)
+    for (const child of el.children) observer.observe(child)
+    return () => observer.disconnect()
+  })
+  return { tree, edges, onScroll: (e: UIEvent<HTMLElement>) => measure(e.currentTarget) }
 }

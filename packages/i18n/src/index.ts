@@ -75,7 +75,11 @@ export function formatDuration(ms: number): string {
 }
 
 // Short age for lists: 5m, 2h, 3d, 2w; under a minute → "now" from the catalog.
+const SANE_SINCE = Date.UTC(2000, 0, 1)
+
 export function formatAge(at: number, now = Date.now()): string {
+  // Before 2000 is not a real timestamp here (0, 1, or seconds from old data): no age, never "Dec 31, 1969".
+  if (!(at >= SANE_SINCE)) return ""
   const s = Math.max(0, (now - at) / 1000)
   if (s < 60) return t("time.now")
   if (s < 3600) return unit("minute", Math.floor(s / 60))

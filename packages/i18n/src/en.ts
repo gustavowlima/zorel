@@ -43,7 +43,7 @@ export const en = {
     newProject: "New project",
     newChatIn: "New chat in {name}",
     projectSettings: "Settings of {name}",
-    noProject: "no project",
+    usageAlert: "{account} {window} limit {percent} used",
     showMore: { one: "Show 1 more", other: "Show {count} more" },
     showLess: "Show less",
     agentsOf: "Agents · {name}",
