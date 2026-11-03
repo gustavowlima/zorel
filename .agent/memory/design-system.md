@@ -1,5 +1,5 @@
 # design-system
-keywords: ui, tailwind, tokens, theme, button, css
+keywords: ui, tailwind, tokens, theme, button, css, check:ui, galeria, avatar, provider icon, detector
 status: active
 updated: 2026-11-03
 
@@ -27,12 +27,20 @@ updated: 2026-11-03
 - decidido (2026-11-03): tema escuro do protótipo é o padrão (claro só troca valores, neutro); paleta de identidade dos agentes (6 cores, --z-agent-1..6) só em avatares (A Regra do Avatar); text-dim #8a8a8a (5,0:1) e no claro muted #666/dim #757575; seção Agents = agentes do projeto aberto
 - DESIGN.md e tokens atualizados pelo protótipo (sidebar = tom da moldura, surface #232323, bordas 6%/10%, tokens accent-faint/line, success-faint/line, diff-add/del, code)
 
+- fase UI passo 1 (2026-11-03): primitivas Switch, Tabs (pílulas), Menu, IconButton (label obrigatório), AgentAvatar (16/20/28/32; `tone` = ordem do agente no projeto, senão hash do id), ProviderIcon (lobehub; Claude em cor, resto mono currentColor; aliases claude-cli/anthropic, codex-cli/openai), Spinner (currentColor, para em reduced motion), ChatStatusIcon (running/waiting/failed); ícones lucide reexportados por ui/icons.tsx
+- galeria em /#/dev/ui (main.tsx carrega lazy só em import.meta.env.DEV), dois temas
+- `bun run check:ui` (scripts/check-ui.ts) no CI: catraca por arquivo/regra em apps/web/ui-baseline.json (literal-color, arbitrary-value, raw-control, direct-import, glyph-icon); src/ui e src/dev isentos; `--update` trava melhora. Dívida atual: App.tsx, features/chat.tsx, features/project.tsx (paga no passo 3)
+- detector impeccable: .impeccable/config.json (hook on; ignore 9px = inicial do avatar 16px); manifest local em .claude/settings.local.json aponta para $HOME/.claude/skills/impeccable (skill é global, o instalador não achou pasta no projeto)
+- NOTICE atribui Lobe Icons (MIT)
+
 ## avoid
 
 - bg-muted / bg-accent / bg-secondary do shadcn: esses nomes são nossos (texto apagado, azul, texto secundário). Ao adotar componente, trocar por bg-control/bg-control-hover
 - fonte Geist e paleta neutra do preset Nova: removidas; a fonte é Inter
 
 - cor literal fora de styles.css: quebra tema light
+- logo de provider sobre fundo branco (variante colorida do Codex tinha tile branco): usar a mono
+- props a11y por spread condicional no svg: o biome não enxerga (noSvgWithoutTitle)
 - copiar CSS/código do OpenBot: licença PolyForm Noncommercial
 
 ## alvo (D19, ARCHITECTURE 10.3)

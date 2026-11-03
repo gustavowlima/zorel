@@ -13,5 +13,9 @@ Partes deste projeto derivam de:
 - T3 Code (https://github.com/pingdotgg/t3code), MIT License, Copyright 2026 T3 Tools Inc.
   Referência de arquitetura (contracts com Effect Schema, adapters de provider).
 
+- Lobe Icons (https://github.com/lobehub/lobe-icons), MIT License, Copyright LobeHub.
+  Usado: logos dos providers (Claude, Codex, opencode, OpenRouter, Ollama) em
+  apps/web/src/ui/provider-icon.tsx, a partir de @lobehub/icons-static-svg 1.102.0.
+
 O design system é inspirado visualmente no OpenBot (PolyForm Noncommercial 1.0.0);
 nenhum código do OpenBot foi copiado.

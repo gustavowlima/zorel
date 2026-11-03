@@ -1,5 +1,5 @@
 import "./styles.css"
-import { StrictMode } from "react"
+import { lazy, StrictMode, Suspense, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./App.tsx"
 
@@ -9,8 +9,27 @@ const applyTheme = () => (document.documentElement.dataset.theme = light.matches
 applyTheme()
 light.addEventListener("change", applyTheme)
 
+// /#/dev/ui: the primitives gallery, only in development (never part of the production build).
+const Gallery = import.meta.env.DEV ? lazy(() => import("./dev/gallery.tsx")) : undefined
+
+function Root() {
+  const [hash, setHash] = useState(location.hash)
+  useEffect(() => {
+    const on = () => setHash(location.hash)
+    addEventListener("hashchange", on)
+    return () => removeEventListener("hashchange", on)
+  }, [])
+  if (Gallery && hash === "#/dev/ui")
+    return (
+      <Suspense>
+        <Gallery />
+      </Suspense>
+    )
+  return <App />
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <Root />
   </StrictMode>
 )
