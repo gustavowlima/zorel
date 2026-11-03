@@ -177,6 +177,10 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
     rpc.kill()
   })
 
+  // Codex levels: "max" is its top one (xhigh); the others match.
+  const effortOf = (e: SessionTurnInput["effort"]) => (e === "max" ? "xhigh" : (e ?? undefined))
+  let active: { threadId: string; turnId: string } | undefined // the running turn, for steering
+
   const turn = (input: SessionTurnInput): Stream.Stream<EngineEvent> =>
     Stream.callback<EngineEvent>((out) => {
       const emit = (e: EngineEvent) => void Queue.offerUnsafe(out, e)
@@ -204,7 +208,8 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
             lastItem = p.itemId
             emit({ type: "text", delta: sep + p.delta })
           } else if (method === "thread/tokenUsage/updated" && p.tokenUsage?.last) {
-            usage = { inputTokens: p.tokenUsage.last.inputTokens ?? 0, outputTokens: p.tokenUsage.last.outputTokens ?? 0 }
+            const last = p.tokenUsage.last
+            usage = { inputTokens: last.inputTokens ?? 0, outputTokens: last.outputTokens ?? 0, cachedTokens: last.cachedInputTokens ?? 0 }
           } else if (method === "turn/completed") {
             const t = p.turn ?? {}
             if (t.status === "completed") emit({ type: "done", usage })
@@ -213,8 +218,9 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
           }
         }
         const model = modelOf(input.model)
+        const effort = effortOf(input.effort)
         const started = yield* Effect.tryPromise({
-          try: () => rpc.request("turn/start", { threadId, input: [{ type: "text", text: input.prompt, text_elements: [] }], ...(model && { model }) }),
+          try: () => rpc.request("turn/start", { threadId, input: [{ type: "text", text: input.prompt, text_elements: [] }], ...(model && { model }), ...(effort && { effort }) }),
           catch: (e) => (e instanceof Error ? e.message : String(e))
         }).pipe(
           Effect.catch((message) =>
@@ -229,7 +235,9 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
           return yield* Queue.end(out)
         }
         turnId = started.turn?.id
+        if (turnId) active = { threadId, turnId }
         yield* Effect.promise(() => finished)
+        active = undefined
         listener = undefined
         yield* Queue.end(out)
       }).pipe(
@@ -247,8 +255,18 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
       )
     })
 
+  // Real steering: adds the text to the running turn (turn/steer checks it is still that turn).
+  const steer = async (text: string) => {
+    const now = active
+    if (!now) return false
+    return rpc
+      .request("turn/steer", { threadId: now.threadId, input: [{ type: "text", text, text_elements: [] }], expectedTurnId: now.turnId })
+      .then(() => true, () => false)
+  }
+
   return {
     turn,
+    steer,
     alive: () => !rpc.exited && !startFailed,
     close: Effect.sync(() => rpc.kill())
   }

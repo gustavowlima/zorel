@@ -69,6 +69,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
 
   const box = inbox()
   let model = splitModel(o.model).model
+  let effort: string | null = null // the session starts at the model's default
   let listener: ((m: SDKMessage | undefined) => void) | undefined // undefined message: process ended
   let ended: string | undefined
   const q = query({
@@ -114,7 +115,12 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
           emit([{ type: "error", message: ended }])
           return yield* Queue.end(out)
         }
-        // Same session, new turn: follow the model if it changed.
+        // Same session, new turn: follow the effort and the model if they changed.
+        const nextEffort = input.effort ?? null
+        if (nextEffort !== effort) {
+          yield* Effect.promise(() => q.applyFlagSettings({ effortLevel: nextEffort }))
+          effort = nextEffort
+        }
         const next = splitModel(input.model).model
         if (next !== model) {
           yield* Effect.promise(() => q.setModel(next))

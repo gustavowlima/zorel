@@ -1,7 +1,7 @@
 // Local database: SQLite via Drizzle over Effect's SqliteClient (D9). Every method returns an Effect;
 // a database error is a defect (orDie): the caller can do nothing but fail the request.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import type { Agent, Chat, McpServer, Memory, Message, Project } from "@zero/contracts"
+import type { Agent, Chat, Effort, McpServer, Memory, Message, Project } from "@zero/contracts"
 import type { Approval, ApprovalOutcome, FileChange, Turn, WorkStep } from "@zero/contracts/events"
 import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
@@ -99,13 +99,13 @@ export const repository = (db: Db) => {
     // ---------- agents ----------
     agents: (): Effect.Effect<Agent[]> => orDie(db.select().from(agents).orderBy(asc(agents.createdAt))),
     agent,
-    createAgent: (input: { projectId: string | null; name: string; instructions: string; model: string; accountId?: string | null | undefined }) =>
+    createAgent: (input: { projectId: string | null; name: string; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined }) =>
       Effect.gen(function* () {
-        const a: Agent = { id: crypto.randomUUID(), ...input, accountId: input.accountId ?? null, createdAt: now() }
+        const a: Agent = { id: crypto.randomUUID(), ...input, accountId: input.accountId ?? null, effort: input.effort ?? null, createdAt: now() }
         yield* db.insert(agents).values(a)
         return a
       }).pipe(orDie),
-    updateAgent: (id: string, input: { name?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined }) =>
+    updateAgent: (id: string, input: { name?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined }) =>
       Effect.gen(function* () {
         const set = defined(input)
         if (Object.keys(set).length) yield* db.update(agents).set(set).where(eq(agents.id, id))
@@ -124,22 +124,22 @@ export const repository = (db: Db) => {
     // ---------- chats and messages ----------
     chats: () => orDie(db.select().from(chats).orderBy(desc(chats.createdAt)).pipe(Effect.flatMap(withMembers))),
     chat,
-    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined }) =>
+    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined }) =>
       Effect.gen(function* () {
         const id = crypto.randomUUID()
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: "Novo chat", model: input.model, accountId: input.accountId ?? null, createdAt: now() })
+            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: "Novo chat", model: input.model, accountId: input.accountId ?? null, effort: input.effort ?? null, createdAt: now() })
             yield* setMembers(tx, id, input.agentIds)
           })
         )
         return (yield* chat(id))!
       }).pipe(orDie),
-    updateChat: (id: string, input: { title?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
+    updateChat: (id: string, input: { title?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
       Effect.gen(function* () {
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            const set = defined({ title: input.title, model: input.model, accountId: input.accountId })
+            const set = defined({ title: input.title, model: input.model, accountId: input.accountId, effort: input.effort })
             if (Object.keys(set).length) yield* tx.update(chats).set(set).where(eq(chats.id, id))
             if (input.agentIds) yield* setMembers(tx, id, input.agentIds)
           })

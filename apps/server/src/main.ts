@@ -183,8 +183,7 @@ const RpcHandlers = ZeroRpc.toLayer(
     const runtime = yield* Runtime
     return {
       send: (p) => runtime.send(p),
-      // ponytail: no native steering yet (phase 2); the message is queued like a normal send.
-      steer: (p) => runtime.send({ chatId: p.chatId, clientId: crypto.randomUUID(), text: p.text }).pipe(Effect.asVoid),
+      steer: (p) => runtime.steer(p.chatId, p.text),
       interrupt: (p) => runtime.interrupt(p.chatId),
       decide: (p) => runtime.decide(p.approvalId, p.outcome, p.reason),
       subscribeChat: (p) => runtime.subscribeChat(p.chatId),

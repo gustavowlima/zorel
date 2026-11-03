@@ -1,14 +1,14 @@
 // Chat/channel: follows runtime events (snapshot + live), so the turn continues if the tab closes and reopens.
 // One reply per agent, mid-turn tool approval, model and member switching, manual compaction.
-import type { Agent, Chat, Message } from "@zero/contracts"
+import type { Agent, Chat, Effort, Message } from "@zero/contracts"
 import { type Approval, type ChatEvent, isInterruption, type WorkStep } from "@zero/contracts/events"
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { call, decideApproval, interruptChat, sendMessage, subscribeChat } from "../api.ts"
+import { call, decideApproval, interruptChat, sendMessage, steerChat, subscribeChat } from "../api.ts"
 import { go, useApp } from "../state.ts"
 import { Badge, Button, Card, ConfirmButton, cx, Select, Textarea, Tooltip } from "@/ui"
-import { AccountSelect } from "./accounts.tsx"
+import { AccountSelect, accountProviderOf } from "./accounts.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 
 type Live = { turnId: string; agentId: string | null; model: string; text: string; steps: WorkStep[] }
@@ -91,7 +91,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   const candidates = data.agents.filter((a) => (a.projectId === null || a.projectId === chat.projectId) && !chat.agentIds.includes(a.id))
   const agentName = (id: string | null) => data.agents.find((a) => a.id === id)?.name ?? "Assistente"
 
-  const update = (payload: { model?: string; accountId?: string | null; agentIds?: ReadonlyArray<string> }) =>
+  const update = (payload: { model?: string; accountId?: string | null; effort?: Effort | null; agentIds?: ReadonlyArray<string> }) =>
     call((c) => c.chats.update({ params: { id: chat.id }, payload })).then(reload, (e) => setError(String(e)))
 
   // With the chat busy, the message enters the runtime queue and is answered later.
@@ -101,7 +101,8 @@ export function ChatView({ chat }: { chat: Chat }) {
     if (!input) return
     setText("")
     setError(undefined)
-    sendMessage(chat.id, input).catch((err) => {
+    // While the agent works, the message corrects it (or waits in the queue if the engine can't).
+    ;(busy ? steerChat(chat.id, input) : sendMessage(chat.id, input)).catch((err) => {
       setError(String(err instanceof Error ? err.message : err))
       setText((t) => t || input)
     })
@@ -141,6 +142,15 @@ export function ChatView({ chat }: { chat: Chat }) {
           {team[0] ? `Modelo de ${team[0].name}` : "Modelo"}
           <ModelPicker className="w-60" value={chat.model} onChange={(model) => update({ model })} />
           <AccountSelect className="w-48" model={chat.model} value={chat.accountId} onChange={(accountId) => update({ accountId })} />
+          {accountProviderOf(chat.model) && (
+            <Select
+              className="w-40"
+              value={chat.effort ?? ""}
+              onChange={(v) => update({ effort: (v || null) as Effort | null })}
+              options={[{ value: "", label: "Raciocínio padrão" }, { value: "low", label: "Raciocínio baixo" }, { value: "medium", label: "Raciocínio médio" }, { value: "high", label: "Raciocínio alto" }, { value: "max", label: "Raciocínio máximo" }]}
+              aria-label="Nível de raciocínio"
+            />
+          )}
         </label>
         <div className="flex gap-1 pt-5">
           <Tooltip content="Resume a conversa até aqui e propõe memórias e skills">
@@ -242,7 +252,7 @@ export function ChatView({ chat }: { chat: Chat }) {
         {busy ? (
           <>
             <Button type="submit" variant="secondary" size="lg" isDisabled={!text.trim()}>
-              Na fila
+              Corrigir
             </Button>
             <Button size="lg" onPress={() => void interruptChat(chat.id).catch((e) => setError(String(e)))}>
               Parar

@@ -54,6 +54,10 @@ updated: 2026-11-03
 - web: features/accounts.tsx (AccountsSection nas configurações, AccountSelect no chat; agente ainda sem seletor de conta: fase UI)
 - server manda cache-control: no-cache no index.html e immutable nos assets com hash
 
+- steering: EngineSession.steer só existe onde é real (Codex: turn/steer com expectedTurnId); runtime.steer grava a mensagem e, se a sessão rodando aceita, ela entra no turno; senão vira o próximo turno. Claude não tem steer (o SDK só enfileira depois do turno e misturaria saídas)
+- effort (low/medium/high/max) em chats e agents; líder usa o do chat; Claude troca ao vivo com applyFlagSettings({effortLevel}); Codex manda por turno (max → xhigh)
+- tokens de cache: Usage.cachedTokens (Claude cache_read_input_tokens, Codex cachedInputTokens) gravado em turns.cached_tokens
+
 ## avoid
 
 - Bun.$ para operação simples de arquivo (mkdir etc.): abre um shell; usar node:fs
