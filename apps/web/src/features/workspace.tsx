@@ -6,10 +6,11 @@ import type { WorkStep } from "@zero/contracts/events"
 import { useAtomValue } from "@effect/atom-react"
 import { formatAge, formatDuration, formatTime, t } from "@zero/i18n"
 import { AsyncResult } from "effect/reactivity"
-import { useMemo, useState } from "react"
+import { lazy, Suspense, useMemo, useState } from "react"
 import { diffAtom, filesAtom, mutations, runsAtom, useMutation } from "../client.ts"
 import { agentName } from "../labels.ts"
-import DiffView from "./diff-view.tsx"
+// The diff viewer and its highlighter load with the panel, not with the app.
+const DiffView = lazy(() => import("./diff-view.tsx"))
 import {
   Button, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleX, ConfirmButton, cx, EmptyState, File, Folder, FolderOpen, IconButton, Spinner, Tab, TabList,
   TabPanel, Tabs, X
@@ -179,7 +180,9 @@ function TurnFiles({ message, path, onPath }: { message: Message; path: string |
               <Delta added={f.added} removed={f.removed} />
             </div>
             {f.patch ? (
-              <DiffView patch={f.patch} />
+              <Suspense fallback={<p className="px-3 py-2 text-sm text-muted">{t("workspace.loadingDiff")}</p>}>
+                <DiffView patch={f.patch} />
+              </Suspense>
             ) : (
               <p className="px-3 py-2 text-sm text-muted">{t("workspace.binary")}</p>
             )}

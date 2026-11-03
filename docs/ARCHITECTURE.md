@@ -341,7 +341,7 @@ Referência: a reference app (`docs/architecture/agents.md` "Agent communication
 - Passos nativos (`tool_use`/`tool_result` do Claude, itens `commandExecution`/`fileChange` do Codex) viram `WorkStep`; leitura e busca não contam como "agiu" para o failover, edição e comando contam.
 - Handoff: cada resposta leva para o próximo turno uma nota do que fez ("[Feito neste turno: editou a.ts (+2 −1); rodou `bun test` (ok)]"), então outro agente ou outro provider sabe o que mudou.
 - Vigia: um engine sem nenhum sinal por 10 min, sem aprovação esperando, falha como `unavailable` (o processo pode ter morrido sem o SDK perceber) e a sessão é fechada.
-- Interface: resumo de mudanças sob cada resposta (ver, desfazer), painel direito Changes/Files e terminal só leitura com os comandos dos agentes. O diff é desenhado por um renderizador próprio (`diff-view.tsx`): o `@pierre/diffs` 1.6.1 renderizava vazio neste ambiente, sem erro, e foi retirado.
+- Interface: resumo de mudanças sob cada resposta (ver, desfazer), painel direito Changes/Files e terminal só leitura com os comandos dos agentes. O diff usa o `@pierre/diffs` 1.6.1 (`FileDiff`, realce de sintaxe, mudança dentro da linha, linhas inalteradas recolhidas) **dentro de um pool de workers** (`diff-pool.tsx`, como o T3 Code faz). Sem o pool, um bug da lib aparece: com o `StrictMode` do React 19 e `disableFileHeader`, a remontagem acha o `<pre>` vazio da primeira montagem, trata como já renderizado e nunca desenha (sem erro). As cores vêm dos tokens `--z-*` via `unsafeCSS` (variáveis CSS atravessam o shadow DOM) e o tema segue o claro/escuro do Zero. O painel carrega o visualizador sob demanda.
 
 ### 9.2 Aprovações
 

@@ -109,6 +109,19 @@ export function setThemePref(pref: ThemePref) {
 
 prefersLight.addEventListener("change", applyTheme)
 
+// The theme in effect now (dark or light), following changes to the preference or the system.
+const resolvedTheme = (): "dark" | "light" => (document.documentElement.dataset.theme === "light" ? "light" : "dark")
+
+export function useResolvedTheme(): "dark" | "light" {
+  const [theme, setTheme] = useState(resolvedTheme)
+  useEffect(() => {
+    const observer = new MutationObserver(() => setTheme(resolvedTheme()))
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] })
+    return () => observer.disconnect()
+  }, [])
+  return theme
+}
+
 // ---------- small per-browser UI memory (expanded projects) ----------
 
 export function readSet(key: string): Set<string> {
