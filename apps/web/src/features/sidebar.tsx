@@ -174,7 +174,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
         )}
       </div>
       <div className={cx("shrink-0 border-t px-3 pt-1 transition-colors duration-120", edges.bottom ? "border-subtle" : "border-transparent")}>
-        <NavItem icon={<Settings />} active={route.view === "settings"} onPress={() => go({ view: "settings", tab: "accounts" })}>
+        <NavItem icon={<Settings />} active={route.view === "settings"} onPress={() => go({ view: "settings", tab: "providers" })}>
           {t("nav.settings")}
         </NavItem>
       </div>

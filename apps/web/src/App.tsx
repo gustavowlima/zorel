@@ -73,7 +73,7 @@ function Screen({ route }: { route: Route }) {
     case "usage":
       return <UsageView />
     case "settings":
-      return <SettingsView tab={route.tab} />
+      return <SettingsView tab={route.tab} provider={route.provider} />
     case "new-agent":
       return <AgentView projectId={route.projectId} />
     case "project": {

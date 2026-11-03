@@ -1,7 +1,7 @@
 // Route in the URL hash, and the theme preference. Data lives in atoms (client.ts), not here.
 import { useEffect, useState } from "react"
 
-export const SETTINGS_TABS = ["accounts", "keys", "mcp", "skills", "appearance"] as const
+export const SETTINGS_TABS = ["providers", "mcp", "skills", "appearance"] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]
 export const PROJECT_TABS = ["overview", "agents", "tools"] as const
 export type ProjectTab = (typeof PROJECT_TABS)[number]
@@ -11,7 +11,7 @@ export type Route =
   | { view: "inbox" }
   | { view: "knowledge"; id?: string }
   | { view: "usage" }
-  | { view: "settings"; tab: SettingsTab }
+  | { view: "settings"; tab: SettingsTab; provider?: string } // provider: one provider's page under Providers
   | { view: "project"; id: string; tab: ProjectTab }
   | { view: "chat"; id: string }
   | { view: "agent"; id: string }
@@ -28,7 +28,8 @@ export function parseRoute(hash: string): Route {
     case "knowledge":
       return a ? { view, id: a } : { view }
     case "settings":
-      return { view, tab: oneOf(SETTINGS_TABS, a, "accounts") }
+      // Old links (#/settings/accounts, #/settings/keys) land on Providers.
+      return { view, tab: oneOf(SETTINGS_TABS, a, "providers"), ...(a === "providers" && b && { provider: b }) }
     case "project":
       return a ? { view, id: a, tab: oneOf(PROJECT_TABS, b, "overview") } : { view: "home" }
     case "chat":
@@ -50,7 +51,7 @@ export const hrefOf = (r: Route): string => {
     case "knowledge":
       return r.id ? `#/knowledge/${r.id}` : "#/knowledge"
     case "settings":
-      return `#/settings/${r.tab}`
+      return r.provider ? `#/settings/${r.tab}/${r.provider}` : `#/settings/${r.tab}`
     case "project":
       return r.tab === "overview" ? `#/project/${r.id}` : `#/project/${r.id}/${r.tab}`
     case "chat":
