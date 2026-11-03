@@ -40,6 +40,19 @@ export const LoginStarted = Schema.Struct({ url: Schema.NullOr(Schema.String) })
 export const Effort = Schema.Literals(["low", "medium", "high", "max"])
 export type Effort = typeof Effort.Type
 
+export const FileChange = Schema.Struct({
+  path: Schema.String, // relative to the project folder
+  added: Schema.Number,
+  removed: Schema.Number,
+  status: Schema.Literals(["added", "modified", "deleted"])
+})
+export type FileChange = typeof FileChange.Type
+
+// Access level of an agent (ARCHITECTURE §9.2), chosen only by you. workspace: reads, edits and runs commands
+// inside the project folder, asks for the rest; ask: only reads freely; full: never asks.
+export const Access = Schema.Literals(["workspace", "ask", "full"])
+export type Access = typeof Access.Type
+
 // Failover (ARCHITECTURE §6.1): ordered alternatives { model, account } tried when the turn fails before
 // acting. Empty list: failover off.
 export const FailoverTarget = Schema.Struct({ model: ModelId, accountId: Schema.NullOr(Id) })
@@ -64,6 +77,7 @@ export const Project = Schema.Struct({
   id: Id,
   name: Schema.String,
   brief: Schema.String, // stable project context, included in every turn's prompt
+  path: Schema.NullOr(Schema.String), // workspace folder; null: agents work in an empty Zero folder
   createdAt: Schema.Number
 })
 export type Project = typeof Project.Type
@@ -77,6 +91,7 @@ export const Agent = Schema.Struct({
   accountId: Schema.NullOr(Id), // null: default account of the model's provider
   effort: Schema.NullOr(Effort),
   failover: FailoverList,
+  access: Access,
   createdAt: Schema.Number
 })
 export type Agent = typeof Agent.Type
@@ -122,6 +137,9 @@ export const Message = Schema.Struct({
   steps: Schema.Array(Step), // tools used in the turn
   attachments: Schema.Array(Attachment),
   switches: Schema.Array(Switch), // failover moves before this reply (empty when the first choice answered)
+  turnId: Schema.NullOr(Id), // the turn that wrote it: its workspace diff and checkpoint
+  changes: Schema.Array(FileChange), // files the turn changed in the workspace
+  revertedAt: Schema.NullOr(Schema.Number), // the turn's changes were undone
   inputTokens: Schema.Number,
   outputTokens: Schema.Number,
   at: Schema.Number
@@ -197,10 +215,11 @@ export const USAGE_DAYS = 30
 
 // ---------- inputs ----------
 
-export const NewProject = Schema.Struct({ name: Name, brief: LongText(8000) })
-export const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: Schema.optional(LongText(8000)) })
-export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList) })
-export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList) })
+const FolderPath = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(1000))
+export const NewProject = Schema.Struct({ name: Name, brief: LongText(8000), path: Schema.optional(Schema.NullOr(FolderPath)) })
+export const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: Schema.optional(LongText(8000)), path: Schema.optional(Schema.NullOr(FolderPath)) })
+export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access) })
+export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access) })
 export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)) })
 export const ChatPatch = Schema.Struct({ title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000) })
@@ -222,6 +241,34 @@ export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullO
 // Turns (send, events, interrupt, approve): see events.ts (RPC over WebSocket at /rpc).
 export const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
 
+// ---------- workspace (ARCHITECTURE §9.1) ----------
+
+// A folder Zero refuses: missing, not a folder, relative, or a place agents must never own (disk root,
+// home, Zero's data folder).
+export class WorkspaceInvalid extends Schema.Error<WorkspaceInvalid>("zero/WorkspaceInvalid")(
+  { _tag: Schema.tag("WorkspaceInvalid"), reason: Schema.Literals(["relative", "missing", "not_directory", "forbidden"]) },
+  { httpApiStatus: 400 }
+) {}
+
+export const FileDiff = Schema.Struct({
+  path: Schema.String,
+  status: Schema.Literals(["added", "modified", "deleted"]),
+  added: Schema.Number,
+  removed: Schema.Number,
+  patch: Schema.String // unified diff of this file (empty for binary files)
+})
+export type FileDiff = typeof FileDiff.Type
+export const TurnDiff = Schema.Struct({ turnId: Id, files: Schema.Array(FileDiff), revertedAt: Schema.NullOr(Schema.Number) })
+export type TurnDiff = typeof TurnDiff.Type
+// Undo refused: these files changed after the turn (by you or a later turn).
+export class UndoConflict extends Schema.Error<UndoConflict>("zero/UndoConflict")(
+  { _tag: Schema.tag("UndoConflict"), files: Schema.Array(Schema.String) },
+  { httpApiStatus: 409 }
+) {}
+export const WorkspaceFile = Schema.Struct({ path: Schema.String, status: Schema.NullOr(Schema.Literals(["added", "modified", "deleted"])) })
+export type WorkspaceFile = typeof WorkspaceFile.Type
+export const MAX_WORKSPACE_FILES = 5000
+
 // ---------- API ----------
 
 const idParam = { id: Id }
@@ -230,8 +277,10 @@ export const Api = HttpApi.make("zero")
   .add(
     HttpApiGroup.make("projects")
       .add(HttpApiEndpoint.get("list", "/api/projects", { success: Schema.Array(Project) }))
-      .add(HttpApiEndpoint.post("create", "/api/projects", { payload: NewProject, success: Project }))
-      .add(HttpApiEndpoint.patch("update", "/api/projects/:id", { params: idParam, payload: ProjectPatch, success: Project, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("create", "/api/projects", { payload: NewProject, success: Project, error: WorkspaceInvalid }))
+      .add(HttpApiEndpoint.patch("update", "/api/projects/:id", { params: idParam, payload: ProjectPatch, success: Project, error: [HttpApiError.NotFound, WorkspaceInvalid] }))
+      // Files of the workspace (up to MAX_WORKSPACE_FILES), marked with what changed since the project's first checkpoint in this chat.
+      .add(HttpApiEndpoint.get("files", "/api/projects/:id/files", { params: idParam, query: { chatId: Schema.optionalKey(Id) }, success: Schema.Array(WorkspaceFile), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("remove", "/api/projects/:id", { params: idParam }))
   )
   .add(
@@ -249,6 +298,9 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.delete("remove", "/api/chats/:id", { params: idParam }))
       .add(HttpApiEndpoint.get("messages", "/api/chats/:id/messages", { params: idParam, success: Schema.Array(Message) }))
       .add(HttpApiEndpoint.post("consolidate", "/api/chats/:id/consolidate", { params: idParam, success: Chat, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
+      // What one turn changed in the workspace, and undoing it (restores the files to the checkpoint before it).
+      .add(HttpApiEndpoint.get("diff", "/api/turns/:id/diff", { params: idParam, success: TurnDiff, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("undo", "/api/turns/:id/undo", { params: idParam, success: TurnDiff, error: [HttpApiError.NotFound, UndoConflict] }))
   )
   .add(
     HttpApiGroup.make("memories")

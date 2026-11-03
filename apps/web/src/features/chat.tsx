@@ -13,11 +13,12 @@ import { agentName, chatTitle, handleOf, modelLabel, switchText } from "../label
 import { go } from "../state.ts"
 import { Composer } from "./composer.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
+import { chatDelta, Delta, type Focus, TerminalPanel, TurnChanges, WorkspacePanel } from "./workspace.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { AuthorAvatar, AvatarStack, TeamPicker } from "./people.tsx"
 import {
   Button, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, Input, Menu, MenuItem,
-  MenuSeparator, MessageCircle, MoreHorizontal, Pencil, Shield, Shuffle, Sparkles, Spinner, Switch, Trash2
+  MenuSeparator, MessageCircle, MoreHorizontal, PanelBottom, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, Switch, Trash2
 } from "@/ui"
 
 export function ChatView({ chat }: { chat: Chat }) {
@@ -35,11 +36,31 @@ export function ChatView({ chat }: { chat: Chat }) {
     return busy ? steer({ payload: { chatId: chat.id, text, ...ids } }) : send({ payload: { chatId: chat.id, clientId: crypto.randomUUID(), text, ...ids } })
   }
   const second = team[1]
+  const projects = useList(projectsAtom)
+  const project = projects.find((p) => p.id === chat.projectId)
+  const [panel, setPanel] = useState<"changes" | "files">()
+  const [terminal, setTerminal] = useState(false)
+  const [focus, setFocus] = useState<Focus>()
+  const view = (f: Focus) => {
+    setFocus(f)
+    setPanel("changes")
+  }
 
   return (
     <section aria-label={t("chat.label")} className="flex h-full min-h-0 flex-col">
-      <ChatHeader chat={chat} team={team} />
-      <Timeline chat={chat} state={state} agents={agents} />
+      <ChatHeader
+        chat={chat}
+        team={team}
+        delta={chatDelta(state.messages)}
+        panelOpen={!!panel}
+        onPanel={() => setPanel(panel ? undefined : "changes")}
+        terminalOpen={terminal}
+        onTerminal={() => setTerminal(!terminal)}
+        workspace={!!project?.path}
+      />
+      <div className="flex min-h-0 flex-1">
+      <div className="flex min-w-0 flex-1 flex-col">
+      <Timeline chat={chat} state={state} agents={agents} onView={view} />
       <div className="mx-auto w-full max-w-3xl px-7 pt-2 pb-6">
         <Composer
           key={chat.id}
@@ -60,13 +81,37 @@ export function ChatView({ chat }: { chat: Chat }) {
           }
         />
       </div>
+      {terminal && <TerminalPanel chatId={chat.id} onClose={() => setTerminal(false)} />}
+      </div>
+      {panel && (
+        <WorkspacePanel chat={chat} project={project} messages={state.messages} agents={agents} tab={panel} onTab={setPanel} focus={focus} onFocus={setFocus} onClose={() => setPanel(undefined)} />
+      )}
+      </div>
     </section>
   )
 }
 
 // ---------- header ----------
 
-function ChatHeader({ chat, team }: { chat: Chat; team: ReadonlyArray<Agent> }) {
+function ChatHeader({
+  chat,
+  team,
+  delta,
+  panelOpen,
+  onPanel,
+  terminalOpen,
+  onTerminal,
+  workspace
+}: {
+  chat: Chat
+  team: ReadonlyArray<Agent>
+  delta: { added: number; removed: number }
+  panelOpen: boolean
+  onPanel: () => void
+  terminalOpen: boolean
+  onTerminal: () => void
+  workspace: boolean
+}) {
   const projects = useList(projectsAtom)
   const project = projects.find((p) => p.id === chat.projectId)
   const update = useMutation(mutations.updateChat)
@@ -100,6 +145,19 @@ function ChatHeader({ chat, team }: { chat: Chat; team: ReadonlyArray<Agent> }) 
           <span className="inline-flex items-center gap-1.5 text-sm text-muted">
             <Spinner size={12} /> {t("chat.compacting")}
           </span>
+        )}
+        {(workspace || delta.added + delta.removed > 0) && (
+          <Button size="sm" variant={panelOpen ? "secondary" : "ghost"} aria-expanded={panelOpen} onPress={onPanel} className="rounded-full">
+            <PanelRight />
+            {t("workspace.changes")}
+            {delta.added + delta.removed > 0 && <Delta {...delta} />}
+          </Button>
+        )}
+        {workspace && (
+          <Button size="sm" variant={terminalOpen ? "secondary" : "ghost"} aria-expanded={terminalOpen} onPress={onTerminal} className="rounded-full">
+            <PanelBottom />
+            {t("workspace.terminal")}
+          </Button>
         )}
         <AvatarStack team={team} />
         <Menu
@@ -235,7 +293,7 @@ function RenameDialog({ isOpen, onClose, title, onSave }: { isOpen: boolean; onC
 
 type Item = { at: number; message: Message } | { at: number; note: Note }
 
-function Timeline({ chat, state, agents }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent> }) {
+function Timeline({ chat, state, agents, onView }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void }) {
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true) // follow new content only while the reader is at the bottom
   const items: Item[] = [...state.messages.map((m) => ({ at: m.at, message: m })), ...state.notes.map((n) => ({ at: n.at, note: n }))].sort((a, b) => a.at - b.at)
@@ -267,7 +325,7 @@ function Timeline({ chat, state, agents }: { chat: Chat; state: ChatState; agent
         {items.map((item) =>
           "message" in item ? (
             <div key={item.message.id} className={cx(item.message.at <= chat.summaryUntil && "opacity-55")} title={item.message.at <= chat.summaryUntil ? t("chat.coveredBySummary") : undefined}>
-              {item.message.role === "user" ? <UserMessage message={item.message} /> : <AgentMessage message={item.message} agents={agents} />}
+              {item.message.role === "user" ? <UserMessage message={item.message} /> : <AgentMessage message={item.message} agents={agents} onView={onView} />}
             </div>
           ) : (
             <TimelineNote key={`${item.note.kind}-${item.note.at}`} note={item.note} agents={agents} />
@@ -362,7 +420,7 @@ function endingOf(error: string | null): { tone: "warning" | "danger"; text: str
   return { tone: "danger", text: error }
 }
 
-function AgentMessage({ message: m, agents }: { message: Message; agents: ReadonlyArray<Agent> }) {
+function AgentMessage({ message: m, agents, onView }: { message: Message; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void }) {
   const accounts = useList(accountsAtom)
   return (
     <div className="flex flex-col gap-6">
@@ -370,12 +428,12 @@ function AgentMessage({ message: m, agents }: { message: Message; agents: Readon
         // biome-ignore lint/suspicious/noArrayIndexKey: a saved message's switches never change
         <Separator key={i}>{switchText(sw, accounts)}</Separator>
       ))}
-      <AgentReply message={m} agents={agents} />
+      <AgentReply message={m} agents={agents} onView={onView} />
     </div>
   )
 }
 
-function AgentReply({ message: m, agents }: { message: Message; agents: ReadonlyArray<Agent> }) {
+function AgentReply({ message: m, agents, onView }: { message: Message; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void }) {
   const ending = endingOf(m.error)
   const tokens = m.inputTokens || m.outputTokens ? t("chat.tokens", { input: formatCompact(m.inputTokens), output: formatCompact(m.outputTokens) }) : null
   return (
@@ -399,6 +457,7 @@ function AgentReply({ message: m, agents }: { message: Message; agents: Readonly
       }
     >
       {m.text && prose(m.text)}
+      <TurnChanges message={m} onView={onView} />
       {ending?.tone === "danger" && <pre className="overflow-auto rounded-control bg-code px-3 py-2 font-mono text-sm whitespace-pre-wrap text-danger">{ending.text}</pre>}
     </Reply>
   )
@@ -424,8 +483,11 @@ function StoredActivity({ steps }: { steps: Message["steps"] }) {
             <li key={i} className="flex gap-2.5">
               <StepIcon status={s.status} />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <Code className="self-start">{s.tool}</Code>
-                {s.args && s.args !== "{}" && <pre className="overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{s.args}</pre>}
+                {/* Native steps: "run" keeps the command, "edit" the files; MCP tools keep name and arguments. */}
+                <Code className="self-start break-all">{s.tool === "run" ? `$ ${s.args}` : s.tool === "edit" ? s.args : s.tool}</Code>
+                {s.tool !== "run" && s.tool !== "edit" && s.args && s.args !== "{}" && (
+                  <pre className="overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{s.args}</pre>
+                )}
                 {s.result && <p className="line-clamp-3 text-sm text-muted">{s.result}</p>}
               </div>
             </li>

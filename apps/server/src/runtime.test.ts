@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test"
 import type { ChatEvent } from "@zero/contracts/events"
 import { Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
-import { mkdirSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Accounts } from "./accounts.ts"
@@ -13,6 +13,7 @@ import { Engines, type EngineEvent } from "./engines.ts"
 import { Runtime } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
 import { Tools } from "./tools.ts"
+import { Workspace } from "./workspace.ts"
 
 // Engine that sends "parte" and then hangs: leaves time to interrupt.
 const Hanging = Layer.succeed(Engines, {
@@ -25,7 +26,7 @@ const Echo = Layer.succeed(Engines, {
 const layer = (dbPath: string, engines: Layer.Layer<Engines>) => {
   const store = Store.layer(dbPath)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(engines, Tools.layer), Layer.provideMerge(Secrets.memory(), store)), DataDir.layer(join(tmpdir(), "zero-rt")))
-  return Layer.provideMerge(Runtime.layer, Layer.provideMerge(Accounts.layer, base))
+  return Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer), base))
 }
 const runWith = <A, E>(dbPath: string, engines: Layer.Layer<Engines>, f: Effect.Effect<A, E, Runtime | Store>) =>
   Effect.runPromise(Effect.scoped(f).pipe(Effect.provide(layer(dbPath, engines))) as Effect.Effect<A>)
@@ -383,5 +384,41 @@ test("failover: when every route fails, the turn fails once and lists each attem
     const error = (yield* store.messages(chat.id)).at(-1)!.error!
     expect(error).toContain("a/m: network")
     expect(error).toContain("b/m: network")
+  }))
+})
+
+// ---------- workspace (ARCHITECTURE §9.1) ----------
+
+test("workspace: the agent works in the project folder; the turn records what it changed; the next turn knows", () => {
+  const folder = mkdtempSync(join(tmpdir(), "zero-proj-"))
+  writeFileSync(join(folder, "a.ts"), "export const a = 1\n")
+  const prompts: string[] = []
+  const editing = Layer.succeed(Engines, {
+    run: (t) => {
+      prompts.push(t.messages.map((m) => m.text).join("\n"))
+      if (t.messages.length === 1) writeFileSync(join(t.cwd, "a.ts"), "export const a = 2\n")
+      return Stream.make<EngineEvent[]>(
+        { type: "step", step: { id: "s1", kind: "edit", title: "Edit a.ts", files: ["a.ts"], status: "running", output: "" } },
+        { type: "step", step: { id: "s1", kind: "edit", title: "Edit a.ts", files: ["a.ts"], status: "ok", output: "" } },
+        { type: "text", delta: `cwd=${t.cwd}` },
+        { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }
+      )
+    }
+  })
+  return runWith(":memory:", editing, Effect.gen(function* () {
+    const store = yield* Store
+    const project = yield* store.createProject({ name: "app", brief: "", path: folder })
+    const chat = yield* store.createChat({ projectId: project.id, agentIds: [], model: "x/y" })
+    const events = yield* sendAndWait(chat.id, "mude a")
+    expect(events.some((e) => e._tag === "step-finished" && e.step.kind === "edit" && e.step.status === "ok")).toBe(true)
+    const reply = (yield* store.messages(chat.id)).at(-1)!
+    expect(reply.text).toBe(`cwd=${folder}`)
+    expect(reply.changes).toEqual([{ path: "a.ts", added: 1, removed: 1, status: "modified" }])
+    const turn = (yield* store.turnRow(reply.turnId!))!
+    expect(turn.treeBefore && turn.treeAfter && turn.treeBefore !== turn.treeAfter).toBe(true)
+
+    yield* sendAndWait(chat.id, "e agora?")
+    expect(prompts[1]).toContain("[Feito neste turno: editou a.ts (+1 −1)]")
+    rmSync(folder, { recursive: true, force: true })
   }))
 })

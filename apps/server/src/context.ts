@@ -63,6 +63,15 @@ export interface TurnInput {
   readonly tools?: TurnTools | undefined
 }
 
+// "[Feito neste turno: editou src/a.ts (+2 −1); rodou `bun test` (ok)]", or nothing.
+export function workNote(m: Message): string {
+  const files = m.changes.map((c) => `${c.status === "added" ? "criou" : c.status === "deleted" ? "apagou" : "editou"} ${c.path} (+${c.added} −${c.removed})`)
+  const runs = m.steps.filter((s) => s.tool === "run").map((s) => `rodou \`${s.args.slice(0, 120)}\` (${s.status === "ok" ? "ok" : s.status === "refused" ? "recusado" : "falhou"})`)
+  const all = [...files, ...runs]
+  if (!all.length) return ""
+  return `\n\n[Feito neste turno: ${all.join("; ")}${m.revertedAt ? ". O usuário desfez essas mudanças depois." : ""}]`
+}
+
 export function buildTurn(i: TurnInput): Turn {
   const of = (scope: string) => i.pinned.filter((m) => m.scope === scope)
   const others = i.members.filter((a) => a.id !== i.agent?.id)
@@ -84,6 +93,11 @@ export function buildTurn(i: TurnInput): Turn {
     channel && section("Canal", channel),
     section("O que você sabe sobre o usuário", bullets(of("user"))),
     i.project && section(`Projeto: ${i.project.name}`, i.project.brief),
+    i.project?.path &&
+      section(
+        "Workspace",
+        `Você trabalha na pasta do projeto: ${i.project.path}. Leia, edite e rode comandos nela com as suas ferramentas; o Zero pede a aprovação do usuário quando o seu nível de acesso exige. Cada turno vira um ponto de restauração, e o usuário pode desfazer o que você mudou.`
+      ),
     i.project && section("Memórias do projeto", bullets(of(`project:${i.project.id}`))),
     i.agent && section("Suas memórias de trabalho", bullets(of(`agent:${i.agent.id}`))),
     section("Skills disponíveis (procedimentos aprovados; siga quando a tarefa casar)", i.skills.all.slice(0, SKILL_TITLES).map((s) => `- ${s.title}`).join("\n"))
@@ -103,14 +117,17 @@ export function buildTurn(i: TurnInput): Turn {
   const filesOf = (m: Message) => (i.filesDir ? m.attachments.map((a) => ({ name: a.name, mime: a.mime, path: join(i.filesDir!, a.id) })) : [])
   // From the replier's point of view: its own lines are "assistant"; other agents' lines arrive
   // as "user" with the name, so they don't look like its own.
+  // Replies carry what their turn did in the workspace, so whoever answers next (another agent, or the
+  // same agent after a provider switch) knows the files and commands without reading the old session.
   const messages: TurnMessage[] = i.messages
     .slice(-MAX_AFTER)
-    .filter((m) => m.text.trim())
-    .map((m) =>
-      m.role === "assistant" && m.agentId !== (i.agent?.id ?? null)
-        ? { role: "user", text: `[${name(m.agentId)}]\n${m.text}`, at: m.at }
-        : { role: m.role, text: m.text, at: m.at, files: filesOf(m) }
-    )
+    .filter((m) => m.text.trim() || m.changes.length)
+    .map((m) => {
+      const text = `${m.text}${workNote(m)}`
+      return m.role === "assistant" && m.agentId !== (i.agent?.id ?? null)
+        ? { role: "user", text: `[${name(m.agentId)}]\n${text}`, at: m.at }
+        : { role: m.role, text, at: m.at, files: filesOf(m) }
+    })
   return { model: i.model, system, stable, dynamic, messages, cwd: i.cwd, tools: i.tools }
 }
 

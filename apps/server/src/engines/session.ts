@@ -2,7 +2,7 @@
 // The runtime owns the lifecycle: opens it on the first turn, sends only what the session has not
 // seen yet (watermark), and closes it when the stable context, the provider or the account changes.
 import type { Effect, Stream } from "effect"
-import type { Effort } from "@zero/contracts"
+import type { Access, Effort } from "@zero/contracts"
 import type { EngineEvent, TurnFile, TurnTools } from "#server/engines.ts"
 
 export interface SessionTurnInput {
@@ -11,6 +11,23 @@ export interface SessionTurnInput {
   readonly tools?: TurnTools | undefined
   readonly effort?: Effort | null | undefined // null: the model's default; applied live when it changes
   readonly images?: ReadonlyArray<TurnFile> | undefined // images attached to the new messages
+}
+
+// A native tool call that needs the person's OK (ARCHITECTURE §9.2). The runtime shows the approval card
+// and resolves true (allowed) or false (denied or expired).
+export interface NativeApproval {
+  readonly kind: "command" | "edit" | "tool" | "network"
+  readonly tool: string
+  readonly summary: string
+  readonly args: string
+  readonly cwd: string | null
+}
+export type Approver = (request: NativeApproval) => Promise<boolean>
+
+// What a session gets about where and how freely it works.
+export interface SessionAccess {
+  readonly access: Access
+  readonly approve: Approver
 }
 
 export interface EngineSession {

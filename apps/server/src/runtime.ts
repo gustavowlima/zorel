@@ -1,21 +1,25 @@
 // Turn runtime (ARCHITECTURE §5): per-chat queue in the database, one turn at a time, live events per chat.
 // The turn doesn't depend on the client: closing the tab stops nothing; reconnect = subscribe again (snapshot + events).
 // Chaining: a reply that mentions another member queues that member's turn (up to MAX_DEPTH without a message from you).
-import type { Agent, Chat, Effort, FailoverTarget, FailureReason, Step, Switch } from "@zero/contracts"
+import type { Access, Agent, Chat, Effort, FailoverTarget, FailureReason, FileChange, Step, Switch } from "@zero/contracts"
 import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zero/contracts/events"
-import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Stream } from "effect"
+import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
 import { consolidate, DataDir, members, prepare } from "./chat.ts"
 import { MAX_DEPTH, mentioned } from "./context.ts"
 import { type AccountRow, Store, type Repository, type TurnRow } from "./db.ts"
-import { type EngineFailure, Engines, isImage, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
-import type { EngineSession } from "#server/engines/session.ts"
+import { type EngineFailure, Engines, isImage, type NativeStep, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
+import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
+import { Workspace } from "./workspace.ts"
 import { exposedName, type GatewayHandle, needsApproval, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
 
 const MAX_MENTIONS = 3
 const MAX_SESSIONS = 8 // live engine processes; the least recently used one closes first
 const APPROVAL_MS = 30 * 60_000 // ARCHITECTURE §9.2: expires in 30 min and counts as denial
 const SKIP_MS = 10 * 60_000 // §6.1: a route that failed (not a limit) is skipped this long
+// An engine that sends nothing for this long, with no approval waiting, is treated as dead (its process may
+// have died without the SDK noticing): the turn fails as "unavailable", so failover can take over.
+const STALL_MS = 10 * 60_000
 const TEXT_BATCH = Duration.millis(100) // batched deltas (OpenBot 100 ms, Zeron 120 ms)
 
 export interface SendInput {
@@ -41,6 +45,7 @@ const ev = <T extends ChatEvent["_tag"]>(_tag: T, body: Omit<Extract<ChatEvent, 
 export const makeRuntime = Effect.gen(function* () {
   const store = yield* Store
   const accounts = yield* Accounts
+  const workspace = yield* Workspace
   const engines = yield* Engines
   const dataDir = yield* DataDir
   const { hub, gateway } = yield* Tools
@@ -113,20 +118,26 @@ export const makeRuntime = Effect.gen(function* () {
   // Running turns whose session can take a correction mid-turn (only while the turn streams).
   const steering = new Map<string, (text: string) => Promise<boolean>>()
 
-  const engineStream = (row: TurnRow, turn: EngineTurn, account: AccountRow | undefined, effort: Effort | null, onSeen: (set: (at: number) => void) => void) =>
+  // The approver of the turn each session is running now (a session outlives turns; approvals go to the current one).
+  const approvers = new Map<string, Approver>()
+  const engineStream = (row: TurnRow, turn: EngineTurn, account: AccountRow | undefined, effort: Effort | null, access: Access, onSeen: (set: (at: number) => void) => void) =>
     Effect.gen(function* () {
       const key = sessionKey(row)
       const provider = splitModel(row.model).provider
       // Tool names are part of the stable context: a session lists tools once, so a new set means a new session.
       // The account too: switching accounts opens a new session with the checkpoint (§6.1, no shared native session).
-      const stable = `${turn.stable ?? turn.system}\n#tools:${(turn.tools?.defs ?? []).map((d) => d.name).sort().join(",")}\n#account:${account?.id ?? "-"}`
+      // So are the folder and the access level: the engine's sandbox is set when the session opens.
+      const stable = `${turn.stable ?? turn.system}\n#tools:${(turn.tools?.defs ?? []).map((d) => d.name).sort().join(",")}\n#account:${account?.id ?? "-"}\n#cwd:${turn.cwd}\n#access:${access}`
       let live = sessions.get(key)
       if (live && (!live.session.alive() || live.stable !== stable)) {
         yield* closeSession(key)
         live = undefined
       }
       if (!live) {
-        const opened = engines.open?.({ model: row.model, system: turn.stable ?? turn.system, cwd: turn.cwd, gatewayUrl: gatewayOf(key).url, dataDir, account: account && { id: account.id, home: account.home } })
+        const opened = engines.open?.({
+          model: row.model, system: turn.stable ?? turn.system, cwd: turn.cwd, gatewayUrl: gatewayOf(key).url, dataDir, account: account && { id: account.id, home: account.home },
+          access, approve: (req) => (approvers.get(key) ?? (async () => false))(req)
+        })
         if (opened === undefined) return engines.run(turn)
         if (typeof opened === "string") return Stream.make<EngineEvent[]>({ type: "error", message: opened })
         if (sessions.size >= MAX_SESSIONS) {
@@ -190,7 +201,7 @@ export const makeRuntime = Effect.gen(function* () {
       const shown = JSON.stringify(args).slice(0, 300)
       const s = await step(name, name)
       if (route.approve) {
-        const outcome = await run(askApproval(chat, row, agent, s, name, args))
+        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to use ${name}`, args: JSON.stringify(args, null, 2).slice(0, 4000), cwd: null }))
         if (outcome === "denied" || outcome === "expired") {
           legacy.push({ tool: name, args: shown, status: "refused", result: "" })
           await finish(s, "refused")
@@ -216,16 +227,17 @@ export const makeRuntime = Effect.gen(function* () {
     return { tools: { url: session.url, defs, call } as TurnTools, close: () => session.close() }
   }
 
-  const askApproval = (chat: Chat, row: TurnRow, agent: Agent | undefined, s: WorkStep, tool: string, args: unknown) =>
+  // One approval card (MCP tool or native call): persisted, published, waited on; expiry counts as denial.
+  const askApproval = (chat: Chat, row: TurnRow, agent: Agent | undefined, s: WorkStep | undefined, req: NativeApproval) =>
     Effect.gen(function* () {
       const now = Date.now()
       const approval = yield* store.addApproval({
-        chatId: chat.id, turnId: row.id, stepId: s.id, agentId: agent?.id ?? null, kind: "tool", tool,
-        summary: `${nameOf(agent)} wants to use ${tool}`, args: JSON.stringify(args, null, 2).slice(0, 4000), cwd: null, expiresAt: now + APPROVAL_MS
+        chatId: chat.id, turnId: row.id, stepId: s?.id ?? null, agentId: agent?.id ?? null, kind: req.kind, tool: req.tool,
+        summary: req.summary, args: req.args, cwd: req.cwd, expiresAt: now + APPROVAL_MS
       })
       const d = yield* Deferred.make<ApprovalOutcome>()
       waiting.set(approval.id, d)
-      yield* publish(chat.id, ev("step-finished", { step: { ...s, status: "waiting" } }))
+      if (s) yield* publish(chat.id, ev("step-finished", { step: { ...s, status: "waiting" } }))
       yield* publish(chat.id, ev("approval", { approval }))
       yield* setStatus(chat.id, "waiting", agent?.id ?? null, `${nameOf(agent)} waits for your OK`)
       const outcome = yield* Deferred.await(d).pipe(
@@ -278,18 +290,29 @@ export const makeRuntime = Effect.gen(function* () {
       const acc = { text: "", error: undefined as string | undefined, usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0 }, steps: [] as Step[], saved: false }
       const route = { model: row.model, accountId: row.accountId }
       const switches: Switch[] = []
+      // Workspace (§9.1): the project folder is the agents' cwd; a checkpoint before the turn and one after
+      // give its diff and its undo.
+      const project = chat.projectId ? yield* store.project(chat.projectId) : undefined
+      const access: Access = agent?.access ?? "workspace"
+      const cwd = workspace.cwdOf(chatId, project)
+      const treeBefore = yield* workspace.snapshot(project)
       let markSeen: (at: number) => void = () => {}
       const save = (state: "completed" | "failed" | "interrupted", error: string | null) =>
         Effect.gen(function* () {
           if (acc.saved) return
           acc.saved = true
-          const message = yield* store.addMessage({ chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model: route.model, error, steps: acc.steps, switches, inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens })
+          const treeAfter = treeBefore ? yield* workspace.snapshot(project) : null
+          const changes: FileChange[] = treeBefore && treeAfter && chat.projectId ? yield* workspace.changes(chat.projectId, treeBefore, treeAfter) : []
+          const message = yield* store.addMessage({
+            chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model: route.model, error, steps: acc.steps, switches,
+            turnId: row.id, changes, inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens
+          })
           markSeen(message.at) // the session has everything up to its own reply
-          const turn = yield* store.finishTurn(row.id, { state, error, messageId: message.id, usage: acc.usage, route: { ...route, switches } })
+          const trees = treeBefore && treeAfter ? { treeBefore, treeAfter } : undefined
+          const turn = yield* store.finishTurn(row.id, { state, error, messageId: message.id, usage: acc.usage, route: { ...route, switches }, ...(trees && { trees }) })
           const tag = state === "completed" ? "turn-completed" : state === "failed" ? "turn-failed" : "interrupted"
           yield* publish(chatId, ev(tag, { turn, message }))
         })
-
       const started = yield* store.startTurn(row.id)
       yield* publish(chatId, ev("turn-started", { turn: store.toTurn(started) }))
       yield* setStatus(chatId, "running", agent?.id ?? null, `${nameOf(agent)} is working`)
@@ -301,6 +324,47 @@ export const makeRuntime = Effect.gen(function* () {
           const native = engines.hasSession?.(model) ?? false
           let acted = false
           let failure: EngineFailure | undefined
+          // Liveness: any engine event or a settled approval counts as activity.
+          let lastActivity = Date.now()
+          let approvalsWaiting = 0
+          const stalled = yield* Deferred.make<void>()
+          yield* Effect.forkScoped(
+            Effect.repeat(
+              Effect.suspend(() => (approvalsWaiting === 0 && Date.now() - lastActivity > STALL_MS ? Deferred.succeed(stalled, undefined) : Effect.void)),
+              Schedule.spaced("15 seconds")
+            )
+          )
+          // Native calls that need the person go to the approval card of this turn.
+          const key = sessionKey(attemptRow)
+          approvers.set(key, async (req) => {
+            approvalsWaiting++
+            try {
+              const outcome = await run(askApproval(chat, attemptRow, agent, undefined, req))
+              return outcome === "approved" || outcome === "always"
+            } finally {
+              approvalsWaiting--
+              lastActivity = Date.now()
+            }
+          })
+          yield* Effect.addFinalizer(() => Effect.sync(() => approvers.delete(key)))
+          // Native steps (reads, edits, commands): persisted, published, and kept on the reply.
+          const stepsById = new Map<string, WorkStep>()
+          const onStep = (n: NativeStep) =>
+            Effect.gen(function* () {
+              const started = stepsById.get(n.id)
+              if (!started) {
+                if (n.kind === "edit" || n.kind === "run") acted = true // failover won't repeat a turn that may have changed something
+                const s = yield* store.addStep({ turnId: row.id, kind: n.kind, title: n.title, tool: null, files: n.files, status: "running" })
+                stepsById.set(n.id, s)
+                yield* publish(chatId, ev("step-started", { step: s }))
+                if (n.status === "running") return
+              }
+              const s = stepsById.get(n.id)!
+              if (n.status === "running") return
+              const done = yield* store.finishStep(s, { status: n.status, output: n.output })
+              yield* publish(chatId, ev("step-finished", { step: done }))
+              if (n.kind !== "read" && n.kind !== "search") acc.steps.push({ tool: n.kind, args: n.kind === "run" ? n.title : n.files.join(", "), status: n.status, result: n.output.slice(0, 300) })
+            })
           const opened = yield* Effect.promise(() =>
             openTools(chat, attemptRow, agent, acc.steps, () => {
               acted = true
@@ -313,11 +377,17 @@ export const makeRuntime = Effect.gen(function* () {
               for (const a of yield* store.openApprovals(chatId)) if (a.turnId === row.id) yield* expire(chatId, a.id)
             })
           )
-          const turn = yield* prepare(store, (yield* store.chat(chatId))!, agent, model, dataDir, opened.tools)
-          const stream = yield* engineStream(attemptRow, turn, account, effort, (set) => {
+          const turn = yield* prepare(store, (yield* store.chat(chatId))!, agent, model, dataDir, opened.tools, cwd)
+          const stream = yield* engineStream(attemptRow, turn, account, effort, access, (set) => {
             markSeen = set
           })
           yield* stream.pipe(
+            Stream.tap(() =>
+              Effect.sync(() => {
+                lastActivity = Date.now()
+              })
+            ),
+            Stream.interruptWhen(Deferred.await(stalled)),
             Stream.withSpan("engine.run", { attributes: { model } }),
             Stream.groupedWithin(512, TEXT_BATCH),
             Stream.runForEach((batch) =>
@@ -328,7 +398,8 @@ export const makeRuntime = Effect.gen(function* () {
                   else if (e.type === "done") acc.usage = { cachedTokens: 0, ...e.usage }
                   else if (e.type === "limits") {
                     if (account) yield* accounts.observe(account.id, e.usage)
-                  } else {
+                  } else if (e.type === "step") yield* onStep(e.step)
+                  else {
                     acc.error = e.message
                     failure = e.failure
                   }
@@ -341,6 +412,11 @@ export const makeRuntime = Effect.gen(function* () {
               })
             )
           )
+          if (yield* Deferred.isDone(stalled)) {
+            acc.error = "The engine stopped responding."
+            failure = { reason: "unavailable" }
+            yield* closeSession(key) // its process is gone or stuck: the next turn opens a fresh one
+          }
           return { failure, acted }
         }).pipe(Effect.scoped)
 

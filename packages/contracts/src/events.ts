@@ -3,7 +3,9 @@
 // handoff between agents, model switch, learning, receipt and status of each chat.
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
-import { MAX_ATTACHMENTS, Message, ModelId, Switch } from "./index.ts"
+import { FileChange, MAX_ATTACHMENTS, Message, ModelId, Switch } from "./index.ts"
+
+export { FileChange }
 
 const Id = Schema.String
 const Millis = Schema.Number // epoch or duration in ms
@@ -53,13 +55,6 @@ export type Turn = typeof Turn.Type
 export const StepKind = Schema.Literals(["read", "edit", "run", "search", "tool", "delegate"])
 export type StepKind = typeof StepKind.Type
 
-export const FileChange = Schema.Struct({
-  path: Schema.String, // relative to the project folder
-  added: Schema.Number,
-  removed: Schema.Number,
-  status: Schema.Literals(["added", "modified", "deleted"])
-})
-export type FileChange = typeof FileChange.Type
 
 export const WorkStep = Schema.Struct({
   id: Id,
@@ -174,5 +169,6 @@ export const ZeroRpc = RpcGroup.make(
   Rpc.make("decide", { payload: { approvalId: Id, outcome: Schema.Literals(["approved", "always", "denied"]), reason: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))) }, error: ApprovalNotFound }),
   Rpc.make("subscribeChat", { payload: { chatId: Id }, success: ChatEvent, error: ChatNotFound, stream: true }),
   Rpc.make("subscribeStatus", { success: ChatStatus, stream: true }), // all chats: sidebar and "Needs you"
-  Rpc.make("approvals", { success: Schema.Array(Approval) }) // open approvals of every chat ("Needs you")
+  Rpc.make("approvals", { success: Schema.Array(Approval) }), // open approvals of every chat ("Needs you")
+  Rpc.make("runs", { payload: { chatId: Id }, success: Schema.Array(WorkStep) }) // commands the agents ran in this chat (terminal panel)
 )

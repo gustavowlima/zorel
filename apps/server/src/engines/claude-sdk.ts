@@ -1,16 +1,81 @@
 // Native Claude session (ARCHITECTURE §6, adapter `claude-sdk`): one live Claude Code process per
 // (chat, agent), reused across turns through the Agent SDK's streaming input. The second turn in the
 // same chat does not spawn a process; model switches use setModel. The gateway URL is fixed for the
-// session (the runtime swaps the tools behind it). Built-in tools stay off: only Zero's gateway (D8).
+// session (the runtime swaps the tools behind it). Built-in tools: files and shell in the workspace only
+// (ARCHITECTURE §9.2); `canUseTool` applies the agent's access level and asks the person through Zero.
 // The SDK runs the user's installed `claude` (pathToClaudeCodeExecutable): its bundled binary is never
 // used and never shipped, and Zero never reads the CLI login (CLAUDE_CONFIG_DIR only picks the account).
-import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
+import { type CanUseTool, query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { Access } from "@zero/contracts"
 import { Effect, Queue, Stream } from "effect"
 import { mkdirSync } from "node:fs"
-import { claudeParser, classifyMessage, type EngineEvent, splitModel, type TurnFile } from "#server/engines.ts"
-import type { EngineSession } from "#server/engines/session.ts"
+import { relative } from "node:path"
+import { claudeParser, classifyMessage, type EngineEvent, type NativeStep, splitModel, type TurnFile } from "#server/engines.ts"
+import { approvalFor, decideCommand, decideEdit, decideRead } from "#server/engines/policy.ts"
+import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
 
 const GATEWAY = "zero"
+// Claude Code's own tools Zero turns on: files and shell. No web, no subagents, no notebooks.
+const NATIVE_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write", "Bash"]
+const DENIED = "The user denied this. Don't try it again without asking."
+
+const kindOf = (tool: string): NativeStep["kind"] =>
+  tool === "Read" ? "read" : tool === "Glob" || tool === "Grep" ? "search" : tool === "Edit" || tool === "Write" ? "edit" : tool === "Bash" ? "run" : "tool"
+
+// Native tool calls as steps: `tool_use` in an assistant message starts one, its `tool_result` ends it.
+function stepTracker(cwd: string) {
+  const open = new Map<string, NativeStep>()
+  const rel = (p: unknown) => (typeof p === "string" ? relative(cwd, p) || p : "")
+  const titleOf = (name: string, input: Record<string, any>) => {
+    if (name === "Bash") return String(input.command ?? "")
+    if (name === "Grep") return `Search ${input.pattern ?? ""}`
+    if (name === "Glob") return `Find ${input.pattern ?? ""}`
+    return `${name} ${rel(input.file_path)}`
+  }
+  return (m: SDKMessage): EngineEvent[] => {
+    const content = (m.type === "assistant" || m.type === "user") && Array.isArray((m as any).message?.content) ? ((m as any).message.content as any[]) : []
+    const out: EngineEvent[] = []
+    for (const block of content) {
+      if (block.type === "tool_use" && !String(block.name).startsWith("mcp__")) {
+        const step: NativeStep = { id: block.id, kind: kindOf(block.name), title: titleOf(block.name, block.input ?? {}).slice(0, 300), files: block.input?.file_path ? [rel(block.input.file_path)] : [], status: "running", output: "" }
+        open.set(block.id, step)
+        out.push({ type: "step", step })
+      } else if (block.type === "tool_result" && open.has(block.tool_use_id)) {
+        const started = open.get(block.tool_use_id)!
+        open.delete(block.tool_use_id)
+        const text = typeof block.content === "string" ? block.content : Array.isArray(block.content) ? block.content.map((c: any) => c.text ?? "").join("") : ""
+        const refused = block.is_error === true && text.includes(DENIED.slice(0, 20))
+        out.push({ type: "step", step: { ...started, status: refused ? "refused" : block.is_error ? "error" : "ok", output: text.slice(0, 4000) } })
+      }
+    }
+    return out
+  }
+}
+
+// canUseTool: the access level decides; what needs the person goes to Zero's approval card.
+export function permissions(access: Access, cwd: string, approve: Approver): CanUseTool {
+  return async (tool, input, { blockedPath }) => {
+    const allow = { behavior: "allow" as const, updatedInput: input }
+    const deny = { behavior: "deny" as const, message: DENIED }
+    if (tool.startsWith("mcp__")) return allow // the gateway applies the server's mode and its approvals
+    const path = typeof input.file_path === "string" ? input.file_path : (blockedPath ?? undefined)
+    let decision: "allow" | "ask"
+    let request: NativeApproval
+    if (tool === "Bash") {
+      const command = String(input.command ?? "")
+      decision = decideCommand(access, command)
+      request = approvalFor("command", "Bash", `Run ${command.slice(0, 200)}`, command, cwd)
+    } else if (tool === "Edit" || tool === "Write") {
+      decision = decideEdit(access, cwd, path ?? "")
+      request = approvalFor("edit", tool, `${tool === "Write" ? "Write" : "Edit"} ${path ? relative(cwd, path) || path : "a file"}`, input, cwd)
+    } else if (tool === "Read" || tool === "Glob" || tool === "Grep") {
+      decision = decideRead(access, cwd, path)
+      request = approvalFor("tool", tool, `Read ${path ?? "outside the project"}`, input, cwd)
+    } else return deny // not a tool Zero turned on
+    if (decision === "allow") return allow
+    return (await approve(request)) ? allow : deny
+  }
+}
 const INTERRUPT_GRACE_MS = 5_000
 
 // Async iterable the SDK reads user messages from for the whole session.
@@ -70,13 +135,14 @@ export interface ClaudeSessionOptions {
   readonly cwd: string
   readonly gatewayUrl: string
   readonly configDir?: string | undefined // account login folder (§6.1); undefined = the CLI's default login
+  readonly access: Access
+  readonly approve: Approver
 }
 
 export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | string {
   const bin = Bun.which("claude")
   if (!bin) return "claude não está instalado ou não está no PATH."
   mkdirSync(o.cwd, { recursive: true })
-
   const box = inbox()
   let model = splitModel(o.model).model
   let effort: string | null = null // the session starts at the model's default
@@ -89,8 +155,9 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
       systemPrompt: o.system,
       cwd: o.cwd,
       pathToClaudeCodeExecutable: bin,
-      tools: [], // no shell or file tools of its own
+      tools: NATIVE_TOOLS,
       allowedTools: [`mcp__${GATEWAY}`], // the gateway applies policy and approvals
+      canUseTool: permissions(o.access, o.cwd, o.approve),
       settingSources: [], // ignore the user's hooks, plugins and permissions
       mcpServers: { [GATEWAY]: { type: "http", url: o.gatewayUrl } },
       strictMcpConfig: true,
@@ -137,12 +204,13 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
           model = next
         }
         const parser = claudeParser()
+        const steps = stepTracker(o.cwd)
         listener = (m) => {
           if (!m) {
             emit(parser.end(null, ended ?? ""))
             return finish()
           }
-          emit(parser.line(JSON.stringify(m))) // SDK messages are the CLI's stream-json lines
+          emit([...steps(m), ...parser.line(JSON.stringify(m))]) // SDK messages are the CLI's stream-json lines
           if (m.type === "result") finish()
         }
         box.push(yield* Effect.promise(() => userMessage(input.prompt, input.images)))

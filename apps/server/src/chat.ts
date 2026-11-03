@@ -24,7 +24,8 @@ export const members = (store: Repository, chat: Chat) =>
 
 // ---------- context ----------
 
-export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined, model: string, dataDir: string, tools: TurnTools | undefined) =>
+// `cwd`: where the agent works (the project folder, or the chat's empty Zero folder; see Workspace).
+export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined, model: string, dataDir: string, tools: TurnTools | undefined, cwd = join(dataDir, "runs", chat.id)) =>
   Effect.gen(function* () {
     const scopes = scopesOf(chat, agent?.id ?? null)
     const fixed = pinned(yield* store.activeMemories(scopes))
@@ -40,7 +41,7 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
       retrieved: yield* store.searchMemories(scopes, last, fixed.map((m) => m.id), RETRIEVED),
       skills: { all: yield* store.activeMemories(scopes, "skill"), relevant: yield* store.searchMemories(scopes, last, [], SKILL_BODIES, "skill") },
       messages,
-      cwd: join(dataDir, "runs", chat.id),
+      cwd,
       filesDir: join(dataDir, "attachments", chat.id),
       tools
     })

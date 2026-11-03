@@ -32,6 +32,7 @@ export function App() {
   const loading = AsyncResult.isInitial(projectsResult)
 
   useRefetchOnSettle()
+  useRetryWhileOffline(offline)
 
   return (
     <div className="flex h-full bg-frame">
@@ -104,6 +105,18 @@ function NotFound() {
   )
 }
 
+// Queries that failed (server restarting, network) don't retry by themselves: while offline, refetch
+// everything every 2s until the server answers again.
+const ALL_KEYS = ["projects", "agents", "chats", "memories", "servers", "accounts", "keys", "models", "usage", "approvals", "preferences", "workspace"] as const
+function useRetryWhileOffline(offline: boolean) {
+  const invalidate = useInvalidate()
+  useEffect(() => {
+    if (!offline) return
+    const id = setInterval(() => invalidate(ALL_KEYS), 2000)
+    return () => clearInterval(id)
+  }, [offline, invalidate])
+}
+
 // When a chat leaves "running" (or starts waiting), refetch what the server may have changed meanwhile.
 function useRefetchOnSettle() {
   const statuses = useStatuses()
@@ -114,7 +127,7 @@ function useRefetchOnSettle() {
     previous.current = statuses
     const changed = Object.values(statuses).filter((s) => before[s.chatId]?.state !== s.state)
     if (!changed.length) return
-    if (changed.some((s) => s.state === "idle" || s.state === "failed")) invalidate(["chats", "memories", "usage", "approvals"])
+    if (changed.some((s) => s.state === "idle" || s.state === "failed")) invalidate(["chats", "memories", "usage", "approvals", "workspace"])
     else if (changed.some((s) => s.state === "waiting")) invalidate(["approvals"])
   }, [statuses, invalidate])
 }

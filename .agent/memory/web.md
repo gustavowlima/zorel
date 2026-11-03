@@ -21,6 +21,9 @@ updated: 2026-11-03
 
 - failover: features/failover.tsx (FailoverEditor + useTermsPending) no agente e no diálogo "Fallbacks…" do chat; nota de troca no chat (evento failover ao vivo, message.switches gravado); uso/espera da conta em Usage e no seletor de modelo
 
+- workspace no chat: features/workspace.tsx (TurnChanges, WorkspacePanel Changes/Files, TerminalPanel), diff-view.tsx (renderizador próprio; @pierre/diffs removido porque renderizava vazio); pasta do projeto no overview e no popover de novo projeto; nível de acesso com ChoiceCards na página do agente
+- App revalida tudo a cada 2s enquanto offline (átomos que falharam não tentam de novo sozinhos)
+
 ## avoid
 
 - line-clamp dentro de Button flex: altura 0; usar truncate
