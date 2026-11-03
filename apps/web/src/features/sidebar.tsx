@@ -9,12 +9,12 @@ import type { ChatStatus } from "@zero/contracts/events"
 import { formatAge, formatPercent, formatTime, t } from "@zero/i18n"
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
-import { agentTone, chatTitle, splitModel, statusLabel, type Pace, paceOf, windowLabel, windowMinutes, windowShort } from "../labels.ts"
+import { agentTone, chatTitle, splitModel, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
 import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, BookOpen, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, ModelAvatar, NavItem, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
+  AgentAvatar, BookOpen, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, ModelAvatar, NavItem, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
@@ -368,8 +368,8 @@ function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatSt
   )
 }
 
-// The subscriptions at the foot (the most at risk first, up to three side by side): each account's limit windows
-// as concentric rings around its logo, and beside it the share used of the window most at risk ("69% · 5h"). Hovering (or focusing) shows the rest: every window with when it
+// The subscriptions at the foot (the most at risk first, up to three side by side): each a ring of its limit windows
+// (concentric, around its logo) with its own hover card, opening Usage when pressed. Hovering (or focusing) shows the rest: every window with when it
 // resets, the account's windows as rings (ui/limit-ring.tsx) and where the pace so far leads.
 const MAX_FOOT_ROWS = 3
 const TONE_TEXT = { ok: "text-secondary", warning: "text-warning", critical: "text-danger" } as const
@@ -388,40 +388,36 @@ function UsageFoot({ active }: { active: boolean }) {
       ? t("nav.usageOut", { account: r.account.label, window, time: formatTime(r.pace.runsOutAt) })
       : t("nav.usageUsed", { account: r.account.label, window, percent: formatPercent(r.pace.used) })
   }
-  const label = rows.length ? `${t("nav.usage")}: ${rows.map(sentence).join("; ")}` : t("nav.usage")
   if (!rows.length)
     return (
       <NavItem active={active} onPress={() => go({ view: "usage" })} icon={<ChartColumn />}>
         {t("nav.usage")}
       </NavItem>
     )
+  // One ring per subscription, nothing else: each has its own card on hover or focus and opens Usage.
   return (
-    <Tooltip content={<UsageDetail rows={rows} />}>
-      <NavItem active={active} onPress={() => go({ view: "usage" })} aria-label={label} className="h-auto py-2">
-        <span className="flex min-w-0 flex-1 items-center gap-4">
-          {rows.slice(0, MAX_FOOT_ROWS).map((r) => {
-            const windows = r.windows.filter(({ w }) => windowMinutes(w.id) !== null)
-            const tone = toneOf(r.pace)
-            return (
-              // One account: its windows as concentric rings (the longest outside) around the logo, and beside it
-              // the window most at risk, in words.
-              <span key={r.account.id} className="flex min-w-0 items-center gap-2">
-                <LimitRing
-                  size={34}
-                  windows={[...windows].sort((x, y) => (windowMinutes(y.w.id) ?? 0) - (windowMinutes(x.w.id) ?? 0)).map(({ pace }) => ({ used: pace.used, tone: toneOf(pace) }))}
-                >
-                  <ProviderIcon provider={r.account.provider} size={13} />
-                </LimitRing>
-                <span className="flex min-w-0 flex-col leading-tight">
-                  <span className={cx("text-sm font-medium tabular-nums", tone === "ok" ? "text-fg" : TONE_TEXT[tone])}>{formatPercent(r.pace.used)}</span>
-                  <span className="text-xs text-muted tabular-nums">{windowShort(r.w.id)}</span>
-                </span>
-              </span>
-            )
-          })}
-        </span>
-      </NavItem>
-    </Tooltip>
+    <div className="flex items-center gap-1 px-1.5">
+      {rows.slice(0, MAX_FOOT_ROWS).map((r) => (
+        <Tooltip key={r.account.id} content={<UsageDetail rows={[r]} />}>
+          <Button
+            variant="ghost"
+            aria-label={`${t("nav.usage")}: ${sentence(r)}`}
+            onPress={() => go({ view: "usage" })}
+            className={cx("h-auto w-auto rounded-full p-1", active && "bg-hover")}
+          >
+            <LimitRing
+              size={34}
+              windows={r.windows
+                .filter(({ w }) => windowMinutes(w.id) !== null)
+                .sort((x, y) => (windowMinutes(y.w.id) ?? 0) - (windowMinutes(x.w.id) ?? 0))
+                .map(({ pace }) => ({ used: pace.used, tone: toneOf(pace) }))}
+            >
+              <ProviderIcon provider={r.account.provider} size={13} />
+            </LimitRing>
+          </Button>
+        </Tooltip>
+      ))}
+    </div>
   )
 }
 
