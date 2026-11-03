@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-03T00:00:00Z",
+  "title": "Design System: Zero",
+  "extensions": {
+    "colorMeta": {
+      "signal-blue": { "role": "primary", "displayName": "Azul de Sinal", "canonical": "#007cf7", "tonalRamp": ["#00264d", "#003b75", "#00509e", "#0066cc", "#007cf7", "#42a0ff", "#8cc5ff", "#d6eaff"] },
+      "frame": { "role": "neutral", "displayName": "Moldura", "canonical": "#0d0d0d", "tonalRamp": ["#0d0d0d", "#141414", "#1a1a1a", "#212121", "#262626", "#2c2c2c", "#6a6a6a", "#979797"] },
+      "canvas": { "role": "neutral", "displayName": "Bancada", "canonical": "#1a1a1a" },
+      "sidebar": { "role": "neutral", "displayName": "Barra Lateral", "canonical": "#141414" },
+      "surface": { "role": "neutral", "displayName": "Superfície", "canonical": "#212121" },
+      "raised": { "role": "neutral", "displayName": "Elevado", "canonical": "#262626" },
+      "text-muted": { "role": "neutral", "displayName": "Texto Apagado", "canonical": "#979797" },
+      "success": { "role": "status", "displayName": "Sucesso", "canonical": "#31cf76" },
+      "warning": { "role": "status", "displayName": "Atenção", "canonical": "#ff9412" },
+      "danger": { "role": "status", "displayName": "Perigo", "canonical": "#fd2f3b" }
+    },
+    "typographyMeta": {
+      "title": { "displayName": "Title", "purpose": "Título de página e títulos no markdown; maior tamanho do sistema." },
+      "body": { "displayName": "Body", "purpose": "Texto padrão da interface e do chat." },
+      "label": { "displayName": "Label", "purpose": "Rótulos de seção em caixa alta e badges." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.2, 0.8, 0.2, 1)", "purpose": "Transições de estado e aperto ao pressionar." },
+      { "name": "press", "value": "transform: scale(0.97) em 120ms", "purpose": "Feedback físico de controles; desligado com prefers-reduced-motion." }
+    ],
+    "themes": [
+      { "name": "light", "selector": ":root[data-theme=\"light\"]", "purpose": "Troca só os valores dos mesmos tokens --z-*; ver src/styles.css." }
+    ]
+  },
+  "components": [
+    { "name": "Primary Button", "kind": "button", "refersTo": "button-default", "description": "Uma ação principal por área.", "html": "<button class=\"ds-btn ds-btn-default\">Send</button>", "css": ".ds-btn { height: 32px; padding: 0 12px; border: 0; border-radius: 8px; font: 500 13px var(--font-sans, 'Inter Variable', sans-serif); cursor: pointer; transition: transform 120ms cubic-bezier(0.2,0.8,0.2,1), background-color 120ms cubic-bezier(0.2,0.8,0.2,1); } .ds-btn:active { transform: scale(0.97); } .ds-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--z-accent); } .ds-btn-default { background: var(--z-accent); color: #fff; } .ds-btn-default:hover { background: var(--z-accent-hover); }" },
+    { "name": "Secondary Button", "kind": "button", "refersTo": "button-secondary", "description": "Botão padrão.", "html": "<button class=\"ds-btn2\">Cancel</button>", "css": ".ds-btn2 { height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--z-bg-control); color: var(--z-text); font: 500 13px 'Inter Variable', sans-serif; transition: transform 120ms, background-color 120ms; } .ds-btn2:hover { background: var(--z-bg-control-hover); } .ds-btn2:active { background: var(--z-bg-control-active); transform: scale(0.97); } .ds-btn2:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--z-accent); }" },
+    { "name": "Ghost Button", "kind": "button", "refersTo": "button-ghost", "description": "Ação discreta.", "html": "<button class=\"ds-ghost\">Compact</button>", "css": ".ds-ghost { height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--z-text-muted); font: 500 13px 'Inter Variable', sans-serif; } .ds-ghost:hover { background: var(--z-bg-control-hover); color: var(--z-text); } .ds-ghost:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--z-accent); }" },
+    { "name": "Destructive Button", "kind": "button", "refersTo": "button-destructive", "description": "Apagar ou esquecer.", "html": "<button class=\"ds-danger\">Delete</button>", "css": ".ds-danger { height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--z-danger-soft); color: var(--z-danger); font: 500 13px 'Inter Variable', sans-serif; } .ds-danger:hover { background: var(--z-danger); color: #fff; } .ds-danger:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--z-accent); }" },
+    { "name": "Input", "kind": "input", "refersTo": "input", "description": "Campo de texto padrão.", "html": "<input class=\"ds-input\" placeholder=\"Project name\">", "css": ".ds-input { height: 32px; width: 240px; padding: 0 12px; border: 1px solid var(--z-border); border-radius: 8px; background: var(--z-bg-control); color: var(--z-text); font: 400 13px 'Inter Variable', sans-serif; outline: none; } .ds-input::placeholder { color: var(--z-text-dim); } .ds-input:focus { border-color: var(--z-border-strong); box-shadow: 0 0 0 2px var(--z-accent-soft); }" },
+    { "name": "Sidebar Item", "kind": "nav", "refersTo": "sidebar-item", "description": "Item da barra lateral; ativo com control-active.", "html": "<nav class=\"ds-nav\"><div class=\"ds-section\">Projects</div><button class=\"ds-item ds-item-active\">zero</button><button class=\"ds-item\">site</button></nav>", "css": ".ds-nav { display: flex; flex-direction: column; width: 220px; padding: 8px; background: var(--z-bg-sidebar); } .ds-section { padding: 16px 8px 4px; font: 500 11px 'Inter Variable', sans-serif; letter-spacing: 0.025em; text-transform: uppercase; color: var(--z-text-dim); } .ds-item { height: 28px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--z-text-muted); font: 400 13px 'Inter Variable', sans-serif; text-align: left; } .ds-item:hover { background: var(--z-bg-control-hover); color: var(--z-text); } .ds-item-active { background: var(--z-bg-control-active); color: var(--z-text); } .ds-item:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--z-accent); }" },
+    { "name": "Badge", "kind": "chip", "refersTo": "badge-accent", "description": "Estado curto em pílula.", "html": "<span class=\"ds-badge\">lead</span> <span class=\"ds-badge ds-badge-n\">idle</span>", "css": ".ds-badge { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 9999px; background: var(--z-accent-soft); color: var(--z-accent-text); font: 500 11px 'Inter Variable', sans-serif; } .ds-badge-n { background: var(--z-bg-control); color: var(--z-text-muted); }" },
+    { "name": "Card", "kind": "card", "refersTo": "card", "description": "Container plano em superfície.", "html": "<div class=\"ds-card\"><strong>Brief</strong><p>Context for every agent in this project.</p></div>", "css": ".ds-card { width: 280px; padding: 16px; border: 1px solid var(--z-border); border-radius: 12px; background: var(--z-bg-surface); color: var(--z-text); font: 400 13px 'Inter Variable', sans-serif; } .ds-card p { margin: 4px 0 0; color: var(--z-text-muted); }" }
+  ],
+  "narrative": {
+    "northStar": "A Bancada Noturna",
+    "overview": "O Zero é uma bancada de trabalho para quem passa horas com agentes no fim do dia: escura, compacta e silenciosa. A interface some atrás do trabalho. Quem fala é o conteúdo do chat, o código e as decisões dos agentes. O cromo é feito de cinzas quase pretos que se separam por tom, não por linha, e um único azul de sinal marca o que é acionável ou exige atenção.",
+    "keyCharacteristics": ["Escuro por padrão, profundidade por camadas de tom.", "Um único acento azul, raro e funcional.", "Escala compacta de controles: 24 / 28 / 32 / 36px.", "Bordas quase invisíveis (5% e 9% de branco).", "Primitivas como única API visual; telas não estilizam controles."],
+    "rules": [
+      { "name": "A Regra da Voz Única", "body": "O azul de sinal é o único acento. Se ele aparece em algo que não é ação, foco, seleção ou link, está errado.", "section": "colors" },
+      { "name": "A Regra do Token", "body": "Nenhuma cor literal fora de styles.css. Uma cor literal quebra o tema claro.", "section": "colors" },
+      { "name": "A Regra dos Quatro Tamanhos", "body": "Só 11, 12, 13 e 15px. Hierarquia nova vem de peso (400/500/600) ou tom de texto, nunca de um quinto tamanho.", "section": "typography" },
+      { "name": "A Regra da Escala", "body": "Nenhuma altura de controle fora de 24 / 28 / 32 / 36px.", "section": "layout" },
+      { "name": "A Regra do Plano", "body": "Superfícies são planas. Se algo precisa se destacar, sobe um degrau de tom; não ganha sombra.", "section": "elevation" }
+    ],
+    "dos": ["Do usar só as primitivas de src/ui nas telas; elas são a única API visual.", "Do usar só tokens, nunca valores literais.", "Do manter alturas de controle em 24 / 28 / 32 / 36px.", "Do dar a todo controle foco visível, estado desabilitado, rótulo acessível e uso completo por teclado.", "Do respeitar \"reduzir movimento\" e manter transições abaixo de 300ms.", "Do separar camadas por tom antes de recorrer a borda."],
+    "donts": ["Don't usar cor literal fora de styles.css: quebra o tema claro.", "Don't introduzir um segundo acento ou usar cores de estado como decoração.", "Don't usar sombras para profundidade.", "Don't criar um quinto tamanho de texto.", "Don't aplicar hover em dispositivos sem ponteiro fino.", "Don't copiar código ou CSS do a reference app (licença PolyForm Noncommercial); só a direção.", "Don't usar Radix nem a paleta neutra e o --radius padrão do shadcn; as primitivas saem do shadcn --base aria já mapeadas para os tokens --z-*."]
+  }
+}
