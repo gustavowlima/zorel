@@ -64,11 +64,25 @@ export function NavItem({
   )
 }
 
-// Section title in sentence case with an optional action (e.g. "+" next to Projects).
-export function NavLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {
+// Section title in sentence case with an optional action (e.g. "+" next to Projects). With `onToggle`, the
+// title is a button that collapses and expands the section; its arrow points down while open.
+export function NavLabel({ children, action, expanded, onToggle }: { children: ReactNode; action?: ReactNode; expanded?: boolean; onToggle?: () => void }) {
   return (
     <div className="flex h-6.5 shrink-0 items-center pr-0.5 pl-2.5 text-sm font-medium text-muted">
-      <span className="min-w-0 flex-1 truncate">{children}</span>
+      {onToggle ? (
+        <span className="flex min-w-0 flex-1">
+          <Button
+            onPress={onToggle}
+            aria-expanded={!!expanded}
+            className="-ml-1 flex h-6 min-w-0 cursor-default items-center gap-1 rounded-control px-1 outline-none transition-colors duration-120 ease-out data-hovered:text-fg data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none"
+          >
+            <span className="truncate">{children}</span>
+            <ChevronRight aria-hidden="true" className={cn("size-3 shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none", expanded && "rotate-90")} />
+          </Button>
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1 truncate">{children}</span>
+      )}
       {action}
     </div>
   )

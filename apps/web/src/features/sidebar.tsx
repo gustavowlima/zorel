@@ -20,6 +20,7 @@ import {
 
 const VISIBLE = 5
 const EXPANDED_KEY = "zero.sidebar.expanded"
+const COLLAPSED_KEY = "zero.sidebar.collapsed" // sections the person closed: "projects", "chats"
 type Statuses = Readonly<Record<string, ChatStatus>>
 
 // Tree keys carry their kind: a project, a chat, or a group's "show more" row.
@@ -50,6 +51,15 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   const toggle = (id: string) => {
     const key = projectKey(id)
     onExpandedChange(new Set(expandedKeys.has(key) ? [...expandedKeys].filter((k) => k !== key) : [...expandedKeys, key]))
+  }
+
+  // Sections open unless closed by hand; the choice is remembered on this computer.
+  const [collapsed, setCollapsed] = useState(() => readSet(COLLAPSED_KEY))
+  const flip = (section: string) => {
+    const next = new Set(collapsed)
+    if (!next.delete(section)) next.add(section)
+    setCollapsed(next)
+    writeSet(COLLAPSED_KEY, next)
   }
 
   const activeChat = route.view === "chat" ? route.id : undefined
@@ -101,17 +111,21 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
 
       <div className="scroll-quiet flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto overscroll-contain pr-2.5 pb-2">
         <section className="flex flex-col gap-px">
-          <NavLabel action={<NewProjectButton />}>{t("nav.projects")}</NavLabel>
-          <NavTree label={t("nav.projects")} expandedKeys={expandedKeys} onExpandedChange={onExpandedChange} dragAndDropHooks={projectDnd}>
-            {projects.map((p) => {
-              const list = groupOf(p.id)
-              return (
-                <ProjectItem key={p.id} project={p} active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)} chats={list} statuses={statuses} onToggle={() => toggle(p.id)}>
-                  {chatItems(p.id, list)}
-                </ProjectItem>
-              )
-            })}
-          </NavTree>
+          <NavLabel action={<NewProjectButton />} expanded={!collapsed.has("projects")} onToggle={() => flip("projects")}>
+            {t("nav.projects")}
+          </NavLabel>
+          {!collapsed.has("projects") && (
+            <NavTree label={t("nav.projects")} expandedKeys={expandedKeys} onExpandedChange={onExpandedChange} dragAndDropHooks={projectDnd}>
+              {projects.map((p) => {
+                const list = groupOf(p.id)
+                return (
+                  <ProjectItem key={p.id} project={p} active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)} chats={list} statuses={statuses} onToggle={() => toggle(p.id)}>
+                    {chatItems(p.id, list)}
+                  </ProjectItem>
+                )
+              })}
+            </NavTree>
+          )}
         </section>
 
         {loose.length > 0 && (
@@ -122,12 +136,16 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
                   <Plus className="size-3.5" />
                 </IconButton>
               }
+              expanded={!collapsed.has("chats")}
+              onToggle={() => flip("chats")}
             >
               {t("nav.chats")}
             </NavLabel>
-            <NavTree label={t("nav.chats")} dragAndDropHooks={looseDnd}>
-              {chatItems("loose", loose)}
-            </NavTree>
+            {!collapsed.has("chats") && (
+              <NavTree label={t("nav.chats")} dragAndDropHooks={looseDnd}>
+                {chatItems("loose", loose)}
+              </NavTree>
+            )}
           </section>
         )}
 
