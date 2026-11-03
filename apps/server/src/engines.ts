@@ -18,6 +18,7 @@ import { resultText, type Session, type ToolDef } from "./tools.ts"
 export interface TurnMessage {
   readonly role: "user" | "assistant"
   readonly text: string
+  readonly at?: number // ordem no chat: a marcação da sessão nativa compara por aqui
 }
 
 export interface TurnTools {
@@ -28,7 +29,9 @@ export interface TurnTools {
 
 export interface Turn {
   readonly model: string // "<provider>/<modelo>"
-  readonly system: string
+  readonly system: string // stable + dynamic: o que um engine sem sessão recebe
+  readonly stable?: string // parte que abre uma sessão nativa
+  readonly dynamic?: string // parte que vai junto da mensagem a cada turno numa sessão nativa
   readonly messages: ReadonlyArray<TurnMessage> // termina numa mensagem do usuário
   readonly cwd: string // diretório vazio: a CLI não recebe arquivos de ninguém
   readonly tools?: TurnTools | undefined
