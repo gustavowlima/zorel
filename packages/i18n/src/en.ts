@@ -85,6 +85,7 @@ export const en = {
     emptyHint: "Switch the model or the account at any time; the context comes along.",
     summaryTitle: "Earlier messages are summarized",
     summaryHint: "This is what the model sees of them now.",
+    details: "Details",
     coveredBySummary: "Covered by the summary",
     leadAnswered: "{name} answered as lead",
     handoff: "{from} handed the turn to {to}",

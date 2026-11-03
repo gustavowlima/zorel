@@ -311,7 +311,9 @@ Compactos e diretos, com aperto físico ao pressionar.
 - O trilho só mostra o que é de fato um caminho: cada conta de assinatura (com a inicial quando há mais de uma do mesmo provedor), provedores de API com chave e servidores locais (Ollama, LM Studio) só enquanto rodam. Um provedor de API com o logo de uma assinatura (Anthropic ↔ Claude, OpenAI ↔ Codex) só aparece com chave, para não parecer uma segunda conta.
 
 ### Mensagem de agente
-- **Avatar:** quadrado de 28px, cantos de 8–9px, cor de identidade, inicial em branco. Nome em 13px semibold e, na mesma linha, a pílula de atividade; modelo, tokens, conta e custo vão para a linha de rodapé em 12px.
+- **Avatar:** quadrado de 28px, cantos de 8–9px, cor de identidade, inicial em branco. Nome em 13px semibold e, na mesma linha, a pílula de atividade.
+- **Sequência:** respostas seguidas do mesmo agente (até 5 min, sem aviso entre elas) mostram avatar e nome só na primeira; as outras alinham o texto na mesma coluna.
+- **Ações da mensagem:** embaixo de cada mensagem (sua à direita, do agente à esquerda), sobre o espaço entre as mensagens e sem ocupar altura: copiar, detalhes (um tooltip com modelo, tokens, conta e custo) e a hora. Aparecem no hover ou no foco, sempre no toque. Só o fim que importa (falhou, cancelado) fica sempre à vista. Ritmo de 28px entre mensagens.
 - **Pílula de atividade:** 24px, sem fundo (hover em `hover`), 12px muted: ponto de estado + resumo ("3 steps", "Running the tests · 14 s") + chevron. Os passos abrem na linha de baixo, num quadro de borda sutil e cantos de 12px com o tempo de cada um.
 - **Aviso central:** 12px text-muted entre dois fios (passagem de tarefa, troca de modelo).
 - **Cartão de aprovação:** uma linha só, até 520px: à esquerda o que o agente quer fazer em `accent-text` peso 500 e, embaixo, o comando em mono muted (pressionar mostra os argumentos); à direita Deny (ghost) e Allow (azul, 28px). Fundo accent-faint, borda accent-line, cantos de 12px.
