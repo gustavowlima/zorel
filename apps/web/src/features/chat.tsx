@@ -1,7 +1,7 @@
 // Chat/canal: segue os eventos do runtime (snapshot + ao vivo), então o turno continua se a aba fechar e reabrir.
 // Respostas uma por agente, aprovação de ferramentas no meio do turno, troca de modelo e membros, compactação manual.
 import type { Agent, Chat, Message } from "@zero/contracts"
-import type { Approval, ChatEvent, WorkStep } from "@zero/contracts/events"
+import { type Approval, type ChatEvent, isInterruption, type WorkStep } from "@zero/contracts/events"
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -256,7 +256,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   )
 }
 
-const interrupted = (error: string) => error.startsWith("interrompido")
+const interrupted = isInterruption
 const stepTone = { ok: "neutral", error: "danger", refused: "warning" } as const
 
 function Bubble({ message: m, author, multi, live }: { message: Pick<Message, "role" | "text" | "model" | "error" | "steps"> & Partial<Message>; author: string; multi: boolean; live?: boolean }) {

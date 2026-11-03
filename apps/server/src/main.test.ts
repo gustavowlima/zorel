@@ -21,6 +21,7 @@ import { CONSOLIDATION_SYSTEM } from "./context.ts"
 import { Store } from "./db.ts"
 import { Engines, type EngineEvent, type Turn } from "./engines.ts"
 import { AppLive } from "./main.ts"
+import { Actor } from "./access.ts"
 import { Runtime } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
 import { Tools } from "./tools.ts"
@@ -94,7 +95,7 @@ beforeAll(async () => {
   const store = Store.layer(":memory:")
   const secrets = Layer.provideMerge(Secrets.memory(), store)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(FakeEngines, Tools.layer), secrets), DataDir.layer(join(tmpdir(), "zero-test")))
-  const services = Layer.provideMerge(Runtime.layer, base)
+  const services = Layer.mergeAll(Layer.provideMerge(Runtime.layer, base), Actor.local)
   const server = AppLive().pipe(HttpRouter.serve, Layer.provide(services), Layer.provide(BunHttpServer.layer({ port })))
   const fiber = Effect.runFork(Layer.launch(server))
   stop = () => Effect.runPromise(Fiber.interrupt(fiber)).then(() => void mcp.stop(true))

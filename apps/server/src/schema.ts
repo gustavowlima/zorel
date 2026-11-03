@@ -70,7 +70,10 @@ export const memories = sqliteTable(
     origin: text({ enum: ["auto", "manual"] }).notNull(),
     chatId: text("chat_id"),
     createdAt: integer("created_at").notNull(),
-    confirmedAt: integer("confirmed_at").notNull()
+    confirmedAt: integer("confirmed_at").notNull(),
+    // Portas da D17 para hospedar: de quem é e quem ouve. Hoje sempre o dono local.
+    owner: text().notNull().default("local"),
+    audience: text({ enum: ["owner", "project", "workspace"] }).notNull().default("project")
   },
   (t) => [unique("memories_scope_normalized").on(t.scope, t.normalized)]
 )
@@ -104,7 +107,8 @@ export const turns = sqliteTable(
     createdAt: integer("created_at").notNull(),
     startedAt: integer("started_at"),
     endedAt: integer("ended_at"),
-    error: text(),
+    firstTokenAt: integer("first_token_at"), // latência até o primeiro texto (medição por turno)
+    error: text(), // código (ErrorCode) ou a mensagem do engine
     partialText: text("partial_text").notNull().default(""), // texto até agora: um kill -9 não perde o que já veio
     messageId: text("message_id"),
     inputTokens: integer("input_tokens").notNull().default(0),

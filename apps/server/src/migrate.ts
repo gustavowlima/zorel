@@ -1,7 +1,7 @@
 // Antes do Drizzle: adota o banco do MVP e faz backup antes de qualquer migração pendente.
 // Roda síncrono (bun:sqlite) antes de o SqliteClient abrir o arquivo.
 import { Database } from "bun:sqlite"
-import { existsSync, mkdirSync, readdirSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs"
 import { dirname, join } from "node:path"
 
 // Lida na hora (não no import): o app desktop define ZERO_MIGRATIONS antes de subir o server.
@@ -112,6 +112,12 @@ export const LEGACY_MIGRATIONS = [
 ]
 
 const ts = () => new Date().toISOString().replace(/[:.]/g, "-")
+const KEEP = 7
+const DAY = 24 * 60 * 60_000
+const backupsOf = (path: string) => {
+  const dir = join(dirname(path), "backups")
+  return existsSync(dir) ? readdirSync(dir).filter((f) => f.startsWith("zero-") && f.endsWith(".db")).sort().map((f) => join(dir, f)) : []
+}
 
 // Copia consistente (WAL incluído) para <pasta do banco>/backups/.
 export function backup(db: Database, path: string): string {
@@ -119,6 +125,7 @@ export function backup(db: Database, path: string): string {
   mkdirSync(dir, { recursive: true })
   const file = join(dir, `zero-${ts()}.db`)
   db.run(`VACUUM INTO '${file.replaceAll("'", "''")}'`)
+  for (const old of backupsOf(path).slice(0, -KEEP)) rmSync(old) // nome com data ISO: ordem alfabética = cronológica
   return file
 }
 
@@ -132,7 +139,11 @@ export function prepare(path: string, dir = migrationsDir()): string | undefined
     const drizzle = !!db.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'").get()
     const applied = drizzle ? (db.query("SELECT count(*) AS n FROM __drizzle_migrations").get() as { n: number }).n : 0
     const local = readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).length
-    if (applied >= local) return
+    if (applied >= local) {
+      // Nada a migrar: ainda assim um backup por dia (ARCHITECTURE §12).
+      const last = backupsOf(path).at(-1)
+      return !last || Date.now() - statSync(last).mtimeMs > DAY ? backup(db, path) : undefined
+    }
     const file = backup(db, path)
     if (!drizzle) {
       const { user_version } = db.query("PRAGMA user_version").get() as { user_version: number }

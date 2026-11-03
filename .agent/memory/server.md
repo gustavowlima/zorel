@@ -37,6 +37,11 @@ updated: 2026-11-03
 - RPC: RpcServer.layerHttp em /rpc (websocket, RpcSerialization.layerJson); handlers em main.ts; steer cai na fila até a fase 2; SSE /send removido
 - encadeamento por @menção cria turnos com depth+1; no limite (MAX_DEPTH) só loga
 
+- observabilidade: observability.ts registra todo valor do Secrets (inclusive cada valor do JSON de env MCP) e o LoggerLive (logfmt) troca por ***; spans "turn", "engine.run", "tool.call" com anotações chatId/turnId
+- Actor (access.ts): sempre LOCAL_ACTOR hoje; memories.owner e memories.audience (user → owner, projeto/agente → project) existem no banco mas não no contrato público (D17)
+- medição: turns.started_at, first_token_at, ended_at e tokens; erros do turno como código (ErrorCode em events.ts; isInterruption cobre o legado "interrompido")
+- backup: antes de migration pendente e um por dia; mantém os 7 mais novos em ~/.zero/backups
+
 ## avoid
 
 - Bun.$ para operação simples de arquivo (mkdir etc.): abre um shell; usar node:fs

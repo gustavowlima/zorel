@@ -2,7 +2,7 @@
 // O turno não depende do cliente: fechar a aba não para nada; reconectar = assinar de novo (snapshot + eventos).
 // Encadeamento: a resposta que menciona outro membro enfileira o turno dele (até MAX_DEPTH sem mensagem sua).
 import type { Agent, Chat, Step } from "@zero/contracts"
-import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, type Turn, type WorkStep } from "@zero/contracts/events"
+import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zero/contracts/events"
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Stream } from "effect"
 import { consolidate, DataDir, members, prepare } from "./chat.ts"
 import { MAX_DEPTH, mentioned } from "./context.ts"
@@ -104,7 +104,11 @@ export const makeRuntime = Effect.gen(function* () {
           return textResult("O usuário recusou esta ação. Não tente de novo sem pedir.", true)
         }
       }
-      const r = await hub.call(server, route.tool, args).catch((e: unknown) => textResult(String(e instanceof Error ? e.message : e), true))
+      const r = await run(
+        Effect.promise(() => hub.call(server, route.tool, args).catch((e: unknown) => textResult(String(e instanceof Error ? e.message : e), true))).pipe(
+          Effect.withSpan("tool.call", { attributes: { tool: name, server: server.name, turnId: row.id } })
+        )
+      )
       const out = resultText(r)
       legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, 300) })
       await finish(s, r.isError ? "error" : "ok", out)
@@ -146,7 +150,7 @@ export const makeRuntime = Effect.gen(function* () {
     Effect.gen(function* () {
       const chatId = row.chatId
       const chat = yield* store.chat(chatId)
-      if (!chat) return yield* store.finishTurn(row.id, { state: "failed", error: "chat removido", messageId: null }).pipe(Effect.as(undefined))
+      if (!chat) return yield* store.finishTurn(row.id, { state: "failed", error: ErrorCode.chatRemoved, messageId: null }).pipe(Effect.as(undefined))
       const team = yield* members(store, chat)
       const agent = team.find((a) => a.id === row.agentId)
       const acc = { text: "", error: undefined as string | undefined, usage: { inputTokens: 0, outputTokens: 0 }, steps: [] as Step[], saved: false }
@@ -175,6 +179,7 @@ export const makeRuntime = Effect.gen(function* () {
         )
         const turn = yield* prepare(store, (yield* store.chat(chatId))!, agent, row.model, dataDir, opened.tools)
         yield* engines.run(turn).pipe(
+          Stream.withSpan("engine.run", { attributes: { model: row.model } }),
           Stream.groupedWithin(512, TEXT_BATCH),
           Stream.runForEach((batch) =>
             Effect.gen(function* () {
@@ -185,6 +190,7 @@ export const makeRuntime = Effect.gen(function* () {
                 else acc.error = e.message
               }
               if (!delta) return
+              if (!acc.text) yield* store.markFirstToken(row.id)
               acc.text += delta
               yield* publish(chatId, ev("text", { turnId: row.id, delta }))
               yield* store.savePartial(row.id, acc.text)
@@ -194,10 +200,13 @@ export const makeRuntime = Effect.gen(function* () {
         yield* save(acc.error ? "failed" : "completed", acc.error ?? null)
       }).pipe(
         Effect.scoped,
-        Effect.onExit((exit) => (exit._tag === "Failure" ? save("interrupted", acc.error ?? "interrompido") : Effect.void))
+        Effect.onExit((exit) => (exit._tag === "Failure" ? save("interrupted", acc.error ?? ErrorCode.interrupted) : Effect.void))
       )
       return acc.error ? undefined : { text: acc.text, agent, team }
-    })
+    }).pipe(
+      Effect.withSpan("turn", { attributes: { chatId: row.chatId, turnId: row.id, agentId: row.agentId ?? "", model: row.model } }),
+      Effect.annotateLogs({ chatId: row.chatId, turnId: row.id })
+    )
 
   // Menções na resposta enfileiram os colegas (encadeamento, até MAX_DEPTH respostas seguidas).
   const chain = (row: TurnRow, done: { text: string; agent: Agent | undefined; team: Agent[] }) =>
@@ -250,8 +259,8 @@ export const makeRuntime = Effect.gen(function* () {
   // ---------- recuperação no boot ----------
   // Turno `running` sem processo vira `interrupted` com o texto parcial; nunca repete efeito colateral incerto.
   for (const row of yield* store.turnsIn("running")) {
-    const message = yield* store.addMessage({ chatId: row.chatId, role: "assistant", agentId: row.agentId, text: row.partialText, model: row.model, error: "interrompido (o server reiniciou)", steps: [], inputTokens: 0, outputTokens: 0 })
-    yield* store.finishTurn(row.id, { state: "interrupted", error: "server restarted", messageId: message.id })
+    const message = yield* store.addMessage({ chatId: row.chatId, role: "assistant", agentId: row.agentId, text: row.partialText, model: row.model, error: ErrorCode.serverRestarted, steps: [], inputTokens: 0, outputTokens: 0 })
+    yield* store.finishTurn(row.id, { state: "interrupted", error: ErrorCode.serverRestarted, messageId: message.id })
   }
   for (const a of yield* store.openApprovals()) yield* store.resolveApproval(a.id, "expired", null, "expiry")
   for (const chatId of new Set((yield* store.turnsIn("queued")).map((t) => t.chatId))) yield* ensureWorker(chatId)
@@ -287,7 +296,7 @@ export const makeRuntime = Effect.gen(function* () {
     interrupt: (chatId) =>
       Effect.gen(function* () {
         for (const t of (yield* store.activeTurns(chatId)).filter((t) => t.state === "queued")) {
-          const turn = yield* store.finishTurn(t.id, { state: "interrupted", error: "cancelado", messageId: null })
+          const turn = yield* store.finishTurn(t.id, { state: "interrupted", error: ErrorCode.cancelled, messageId: null })
           yield* publish(chatId, ev("interrupted", { turn, message: null }))
         }
         const fiber = running.get(chatId)

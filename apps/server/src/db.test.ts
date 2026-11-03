@@ -80,3 +80,41 @@ test("banco do MVP (user_version 2) é adotado: backup feito, dados mantidos, mi
   rmSync(dir, { recursive: true })
   expect(existsSync(dir)).toBe(false)
 })
+
+test("backup: um por dia mesmo sem migration pendente, e só os 7 mais novos ficam", async () => {
+  const dir = join(tmpdir(), `zero-bk-${crypto.randomUUID()}`)
+  const path = join(dir, "zero.db")
+  require("node:fs").mkdirSync(join(dir, "backups"), { recursive: true })
+  await run(path, (r) => r.projects()) // banco novo: nada a fazer
+  // 8 backups antigos (mais de um dia): o próximo boot faz o do dia e apaga os excedentes
+  const old = new Date(Date.now() - 3 * 24 * 60 * 60_000)
+  for (let i = 0; i < 8; i++) {
+    const f = join(dir, "backups", `zero-2020-01-0${i + 1}T00-00-00-000Z.db`)
+    require("node:fs").writeFileSync(f, "")
+    require("node:fs").utimesSync(f, old, old)
+  }
+  await run(path, (r) => r.projects())
+  const files = readdirSync(join(dir, "backups")).sort()
+  expect(files).toHaveLength(7)
+  expect(files.at(-1)!.startsWith("zero-2026") || files.at(-1)! > "zero-2020-01-08").toBe(true)
+  rmSync(dir, { recursive: true })
+})
+
+test("memória sobre a pessoa só o dono ouve; a do projeto, o projeto", async () => {
+  const dir = join(tmpdir(), `zero-aud-${crypto.randomUUID()}`)
+  const path = join(dir, "zero.db")
+  require("node:fs").mkdirSync(dir)
+  await run(path, (r) =>
+    Effect.gen(function* () {
+      yield* r.addMemory({ scope: "user", text: "Prefere Biome", state: "active", origin: "manual", chatId: null, owner: "local" })
+      yield* r.addMemory({ scope: "project:p", text: "Deploy na Vercel", state: "active", origin: "manual", chatId: null })
+    })
+  )
+  // owner/audience ainda não estão no contrato público (portas da D17): conferir direto no banco
+  const rows = new Database(path, { readonly: true }).query("SELECT scope, owner, audience FROM memories ORDER BY scope").all()
+  expect(rows).toEqual([
+    { scope: "project:p", owner: "local", audience: "project" },
+    { scope: "user", owner: "local", audience: "owner" }
+  ])
+  rmSync(dir, { recursive: true })
+})
