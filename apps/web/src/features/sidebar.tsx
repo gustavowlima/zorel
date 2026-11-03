@@ -121,7 +121,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
       </div>
 
       {/* Which list shows below: Chats or Projects, both named; the + creates in the open one. */}
-      <div className="mb-2 flex shrink-0 items-center gap-1.5 pr-2.5">
+      <div className="mb-2 flex shrink-0 items-center gap-1.5 pr-2.5 pl-1.5">
         <NavSegment
           label={t("nav.lists")}
           value={tab}
@@ -145,7 +145,11 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
       <div ref={listRef} onScroll={measure} className={cx("scroll-quiet flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pr-2.5 pb-2", more && "fade-bottom")}>
         {tab === "chats" ? (
           recent.length ? (
-            <NavTree key="chats" label={t("nav.chats")}>{chatItems("recent", recent)}</NavTree>
+            <NavTree key="chats" label={t("nav.chats")}>
+              {recent.map((c) => (
+                <ChatItem key={c.id} chat={c} status={statuses[c.id]} active={c.id === activeChat} agents={agents} />
+              ))}
+            </NavTree>
           ) : (
             <p className="px-2.5 py-2 text-sm text-muted">{t("nav.noChats")}</p>
           )
@@ -281,7 +285,7 @@ function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatSt
 
 // An icon button of the foot toolbar; the open screen's stays lit.
 // The subscriptions at the foot (the most at risk first): one line per limit window, shortest first ("5h", "7d",
-// "30d"), each a bar of the share used and that share; the logo marks the account (dimmed after its first row). Hovering (or focusing) shows the rest: every window with when it
+// "30d"), each a bar of the share used and that share; the logo opens each account's group (its windows sit tight, accounts apart). Hovering (or focusing) shows the rest: every window with when it
 // resets, and the one at risk as a tiny burn-down (ui/burn-down.tsx) with where the pace so far leads.
 const MAX_FOOT_ROWS = 3
 const TONE_TEXT = { ok: "text-secondary", warning: "text-warning", critical: "text-danger" } as const
@@ -311,7 +315,7 @@ function UsageFoot({ active }: { active: boolean }) {
   return (
     <Tooltip content={<UsageDetail rows={rows} />}>
       <NavItem active={active} onPress={() => go({ view: "usage" })} aria-label={label} className="h-auto py-2">
-        <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
           {rows.slice(0, MAX_FOOT_ROWS).flatMap((r) =>
             r.windows
               .filter(({ w }) => windowMinutes(w.id) !== null)
@@ -319,10 +323,8 @@ function UsageFoot({ active }: { active: boolean }) {
               .map(({ w, pace }, i) => {
                 const tone = toneOf(pace)
                 return (
-                  <span key={`${r.account.id}:${w.id}`} className={cx("flex min-w-0 items-center gap-2.5 text-xs", i === 0 && "not-first:mt-1")}>
-                    <span className={cx("flex size-5 shrink-0 items-center justify-center", i > 0 && "opacity-35")}>
-                      <ProviderIcon provider={r.account.provider} size={14} />
-                    </span>
+                  <span key={`${r.account.id}:${w.id}`} className={cx("flex min-w-0 items-center gap-2.5 text-xs", i === 0 && "not-first:mt-2")}>
+                    <span className="flex size-5 shrink-0 items-center justify-center">{i === 0 && <ProviderIcon provider={r.account.provider} size={14} />}</span>
                     <span className="w-7 shrink-0 text-muted tabular-nums">{windowShort(w.id)}</span>
                     <span className="relative h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-control">
                       <span
