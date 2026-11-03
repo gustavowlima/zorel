@@ -1,11 +1,11 @@
 // Chat/channel: follows runtime events (snapshot + live), so the turn continues if the tab closes and reopens.
 // One reply per agent, mid-turn tool approval, model and member switching, manual compaction.
-import type { Agent, Chat, Effort, Message } from "@zero/contracts"
+import { type Agent, type Attachment, type Chat, type Effort, MAX_ATTACHMENTS, type Message } from "@zero/contracts"
 import { type Approval, type ChatEvent, isInterruption, type WorkStep } from "@zero/contracts/events"
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { call, decideApproval, interruptChat, sendMessage, steerChat, subscribeChat } from "../api.ts"
+import { call, decideApproval, interruptChat, sendMessage, steerChat, subscribeChat, uploadAttachment } from "../api.ts"
 import { go, useApp } from "../state.ts"
 import { Badge, Button, Card, ConfirmButton, cx, Select, Textarea, Tooltip } from "@/ui"
 import { AccountSelect, accountProviderOf } from "./accounts.tsx"
@@ -22,6 +22,9 @@ export function ChatView({ chat }: { chat: Chat }) {
   const [busy, setBusy] = useState(false)
   const [approvals, setApprovals] = useState<ReadonlyArray<Approval>>([])
   const [text, setText] = useState("")
+  const [files, setFiles] = useState<ReadonlyArray<Attachment>>([]) // uploaded, waiting to be sent
+  const [uploading, setUploading] = useState(0)
+  const picker = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string>()
   const [compacting, setCompacting] = useState(false)
   const bottom = useRef<HTMLDivElement>(null)
@@ -97,15 +100,27 @@ export function ChatView({ chat }: { chat: Chat }) {
   // With the chat busy, the message enters the runtime queue and is answered later.
   const submit = (e?: FormEvent) => {
     e?.preventDefault()
-    const input = text.trim()
-    if (!input) return
+    const input = text.trim() || (files.length ? "Veja os anexos." : "")
+    if (!input || uploading) return
+    const ids = files.map((f) => f.id)
     setText("")
+    setFiles([])
     setError(undefined)
     // While the agent works, the message corrects it (or waits in the queue if the engine can't).
-    ;(busy ? steerChat(chat.id, input) : sendMessage(chat.id, input)).catch((err) => {
+    ;(busy ? steerChat(chat.id, input, ids) : sendMessage(chat.id, input, ids)).catch((err) => {
       setError(String(err instanceof Error ? err.message : err))
       setText((t) => t || input)
     })
+  }
+
+  const attach = (list: Iterable<File>) => {
+    const picked = [...list].slice(0, MAX_ATTACHMENTS - files.length)
+    for (const f of picked) {
+      setUploading((n) => n + 1)
+      uploadAttachment(chat.id, f)
+        .then((a) => setFiles((x) => [...x, a]), (e) => setError(String(e instanceof Error ? e.message : e)))
+        .finally(() => setUploading((n) => n - 1))
+    }
   }
 
   const decide = (a: Approval, approve: boolean) => {
@@ -235,10 +250,41 @@ export function ChatView({ chat }: { chat: Chat }) {
         </div>
       </div>
 
-      <form onSubmit={submit} className="mx-auto flex w-full max-w-3xl items-end gap-2 px-4 pb-4">
+      <form
+        onSubmit={submit}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault()
+          attach(e.dataTransfer.files)
+        }}
+        className="mx-auto flex w-full max-w-3xl flex-wrap items-end gap-2 px-4 pb-4"
+      >
+        {(files.length > 0 || uploading > 0) && (
+          <div className="flex w-full flex-wrap gap-1.5">
+            {files.map((f) => (
+              <span key={f.id} className="inline-flex items-center gap-1 rounded-full bg-control py-0.5 pr-1 pl-2.5 text-sm">
+                {f.name}
+                <button type="button" aria-label={`Tirar ${f.name}`} className="rounded-full px-1 text-dim hover:text-fg" onClick={() => setFiles((x) => x.filter((y) => y.id !== f.id))}>
+                  ×
+                </button>
+              </span>
+            ))}
+            {uploading > 0 && <span className="text-sm text-muted">anexando…</span>}
+          </div>
+        )}
+        <input ref={picker} type="file" multiple hidden onChange={(e) => e.target.files && attach(e.target.files)} />
+        <Button size="lg" variant="ghost" aria-label="Anexar arquivos" onPress={() => picker.current?.click()}>
+          Anexar
+        </Button>
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onPaste={(e) => {
+            if (e.clipboardData.files.length) {
+              e.preventDefault()
+              attach(e.clipboardData.files)
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return
             e.preventDefault()
@@ -259,7 +305,7 @@ export function ChatView({ chat }: { chat: Chat }) {
             </Button>
           </>
         ) : (
-          <Button type="submit" variant="default" size="lg" isDisabled={!text.trim()}>
+          <Button type="submit" variant="default" size="lg" isDisabled={(!text.trim() && !files.length) || uploading > 0}>
             Enviar
           </Button>
         )}
@@ -272,7 +318,27 @@ const interrupted = isInterruption
 const stepTone = { ok: "neutral", error: "danger", refused: "warning" } as const
 
 function Bubble({ message: m, author, multi, live }: { message: Pick<Message, "role" | "text" | "model" | "error" | "steps"> & Partial<Message>; author: string; multi: boolean; live?: boolean }) {
-  if (m.role === "user") return <div className="max-w-[85%] self-end whitespace-pre-wrap rounded-card bg-surface px-3 py-2">{m.text}</div>
+  if (m.role === "user")
+    return (
+      <div className="flex max-w-[85%] flex-col items-end gap-1.5 self-end">
+        {m.attachments && m.attachments.length > 0 && (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {m.attachments.map((a) =>
+              a.mime.startsWith("image/") ? (
+                <a key={a.id} href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer">
+                  <img src={`/api/attachments/${a.id}`} alt={a.name} className="h-24 rounded-control border border-subtle object-cover" />
+                </a>
+              ) : (
+                <a key={a.id} href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer" className="rounded-control bg-control px-2 py-1 text-sm text-accent-text">
+                  {a.name}
+                </a>
+              )
+            )}
+          </div>
+        )}
+        <div className="whitespace-pre-wrap rounded-card bg-surface px-3 py-2">{m.text}</div>
+      </div>
+    )
   return (
     <div className="flex flex-col gap-1">
       {multi && <div className="text-sm font-medium text-accent-text">{author}</div>}

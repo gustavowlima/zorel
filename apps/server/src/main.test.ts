@@ -119,7 +119,7 @@ const rpc = <A, E>(f: (c: Rpc) => Effect.Effect<A, E>) =>
   Effect.runPromise(Effect.scoped(Effect.flatMap(RpcClient.make(ZeroRpc), (c) => f(c as Rpc))).pipe(Effect.provide(rpcLayer())))
 
 // Subscribes to the chat, sends and waits for the chat to go idle again. `onApproval` decides requests while the turn waits.
-async function send(chatId: string, body: { text: string; model?: string }, onApproval?: (a: Approval) => boolean) {
+async function send(chatId: string, body: { text: string; model?: string; attachmentIds?: string[] }, onApproval?: (a: Approval) => boolean) {
   return rpc((c) =>
     Effect.gen(function* () {
       const events: ChatEvent[] = []
@@ -319,4 +319,36 @@ test("contas: padrão criadas sozinhas e não removíveis; extra ganha pasta pr�
   expect((await fetch(`${base}/api/accounts/${def.id}`, { method: "DELETE" })).status).toBe(409)
   expect((await fetch(`${base}/api/accounts/${extra.id}`, { method: "DELETE" })).status).toBe(204)
   expect(require("node:fs").existsSync(home)).toBe(false)
+})
+
+test("anexos: upload, mensagem com arquivos, o engine recebe caminhos; texto inline, imagem pelo nome; apagar o chat apaga os arquivos", async () => {
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
+  const up = async (name: string, mime: string, body: BodyInit) => {
+    const r = await fetch(`${base}/api/chats/${chat.id}/attachments`, { method: "POST", headers: { "content-type": mime, "x-file-name": encodeURIComponent(name) }, body })
+    return { status: r.status, json: (await r.json()) as { id: string; name: string; size: number } }
+  }
+  const note = await up("notas do projeto.md", "text/markdown", "# Deploy\nVercel às sextas")
+  const png = await up("tela.png", "image/png", new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]))
+  expect(note.status).toBe(200)
+  expect(note.json).toMatchObject({ name: "notas do projeto.md", size: 26 }) // bytes, not characters
+  expect((await up("grande.bin", "application/octet-stream", new Uint8Array(20 * 1024 * 1024 + 1))).status).toBe(413)
+
+  const r = await send(chat.id, { text: "veja os anexos", attachmentIds: [note.json.id, png.json.id] })
+  const user = r.events.find((e) => e._tag === "message")
+  expect(user && user._tag === "message" && user.message.attachments.map((a) => a.name)).toEqual(["notas do projeto.md", "tela.png"])
+  const files = turns.at(-1)!.messages.at(-1)!.files!
+  expect(files.map((f) => [f.name, f.mime])).toEqual([["notas do projeto.md", "text/markdown"], ["tela.png", "image/png"]])
+  const { transcript } = await import("./engines.ts")
+  const text = transcript(turns.at(-1)!.messages)
+  expect(text).toContain("Vercel às sextas") // small text file inline
+  expect(text).toContain("[imagem anexada: tela.png]")
+
+  const served = await fetch(`${base}/api/attachments/${note.json.id}`)
+  expect(served.headers.get("content-type")).toContain("text/markdown")
+  expect(await served.text()).toBe("# Deploy\nVercel às sextas")
+
+  const dir = join(tmpdir(), "zero-test", "attachments", chat.id)
+  expect(require("node:fs").existsSync(dir)).toBe(true)
+  await api((c) => c.chats.remove({ params: { id: chat.id } }))
+  expect(require("node:fs").existsSync(dir)).toBe(false)
 })

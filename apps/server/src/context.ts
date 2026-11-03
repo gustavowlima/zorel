@@ -4,6 +4,7 @@
 //   → skills → chat summary → memories retrieved by the current message → latest messages.
 // Each layer has a budget; what doesn't fit stays searchable (FTS) and comes back when relevant.
 // Rolling summary + memories + proposed skills model derived from Tucano (Apache-2.0), see NOTICE.
+import { join } from "node:path"
 import type { Agent, Chat, Memory, Message, Project } from "@zero/contracts"
 import { normalize } from "./db.ts"
 import type { Turn, TurnMessage, TurnTools } from "./engines.ts"
@@ -58,6 +59,7 @@ export interface TurnInput {
   readonly skills: { readonly all: ReadonlyArray<Memory>; readonly relevant: ReadonlyArray<Memory> }
   readonly messages: ReadonlyArray<Message> // since the summary, in order; the last is from the user or another agent
   readonly cwd: string
+  readonly filesDir?: string | undefined // where this chat's attachments live (<dataDir>/attachments/<chat>)
   readonly tools?: TurnTools | undefined
 }
 
@@ -98,6 +100,7 @@ export function buildTurn(i: TurnInput): Turn {
     .join("\n\n")
   const system = [stable, dynamic].filter(Boolean).join("\n\n")
 
+  const filesOf = (m: Message) => (i.filesDir ? m.attachments.map((a) => ({ name: a.name, mime: a.mime, path: join(i.filesDir!, a.id) })) : [])
   // From the replier's point of view: its own lines are "assistant"; other agents' lines arrive
   // as "user" with the name, so they don't look like its own.
   const messages: TurnMessage[] = i.messages
@@ -106,7 +109,7 @@ export function buildTurn(i: TurnInput): Turn {
     .map((m) =>
       m.role === "assistant" && m.agentId !== (i.agent?.id ?? null)
         ? { role: "user", text: `[${name(m.agentId)}]\n${m.text}`, at: m.at }
-        : { role: m.role, text: m.text, at: m.at }
+        : { role: m.role, text: m.text, at: m.at, files: filesOf(m) }
     )
   return { model: i.model, system, stable, dynamic, messages, cwd: i.cwd, tools: i.tools }
 }

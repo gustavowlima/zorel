@@ -49,7 +49,7 @@ usando assinaturas (CLI oficial: Claude Code, Codex, ACP) ou token de API (effec
 - engine primeiro: fase 1 (runtime) e fase 2 (engines) antes da interface; a fase UI redesenha tudo uma vez, com i18n e átomos, a partir do protótipo
 - protótipo das telas: https://claude.ai/artifact/ERkKURix2bnKAqzi97emmw (privado do dono)
 - novas fases: 3c painel de execução (terminal, tests, problems, processes, logs); catálogo de conectores com OAuth na fase 4
-- fase 1 (runtime) concluída em 2026-11-03; próxima: fase 2 (engines vivos: Claude Agent SDK + Codex App Server, sessão, marcação por sessão, multicontas)
+- fase 1 (runtime) e fase 2 (engines vivos) concluídas em 2026-11-03; próxima pela ordem da §13: fase UI (interface nova), ou 2b/2c (failover, consumo)
 
 ## convenções
 

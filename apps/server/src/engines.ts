@@ -12,6 +12,7 @@ import type { ModelInfo } from "@zero/contracts"
 import { Context, Effect, Layer, Queue, Redacted, Stream } from "effect"
 import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
+import { readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { openClaudeSession } from "#server/engines/claude-sdk.ts"
 import { openCodexSession } from "#server/engines/codex.ts"
@@ -19,9 +20,16 @@ import type { EngineSession } from "#server/engines/session.ts"
 import { Secrets, type SecretStore } from "./secrets.ts"
 import { resultText, type Session, type ToolDef } from "./tools.ts"
 
+export interface TurnFile {
+  readonly name: string
+  readonly mime: string
+  readonly path: string
+}
+
 export interface TurnMessage {
   readonly role: "user" | "assistant"
   readonly text: string
+  readonly files?: ReadonlyArray<TurnFile> | undefined // attachments of this message
   readonly at?: number // order in the chat: the native session marker compares by this
 }
 
@@ -132,12 +140,30 @@ const json = (line: string): Record<string, any> | undefined => {
 const tail = (s: string) => s.trim().split("\n").slice(-5).join("\n")
 
 // History becomes a transcript: the CLI gets a single prompt per turn.
+export const isImage = (f: TurnFile) => /^image\/(png|jpeg|gif|webp)$/.test(f.mime)
+const TEXT_INLINE_BYTES = 64 * 1024
+// How a file shows up in the text: images go as images (native sessions) and are only named here;
+// small text files go inline; anything else by name until agents have file tools (workspace phase).
+function fileNote(f: TurnFile): string {
+  if (isImage(f)) return `[imagem anexada: ${f.name}]`
+  const textual = /^text\/|json|xml|yaml|toml|javascript|typescript/.test(f.mime) || /\.(md|txt|csv|ts|tsx|js|json|ya?ml|toml|py|go|rs|sql|sh)$/i.test(f.name)
+  if (textual) {
+    try {
+      if (statSync(f.path).size <= TEXT_INLINE_BYTES) return `<arquivo nome="${f.name}">\n${readFileSync(f.path, "utf8")}\n</arquivo>`
+    } catch {
+      // gone from disk: fall back to the name
+    }
+  }
+  return `[arquivo anexado: ${f.name} (${f.mime})]`
+}
+const withFiles = (m: TurnMessage) => (m.files?.length ? `${m.text}\n\n${m.files.map(fileNote).join("\n")}` : m.text)
+
 export function transcript(messages: ReadonlyArray<TurnMessage>): string {
   const last = messages.at(-1)!
   const before = messages.slice(0, -1)
-  if (!before.length) return last.text
-  const lines = before.map((m) => `<${m.role}>\n${m.text}\n</${m.role}>`).join("\n")
-  return `Conversa até aqui, da mais antiga para a mais nova:\n${lines}\n\nNova mensagem do usuário:\n${last.text}`
+  if (!before.length) return withFiles(last)
+  const lines = before.map((m) => `<${m.role}>\n${withFiles(m)}\n</${m.role}>`).join("\n")
+  return `Conversa até aqui, da mais antiga para a mais nova:\n${lines}\n\nNova mensagem do usuário:\n${withFiles(last)}`
 }
 
 const GATEWAY = "zero"

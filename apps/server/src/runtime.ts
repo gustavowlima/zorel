@@ -8,7 +8,7 @@ import { Accounts } from "./accounts.ts"
 import { consolidate, DataDir, members, prepare } from "./chat.ts"
 import { MAX_DEPTH, mentioned } from "./context.ts"
 import { type AccountRow, Store, type Repository, type TurnRow } from "./db.ts"
-import { Engines, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
+import { Engines, isImage, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
 import type { EngineSession } from "#server/engines/session.ts"
 import { exposedName, type GatewayHandle, needsApproval, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
 
@@ -22,12 +22,13 @@ export interface SendInput {
   readonly clientId: string
   readonly text: string
   readonly model?: string | undefined
+  readonly attachmentIds?: ReadonlyArray<string> | undefined
 }
 
 export interface RuntimeService {
   readonly send: (input: SendInput) => Effect.Effect<{ turnId: string }, ChatNotFound>
   // Corrects the agent mid-turn when the engine supports it (Codex); otherwise queues it like `send`.
-  readonly steer: (chatId: string, text: string) => Effect.Effect<void, ChatNotFound>
+  readonly steer: (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) => Effect.Effect<void, ChatNotFound>
   readonly interrupt: (chatId: string) => Effect.Effect<void>
   readonly decide: (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">, reason?: string) => Effect.Effect<void, ApprovalNotFound>
   readonly subscribeChat: (chatId: string) => Stream.Stream<ChatEvent, ChatNotFound>
@@ -81,7 +82,9 @@ export const makeRuntime = Effect.gen(function* () {
   const sessions = new Map<string, Live>()
   // ponytail: one gateway URL per (chat, agent), closed only when the server stops; drop on chat delete if it grows.
   const gateways = new Map<string, GatewayHandle>()
-  const sessionKey = (row: TurnRow) => `${row.chatId}:${row.agentId ?? "-"}`
+  // Per provider too: switching Claude → Codex → Claude keeps the Claude session, which on return only
+  // gets what it hasn't seen (Zeron's per-session watermark). The LRU cap bounds the processes.
+  const sessionKey = (row: TurnRow) => `${row.chatId}:${row.agentId ?? "-"}:${splitModel(row.model).provider}`
   const gatewayOf = (key: string) => {
     let g = gateways.get(key)
     if (!g) {
@@ -117,7 +120,7 @@ export const makeRuntime = Effect.gen(function* () {
       // The account too: switching accounts opens a new session with the checkpoint (§6.1, no shared native session).
       const stable = `${turn.stable ?? turn.system}\n#tools:${(turn.tools?.defs ?? []).map((d) => d.name).sort().join(",")}\n#account:${account?.id ?? "-"}`
       let live = sessions.get(key)
-      if (live && (!live.session.alive() || live.provider !== provider || live.stable !== stable)) {
+      if (live && (!live.session.alive() || live.stable !== stable)) {
         yield* closeSession(key)
         live = undefined
       }
@@ -140,7 +143,8 @@ export const makeRuntime = Effect.gen(function* () {
         current.seen = at
       })
       const steer = current.session.steer
-      return current.session.turn({ model: row.model, prompt, tools: turn.tools, effort }).pipe(
+      const images = fresh.flatMap((m) => (m.files ?? []).filter(isImage))
+      return current.session.turn({ model: row.model, prompt, tools: turn.tools, effort, images }).pipe(
         Stream.onStart(Effect.sync(() => steer && steering.set(row.chatId, steer))),
         Stream.ensuring(Effect.sync(() => steering.delete(row.chatId)))
       )
@@ -365,9 +369,9 @@ export const makeRuntime = Effect.gen(function* () {
   for (const a of yield* store.openApprovals()) yield* store.resolveApproval(a.id, "expired", null, "expiry")
   for (const chatId of new Set((yield* store.turnsIn("queued")).map((t) => t.chatId))) yield* ensureWorker(chatId)
 
-  const addUserMessage = (chatId: string, text: string) =>
+  const addUserMessage = (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) =>
     Effect.gen(function* () {
-      const message = yield* store.addMessage({ chatId, role: "user", agentId: null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 })
+      const message = yield* store.addMessage({ chatId, role: "user", agentId: null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0, attachmentIds })
       yield* publish(chatId, ev("message", { message }))
     })
   // Queues who answers this text: the mentioned members, or the lead.
@@ -402,16 +406,17 @@ export const makeRuntime = Effect.gen(function* () {
         if (!chat) return yield* new ChatNotFound({ chatId: input.chatId })
         if (input.model && input.model !== chat.model) chat = (yield* store.updateChat(chat.id, { model: input.model }))!
         if (chat.title === "Novo chat") chat = (yield* store.updateChat(chat.id, { title: input.text.replace(/\s+/g, " ").slice(0, 60) }))!
-        yield* addUserMessage(chat.id, input.text)
+        yield* addUserMessage(chat.id, input.text, input.attachmentIds)
         return { turnId: yield* enqueueFor(chat, input.text, input.clientId) }
       }),
 
-    steer: (chatId, text) =>
+    steer: (chatId, text, attachmentIds) =>
       Effect.gen(function* () {
         const chat = yield* store.chat(chatId)
         if (!chat) return yield* new ChatNotFound({ chatId })
-        yield* addUserMessage(chatId, text)
-        const steer = steering.get(chatId)
+        yield* addUserMessage(chatId, text, attachmentIds)
+        // Images can't join a running turn: with attachments the correction waits for the next turn.
+        const steer = attachmentIds?.length ? undefined : steering.get(chatId)
         const taken = steer ? yield* Effect.promise(() => steer(text)) : false
         // Not taken mid-turn: it becomes the next turn in the queue (the message is already saved).
         if (!taken) yield* enqueueFor(chat, text, null)

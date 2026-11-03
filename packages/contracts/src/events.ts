@@ -3,7 +3,7 @@
 // handoff between agents, model switch, learning, receipt and status of each chat.
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
-import { Message, ModelId } from "./index.ts"
+import { MAX_ATTACHMENTS, Message, ModelId } from "./index.ts"
 
 const Id = Schema.String
 const Millis = Schema.Number // epoch or duration in ms
@@ -159,12 +159,16 @@ export const SendPayload = {
   chatId: Id,
   clientId: Schema.String.check(Schema.isMinLength(8), Schema.isMaxLength(64)),
   text: Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(100_000)),
-  model: Schema.optional(ModelId)
+  model: Schema.optional(ModelId),
+  attachmentIds: Schema.optional(Schema.Array(Schema.String).check(Schema.isMaxLength(MAX_ATTACHMENTS))) // uploaded first (POST /api/chats/:id/attachments)
 }
 
 export const ZeroRpc = RpcGroup.make(
   Rpc.make("send", { payload: SendPayload, success: Schema.Struct({ turnId: Id }), error: ChatNotFound }),
-  Rpc.make("steer", { payload: { chatId: Id, text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100_000)) }, error: ChatNotFound }),
+  Rpc.make("steer", {
+    payload: { chatId: Id, text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100_000)), attachmentIds: Schema.optional(Schema.Array(Schema.String).check(Schema.isMaxLength(MAX_ATTACHMENTS))) },
+    error: ChatNotFound
+  }),
   Rpc.make("interrupt", { payload: { chatId: Id } }),
   Rpc.make("decide", { payload: { approvalId: Id, outcome: Schema.Literals(["approved", "always", "denied"]), reason: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))) }, error: ApprovalNotFound }),
   Rpc.make("subscribeChat", { payload: { chatId: Id }, success: ChatEvent, error: ChatNotFound, stream: true }),

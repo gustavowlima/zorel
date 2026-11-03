@@ -41,6 +41,7 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
       skills: { all: yield* store.activeMemories(scopes, "skill"), relevant: yield* store.searchMemories(scopes, last, [], SKILL_BODIES, "skill") },
       messages,
       cwd: join(dataDir, "runs", chat.id),
+      filesDir: join(dataDir, "attachments", chat.id),
       tools
     })
   })

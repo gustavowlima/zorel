@@ -1,5 +1,5 @@
 // Typed clients derived from the same server contract: HTTP for CRUD and RPC (WebSocket at /rpc) for turns.
-import { Api } from "@zero/contracts"
+import { Api, type Attachment, MAX_ATTACHMENT_BYTES } from "@zero/contracts"
 import { type ApprovalOutcome, type ChatEvent, ZeroRpc } from "@zero/contracts/events"
 import { Effect, Layer, ManagedRuntime, Schedule, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
@@ -23,10 +23,24 @@ type Client = Awaited<typeof client>
 const rpc = <A, E>(f: (c: Client) => Effect.Effect<A, E>) => client.then((c) => runtime.runPromise(f(c)))
 
 // clientId: resending (e.g. network dropped midway) doesn't duplicate the message.
-export const sendMessage = (chatId: string, text: string, clientId = crypto.randomUUID()) => rpc((c) => c.send({ chatId, clientId, text }))
+export const sendMessage = (chatId: string, text: string, attachmentIds: ReadonlyArray<string> = [], clientId = crypto.randomUUID()) =>
+  rpc((c) => c.send({ chatId, clientId, text, ...(attachmentIds.length && { attachmentIds }) }))
 export const interruptChat = (chatId: string) => rpc((c) => c.interrupt({ chatId }))
 // Mid-turn correction: joins the running turn when the engine can (Codex), otherwise queues.
-export const steerChat = (chatId: string, text: string) => rpc((c) => c.steer({ chatId, text }))
+export const steerChat = (chatId: string, text: string, attachmentIds: ReadonlyArray<string> = []) =>
+  rpc((c) => c.steer({ chatId, text, ...(attachmentIds.length && { attachmentIds }) }))
+
+// Raw upload; the returned id goes with the message.
+export async function uploadAttachment(chatId: string, file: File): Promise<Attachment> {
+  if (file.size > MAX_ATTACHMENT_BYTES) throw new Error(`${file.name} passa de 20 MB.`)
+  const r = await fetch(`/api/chats/${chatId}/attachments`, {
+    method: "POST",
+    headers: { "content-type": file.type || "application/octet-stream", "x-file-name": encodeURIComponent(file.name) },
+    body: file
+  })
+  if (!r.ok) throw new Error(`Não deu para anexar ${file.name}.`)
+  return r.json()
+}
 export const decideApproval = (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">) => rpc((c) => c.decide({ approvalId, outcome }))
 
 // Subscribes to the chat events. Connection dropped: subscribes again and gets another snapshot. Returns the canceller.
