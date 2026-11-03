@@ -1,5 +1,5 @@
 # design-system
-keywords: ui, tailwind, tokens, theme, button, css, check:ui, galeria, avatar, provider icon, detector
+keywords: ui, tailwind, tokens, theme, button, css, check:ui, avatar, provider icon, detector
 status: active
 updated: 2026-11-03
 
@@ -28,8 +28,8 @@ updated: 2026-11-03
 - DESIGN.md e tokens atualizados pelo protótipo (sidebar = tom da moldura, surface #232323, bordas 6%/10%, tokens accent-faint/line, success-faint/line, diff-add/del, code)
 
 - fase UI passo 1 (2026-11-03): primitivas Switch, Tabs (pílulas), Menu, IconButton (label obrigatório), AgentAvatar (16/20/28/32; `tone` = ordem do agente no projeto, senão hash do id), ProviderIcon (lobehub; Claude em cor, resto mono currentColor; aliases claude-cli/anthropic, codex-cli/openai), Spinner (currentColor, para em reduced motion), ChatStatusIcon (running/waiting/failed); ícones lucide reexportados por ui/icons.tsx
-- galeria em /#/dev/ui (main.tsx carrega lazy só em import.meta.env.DEV), dois temas
-- `bun run check:ui` (scripts/check-ui.ts) no CI: catraca por arquivo/regra em apps/web/ui-baseline.json (literal-color, arbitrary-value, raw-control, direct-import, glyph-icon); src/ui e src/dev isentos; `--update` trava melhora. Dívida atual: App.tsx, features/chat.tsx, features/project.tsx (paga no passo 3)
+- sem galeria /dev/ui (removida 2026-11-03, decisão do usuário): conferir primitivas nas telas reais, nos dois temas
+- `bun run check:ui` (scripts/check-ui.ts) no CI: catraca por arquivo/regra em apps/web/ui-baseline.json (literal-color, arbitrary-value, raw-control, direct-import, glyph-icon); src/ui isento; `--update` trava melhora. Dívida zerada no passo 3
 - detector impeccable: .impeccable/config.json (hook on; ignore 9px = inicial do avatar 16px); manifest local em .claude/settings.local.json aponta para $HOME/.claude/skills/impeccable (skill é global, o instalador não achou pasta no projeto)
 - NOTICE atribui Lobe Icons (MIT)
 
@@ -54,5 +54,5 @@ updated: 2026-11-03
 - primitivas em apps/web/src/ui/ como única API visual; complexos sobre React Aria Components (via shadcn --base aria); telas nunca importam headless/ícones direto
 - fundação a reference app (só ideias): escala 24/28/32/36, dark padrão + light só troca valores, só tokens, hover só ponteiro fino, scale 0.97, <300ms + reduced motion, estados obrigatórios + teclado + rótulo
 - fluxo impeccable: shape antes de tela nova; detector ligado (hooks on); audit ao terminar tela; um passe de polish ao fechar fase; harden/clarify para erros e i18n; extract quando componente repete em 2+ telas
-- check:ui no CI (literais, escala, botão/diálogo à mão, import direto de headless/ícones); galeria /dev/ui em dev no lugar de Storybook
+- check:ui no CI (literais, escala, botão/diálogo à mão, import direto de headless/ícones); nem Storybook nem galeria
 - shadcn (CLI 4.x) como GERADOR das primitivas: `shadcn init --base aria` (React Aria Components; Radix e Base UI NÃO, decisão do usuário 2026-11-03), código copiado para src/ui e nosso; tokens semânticos do shadcn mapeados uma vez para --z-*; nada da paleta neutra/--radius padrão; alturas na escala 24/28/32/36

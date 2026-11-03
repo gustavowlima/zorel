@@ -311,7 +311,7 @@ Respostas em markdown com ritmo de 0.6em entre blocos, títulos em 15px, links e
 - `ProviderIcon`: logos oficiais do Lobe Icons. O Claude tem a cor da marca; os outros são monocromáticos (`currentColor`) e seguem o texto. Nunca sobre fundo branco.
 
 ### Como o design system se mantém
-- **Galeria** em `/#/dev/ui` (só em dev): toda primitiva, em todos os estados e nos dois temas. Primitiva nova entra lá antes de ir para uma tela.
+- **Sem galeria:** as telas reais são a referência; primitiva nova é conferida na tela que a usa, nos dois temas.
 - **`bun run check:ui`** (no CI): nas telas, fora de `src/ui`, nada de cor literal, valor arbitrário `[..]`, controle HTML cru, import direto de `lucide-react` ou `react-aria-components` ou glifo unicode como ícone. É uma catraca: a dívida antiga está em `ui-baseline.json` e só pode cair.
 - **Detector do impeccable** roda depois de cada edição de UI (hook local) e faz um passe completo ao fim da sessão.
 - **`bun run check:i18n`** (no CI): nenhum texto em JSX nem em props lidas pela pessoa fora do catálogo `packages/i18n` (`t()`). A interface é em inglês (D13); conteúdo do usuário não passa pelo catálogo.

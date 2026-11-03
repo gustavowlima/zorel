@@ -1,13 +1,11 @@
 // i18n check (ARCHITECTURE §10.1, D13): no literal interface text in JSX outside the catalog
 // (packages/i18n). Parses every .tsx and flags JSX text with letters, and string literals in the props a
-// person reads or hears (placeholder, aria-label, title…). The dev gallery is exempt (it shows primitives,
-// not product text). Run: bun scripts/check-i18n.ts
+// person reads or hears (placeholder, aria-label, title…). Run: bun scripts/check-i18n.ts
 import { parse } from "@babel/parser"
 import { Glob } from "bun"
 import { relative } from "node:path"
 
 const ROOT = new URL("../apps/web/", import.meta.url).pathname
-const EXEMPT = [/^src\/dev\//]
 const PROPS = new Set(["placeholder", "aria-label", "title", "label", "description", "confirmLabel", "hint", "content", "alt", "subtitle"])
 const HAS_WORD = /\p{L}{2}/u
 
@@ -27,7 +25,6 @@ function* walk(node: unknown): Generator<Node> {
 const problems: string[] = []
 for await (const abs of new Glob("src/**/*.tsx").scan({ cwd: ROOT, absolute: true })) {
   const file = relative(ROOT, abs)
-  if (EXEMPT.some((r) => r.test(file))) continue
   const ast = parse(await Bun.file(abs).text(), { sourceType: "module", plugins: ["typescript", "jsx"] })
   for (const n of walk(ast.program)) {
     const line = n.loc?.start.line ?? 0
