@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "files": { "includes": ["apps/*/src/**", "packages/*/src/**", "apps/desktop/electrobun.config.ts", "!**/*.css", "!**/fixtures"] },
+  "formatter": { "enabled": false },
+  "assist": { "enabled": false },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "style": {
+        "noNonNullAssertion": "off"
+      },
+      "complexity": {
+        "noBannedTypes": "off"
+      },
+      "a11y": {
+        "noLabelWithoutControl": { "level": "error", "options": { "inputComponents": ["Input", "Textarea", "Select", "ModelPicker"] } }
+      },
+      "suspicious": {
+        "noExplicitAny": "warn"
+      }
+    }
+  }
+}

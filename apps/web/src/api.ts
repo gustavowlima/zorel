@@ -17,8 +17,7 @@ export async function sendMessage(chatId: string, input: SendInput, onEvent: (e:
   let buf = ""
   for await (const chunk of res.body.pipeThrough(new TextDecoderStream())) {
     buf += chunk
-    let i: number
-    while ((i = buf.indexOf("\n\n")) >= 0) {
+    for (let i = buf.indexOf("\n\n"); i >= 0; i = buf.indexOf("\n\n")) {
       const line = buf.slice(0, i)
       buf = buf.slice(i + 2)
       if (line.startsWith("data: ")) onEvent(JSON.parse(line.slice(6)) as SendEvent)

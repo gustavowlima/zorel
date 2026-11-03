@@ -162,7 +162,11 @@ export class Tools extends Context.Service<Tools, { readonly hub: Hub; readonly 
           gateway.start()
           return { hub: new Hub(secrets), gateway }
         }),
-        (t) => Effect.promise(async () => (t.gateway.stop(), await t.hub.closeAll()))
+        (t) =>
+          Effect.promise(async () => {
+            t.gateway.stop()
+            await t.hub.closeAll()
+          })
       )
     })
   )

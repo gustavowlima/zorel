@@ -25,7 +25,10 @@ test("migração 2 → 3: agente do chat vira membro, memórias entram no índic
   const { MIGRATIONS } = require("./db.ts")
   const path = `${require("node:os").tmpdir()}/zero-mig-${crypto.randomUUID()}.db`
   const old = new Database(path)
-  old.transaction(() => (MIGRATIONS.slice(0, 2).forEach((s: string) => old.run(s)), old.run("PRAGMA user_version = 2")))()
+  old.transaction(() => {
+    for (const s of MIGRATIONS.slice(0, 2)) old.run(s)
+    old.run("PRAGMA user_version = 2")
+  })()
   old.run("INSERT INTO projects VALUES ('p', 'P', '', 1)")
   old.run("INSERT INTO agents VALUES ('a', 'p', 'Dev', '', 'x/y', 1)")
   old.run("INSERT INTO chats (id, project_id, agent_id, title, model, created_at) VALUES ('c', 'p', 'a', 'T', 'x/y', 1)")

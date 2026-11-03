@@ -22,6 +22,7 @@ export class DataDir extends Context.Service<DataDir, string>()("DataDir") {
 }
 
 const MAX_MENTIONS = 3
+const MAX_PENDING = 20 // propostas esperando revisão; acima disso a consolidação só atualiza o resumo
 const APPROVAL_MS = 10 * 60_000
 
 // ponytail: travas e aprovações em memória, um processo de server; mover para o banco se houver mais de um.
@@ -50,7 +51,10 @@ interface ToolsOfTurn {
 // `emit` empurra eventos (passos e pedidos de aprovação) para o stream da resposta.
 async function openTools(store: Repository, hub: Hub, gateway: Gateway, chat: Chat, emit: (e: SendEvent) => void): Promise<ToolsOfTurn> {
   const steps: Step[] = []
-  const record = (step: Step) => (steps.push(step), emit({ type: "tool", step }))
+  const record = (step: Step) => {
+    steps.push(step)
+    emit({ type: "tool", step })
+  }
   const pendingHere = new Set<string>()
   const routes = new Map<string, { server: string; tool: string; approve: boolean }>()
   const defs: ToolDef[] = []
@@ -157,7 +161,7 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, f
         messages: [{
           role: "user",
           text: consolidationPrompt({
-            summary: chat.summary, chunk, existing: store.activeMemories(scopes), skills: store.activeMemories(scopes, "skill"),
+            summary: chat.summary, chunk, existing: store.activeMemories(scopes), skills: store.activeMemories(scopes, "skill"), forgotten: store.forgottenMemories(scopes),
             hasProject: !!chat.projectId, hasAgent: !!lead, names: (id) => agents.find((a) => a.id === id)?.name ?? "assistente"
           })
         }],
@@ -172,8 +176,14 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, f
     }
     const scopeOf = { user: "user", project: `project:${chat.projectId}`, agent: `agent:${lead}` }
     store.setSummary(chat.id, parsed.summary, chunk.at(-1)!.at)
-    for (const m of parsed.memories) store.addMemory({ scope: scopeOf[m.scope], text: m.text, state: "pending", origin: "auto", chatId: chat.id })
-    for (const s of parsed.skills) store.addMemory({ scope: scopeOf[s.scope], kind: "skill", title: s.title, text: s.text, state: "pending", origin: "auto", chatId: chat.id })
+    // Teto de pendentes: a revisão humana é o gargalo; acima dele, propostas novas são descartadas.
+    const proposals = [
+      ...parsed.memories.map((m) => ({ scope: scopeOf[m.scope], kind: "fact" as const, title: "", text: m.text })),
+      ...parsed.skills.map((s) => ({ scope: scopeOf[s.scope], kind: "skill" as const, title: s.title, text: s.text }))
+    ]
+    const room = Math.max(0, MAX_PENDING - store.pendingCount(scopes))
+    if (proposals.length > room) yield* Effect.logInfo("propostas acima do teto de pendentes; excedentes descartadas", { room, proposed: proposals.length })
+    for (const p of proposals.slice(0, room)) store.addMemory({ ...p, state: "pending", origin: "auto", chatId: chat.id })
     return store.chat(chat.id)!
   }).pipe(Effect.ensuring(Effect.sync(() => consolidating.delete(chatId))))
 })
@@ -222,7 +232,10 @@ export const send = Effect.fn("send")(function* (chatId: string, input: SendInpu
         yield* engines.run(turn).pipe(
           Stream.runForEach((ev) =>
             Effect.sync(() => {
-              if (ev.type === "text") (acc.text += ev.delta), emit(ev)
+              if (ev.type === "text") {
+                acc.text += ev.delta
+                emit(ev)
+              }
               else if (ev.type === "done") acc.usage = ev.usage
               else acc.error = ev.message
             })
@@ -234,7 +247,9 @@ export const send = Effect.fn("send")(function* (chatId: string, input: SendInpu
         // Cliente desconectou ou algo quebrou no meio: guarda o que já veio.
         Effect.onExit((exit) =>
           Effect.sync(() => {
-            if (exit._tag === "Failure") (acc.error ??= "interrompido"), save()
+            if (exit._tag !== "Failure") return
+            acc.error ??= "interrompido"
+            save()
           })
         )
       )

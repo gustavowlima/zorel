@@ -176,8 +176,36 @@ const WebRoute = (dir: string) =>
     return HttpServerResponse.file(file).pipe(Effect.orDie)
   })
 
+// O server é local, sem login: só aceita quem fala com ele como local. Host fora da lista barra DNS rebinding;
+// Origin de outro site barra CSRF (um POST "simples" de qualquer página dispararia um turno com ferramentas).
+const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]", "::1"])
+const hostname = (value: string | undefined) => {
+  if (!value) return undefined
+  try {
+    return new URL(value.includes("://") ? value : `http://${value}`).hostname
+  } catch {
+    return "invalid"
+  }
+}
+export function isLocalRequest(headers: Readonly<Record<string, string | undefined>>): boolean {
+  const host = hostname(headers.host)
+  if (!host || !LOCAL.has(host)) return false
+  if (!headers.origin) return true // mesma origem em GET, curl, CLIs
+  return LOCAL.has(hostname(headers.origin) ?? "") // "null" (sandbox, file://) também é recusada
+}
+
+const LocalOnly = HttpRouter.middleware(
+  (app) =>
+    Effect.gen(function* () {
+      const req = yield* HttpServerRequest.HttpServerRequest
+      return isLocalRequest(req.headers) ? yield* app : HttpServerResponse.text("forbidden", { status: 403 })
+    }),
+  { global: true }
+)
+
 export const AppLive = (webDir?: string) =>
   Layer.mergeAll(
+    LocalOnly,
     HttpApiBuilder.layer(Api).pipe(Layer.provide([Projects, Agents, Chats, Memories, ToolsGroup, Settings])),
     SendRoute,
     ...(webDir && existsSync(join(webDir, "index.html")) ? [WebRoute(webDir)] : [])

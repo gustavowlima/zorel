@@ -46,6 +46,7 @@ const mcp = Bun.serve({
 // ---------- engine falso ----------
 const turns: Turn[] = []
 const mentionNext = new Map<string, string>() // texto da resposta por nome de agente (para testar repasse)
+let manyMemories = 0 // > 0: a consolidação falsa propõe tantas memórias de usuário
 
 async function useTool(t: Turn, name: string, args: Record<string, unknown>) {
   const client = new Client({ name: "fake-cli", version: "1" })
@@ -59,6 +60,11 @@ async function useTool(t: Turn, name: string, args: Record<string, unknown>) {
 const FakeEngines = Layer.succeed(Engines, {
   run: (t) => {
     turns.push(t)
+    if (t.system === CONSOLIDATION_SYSTEM && manyMemories)
+      return Stream.make<EngineEvent[]>(
+        { type: "text", delta: JSON.stringify({ summary: "S", memories: Array.from({ length: manyMemories }, (_, i) => ({ scope: "user", text: `Preferência número ${i}` })) }) },
+        { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }
+      )
     if (t.system === CONSOLIDATION_SYSTEM)
       return Stream.make(
         { type: "text" as const, delta: JSON.stringify({ summary: "Falaram de deploy.", memories: [{ scope: "project", text: "Deploy é na Vercel" }, { scope: "team", text: "fora do escopo" }], skills: [{ scope: "project", title: "Publicar o site", text: "1. bun run build\n2. vercel deploy" }] }) },
@@ -102,8 +108,7 @@ async function send(chatId: string, body: unknown, onApproval?: (e: Extract<Send
   let buf = ""
   for await (const chunk of res.body.pipeThrough(new TextDecoderStream())) {
     buf += chunk
-    let i: number
-    while ((i = buf.indexOf("\n\n")) >= 0) {
+    for (let i = buf.indexOf("\n\n"); i >= 0; i = buf.indexOf("\n\n")) {
       const line = buf.slice(0, i)
       buf = buf.slice(i + 2)
       if (!line.startsWith("data: ")) continue
@@ -233,4 +238,44 @@ test("erros na fronteira: entrada inválida 400, chat inexistente 404, agente de
   const foreign = await api((c) => c.agents.create({ payload: { projectId: other.id, name: "X", instructions: "", model: "ollama/llama3" } }))
   const res = await fetch(`${base}/api/chats`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ projectId: null, agentIds: [foreign.id], model: "ollama/llama3" }) })
   expect(res.status).toBe(404)
+})
+
+test("só local: Host estranho (DNS rebinding) e Origin de outro site (CSRF) recebem 403", async () => {
+  const { isLocalRequest } = await import("./main.ts")
+  expect(isLocalRequest({ host: "localhost:5173" })).toBe(true)
+  expect(isLocalRequest({ host: "127.0.0.1:4317", origin: "http://127.0.0.1:4317" })).toBe(true)
+  expect(isLocalRequest({ host: "evil.example:4317" })).toBe(false)
+  expect(isLocalRequest({ host: "localhost:4317", origin: "https://evil.example" })).toBe(false)
+  expect(isLocalRequest({ host: "localhost:4317", origin: "null" })).toBe(false)
+  expect(isLocalRequest({})).toBe(false)
+
+  // POST "simples" (text/plain) de outra página: nunca chega a disparar um turno.
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
+  const before = turns.length
+  const res = await fetch(`${base}/api/chats/${chat.id}/send`, { method: "POST", headers: { "content-type": "text/plain", origin: "https://evil.example" }, body: '{"text":"oi"}' })
+  expect(res.status).toBe(403)
+  expect(turns.length).toBe(before)
+  expect((await fetch(`${base}/api/projects`, { headers: { origin: "https://evil.example" } })).status).toBe(403)
+  expect((await fetch(`${base}/api/projects`, { headers: { origin: base } })).status).toBe(200)
+})
+
+test("aprendizado: esquecidas vão para a consolidação e podem ser restauradas; teto de 20 pendentes", async () => {
+  const forgotten = await api((c) => c.memories.create({ payload: { scope: "user", kind: "fact", title: "", text: "Gosta de emojis" } }))
+  await api((c) => c.memories.update({ params: { id: forgotten.id }, payload: { state: "forgotten" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
+  await send(chat.id, { text: "oi" })
+
+  manyMemories = 25
+  const before = (await api((c) => c.memories.list())).filter((m) => m.state === "pending" && m.scope === "user").length
+  await api((c) => c.chats.consolidate({ params: { id: chat.id } }))
+  manyMemories = 0
+  expect(turns.at(-1)!.messages[0]!.text).toContain("mandou esquecer (não proponha de novo, nem com outras palavras):\n- Gosta de emojis")
+  const pending = (await api((c) => c.memories.list())).filter((m) => m.state === "pending" && m.scope === "user")
+  expect(pending.length).toBe(Math.max(before, 20))
+
+  // via de volta: a esquecida continua listada e volta a ativa
+  expect((await api((c) => c.memories.list())).find((m) => m.id === forgotten.id)!.state).toBe("forgotten")
+  await api((c) => c.memories.update({ params: { id: forgotten.id }, payload: { state: "active" } }))
+  await send(chat.id, { text: "e aí" })
+  expect(turns.at(-1)!.system).toContain("Gosta de emojis")
 })

@@ -11,9 +11,11 @@
     "start": "bun run build && bun apps/server/src/main.ts",
     "desktop": "bun run --cwd apps/desktop start",
     "desktop:build": "bun run --cwd apps/desktop prebuild && bun run --cwd apps/desktop build",
-    "typecheck": "tsc -p apps/server && tsc -p apps/web"
+    "typecheck": "tsc -p apps/server && tsc -p apps/web",
+    "lint": "biome lint"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.6.4",
     "@types/bun": "^1.4.4",
     "typescript": "^7.0.2"
   }

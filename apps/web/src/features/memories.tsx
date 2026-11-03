@@ -12,6 +12,7 @@ export function MemoriesView() {
   const facts = active.filter((m) => m.kind === "fact")
   const skills = active.filter((m) => m.kind === "skill")
   const scopes = [...new Set(facts.map((m) => m.scope))]
+  const forgotten = data.memories.filter((m) => m.state === "forgotten")
 
   return (
     <Page title="Memórias e skills">
@@ -51,6 +52,18 @@ export function MemoriesView() {
             ))}
         </section>
       ))}
+
+      {forgotten.length > 0 && (
+        <details className="flex flex-col gap-2">
+          <summary className="cursor-pointer font-semibold">Esquecidas ({forgotten.length})</summary>
+          <p className="my-2 text-sm text-muted">Não entram no contexto e a consolidação é avisada para não propor de novo.</p>
+          <div className="flex flex-col gap-2">
+            {forgotten.map((m) => (
+              <MemoryRow key={m.id} memory={m} label={scopeLabel(m.scope, data)} onChange={reload} />
+            ))}
+          </div>
+        </details>
+      )}
     </Page>
   )
 }
@@ -98,14 +111,22 @@ function MemoryRow({ memory: m, label, onChange }: { memory: Memory; label?: str
           Aprovar
         </Button>
       )}
-      {!editing && (
-        <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
-          Editar
+      {m.state === "forgotten" ? (
+        <Button size="sm" variant="ghost" onClick={() => patch({ state: "active" })}>
+          Restaurar
         </Button>
+      ) : (
+        <>
+          {!editing && (
+            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+              Editar
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => patch({ state: "forgotten" })}>
+            {m.state === "pending" ? "Descartar" : "Esquecer"}
+          </Button>
+        </>
       )}
-      <Button size="sm" variant="ghost" onClick={() => patch({ state: "forgotten" })}>
-        {m.state === "pending" ? "Descartar" : "Esquecer"}
-      </Button>
     </Card>
   )
 }
@@ -119,7 +140,11 @@ function NewMemory({ onCreated }: { onCreated: () => void }) {
   const skill = kind === "skill"
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    call((c) => c.memories.create({ payload: { scope, kind, title: skill ? title.trim() : "", text: text.trim() } })).then(() => (setText(""), setTitle(""), onCreated()))
+    call((c) => c.memories.create({ payload: { scope, kind, title: skill ? title.trim() : "", text: text.trim() } })).then(() => {
+      setText("")
+      setTitle("")
+      onCreated()
+    })
   }
   return (
     <form onSubmit={submit} className="flex flex-col gap-2">

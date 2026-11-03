@@ -1,0 +1,522 @@
+# Arquitetura do Zero
+
+Este documento registra o estado atual, a arquitetura alvo e as decisões tomadas, com o motivo e as alternativas descartadas.
+
+Ele vem antes do código: ao mudar uma decisão, atualize aqui e em `.agent/memory/`. Para saber de onde veio cada prática (a reference app, T3 Code, a reference app, Zeron, ai-memory), consulte [references.md](references.md).
+
+Revisado em 2026-11-03.
+
+**Propósito:** o Zero é, **agora**, uma plataforma de agentes **para código**: desktop e web local, projetos, equipe de agentes, memória e contexto próprios. **Depois**, evolui para **hospedado e automação**, sem reescrever, porque as portas para isso ficam abertas desde já (D17).
+
+---
+
+## 1. Decisões
+
+| # | Decisão | Por quê | Descartado |
+|---|---|---|---|
+| D0 | **Leve primeiro**: um processo, um arquivo de banco, **nenhum serviço externo obrigatório** (nada de Qdrant, Ollama, Redis ou mem0 para funcionar). Cada recurso começa no mínimo útil e só cresce quando uma medição (latência, recall, custo) mostra que precisa; o resto vai para o backlog com critério de entrada | Pedido explícito: simples, leve e eficiente. Menos peças = menos falhas e instalação trivial (desktop e, depois, hospedado) | Recursos completos desde o início (tiers, grafo, RAG de documentos, várias fontes): mais código e mais dependências antes de provar valor |
+| D1 | **Effect de ponta a ponta**: server, contrato e front | Um schema, um modelo de erro, um modelo de stream, do banco até o componente. É a mesma escolha do T3 Code, que tem ~490 átomos no front e usa `effect/rpc` em web, desktop e mobile | **oRPC**: a integração com Effect é experimental, traduz erros e streams nas duas pontas e não tem referência desse porte. **tRPC/Hono**: abandonaria o `HttpApi` |
+| D2 | **Effect Schema**, sem Zod | O `HttpApi`/`effect/rpc` geram validação, codificação, erros e client a partir dele. É bidirecional | Zod. Ele só entra como dependência interna do Claude Agent SDK, restrito ao adaptador do Claude |
+| D3 | **Transporte**: `HttpApi` para o CRUD; `effect/rpc` sobre WebSocket para turnos e eventos | O turno sai da requisição HTTP. Comandos e assinatura ficam separados | SSE preso ao `POST` (o modelo atual). oRPC |
+| D4 | **Front com átomos** (`effect/reactivity` + `@effect/atom-react`): `AtomHttpApi` no CRUD, `AtomRpc` no chat | Cache, stale-while-revalidate, invalidação por chave e otimismo, gerados do mesmo contrato | TanStack Query. Exigiria oRPC ou um client paralelo |
+| D5 | **Harness primeiro, com uma regra por credencial**. **Assinatura → harness do dono**: Claude Agent SDK, Codex App Server ou ACP da CLI. **API key → OpenCode via ACP, para todos os providers**, inclusive Anthropic e OpenAI. O `effect/ai` fica só para tarefas internas (consolidação, títulos, roteamento, revisão de memória) e para a conversa rápida sem workspace | Sessão viva, steering, interrupção e troca de modelo ao vivo, com ferramentas de código maduras (arquivos, shell, edição, LSP, compactação, permissões). No modo chave há um só caminho: injeção de credenciais, catálogo de modelos (models.dev) e permissões, com o mesmo comportamento ao trocar entre modelos. Os adaptadores de assinatura não precisam tratar chave. É o desenho de a reference app, T3 Code e Zeron. **Custo aceito:** os modelos da Anthropic e da OpenAI podem render um pouco menos no OpenCode do que nos harnesses dos donos. A medição por turno decide se algum provider ganha rota nativa | `claude -p` / `codex exec` por turno (3–7 s por turno, perde o trabalho entre turnos). Loop de ferramentas próprio sobre `effect/ai` para agentes com API key (reinventaria um harness, pior). ACP também para Claude/Codex (fica atrás do nativo). Mastra/LangGraph (dois runtimes, estado e memória duplicados, Zod) |
+| D6 | **Contexto híbrido**: sessão nativa quando o engine permite, com o **contexto em camadas do Zero como ponto de retomada** | Mantém o diferencial (contexto curado, memórias aprovadas, troca livre de modelo) e ganha latência, cache e continuidade das ferramentas | Só sessão nativa (perde o controle do contexto; handoff cru de 32k como no a reference app). Só sem sessão (custo de processo por turno; perde o trabalho entre turnos) |
+| D7 | **Aprendizado contínuo com controle**: o Zero aprende sozinho enquanto trabalha (D18). **O conhecimento do projeto entra direto**, com histórico de versões, desfazer e um feed "o que o Zero aprendeu". **O que é sobre você** (preferências, jeito de trabalhar, que vale em todos os projetos) **passa pela sua aprovação** | Aprovar cada página de conhecimento vira trabalho demais em aprendizado contínuo; versão + desfazer + feed dão controle com custo baixo (como o ai-memory). O que é pessoal e atravessa projetos continua sob aprovação | Aprovar tudo (trava o aprendizado). Gravar tudo sem revisão nem histórico (a reference app) |
+| D8 | **Ferramentas só pelo gateway do Zero** | Política e aprovação valem para todo engine | Ferramentas configuradas direto em cada CLI |
+| D9 | **Drizzle ORM 1.0 (rc, versão fixada) sobre `@effect/sql`**: **`@effect/sql-sqlite-bun`** (o SQLite do próprio Bun) agora e `@effect/sql-pg` quando hospedado. Tabelas simples, mais recibos idempotentes onde há retentativa. Migrations geradas pelo `drizzle-kit`. FTS5 e triggers em SQL puro (`sql`). Tipos do repositório derivados por `drizzle-orm/effect-schema`; **o contrato da API continua separado das tabelas** | Consultas tipadas e schema em TypeScript sem sair do Effect: o Drizzle roda sobre o cliente do `@effect/sql`, então erros, transações e traces continuam no Effect. Trocar de banco é trocar o driver do Effect. Integração nativa com Effect 4 a partir do `drizzle-orm@1.0.0-beta.24`; no `rc.5`, com os drivers `sqlite-bun`, `pg` e outros. O SQLite do Bun não exige módulo nativo extra (D0) | `bun:sqlite` direto (o estado atual: tudo à mão, sem portabilidade). libSQL (vetores nativos): só se justificava com RAG de documentos, que saiu do escopo (D18); se embeddings vierem a ser necessários, começam por força bruta no próprio SQLite. `@effect/sql-drizzle` (só Effect 3). Event sourcing completo (a reference app, T3 Code): só com sincronização entre dispositivos. **Risco aceito:** a 1.0 ainda é release candidate, e o schema é por banco (`sqliteTable` → `pgTable` exige portar uma vez ao hospedar) |
+| D10 | **Rotinas e fluxos duráveis com `effect/workflow`** (fase futura) | Já está no pacote `effect` | LangGraph, Temporal |
+| D11 | **Desktop com Electrobun**, que sobe o mesmo server. A partir da fase 7, o server roda como **processo em background separado da janela**: fechar a janela não para turnos nem rotinas, e a janela só se conecta (como o Zeron faz) | Bun no processo principal e um único binário | Electron (exigiria Node e mais um runtime). Server dentro da janela para sempre (morre ao fechar, e as rotinas não rodam) |
+| D12 | **Licença Apache-2.0**. Código derivado só de projetos MIT/Apache, com `NOTICE` | — | Código do a reference app (PolyForm Noncommercial) |
+| D13 | **i18n desde já, com inglês como único idioma por enquanto**. Todo texto visível ao usuário sai de um catálogo tipado (`packages/i18n`). O inglês é a fonte da verdade, e um idioma novo só entra completo | Adicionar idiomas depois vira só traduzir, sem caçar texto no código. Chave faltando não compila | Texto fixo nos componentes (o estado atual, em português). Libs pesadas (i18next, FormatJS) enquanto houver um só idioma: `Intl` cobre plural, datas e números |
+| D14 | **Multicontas por provider**: cada conta é um registro com credencial isolada (pasta de login própria da CLI para assinaturas; chave própria no chaveiro para API keys). Agente e chat escolhem a conta. Trocar de conta funciona como trocar de provider (o ponto de retomada entra na sessão nova). **Troca automática (failover) opcional**: lista ordenada de alternativas por agente/chat, acionada por limite ou erro do provider, **ligada só por escolha explícita** e com aviso de termos para assinaturas | Separar conta de trabalho e pessoal e dividir limites é um pedido comum, e a troca automática evita parar o trabalho no meio. T3 Code e a reference app suportam multicontas, e o a reference app faz o failover automático. Com o nosso contexto, a troca não precisa do "shadow home" do T3 Code e pode ir até para outro provider | Failover ligado por padrão: alternar contas de assinatura para contornar limite pode violar os termos dos providers (o T3 Code recusa por isso), então o risco precisa ser assumido explicitamente pelo usuário. Pool com rodízio de contas no Zero: fica com proxy externo |
+| D15 | **Área de consumo**: tokens, custo estimado e tempo por turno, agregados por agente, projeto, conta e modelo, mais as janelas de limite de cada assinatura e alertas configuráveis | Saber quanto cada agente e projeto consome, quanto falta da assinatura e quando ela reseta. É a base do failover e da decisão de rota nativa vs OpenCode. a reference app e a reference app têm | Só tokens por mensagem (o estado atual). Bloqueio rígido por orçamento sem aviso prévio |
+| D16 | **Projeto próprio, sem fork do T3 Code**. Do T3 Code (MIT) **copiamos** `packages/effect-acp` e `packages/effect-codex-app-server`, que são inteiros e não dependem de nada interno dele, com atribuição no `NOTICE`. Os adaptadores do Claude e do OpenCode, os leitores de uso e o padrão de átomos e RPC servem de **referência** | O diferencial do Zero (contexto, memória, equipe) fica no centro do desenho, e não enxertado em 94 mil linhas de orquestração. O trabalho de código é feito pelos harnesses, então a interface de código que precisamos é moderada. O server em Bun é enxuto e vira binário único para hospedar | Fork rígido do T3 Code: traria git, terminal e acesso remoto prontos, mas também Node + pnpm + Electron, ~600 mil linhas para manter e nenhum i18n. **Critério para rever:** se a experiência completa de git dele (worktrees, PRs, revisão, terminal) virar prioridade de curto prazo |
+| D17 | **Portas abertas para hospedar**, sem construir a hospedagem agora: (1) toda requisição resolve um `Actor` (hoje, sempre o dono local; `LocalOnly` vira uma forma de acesso); (2) banco via `@effect/sql` + Drizzle (D9); (3) segredos só pelo serviço `Secrets` (chaveiro agora, cofre no banco depois); (4) serviço `Workspace` (pasta local + sandbox do harness agora, container depois); (5) memória com **de quem é** e **quem ouve** desde a primeira migration; (6) agente como dado versionado; (7) motores atrás da interface `Engine` (um runtime leve para automação entra depois como mais um motor) | Cada item custa pouco agora e muito depois, principalmente dados (memória sem dono/público, banco preso ao driver) | Construir a hospedagem já (login, equipe, cofre, Postgres, containers): fica para a fase 8. Ignorar a hospedagem: obrigaria a reescrever acesso, banco e memória |
+| D18 | **Conhecimento aprendido, no modelo do ai-memory**: **captura → consolida → recupera → passa o bastão**. Um único modelo, a **página de conhecimento** (fato, decisão, como-fazer, armadilha, referência, sessão), substitui as tabelas de memórias e skills. A captura sai do próprio runtime; a consolidação funciona **sem LLM** (página de sessão extraída dos passos) e, opcionalmente, com uma chamada de modelo barato; a recuperação é um **resumo de entrada curto** no contexto + busca FTS sob demanda | O agente continua o trabalho sem reexplicações: o que foi decidido, o que falhou, como se faz aqui. Um modelo só é mais simples que memórias + skills + base de documentos. Sem LLM obrigatório, sem serviço externo (D0) | RAG de documentos por upload (fica no backlog). mem0 (grava sem controle, exige banco vetorial externo no SDK TS; disponível via MCP para quem quiser). Grafo, entidades e tiers de decaimento (backlog) |
+
+---
+
+## 2. Visão geral (alvo)
+
+```
+ apps/web (React + átomos)          apps/desktop (Electrobun: janela nativa)
+   │ AtomHttpApi ──── HTTP ────┐       │
+   │ AtomRpc ─── WebSocket ────┤       │ sobe o mesmo server numa porta livre
+   ▼                           ▼       ▼
+ apps/server ── LocalOnly (Host/Origin) ───────────────────────────────────
+   ├─ HttpApi (CRUD: projetos, agentes, chats, memórias, MCP, contas, consumo, settings)
+   ├─ Rpc (send, steer, interrupt, decide, subscribeChat)
+   ├─ Runtime de turnos ── fila por chat · estado persistido · recuperação no boot
+   │     ├─ Contexto ─── camadas + marcação de leitura por sessão + passos de trabalho
+   │     ├─ Engines ──── ClaudeSdk │ CodexAppServer │ Acp(*) │ Api(effect/ai)
+   │     └─ Gateway MCP ─ zero.* (ferramentas internas) + MCP do usuário · política · aprovação
+   ├─ Conhecimento ── captura (passos + mensagens) → consolidação → páginas versionadas → resumo de entrada + busca FTS
+   ├─ Contas e consumo ── provider_accounts · failover · janelas de limite · custo
+   ├─ Actor (acesso) · Workspace (onde o agente trabalha)
+   └─ Store (Drizzle sobre @effect/sql: SQLite do Bun agora, Postgres depois) · Secrets (chaveiro agora, cofre depois)
+```
+
+---
+
+## 3. Módulos
+
+| Módulo | Hoje | Alvo |
+|---|---|---|
+| `packages/contracts` | Entidades + `Api` (HttpApi) + `SendEvent` | + `ZeroRpc` (`RpcGroup`) com `ChatEvent` tipado. O `SendEvent` sai |
+| `server/db.ts` | 3 migrations; repositório síncrono sobre `bun:sqlite` | `db/schema.ts` (Drizzle) + `db/migrations/` (`drizzle-kit`) + repositórios em Effect sobre `@effect/sql-sqlite-bun`. Novas tabelas: `turns`, `approvals`, `provider_sessions`, `provider_accounts`, `usage_windows`, passos de trabalho estruturados, `projects.path`, lista de failover em agente e chat, `observations`, `pages` (+ `page_versions`, FTS5) com dono/público, versões de agente |
+| `server/access.ts`, `server/workspace.ts` | — | `Actor` (quem faz a requisição) e `Workspace` (onde o agente trabalha): portas da D17 |
+| `server/usage/` | Tokens por mensagem | `pricing.ts` (preço por modelo, do catálogo do OpenCode/models.dev, com fallback manual), `windows.ts` (leitura das janelas de limite por conta, com cache e espaçamento), `aggregate.ts` (consultas da área de consumo) |
+| `server/engines.ts` | Wrappers de CLI + `effect/ai` num arquivo só | Pasta `engines/`: `types.ts` (interface + capacidades), `claude-sdk.ts`, `codex-app-server.ts`, `acp.ts` (sobre `packages/effect-acp`, copiado do T3 Code), `api.ts`. O Codex usa `packages/effect-codex-app-server`, também copiado |
+| `server/chat.ts` | Turno dentro do stream da requisição | `runtime/`: `queue.ts` (fila por chat), `turn.ts` (execução de uma resposta), `recovery.ts` (boot), `events.ts` (PubSub por chat) |
+| `server/context.ts` | Montagem completa a cada turno | + `deltaSince(sessão)` (só o que a sessão não viu); a montagem completa vira o ponto de retomada |
+| `server/tools.ts` | Hub + gateway + política | + ferramentas internas `zero.*`; ponte de permissões das ferramentas nativas |
+| `server/knowledge/` | Memórias e skills espalhadas em `chat.ts`/`db.ts`/`context.ts` | `capture.ts` (observações por turno, sem segredos), `consolidate.ts` (página de sessão sem LLM + propostas com LLM opcional), `brief.ts` (resumo de entrada), `search.ts` (FTS), `redact.ts` |
+| `web/api.ts`, `state.ts` | `call()` + `useState` + `reload()` | `client.ts` (`AtomHttpApi.Service` + `AtomRpc`) e átomos por recurso |
+
+Regra: o domínio (contexto, engines, aprendizado, ferramentas) não importa nada de transporte. `main.ts` e `rpc.ts` só traduzem.
+
+---
+
+## 4. Contrato e transporte
+
+**CRUD (`HttpApi`, já existe):** projetos, agentes, chats (sem envio), memórias, servidores MCP, chaves, modelos. **Novos:** contas (`provider_accounts`, login, failover) e consumo (agregados, janelas, orçamentos).
+
+**Turnos (`effect/rpc` em `/rpc`, WebSocket):**
+
+```ts
+RpcGroup.make(
+  Rpc.make("send",          { payload: { chatId, clientId, text, model? }, success: { turnId } }),  // clientId: idempotência
+  Rpc.make("steer",         { payload: { chatId, text } }),
+  Rpc.make("interrupt",     { payload: { chatId } }),
+  Rpc.make("decide",        { payload: { approvalId, approve } }),
+  Rpc.make("subscribeChat", { payload: { chatId }, success: ChatEvent, stream: true })
+)
+```
+
+- `subscribeChat` sempre começa com um `snapshot` (mensagens desde o resumo, turno em andamento, aprovações abertas, fila) e segue com eventos ao vivo. **Reconectar é assinar de novo.**
+- `ChatEvent`: `snapshot | queued | turn-started | text (agrupado) | reasoning | tool | approval | approval-resolved | turn-completed | turn-failed | interrupted | context-usage`.
+- **Deltas de texto agrupados a cada 100 ms** ou 8 KiB (referência: a reference app 100 ms, Zeron 120 ms).
+- `LocalOnly` cobre HTTP e WebSocket.
+
+---
+
+## 5. Runtime de turnos
+
+**Estados** (tabela `turns`): `queued → running → completed | failed | interrupted`. As colunas são `chat_id`, `agent_id`, `model`, `client_id UNIQUE`, `started_at`, `ended_at`, `error`, `usage`.
+
+- **Fila por chat**, com um turno por vez. O encadeamento de agentes (@menção, até 3 repasses) gera novos turnos na mesma fila.
+- **Mensagem com o agente ocupado:** vai para a fila por padrão. Vira `steer` se o engine suportar e você pedir.
+- **Interromper:** pelo engine (`interrupt`/`turn/interrupt`). O texto parcial é gravado como `interrupted`.
+- **Aprovações** ficam persistidas (`approvals`) e não mais só em memória. Ao fechar o turno, as abertas viram recusa.
+- **Idempotência:** `send` com o mesmo `clientId` devolve o mesmo `turnId`, então reenviar não duplica.
+- **Recuperação no boot:** um turno `running` sem processo vira `interrupted`, e a mensagem parcial é preservada. Nunca repete efeito colateral incerto (regra do a reference app).
+- **O turno não depende do cliente.** Fechar a aba não para nada.
+
+---
+
+## 6. Engines
+
+```ts
+interface Engine {
+  readonly capabilities: {
+    session: "native" | "none"          // native: mantém sessão viva entre turnos
+    steer: boolean
+    interrupt: boolean
+    liveModelSwitch: boolean            // troca de modelo sem nova sessão
+    images: boolean
+    reasoningEffort: ReadonlyArray<"low" | "medium" | "high" | "max">
+    nativeTools: boolean                // shell/edição próprios da CLI
+  }
+  open(input: { chatId; agentId; model; cwd; resume?: ProviderSessionId; tools?: TurnTools; permissions }): Effect<EngineSession>
+}
+interface EngineSession {
+  readonly id: ProviderSessionId
+  turn(input: { system?: string; messages: TurnMessage[]; images?; effort? }): Stream<EngineEvent>
+  steer(text: string): Effect<void>
+  interrupt: Effect<void>
+  setModel(model: string, effort?: string): Effect<void>
+  close: Effect<void>
+}
+```
+
+| Adaptador | Base | Sessão | Observações |
+|---|---|---|---|
+| `claude-sdk` | `@anthropic-ai/claude-agent-sdk` (roda a CLI oficial) | nativa (`resume`) | `setModel` ao vivo. `canUseTool` → cartão de aprovação. Ferramentas do Zero via servidor MCP no mesmo processo. Login nunca é lido |
+| `codex-app-server` | `codex app-server` (JSON-RPC) | nativa (`thread/resume`) | Modelo por `turn/start`. `turn/steer`, `turn/interrupt`, `thread/compact/start`, `model/list`, `account/rateLimits/read`. Sandbox `read-only`/`workspace-write` |
+| `acp` | `effect-acp` (T3 Code, MIT) | nativa quando o agente suporta | **OpenCode** (harness de **todas** as API keys), Gemini CLI, Cursor, Kimi, Cline, Grok, Hermes |
+| `api` | `effect/ai` | `none` | **Não é agente de projeto.** Só para consolidação, títulos, roteamento, revisão de memória e conversa rápida sem workspace. Marcadores de cache, uma mensagem por bloco |
+
+**Credencial → harness:**
+
+| Credencial | Harness | Como a credencial chega |
+|---|---|---|
+| Assinatura Claude (Pro/Max) | `claude-sdk` | Login da própria CLI (nunca lido pelo Zero) |
+| Assinatura ChatGPT | `codex-app-server` | Login da própria CLI |
+| Outras CLIs com assinatura própria (Gemini CLI, Cursor, Kimi…) | `acp` | Login da própria CLI |
+| **Qualquer API key**: Anthropic, OpenAI, OpenRouter, Gemini, DeepSeek, Groq; ou servidor local (Ollama, LM Studio, base OpenAI-compatível) | `acp` → `opencode acp` | Config injetada por `OPENCODE_CONFIG_CONTENT` (provider, modelo, `baseURL`, `apiKey` vinda do chaveiro). O `opencode.json` do usuário nunca é tocado. A permissão vem do nível de acesso do Zero (seção 9) |
+
+**Quem decide o harness é a conta, não o nome do modelo.** A escolha é o par `{ accountId, model }`: uma conta `subscription/claude` usa o Claude Agent SDK, e uma conta `api-key/anthropic` usa o OpenCode, mesmo que o modelo seja o mesmo. O seletor mostra os dois ("Sonnet · Claude pessoal" e "Sonnet · chave Anthropic"). Trocar entre eles equivale a trocar de provider: o ponto de retomada entra na sessão nova.
+
+*Migração do estado atual:* os ids `claude-cli/…`, `codex-cli/…` e `anthropic/…` viram a conta padrão do provider correspondente mais o nome do modelo.
+
+- **Mesmas garantias para todos:** contexto em camadas e ponto de retomada, conhecimento aprendido, gateway MCP com política e aprovação, fila, interrupção e troca de modelo. O harness só faz o trabalho de agente de código.
+- **Várias contas por provider:** ver 6.1.
+- **Modelos** listados pelo próprio harness (`model/list`, catálogo do OpenCode via models.dev), e não por lista fixa. Cada conta tem a sua lista, porque contas diferentes podem ter modelos diferentes.
+
+### 6.1 Multicontas (D14)
+
+**Modelo de dados.** Tabela `provider_accounts`:
+
+| coluna | descrição |
+|---|---|
+| `id`, `label` | ex.: "Claude trabalho", "Claude pessoal" |
+| `kind` | `subscription` \| `api-key` |
+| `provider` | `claude`, `codex`, `gemini-cli`… (assinatura) ou `anthropic`, `openai`, `openrouter`… (chave) |
+| `home` | assinatura: pasta de login gerenciada pelo Zero, `~/.zero/accounts/<id>`, ou `null` para o login padrão da CLI |
+| `secret` | chave: nome no chaveiro (`account:<id>`). O valor nunca vai para o banco |
+| `base_url` | chave: opcional (Ollama, LM Studio, base OpenAI-compatível) |
+| `identity` | o que o harness reportar (e-mail ou plano), só para exibição |
+
+A conta "padrão" de cada CLI é a que já está logada no seu computador (`home = null`). Ela aparece sem cadastro.
+
+**Como a credencial chega ao harness:**
+
+| Tipo | Isolamento |
+|---|---|
+| Claude (assinatura) | `CLAUDE_CONFIG_DIR=<home>` no processo do SDK. Não muda `HOME` nem o chaveiro do sistema (mesmo cuidado do T3 Code) |
+| Codex (assinatura) | `CODEX_HOME=<home>`. Se a CLI usar o chaveiro do sistema para o login, a conta extra precisa de armazenamento em arquivo (limitação do Codex, também documentada pelo T3 Code) |
+| CLIs ACP (assinatura) | A variável de pasta de cada CLI (`GEMINI_HOME`, `GROK_HOME`…), declarada no adaptador |
+| API key (OpenCode) | A chave da conta vai na config injetada daquela sessão. Duas contas Anthropic são dois providers distintos na config |
+
+**Login dentro do Zero.**
+- O Zero roda o comando de login oficial da CLI com a pasta da conta. Por exemplo: `CLAUDE_CONFIG_DIR=… claude auth login`, `CODEX_HOME=… codex login`.
+- O fluxo acontece no navegador do provider. O Zero nunca vê nem guarda o token.
+- Depois, o Zero lê do harness só a identidade, para exibir.
+- Remover a conta apaga a pasta, com confirmação.
+
+**Escolha da conta:**
+- Agente e chat têm `accountId`. O id do modelo continua `provider/modelo`.
+- O seletor de modelo lista modelos por conta ("Sonnet · Claude pessoal").
+- Os membros de um canal podem usar contas diferentes.
+- **Trocar de conta no meio do chat** encerra a sessão da conta antiga e abre outra na conta nova com o ponto de retomada, igual a uma troca de provider. Não reaproveita a sessão nativa entre contas, então não há "shadow home": é mais simples e não depende de como cada CLI guarda sessões.
+
+**Troca automática (failover).**
+
+*Configuração:* cada agente (e cada chat, quando sobrescreve) tem uma lista ordenada de até 8 alternativas `{ conta, modelo }`. As alternativas podem ser de outro provider, por exemplo: assinatura Claude pessoal → assinatura Claude trabalho → chave da Anthropic via OpenCode → chave do OpenRouter. Como o contexto é nosso, qualquer alternativa continua o trabalho. A lista começa vazia, e o failover fica desligado até você montá-la.
+
+*Aviso:* ao incluir uma **segunda conta de assinatura do mesmo provider** na lista, o Zero mostra uma vez, e grava que você aceitou: "Alternar contas de assinatura para contornar limites pode violar os termos do provider e levar a bloqueio da conta. O risco é seu." Alternativas por API key não têm esse aviso, mas mostram que passam a ter custo por token.
+
+*Gatilhos* (classificados pelo adaptador a partir do sinal de cada harness: `rate_limit_event` do Claude, erros e `account/rateLimits` do Codex, erros do OpenCode):
+
+| Gatilho | O que acontece |
+|---|---|
+| **Limite da assinatura** (com horário de volta) | A conta fica em espera até o reset. O turno vai para a primeira alternativa pronta. **Volta sozinho** para a conta principal quando o reset passa |
+| **Erro do provider**: `rate_limit`, `billing`, `unavailable`, `auth`, `network`, `timeout` | **Só se o turno ainda não agiu**: nenhuma ferramenta que escreve foi executada. A mensagem volta para a fila e roda na próxima alternativa. A conta que falhou é pulada por 10 min |
+| Erro depois de o turno ter agido | **Não troca.** Falha com a explicação e oferece retomar manualmente; nunca repete efeito colateral incerto |
+| Erro de conteúdo / pedido inválido | Não troca: outro modelo daria o mesmo erro |
+
+*Limites:* cada mensagem tenta cada alternativa no máximo uma vez. Se todas falharem, o turno falha e lista o motivo de cada tentativa.
+
+*Visibilidade:*
+- Toda troca aparece no chat ("Limite da Claude pessoal até 14:30, continuando com Claude trabalho").
+- A mensagem guarda conta e modelo que de fato responderam.
+- A medição por turno registra as trocas.
+
+*Leitura de uso por conta:* as janelas de limite da assinatura (Claude, Codex) entram junto com o failover. Assim o Zero sabe quando a conta volta e pode avisar antes de chegar ao limite.
+
+*Pool com rodízio* de várias contas para distribuir carga continua fora do Zero (proxy externo como API key de base compatível). O failover só troca quando há falha ou limite, não para balancear.
+
+---
+
+## 7. Contexto (D6)
+
+**Ponto de retomada**, sempre atualizado e guardado no Zero:
+
+```
+base → agente → canal → sobre você (aprovado) → projeto (brief) → resumo de entrada do conhecimento
+     → resumo do chat → passos de trabalho (compactados) → últimas 30 mensagens
+```
+
+**Regras por situação:**
+
+| Situação | Enviado |
+|---|---|
+| Sessão viva, mesmo provider | Só as mensagens após a marcação da sessão (`provider_sessions.seen_message_id`), mais as camadas que mudaram desde o último envio (identificadas por hash) |
+| Troca de modelo no mesmo provider | `setModel` ao vivo (Claude: só no modo de entrada em streaming, que é o que usamos), então igual à linha de cima. **Cada modelo tem seu próprio cache de prompt**, e a primeira chamada depois da troca paga a conversa sem cache |
+| Troca de provider / sessão nova / retomada falhou | **Ponto de retomada completo** |
+| Volta a um provider já usado | Retoma a sessão dele e envia só o que ele ainda não viu (ideia do Zeron) |
+| Engine `api` | Ponto de retomada a cada turno, com cache de prompt |
+
+- **Passos de trabalho:** de cada turno ficam guardadas as ferramentas usadas, os comandos e os arquivos alterados. Entram compactados no ponto de retomada; o detalhe fica disponível por `zero.history_read`.
+- **Handoff tipado:** `{ feito, falhou, em aberto, próximo passo, arquivos }`, gerado sem LLM a partir dos passos de trabalho. Fica preso ao chat e é **oferecido**, nunca consumido automaticamente (lição do ai-memory).
+- **Compactação nativa** da CLI pode acontecer à vontade: o ponto de retomada não depende dela.
+- **Medição em todo turno:** latência até o primeiro token, latência total, tokens de entrada, tokens lidos do cache e tokens de saída. As decisões de contexto se baseiam nesses números.
+
+---
+
+## 8. Conhecimento aprendido (D18, D7)
+
+**Modelo único: a página.**
+
+```
+página = { escopo: projeto | agente | você, tipo, título, resumo (1 linha), corpo,
+           estado: ativa | pendente (só "você") | aposentada, versão anterior,
+           usos, último uso, origem: turnos que a geraram, dono e público (D17) }
+
+tipo: fato · decisão · como-fazer · armadilha · referência · sessão
+```
+
+As memórias e skills de hoje migram para páginas: memória → `fato`, skill → `como-fazer`.
+
+**1. Captura.** O runtime já vê cada turno. Ele grava as **observações**: o pedido, os passos de trabalho (ferramentas, arquivos, comandos, erros) e a resposta, **com segredos removidos antes de gravar**. Não há hooks nem processo extra.
+
+**2. Consolidação**, disparada ao fechar um bloco de trabalho (fração da janela de contexto atingida, fim do chat ou botão):
+- **Sem LLM, sempre:** página `sessão` extraída das observações (o que foi pedido, feito, alterado, o que falhou e o que ficou aberto) e o **handoff tipado** do chat.
+- **Com LLM, opcional** (um modelo barato, uma chamada por bloco): propõe criar ou atualizar páginas de `decisão`, `armadilha`, `como-fazer` e `fato`, e **aposentar** a página que a conversa mostrou estar desatualizada.
+  - O que é do **projeto ou do agente** entra direto, como nova versão.
+  - O que é **sobre você** fica pendente até aprovação.
+  - Teto de pendentes: 20.
+
+**3. Recuperação:**
+- **Resumo de entrada** (camada do contexto, seção 7): título + resumo de 1 linha das páginas **fixadas** e das mais relevantes (recência + usos), dentro de um orçamento de ~1.500 tokens. O corpo não entra.
+- **`zero.knowledge_search`**: busca FTS5 (BM25) no título, resumo e corpo, devolvendo trechos com o link da página. **`zero.knowledge_read`**: abre a página inteira.
+- Cada página entregue ao modelo conta um uso. O que é usado sobe no resumo de entrada; o que não é, desce sozinho.
+- **Embeddings só com medição:** se a avaliação mostrar que a busca por palavra perde recall em paráfrases, entra um modelo local pequeno no processo, por força bruta no SQLite (sem índice vetorial nem serviço externo).
+
+**4. Passar o bastão.** O handoff tipado (`feito, falhou, em aberto, próximo passo, arquivos`) fica preso ao chat. Ele é **oferecido** na retomada e nunca consumido sozinho (lição do ai-memory).
+
+### 8.1 Gerenciar o conhecimento
+
+| Ação | Onde |
+|---|---|
+| **Feed "o que o Zero aprendeu"**: páginas criadas, atualizadas e aposentadas, por projeto e por dia | Tela Conhecimento |
+| Ler, editar, **fixar**, aposentar e restaurar uma página | Tela Conhecimento |
+| **Histórico de versões e desfazer** de cada página | Página |
+| Aprovar, editar ou descartar o que é **sobre você** | Fila "Para revisar" |
+| Ver de onde a página veio (turnos de origem, com link) | Página |
+| **"O que o modelo viu"**: por resposta, as camadas enviadas e os tokens de cada uma (gravado no turno) | Chat |
+| Desligar o aprendizado de um agente ou de um projeto | Configurações do agente ou do projeto |
+| Exportar o conhecimento do projeto em Markdown | Tela Conhecimento |
+
+**Backlog com critério de entrada:**
+
+| Item | Entra quando |
+|---|---|
+| Embeddings locais | A avaliação mostrar perda de recall em paráfrases |
+| Detecção de quase-duplicata e contradição | Duplicatas aparecerem no feed com frequência |
+| Feedback "ajudou / errada" | O resumo de entrada trouxer páginas inúteis com frequência |
+| Espelho em Markdown na pasta do projeto | Pedido de versionar o conhecimento junto com o código |
+| RAG de documentos por upload | Necessidade real de buscar em documentos que não nasceram do trabalho |
+| Grafo, entidades, tiers de decaimento | Mais de ~5 mil páginas por projeto ou recall insuficiente |
+| Integração mem0 | Via MCP, para quem quiser, já funciona sem código novo |
+
+## 9. Ferramentas, aprovações e interação entre agentes
+
+Referência: a reference app (`docs/architecture/agents.md` "Agent communication policy" e `structure.md` sobre permissões). Só ideias: a licença é PolyForm Noncommercial. O a reference app entra no vínculo da aprovação à chamada exata e na recusa com motivo.
+
+### 9.1 Ferramentas
+
+- **Gateway MCP por turno** (já existe): URL secreta, lista fechada, modos `read`/`approve`/`auto` por servidor e escopo global ou por projeto.
+- **Ferramentas internas `zero.*`** no mesmo gateway: conhecimento (`knowledge_search`, `knowledge_read`), histórico (`history_search`, `history_read`), equipe (`list_agents`, `send_message`, `start_task`, `interrupt_agent`) e `ask_user`. Quando passarem de cerca de 15, entram por busca sob demanda (`tool_search`), como no a reference app.
+- **Agente padrão do projeto:** o chat novo no projeto começa com ele; qualquer membro pode responder depois (ideia do AgenticOS).
+- **Workspace do projeto:** o projeto ganha `path` (pasta no disco, opcional). Ela é o `cwd` dos agentes do projeto; sem pasta, o agente roda numa pasta vazia do Zero, como hoje. **O agente nunca acrescenta pastas a si mesmo** (só você), e o Zero recusa a raiz do disco, a home e a pasta de dados do Zero.
+- **Desfazer edições:** o Claude Agent SDK tem `rewindFiles` (checkpoint por mensagem). Os outros harnesses dependem de git: o Zero sugere commitar ou usar uma worktree antes de trabalho em nível Workspace.
+- **OAuth para MCP remoto** fica numa fase futura.
+
+### 9.2 Aprovações
+
+**Nível de acesso por agente**, escolhido só por você, os mesmos três do a reference app:
+
+| Nível | O que faz sem perguntar | O que pergunta | Claude SDK | Codex | OpenCode/ACP |
+|---|---|---|---|---|---|
+| **Workspace** (padrão) | Ler; editar e rodar comandos **dentro** do workspace (pasta do projeto + pastas que você adicionou) | Escrever fora dele; rede; comandos destrutivos; ferramentas MCP de escrita conforme o modo do servidor | `canUseTool` decide por caminho e comando | sandbox `workspace-write` + `approvalPolicy: on-request` | `session/request_permission` + permissões injetadas na config |
+| **Perguntar antes** | Só ler | Toda escrita e todo comando | `canUseTool` pergunta tudo que não é leitura | `read-only` + `on-request` | tudo em `ask` |
+| **Acesso total** | Tudo | Nada (só o que o modo do servidor MCP exigir) | tudo permitido | `danger-full-access` | tudo em `allow` |
+
+**O cartão de aprovação**, igual para ferramenta nativa e MCP:
+- Mostra o agente, a ferramenta, os argumentos (com segredos mascarados) e a pasta.
+- **Vínculo à chamada exata:** um hash da ferramenta mais os argumentos canônicos. Uma aprovação não vale para outra chamada.
+- Respostas possíveis:
+  - **Aprovar uma vez.**
+  - **Sempre permitir** esta ferramenta, neste agente e projeto. Isso grava uma regra visível e revogável.
+  - **Recusar com motivo.** O agente lê o motivo e não tenta de novo sem pedir.
+- **Persistido no banco** (`approvals`): sobrevive a reinício e fechamento da aba.
+- **Expira** (padrão 30 min), e a expiração vale como recusa.
+- **Promover um agente a Acesso total responde sozinho** as aprovações que ele tem esperando (como `answerGrantedRequests` do a reference app).
+
+**Tela "Precisa de você":** reúne aprovações, perguntas (`ask_user`) e logins pendentes de todos os chats, tarefas e rotinas, com link para a origem e notificação do desktop.
+- A aprovação de uma tarefa delegada aparece **também** no chat de quem delegou.
+- **Rotina não tem ninguém olhando.** Cada rotina define o que fazer quando precisar de aprovação:
+  - **recusar e reportar** (padrão);
+  - **esperar** até X horas, avisando.
+
+**Regras de segurança** (do a reference app, mantidas):
+- **Um agente só pode restringir acesso** (o próprio ou de um colega), nunca ampliar. Só você amplia.
+- **Agente criado por outro herda os limites do criador.** Um agente em Workspace não escapa do sandbox criando um colega.
+- **Mudança em servidor MCP feita por agente** (só quando você pede) sempre passa por aprovação. As ferramentas nunca recebem nem devolvem valores de cabeçalho ou variável: chave você digita na tela de MCP.
+- **Ferramentas de canal** recusam pedidos que não vieram de uma pessoa.
+
+### 9.3 Interação entre agentes
+
+**Ferramentas** (`zero.*`):
+
+| Ferramenta | Comportamento |
+|---|---|
+| `list_agents` | Agentes visíveis com **responsabilidades**, status (`working`/`idle`), fila e última atividade. É o primeiro passo antes de delegar |
+| `send_message(to[], text, expectsReply = true, replyTo?)` | Entrega na fila de cada destinatário. Com `expectsReply`, **a resposta final do destinatário volta sozinha** para quem pediu, como mensagem sem pedido de resposta. Há proteção contra loop de repasse (a origem da cadeia é carregada) e idempotência por chave, para reenvio não duplicar |
+| `start_task(agent, text)` | Abre uma **tarefa paralela**: thread lateral com sessão própria e o resultado de volta. No máximo 2 tarefas rodando por agente (configurável até 4) e 8 abertas por iniciativa do próprio agente |
+| `interrupt_agent(agent)` | Só interrompe trabalho **que o próprio chamador pediu**. Nunca trabalho seu, de rotina ou de outro agente. Cancela primeiro os pedidos dele que estão na fila e deixa um aviso ao alvo do motivo da parada |
+| `ask_user` | Pergunta a você (aparece em "Precisa de você"). No Claude, usa o `AskUserQuestion` nativo |
+
+**Semântica:**
+- **Pedido para vários agentes:** as respostas esperam na fila de quem pediu até **todas** as cópias terminarem, e então entram num turno só, que diz quem não respondeu. Uma mensagem sua não espera: entra na hora e leva o que já chegou.
+- **Agente ocupado:** a mensagem de outro agente segue o modo do destinatário (fila por padrão, ou steering se o harness suportar). Respostas de pedido múltiplo e trabalho de canal ficam sempre na fila, para chegarem juntas.
+- **Política de delegação no prompt base:**
+  - consultar `list_agents` antes de dizer que não consegue;
+  - delegar a quem tem a responsabilidade;
+  - nunca devolver a tarefa a quem a passou;
+  - não narrar preparação nem trocar confirmações em loop;
+  - resposta delegada no formato **Status / Resultado / Evidência / Desbloqueio**;
+  - a síntese para você começa com o nome do colega;
+  - nunca dizer que verificou algo sem resultado de ferramenta ou resposta que mostre isso;
+  - pode oferecer criar um especialista, mas só cria se você aceitar.
+
+**Canais:**
+- **Roteamento determinístico primeiro:** destinatário explícito, `@menção` ou `@todos`, resposta a uma tarefa, membro único.
+- **Sem isso, o líder decide** numa chamada sem ferramentas, lendo o resumo do canal e as **responsabilidades** dos membros.
+- Cada membro escolhido recebe a sua tarefa.
+- Limites: até 8 atribuições automáticas por pedido e 2 em paralelo por canal.
+- O repasse por `@menção` entre agentes continua com teto de 3 respostas seguidas sem mensagem sua.
+
+**Visibilidade (onde o Zero vai além):**
+- A troca entre agentes aparece no chat como um bloco **recolhido** "conversa entre agentes": quem pediu o quê, a quem, e o resultado.
+- O **consumo por delegação** (tokens e custo de cada colega) entra na área de consumo.
+- O **"o que o modelo viu"** de cada colega também fica acessível.
+
+## 10. Front
+
+- **Runtime da página:** `ZeroClient = AtomHttpApi.Service(...)` + `AtomRpc` sobre WebSocket com reconexão.
+- **CRUD:** `ZeroClient.query(..., { reactivityKeys })` + `Atom.swr`. Mutations com as mesmas chaves revalidam sozinhas, e o `reload()` some.
+- **Chat:** `Atom.family(chatId → subscribeChat)`. O componente lê o estado (snapshot + eventos) e renderiza a resposta ao vivo agrupada.
+- **Design system:** sem mudança (`styles.css` + `ui.tsx`).
+
+---
+
+## 10.1 Internacionalização (D13)
+
+**Hoje:** a interface tem ~60 textos fixos em português, e os textos que o server mostra (erros, avisos) também são fixos.
+
+**Alvo:**
+
+- **`packages/i18n`:** `en.ts` é o catálogo fonte, um objeto aninhado por área (`chat.send`, `knowledge.approve`…). Os outros idiomas são `satisfies Messages`, então chave faltando ou sobrando quebra o typecheck.
+- **API de uso:** `t("chat.send")` e `t("knowledge.pending", { count })`.
+  - Plural com `Intl.PluralRules`.
+  - Datas e números com `Intl.DateTimeFormat` / `Intl.NumberFormat`.
+  - Interpolação simples (`{count}`), sem HTML no catálogo.
+- **Idioma:** só `en` por enquanto. A escolha (`navigator.language`, preferência salva) já passa por uma função única, para não mudar quando houver outros idiomas.
+- **Server:** erros e avisos ao usuário saem como **código + parâmetros** (`{ code: "chat.busy" }`, `{ code: "agents.chain_stopped", max: 3 }`) no contrato, e o front traduz. O server não manda frase pronta para a interface.
+- **Prompts dos modelos:** em inglês (prompt base, consolidação, protocolo de canal). A instrução "responda no idioma do usuário" continua valendo, então o idioma da conversa não depende do idioma da interface.
+- **Conteúdo do usuário** (brief, memórias, mensagens, nomes) **não é traduzido**: fica como foi escrito.
+- **Verificação:** um script no CI acusa texto literal em JSX (`check:i18n`, como o `i18n-check` do a reference app), com exceções explícitas.
+
+## 10.2 Área de consumo (D15)
+
+**Fonte dos dados:** a tabela `turns`, que a fase 1 já grava. Cada turno registra conta, modelo, harness, tokens (entrada, cache lido, cache escrito, saída), custo estimado, tempo até o primeiro token, tempo total e trocas de failover.
+
+**Custo:**
+- **API key:** custo estimado = tokens × preço do modelo. O preço vem do catálogo do OpenCode/models.dev, com a possibilidade de corrigir à mão.
+- **Assinatura:** o custo por token não se aplica. Mostra o "equivalente em API", só como referência, e o que importa: as janelas de limite.
+
+**Janelas de limite por conta**, lidas do harness:
+- Claude: `rate_limit_event` com janela de 5 h e janela semanal.
+- Codex: `account/rateLimits/read`.
+- Outras: quando o harness reportar.
+
+A leitura acontece **uma por vez, com cache de 4 min e espaçamento crescente em falha** (5/10/20/40 min, até 1 h), mesma cadência do a reference app e do T3 Code, para não gastar limite só para medir.
+
+**Tela:**
+- Mês atual por agente, projeto, conta e modelo, com gráfico diário.
+- Cartão por conta de assinatura: uso das janelas e horário de reset.
+- Os turnos mais caros, com link para o chat.
+- Exportar CSV.
+
+**Alertas e orçamento** (opcionais):
+- Aviso ao atingir 80% de uma janela de assinatura ou de um orçamento mensal (por agente ou por conta de API key).
+- Ao atingir 100% do orçamento: o turno pede confirmação para continuar. Não bloqueia em silêncio.
+- O limite de assinatura alimenta o failover (seção 6.1).
+
+**No chat:** cada mensagem já mostra tokens. Passa a mostrar também o custo estimado, ou "assinatura", e a conta usada.
+
+## 11. Segurança
+
+- **Server só local:** escuta em `127.0.0.1` e o `LocalOnly` exige Host e Origin locais.
+- **Segredos:** chaves de API e variáveis MCP no chaveiro do sistema, nunca no banco nem devolvidas pela API.
+- **Login das CLIs de assinatura:** nunca é lido nem guardado.
+- **Termos:** usar a assinatura do Claude via Agent SDK num app de terceiros é zona cinzenta. O a reference app documenta que a Anthropic não confirmou que é permitido e recomenda API key. O T3 Code faz o mesmo que nós: a CLI oficial com o login do próprio usuário. O Zero mostra esse aviso ao conectar uma conta de assinatura Claude. Com API key, o caminho é o OpenCode, sem esse risco.
+- **Ferramentas** só pelo gateway, com política e aprovação.
+- **Sanitização de segredos** antes de gravar observações e páginas (seção 8, captura).
+- **Conteúdo não confiável:** saída de ferramenta, páginas e memórias são tratadas como não confiáveis no prompt base.
+
+---
+
+## 12. Transversal
+
+Pela régua da D0, cada tema na forma mínima.
+
+**Observabilidade:**
+- Logs estruturados do Effect (`Effect.log*` com anotações de chat, turno, agente e conta), sempre passando pelo **mascaramento de segredos**: os valores do `Secrets` são registrados como sensíveis, como no `registerSecretValue` do a reference app.
+- Spans do Effect por turno, chamada de engine e chamada de ferramenta.
+- **"Exportar diagnóstico"** gera um JSON com versões, status dos harnesses e contas (sem e-mail nem token), contagens e erros recentes. Nunca inclui conteúdo de conversa.
+
+**Testes**, em três camadas:
+1. **Unitários** de funções puras: montagem de contexto, política e classificação de ferramentas, parsers, consolidação sem LLM e menções.
+2. **Ponta a ponta com engine falso**: server real, banco em memória e client tipado. É o padrão de hoje (`main.test.ts`). Cobre cada critério de pronto das fases.
+3. **Smoke com CLIs reais** (Claude Code, Codex, OpenCode): manual ou agendado, nunca obrigatório no CI, porque gasta assinatura.
+
+No CI rodam lint, typecheck, i18n e as camadas 1 e 2. **Cada migration tem teste** que parte do schema anterior com dados.
+
+**Migração dos dados atuais** (fase 1):
+- Uma migration do Drizzle traz o schema de hoje inteiro: projetos, agentes, chats, membros, mensagens, memórias, servidores MCP.
+- Na fase 3b, memória vira página `fato` e skill vira `como-fazer`, mantendo estado, escopo e datas.
+- **Backup automático** do arquivo antes de migrar. Teste com um banco real copiado.
+
+**Backup e exportação:**
+- Backup do arquivo SQLite com `VACUUM INTO`: diário e antes de cada migration, guardando os últimos 7.
+- **Exportar e importar o workspace** em `.zip` (projetos, agentes, chats, conhecimento e configurações), **sem segredos**. Servidores MCP voltam desligados.
+
+**Notificações** (desktop):
+- Disparam em: aprovação ou pergunta esperando, tarefa ou rotina concluída ou com falha, limite de conta atingido, failover acionado.
+- Ligam e desligam por tipo, agente e projeto. Não notificam a janela que está em foco.
+
+**Anexos e imagens** (fase 2):
+- Arrastar ou colar no chat. Limites de 10 por mensagem, 20 MB cada.
+- Guardados em `ZERO_HOME/attachments/<chat>`.
+- Imagem vai como imagem para o harness que suporta (Claude SDK, Codex `--image`/item local, OpenCode). Outros arquivos vão como **caminho**, para o agente ler com as ferramentas dele.
+- Apagar o chat apaga os anexos.
+
+**Atualização do app** (fase 7):
+- O Electrobun gera o pacote de atualização (`update.json` + bundle). Canais `stable` e `beta`.
+- **A troca espera os turnos em andamento terminarem.** As migrations rodam na subida, depois do backup.
+- O server em background reinicia na versão nova.
+
+## 13. Fases
+
+Cada fase termina com lint, typecheck e testes verdes, mais um teste real com Claude Code e Codex.
+
+| Fase | Entrega | Pronto quando |
+|---|---|---|
+| **1. Runtime** | **Banco migrado para Drizzle + `@effect/sql-sqlite-bun`, com a migração dos dados atuais e backup** (seção 12); logs com mascaramento e spans; testes nas camadas 1 e 2 no CI; (com dono/público nas tabelas que guardam conhecimento), **`Actor`**, `turns`, fila, `ZeroRpc` + `subscribeChat`, interrupt, recuperação no boot, deltas agrupados, **átomos no chat e no CRUD** (a migração de i18n já reescreve todos os componentes), medição por turno gravada em `turns`, **`packages/i18n` (en) com a interface migrada para `t()` e erros do server como código** | Fechar a aba no meio de um turno e reabrir mostra o turno continuando. `kill -9` no server marca o turno `interrupted` com o texto parcial. Reenviar o mesmo `clientId` não duplica. Nenhum texto literal em JSX fora do catálogo (`check:i18n` verde) |
+| **2. Engines vivos** | Claude Agent SDK + Codex App Server com sessão, marcação por sessão, steering, `setModel`, esforço de raciocínio, imagens. **Só assinaturas** (API keys são da fase 5). **Multicontas de assinatura** (`provider_accounts`, login dentro do Zero, `accountId` em agente e chat); **anexos e imagens** (seção 12) | O segundo turno no mesmo chat não sobe processo. Trocar Claude → Codex → Claude envia só o delta ao voltar. Os números de latência e cache estão registrados |
+| **2b. Failover** | Lista de alternativas por agente e chat, classificação de erros por adaptador, espera por limite com retorno automático, regra "só se ainda não agiu", aviso de termos, leitura de uso por conta, trocas visíveis no chat | Com a conta principal em limite, o turno continua na alternativa e volta sozinho após o reset. Um erro depois de uma ferramenta de escrita não repete o turno. Sem lista configurada, nada troca |
+| **2c. Consumo** | Área de consumo (seção 10.2): agregados por agente, projeto, conta e modelo; custo estimado; janelas de limite por conta; alertas | A tela mostra o consumo do mês por agente e o quanto falta de cada assinatura com o horário de reset. Um alerta de 80% aparece antes do limite |
+| **3. Workspace de código** (fase central) | `projects.path`, serviço `Workspace`, `cwd` do projeto, níveis de acesso, aprovação das ferramentas nativas, **diff das mudanças de cada turno**, **checkpoint e desfazer** (`rewindFiles` no Claude, git nos outros), passos de trabalho e handoff tipado | Um agente lê, edita e roda os testes do projeto com aprovação. O diff do turno aparece no chat e dá para desfazer. Depois de trocar de provider, o novo agente sabe o que foi feito |
+| **3b. Conhecimento aprendido** | Seção 8: páginas (migração de memórias e skills), captura por turno com segredos removidos, consolidação sem LLM (página de sessão + handoff) e com LLM opcional, resumo de entrada, `zero.knowledge_search`/`read`, tela Conhecimento com feed, versões e desfazer, fila de aprovação do que é sobre você, "o que o modelo viu" | Depois de um chat de trabalho, a página de sessão e o handoff existem sem nenhuma chamada de LLM. Um chat novo no projeto recebe o resumo de entrada e acha por busca a decisão tomada antes. Desfazer uma atualização de página restaura a versão anterior |
+| **4. Equipe** | Agente como dado versionado (versões, publicação, voltar versão, exportar sem segredos); campo de **responsabilidades**; criar e configurar agentes pela conversa (`zero.create_agent`/`update_agent`/`read_agent`/`list_models`) com **cartão de proposta**; construtor com chat de teste; **interação da seção 9.3** (`list_agents`, `send_message` com resposta automática e espera de pedidos múltiplos, `start_task`, `interrupt_agent`, `ask_user`, política de delegação, roteamento do líder); **aprovações da 9.2** (três níveis, "sempre permitir", recusa com motivo, persistidas, "Precisa de você", regras de restrição e herança); tela de equipe com status, fila e consumo; **notificações** (seção 12); agente padrão por projeto | Um agente delega a dois colegas, as duas respostas voltam juntas num turno só, e a aprovação de um deles aparece no chat de origem e em "Precisa de você". Um agente em Workspace não consegue criar um colega com Acesso total. Restaurar uma versão anterior do perfil funciona |
+| **5. ACP** | `effect-acp`, **primeiro com OpenCode como harness de todas as API keys**, inclusive Anthropic e OpenAI (config injetada), **com várias chaves por provider**; depois Gemini CLI, Cursor, Kimi…; várias contas; modelos lidos de cada harness. O engine `api` deixa de aparecer como agente de projeto | Um agente de projeto com uma chave do OpenRouter lê, edita e roda testes igual a um com Claude |
+| **6. Conhecimento 2** | Itens do backlog da seção 8.1 que tiverem batido o critério de entrada, mais a avaliação de recall rodando no CI | Cada item entra com o número que justificou a entrada registrado |
+| **7. Automação local** | Server do desktop em background separado da janela; rotinas (cron, horário de verão) com agente responsável, rodando uma **versão publicada** do agente; webhooks com HMAC sobre `effect/workflow`; **atualização do app** com canais e espera de turnos (seção 12); exportar e importar workspace | Uma rotina diária roda com o app fechado (server/desktop em background) |
+| **8. Hospedado** | Sobre as portas da D17: login (e-mail + senha ou OIDC) e `Actor` real; equipe e papéis simples; memória por público aplicada; cofre de segredos no banco com criptografia envelope; Postgres (`@effect/sql-pg` + schema Drizzle portado); container por projeto ou agente; imagem Docker + binário único; API para rodar agentes; runtime leve para agentes de automação (sem harness); canais (Slack, Telegram) | O mesmo Zero roda num servidor com login, duas pessoas usam projetos diferentes, uma memória privada nunca aparece no projeto da outra, e o shell do agente roda isolado em container |
+
+**Fora do escopo atual:** sincronização entre dispositivos, mobile, router por LLM, pool com rodízio de contas e assinatura macOS.
+
+**Backlog avaliado (sem fase ainda):** arquivos de contexto compartilhados com modo `inject`/`link` (AgenticOS; hoje o brief e as páginas fixadas cobrem: entra se o mesmo texto começar a ser repetido entre agentes); detector de loop de ferramentas, monitor de quebra de cache de prompt por run, revisor durante o run e auditoria encadeada por hash (ideias do AgenticOS); respostas visuais salvas como páginas; o Zero como servidor MCP para outros clientes (Claude Code, Cursor). Os motivos estão em [references.md](references.md).
