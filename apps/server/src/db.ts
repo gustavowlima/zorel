@@ -8,7 +8,7 @@ import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
 import { Context, Effect, Layer } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
-import { agents, approvals, chatMembers, chats, mcpServers, memories, messages, projects, steps, turns } from "./schema.ts"
+import { agents, approvals, chatMembers, chats, mcpServers, memories, messages, projects, providerAccounts, steps, turns } from "./schema.ts"
 
 // "Prefere PRs pequenos." and "prefere prs pequenos" are the same memory.
 export const normalize = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
@@ -40,6 +40,7 @@ const toApproval = (r: typeof approvals.$inferSelect): Approval => ({
   summary: r.summary, args: r.args, cwd: r.cwd, createdAt: r.createdAt, expiresAt: r.expiresAt
 })
 export type TurnRow = typeof turns.$inferSelect
+export type AccountRow = typeof providerAccounts.$inferSelect
 const defined = <T extends Record<string, unknown>>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>
 
 const makeDb = Drizzle.makeWithDefaults()
@@ -98,13 +99,13 @@ export const repository = (db: Db) => {
     // ---------- agents ----------
     agents: (): Effect.Effect<Agent[]> => orDie(db.select().from(agents).orderBy(asc(agents.createdAt))),
     agent,
-    createAgent: (input: { projectId: string | null; name: string; instructions: string; model: string }) =>
+    createAgent: (input: { projectId: string | null; name: string; instructions: string; model: string; accountId?: string | null | undefined }) =>
       Effect.gen(function* () {
-        const a: Agent = { id: crypto.randomUUID(), ...input, createdAt: now() }
+        const a: Agent = { id: crypto.randomUUID(), ...input, accountId: input.accountId ?? null, createdAt: now() }
         yield* db.insert(agents).values(a)
         return a
       }).pipe(orDie),
-    updateAgent: (id: string, input: { name?: string | undefined; instructions?: string | undefined; model?: string | undefined }) =>
+    updateAgent: (id: string, input: { name?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined }) =>
       Effect.gen(function* () {
         const set = defined(input)
         if (Object.keys(set).length) yield* db.update(agents).set(set).where(eq(agents.id, id))
@@ -123,22 +124,22 @@ export const repository = (db: Db) => {
     // ---------- chats and messages ----------
     chats: () => orDie(db.select().from(chats).orderBy(desc(chats.createdAt)).pipe(Effect.flatMap(withMembers))),
     chat,
-    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string }) =>
+    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined }) =>
       Effect.gen(function* () {
         const id = crypto.randomUUID()
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: "Novo chat", model: input.model, createdAt: now() })
+            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: "Novo chat", model: input.model, accountId: input.accountId ?? null, createdAt: now() })
             yield* setMembers(tx, id, input.agentIds)
           })
         )
         return (yield* chat(id))!
       }).pipe(orDie),
-    updateChat: (id: string, input: { title?: string | undefined; model?: string | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
+    updateChat: (id: string, input: { title?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
       Effect.gen(function* () {
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            const set = defined({ title: input.title, model: input.model })
+            const set = defined({ title: input.title, model: input.model, accountId: input.accountId })
             if (Object.keys(set).length) yield* tx.update(chats).set(set).where(eq(chats.id, id))
             if (input.agentIds) yield* setMembers(tx, id, input.agentIds)
           })
@@ -250,10 +251,30 @@ export const repository = (db: Db) => {
       }).pipe(orDie),
     removeMcpServer: (id: string) => orDie(db.delete(mcpServers).where(eq(mcpServers.id, id)).pipe(Effect.asVoid)),
 
+    // ---------- provider accounts ----------
+    accounts: () => orDie(db.select().from(providerAccounts).orderBy(asc(providerAccounts.createdAt))),
+    account: (id: string) => orDie(db.select().from(providerAccounts).where(eq(providerAccounts.id, id)).pipe(Effect.map(first))),
+    // Creates it only if missing (default accounts are seeded on every boot).
+    ensureAccount: (a: Omit<AccountRow, "createdAt">) =>
+      orDie(db.insert(providerAccounts).values({ ...a, createdAt: now() }).onConflictDoNothing().pipe(Effect.asVoid)),
+    updateAccount: (id: string, set: { label?: string; identity?: string | null }) =>
+      orDie(db.update(providerAccounts).set(defined(set)).where(eq(providerAccounts.id, id)).returning().pipe(Effect.map(first))),
+    removeAccount: (id: string) =>
+      orDie(
+        db.transaction((tx) =>
+          Effect.gen(function* () {
+            // Agents and chats that used it fall back to the provider's default account.
+            yield* tx.update(agents).set({ accountId: null }).where(eq(agents.accountId, id))
+            yield* tx.update(chats).set({ accountId: null }).where(eq(chats.accountId, id))
+            yield* tx.delete(providerAccounts).where(eq(providerAccounts.id, id))
+          })
+        )
+      ),
+
     // ---------- turns (per-chat queue) ----------
     turnRow: (id: string) => orDie(db.select().from(turns).where(eq(turns.id, id)).pipe(Effect.map(first))),
     turnByClientId: (clientId: string) => orDie(db.select().from(turns).where(eq(turns.clientId, clientId)).pipe(Effect.map(first))),
-    enqueueTurn: (input: { chatId: string; agentId: string | null; model: string; clientId: string | null; depth: number }) =>
+    enqueueTurn: (input: { chatId: string; agentId: string | null; model: string; accountId?: string | null; clientId: string | null; depth: number }) =>
       orDie(db.insert(turns).values({ id: crypto.randomUUID(), ...input, state: "queued", createdAt: now() }).returning().pipe(Effect.map((r) => r[0]!))),
     nextQueued: (chatId: string) =>
       orDie(db.select().from(turns).where(and(eq(turns.chatId, chatId), eq(turns.state, "queued"))).orderBy(asc(turns.createdAt)).limit(1).pipe(Effect.map(first))),

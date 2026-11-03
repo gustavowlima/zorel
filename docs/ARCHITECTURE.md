@@ -181,7 +181,7 @@ interface EngineSession {
 | `base_url` | chave: opcional (Ollama, LM Studio, base OpenAI-compatível) |
 | `identity` | o que o harness reportar (e-mail ou plano), só para exibição |
 
-A conta "padrão" de cada CLI é a que já está logada no seu computador (`home = null`). Ela aparece sem cadastro.
+A conta "padrão" de cada CLI aparece sem cadastro. **Claude:** é o login que já está no seu computador (`home = null`). **Codex:** é uma pasta do próprio Zero (`~/.zero/accounts/codex-default`), com login feito uma vez pelo Zero, porque o `codex app-server` sempre carrega o `config.toml` do usuário (servidores MCP, `AGENTS.md`, memórias) e não tem como ignorá-lo (implementado em 2026-11-03).
 
 **Como a credencial chega ao harness:**
 

@@ -2,6 +2,7 @@
 import type { McpServer, ToolInfo } from "@zero/contracts"
 import { useEffect, useState, type FormEvent } from "react"
 import { call } from "../api.ts"
+import { AccountsSection } from "./accounts.tsx"
 import { useApp } from "../state.ts"
 import { Badge, Button, Card, ConfirmButton, Field, Input, Page, Select, Textarea } from "@/ui"
 
@@ -178,6 +179,7 @@ export function SettingsView() {
 
   return (
     <Page title="Configurações">
+      <AccountsSection />
       <section className="flex flex-col gap-2">
         <h2 className="font-semibold">Chaves de API</h2>
         <p className="text-sm text-muted">Guardadas no chaveiro do sistema. Assinaturas (Claude Code, Codex) não precisam de chave: usam a CLI já logada.</p>
