@@ -436,7 +436,7 @@ Referência: a reference app (`docs/architecture/agents.md` "Agent communication
 | Textos, erros e i18n | `/impeccable harden` e `clarify` | Estados de erro, casos de borda, textos curtos e claros |
 | Componente repetido em 2+ telas | `/impeccable extract` | Vira primitiva |
 
-**Verificação mecânica no CI:** `check:ui` falha com cor literal fora dos tokens, tamanho, raio ou duração fora da escala, `<button>` ou diálogo feito à mão nas telas, ou import direto da biblioteca headless ou de ícones fora de `ui/`. É o equivalente leve do `check:ui` do a reference app.
+**Verificação mecânica no CI:** `check:ui` falha com cor literal fora dos tokens, tamanho, raio ou duração fora da escala, `<button>` ou diálogo feito à mão nas telas, ou import direto da biblioteca headless ou de ícones fora de `ui/`. É o equivalente leve do `check:ui` do a reference app. Funciona como catraca (`scripts/check-ui.ts`): a dívida que já existe fica congelada em `apps/web/ui-baseline.json` por arquivo e regra, e só pode cair; `bun run check:ui --update` trava a melhora. `src/ui/` e `src/dev/` ficam de fora, porque são o próprio design system.
 
 **Protótipo das telas** (fonte do redesenho, fase UI): chat com pílulas expansíveis e painéis direito e de baixo, "Precisa de você", conhecimento, agente, consumo e configurações (conectores, MCP, skills). Link no `.agent/memory/design-system.md`.
 

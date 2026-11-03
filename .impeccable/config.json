@@ -1,0 +1,21 @@
+{
+  "hook": {
+    "enabled": true,
+    "limits": {
+      "maxFindings": 5,
+      "maxChars": 8000
+    }
+  },
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-font-size",
+        "value": "9px",
+        "createdAt": "2026-11-03T17:07:31.450Z",
+        "reason": "Agent: initial inside the 16px AgentAvatar tile (ui/avatar.tsx); 11px, the ramp's smallest step, doesn't fit the tile"
+      }
+    ]
+  }
+}

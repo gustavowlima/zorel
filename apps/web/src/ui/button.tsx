@@ -30,3 +30,15 @@ export type ButtonProps = Omit<ButtonPrimitiveProps, "className"> & VariantProps
 export function Button({ className, variant, size, ...props }: ButtonProps) {
   return <ButtonPrimitive data-slot="button" className={cn(buttonVariants({ variant, size }), className)} {...props} />
 }
+
+// Icon-only button: the label is required (screen readers, and the tooltip-less hover title).
+export function IconButton({ label, size = "md", variant = "ghost", className, ...props }: Omit<ButtonProps, "aria-label" | "size"> & { label: string; size?: "sm" | "md" }) {
+  return (
+    <ButtonPrimitive
+      data-slot="icon-button"
+      aria-label={label}
+      className={cn(buttonVariants({ variant, size: "icon" }), size === "sm" ? "size-control-xs" : "size-control-sm", className)}
+      {...props}
+    />
+  )
+}

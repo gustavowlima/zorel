@@ -304,6 +304,15 @@ Compactos e diretos, com aperto físico ao pressionar.
 ### Chat (componente assinatura)
 Respostas em markdown com ritmo de 0.6em entre blocos, títulos em 15px, links em signal-blue-text sublinhados, código inline em fundo de controle e blocos de código em superfície com borda sutil e cantos de 12px.
 
+### Avatar e logos de provider
+- `AgentAvatar` em 16, 20, 28 e 32px; passe `tone` = posição do agente no projeto, para dois agentes nunca dividirem cor (até seis). Sem `tone`, um hash do id mantém a cor estável.
+- `ProviderIcon`: logos oficiais do Lobe Icons. O Claude tem a cor da marca; os outros são monocromáticos (`currentColor`) e seguem o texto. Nunca sobre fundo branco.
+
+### Como o design system se mantém
+- **Galeria** em `/#/dev/ui` (só em dev): toda primitiva, em todos os estados e nos dois temas. Primitiva nova entra lá antes de ir para uma tela.
+- **`bun run check:ui`** (no CI): nas telas, fora de `src/ui`, nada de cor literal, valor arbitrário `[..]`, controle HTML cru, import direto de `lucide-react` ou `react-aria-components` ou glifo unicode como ícone. É uma catraca: a dívida antiga está em `ui-baseline.json` e só pode cair.
+- **Detector do impeccable** roda depois de cada edição de UI (hook local) e faz um passe completo ao fim da sessão.
+
 ## Do's and Don'ts
 
 ### Do:

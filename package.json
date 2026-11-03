@@ -12,7 +12,8 @@
     "desktop": "bun run --cwd apps/desktop start",
     "desktop:build": "bun run --cwd apps/desktop prebuild && bun run --cwd apps/desktop build",
     "typecheck": "tsc -p apps/server && tsc -p apps/web",
-    "lint": "biome lint"
+    "lint": "biome lint",
+    "check:ui": "bun scripts/check-ui.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",
