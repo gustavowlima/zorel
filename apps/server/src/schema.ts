@@ -219,3 +219,24 @@ export const preferences = sqliteTable("preferences", {
   key: text().primaryKey(),
   value: text().notNull()
 })
+
+// Audit log (Settings › Audit log): who changed what, written through evlog's audit helpers (audit.ts).
+// Append-only from the app: rows are inserted and read, never updated.
+export const auditEvents = sqliteTable(
+  "audit_events",
+  {
+    id: text().primaryKey(),
+    at: integer().notNull(),
+    action: text().notNull(), // "agent.updated"
+    actorType: text("actor_type", { enum: ["user", "system", "api", "agent"] }).notNull(),
+    actorId: text("actor_id").notNull(),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    targetName: text("target_name").notNull(),
+    outcome: text({ enum: ["success", "failure", "denied"] }).notNull(),
+    reason: text(),
+    changes: text({ mode: "json" }).$type<ReadonlyArray<{ field: string; before: string | null; after: string | null }>>().notNull().default([])
+  },
+  (t) => [index("audit_events_at").on(t.at)]
+)
+

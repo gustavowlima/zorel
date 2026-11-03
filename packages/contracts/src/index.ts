@@ -117,6 +117,20 @@ export const Chat = Schema.Struct({
 })
 export type Chat = typeof Chat.Type
 
+// Audit log: one change, who made it and the fields it touched (before → after, secrets redacted).
+export const AuditEntry = Schema.Struct({
+  id: Schema.String,
+  at: Schema.Number,
+  action: Schema.String, // "<resource>.<verb>" in the past tense: "agent.updated", "approval.denied"
+  actor: Schema.Struct({ type: Schema.Literals(["user", "system", "api", "agent"]), id: Schema.String }),
+  target: Schema.Struct({ type: Schema.String, id: Schema.String, name: Schema.String }),
+  outcome: Schema.Literals(["success", "failure", "denied"]),
+  reason: Schema.NullOr(Schema.String),
+  changes: Schema.Array(Schema.Struct({ field: Schema.String, before: Schema.NullOr(Schema.String), after: Schema.NullOr(Schema.String) }))
+})
+export type AuditEntry = typeof AuditEntry.Type
+export const AUDIT_PAGE = 500 // the newest entries the log shows
+
 // Manual order in the sidebar: the ids in their new order. Chats only reorder inside their own group.
 export const ProjectOrder = Schema.Struct({ ids: Schema.Array(Id) })
 export const ChatOrder = Schema.Struct({ projectId: Schema.NullOr(Id), ids: Schema.Array(Id) })
@@ -368,6 +382,7 @@ export const Api = HttpApi.make("zero")
     HttpApiGroup.make("settings")
       .add(HttpApiEndpoint.get("models", "/api/models", { success: Schema.Array(ModelInfo) }))
       .add(HttpApiEndpoint.get("keys", "/api/keys", { success: Schema.Array(KeyInfo) }))
+      .add(HttpApiEndpoint.get("audit", "/api/audit", { success: Schema.Array(AuditEntry) })) // newest AUDIT_PAGE
       .add(HttpApiEndpoint.get("usage", "/api/usage", { success: Schema.Array(UsageRow) })) // last USAGE_DAYS days
       .add(HttpApiEndpoint.get("topTurns", "/api/usage/top", { query: { since: Schema.NumberFromString }, success: Schema.Array(TopTurn) }))
       .add(HttpApiEndpoint.get("preferences", "/api/preferences", { success: Preferences }))

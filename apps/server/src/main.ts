@@ -14,6 +14,7 @@ import { Engines, listModels } from "./engines.ts"
 import { API_KEYS, mcpEnvName, Secrets } from "./secrets.ts"
 import { Accounts } from "./accounts.ts"
 import { Actor } from "./access.ts"
+import { Actions, Audit, changed } from "./audit.ts"
 import { LoggerLive } from "./observability.ts"
 import { Runtime } from "./runtime.ts"
 import { Tools } from "./tools.ts"
@@ -35,13 +36,25 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
     const store = yield* Store
     const { hub } = yield* Tools
     const workspace = yield* Workspace
+    const audit = yield* Audit
     // A folder is stored only after the Workspace accepts it (absolute, real, a directory, not root/home/data).
     const withPath = <T extends { path?: string | null | undefined }>(input: T) =>
       input.path ? Effect.map(workspace.validate(input.path), (path) => ({ ...input, path })) : Effect.succeed(input)
     return h
       .handle("list", () => store.projects())
-      .handle("create", ({ payload }) => Effect.flatMap(withPath(payload), store.createProject))
-      .handle("update", ({ params, payload }) => Effect.flatMap(withPath(payload), (p) => found(store.updateProject(params.id, p))))
+      .handle("create", ({ payload }) =>
+        Effect.flatMap(withPath(payload), store.createProject).pipe(
+          Effect.tap((p) => audit.record(Actions.projectCreated, { target: p, after: { name: p.name, path: p.path } }))
+        )
+      )
+      .handle("update", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const before = yield* store.project(params.id)
+          const after = yield* Effect.flatMap(withPath(payload), (p) => found(store.updateProject(params.id, p)))
+          if (before) yield* audit.record(Actions.projectUpdated, { target: after, ...changed(before, after, ["name", "brief", "path"]) })
+          return after
+        })
+      )
       .handle("files", ({ params, query }) =>
         Effect.gen(function* () {
           const project = yield* store.project(params.id)
@@ -55,21 +68,43 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
         Effect.gen(function* () {
           const servers = (yield* store.mcpServers()).filter((s) => s.projectId === params.id)
           yield* Effect.promise(() => Promise.all(servers.map((s) => hub.close(s.id))))
+          const project = yield* store.project(params.id)
           yield* store.removeProject(params.id)
+          if (project) yield* audit.record(Actions.projectDeleted, { target: project })
         })
       )
       .handle("reorder", ({ payload }) => store.reorderProjects(payload.ids))
   })
 )
 
+const AGENT_FIELDS = ["name", "instructions", "model", "accountId", "effort", "failover", "access"] as const
+
 const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
+    const audit = yield* Audit
     return h
       .handle("list", () => store.agents())
-      .handle("create", ({ payload }) => Effect.flatMap(projectOk(store, payload.projectId), (ok) => (ok ? store.createAgent(payload) : notFound())))
-      .handle("update", ({ params, payload }) => found(store.updateAgent(params.id, payload)))
-      .handle("remove", ({ params }) => store.removeAgent(params.id))
+      .handle("create", ({ payload }) =>
+        Effect.flatMap(projectOk(store, payload.projectId), (ok) => (ok ? store.createAgent(payload) : notFound())).pipe(
+          Effect.tap((a) => audit.record(Actions.agentCreated, { target: a, after: { name: a.name, model: a.model, access: a.access } }))
+        )
+      )
+      .handle("update", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const before = yield* store.agent(params.id)
+          const after = yield* found(store.updateAgent(params.id, payload))
+          if (before) yield* audit.record(Actions.agentUpdated, { target: after, ...changed(before, after, AGENT_FIELDS) })
+          return after
+        })
+      )
+      .handle("remove", ({ params }) =>
+        Effect.gen(function* () {
+          const agent = yield* store.agent(params.id)
+          yield* store.removeAgent(params.id)
+          if (agent) yield* audit.record(Actions.agentDeleted, { target: agent })
+        })
+      )
   })
 )
 
@@ -78,6 +113,7 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
     const store = yield* Store
     const dataDir = yield* DataDir
     const workspace = yield* Workspace
+    const audit = yield* Audit
     const services = yield* Effect.context<Store | Engines | DataDir>()
     // A turn with workspace checkpoints, its project and whether its changes were undone.
     const turnWithTrees = (id: string) =>
@@ -130,6 +166,8 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           const { conflicts } = yield* workspace.restore(project, t.before, t.after)
           if (conflicts.length) return yield* new UndoConflict({ files: conflicts })
           yield* store.markReverted(t.row.id)
+          const files = yield* workspace.diff(t.projectId, t.before, t.after)
+          yield* audit.record(Actions.turnUndone, { target: { id: t.row.id, name: (yield* store.chat(t.row.chatId))?.title ?? project.name }, before: { files: files.map((f) => f.path) } })
           return { turnId: t.row.id, files: yield* workspace.diff(t.projectId, t.before, t.after), revertedAt: Date.now() }
         })
       )
@@ -159,6 +197,7 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
     const secrets = yield* Secrets
     const { hub } = yield* Tools
     const runtime = yield* Runtime
+    const audit = yield* Audit
     return h
       .handle("list", () => store.mcpServers())
       .handle("create", ({ payload: { env, ...input } }) =>
@@ -166,17 +205,29 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
           if (!(yield* projectOk(store, input.projectId))) return yield* notFound()
           const server = yield* store.createMcpServer({ ...input, envKeys: Object.keys(env) })
           if (Object.keys(env).length) yield* Effect.promise(() => secrets.set(mcpEnvName(server.id), JSON.stringify(env))) // values only in the keychain
+          yield* audit.record(Actions.mcpAdded, { target: server, after: { mode: server.mode, envKeys: Object.keys(env) } })
           return server
         })
       )
       .handle("update", ({ params, payload }) =>
-        Effect.promise(() => hub.close(params.id)).pipe(Effect.flatMap(() => found(store.updateMcpServer(params.id, payload))))
+        Effect.gen(function* () {
+          const before = yield* store.mcpServer(params.id)
+          yield* Effect.promise(() => hub.close(params.id))
+          const after = yield* found(store.updateMcpServer(params.id, payload))
+          if (before) yield* audit.record(Actions.mcpUpdated, { target: after, ...changed(before, after, Object.keys(payload)) })
+          return after
+        })
       )
       .handle("remove", ({ params }) =>
-        Effect.promise(async () => {
-          await hub.close(params.id)
-          await secrets.set(mcpEnvName(params.id), "")
-        }).pipe(Effect.andThen(store.removeMcpServer(params.id)))
+        Effect.gen(function* () {
+          const server = yield* store.mcpServer(params.id)
+          yield* Effect.promise(async () => {
+            await hub.close(params.id)
+            await secrets.set(mcpEnvName(params.id), "")
+          })
+          yield* store.removeMcpServer(params.id)
+          if (server) yield* audit.record(Actions.mcpRemoved, { target: server })
+        })
       )
       .handle("inspect", ({ params }) =>
         Effect.flatMap(found(store.mcpServer(params.id)), (server) =>
@@ -197,19 +248,39 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
 const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
   Effect.gen(function* () {
     const accounts = yield* Accounts
+    const audit = yield* Audit
+    const named = (id: string) => Effect.map(accounts.list, (all) => all.find((a) => a.id === id))
     return h
       .handle("list", () => accounts.list)
-      .handle("create", ({ payload }) => accounts.create(payload.provider, payload.label))
-      .handle("update", ({ params, payload }) => found(accounts.rename(params.id, payload.label)))
+      .handle("create", ({ payload }) =>
+        accounts.create(payload.provider, payload.label).pipe(Effect.tap((a) => audit.record(Actions.accountAdded, { target: { id: a.id, name: a.label }, after: { provider: a.provider } })))
+      )
+      .handle("update", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const before = yield* named(params.id)
+          const after = yield* found(accounts.rename(params.id, payload.label))
+          yield* audit.record(Actions.accountRenamed, { target: { id: after.id, name: after.label }, before: { label: before?.label }, after: { label: after.label } })
+          return after
+        })
+      )
       .handle("remove", ({ params }) =>
-        Effect.flatMap(accounts.remove(params.id), (r): Effect.Effect<void, HttpApiError.NotFound | HttpApiError.Conflict> =>
-          r === "ok" ? Effect.void : r === "not-found" ? notFound() : Effect.fail(new HttpApiError.Conflict())
-        )
+        Effect.gen(function* () {
+          const account = yield* named(params.id)
+          const r = yield* accounts.remove(params.id)
+          if (r === "not-found") return yield* notFound()
+          if (r !== "ok") return yield* Effect.fail(new HttpApiError.Conflict())
+          if (account) yield* audit.record(Actions.accountRemoved, { target: { id: account.id, name: account.label } })
+        })
       )
       .handle("login", ({ params }) =>
-        Effect.flatMap(accounts.login(params.id), (r): Effect.Effect<{ url: string | null }, HttpApiError.NotFound | HttpApiError.Conflict> =>
-          r === "not-found" ? notFound() : r === "busy" ? Effect.fail(new HttpApiError.Conflict()) : Effect.succeed(r)
-        )
+        Effect.gen(function* () {
+          const r = yield* accounts.login(params.id)
+          if (r === "not-found") return yield* notFound()
+          if (r === "busy") return yield* Effect.fail(new HttpApiError.Conflict())
+          const account = yield* named(params.id)
+          if (account) yield* audit.record(Actions.accountSignInStarted, { target: { id: account.id, name: account.label } })
+          return r
+        })
       )
       .handle("limits", ({ params }) => found(accounts.refreshLimits(params.id)))
   })
@@ -225,17 +296,29 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
     const secrets = yield* Secrets
     const accounts = yield* Accounts
     const store = yield* Store
+    const audit = yield* Audit
     return h
+      .handle("audit", () => audit.list)
       .handle("models", () => Effect.flatMap(accounts.cliModels, (cli) => Effect.promise(() => listModels(secrets, cli))))
       .handle("usage", () => Effect.map(store.usage(Date.now() - USAGE_DAYS * 86_400_000), (rows) => rows.map((r) => ({ ...r, billing: billingOf(r.model) }))))
       .handle("topTurns", ({ query }) =>
         Effect.map(store.topTurns(query.since), (rows) => rows.map((r) => ({ ...r, cost: r.cost ?? 0, billing: billingOf(r.model) })))
       )
       .handle("preferences", () => preferencesOf(store))
-      .handle("acceptFailoverTerms", () => Effect.andThen(store.setPreference(FAILOVER_TERMS, String(Date.now())), preferencesOf(store)))
+      .handle("acceptFailoverTerms", () =>
+        Effect.andThen(
+          store.setPreference(FAILOVER_TERMS, String(Date.now())).pipe(Effect.tap(() => audit.record(Actions.failoverTermsAccepted, { target: { id: FAILOVER_TERMS, name: "Failover" } }))),
+          preferencesOf(store)
+        )
+      )
       .handle("keys", () => Effect.sync(() => API_KEYS.map((name) => ({ name, set: !!secrets.get(name), fromEnv: secrets.fromEnv(name) }))))
+      // The value never reaches the audit log: only which key was set or cleared.
       .handle("setKey", ({ params, payload }) =>
-        (API_KEYS as ReadonlyArray<string>).includes(params.name) ? Effect.promise(() => secrets.set(params.name, payload.value.trim())) : notFound()
+        (API_KEYS as ReadonlyArray<string>).includes(params.name)
+          ? Effect.promise(() => secrets.set(params.name, payload.value.trim())).pipe(
+              Effect.tap(() => audit.record(payload.value.trim() ? Actions.apiKeySet : Actions.apiKeyCleared, { target: { id: params.name, name: params.name } }))
+            )
+          : notFound()
       )
   })
 )
@@ -348,7 +431,7 @@ export const services = (dbPath: string, dataDir: string, secrets?: Layer.Layer<
   const store = Store.layer(dbPath)
   const withSecrets = Layer.provideMerge(secrets ?? Secrets.layer, store)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(Engines.layer, Tools.layer), withSecrets), DataDir.layer(dataDir))
-  const withAccounts = Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.layer), base)
+  const withAccounts = Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.layer, Audit.layer), base)
   return Layer.mergeAll(Layer.provideMerge(Runtime.layer, withAccounts), Actor.local)
 }
 

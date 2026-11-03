@@ -8,7 +8,7 @@ import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
 import { Context, Effect, Layer } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
-import { agents, approvals, attachments, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
+import { agents, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
 
 // "Prefere PRs pequenos." and "prefere prs pequenos" are the same memory.
 export const normalize = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
@@ -432,6 +432,11 @@ export const repository = (db: Db) => {
           .orderBy(desc(turns.cost))
           .limit(limit)
       ),
+
+    // ---------- audit log ----------
+    addAudit: (row: typeof auditEvents.$inferInsert) => orDie(db.insert(auditEvents).values(row)),
+    // Newest first; within the same millisecond, the last inserted first.
+    auditLog: (limit: number) => orDie(db.select().from(auditEvents).orderBy(desc(auditEvents.at), sql`rowid desc`).limit(limit)),
 
     // ---------- preferences ----------
     preference: (key: string) => orDie(db.select().from(preferences).where(eq(preferences.key, key)).pipe(Effect.map((r) => r[0]?.value))),

@@ -39,3 +39,4 @@ updated: 2026-11-03
 - usage.tsx (2026-11-03, inspirado no a reference app): hero do total (custo ou tokens), lista de harness = legenda, AreaChart (SVG próprio, sem lib; slider por teclado), Totals, Breakdown (aba Day = gráfico em tabela); cores das séries em --z-series-N por harness em ordem fixa (HARNESSES)
 - settings: abas providers (providers.tsx: lista Connected/Other + página por provider em #/settings/providers/<id> com sign-ins, API key, servidor local, modelos), mcp, skills, appearance; links antigos #/settings/accounts|keys caem em providers; providerPageOf(harness) leva o seletor de modelo à página certa
 - i18n: nenhum ramo do catálogo pode ter uma chave `other` com texto (o lookup trata como plural); plurais só one/other em inglês
+- audit.tsx: Settings › Audit log (filtro por tipo + busca, frase por ação em audit.actions.*, campos antes → depois com rótulos de modelo e acesso); recarrega ao abrir (as mutações das outras telas não invalidam "audit")

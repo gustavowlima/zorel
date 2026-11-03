@@ -22,6 +22,7 @@ import { Store } from "./db.ts"
 import { Engines, type EngineEvent, type Turn } from "./engines.ts"
 import { AppLive } from "./main.ts"
 import { Accounts } from "./accounts.ts"
+import { Audit } from "./audit.ts"
 import { Actor } from "./access.ts"
 import { Runtime } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
@@ -101,7 +102,7 @@ beforeAll(async () => {
   const store = Store.layer(":memory:")
   const secrets = Layer.provideMerge(Secrets.memory(), store)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(FakeEngines, Tools.layer), secrets), DataDir.layer(join(tmpdir(), "zero-test")))
-  const services = Layer.mergeAll(Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.fixed(PRICES)), base)), Actor.local)
+  const services = Layer.mergeAll(Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.fixed(PRICES), Audit.layer), base)), Actor.local)
   const server = AppLive().pipe(HttpRouter.serve, Layer.provide(services), Layer.provide(BunHttpServer.layer({ port })))
   const fiber = Effect.runFork(Layer.launch(server))
   stop = () => Effect.runPromise(Fiber.interrupt(fiber)).then(() => void mcp.stop(true))
@@ -390,4 +391,22 @@ test("ordem da barra lateral: projetos na ordem dada (novos no topo); chats só 
   expect(after(inA.id).position).toBe(1)
   expect(after(inB.id).position).toBeNull() // another project's chat is ignored
   expect(after(inB.id).projectId).toBe(b.id) // and never moves
+})
+
+test("audit log: mudanças com antes → depois; chave de API só pelo nome, nunca o valor", async () => {
+  const agent = await api((c) => c.agents.create({ payload: { projectId: null, name: "Auditado", instructions: "", model: "ollama/llama3" } }))
+  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { model: "ollama/qwen", name: "Auditado" } }))
+  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { model: "ollama/llama3" } }))
+  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { model: "ollama/qwen" } })) // the same change again, at once: kept too
+  await api((c) => c.settings.setKey({ params: { name: "OPENROUTER_API_KEY" }, payload: { value: "sk-super-secreta" } }))
+  await api((c) => c.settings.setKey({ params: { name: "OPENROUTER_API_KEY" }, payload: { value: "" } }))
+  const log = await api((c) => c.settings.audit())
+  const updates = log.filter((e) => e.action === "agent.updated" && e.target.id === agent.id)
+  expect(updates).toHaveLength(3)
+  const update = updates.at(-1)!
+  expect(update.actor).toEqual({ type: "user", id: "local" })
+  expect(update.changes).toEqual([{ field: "model", before: "ollama/llama3", after: "ollama/qwen" }]) // the unchanged name is left out
+  expect(log.some((e) => e.action === "agent.created" && e.target.name === "Auditado")).toBe(true)
+  expect(log.filter((e) => e.target.id === "OPENROUTER_API_KEY").map((e) => e.action).slice(0, 2)).toEqual(["api_key.cleared", "api_key.set"]) // newest first
+  expect(JSON.stringify(log)).not.toContain("sk-super-secreta")
 })

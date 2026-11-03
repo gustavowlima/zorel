@@ -11,6 +11,7 @@ import { type AccountRow, Store, type Repository, type TurnRow } from "./db.ts"
 import { type EngineFailure, Engines, isImage, type NativeStep, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
 import { Pricing } from "./pricing.ts"
+import { Actions, Audit } from "./audit.ts"
 import { Workspace } from "./workspace.ts"
 import { exposedName, type GatewayHandle, needsApproval, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
 
@@ -48,6 +49,7 @@ export const makeRuntime = Effect.gen(function* () {
   const accounts = yield* Accounts
   const workspace = yield* Workspace
   const pricing = yield* Pricing
+  const audit = yield* Audit
   const engines = yield* Engines
   const dataDir = yield* DataDir
   const { hub, gateway } = yield* Tools
@@ -595,6 +597,11 @@ export const makeRuntime = Effect.gen(function* () {
       Effect.gen(function* () {
         const a = yield* store.resolveApproval(approvalId, outcome, reason ?? null, "user")
         if (!a) return yield* new ApprovalNotFound({ approvalId })
+        yield* audit.record(outcome === "denied" ? Actions.approvalDenied : Actions.approvalApproved, {
+          target: { id: a.id, name: a.summary },
+          after: { tool: a.tool, chatId: a.chatId, agentId: a.agentId },
+          ...(reason && { reason })
+        })
         // ponytail: "always" approves only this call; the persistent "always allow" rule is phase 4.
         const d = waiting.get(approvalId)
         if (d) yield* Deferred.succeed(d, outcome)
