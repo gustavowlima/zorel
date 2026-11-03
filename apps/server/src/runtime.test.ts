@@ -57,6 +57,9 @@ test("reenviar o mesmo clientId devolve o mesmo turno e não duplica a mensagem"
     yield* c.done
     const msgs = yield* store.messages(chat.id)
     expect(msgs.map((m) => [m.role, m.text])).toEqual([["user", "oi"], ["assistant", "eco: oi"]])
+    // medição por turno: início, primeiro texto e fim gravados, em ordem
+    const t = (yield* store.turnRow(a.turnId))!
+    expect(t.startedAt! <= t.firstTokenAt! && t.firstTokenAt! <= t.endedAt!).toBe(true)
   })))
 
 test("interromper guarda o texto parcial e emite interrupted", () =>
@@ -99,7 +102,7 @@ test("kill -9 no meio do turno: na próxima subida o turno vira interrupted com 
     const store = yield* Store
     expect(yield* store.turnsIn("running")).toEqual([])
     const [turn] = yield* store.turnsIn("interrupted")
-    expect(turn!.error).toBe("server restarted")
+    expect(turn!.error).toBe("server_restarted")
     const msgs = yield* store.messages(chatId)
     expect(msgs.at(-1)).toMatchObject({ role: "assistant", text: "meio caminho" })
   }))

@@ -1,6 +1,7 @@
 // Segredos (chaves de API, variáveis de servidores MCP) ficam no chaveiro do sistema via Bun.secrets
 // (Keychain no macOS, libsecret no Linux, Credential Manager no Windows), nunca no banco nem em arquivo.
 // Variável de ambiente tem precedência: quem roda o server define o que vale.
+import { registerSecret } from "./observability.ts"
 import { Context, Effect, Layer } from "effect"
 import { Store } from "./db.ts"
 
@@ -41,10 +42,13 @@ export class Secrets extends Context.Service<Secrets, SecretStore>()("Secrets") 
 
 function memoryStore(cache: Map<string, string>, persist: (name: string, value: string) => Promise<unknown> = async () => {}): SecretStore {
   const env = (name: string) => process.env[name]?.trim() || undefined
+  for (const v of cache.values()) registerSecret(v)
+  for (const name of API_KEYS) registerSecret(env(name))
   return {
     get: (name) => env(name) ?? cache.get(name),
     fromEnv: (name) => !!env(name),
     set: async (name, value) => {
+      registerSecret(value)
       await persist(name, value)
       if (value) cache.set(name, value)
       else cache.delete(name)

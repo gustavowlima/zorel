@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { ChatEvent, ZeroRpc } from "./events.ts"
 
 const decode = Schema.decodeUnknownSync(ChatEvent)
-const turn = { id: "t1", chatId: "c1", agentId: "a1", model: "claude-cli/opus", accountId: null, clientId: "client-0001", state: "running", startedAt: 1, endedAt: null, error: null, usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0 } }
+const turn = { id: "t1", chatId: "c1", agentId: "a1", model: "claude-cli/opus", accountId: null, clientId: "client-0001", state: "running", startedAt: 1, endedAt: null, firstTokenAt: null, error: null, usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0 } }
 
 describe("ChatEvent", () => {
   test("decodifica um passo com edição e um handoff", () => {

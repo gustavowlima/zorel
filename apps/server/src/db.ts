@@ -21,7 +21,7 @@ type Row = Record<string, any>
 const toMessage = (r: typeof messages.$inferSelect): Message => ({ ...r, steps: JSON.parse(r.steps) })
 const toMcpServer = (r: typeof mcpServers.$inferSelect): McpServer => ({ ...r, args: JSON.parse(r.args), envKeys: JSON.parse(r.envKeys) })
 const toMemory = (r: typeof memories.$inferSelect): Memory => {
-  const { normalized: _, ...m } = r
+  const { normalized: _, owner: _o, audience: _a, ...m } = r
   return m
 }
 // Linha crua (SQL à mão, colunas snake_case) da busca FTS.
@@ -31,7 +31,7 @@ const memoryRow = (r: Row): Memory => ({
 })
 const toTurn = (r: typeof turns.$inferSelect): Turn => ({
   id: r.id, chatId: r.chatId, agentId: r.agentId, model: r.model, accountId: r.accountId, clientId: r.clientId, state: r.state,
-  startedAt: r.startedAt, endedAt: r.endedAt, error: r.error,
+  startedAt: r.startedAt, endedAt: r.endedAt, firstTokenAt: r.firstTokenAt, error: r.error,
   usage: { inputTokens: r.inputTokens, outputTokens: r.outputTokens, cachedTokens: r.cachedTokens }
 })
 const toStep = (r: typeof steps.$inferSelect): WorkStep => ({ ...r, files: JSON.parse(r.files), changes: JSON.parse(r.changes) })
@@ -191,11 +191,14 @@ export const repository = (db: Db) => {
           .pipe(Effect.map((r) => r.map(toMemory)))
       ),
     // Já existente (mesmo texto normalizado no escopo): devolve undefined e não duplica, nem ressuscita uma esquecida.
-    addMemory: (input: { scope: string; kind?: Memory["kind"]; title?: string; text: string; state: Memory["state"]; origin: Memory["origin"]; chatId: string | null }) =>
+    // owner: o Actor que criou (ou o dono do chat, na consolidação). Sobre a pessoa (escopo user): só o dono ouve.
+    addMemory: (input: { scope: string; kind?: Memory["kind"]; title?: string; text: string; state: Memory["state"]; origin: Memory["origin"]; chatId: string | null; owner?: string }) =>
       Effect.gen(function* () {
         const at = now()
-        const m: Memory = { id: crypto.randomUUID(), kind: "fact", title: "", ...input, createdAt: at, confirmedAt: at }
-        const inserted = yield* db.insert(memories).values({ ...m, normalized: normalize(m.text) }).onConflictDoNothing().returning({ id: memories.id })
+        const { owner = "local", ...rest } = input
+        const m: Memory = { id: crypto.randomUUID(), kind: "fact", title: "", ...rest, createdAt: at, confirmedAt: at }
+        const audience = m.scope === "user" ? "owner" : "project"
+        const inserted = yield* db.insert(memories).values({ ...m, owner, audience, normalized: normalize(m.text) }).onConflictDoNothing().returning({ id: memories.id })
         return inserted.length ? m : undefined
       }).pipe(orDie),
     updateMemory: (id: string, input: { state?: Memory["state"] | undefined; title?: string | undefined; text?: string | undefined }) =>
@@ -259,6 +262,7 @@ export const repository = (db: Db) => {
       orDie(db.select().from(turns).where(and(eq(turns.chatId, chatId), inArray(turns.state, ["queued", "running"]))).orderBy(asc(turns.createdAt)).pipe(Effect.map((r) => r.map(toTurn)))),
     startTurn: (id: string) =>
       orDie(db.update(turns).set({ state: "running", startedAt: now() }).where(eq(turns.id, id)).returning().pipe(Effect.map((r) => r[0]!))),
+    markFirstToken: (id: string) => orDie(db.update(turns).set({ firstTokenAt: now() }).where(and(eq(turns.id, id), isNull(turns.firstTokenAt))).pipe(Effect.asVoid)),
     savePartial: (id: string, partialText: string) => orDie(db.update(turns).set({ partialText }).where(eq(turns.id, id)).pipe(Effect.asVoid)),
     finishTurn: (id: string, end: { state: "completed" | "failed" | "interrupted"; error: string | null; messageId: string | null; usage?: { inputTokens: number; outputTokens: number; cachedTokens?: number } }) =>
       orDie(

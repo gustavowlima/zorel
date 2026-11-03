@@ -10,6 +10,18 @@ const Millis = Schema.Number // epoch ou duração em ms
 
 // ---------- turno ----------
 
+// Erros do server como código: a interface traduz (i18n, fase UI). Erro do engine continua texto livre.
+export const ErrorCode = {
+  interrupted: "interrupted", // você parou
+  cancelled: "cancelled", // estava na fila quando você parou
+  serverRestarted: "server_restarted", // o server caiu no meio; o parcial foi guardado
+  chatRemoved: "chat_removed"
+} as const
+export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode]
+// Mensagens antigas guardavam "interrompido" em texto.
+export const isInterruption = (error: string | null) =>
+  !!error && (error === ErrorCode.interrupted || error === ErrorCode.cancelled || error === ErrorCode.serverRestarted || error.startsWith("interrompido"))
+
 export const TurnState = Schema.Literals(["queued", "running", "completed", "failed", "interrupted"])
 export type TurnState = typeof TurnState.Type
 
@@ -30,7 +42,8 @@ export const Turn = Schema.Struct({
   state: TurnState,
   startedAt: Schema.NullOr(Millis),
   endedAt: Schema.NullOr(Millis),
-  error: Schema.NullOr(Schema.String),
+  firstTokenAt: Schema.NullOr(Millis), // latência até o primeiro texto
+  error: Schema.NullOr(Schema.String), // ErrorCode ou a mensagem do engine
   usage: Usage
 })
 export type Turn = typeof Turn.Type

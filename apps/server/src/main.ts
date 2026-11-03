@@ -12,6 +12,8 @@ import { consolidate, DataDir } from "./chat.ts"
 import { Store, type Repository } from "./db.ts"
 import { Engines, listModels } from "./engines.ts"
 import { API_KEYS, mcpEnvName, Secrets } from "./secrets.ts"
+import { Actor } from "./access.ts"
+import { LoggerLive } from "./observability.ts"
 import { Runtime } from "./runtime.ts"
 import { Tools } from "./tools.ts"
 
@@ -87,12 +89,13 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
 const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
+    const actor = yield* Actor
     return h
       .handle("list", () => store.memories())
       // Escrita pelo usuário: já nasce ativa. Repetida: devolve a existente.
       .handle("create", ({ payload }) =>
         Effect.gen(function* () {
-          const added = yield* store.addMemory({ ...payload, state: "active", origin: "manual", chatId: null })
+          const added = yield* store.addMemory({ ...payload, state: "active", origin: "manual", chatId: null, owner: actor.id })
           return added ?? (yield* store.memories()).find((m) => m.scope === payload.scope && m.text === payload.text)!
         })
       )
@@ -218,7 +221,7 @@ export const services = (dbPath: string, dataDir: string, secrets?: Layer.Layer<
   const store = Store.layer(dbPath)
   const withSecrets = Layer.provideMerge(secrets ?? Secrets.layer, store)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(Engines.layer, Tools.layer), withSecrets), DataDir.layer(dataDir))
-  return Layer.provideMerge(Runtime.layer, base)
+  return Layer.mergeAll(Layer.provideMerge(Runtime.layer, base), Actor.local)
 }
 
 export interface StartOptions {
@@ -237,6 +240,7 @@ export async function start(o: StartOptions = {}) {
     HttpRouter.serve,
     Layer.provide(services(process.env.ZERO_DB ?? join(dataDir, "zero.db"), dataDir)),
     Layer.provide(BunHttpServer.layer({ port, hostname: "127.0.0.1" })),
+    Layer.provide(LoggerLive),
     Layer.launch,
     BunRuntime.runMain
   )
