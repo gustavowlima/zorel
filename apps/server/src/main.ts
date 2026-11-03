@@ -25,6 +25,7 @@ import { Tools } from "./tools.ts"
 import { billingOf, Pricing } from "./pricing.ts"
 import { clean, measure } from "./storage.ts"
 import { Workspace } from "./workspace.ts"
+import { TerminalSocket } from "./terminals.ts"
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
 const found = <A, E, R>(e: Effect.Effect<A | undefined, E, R>) => Effect.flatMap(e, (a) => (a === undefined ? notFound() : Effect.succeed(a)))
@@ -484,6 +485,7 @@ export const AppLive = (webDir?: string) =>
     RpcRoute,
     AttachmentUpload,
     AttachmentFile,
+    TerminalSocket,
     ...(webDir && existsSync(join(webDir, "index.html")) ? [WebRoute(webDir)] : [])
   )
 

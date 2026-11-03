@@ -309,6 +309,11 @@ Compactos e diretos, com aperto físico ao pressionar.
 ### Visualizador de imagem
 - Uma imagem do chat abre dentro do Zero (`ImageViewer`), nunca numa aba nova: modal sobre o app escurecido, a imagem o maior que couber (object-contain, borda forte, cantos de 12px) e, acima, uma barra com o nome, "Open original" e o fechar. Esc, clique fora ou o botão fecham; o foco volta à miniatura.
 
+### Terminal
+- Painel embaixo do chat, de altura ajustável: arraste a borda de cima (ou foque nela e use as setas); a altura fica lembrada (mín. 160px, máx. 75% da janela).
+- Abas em pílula: a primeira, "Agent commands", é o registro (só leitura) dos comandos que os agentes rodaram; o + abre um shell de verdade ("Shell 1", "Shell 2"…), um shell de login num PTY na pasta onde os agentes do chat trabalham. Cada aba de shell tem um × (e Delete/Backspace na aba focada) que a fecha e encerra o shell; trocar de aba não derruba o shell. Um shell que terminou mostra "The shell ended." e o rótulo apagado.
+- xterm.js com as cores dos tokens (fundo `code`, texto secundário, seleção accent-soft) e a fonte mono; o tamanho segue o painel.
+
 ### Seletor de modelo
 - Popover com um trilho de ícones à esquerda (uma conta de assinatura ou provedor por botão) e, à direita, a busca em todos os modelos, os limites da conta escolhida e a lista dela.
 - O trilho só mostra o que é de fato um caminho: cada conta de assinatura (com a inicial quando há mais de uma do mesmo provedor), provedores de API com chave e servidores locais (Ollama, LM Studio) só enquanto rodam. Um provedor de API com o logo de uma assinatura (Anthropic ↔ Claude, OpenAI ↔ Codex) só aparece com chave, para não parecer uma segunda conta.
