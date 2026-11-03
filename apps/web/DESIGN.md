@@ -306,6 +306,9 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Projeto:** uma linha de 32px. Seta à esquerda que gira 90° ao abrir; nome em 500 (600 aberto); à direita só o estado: ponto azul (`accent-text`) quando algum chat espera você, girando verde quando algum trabalha, nada parado. Ajustes e novo chat aparecem no hover ou foco no lugar do estado.
 - **Chat:** uma linha de 32px (detalhada no item Barra lateral). Ordem dentro de cada grupo: esperando você, trabalhando, depois a ordem manual e a atividade; 5 por grupo e "mostrar mais".
 
+### Visualizador de imagem
+- Uma imagem do chat abre dentro do Zero (`ImageViewer`), nunca numa aba nova: modal sobre o app escurecido, a imagem o maior que couber (object-contain, borda forte, cantos de 12px) e, acima, uma barra com o nome, "Open original" e o fechar. Esc, clique fora ou o botão fecham; o foco volta à miniatura.
+
 ### Seletor de modelo
 - Popover com um trilho de ícones à esquerda (uma conta de assinatura ou provedor por botão) e, à direita, a busca em todos os modelos, os limites da conta escolhida e a lista dela.
 - O trilho só mostra o que é de fato um caminho: cada conta de assinatura (com a inicial quando há mais de uma do mesmo provedor), provedores de API com chave e servidores locais (Ollama, LM Studio) só enquanto rodam. Um provedor de API com o logo de uma assinatura (Anthropic ↔ Claude, OpenAI ↔ Codex) só aparece com chave, para não parecer uma segunda conta.

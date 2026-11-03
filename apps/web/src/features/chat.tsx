@@ -21,7 +21,7 @@ import { chatDelta, Delta, type Focus, TerminalPanel, TurnChanges, WorkspacePane
 import { ModelPicker } from "./model-picker.tsx"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import {
-  Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, Info, Input, Menu, MenuItem,
+  Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
   MenuSeparator, MessageCircle, Minimize2, MoreHorizontal, PanelBottom, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
 } from "@/ui"
 
@@ -459,9 +459,9 @@ function UserMessage({ message: m }: { message: Message }) {
         <div className="flex flex-wrap justify-end gap-1.5">
           {m.attachments.map((a) =>
             a.mime.startsWith("image/") ? (
-              <a key={a.id} href={attachmentUrl(a.id)} target="_blank" rel="noreferrer" className="rounded-card outline-none focus-visible:ring-2 focus-visible:ring-accent">
+              <ImageViewer key={a.id} src={attachmentUrl(a.id)} name={a.name} closeLabel={t("common.close")} openLabel={t("chat.openOriginal")}>
                 <img src={attachmentUrl(a.id)} alt={a.name} className="h-28 max-w-60 rounded-card border border-subtle object-cover" />
-              </a>
+              </ImageViewer>
             ) : (
               <a
                 key={a.id}
