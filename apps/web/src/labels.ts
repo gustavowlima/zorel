@@ -118,6 +118,27 @@ export function windowMinutes(id: string): number | null {
   return Number.isFinite(minutes) ? minutes : null
 }
 
+// How a limit window is going at `now`: used and elapsed (0..1) and, when the burn so far would empty it before
+// it resets, roughly when. No projection in the window's first tenth: too little to go on.
+// ponytail: a straight line from the window's start; a recent-rate estimate needs readings over time.
+export interface Pace {
+  readonly used: number
+  readonly elapsed: number | null
+  readonly runsOutAt: number | null
+  readonly risk: number // > 1 when it runs out early; otherwise how full it is
+}
+export function paceOf(w: { id: string; usedPercent: number; resetsAt: number | null }, now = Date.now()): Pace {
+  const used = w.usedPercent / 100
+  const minutes = windowMinutes(w.id)
+  if (!minutes || !w.resetsAt) return { used, elapsed: null, runsOutAt: null, risk: used }
+  const length = minutes * 60_000
+  const start = w.resetsAt - length
+  const elapsed = Math.max(0, Math.min(1, (now - start) / length))
+  const out = used > 0 && elapsed >= 0.1 ? start + (now - start) / used : null
+  const runsOutAt = out !== null && out < w.resetsAt ? out : null
+  return { used, elapsed, runsOutAt, risk: runsOutAt ? 1 + (w.resetsAt - runsOutAt) / length : used }
+}
+
 // The fullest window of an account (0..1), for alerts and compact meters.
 export const fullest = (a: Pick<ProviderAccount, "usage">) => Math.max(0, ...(a.usage?.windows ?? []).map((w) => w.usedPercent / 100))
 
