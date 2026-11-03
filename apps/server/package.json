@@ -7,6 +7,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.317",
     "@effect/ai-anthropic": "4.1.2",
     "@effect/ai-openai-compat": "4.1.2",
     "@effect/platform-bun": "4.1.2",
@@ -19,5 +20,8 @@
   "devDependencies": {
     "@types/bun": "^1.4.4",
     "drizzle-kit": "1.0.0-rc.5"
+  },
+  "imports": {
+    "#server/*": "./src/*"
   }
 }

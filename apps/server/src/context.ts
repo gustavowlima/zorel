@@ -73,7 +73,8 @@ export function buildTurn(i: TurnInput): Turn {
       "Para passar parte do trabalho a um deles, mencione @handle na resposta: ele responde em seguida. Mencione só quando precisar; para só citar alguém, escreva o nome sem @."
     ].join("\n")
 
-  const system = [
+  // Estável: abre a sessão nativa (muda pouco; se mudar, a sessão reabre com o ponto de retomada).
+  const stable = [
     "Você é um assistente num workspace de projetos. Responda no idioma do usuário, de forma direta.",
     "Use o contexto abaixo quando ajudar; não invente fatos que não estão nele.",
     i.tools?.defs.length && "Você tem ferramentas. Use quando a tarefa pedir; ações que mudam algo podem esperar a aprovação do usuário.",
@@ -83,13 +84,19 @@ export function buildTurn(i: TurnInput): Turn {
     i.project && section(`Projeto: ${i.project.name}`, i.project.brief),
     i.project && section("Memórias do projeto", bullets(of(`project:${i.project.id}`))),
     i.agent && section("Suas memórias de trabalho", bullets(of(`agent:${i.agent.id}`))),
-    section("Skills disponíveis (procedimentos aprovados; siga quando a tarefa casar)", i.skills.all.slice(0, SKILL_TITLES).map((s) => `- ${s.title}`).join("\n")),
+    section("Skills disponíveis (procedimentos aprovados; siga quando a tarefa casar)", i.skills.all.slice(0, SKILL_TITLES).map((s) => `- ${s.title}`).join("\n"))
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+  // Dinâmico: depende da mensagem atual; numa sessão nativa vai junto da mensagem do turno.
+  const dynamic = [
     ...i.skills.relevant.map((s) => section(`Skill: ${s.title}`, s.text)),
     section("Resumo do que veio antes nesta conversa", i.chat.summary),
     section("Memórias possivelmente relevantes para a mensagem atual", bullets(i.retrieved))
   ]
     .filter(Boolean)
     .join("\n\n")
+  const system = [stable, dynamic].filter(Boolean).join("\n\n")
 
   // Do ponto de vista de quem responde: as próprias falas são "assistant"; as de outros agentes chegam
   // como "user" com o nome, para não parecer que ele mesmo disse.
@@ -98,10 +105,10 @@ export function buildTurn(i: TurnInput): Turn {
     .filter((m) => m.text.trim())
     .map((m) =>
       m.role === "assistant" && m.agentId !== (i.agent?.id ?? null)
-        ? { role: "user", text: `[${name(m.agentId)}]\n${m.text}` }
-        : { role: m.role, text: m.text }
+        ? { role: "user", text: `[${name(m.agentId)}]\n${m.text}`, at: m.at }
+        : { role: m.role, text: m.text, at: m.at }
     )
-  return { model: i.model, system, messages, cwd: i.cwd, tools: i.tools }
+  return { model: i.model, system, stable, dynamic, messages, cwd: i.cwd, tools: i.tools }
 }
 
 // ---------- consolidação (aprendizado contínuo) ----------

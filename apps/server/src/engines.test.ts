@@ -55,7 +55,7 @@ test("contexto: orçamento de memórias prioriza as recentes; camadas na ordem e
   })
   const order = ["INSTR", "@revisor-senior", "EU", "BRIEF", "PROJ", "AG", "SKILLTITLE", "SKILLBODY", "RESUMO", "BUSCA"].map((s) => turn.system.indexOf(s))
   expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]!))).toBe(true)
-  expect(turn.messages).toEqual([
+  expect(turn.messages.map(({ role, text }) => ({ role, text }))).toEqual([
     { role: "user", text: "oi" },
     { role: "assistant", text: "minha fala" },
     { role: "user", text: "[Revisor Sênior]\nfala do revisor" },

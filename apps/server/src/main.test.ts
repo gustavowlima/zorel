@@ -201,7 +201,7 @@ test("canal: @menção escolhe quem responde; agente passa a vez mencionando out
   mentionNext.set("Leo", "achei o bug, @nico revisa?")
   r = await send(chat.id, { text: "@leo investiga o erro" })
   expect(dones(r.events).map((m) => [m.agentId, m.model])).toEqual([[leo.id, "codex-cli/default"], [nico.id, "ollama/llama3"]])
-  expect(turns.at(-1)!.messages.at(-1)).toEqual({ role: "user", text: "[Leo]\nachei o bug, @nico revisa?" })
+  expect(turns.at(-1)!.messages.at(-1)).toMatchObject({ role: "user", text: "[Leo]\nachei o bug, @nico revisa?" })
 
   // ping-pong para no limite
   mentionNext.set("Nico", "@leo de novo")
