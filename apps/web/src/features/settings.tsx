@@ -1,18 +1,19 @@
 // Settings (prototype "Settings"): sections on the left, one at a time on the right. Providers (subscription
 // sign-ins and API keys, providers.tsx), MCP servers, skills, storage (storage.tsx), the audit log
-// (audit.tsx), appearance.
+// (audit.tsx), General (the theme and the preferences to come).
 import { formatAge, t } from "@zero/i18n"
 import { type ReactNode, useState } from "react"
-import { agentsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation } from "../client.ts"
+import { agentsAtom, memoriesAtom, mutations, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { scopeLabel } from "../labels.ts"
 import { go, SETTINGS_TABS, type SettingsTab, setThemePref, themePref, type ThemePref } from "../state.ts"
 import { AuditSection } from "./audit.tsx"
 import { McpSection } from "./mcp.tsx"
 import { ProvidersSection } from "./providers.tsx"
+import { ReadingState } from "./reading.tsx"
 import { StorageSection } from "./storage.tsx"
-import { BookOpen, Button, Field, HardDrive, History, NavItem, Palette, Plug, Plus, Screen, Section, Select, Sparkles, Switch } from "@/ui"
+import { ArrowRight, BookOpen, Button, HardDrive, History, NavItem, Plug, Settings, Rows, Screen, Section, Segmented, Sparkles, Switch } from "@/ui"
 
-const ICONS: Record<SettingsTab, ReactNode> = { providers: <Sparkles />, mcp: <Plug />, skills: <BookOpen />, storage: <HardDrive />, audit: <History />, appearance: <Palette /> }
+const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, skills: <BookOpen />, storage: <HardDrive />, audit: <History /> }
 
 export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: string | undefined }) {
   return (
@@ -31,7 +32,7 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
           {tab === "audit" && <AuditSection />}
           {tab === "mcp" && <McpSection projectId={null} />}
           {tab === "skills" && <Skills />}
-          {tab === "appearance" && <Appearance />}
+          {tab === "general" && <General />}
         </div>
       </div>
     </Screen>
@@ -41,23 +42,27 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
 // ---------- skills ----------
 
 function Skills() {
-  const skills = useList(memoriesAtom).filter((m) => m.kind === "skill")
+  const reading = useReading(memoriesAtom)
+  const skills = reading.items.filter((m) => m.kind === "skill")
+  const invalidate = useInvalidate()
+  const [failed, setFailed] = useState<string>()
   const projects = useList(projectsAtom)
   const agents = useList(agentsAtom)
   const update = useMutation(mutations.updateMemory)
   return (
-    <>
-      <p className="text-muted">{t("skills.intro")}</p>
-      <Section
+    <Section
         title={t("settings.skills")}
+        description={<span className="block max-w-prose">{t("skills.intro")}</span>}
         action={
           <Button size="sm" variant="secondary" onPress={() => go({ view: "knowledge" })}>
-            <Plus />
-            {t("skills.new")}
+            {t("skills.newInKnowledge")}
+            <ArrowRight />
           </Button>
         }
       >
-        {skills.length === 0 && <p className="text-muted">{t("skills.empty")}</p>}
+        <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["memories"])} />
+        {failed && <p className="text-sm text-danger">{failed}</p>}
+        {!reading.loading && !reading.failed && skills.length === 0 && <p className="text-muted">{t("skills.empty")}</p>}
         {skills.length > 0 && (
           <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
             {skills.map((s) => (
@@ -77,7 +82,10 @@ function Skills() {
                   <Switch
                     isSelected={s.state === "active"}
                     aria-label={t("skills.active", { name: s.title })}
-                    onChange={(on) => void update({ params: { id: s.id }, payload: { state: on ? "active" : "forgotten" }, reactivityKeys: ["memories"] })}
+                    onChange={(on) => {
+                      setFailed(undefined)
+                      update({ params: { id: s.id }, payload: { state: on ? "active" : "forgotten" }, reactivityKeys: ["memories"] }).catch(() => setFailed(t("skills.updateFailed", { name: s.title })))
+                    }}
                   />
                 )}
               </div>
@@ -85,25 +93,34 @@ function Skills() {
           </div>
         )}
       </Section>
-    </>
   )
 }
 
-// ---------- appearance ----------
+// ---------- general ----------
 
-function Appearance() {
+// Preferences of this computer, one section per topic; Appearance (the theme) first.
+
+function General() {
   const [pref, setPref] = useState<ThemePref>(themePref)
   return (
-    <Field label={t("appearance.theme")} className="w-64">
-      <Select
-        value={pref}
-        aria-label={t("appearance.theme")}
-        onChange={(v) => {
-          setPref(v as ThemePref)
-          setThemePref(v as ThemePref)
-        }}
-        options={(["system", "dark", "light"] as const).map((p) => ({ value: p, label: t(`appearance.${p}`) }))}
-      />
-    </Field>
+    <Section title={t("appearance.title")}>
+      <Rows>
+        <div className="flex flex-wrap items-center gap-3 py-3.5">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="font-medium">{t("appearance.theme")}</span>
+            <span className="text-sm text-muted">{t("appearance.themeHint")}</span>
+          </span>
+          <Segmented
+            label={t("appearance.theme")}
+            value={pref}
+            onChange={(v) => {
+              setPref(v)
+              setThemePref(v)
+            }}
+            options={(["system", "dark", "light"] as const).map((p) => ({ id: p, label: t(`appearance.${p}`) }))}
+          />
+        </div>
+      </Rows>
+    </Section>
   )
 }

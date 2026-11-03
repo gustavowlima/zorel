@@ -26,6 +26,9 @@ export const en = {
     none: "None",
     default: "Default",
     retry: "Try again",
+    checking: "Checking…",
+    loadFailed: "Couldn't read this",
+    loadFailedHint: "Zero's server didn't answer. Check that it is running, then try again.",
     copy: "Copy",
     copied: "Copied",
     assistant: "Assistant",
@@ -383,14 +386,14 @@ export const en = {
     storage: "Storage",
     audit: "Audit log",
     skills: "Skills",
-    appearance: "Appearance",
+    general: "General",
     hint: {
+      general: "Theme and other preferences",
       providers: "Subscriptions, API keys and local servers",
       storage: "What Zero keeps on this computer",
       audit: "Who changed what, and when",
       mcp: "Tools agents use through the gateway",
-      skills: "Procedures agents follow",
-      appearance: "How Zero looks on this computer"
+      skills: "Procedures agents follow"
     }
   },
   accounts: {
@@ -449,6 +452,8 @@ export const en = {
     measured: "Measured {age}",
     free: "{size} free on this disk",
     measure: "Measure again",
+    measuring: "Measuring…",
+    cleanFailed: "Couldn't clean {name}. Try again.",
     categories: {
       workspaces: "Workspace snapshots",
       attachments: "Attachments",
@@ -484,6 +489,15 @@ export const en = {
     search: "Search",
     empty: "Nothing changed yet",
     noMatch: "No change matches",
+    today: "Today",
+    yesterday: "Yesterday",
+    from: "From",
+    to: "To",
+    clearFilters: "Clear filters",
+    range: "{first}–{last} of {total}",
+    pageOf: "{page} of {pages}",
+    newer: "Newer",
+    older: "Older",
     you: "You",
     removedAgent: "Removed agent",
     actions: {
@@ -559,6 +573,8 @@ export const en = {
     intro: "Servers you added. Secrets live in the system keychain, never in Zero's database.",
     projectIntro: "Available in this project's chats, on top of the global ones.",
     empty: "No servers yet",
+    updateFailed: "Couldn't change {name}. Try again.",
+    removeFailed: "Couldn't remove {name}. Try again.",
     add: "Add server",
     local: "Local",
     remote: "Remote",
@@ -601,6 +617,8 @@ export const en = {
     intro: "Procedures agents follow, learned while working or added by you. They enter the context only when the message needs them.",
     empty: "No skills yet",
     new: "New skill",
+    newInKnowledge: "New skill in Knowledge",
+    updateFailed: "Couldn't change {name}. Try again.",
     review: "Review",
     active: "{name} on",
     pending: "Waiting for your review",
@@ -608,7 +626,9 @@ export const en = {
     added: "Added by you"
   },
   appearance: {
+    title: "Appearance",
     theme: "Theme",
+    themeHint: "Match the system follows your computer's light or dark setting.",
     system: "Match the system",
     dark: "Dark",
     light: "Light"

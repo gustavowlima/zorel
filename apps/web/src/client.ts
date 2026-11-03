@@ -3,7 +3,7 @@
 //   no screen calls reload() by hand.
 // - Turns: AtomRpc over one WebSocket. Each chat is an atom folded from its event stream (snapshot first,
 //   then live events); reconnecting subscribes again and the next snapshot replaces the state.
-import { Api, type Attachment, MAX_ATTACHMENT_BYTES, type Message, type Switch } from "@zero/contracts"
+import { type AuditKind, Api, type Attachment, MAX_ATTACHMENT_BYTES, type Message, type Switch } from "@zero/contracts"
 import { type Approval, type ApprovalOutcome, type ChatEvent, type ChatStatus, type WorkStep, ZeroRpc } from "@zero/contracts/events"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { t } from "@zero/i18n"
@@ -35,7 +35,8 @@ export const memoriesAtom = Zero.query("memories", "list", { reactivityKeys: ["m
 export const serversAtom = Zero.query("tools", "list", { reactivityKeys: ["servers"] })
 export const accountsAtom = Zero.query("accounts", "list", { reactivityKeys: ["accounts"] })
 export const keysAtom = Zero.query("settings", "keys", { reactivityKeys: ["keys"] })
-export const auditAtom = Zero.query("settings", "audit", { reactivityKeys: ["audit"] })
+export const auditAtom = (query: { kind?: AuditKind; q?: string; from?: number; to?: number; page?: number }) =>
+  Zero.query("settings", "audit", { query, reactivityKeys: ["audit"] })
 export const storageAtom = Zero.query("settings", "storage", { reactivityKeys: ["storage"] })
 // How full the next turn of a chat is (the composer's context meter); read again when the meter opens.
 export const commandsAtom = (id: string) => Zero.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
@@ -98,6 +99,12 @@ const EMPTY: ReadonlyArray<never> = []
 // A list query as a plain array: empty while the first load runs, the last value while it refetches.
 export function useList<A>(atom: Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<A>, unknown>>): ReadonlyArray<A> {
   return AsyncResult.getOrElse(useAtomValue(atom), () => EMPTY)
+}
+
+// A list query with its state, for screens that must not read "empty" before the first answer or after a failure.
+export function useReading<A>(atom: Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<A>, unknown>>) {
+  const result = useAtomValue(atom)
+  return { items: AsyncResult.getOrElse(result, () => EMPTY as ReadonlyArray<A>), loading: AsyncResult.isInitial(result), failed: AsyncResult.isFailure(result) }
 }
 
 // Promise-returning mutation: `await create({ payload, reactivityKeys: ["projects"] })`.

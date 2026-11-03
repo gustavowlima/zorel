@@ -155,3 +155,6 @@ export function formatCost(usd: number): string {
   money ??= new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
   return usd > 0 && usd < 0.01 ? `$${usd.toPrecision(2)}` : money.format(usd)
 }
+
+// A command line as a shell would split it, for the usual cases: words, "double" or 'single' quoted arguments.
+export const splitCommand = (line: string) => [...line.trim().matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? "")

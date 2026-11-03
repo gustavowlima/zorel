@@ -116,7 +116,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
             <IconButton
               label={t("nav.settings")}
               size="sm"
-              onPress={() => go({ view: "settings", tab: "providers" })}
+              onPress={() => go({ view: "settings", tab: "general" })}
               className={cx(route.view === "settings" && "bg-hover text-fg")}
               {...(route.view === "settings" && { "aria-current": "page" as const })}
             >

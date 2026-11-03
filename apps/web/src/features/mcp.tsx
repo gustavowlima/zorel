@@ -3,7 +3,9 @@
 import type { McpServer, ToolInfo } from "@zero/contracts"
 import { t } from "@zero/i18n"
 import { type FormEvent, useState } from "react"
-import { mutations, serversAtom, useList, useMutation } from "../client.ts"
+import { splitCommand } from "../labels.ts"
+import { mutations, serversAtom, useInvalidate, useMutation, useReading } from "../client.ts"
+import { ReadingState } from "./reading.tsx"
 import { Badge, Button, Code, ConfirmButton, Field, Input, Plus, Section, Select, Spinner, Switch, Textarea } from "@/ui"
 
 const MODES = ["read", "approve", "auto"] as const
@@ -11,12 +13,15 @@ const modeOptions = () => MODES.map((m) => ({ value: m, label: t(`mcp.modes.${m}
 const CLS_TONE = { read: "neutral", write: "warning", sensitive: "danger" } as const
 
 export function McpSection({ projectId }: { projectId: string | null }) {
-  const servers = useList(serversAtom).filter((s) => s.projectId === projectId)
+  const reading = useReading(serversAtom)
+  const servers = reading.items.filter((s) => s.projectId === projectId)
+  const invalidate = useInvalidate()
   const [adding, setAdding] = useState(false)
   return (
     <div className="flex flex-col gap-8">
       <Section
-        title={projectId ? t("mcp.projectIntro") : t("mcp.intro")}
+        title={t("settings.mcp")}
+        description={projectId ? t("mcp.projectIntro") : t("mcp.intro")}
         action={
           !adding && (
             <Button size="sm" variant="secondary" onPress={() => setAdding(true)}>
@@ -27,7 +32,8 @@ export function McpSection({ projectId }: { projectId: string | null }) {
         }
       >
         {adding && <NewServer projectId={projectId} onDone={() => setAdding(false)} />}
-        {servers.length === 0 && !adding && <p className="text-muted">{t("mcp.empty")}</p>}
+        <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["servers"])} />
+        {!reading.loading && !reading.failed && servers.length === 0 && !adding && <p className="text-muted">{t("mcp.empty")}</p>}
         {servers.length > 0 && (
           <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
             {servers.map((s) => (
@@ -56,7 +62,11 @@ function ServerRow({ server: s }: { server: McpServer }) {
   const inspect = useMutation(mutations.inspectServer)
   const [tools, setTools] = useState<{ tools: ReadonlyArray<ToolInfo>; error: string | null }>()
   const [testing, setTesting] = useState(false)
-  const patch = (payload: { mode?: McpServer["mode"]; enabled?: boolean }) => void update({ params: { id: s.id }, payload, reactivityKeys: ["servers"] })
+  const [failed, setFailed] = useState<string>()
+  const patch = (payload: { mode?: McpServer["mode"]; enabled?: boolean }) => {
+    setFailed(undefined)
+    update({ params: { id: s.id }, payload, reactivityKeys: ["servers"] }).catch(() => setFailed(t("mcp.updateFailed", { name: s.name })))
+  }
   const test = () => {
     setTesting(true)
     setTools(undefined)
@@ -81,11 +91,12 @@ function ServerRow({ server: s }: { server: McpServer }) {
           {testing ? <Spinner size={12} /> : null}
           {t("mcp.test")}
         </Button>
-        <ConfirmButton size="sm" variant="ghost" title={t("mcp.removeTitle", { name: s.name })} confirmLabel={t("common.remove")} onConfirm={() => void remove({ params: { id: s.id }, reactivityKeys: ["servers"] })}>
+        <ConfirmButton size="sm" variant="ghost" title={t("mcp.removeTitle", { name: s.name })} confirmLabel={t("common.remove")} onConfirm={() => void remove({ params: { id: s.id }, reactivityKeys: ["servers"] }).catch(() => setFailed(t("mcp.removeFailed", { name: s.name })))}>
           {t("common.remove")}
         </ConfirmButton>
         <Switch isSelected={s.enabled} onChange={(enabled) => patch({ enabled })} aria-label={t("mcp.enabled", { name: s.name })} />
       </div>
+      {failed && <p className="text-sm text-danger">{failed}</p>}
       {tools?.error && <p className="text-sm text-danger">{t("mcp.failed", { error: tools.error })}</p>}
       {tools && !tools.error && (
         <ul className="flex flex-col gap-1.5">
@@ -124,7 +135,7 @@ function NewServer({ projectId, onDone }: { projectId: string | null; onDone: ()
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    const [cmd = "", ...args] = command.trim().split(/\s+/) // no quoting: an argument with spaces needs editing by hand
+    const [cmd = "", ...args] = splitCommand(command)
     const payload = { projectId, name: name.trim(), command: kind === "stdio" ? cmd : "", args: kind === "stdio" ? args : [], url: kind === "http" ? url.trim() : "", env: parseEnv(env), mode }
     create({ payload, reactivityKeys: ["servers"] }).then(onDone, (err: unknown) => setError(String(err)))
   }

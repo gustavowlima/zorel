@@ -3,7 +3,7 @@
 // redacted diff (auditDiff). The event is written straight to SQLite inside the Effect that made the change, so
 // a change and its record share one process and tests stay isolated (no global drain). Secrets never enter:
 // API keys and MCP env values are recorded by name only, and *key/*token/*secret paths are redacted anyway.
-import type { AuditEntry } from "@zero/contracts"
+import { AUDIT_PAGE, type AuditEntry, type AuditKind, type AuditPage } from "@zero/contracts"
 import { Context, Effect, Layer } from "effect"
 import { type AuditActor, audit, auditDiff, defineAuditAction, initLogger } from "evlog"
 import { LOCAL_ACTOR } from "./access.ts"
@@ -49,7 +49,23 @@ export interface AuditInput {
 
 export interface AuditService {
   readonly record: (action: Action, input: AuditInput) => Effect.Effect<void>
-  readonly list: Effect.Effect<AuditEntry[]>
+  readonly list: (q: AuditFilter) => Effect.Effect<AuditPage>
+}
+
+export interface AuditFilter {
+  readonly kind?: AuditKind | undefined
+  readonly q?: string | undefined
+  readonly from?: number | undefined
+  readonly to?: number | undefined
+  readonly page?: number | undefined
+}
+
+// A kind of change, as the action prefixes it covers.
+const KIND_PREFIXES: Record<Exclude<AuditKind, "all">, ReadonlyArray<string>> = {
+  providers: ["account", "api_key", "failover_terms"],
+  projects: ["project", "agent"],
+  tools: ["mcp_server"],
+  approvals: ["approval", "turn"]
 }
 
 const show = (v: unknown) => (v === undefined || v === null ? null : typeof v === "string" ? v : JSON.stringify(v))
@@ -100,8 +116,22 @@ export class Audit extends Context.Service<Audit, AuditService>()("Audit") {
               changes: changes.map((c) => (REDACT.some((p) => p.endsWith(`.${c.field}`)) ? { ...c, before: c.before && "[REDACTED]", after: c.after && "[REDACTED]" } : c))
             })
           }).pipe(Effect.catchCause((cause) => Effect.logWarning("audit event not recorded", { cause: String(cause) }))), // never breaks the change itself
-        list: Effect.map(store.auditLog(500), (rows) =>
-          rows.map((r) => ({
+        list: (f) => {
+          const page = Math.max(0, Math.floor(f.page ?? 0))
+          return Effect.map(
+            store.auditLog({
+              prefixes: f.kind && f.kind !== "all" ? KIND_PREFIXES[f.kind] : undefined,
+              q: f.q?.trim() || undefined,
+              from: f.from,
+              to: f.to,
+              limit: AUDIT_PAGE,
+              offset: page * AUDIT_PAGE
+            }),
+            ({ rows, total }) => ({
+              total,
+              page,
+              pageSize: AUDIT_PAGE,
+              entries: rows.map((r): AuditEntry => ({
             id: r.id,
             at: r.at,
             action: r.action,
@@ -110,8 +140,10 @@ export class Audit extends Context.Service<Audit, AuditService>()("Audit") {
             outcome: r.outcome,
             reason: r.reason,
             changes: r.changes
-          }))
-        )
+              }))
+            })
+          )
+        }
       }
     })
   )

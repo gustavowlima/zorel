@@ -458,8 +458,25 @@ export const repository = (db: Db) => {
 
     // ---------- audit log ----------
     addAudit: (row: typeof auditEvents.$inferInsert) => orDie(db.insert(auditEvents).values(row)),
-    // Newest first; within the same millisecond, the last inserted first.
-    auditLog: (limit: number) => orDie(db.select().from(auditEvents).orderBy(desc(auditEvents.at), sql`rowid desc`).limit(limit)),
+    // Newest first; within the same millisecond, the last inserted first. Narrowed by action prefixes (a kind of
+    // change), words (in the target, the action or the changes) and a span of time; one page plus the total.
+    auditLog: (f: { prefixes?: ReadonlyArray<string> | undefined; q?: string | undefined; from?: number | undefined; to?: number | undefined; limit: number; offset: number }) => {
+      const like = (s: string) => `%${s.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+      const where = and(
+        f.prefixes?.length ? or(...f.prefixes.map((p) => sql`${auditEvents.action} like ${`${p}.%`}`)) : undefined,
+        f.q
+          ? or(sql`${auditEvents.targetName} like ${like(f.q)} escape '\\'`, sql`${auditEvents.action} like ${like(f.q)} escape '\\'`, sql`${auditEvents.changes} like ${like(f.q)} escape '\\'`)
+          : undefined,
+        f.from !== undefined ? sql`${auditEvents.at} >= ${f.from}` : undefined,
+        f.to !== undefined ? sql`${auditEvents.at} < ${f.to}` : undefined
+      )
+      return orDie(
+        Effect.all({
+          rows: db.select().from(auditEvents).where(where).orderBy(desc(auditEvents.at), sql`rowid desc`).limit(f.limit).offset(f.offset),
+          total: db.select({ n: sql<number>`count(*)` }).from(auditEvents).where(where).pipe(Effect.map((r) => Number(r[0]?.n ?? 0)))
+        })
+      )
+    },
 
     // ---------- preferences ----------
     preference: (key: string) => orDie(db.select().from(preferences).where(eq(preferences.key, key)).pipe(Effect.map((r) => r[0]?.value))),

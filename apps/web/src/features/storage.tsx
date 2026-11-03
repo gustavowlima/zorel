@@ -5,11 +5,12 @@ import { useAtomValue } from "@effect/atom-react"
 import type { StorageReport } from "@zero/contracts"
 import { formatAge, formatBytes, formatPercent, t } from "@zero/i18n"
 import { AsyncResult } from "effect/reactivity"
-import { useEffect } from "react"
 import { mutations, projectsAtom, storageAtom, useInvalidate, useList, useMutation } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
-import { Button, ConfirmButton, Meter, RefreshCw } from "@/ui"
+import { Button, ChevronRight, ConfirmButton, Meter, RefreshCw, Rows, Section } from "@/ui"
+import { ReadingState } from "./reading.tsx"
+import { useEffect, useState } from "react"
 
 type Category = StorageReport["categories"][number]["id"]
 type Cleanup = StorageReport["cleanup"][number]["id"]
@@ -31,7 +32,12 @@ export function StorageSection() {
   const measure = () => invalidate(["storage"])
   // Measured fresh every time the section opens.
   useEffect(() => invalidate(["storage"]), [invalidate])
-  if (!report) return null
+  if (!report)
+    return (
+      <Section title={t("storage.onThisComputer")}>
+        <ReadingState loading={!AsyncResult.isFailure(result)} failed={AsyncResult.isFailure(result)} onRetry={measure} />
+      </Section>
+    )
   return (
     <>
       <Overview report={report} measuring={result.waiting} onMeasure={measure} />
@@ -51,7 +57,7 @@ function Overview({ report, measuring, onMeasure }: { report: StorageReport; mea
           <span className="text-sm text-muted">{t("storage.onThisComputer")}</span>
           <span className="text-5xl font-semibold tracking-tight">{formatBytes(report.total)}</span>
           <span className="text-sm text-muted">
-            {[t("storage.measured", { age: formatAge(report.measuredAt) }), report.free !== null && t("storage.free", { size: formatBytes(report.free) })].filter(Boolean).join(" · ")}
+            {[measuring ? t("storage.measuring") : t("storage.measured", { age: formatAge(report.measuredAt) }), report.free !== null && t("storage.free", { size: formatBytes(report.free) })].filter(Boolean).join(" · ")}
           </span>
         </div>
         <Button size="sm" variant="secondary" isPending={measuring} onPress={onMeasure}>
@@ -81,26 +87,26 @@ function Overview({ report, measuring, onMeasure }: { report: StorageReport; mea
 
 function Projects({ report }: { report: StorageReport }) {
   if (!report.projects.length) return null
-  const max = Math.max(1, ...report.projects.map((p) => p.bytes))
+  // The meter is the project's share of everything Zero keeps, the same number written beside it.
+  const share = (bytes: number) => (report.total ? bytes / report.total : 0)
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-medium text-muted">{t("storage.projects")}</h2>
-      <div className="flex flex-col divide-y divide-subtle rounded-card bg-surface px-4">
+    <Section title={t("storage.projects")}>
+      <Rows>
         {report.projects.map((p) => (
           <div key={p.id} className="grid grid-cols-12 items-center gap-4 py-3.5">
             <span className="col-span-5 flex min-w-0 flex-col">
               <span className="truncate font-medium">{p.name}</span>
               <span className="text-sm text-muted">{t("storage.chatsIn", { count: p.chats })}</span>
             </span>
-            <Meter value={p.bytes / max} label={p.name} className="col-span-4" />
+            <Meter value={share(p.bytes)} label={p.name} className="col-span-4" />
             <span className="col-span-3 flex flex-col text-right tabular-nums">
               <span>{formatBytes(p.bytes)}</span>
-              <span className="text-sm text-muted">{formatPercent(report.total ? p.bytes / report.total : 0)}</span>
+              <span className="text-sm text-muted">{formatPercent(share(p.bytes))}</span>
             </span>
           </div>
         ))}
-      </div>
-    </section>
+      </Rows>
+    </Section>
   )
 }
 
@@ -108,11 +114,10 @@ function LargestChats({ report }: { report: StorageReport }) {
   const projects = useList(projectsAtom)
   if (!report.chats.length) return null
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-medium text-muted">{t("storage.largestChats")}</h2>
-      <div className="flex flex-col divide-y divide-subtle overflow-hidden rounded-card bg-surface">
+    <Section title={t("storage.largestChats")}>
+      <Rows>
         {report.chats.map((c) => (
-          <Button key={c.id} variant="ghost" className="h-auto justify-start gap-4 rounded-none px-4 py-3.5 text-left font-normal text-fg" onPress={() => go({ view: "chat", id: c.id })}>
+          <Button key={c.id} variant="ghost" className="h-auto justify-start gap-4 rounded-control px-3 py-3 text-left font-normal text-fg" onPress={() => go({ view: "chat", id: c.id })}>
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate font-medium">{chatTitle(c)}</span>
               <span className="truncate text-sm text-muted">
@@ -120,10 +125,11 @@ function LargestChats({ report }: { report: StorageReport }) {
               </span>
             </span>
             <span className="shrink-0 tabular-nums">{formatBytes(c.bytes)}</span>
+            <ChevronRight className="size-4 shrink-0 text-muted" />
           </Button>
         ))}
-      </div>
-    </section>
+      </Rows>
+    </Section>
   )
 }
 
@@ -131,13 +137,10 @@ function Cleanups({ report }: { report: StorageReport }) {
   const clean = useMutation(mutations.cleanStorage)
   const freeable = report.cleanup.reduce((n, c) => n + c.bytes, 0)
   const name = (id: Cleanup) => t(`storage.cleanups.${id}`)
+  const [failed, setFailed] = useState<string>()
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-sm font-medium text-muted">{t("storage.cleanUp")}</h2>
-        <span className="text-sm text-muted">{freeable ? t("storage.canFree", { size: formatBytes(freeable) }) : t("storage.nothing")}</span>
-      </div>
-      <div className="flex flex-col divide-y divide-subtle rounded-card bg-surface px-4">
+    <Section title={t("storage.cleanUp")} action={<span className="text-sm text-muted">{freeable ? t("storage.canFree", { size: formatBytes(freeable) }) : t("storage.nothing")}</span>}>
+      <Rows>
         {report.cleanup.map((c) => (
           <div key={c.id} className="flex flex-wrap items-center gap-4 py-3.5">
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -152,13 +155,17 @@ function Cleanups({ report }: { report: StorageReport }) {
               title={t("storage.confirmTitle", { name: name(c.id).toLowerCase() })}
               description={t("storage.confirmBody", { size: formatBytes(c.bytes) })}
               confirmLabel={t("storage.clean")}
-              onConfirm={() => void clean({ params: { id: c.id }, reactivityKeys: ["storage", "audit"] })}
+              onConfirm={() => {
+                setFailed(undefined)
+                clean({ params: { id: c.id }, reactivityKeys: ["storage", "audit"] }).catch(() => setFailed(t("storage.cleanFailed", { name: name(c.id).toLowerCase() })))
+              }}
             >
               {t("storage.clean")}
             </ConfirmButton>
           </div>
         ))}
-      </div>
-    </section>
+      </Rows>
+      {failed && <p className="text-sm text-danger">{failed}</p>}
+    </Section>
   )
 }
