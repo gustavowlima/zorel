@@ -311,7 +311,11 @@ Compactos e diretos, com aperto físico ao pressionar.
 
 ### Terminal
 - Painel embaixo do chat, de altura ajustável: arraste a borda de cima (ou foque nela e use as setas); a altura fica lembrada (mín. 160px, máx. 75% da janela).
-- Abas em pílula: a primeira, "Agent commands", é o registro (só leitura) dos comandos que os agentes rodaram; o + abre um shell de verdade ("Shell 1", "Shell 2"…), um shell de login num PTY na pasta onde os agentes do chat trabalham. Cada aba de shell tem um × (e Delete/Backspace na aba focada) que a fecha e encerra o shell; trocar de aba não derruba o shell. Um shell que terminou mostra "The shell ended." e o rótulo apagado.
+- Abrir o painel abre um shell (ou traz de volta os do chat): abas em pílula "Shell 1", "Shell 2"…, o + abre outra. Os comandos que os agentes rodaram ficam no chat, nos passos de cada resposta, não aqui.
+- Cada shell vive no servidor (um shell de login num PTY na pasta onde os agentes do chat trabalham): fechar o painel ou recarregar só desconecta; ao voltar, as abas e o layout reaparecem e o fim da saída é reexibido. Fechar a aba (× ou Delete/Backspace nela) encerra o shell, perguntando antes se algo ainda roda nele; fechar a última aba fecha o painel.
+- Uma aba divide em até 4 painéis, lado a lado ou empilhados (botões na barra); cada painel é um shell, com × no hover quando há mais de um.
+- Links: URLs abrem numa aba nova; caminhos de arquivo (src/a.ts:12) abrem o arquivo no app padrão do computador, só dentro da pasta do chat.
+- Selecionar texto mostra "Add to chat": o trecho vai para o campo de mensagem num bloco de código, depois do que já está digitado.
 - xterm.js com as cores dos tokens (fundo `code`, texto secundário, seleção accent-soft) e a fonte mono; o tamanho segue o painel.
 
 ### Menu de contexto

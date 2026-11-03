@@ -183,6 +183,13 @@ export type ContextUsage = typeof ContextUsage.Type
 export const EngineCommand = Schema.Struct({ name: Schema.String, description: Schema.String, argumentHint: Schema.NullOr(Schema.String) })
 export type EngineCommand = typeof EngineCommand.Type
 
+// A shell of the chat's Terminal panel (it outlives the panel; see apps/server/src/terminals.ts). busy: something
+// runs in it, so closing it asks first.
+export const TerminalSession = Schema.Struct({ id: Schema.String, n: Schema.Number, ended: Schema.Boolean, busy: Schema.Boolean })
+export type TerminalSession = typeof TerminalSession.Type
+// A file to open in the computer's default app, from a path printed in the terminal (relative to the chat's folder).
+export const OpenFile = Schema.Struct({ path: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1000)) })
+
 // Manual order in the sidebar: the ids in their new order. Chats only reorder inside their own group.
 export const ProjectOrder = Schema.Struct({ ids: Schema.Array(Id) })
 export const ChatOrder = Schema.Struct({ projectId: Schema.NullOr(Id), ids: Schema.Array(Id) })
@@ -416,6 +423,9 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.get("messages", "/api/chats/:id/messages", { params: idParam, success: Schema.Array(Message) }))
       .add(HttpApiEndpoint.get("context", "/api/chats/:id/context", { params: idParam, success: ContextUsage, error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.get("commands", "/api/chats/:id/commands", { params: idParam, success: Schema.Array(EngineCommand), error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.get("terminals", "/api/chats/:id/terminals", { params: idParam, success: Schema.Array(TerminalSession), error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.delete("closeTerminal", "/api/chats/:id/terminals/:terminal", { params: Schema.Struct({ id: Schema.String, terminal: Schema.String }) }))
+      .add(HttpApiEndpoint.post("openFile", "/api/chats/:id/open", { params: idParam, payload: OpenFile, error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
       .add(HttpApiEndpoint.post("consolidate", "/api/chats/:id/consolidate", { params: idParam, success: Chat, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
       // What one turn changed in the workspace, and undoing it (restores the files to the checkpoint before it).
       .add(HttpApiEndpoint.get("diff", "/api/turns/:id/diff", { params: idParam, success: TurnDiff, error: HttpApiError.NotFound }))

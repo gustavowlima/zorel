@@ -40,6 +40,7 @@ export const auditAtom = (query: { kind?: AuditKind; q?: string; from?: number; 
 export const storageAtom = Zero.query("settings", "storage", { reactivityKeys: ["storage"] })
 // How full the next turn of a chat is (the composer's context meter); read again when the meter opens.
 export const commandsAtom = (id: string) => Zero.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
+export const terminalsAtom = (id: string) => Zero.query("chats", "terminals", { params: { id }, reactivityKeys: ["terminals"] })
 export const contextAtom = (id: string) => Zero.query("chats", "context", { params: { id }, reactivityKeys: ["context"] })
 export const modelsAtom = Zero.query("settings", "models", { reactivityKeys: ["models"] })
 export const usageAtom = Zero.query("settings", "usage", { reactivityKeys: ["usage"] })
@@ -51,7 +52,6 @@ export const approvalsAtom = Live.query("approvals", undefined, { reactivityKeys
 // and the commands the agents ran. All refetch when a turn settles ("workspace" key).
 export const diffAtom = (turnId: string) => Zero.query("chats", "diff", { params: { id: turnId }, reactivityKeys: ["workspace"] })
 export const filesAtom = (projectId: string, chatId: string) => Zero.query("projects", "files", { params: { id: projectId }, query: { chatId }, reactivityKeys: ["workspace"] })
-export const runsAtom = (chatId: string) => Live.query("runs", { chatId }, { reactivityKeys: ["workspace"] })
 
 // ---------- mutations ----------
 
@@ -67,6 +67,8 @@ export const mutations = {
   reorderChats: Zero.mutation("chats", "reorder"),
   reorderProjects: Zero.mutation("projects", "reorder"),
   removeChat: Zero.mutation("chats", "remove"),
+  closeTerminal: Zero.mutation("chats", "closeTerminal"),
+  openFile: Zero.mutation("chats", "openFile"),
   consolidate: Zero.mutation("chats", "consolidate"),
   createMemory: Zero.mutation("memories", "create"),
   updateMemory: Zero.mutation("memories", "update"),
