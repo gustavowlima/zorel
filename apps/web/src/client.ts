@@ -38,6 +38,7 @@ export const keysAtom = Zero.query("settings", "keys", { reactivityKeys: ["keys"
 export const auditAtom = Zero.query("settings", "audit", { reactivityKeys: ["audit"] })
 export const storageAtom = Zero.query("settings", "storage", { reactivityKeys: ["storage"] })
 // How full the next turn of a chat is (the composer's context meter); read again when the meter opens.
+export const commandsAtom = (id: string) => Zero.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
 export const contextAtom = (id: string) => Zero.query("chats", "context", { params: { id }, reactivityKeys: ["context"] })
 export const modelsAtom = Zero.query("settings", "models", { reactivityKeys: ["models"] })
 export const usageAtom = Zero.query("settings", "usage", { reactivityKeys: ["usage"] })

@@ -25,3 +25,4 @@
 2026-11-03 | position em projects e chats + endpoints de reordenação | drag and drop na sidebar
 2026-11-03 | audit log com evlog gravando em SQLite | pedido do usuário
 2026-11-03 | endpoint de contexto, janela no catálogo, $skill no turno | composer novo
+2026-11-03 | claude-cli loads user/project/local settings with policy-only permissions and no hooks; CLI slash commands listed and dispatched | run Claude Code's own / commands like T3 Code
