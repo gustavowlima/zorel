@@ -108,6 +108,15 @@ export interface Session {
   readonly call: (name: string, args: Record<string, unknown>) => Promise<CallToolResult>
 }
 
+export interface GatewayHandle {
+  readonly url: string
+  readonly update: (session: Session) => void
+  readonly close: () => void
+}
+
+// No tools: what a native session's gateway serves between turns.
+export const NO_TOOLS: Session = { tools: [], call: async (name) => textResult(`Ferramenta não permitida: ${name}`, true) }
+
 export class Gateway {
   private sessions = new Map<string, Session>()
   private server: ReturnType<typeof Bun.serve> | undefined
@@ -119,11 +128,16 @@ export class Gateway {
     this.server?.stop(true)
   }
 
-  // URL handed to the engine and the function that revokes it.
-  open(session: Session): { url: string; close: () => void } {
+  // URL handed to the engine, a way to swap the tools behind it (native sessions keep one URL across
+  // turns), and the function that revokes it.
+  open(session: Session): GatewayHandle {
     const token = Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString("hex")
     this.sessions.set(token, session)
-    return { url: `http://127.0.0.1:${this.server!.port}/mcp/${token}`, close: () => this.sessions.delete(token) }
+    return {
+      url: `http://127.0.0.1:${this.server!.port}/mcp/${token}`,
+      update: (next) => void this.sessions.set(token, next),
+      close: () => this.sessions.delete(token)
+    }
   }
 
   private async handle(req: Request): Promise<Response> {

@@ -12,7 +12,9 @@ import type { ModelInfo } from "@zero/contracts"
 import { Context, Effect, Layer, Queue, Redacted, Stream } from "effect"
 import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
+import { join } from "node:path"
 import { openClaudeSession } from "#server/engines/claude-sdk.ts"
+import { openCodexSession } from "#server/engines/codex.ts"
 import type { EngineSession } from "#server/engines/session.ts"
 import { Secrets, type SecretStore } from "./secrets.ts"
 import { resultText, type Session, type ToolDef } from "./tools.ts"
@@ -188,7 +190,7 @@ export function claudeParser(): Parser {
 }
 
 // Codex without its own tools, without user config/rules and without a saved session.
-const CODEX_DISABLED = ["shell_tool", "unified_exec", "apps", "plugins", "browser_use", "computer_use", "image_generation", "multi_agent", "view_image", "hooks", "memories"]
+export const CODEX_DISABLED = ["shell_tool", "unified_exec", "apps", "plugins", "browser_use", "computer_use", "image_generation", "multi_agent", "view_image", "hooks", "memories"]
 export const codexArgs = (t: Turn) => {
   const { model } = splitModel(t.model)
   return [
@@ -349,6 +351,8 @@ export interface OpenSession {
   readonly model: string
   readonly system: string // stable part of the context
   readonly cwd: string
+  readonly gatewayUrl: string // stable for the session; the runtime swaps the tools behind it each turn
+  readonly dataDir: string // where Zero-owned account folders live (e.g. CODEX_HOME)
 }
 
 export interface EnginesService {
@@ -356,7 +360,10 @@ export interface EnginesService {
   readonly run: (turn: Turn) => Stream.Stream<EngineEvent>
   // Native session for providers that have one; undefined = use `run`; string = could not open (shown as the turn error).
   readonly open?: (o: OpenSession) => EngineSession | string | undefined
+  readonly hasSession?: (model: string) => boolean
 }
+
+const NATIVE = new Set(["claude-cli", "codex-cli"])
 
 export class Engines extends Context.Service<Engines, EnginesService>()("Engines") {
   static layer = Layer.effect(
@@ -370,7 +377,14 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
           if (provider === "codex-cli") return cli("codex", codexArgs(t), transcript(t.messages), t.cwd, codexParser())
           return api(secrets, t)
         },
-        open: (o: OpenSession) => (splitModel(o.model).provider === "claude-cli" ? openClaudeSession(o) : undefined)
+        hasSession: (model: string) => NATIVE.has(splitModel(model).provider),
+        open: (o: OpenSession) => {
+          const { provider } = splitModel(o.model)
+          if (provider === "claude-cli") return openClaudeSession(o)
+          // ponytail: one Zero-owned Codex login for now; per-account homes come with provider_accounts (§6.1).
+          if (provider === "codex-cli") return openCodexSession({ ...o, home: join(o.dataDir, "accounts", "codex-default") })
+          return undefined
+        }
       }
     })
   )

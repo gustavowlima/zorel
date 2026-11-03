@@ -45,6 +45,10 @@ updated: 2026-11-03
 - sessões nativas (fase 2): Engines.open(model, system estável, cwd) → EngineSession (engines/session.ts); hoje só claude-cli (engines/claude-sdk.ts, Agent SDK 0.3.317 com o `claude` instalado); runtime guarda uma por (chat, agente), marcação `seen` = at da última mensagem que a sessão tem; turno manda <context>dinâmico</context> + transcript só do que é novo; reabre se o contexto estável, provider ou sessão morta mudar; máx. 8 sessões (LRU)
 - buildTurn devolve system (estável + dinâmico, para engines sem sessão), stable e dynamic; mensagens do turno levam `at`
 
+- Codex: engines/codex.ts, cliente JSON-RPC mínimo (D16 revisada); CODEX_HOME = <dataDir>/accounts/codex-default (isola config.toml do usuário: -c mcp_servers={} NÃO remove os servidores dele); account/read antes da thread → sem login, erro com `CODEX_HOME=… codex login`; pedidos de aprovação do Codex são recusados (sandbox read-only, shell off, ações só pelo gateway); teste contra engines/fixtures/fake-codex-app-server.ts
+- sessões nativas usam URL fixa do gateway (GatewayHandle.update troca as ferramentas por turno); nomes das ferramentas entram na chave do contexto estável (lista nova = sessão nova); Engines.hasSession decide
+- smoke contra o server: script precisa rodar de dentro de apps/server (bun --no-install), senão o Bun instala outro effect e o RPC trava
+
 ## avoid
 
 - Bun.$ para operação simples de arquivo (mkdir etc.): abre um shell; usar node:fs

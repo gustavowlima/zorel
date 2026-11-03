@@ -1,13 +1,13 @@
 // Native Claude session (ARCHITECTURE §6, adapter `claude-sdk`): one live Claude Code process per
 // (chat, agent), reused across turns through the Agent SDK's streaming input. The second turn in the
-// same chat does not spawn a process; model switches use setModel; the per-turn MCP gateway URL is
-// swapped with setMcpServers. Built-in tools stay off: tools only come through Zero's gateway (D8).
+// same chat does not spawn a process; model switches use setModel. The gateway URL is fixed for the
+// session (the runtime swaps the tools behind it). Built-in tools stay off: only Zero's gateway (D8).
 // The SDK runs the user's installed `claude` (pathToClaudeCodeExecutable): its bundled binary is never
 // used and never shipped, and Zero never reads the CLI login (CLAUDE_CONFIG_DIR only picks the account).
 import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { Effect, Queue, Stream } from "effect"
 import { mkdirSync } from "node:fs"
-import { claudeParser, type EngineEvent, splitModel, type TurnTools } from "#server/engines.ts"
+import { claudeParser, type EngineEvent, splitModel } from "#server/engines.ts"
 import type { EngineSession } from "#server/engines/session.ts"
 
 const GATEWAY = "zero"
@@ -58,6 +58,7 @@ export interface ClaudeSessionOptions {
   readonly model: string // "<provider>/<model>"
   readonly system: string // stable part of the context; a change means a new session
   readonly cwd: string
+  readonly gatewayUrl: string
   readonly configDir?: string | undefined // account login folder (§6.1); undefined = the CLI's default login
 }
 
@@ -80,6 +81,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
       tools: [], // no shell or file tools of its own
       allowedTools: [`mcp__${GATEWAY}`], // the gateway applies policy and approvals
       settingSources: [], // ignore the user's hooks, plugins and permissions
+      mcpServers: { [GATEWAY]: { type: "http", url: o.gatewayUrl } },
       strictMcpConfig: true,
       persistSession: false, // Zero's context is the source of truth; resuming uses the checkpoint
       includePartialMessages: true,
@@ -112,9 +114,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
           emit([{ type: "error", message: ended }])
           return yield* Queue.end(out)
         }
-        // Same session, new turn: point the gateway at this turn's URL (or drop it) and follow the model.
-        const servers = input.tools ? { [GATEWAY]: { type: "http" as const, url: input.tools.url } } : {}
-        yield* Effect.promise(() => q.setMcpServers(servers))
+        // Same session, new turn: follow the model if it changed.
         const next = splitModel(input.model).model
         if (next !== model) {
           yield* Effect.promise(() => q.setModel(next))
