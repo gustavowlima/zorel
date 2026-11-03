@@ -288,7 +288,7 @@ function ChatItem({ chat, status, active, agents }: { chat: Chat; status: ChatSt
 }
 
 // The subscriptions at the foot (the most at risk first): one line per limit window, shortest first ("5h", "7d",
-// "30d"), each a bar of the share used and that share; the logo opens each account's group (its windows sit tight, accounts apart). Hovering (or focusing) shows the rest: every window with when it
+// "30d"), each a bar of the share used and that share, grouped by account: the logo in the icon column, centred on its bars. Hovering (or focusing) shows the rest: every window with when it
 // resets, and the one at risk as a tiny burn-down (ui/burn-down.tsx) with where the pace so far leads.
 const MAX_FOOT_ROWS = 3
 const TONE_TEXT = { ok: "text-secondary", warning: "text-warning", critical: "text-danger" } as const
@@ -318,28 +318,35 @@ function UsageFoot({ active }: { active: boolean }) {
   return (
     <Tooltip content={<UsageDetail rows={rows} />}>
       <NavItem active={active} onPress={() => go({ view: "usage" })} aria-label={label} className="h-auto py-2">
-        <span className="flex min-w-0 flex-1 flex-col gap-1">
-          {rows.slice(0, MAX_FOOT_ROWS).flatMap((r) =>
-            r.windows
-              .filter(({ w }) => windowMinutes(w.id) !== null)
-              .sort((x, y) => (windowMinutes(x.w.id) ?? 0) - (windowMinutes(y.w.id) ?? 0))
-              .map(({ w, pace }, i) => {
-                const tone = toneOf(pace)
-                return (
-                  <span key={`${r.account.id}:${w.id}`} className={cx("flex min-w-0 items-center gap-2.5 text-xs", i === 0 && "not-first:mt-2")}>
-                    <span className="flex size-5 shrink-0 items-center justify-center">{i === 0 && <ProviderIcon provider={r.account.provider} size={14} />}</span>
-                    <span className="w-7 shrink-0 text-muted tabular-nums">{windowShort(w.id)}</span>
-                    <span className="relative h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-control">
-                      <span
-                        className={cx("absolute inset-0 origin-left rounded-full transition-transform duration-500 ease-out motion-reduce:transition-none", TONE_BG[tone])}
-                        style={{ transform: `scaleX(${Math.min(1, pace.used)})` }}
-                      />
-                    </span>
-                    <span className={cx("w-9 shrink-0 text-right tabular-nums", TONE_TEXT[tone])}>{formatPercent(pace.used)}</span>
-                  </span>
-                )
-              })
-          )}
+        <span className="flex min-w-0 flex-1 flex-col gap-3">
+          {rows.slice(0, MAX_FOOT_ROWS).map((r) => (
+            // One group per account: its logo in the icon column, centred on the bars of its windows.
+            <span key={r.account.id} className="flex min-w-0 items-center gap-2.5 text-xs">
+              <span className="flex size-5 shrink-0 items-center justify-center">
+                <ProviderIcon provider={r.account.provider} size={16} />
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                {r.windows
+                  .filter(({ w }) => windowMinutes(w.id) !== null)
+                  .sort((x, y) => (windowMinutes(x.w.id) ?? 0) - (windowMinutes(y.w.id) ?? 0))
+                  .map(({ w, pace }) => {
+                    const tone = toneOf(pace)
+                    return (
+                      <span key={w.id} className="flex min-w-0 items-center gap-2.5">
+                        <span className="w-7 shrink-0 text-muted tabular-nums">{windowShort(w.id)}</span>
+                        <span className="relative h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-control">
+                          <span
+                            className={cx("absolute inset-0 origin-left rounded-full transition-transform duration-500 ease-out motion-reduce:transition-none", TONE_BG[tone])}
+                            style={{ transform: `scaleX(${Math.min(1, pace.used)})` }}
+                          />
+                        </span>
+                        <span className={cx("w-9 shrink-0 text-right tabular-nums", TONE_TEXT[tone])}>{formatPercent(pace.used)}</span>
+                      </span>
+                    )
+                  })}
+              </span>
+            </span>
+          ))}
         </span>
       </NavItem>
     </Tooltip>
