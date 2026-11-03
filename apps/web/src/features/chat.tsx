@@ -2,13 +2,15 @@
 // right, each agent's reply with its activity pill, approvals waiting for you, handoffs between agents),
 // and the message box. State is the chat atom: snapshot + live events, so a turn keeps going if the tab
 // closes and the screen catches up when it reopens.
-import { type Agent, type Chat, type FailoverTarget, type Message, type ProviderAccount, skillHandle } from "@zero/contracts"
+import { type Agent, type Chat, type FailoverTarget, type Message, type ProviderAccount, skillHandle, type WorkspaceFile } from "@zero/contracts"
+import { useAtomValue } from "@effect/atom-react"
+import { AsyncResult } from "effect/reactivity"
 import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zero/contracts/events"
 import { formatCompact, formatDuration, t } from "@zero/i18n"
 import { type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { accountsAtom, agentsAtom, attachmentUrl, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
+import { accountsAtom, agentsAtom, attachmentUrl, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
 import { agentName, chatTitle, formatCost, handleOf, modelLabel, switchText } from "../labels.ts"
 import { go } from "../state.ts"
 import { Composer, type ComposerSources } from "./composer.tsx"
@@ -67,7 +69,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   const available = agents.filter((a) => a.projectId === null || a.projectId === chat.projectId)
   const makeLead = (a: Agent) =>
     void updateChat({ params: { id: chat.id }, payload: { agentIds: [a.id, ...chat.agentIds.filter((id) => id !== a.id)], model: a.model }, reactivityKeys: ["chats", "context"] })
-  const sources: ComposerSources = {
+  const sourcesWith = (files: ReadonlyArray<WorkspaceFile>): ComposerSources => ({
     leads: available.map((a) => ({
       id: handleOf(a),
       label: a.name,
@@ -75,7 +77,11 @@ export function ChatView({ chat }: { chat: Chat }) {
       icon: <AuthorAvatar agent={a} model={null} size={16} />,
       run: () => makeLead(a)
     })),
-    agents: team.map((a) => ({ id: handleOf(a), label: a.name, icon: <AuthorAvatar agent={a} model={null} size={16} /> })),
+    // "@": the members first, then the project's files (the agent reads them with its tools).
+    agents: [
+      ...team.map((a) => ({ id: handleOf(a), label: a.name, icon: <AuthorAvatar agent={a} model={null} size={16} /> })),
+      ...files.filter((f) => f.status !== "deleted").map((f) => ({ id: f.path, label: f.path, hint: t("composer.file"), icon: <File className="size-4" /> }))
+    ],
     skills: memories.filter((m) => m.kind === "skill" && m.state === "active" && scopes.has(m.scope)).map((m) => ({ id: skillHandle(m.title), label: m.title, icon: <Sparkles className="size-4" /> })),
     commands: [
       { id: "compact", label: t("composer.command.compact"), hint: t("composer.command.compactHint"), icon: <Minimize2 className="size-4" />, run: compact },
@@ -83,7 +89,7 @@ export function ChatView({ chat }: { chat: Chat }) {
       { id: "changes", label: t("composer.command.changes"), hint: t("composer.command.changesHint"), icon: <PanelRight className="size-4" />, run: () => setPanel("changes") },
       ...(project?.path ? [{ id: "terminal", label: t("composer.command.terminal"), hint: t("composer.command.terminalHint"), icon: <PanelBottom className="size-4" />, run: () => setTerminal(true) }] : [])
     ]
-  }
+  })
 
   return (
     <section aria-label={t("chat.label")} className="flex h-full min-h-0 flex-col">
@@ -114,26 +120,30 @@ export function ChatView({ chat }: { chat: Chat }) {
           }}
           onRemove={(item) => queue.remove(item.id)}
         />
-        <Composer
-          key={`${chat.id}:${draft.key}`}
-          autoFocus
-          initialText={draft.text}
-          sources={sources}
-          busy={busy}
-          onStop={() => void interrupt({ payload: { chatId: chat.id } })}
-          onSubmit={submit}
-          upload={(f) => uploadAttachment(chat.id, f)}
-          placeholder={team[0] && second ? t("composer.placeholderTeam", { name: team[0].name }) : t("composer.placeholder")}
-          tools={
-            <>
-              <ModelPicker
-                value={{ model: chat.model, accountId: chat.accountId, effort: chat.effort }}
-                onChange={(v) => void updateChat({ params: { id: chat.id }, payload: v, reactivityKeys: ["chats", "context"] })}
-              />
-              <ContextMeter chatId={chat.id} onCompact={compact} onNewChat={newChat} />
-            </>
-          }
-        />
+        <WithFiles projectId={project?.path ? project.id : undefined} chatId={chat.id}>
+          {(files) => (
+            <Composer
+              key={`${chat.id}:${draft.key}`}
+              autoFocus
+              initialText={draft.text}
+              sources={sourcesWith(files)}
+              busy={busy}
+              onStop={() => void interrupt({ payload: { chatId: chat.id } })}
+              onSubmit={submit}
+              upload={(f) => uploadAttachment(chat.id, f)}
+              placeholder={team[0] && second ? t("composer.placeholderTeam", { name: team[0].name }) : t("composer.placeholder")}
+              tools={
+                <>
+                  <ModelPicker
+                    value={{ model: chat.model, accountId: chat.accountId, effort: chat.effort }}
+                    onChange={(v) => void updateChat({ params: { id: chat.id }, payload: v, reactivityKeys: ["chats", "context"] })}
+                  />
+                  <ContextMeter chatId={chat.id} onCompact={compact} onNewChat={newChat} />
+                </>
+              }
+            />
+          )}
+        </WithFiles>
       </div>
       {terminal && <TerminalPanel chatId={chat.id} onClose={() => setTerminal(false)} />}
       </div>
@@ -143,6 +153,14 @@ export function ChatView({ chat }: { chat: Chat }) {
       </div>
     </section>
   )
+}
+
+// The project's files for "@" (only a project with a folder has them; read once, kept fresh by the workspace key).
+function WithFiles({ projectId, chatId, children }: { projectId: string | undefined; chatId: string; children: (files: ReadonlyArray<WorkspaceFile>) => ReactNode }) {
+  return projectId ? <FilesOf projectId={projectId} chatId={chatId}>{children}</FilesOf> : children([])
+}
+function FilesOf({ projectId, chatId, children }: { projectId: string; chatId: string; children: (files: ReadonlyArray<WorkspaceFile>) => ReactNode }) {
+  return children(AsyncResult.getOrElse(useAtomValue(filesAtom(projectId, chatId)), () => []))
 }
 
 // ---------- header ----------

@@ -1,6 +1,6 @@
 // Message box (the chosen redesign): one bar — attach, the text, the slots the screen passes (agent, model,
 // context), then stop and a round send. The text is a Tiptap editor so references are chips inside it:
-// "@" picks an agent of the chat, "$" a skill, "/" runs a command. Chips go to the server as plain text
+// "@" picks an agent of the chat or a file of the project, "$" a skill, "/" runs a command. Chips go to the server as plain text
 // (@handle, $skill-handle), which it already reads; commands never leave the browser. Enter sends,
 // Shift+Enter breaks the line. "#" picks who answers (the chat's lead) and, like "/", leaves nothing in the text.
 // Attachments sit as chips above the bar.
@@ -28,7 +28,7 @@ export interface ComposerOption {
   readonly run?: () => void
 }
 export interface ComposerSources {
-  readonly agents?: ReadonlyArray<ComposerOption> // "@": mention a member in the message
+  readonly agents?: ReadonlyArray<ComposerOption> // "@": mention a member in the message, or a file (path as id)
   readonly skills?: ReadonlyArray<ComposerOption> // "$"
   readonly commands?: ReadonlyArray<ComposerOption> // "/" at the start of a line
   readonly leads?: ReadonlyArray<ComposerOption> // "#": make an agent the one who answers
@@ -46,7 +46,7 @@ const ENTER = "Enter" // a ProseMirror key name (spelled as a constant so lint d
 const match = (options: ReadonlyArray<ComposerOption> | undefined, query: string) => {
   const q = query.toLowerCase()
   const rank = (o: ComposerOption) => {
-    const words = [o.id, ...o.label.split(/\s+/)].map((w) => w.toLowerCase())
+    const words = [o.id, ...o.label.split(/[\s/]+/)].map((w) => w.toLowerCase()) // a file also matches by its name
     if (words.some((w) => w.startsWith(q))) return words[0]?.startsWith(q) ? 0 : 1
     return o.id.toLowerCase().includes(q) || o.label.toLowerCase().includes(q) ? 2 : 3
   }
@@ -317,7 +317,7 @@ function OptionList({ menu, onHover }: { menu: Menu; onHover: (i: number) => voi
         >
           {o.icon && <span className="flex size-5 shrink-0 items-center justify-center text-muted">{o.icon}</span>}
           <span className="truncate">{o.label}</span>
-          <span className="truncate text-sm text-muted">{ACTIONS.has(menu.trigger) ? o.hint : `${menu.trigger}${o.id}`}</span>
+          <span className="truncate text-sm text-muted">{o.hint ?? `${menu.trigger}${o.id}`}</span>
         </div>
       ))}
     </div>

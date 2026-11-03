@@ -128,6 +128,7 @@ export const en = {
     skills: "Skills",
     commands: "Commands",
     leads: "Who answers",
+    file: "file",
     answering: "answers now",
     command: {
       compact: "Compact",
