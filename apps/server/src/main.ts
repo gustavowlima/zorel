@@ -13,27 +13,28 @@ import { API_KEYS, mcpEnvName, Secrets } from "./secrets.ts"
 import { Tools } from "./tools.ts"
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
-const found = <A>(a: A | undefined) => (a === undefined ? notFound() : Effect.succeed(a))
+const found = <A, E, R>(e: Effect.Effect<A | undefined, E, R>) => Effect.flatMap(e, (a) => (a === undefined ? notFound() : Effect.succeed(a)))
+const exists = <A>(e: Effect.Effect<A | undefined>) => Effect.map(e, (a) => a !== undefined)
 
 // Agentes de um chat: existem e são globais ou do mesmo projeto.
 const validAgents = (store: Repository, agentIds: ReadonlyArray<string>, projectId: string | null) =>
-  agentIds.every((id) => {
-    const a = store.agent(id)
-    return !!a && (a.projectId === null || a.projectId === projectId)
-  })
+  Effect.forEach(agentIds, store.agent).pipe(Effect.map((as) => as.every((a) => !!a && (a.projectId === null || a.projectId === projectId))))
+// Projeto opcional que, se informado, precisa existir.
+const projectOk = (store: Repository, projectId: string | null) => (projectId ? exists(store.project(projectId)) : Effect.succeed(true))
 
 const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
     const { hub } = yield* Tools
     return h
-      .handle("list", () => Effect.sync(store.projects))
-      .handle("create", ({ payload }) => Effect.sync(() => store.createProject(payload)))
+      .handle("list", () => store.projects())
+      .handle("create", ({ payload }) => store.createProject(payload))
       .handle("update", ({ params, payload }) => found(store.updateProject(params.id, payload)))
       .handle("remove", ({ params }) =>
-        Effect.promise(async () => {
-          await Promise.all(store.mcpServers().filter((s) => s.projectId === params.id).map((s) => hub.close(s.id)))
-          store.removeProject(params.id)
+        Effect.gen(function* () {
+          const servers = (yield* store.mcpServers()).filter((s) => s.projectId === params.id)
+          yield* Effect.promise(() => Promise.all(servers.map((s) => hub.close(s.id))))
+          yield* store.removeProject(params.id)
         })
       )
   })
@@ -43,10 +44,10 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
     return h
-      .handle("list", () => Effect.sync(store.agents))
-      .handle("create", ({ payload }) => (payload.projectId && !store.project(payload.projectId) ? notFound() : Effect.sync(() => store.createAgent(payload))))
+      .handle("list", () => store.agents())
+      .handle("create", ({ payload }) => Effect.flatMap(projectOk(store, payload.projectId), (ok) => (ok ? store.createAgent(payload) : notFound())))
       .handle("update", ({ params, payload }) => found(store.updateAgent(params.id, payload)))
-      .handle("remove", ({ params }) => Effect.sync(() => store.removeAgent(params.id)))
+      .handle("remove", ({ params }) => store.removeAgent(params.id))
   })
 )
 
@@ -55,19 +56,22 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
     const store = yield* Store
     const services = yield* Effect.context<Store | Engines | DataDir>()
     return h
-      .handle("list", () => Effect.sync(store.chats))
+      .handle("list", () => store.chats())
       .handle("create", ({ payload }) =>
-        (payload.projectId && !store.project(payload.projectId)) || !validAgents(store, payload.agentIds, payload.projectId)
-          ? notFound()
-          : Effect.sync(() => store.createChat(payload))
+        Effect.gen(function* () {
+          if (!(yield* projectOk(store, payload.projectId)) || !(yield* validAgents(store, payload.agentIds, payload.projectId))) return yield* notFound()
+          return yield* store.createChat(payload)
+        })
       )
-      .handle("update", ({ params, payload }) => {
-        const chat = store.chat(params.id)
-        if (!chat || (payload.agentIds && !validAgents(store, payload.agentIds, chat.projectId))) return notFound()
-        return found(store.updateChat(params.id, payload))
-      })
-      .handle("remove", ({ params }) => Effect.sync(() => store.removeChat(params.id)))
-      .handle("messages", ({ params }) => Effect.sync(() => store.messages(params.id)))
+      .handle("update", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const chat = yield* store.chat(params.id)
+          if (!chat || (payload.agentIds && !(yield* validAgents(store, payload.agentIds, chat.projectId)))) return yield* notFound()
+          return yield* found(store.updateChat(params.id, payload))
+        })
+      )
+      .handle("remove", ({ params }) => store.removeChat(params.id))
+      .handle("messages", ({ params }) => store.messages(params.id))
       .handle("consolidate", ({ params }) =>
         consolidate(params.id, true).pipe(
           Effect.provide(services),
@@ -81,14 +85,13 @@ const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
     return h
-      .handle("list", () => Effect.sync(store.memories))
+      .handle("list", () => store.memories())
       // Escrita pelo usuário: já nasce ativa. Repetida: devolve a existente.
       .handle("create", ({ payload }) =>
-        Effect.sync(
-          () =>
-            store.addMemory({ ...payload, state: "active", origin: "manual", chatId: null }) ??
-            store.memories().find((m) => m.scope === payload.scope && m.text === payload.text)!
-        )
+        Effect.gen(function* () {
+          const added = yield* store.addMemory({ ...payload, state: "active", origin: "manual", chatId: null })
+          return added ?? (yield* store.memories()).find((m) => m.scope === payload.scope && m.text === payload.text)!
+        })
       )
       .handle("update", ({ params, payload }) => found(store.updateMemory(params.id, payload)))
   })
@@ -100,15 +103,14 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
     const secrets = yield* Secrets
     const { hub } = yield* Tools
     return h
-      .handle("list", () => Effect.sync(store.mcpServers))
+      .handle("list", () => store.mcpServers())
       .handle("create", ({ payload: { env, ...input } }) =>
-        input.projectId && !store.project(input.projectId)
-          ? notFound()
-          : Effect.promise(async () => {
-              const server = store.createMcpServer({ ...input, envKeys: Object.keys(env) })
-              if (Object.keys(env).length) await secrets.set(mcpEnvName(server.id), JSON.stringify(env)) // valores só no chaveiro
-              return server
-            })
+        Effect.gen(function* () {
+          if (!(yield* projectOk(store, input.projectId))) return yield* notFound()
+          const server = yield* store.createMcpServer({ ...input, envKeys: Object.keys(env) })
+          if (Object.keys(env).length) yield* Effect.promise(() => secrets.set(mcpEnvName(server.id), JSON.stringify(env))) // valores só no chaveiro
+          return server
+        })
       )
       .handle("update", ({ params, payload }) =>
         Effect.promise(() => hub.close(params.id)).pipe(Effect.flatMap(() => found(store.updateMcpServer(params.id, payload))))
@@ -117,19 +119,18 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
         Effect.promise(async () => {
           await hub.close(params.id)
           await secrets.set(mcpEnvName(params.id), "")
-          store.removeMcpServer(params.id)
-        })
+        }).pipe(Effect.andThen(store.removeMcpServer(params.id)))
       )
-      .handle("inspect", ({ params }) => {
-        const server = store.mcpServer(params.id)
-        if (!server) return notFound()
-        return Effect.promise(() =>
-          hub.tools(server).then(
-            (tools) => ({ tools: tools.map(({ name, description, cls }): ToolInfo => ({ name, description, cls })), error: null }),
-            (e: unknown) => ({ tools: [], error: e instanceof Error ? e.message : String(e) })
+      .handle("inspect", ({ params }) =>
+        Effect.flatMap(found(store.mcpServer(params.id)), (server) =>
+          Effect.promise(() =>
+            hub.tools(server).then(
+              (tools) => ({ tools: tools.map(({ name, description, cls }): ToolInfo => ({ name, description, cls })), error: null }),
+              (e: unknown) => ({ tools: [], error: e instanceof Error ? e.message : String(e) })
+            )
           )
         )
-      })
+      )
       .handle("decide", ({ params, payload }) => (decide(params.id, payload.approve) ? Effect.void : notFound()))
   })
 )

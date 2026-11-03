@@ -23,6 +23,7 @@ const freePort = () => {
 }
 
 if (process.platform !== "win32") await loginShellPath()
+process.env.ZERO_MIGRATIONS = join(PATHS.VIEWS_FOLDER, "..", "drizzle")
 const url = await start({ port: freePort(), webDir: join(PATHS.VIEWS_FOLDER, "..", "web") })
 for (let i = 0; i < 100 && !(await fetch(`${url}/api/models`).catch(() => null)); i++) await Bun.sleep(50)
 
