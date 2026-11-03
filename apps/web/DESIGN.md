@@ -3,7 +3,7 @@ name: Zero
 description: Workspace de agentes de IA para código, escuro, compacto e silencioso.
 colors:
   frame: "#0d0d0d"
-  canvas: "#1a1a1a"
+  canvas: "#171717"
   sidebar: "#0d0d0d"
   surface: "#232323"
   raised: "#262626"
