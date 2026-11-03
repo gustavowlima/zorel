@@ -44,6 +44,7 @@ export interface Turn {
 export interface Usage {
   readonly inputTokens: number
   readonly outputTokens: number
+  readonly cachedTokens?: number // input read from the provider's prompt cache (part of inputTokens)
 }
 
 export type EngineEvent =
@@ -181,7 +182,7 @@ export function claudeParser(): Parser {
       finished = true
       if (ev.is_error === true || ev.subtype !== "success") return [{ type: "error", message: (typeof ev.result === "string" && ev.result) || `Claude Code terminou com erro (${ev.subtype}).` }]
       const u = ev.usage ?? {}
-      return [{ type: "done", usage: { inputTokens: num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens), outputTokens: num(u.output_tokens) } }]
+      return [{ type: "done", usage: { inputTokens: num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens), outputTokens: num(u.output_tokens), cachedTokens: num(u.cache_read_input_tokens) } }]
     },
     end(code, stderr) {
       return finished ? [] : [{ type: "error", message: `Claude Code saiu sem resposta (código ${code ?? "?"}).\n${tail(stderr)}`.trim() }]

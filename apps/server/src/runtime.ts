@@ -1,7 +1,7 @@
 // Turn runtime (ARCHITECTURE §5): per-chat queue in the database, one turn at a time, live events per chat.
 // The turn doesn't depend on the client: closing the tab stops nothing; reconnect = subscribe again (snapshot + events).
 // Chaining: a reply that mentions another member queues that member's turn (up to MAX_DEPTH without a message from you).
-import type { Agent, Chat, Step } from "@zero/contracts"
+import type { Agent, Chat, Effort, Step } from "@zero/contracts"
 import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zero/contracts/events"
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
@@ -26,6 +26,8 @@ export interface SendInput {
 
 export interface RuntimeService {
   readonly send: (input: SendInput) => Effect.Effect<{ turnId: string }, ChatNotFound>
+  // Corrects the agent mid-turn when the engine supports it (Codex); otherwise queues it like `send`.
+  readonly steer: (chatId: string, text: string) => Effect.Effect<void, ChatNotFound>
   readonly interrupt: (chatId: string) => Effect.Effect<void>
   readonly decide: (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">, reason?: string) => Effect.Effect<void, ApprovalNotFound>
   readonly subscribeChat: (chatId: string) => Stream.Stream<ChatEvent, ChatNotFound>
@@ -104,7 +106,10 @@ export const makeRuntime = Effect.gen(function* () {
 
   // Picks the engine for this turn. With a native session, only the dynamic context and the messages
   // after the watermark are sent; a new session gets the whole checkpoint (summary + recent messages).
-  const engineStream = (row: TurnRow, turn: EngineTurn, account: AccountRow | undefined, onSeen: (set: (at: number) => void) => void) =>
+  // Running turns whose session can take a correction mid-turn (only while the turn streams).
+  const steering = new Map<string, (text: string) => Promise<boolean>>()
+
+  const engineStream = (row: TurnRow, turn: EngineTurn, account: AccountRow | undefined, effort: Effort | null, onSeen: (set: (at: number) => void) => void) =>
     Effect.gen(function* () {
       const key = sessionKey(row)
       const provider = splitModel(row.model).provider
@@ -134,7 +139,11 @@ export const makeRuntime = Effect.gen(function* () {
       onSeen((at) => {
         current.seen = at
       })
-      return current.session.turn({ model: row.model, prompt, tools: turn.tools })
+      const steer = current.session.steer
+      return current.session.turn({ model: row.model, prompt, tools: turn.tools, effort }).pipe(
+        Stream.onStart(Effect.sync(() => steer && steering.set(row.chatId, steer))),
+        Stream.ensuring(Effect.sync(() => steering.delete(row.chatId)))
+      )
     })
   const running = new Map<string, Fiber.Fiber<unknown, unknown>>()
   const waiting = new Map<string, Deferred.Deferred<ApprovalOutcome>>()
@@ -235,13 +244,13 @@ export const makeRuntime = Effect.gen(function* () {
       if (!chat) return yield* store.finishTurn(row.id, { state: "failed", error: ErrorCode.chatRemoved, messageId: null }).pipe(Effect.as(undefined))
       const team = yield* members(store, chat)
       const agent = team.find((a) => a.id === row.agentId)
-      const acc = { text: "", error: undefined as string | undefined, usage: { inputTokens: 0, outputTokens: 0 }, steps: [] as Step[], saved: false }
+      const acc = { text: "", error: undefined as string | undefined, usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0 }, steps: [] as Step[], saved: false }
       let markSeen: (at: number) => void = () => {}
       const save = (state: "completed" | "failed" | "interrupted", error: string | null) =>
         Effect.gen(function* () {
           if (acc.saved) return
           acc.saved = true
-          const message = yield* store.addMessage({ chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model: row.model, error, steps: acc.steps, ...acc.usage })
+          const message = yield* store.addMessage({ chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model: row.model, error, steps: acc.steps, inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens })
           markSeen(message.at) // the session has everything up to its own reply
           const turn = yield* store.finishTurn(row.id, { state, error, messageId: message.id, usage: acc.usage })
           const tag = state === "completed" ? "turn-completed" : state === "failed" ? "turn-failed" : "interrupted"
@@ -264,7 +273,9 @@ export const makeRuntime = Effect.gen(function* () {
         )
         const turn = yield* prepare(store, (yield* store.chat(chatId))!, agent, row.model, dataDir, opened.tools)
         const account = yield* accounts.resolve(row.model, row.accountId)
-        const stream = yield* engineStream(row, turn, account, (set) => {
+        // The lead follows the chat's effort; other members, their own.
+        const effort = !agent || agent.id === team[0]?.id ? chat.effort : agent.effort
+        const stream = yield* engineStream(row, turn, account, effort, (set) => {
           markSeen = set
         })
         yield* stream.pipe(
@@ -275,7 +286,7 @@ export const makeRuntime = Effect.gen(function* () {
               let delta = ""
               for (const e of batch) {
                 if (e.type === "text") delta += e.delta
-                else if (e.type === "done") acc.usage = e.usage
+                else if (e.type === "done") acc.usage = { cachedTokens: 0, ...e.usage }
                 else acc.error = e.message
               }
               if (!delta) return
@@ -354,6 +365,33 @@ export const makeRuntime = Effect.gen(function* () {
   for (const a of yield* store.openApprovals()) yield* store.resolveApproval(a.id, "expired", null, "expiry")
   for (const chatId of new Set((yield* store.turnsIn("queued")).map((t) => t.chatId))) yield* ensureWorker(chatId)
 
+  const addUserMessage = (chatId: string, text: string) =>
+    Effect.gen(function* () {
+      const message = yield* store.addMessage({ chatId, role: "user", agentId: null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 })
+      yield* publish(chatId, ev("message", { message }))
+    })
+  // Queues who answers this text: the mentioned members, or the lead.
+  const enqueueFor = (chat: Chat, text: string, clientId: string | null) =>
+    Effect.gen(function* () {
+      const team = yield* members(store, chat)
+      const lead = team[0]
+      const targets: Array<Agent | undefined> = mentioned(text, team).slice(0, MAX_MENTIONS)
+      if (!targets.length) targets.push(lead)
+      let first: string | undefined
+      for (const [i, a] of targets.entries()) {
+        // The leader uses the chat model (the one you picked); other members use their own.
+        const isLead = !a || a.id === lead?.id
+        const t = yield* store.enqueueTurn({
+          chatId: chat.id, agentId: a?.id ?? null, model: isLead ? chat.model : a.model, accountId: isLead ? chat.accountId : a.accountId,
+          clientId: i === 0 ? clientId : null, depth: 0
+        })
+        first ??= t.id
+        yield* publish(chat.id, ev("queued", { turn: store.toTurn(t) }))
+      }
+      yield* ensureWorker(chat.id)
+      return first!
+    })
+
   // ---------- API ----------
   const service: RuntimeService = {
     send: (input) =>
@@ -364,25 +402,19 @@ export const makeRuntime = Effect.gen(function* () {
         if (!chat) return yield* new ChatNotFound({ chatId: input.chatId })
         if (input.model && input.model !== chat.model) chat = (yield* store.updateChat(chat.id, { model: input.model }))!
         if (chat.title === "Novo chat") chat = (yield* store.updateChat(chat.id, { title: input.text.replace(/\s+/g, " ").slice(0, 60) }))!
-        const message = yield* store.addMessage({ chatId: chat.id, role: "user", agentId: null, text: input.text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 })
-        yield* publish(chat.id, ev("message", { message }))
-        const team = yield* members(store, chat)
-        const lead = team[0]
-        const targets: Array<Agent | undefined> = mentioned(input.text, team).slice(0, MAX_MENTIONS)
-        if (!targets.length) targets.push(lead)
-        let first: string | undefined
-        for (const [i, a] of targets.entries()) {
-          // The leader uses the chat model (the one you picked); other members use their own.
-          const isLead = !a || a.id === lead?.id
-          const t = yield* store.enqueueTurn({
-            chatId: chat.id, agentId: a?.id ?? null, model: isLead ? chat.model : a.model, accountId: isLead ? chat.accountId : a.accountId,
-            clientId: i === 0 ? input.clientId : null, depth: 0
-          })
-          first ??= t.id
-          yield* publish(chat.id, ev("queued", { turn: store.toTurn(t) }))
-        }
-        yield* ensureWorker(chat.id)
-        return { turnId: first! }
+        yield* addUserMessage(chat.id, input.text)
+        return { turnId: yield* enqueueFor(chat, input.text, input.clientId) }
+      }),
+
+    steer: (chatId, text) =>
+      Effect.gen(function* () {
+        const chat = yield* store.chat(chatId)
+        if (!chat) return yield* new ChatNotFound({ chatId })
+        yield* addUserMessage(chatId, text)
+        const steer = steering.get(chatId)
+        const taken = steer ? yield* Effect.promise(() => steer(text)) : false
+        // Not taken mid-turn: it becomes the next turn in the queue (the message is already saved).
+        if (!taken) yield* enqueueFor(chat, text, null)
       }),
 
     interrupt: (chatId) =>

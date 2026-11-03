@@ -110,7 +110,7 @@ test("kill -9 no meio do turno: na próxima subida o turno vira interrupted com 
 })
 
 // Fake native-session engine: records how many sessions opened and what each turn received.
-const sessionLog = { opened: [] as string[], prompts: [] as string[], interrupts: 0, homes: [] as Array<string | null | undefined> }
+const sessionLog = { opened: [] as string[], prompts: [] as string[], interrupts: 0, homes: [] as Array<string | null | undefined>, efforts: [] as unknown[] }
 const Sessions = Layer.succeed(Engines, {
   run: () => Stream.make<EngineEvent[]>({ type: "error", message: "should use the session" }),
   hasSession: () => true,
@@ -122,6 +122,7 @@ const Sessions = Layer.succeed(Engines, {
       close: Effect.void,
       turn: (input) => {
         sessionLog.prompts.push(input.prompt)
+        sessionLog.efforts.push(input.effort)
         if (input.prompt.includes("slow"))
           return Stream.concat(Stream.make<EngineEvent[]>({ type: "text", delta: "parte" }), Stream.never).pipe(
             Stream.onExit((exit) => Effect.sync(() => void (Exit.hasInterrupts(exit) && sessionLog.interrupts++)))
@@ -201,4 +202,64 @@ test("accounts: the chat's account reaches the session as its login folder; swit
     yield* turnOnce("b")
     expect(sessionLog.opened.length - before).toBe(2) // new account, new session
     expect(sessionLog.homes.at(-1)).toBeNull()
+  })))
+
+// Fake session that supports steering: a "slow" turn waits until it is steered, then finishes with it.
+const Steerable = Layer.succeed(Engines, {
+  run: () => Stream.make<EngineEvent[]>({ type: "error", message: "should use the session" }),
+  hasSession: () => true,
+  open: () => {
+    let steered: ((text: string) => void) | undefined
+    return {
+      alive: () => true,
+      close: Effect.void,
+      steer: async (text) => {
+        if (!steered) return false
+        steered(text)
+        return true
+      },
+      turn: (input) =>
+        input.prompt.includes("slow")
+          ? Stream.concat(
+              Stream.make<EngineEvent[]>({ type: "text", delta: "parte" }),
+              Stream.fromEffect(Effect.promise(() => new Promise<string>((r) => { steered = r }))).pipe(
+                Stream.flatMap((t) => Stream.make<EngineEvent[]>({ type: "text", delta: ` + ${t}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })),
+                Stream.ensuring(Effect.sync(() => { steered = undefined }))
+              )
+            )
+          : Stream.make<EngineEvent[]>({ type: "text", delta: "ok" }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+    }
+  }
+})
+
+test("steering: joins the running turn when the session can; otherwise it becomes the next turn", () =>
+  runWith(":memory:", Steerable, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "codex-cli/default" })
+    const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "slow" })
+    while (!c.events.some((e) => e._tag === "text")) yield* Effect.sleep("10 millis")
+    yield* runtime.steer(chat.id, "use src")
+    yield* c.done
+    const msgs = yield* store.messages(chat.id)
+    expect(msgs.map((m) => [m.role, m.text])).toEqual([["user", "slow"], ["user", "use src"], ["assistant", "parte + use src"]])
+    expect(yield* store.activeTurns(chat.id)).toEqual([]) // nothing extra queued
+
+    // No turn running: the correction is just the next turn.
+    const d = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+    yield* runtime.steer(chat.id, "e agora?")
+    yield* d.done
+    expect((yield* store.messages(chat.id)).at(-1)).toMatchObject({ role: "assistant", text: "ok" })
+  })))
+
+test("effort: the chat's level reaches the session on every turn", () =>
+  runWith(":memory:", Sessions, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/haiku", effort: "high" })
+    const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "pensa" })
+    yield* c.done
+    expect(sessionLog.efforts.at(-1)).toBe("high")
   })))

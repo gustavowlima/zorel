@@ -31,6 +31,7 @@ export const agents = sqliteTable("agents", {
   instructions: text().notNull().default(""),
   model: text().notNull(),
   accountId: text("account_id"), // null: the default account of the model's provider
+  effort: text({ enum: ["low", "medium", "high", "max"] }), // null: the model's default
   createdAt: integer("created_at").notNull()
 })
 
@@ -40,6 +41,7 @@ export const chats = sqliteTable("chats", {
   title: text().notNull(),
   model: text().notNull(),
   accountId: text("account_id"), // the lead's account; null: the default one
+  effort: text({ enum: ["low", "medium", "high", "max"] }), // the lead's; null: the model's default
   summary: text().notNull().default(""),
   summaryUntil: integer("summary_until").notNull().default(0),
   createdAt: integer("created_at").notNull()

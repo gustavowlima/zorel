@@ -1,5 +1,6 @@
 // Fake `codex app-server` for tests: answers the handshake and streams a scripted turn.
-// FAKE_CODEX=nologin: no account. Prompt "hang": never completes (to test interrupt). Prompt "die": exits.
+// FAKE_CODEX=nologin: no account. Prompt "hang": waits for an interrupt or a steer. Prompt "die": exits.
+// Each turn echoes the effort it got, so tests can check it arrived.
 const out = (m: object) => process.stdout.write(`${JSON.stringify(m)}\n`)
 let turn = 0
 for await (const line of console) {
@@ -16,10 +17,14 @@ for await (const line of console) {
       out({ method: "item/agentMessage/delta", params: { threadId: "th-1", turnId: id, itemId: "i1", delta: "parcial" } })
       continue
     }
-    out({ method: "item/agentMessage/delta", params: { threadId: "th-1", turnId: id, itemId: "i1", delta: `eco ${turn}` } })
+    out({ method: "item/agentMessage/delta", params: { threadId: "th-1", turnId: id, itemId: "i1", delta: `eco ${turn}${m.params.effort ? ` (${m.params.effort})` : ""}` } })
     out({ method: "item/agentMessage/delta", params: { threadId: "th-1", turnId: id, itemId: "i2", delta: "fim" } })
-    out({ method: "thread/tokenUsage/updated", params: { threadId: "th-1", turnId: id, tokenUsage: { last: { inputTokens: 10, outputTokens: 2 } } } })
+    out({ method: "thread/tokenUsage/updated", params: { threadId: "th-1", turnId: id, tokenUsage: { last: { inputTokens: 10, outputTokens: 2, cachedInputTokens: 4 } } } })
     out({ method: "turn/completed", params: { threadId: "th-1", turn: { id, status: "completed", error: null } } })
+  } else if (m.method === "turn/steer") {
+    out({ id: m.id, result: { turnId: m.params.expectedTurnId } })
+    out({ method: "item/agentMessage/delta", params: { threadId: "th-1", turnId: m.params.expectedTurnId, itemId: "i9", delta: `corrigido: ${m.params.input[0].text}` } })
+    out({ method: "turn/completed", params: { threadId: "th-1", turn: { id: m.params.expectedTurnId, status: "completed", error: null } } })
   } else if (m.method === "turn/interrupt") {
     out({ id: m.id, result: {} })
     out({ method: "turn/completed", params: { threadId: "th-1", turn: { id: m.params.turnId, status: "interrupted", error: null } } })

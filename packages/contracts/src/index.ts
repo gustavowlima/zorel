@@ -30,6 +30,10 @@ export const NewAccount = Schema.Struct({ provider: AccountProvider, label: Name
 export const AccountPatch = Schema.Struct({ label: Name })
 export const LoginStarted = Schema.Struct({ url: Schema.NullOr(Schema.String) }) // url: when the CLI printed one
 
+// Reasoning effort (ARCHITECTURE §6). null = the model's default. "max" maps to each engine's top level.
+export const Effort = Schema.Literals(["low", "medium", "high", "max"])
+export type Effort = typeof Effort.Type
+
 export const Project = Schema.Struct({
   id: Id,
   name: Schema.String,
@@ -45,6 +49,7 @@ export const Agent = Schema.Struct({
   instructions: Schema.String,
   model: Schema.String,
   accountId: Schema.NullOr(Id), // null: default account of the model's provider
+  effort: Schema.NullOr(Effort),
   createdAt: Schema.Number
 })
 export type Agent = typeof Agent.Type
@@ -55,6 +60,7 @@ export const Chat = Schema.Struct({
   agentIds: Schema.Array(Id), // members; the first is the leader (replies when no one is mentioned)
   title: Schema.String,
   accountId: Schema.NullOr(Id), // the lead's account; null: default
+  effort: Schema.NullOr(Effort), // the lead's reasoning effort; null: the model's default
   model: Schema.String, // leader's model for the next turn; other members use their own model
   summary: Schema.String, // summary of what left the window (consolidation)
   summaryUntil: Schema.Number, // `at` of the last message covered by the summary
@@ -139,10 +145,10 @@ export const KeyInfo = Schema.Struct({ name: Schema.String, set: Schema.Boolean,
 
 export const NewProject = Schema.Struct({ name: Name, brief: LongText(8000) })
 export const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: Schema.optional(LongText(8000)) })
-export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)) })
-export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)) })
-export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)) })
-export const ChatPatch = Schema.Struct({ title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
+export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)) })
+export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)) })
+export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)) })
+export const ChatPatch = Schema.Struct({ title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000) })
 export const MemoryPatch = Schema.Struct({ state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)) })
 export const NewMcpServer = Schema.Struct({

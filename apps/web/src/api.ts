@@ -25,6 +25,8 @@ const rpc = <A, E>(f: (c: Client) => Effect.Effect<A, E>) => client.then((c) => 
 // clientId: resending (e.g. network dropped midway) doesn't duplicate the message.
 export const sendMessage = (chatId: string, text: string, clientId = crypto.randomUUID()) => rpc((c) => c.send({ chatId, clientId, text }))
 export const interruptChat = (chatId: string) => rpc((c) => c.interrupt({ chatId }))
+// Mid-turn correction: joins the running turn when the engine can (Codex), otherwise queues.
+export const steerChat = (chatId: string, text: string) => rpc((c) => c.steer({ chatId, text }))
 export const decideApproval = (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">) => rpc((c) => c.decide({ approvalId, outcome }))
 
 // Subscribes to the chat events. Connection dropped: subscribes again and gets another snapshot. Returns the canceller.
