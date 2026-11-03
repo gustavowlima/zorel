@@ -24,8 +24,8 @@ updated: 2026-11-03
 - mudou token em styles.css → atualizar DESIGN.md e o sidecar juntos
 
 - protótipo das telas (canvas): https://claude.ai/artifact/ERkKURix2bnKAqzi97emmw — moldura + cartão raio 16, barra lateral em árvore (pasta, linha de árvore sem fundo, status em 2ª linha com ícone girando/relógio), General = chats sem projeto, pílula de atividade expansível, aprovação pendente/recibo, seletor de modelo com trilho de contas e logos (@lobehub/icons-static-svg 1.102.0, MIT), painel direito Changes/Files (@pierre/diffs), painel de baixo Terminal/Tests/Problems/Processes/Logs, configurações com conectores/MCP/skills
-- decisões em aberto (fase UI): tema claro neutro ou quente; paleta de identidade dos agentes como exceção ao acento único; text-dim #6a6a6a reprova contraste; seção Agents da barra lateral = projeto aberto ou todos
-- DESIGN.md ainda descreve o MVP; atualizar na fase UI
+- decidido (2026-11-03): tema escuro do protótipo é o padrão (claro só troca valores, neutro); paleta de identidade dos agentes (6 cores, --z-agent-1..6) só em avatares (A Regra do Avatar); text-dim #8a8a8a (5,0:1) e no claro muted #666/dim #757575; seção Agents = agentes do projeto aberto
+- DESIGN.md e tokens atualizados pelo protótipo (sidebar = tom da moldura, surface #232323, bordas 6%/10%, tokens accent-faint/line, success-faint/line, diff-add/del, code)
 
 ## avoid
 
