@@ -6,3 +6,4 @@
 2026-11-03 | primitivas que faltavam, galeria /dev/ui, check:ui (catraca) no CI, detector ligado | fase UI passo 1
 2026-11-03 | primitivas de navegação, popover, pílula e layout; borda padrão em @layer base | fase UI passos 2 e 3
 2026-11-03 | galeria /dev/ui removida | decisão do usuário: não deve existir
+2026-11-03 | sidebar desktop: só a árvore rola sem barra, linhas fixas, ações sobrepostas, % de uso só em alerta | crítica impeccable 24/40

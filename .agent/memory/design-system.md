@@ -56,3 +56,7 @@ updated: 2026-11-03
 - fluxo impeccable: shape antes de tela nova; detector ligado (hooks on); audit ao terminar tela; um passe de polish ao fechar fase; harden/clarify para erros e i18n; extract quando componente repete em 2+ telas
 - check:ui no CI (literais, escala, botão/diálogo à mão, import direto de headless/ícones); nem Storybook nem galeria
 - shadcn (CLI 4.x) como GERADOR das primitivas: `shadcn init --base aria` (React Aria Components; Radix e Base UI NÃO, decisão do usuário 2026-11-03), código copiado para src/ui e nosso; tokens semânticos do shadcn mapeados uma vez para --z-*; nada da paleta neutra/--radius padrão; alturas na escala 24/28/32/36
+- scrollbars: nada de scrollbar-color/scrollbar-width no :root (herda e faz o Chrome/WebKit ignorar ::-webkit-scrollbar); só em @supports not selector(::-webkit-scrollbar). Áreas estilo desktop usam .scroll-quiet (sem barra) + hairline nas bordas com conteúdo escondido
+- sidebar: marca, Needs you/Knowledge/Usage e Settings fixos; só a árvore rola; linhas shrink-0 (nunca encolhem); ações do GroupRow sobrepõem o trailing no hover/foco, sem ocupar largura
+- números soltos na navegação só quando acionáveis: o % de Usage aparece a partir de LIMIT_ALERT, com aria-label/title dizendo conta e janela
+

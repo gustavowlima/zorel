@@ -5,7 +5,7 @@ import { Button } from "react-aria-components"
 import { cn } from "@/lib/utils"
 
 const row =
-  "flex w-full min-w-0 cursor-default items-center gap-2.5 rounded-control border text-left text-base outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none"
+  "flex w-full min-w-0 shrink-0 cursor-default items-center gap-2.5 rounded-control border text-left text-base outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none"
 const state = (active: boolean | undefined) =>
   active ? "border-subtle bg-canvas font-medium text-fg" : "border-transparent text-secondary data-hovered:bg-control-hover data-hovered:text-fg data-pressed:bg-control-active"
 
@@ -56,7 +56,7 @@ export function TreeItem({ active, title, detail, trailing, onPress }: { active?
 // Uppercase group label with an optional action (e.g. "+" next to Projects).
 export function NavLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mt-4 flex h-control-sm items-center pr-1 pl-2.5 text-xs font-medium uppercase tracking-wide text-muted">
+    <div className="mt-4 flex h-control-sm shrink-0 items-center pr-1 pl-2.5 text-xs font-medium uppercase tracking-wide text-muted">
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {action}
     </div>
@@ -64,7 +64,8 @@ export function NavLabel({ children, action }: { children: ReactNode; action?: R
 }
 
 // Header row of a group in the tree (a project, General): the name toggles it open; actions (new chat,
-// settings) sit inside the row and show on hover or focus, so the row keeps its full width.
+// settings) take the place of the trailing count and chevron on hover or focus, so they never cost the name
+// any width.
 export function GroupRow({
   icon,
   name,
@@ -85,7 +86,7 @@ export function GroupRow({
   return (
     <div
       className={cn(
-        "group/row flex h-control items-center gap-1 rounded-control border pr-1 transition-colors duration-120 ease-out motion-reduce:transition-none",
+        "group/row relative flex h-control shrink-0 items-center gap-1 rounded-control border pr-1 transition-colors duration-120 ease-out motion-reduce:transition-none",
         active ? "border-subtle bg-canvas" : "border-transparent hover:bg-control-hover"
       )}
     >
@@ -100,8 +101,21 @@ export function GroupRow({
         <span className="flex size-5 shrink-0 items-center justify-center text-muted [&_svg]:size-4">{icon}</span>
         <span className="min-w-0 flex-1 truncate">{name}</span>
       </Button>
-      {actions && <span className="flex opacity-0 transition-opacity duration-120 group-focus-within/row:opacity-100 group-hover/row:opacity-100 motion-reduce:transition-none">{actions}</span>}
-      {trailing}
+      {trailing && (
+        <span className={cn("flex shrink-0 items-center", actions && "transition-opacity duration-120 group-focus-within/row:opacity-0 group-hover/row:opacity-0 motion-reduce:transition-none")}>
+          {trailing}
+        </span>
+      )}
+      {actions && (
+        <span
+          className={cn(
+            "absolute inset-y-0 right-1 flex items-center opacity-0 transition-opacity duration-120 group-focus-within/row:opacity-100 group-hover/row:opacity-100 motion-reduce:transition-none",
+            active ? "bg-canvas" : "bg-control-hover"
+          )}
+        >
+          {actions}
+        </span>
+      )}
     </div>
   )
 }

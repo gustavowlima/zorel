@@ -180,11 +180,17 @@ html, body, #root { height: 100%; }
 
 /* Browser surfaces in the palette (selection, caret, scrollbars): the parts no component draws. */
 ::selection { background: var(--z-accent-soft); color: var(--z-text); }
-:root { caret-color: var(--z-accent-text); accent-color: var(--z-accent); scrollbar-color: var(--z-border-strong) transparent; scrollbar-width: thin; }
+:root { caret-color: var(--z-accent-text); accent-color: var(--z-accent); }
+/* WebKit and Chrome ignore the ::-webkit-scrollbar rules below on any element that has scrollbar-color, and it
+   inherits; so the standard properties go only to engines without the pseudo-elements (Firefox). */
+@supports not selector(::-webkit-scrollbar) { :root { scrollbar-color: var(--z-border-strong) transparent; scrollbar-width: thin; } }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--z-border-strong); border-radius: 9999px; border: 3px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background-color: var(--z-text-dim); }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+/* Desktop-style scroll areas (the sidebar tree): no visible bar; edges get a hairline while content is hidden. */
+.scroll-quiet { scrollbar-width: none; }
+.scroll-quiet::-webkit-scrollbar { display: none; }
 a { text-underline-offset: 3px; }
 body {
   margin: 0;

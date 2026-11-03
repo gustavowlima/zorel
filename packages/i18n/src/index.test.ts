@@ -24,4 +24,6 @@ test("formatters", () => {
   expect(formatAge(now - 2 * 3_600_000, now)).toBe("2h")
   expect(formatAge(now - 3 * 86_400_000, now)).toBe("3d")
   expect(formatAge(Date.UTC(2020, 0, 15), Date.UTC(2026, 10, 3))).toBe("Jan 15, 2020")
+  expect(formatAge(0, now)).toBe("") // missing timestamps from old data have no age
+  expect(formatAge(1, now)).toBe("")
 })

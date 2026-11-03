@@ -36,6 +36,8 @@ export function TeamPicker({ chat }: { chat: Chat }) {
   const lead = team[0]
   const setTeam = (agentIds: ReadonlyArray<string>, model?: string) =>
     update({ params: { id: chat.id }, payload: { agentIds, ...(model && { model }) }, reactivityKeys: ["chats"] })
+  // No agents to pick: the model answers on its own and the model chip already says which.
+  if (!lead && candidates.length === 0) return null
 
   return (
     <Popover
