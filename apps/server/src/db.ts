@@ -1,8 +1,8 @@
 // Local database: SQLite via Drizzle over Effect's SqliteClient (D9). Every method returns an Effect;
 // a database error is a defect (orDie): the caller can do nothing but fail the request.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import type { Agent, AccountUsage, Attachment, Chat, Effort, FailoverTarget, McpServer, Memory, Message, Project, Switch } from "@zero/contracts"
-import type { Approval, ApprovalOutcome, FileChange, Turn, WorkStep } from "@zero/contracts/events"
+import type { Access, Agent, AccountUsage, Attachment, Chat, Effort, FailoverTarget, FileChange, McpServer, Memory, Message, Project, Switch } from "@zero/contracts"
+import type { Approval, ApprovalOutcome, Turn, WorkStep } from "@zero/contracts/events"
 import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
@@ -83,13 +83,13 @@ export const repository = (db: Db) => {
     // ---------- projects ----------
     projects: (): Effect.Effect<Project[]> => orDie(db.select().from(projects).orderBy(desc(projects.createdAt))),
     project,
-    createProject: (input: { name: string; brief: string }) =>
+    createProject: (input: { name: string; brief: string; path?: string | null | undefined }) =>
       Effect.gen(function* () {
-        const p: Project = { id: crypto.randomUUID(), ...input, createdAt: now() }
+        const p: Project = { id: crypto.randomUUID(), ...input, path: input.path ?? null, createdAt: now() }
         yield* db.insert(projects).values(p)
         return p
       }).pipe(orDie),
-    updateProject: (id: string, input: { name?: string | undefined; brief?: string | undefined }) =>
+    updateProject: (id: string, input: { name?: string | undefined; brief?: string | undefined; path?: string | null | undefined }) =>
       Effect.gen(function* () {
         const set = defined(input)
         if (Object.keys(set).length) yield* db.update(projects).set(set).where(eq(projects.id, id))
@@ -109,13 +109,13 @@ export const repository = (db: Db) => {
     // ---------- agents ----------
     agents: (): Effect.Effect<Agent[]> => orDie(db.select().from(agents).orderBy(asc(agents.createdAt))),
     agent,
-    createAgent: (input: { projectId: string | null; name: string; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined }) =>
+    createAgent: (input: { projectId: string | null; name: string; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined }) =>
       Effect.gen(function* () {
-        const a: Agent = { id: crypto.randomUUID(), ...input, accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], createdAt: now() }
+        const a: Agent = { id: crypto.randomUUID(), ...input, accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], access: input.access ?? "workspace", createdAt: now() }
         yield* db.insert(agents).values(a)
         return a
       }).pipe(orDie),
-    updateAgent: (id: string, input: { name?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined }) =>
+    updateAgent: (id: string, input: { name?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined }) =>
       Effect.gen(function* () {
         const set = defined(input)
         if (Object.keys(set).length) yield* db.update(agents).set(set).where(eq(agents.id, id))
@@ -162,10 +162,17 @@ export const repository = (db: Db) => {
     messagesAfter: (chatId: string, at: number) =>
       withFiles(db.select().from(messages).where(and(eq(messages.chatId, chatId), gt(messages.at, at))).orderBy(asc(messages.at))),
     // attachmentIds: files uploaded to this chat beforehand; linked to the message here.
-    addMessage: (input: Omit<Message, "id" | "at" | "attachments" | "switches"> & { attachmentIds?: ReadonlyArray<string> | undefined; switches?: ReadonlyArray<Switch> | undefined }) =>
+    addMessage: (
+      input: Omit<Message, "id" | "at" | "attachments" | "switches" | "turnId" | "changes" | "revertedAt"> & {
+        attachmentIds?: ReadonlyArray<string> | undefined
+        switches?: ReadonlyArray<Switch> | undefined
+        turnId?: string | null | undefined
+        changes?: ReadonlyArray<FileChange> | undefined
+      }
+    ) =>
       Effect.gen(function* () {
-        const { attachmentIds = [], switches = [], ...rest } = input
-        const base = { id: crypto.randomUUID(), ...rest, switches, at: now() }
+        const { attachmentIds = [], switches = [], turnId = null, changes = [], ...rest } = input
+        const base = { id: crypto.randomUUID(), ...rest, switches, turnId, changes, revertedAt: null, at: now() }
         yield* db.insert(messages).values({ ...base, steps: JSON.stringify(base.steps) })
         let files: Attachment[] = []
         if (attachmentIds.length) {
@@ -316,11 +323,11 @@ export const repository = (db: Db) => {
       orDie(db.update(turns).set({ state: "running", startedAt: now() }).where(eq(turns.id, id)).returning().pipe(Effect.map((r) => r[0]!))),
     markFirstToken: (id: string) => orDie(db.update(turns).set({ firstTokenAt: now() }).where(and(eq(turns.id, id), isNull(turns.firstTokenAt))).pipe(Effect.asVoid)),
     savePartial: (id: string, partialText: string) => orDie(db.update(turns).set({ partialText }).where(eq(turns.id, id)).pipe(Effect.asVoid)),
-    finishTurn: (id: string, end: { state: "completed" | "failed" | "interrupted"; error: string | null; messageId: string | null; usage?: { inputTokens: number; outputTokens: number; cachedTokens?: number }; route?: { model: string; accountId: string | null; switches: ReadonlyArray<Switch> } }) =>
+    finishTurn: (id: string, end: { state: "completed" | "failed" | "interrupted"; error: string | null; messageId: string | null; usage?: { inputTokens: number; outputTokens: number; cachedTokens?: number }; route?: { model: string; accountId: string | null; switches: ReadonlyArray<Switch> }; trees?: { treeBefore: string; treeAfter: string } }) =>
       orDie(
         db
           .update(turns)
-          .set({ state: end.state, error: end.error, messageId: end.messageId, endedAt: now(), ...(end.route && end.route), ...(end.usage && { inputTokens: end.usage.inputTokens, outputTokens: end.usage.outputTokens, cachedTokens: end.usage.cachedTokens ?? 0 }) })
+          .set({ state: end.state, error: end.error, messageId: end.messageId, endedAt: now(), ...(end.route && end.route), ...(end.trees && end.trees), ...(end.usage && { inputTokens: end.usage.inputTokens, outputTokens: end.usage.outputTokens, cachedTokens: end.usage.cachedTokens ?? 0 }) })
           .where(eq(turns.id, id))
           .returning()
           .pipe(Effect.map((r) => toTurn(r[0]!)))
@@ -340,6 +347,24 @@ export const repository = (db: Db) => {
         yield* db.update(steps).set({ status: done.status, output: done.output, changes: JSON.stringify(done.changes), durationMs: done.durationMs }).where(eq(steps.id, step.id))
         return done
       }).pipe(orDie),
+    // Commands the agents ran in a chat (terminal panel), oldest first.
+    runsOf: (chatId: string, limit = 200) =>
+      orDie(
+        db
+          .select({ step: steps })
+          .from(steps)
+          .innerJoin(turns, eq(turns.id, steps.turnId))
+          .where(and(eq(turns.chatId, chatId), eq(steps.kind, "run")))
+          .orderBy(desc(steps.startedAt))
+          .limit(limit)
+          .pipe(Effect.map((r) => r.map((x) => toStep(x.step)).reverse()))
+      ),
+    // The chat's first workspace checkpoint (marks "what this conversation changed" in the file tree).
+    firstTree: (chatId: string) =>
+      orDie(
+        db.select({ tree: turns.treeBefore }).from(turns).where(and(eq(turns.chatId, chatId), sql`${turns.treeBefore} is not null`)).orderBy(asc(turns.createdAt)).limit(1).pipe(Effect.map((r) => r[0]?.tree ?? null))
+      ),
+    markReverted: (turnId: string) => orDie(db.update(messages).set({ revertedAt: now() }).where(eq(messages.turnId, turnId)).pipe(Effect.asVoid)),
     stepsOf: (turnIds: ReadonlyArray<string>) =>
       orDie(db.select().from(steps).where(inArray(steps.turnId, [...turnIds])).orderBy(asc(steps.startedAt)).pipe(Effect.map((r) => r.map(toStep)))),
 

@@ -70,7 +70,15 @@ updated: 2026-11-03
 - preferences (tabela chave/valor): failover_terms_accepted_at; GET /api/preferences, POST /api/preferences/failover-terms
 - colunas JSON tipadas com text({ mode: "json" }).$type<...>() (sem JSON.parse manual)
 
+- workspace (fase 3, 2026-11-03): workspace.ts (validate, cwdOf, snapshot/changes/diff/restore/files via git sombra em <dataDir>/workspaces/<projectId>.git, semáforo por projeto); runTurn tira árvore antes/depois → messages.changes/turn_id, turns.tree_before/after; GET /api/turns/:id/diff, POST /api/turns/:id/undo (409 UndoConflict), GET /api/projects/:id/files?chatId, RPC runs
+- acesso por agente (workspace/ask/full): engines/policy.ts; Claude canUseTool + tools nativas; Codex sandbox/approvalPolicy + pedidos de aprovação → askApproval (cartão único para MCP e nativo); approvers por sessionKey
+- vigia STALL_MS 10 min sem eventos (sem aprovação esperando) → erro unavailable + fecha a sessão
+- Codex: skills da máquina desligadas via skills/list + skills/config/write no CODEX_HOME do Zero; --disable skill_search --enable skip_host_skill_discovery
+
 ## avoid
+
+- subir o server de teste com `nohup … &` no shell com sandbox: os filhos (CLI do Claude) morrem e o turno pendura; usar o modo de segundo plano da ferramenta
+- constante de módulo em engines/codex.ts que lê algo de engines.ts (import circular): calcular dentro da função
 
 - teste que chama os CLIs reais (contas) precisa de timeout maior que 5s
 

@@ -12,25 +12,36 @@ import {
   TabList, TabPanel, Tabs, Textarea, Trash2
 } from "@/ui"
 
+// The reason a folder was refused (WorkspaceInvalid), in words.
+const REASONS = ["relative", "missing", "not_directory", "forbidden"] as const
+export function folderError(e: unknown): string {
+  const reason = (e as { reason?: string })?.reason
+  return REASONS.includes(reason as (typeof REASONS)[number]) ? t(`workspace.invalid.${reason as (typeof REASONS)[number]}`) : String(e)
+}
+
 // New project: a small popover from the sidebar's "+" (name and an optional brief), not a page.
 // The brief can be written later in the project's overview.
 export function NewProjectButton() {
   const create = useMutation(mutations.createProject)
   const [name, setName] = useState("")
   const [brief, setBrief] = useState("")
+  const [path, setPath] = useState("")
+  const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
     setBusy(true)
-    create({ payload: { name: name.trim(), brief }, reactivityKeys: ["projects"] })
+    setError(undefined)
+    create({ payload: { name: name.trim(), brief, path: path.trim() || null }, reactivityKeys: ["projects"] })
       .then((p) => {
         setOpen(false)
         setName("")
         setBrief("")
+        setPath("")
         go({ view: "project", id: p.id, tab: "overview" })
-      })
+      }, (e: unknown) => setError(folderError(e)))
       .finally(() => setBusy(false))
   }
   return (
@@ -50,6 +61,9 @@ export function NewProjectButton() {
         <p className="font-semibold">{t("project.newTitle")}</p>
         <Field label={t("project.name")}>
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required autoFocus />
+        </Field>
+        <Field label={t("workspace.folder")} hint={error ? <span className="text-danger">{error}</span> : t("project.briefHintShort")}>
+          <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder={t("workspace.folderPlaceholder")} spellCheck={false} className="font-mono" />
         </Field>
         <Field label={t("project.brief")} hint={t("project.briefHintShort")}>
           <Textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={3} maxLength={8000} />
@@ -128,22 +142,32 @@ function Overview({ project }: { project: Project }) {
   const statuses = useStatuses()
   const [name, setName] = useState(project.name)
   const [brief, setBrief] = useState(project.brief)
+  const [path, setPath] = useState(project.path ?? "")
+  const [pathError, setPathError] = useState<string>()
   useEffect(() => {
     setName(project.name)
     setBrief(project.brief)
+    setPath(project.path ?? "")
+    setPathError(undefined)
   }, [project])
-  const dirty = name !== project.name || brief !== project.brief
+  const dirty = name !== project.name || brief !== project.brief || path.trim() !== (project.path ?? "")
   return (
     <div className="flex flex-col gap-8">
       <form
         className="flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault()
-          void update({ params: { id: project.id }, payload: { name: name.trim(), brief }, reactivityKeys: ["projects"] })
+          setPathError(undefined)
+          update({ params: { id: project.id }, payload: { name: name.trim(), brief, path: path.trim() || null }, reactivityKeys: ["projects"] }).catch((e: unknown) =>
+            setPathError(folderError(e))
+          )
         }}
       >
         <Field label={t("project.name")}>
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
+        </Field>
+        <Field label={t("workspace.folder")} hint={pathError ? <span className="text-danger">{pathError}</span> : t("workspace.folderHint")}>
+          <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder={t("workspace.folderPlaceholder")} spellCheck={false} className="font-mono" />
         </Field>
         <Field label={t("project.brief")} hint={t("project.briefHint")}>
           <Textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={7} maxLength={8000} />

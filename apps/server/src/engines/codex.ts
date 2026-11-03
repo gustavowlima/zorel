@@ -7,9 +7,30 @@
 // memories) never reaches Zero's agents (D8). Zero never reads the login inside it.
 import { Effect, Queue, Stream } from "effect"
 import { mkdirSync } from "node:fs"
-import type { AccountUsage, FailureReason } from "@zero/contracts"
-import { classifyMessage, CODEX_DISABLED, type EngineEvent, type EngineFailure, splitModel, toMillis, type Usage } from "#server/engines.ts"
-import type { EngineSession, SessionTurnInput } from "#server/engines/session.ts"
+import type { Access, AccountUsage, FailureReason } from "@zero/contracts"
+import { relative } from "node:path"
+import { classifyMessage, CODEX_DISABLED, type EngineEvent, type EngineFailure, type NativeStep, splitModel, toMillis, type Usage } from "#server/engines.ts"
+import { approvalFor } from "#server/engines/policy.ts"
+import type { Approver, EngineSession, SessionTurnInput } from "#server/engines/session.ts"
+
+// Access level → Codex sandbox and approval policy (ARCHITECTURE §9.2). The shell is on in the app-server:
+// commands run in Codex's sandbox and what leaves it asks through Zero.
+const SANDBOX: Record<Access, string> = { workspace: "workspace-write", ask: "read-only", full: "danger-full-access" }
+const APPROVAL: Record<Access, string> = { workspace: "on-request", ask: "on-request", full: "never" }
+// A function, not a constant: engines.ts imports this module, so CODEX_DISABLED isn't ready at load time.
+const appServerDisabled = () => CODEX_DISABLED.filter((f) => f !== "shell_tool" && f !== "unified_exec")
+
+// Codex items as steps: a command or a file change starts with item/started and ends with item/completed.
+export function codexStep(item: Json, cwd: string): NativeStep | undefined {
+  const done = (s: unknown) => (s === "completed" ? "ok" : s === "declined" ? "refused" : s === "failed" ? "error" : "running") as NativeStep["status"]
+  if (item?.type === "commandExecution")
+    return { id: String(item.id), kind: "run", title: String(item.command ?? "").slice(0, 300), files: [], status: done(item.status), output: String(item.aggregatedOutput ?? "").slice(0, 4000) }
+  if (item?.type === "fileChange") {
+    const files = (item.changes ?? []).map((c: Json) => relative(cwd, String(c.path)) || String(c.path))
+    return { id: String(item.id), kind: "edit", title: `Edit ${files.join(", ")}`.slice(0, 300), files, status: done(item.status), output: "" }
+  }
+  return undefined
+}
 
 const REQUEST_TIMEOUT_MS = 60_000
 const INTERRUPT_GRACE_MS = 5_000
@@ -24,6 +45,8 @@ class Rpc {
   private stderr = ""
   exited: string | undefined
   onNotification: (method: string, params: Json) => void = () => {}
+  // Requests from Codex (approvals). Returns the JSON-RPC result; undefined: not supported.
+  onRequest: (method: string, params: Json) => Promise<Json | undefined> = async () => undefined
   onExit: () => void = () => {}
 
   private constructor(private proc: Bun.Subprocess<"pipe", "pipe", "pipe">) {}
@@ -106,10 +129,12 @@ class Rpc {
       if (m.error) p.reject(new Error(m.error.message ?? "erro do codex app-server"))
       else p.resolve(m.result)
     } else if (m.id !== undefined) {
-      // A request from Codex (approvals, user input). Sandbox is read-only and shell is off, so Zero
-      // declines: actions only happen through the gateway, which has its own approvals.
-      const decline = /requestApproval$/.test(m.method) ? { result: { decision: "decline" } } : { error: { code: -32601, message: "não suportado pelo Zero" } }
-      this.write({ id: m.id, ...decline })
+      // A request from Codex (approvals, user input): answered when the person decides.
+      const id = m.id
+      void this.onRequest(m.method, m.params ?? {}).then(
+        (result) => this.write(result === undefined ? { id, error: { code: -32601, message: "não suportado pelo Zero" } } : { id, result }),
+        () => this.write({ id, result: { decision: "decline" } })
+      )
     } else if (m.method) this.onNotification(m.method, m.params ?? {})
   }
 }
@@ -150,6 +175,8 @@ export interface CodexSessionOptions {
   readonly cwd: string
   readonly home: string // Zero-owned CODEX_HOME for the account
   readonly gatewayUrl: string // this session's stable gateway URL (tools change per turn behind it)
+  readonly access: Access
+  readonly approve: Approver
   readonly command?: ReadonlyArray<string> // tests: a fake app-server instead of `codex`
 }
 
@@ -160,12 +187,31 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
   if (!bin) return "codex não está instalado ou não está no PATH."
   mkdirSync(o.cwd, { recursive: true })
   mkdirSync(o.home, { recursive: true })
-  const args = o.command?.slice(1) ?? ["app-server", "-c", "project_doc_max_bytes=0", "-c", 'web_search="disabled"', ...CODEX_DISABLED.flatMap((f) => ["--disable", f])]
+  // Skills on this machine (~/.agents/skills…) are the person's, not Zero's (D8): host discovery off.
+  const args = o.command?.slice(1) ?? [
+    "app-server", "-c", "project_doc_max_bytes=0", "-c", 'web_search="disabled"',
+    ...appServerDisabled().flatMap((f) => ["--disable", f]), "--disable", "skill_search", "--enable", "skip_host_skill_discovery"
+  ]
   const rpc = Rpc.start(bin, args, o.cwd, childEnv(o.home))
 
   let listener: ((method: string, params: Json) => void) | undefined
   rpc.onNotification = (method, params) => listener?.(method, params)
   rpc.onExit = () => listener?.("zero/exited", {})
+  // File changes waiting for approval: their paths come with item/started, the request only has the item id.
+  const pendingFiles = new Map<string, ReadonlyArray<string>>()
+  rpc.onRequest = async (method, p) => {
+    if (method === "item/commandExecution/requestApproval") {
+      const command = String(p.command ?? "")
+      const ok = await o.approve(approvalFor(p.networkApprovalContext ? "network" : "command", "shell", `Run ${command.slice(0, 200)}`, command, String(p.cwd ?? o.cwd)))
+      return { decision: ok ? "accept" : "decline" }
+    }
+    if (method === "item/fileChange/requestApproval") {
+      const files = pendingFiles.get(String(p.itemId)) ?? []
+      const ok = await o.approve(approvalFor("edit", "apply_patch", `Edit ${files.join(", ") || "files"}`, { files, reason: p.reason ?? null }, o.cwd))
+      return { decision: ok ? "accept" : "decline" }
+    }
+    return undefined
+  }
 
   const modelOf = (id: string) => {
     const m = splitModel(id).model
@@ -177,12 +223,18 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
     rpc.notify("initialized")
     const account = await rpc.request("account/read", {})
     if (!account?.account) throw new Error(codexLoginHint(o.home))
+    // Codex finds skills on the machine (~/.agents/skills, the repo, its own); they're not Zero's (D8).
+    // Turned off in Zero's CODEX_HOME config, never in the person's own.
+    const listed = await rpc.request("skills/list", { cwds: [o.cwd] }).catch(() => undefined)
+    for (const entry of listed?.data ?? [])
+      for (const skill of entry.skills ?? [])
+        if (skill.enabled) await rpc.request("skills/config/write", { path: skill.path, enabled: false }).catch(() => undefined)
     const model = modelOf(o.model)
     const started = await rpc.request("thread/start", {
       ...(model && { model }),
       cwd: o.cwd,
-      approvalPolicy: "never",
-      sandbox: "read-only",
+      approvalPolicy: APPROVAL[o.access],
+      sandbox: SANDBOX[o.access],
       ephemeral: true, // Zero's context is the source of truth; resuming uses the checkpoint
       developerInstructions: o.system,
       config: {
@@ -235,6 +287,12 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
           }
           if (method === "account/rateLimits/updated") return readLimits(p.rateLimits) // account-wide, no threadId
           if (p.threadId !== threadId) return
+          if (method === "item/started" || method === "item/completed") {
+            const step = codexStep(p.item, o.cwd)
+            if (p.item?.type === "fileChange" && method === "item/started") pendingFiles.set(String(p.item.id), step?.files ?? [])
+            if (step) emit({ type: "step", step: method === "item/started" ? { ...step, status: "running" } : step })
+            return
+          }
           if (method === "item/agentMessage/delta" && typeof p.delta === "string") {
             const sep = lastItem && lastItem !== p.itemId ? "\n\n" : "" // separate messages around tool calls
             lastItem = p.itemId

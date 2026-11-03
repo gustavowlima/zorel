@@ -12,7 +12,7 @@ const open = (env?: string) => {
   else delete process.env.FAKE_CODEX
   const s = openCodexSession({
     model: "codex-cli/default", system: "S", cwd: join(tmpdir(), "zero-codex-test"), home: join(tmpdir(), "zero-codex-home"),
-    gatewayUrl: "http://127.0.0.1:9/mcp", command: [process.execPath, fake]
+    gatewayUrl: "http://127.0.0.1:9/mcp", access: "ask", approve: async () => false, command: [process.execPath, fake]
   })
   if (typeof s === "string") throw new Error(s)
   return s

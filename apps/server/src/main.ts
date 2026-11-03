@@ -1,5 +1,5 @@
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, MAX_ATTACHMENT_BYTES, type ToolInfo, USAGE_DAYS } from "@zero/contracts"
+import { Api, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS } from "@zero/contracts"
 import { ZeroRpc } from "@zero/contracts/events"
 import { Effect, Layer, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -17,6 +17,7 @@ import { Actor } from "./access.ts"
 import { LoggerLive } from "./observability.ts"
 import { Runtime } from "./runtime.ts"
 import { Tools } from "./tools.ts"
+import { Workspace } from "./workspace.ts"
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
 const found = <A, E, R>(e: Effect.Effect<A | undefined, E, R>) => Effect.flatMap(e, (a) => (a === undefined ? notFound() : Effect.succeed(a)))
@@ -32,10 +33,23 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
     const { hub } = yield* Tools
+    const workspace = yield* Workspace
+    // A folder is stored only after the Workspace accepts it (absolute, real, a directory, not root/home/data).
+    const withPath = <T extends { path?: string | null | undefined }>(input: T) =>
+      input.path ? Effect.map(workspace.validate(input.path), (path) => ({ ...input, path })) : Effect.succeed(input)
     return h
       .handle("list", () => store.projects())
-      .handle("create", ({ payload }) => store.createProject(payload))
-      .handle("update", ({ params, payload }) => found(store.updateProject(params.id, payload)))
+      .handle("create", ({ payload }) => Effect.flatMap(withPath(payload), store.createProject))
+      .handle("update", ({ params, payload }) => Effect.flatMap(withPath(payload), (p) => found(store.updateProject(params.id, p))))
+      .handle("files", ({ params, query }) =>
+        Effect.gen(function* () {
+          const project = yield* store.project(params.id)
+          if (!project) return yield* notFound()
+          // Marks are relative to the chat's first checkpoint: what this conversation changed.
+          const since = query.chatId ? yield* store.firstTree(query.chatId) : null
+          return yield* workspace.files(project, since ?? null)
+        })
+      )
       .handle("remove", ({ params }) =>
         Effect.gen(function* () {
           const servers = (yield* store.mcpServers()).filter((s) => s.projectId === params.id)
@@ -61,7 +75,18 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
     const dataDir = yield* DataDir
+    const workspace = yield* Workspace
     const services = yield* Effect.context<Store | Engines | DataDir>()
+    // A turn with workspace checkpoints, its project and whether its changes were undone.
+    const turnWithTrees = (id: string) =>
+      Effect.gen(function* () {
+        const row = yield* store.turnRow(id)
+        if (!row?.treeBefore || !row.treeAfter) return undefined
+        const chat = yield* store.chat(row.chatId)
+        if (!chat?.projectId) return undefined
+        const message = row.messageId ? (yield* store.messages(row.chatId)).find((m) => m.id === row.messageId) : undefined
+        return { row, projectId: chat.projectId, before: row.treeBefore, after: row.treeAfter, revertedAt: message?.revertedAt ?? null }
+      })
     return h
       .handle("list", () => store.chats())
       .handle("create", ({ payload }) =>
@@ -86,6 +111,24 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           Effect.provide(services),
           Effect.catchTags({ NotFound: () => notFound(), Busy: () => Effect.fail(new HttpApiError.Conflict()) })
         )
+      )
+      .handle("diff", ({ params }) =>
+        Effect.gen(function* () {
+          const t = yield* turnWithTrees(params.id)
+          if (!t) return yield* notFound()
+          return { turnId: t.row.id, files: yield* workspace.diff(t.projectId, t.before, t.after), revertedAt: t.revertedAt }
+        })
+      )
+      .handle("undo", ({ params }) =>
+        Effect.gen(function* () {
+          const t = yield* turnWithTrees(params.id)
+          const project = t && (yield* store.project(t.projectId))
+          if (!t || !project) return yield* notFound()
+          const { conflicts } = yield* workspace.restore(project, t.before, t.after)
+          if (conflicts.length) return yield* new UndoConflict({ files: conflicts })
+          yield* store.markReverted(t.row.id)
+          return { turnId: t.row.id, files: yield* workspace.diff(t.projectId, t.before, t.after), revertedAt: Date.now() }
+        })
       )
   })
 )
@@ -201,7 +244,8 @@ const RpcHandlers = ZeroRpc.toLayer(
       decide: (p) => runtime.decide(p.approvalId, p.outcome, p.reason),
       subscribeChat: (p) => runtime.subscribeChat(p.chatId),
       subscribeStatus: () => runtime.subscribeStatus,
-      approvals: () => store.openApprovals()
+      approvals: () => store.openApprovals(),
+      runs: (p) => store.runsOf(p.chatId)
     }
   })
 )
@@ -296,7 +340,7 @@ export const services = (dbPath: string, dataDir: string, secrets?: Layer.Layer<
   const store = Store.layer(dbPath)
   const withSecrets = Layer.provideMerge(secrets ?? Secrets.layer, store)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(Engines.layer, Tools.layer), withSecrets), DataDir.layer(dataDir))
-  const withAccounts = Layer.provideMerge(Accounts.layer, base)
+  const withAccounts = Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer), base)
   return Layer.mergeAll(Layer.provideMerge(Runtime.layer, withAccounts), Actor.local)
 }
 

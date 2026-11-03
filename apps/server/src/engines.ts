@@ -8,7 +8,7 @@
 // CLI arguments and parsers derive from a reference app (Apache-2.0), see NOTICE.
 import { AnthropicClient, AnthropicLanguageModel } from "@effect/ai-anthropic"
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
-import type { AccountUsage, FailureReason, ModelInfo } from "@zero/contracts"
+import type { Access, AccountUsage, FailureReason, ModelInfo } from "@zero/contracts"
 import { Context, Effect, Layer, Queue, Redacted, Stream } from "effect"
 import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
@@ -16,6 +16,7 @@ import { readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { openClaudeSession } from "#server/engines/claude-sdk.ts"
 import { openCodexSession } from "#server/engines/codex.ts"
+import type { Approver } from "#server/engines/session.ts"
 import type { EngineSession } from "#server/engines/session.ts"
 import { Secrets, type SecretStore } from "./secrets.ts"
 import { resultText, type Session, type ToolDef } from "./tools.ts"
@@ -68,6 +69,17 @@ export type EngineEvent =
   | { readonly type: "error"; readonly message: string; readonly failure?: EngineFailure | undefined }
   // A limit reading of the account the session runs on (Claude rate_limit_event, Codex account/rateLimits).
   | { readonly type: "limits"; readonly usage: AccountUsage }
+  // A native tool call (read, edit, command…): sent when it starts and again when it ends, same id.
+  | { readonly type: "step"; readonly step: NativeStep }
+
+export interface NativeStep {
+  readonly id: string
+  readonly kind: "read" | "edit" | "run" | "search" | "tool"
+  readonly title: string // "Read src/a.ts", "bun test"
+  readonly files: ReadonlyArray<string> // relative to the workspace
+  readonly status: "running" | "ok" | "error" | "refused"
+  readonly output: string // start of the result
+}
 
 // Seconds or milliseconds → milliseconds (CLIs report epoch seconds).
 export const toMillis = (t: number) => (t < 1e12 ? t * 1000 : t)
@@ -429,6 +441,8 @@ export interface OpenSession {
   readonly gatewayUrl: string // stable for the session; the runtime swaps the tools behind it each turn
   readonly dataDir: string // where Zero-owned account folders live (e.g. CODEX_HOME)
   readonly account?: { readonly id: string; readonly home: string | null } | undefined // §6.1: whose login runs this session
+  readonly access: Access // §9.2: what the agent may do in `cwd` without asking
+  readonly approve: Approver // asks the person (the approval card) for a native call
 }
 
 export interface EnginesService {

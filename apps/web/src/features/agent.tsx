@@ -1,6 +1,6 @@
 // Agent (prototype "Agent settings"): name, default model (with account and reasoning), role, and the tools
 // its chats can reach. Without an id it creates one, in a project or global.
-import type { Agent, FailoverTarget } from "@zero/contracts"
+import type { Access, Agent, FailoverTarget } from "@zero/contracts"
 import { t } from "@zero/i18n"
 import { useEffect, useState } from "react"
 import { agentsAtom, mutations, projectsAtom, serversAtom, useList, useMutation } from "../client.ts"
@@ -8,7 +8,7 @@ import { agentTone } from "../labels.ts"
 import { go } from "../state.ts"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
-import { AgentAvatar, Button, ConfirmDialog, Field, IconButton, Input, Menu, MenuItem, MoreHorizontal, Screen, Section, Textarea, Trash2 } from "@/ui"
+import { AgentAvatar, Button, ChoiceCards, ConfirmDialog, Field, IconButton, Input, Menu, MenuItem, MoreHorizontal, Screen, Section, Textarea, Trash2 } from "@/ui"
 
 const DEFAULT: ModelChoice = { model: "claude-cli/sonnet", accountId: null, effort: null }
 
@@ -23,6 +23,7 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
   const [instructions, setInstructions] = useState(agent?.instructions ?? "")
   const [choice, setChoice] = useState<ModelChoice>(agent ? { model: agent.model, accountId: agent.accountId, effort: agent.effort } : DEFAULT)
   const [failover, setFailover] = useState<ReadonlyArray<FailoverTarget>>(agent?.failover ?? [])
+  const [access, setAccess] = useState<Access>(agent?.access ?? "workspace")
   const termsPending = useTermsPending({ model: choice.model, accountId: choice.accountId }, failover)
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -32,6 +33,7 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
     setInstructions(agent?.instructions ?? "")
     setChoice(agent ? { model: agent.model, accountId: agent.accountId, effort: agent.effort } : DEFAULT)
     setFailover(agent?.failover ?? [])
+    setAccess(agent?.access ?? "workspace")
   }, [agent])
 
   const project = projects.find((p) => p.id === (agent?.projectId ?? projectId))
@@ -43,11 +45,12 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
     choice.model !== agent.model ||
     choice.accountId !== agent.accountId ||
     choice.effort !== agent.effort ||
-    JSON.stringify(failover) !== JSON.stringify(agent.failover)
+    JSON.stringify(failover) !== JSON.stringify(agent.failover) ||
+    access !== agent.access
 
   const save = () => {
     setBusy(true)
-    const payload = { name: name.trim(), instructions, ...choice, failover }
+    const payload = { name: name.trim(), instructions, ...choice, failover, access }
     const done = agent
       ? update({ params: { id: agent.id }, payload, reactivityKeys: ["agents"] })
       : create({ payload: { ...payload, projectId: project?.id ?? null }, reactivityKeys: ["agents"] }).then((a) => go({ view: "agent", id: a.id }))
@@ -103,6 +106,14 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
         <Field label={t("agent.role")} hint={t("agent.roleHint")}>
           <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={6} maxLength={8000} />
         </Field>
+        <Section title={t("access.title")}>
+          <ChoiceCards
+            label={t("access.title")}
+            value={access}
+            onChange={setAccess}
+            options={(["workspace", "ask", "full"] as const).map((a) => ({ value: a, title: t(`access.${a}`), description: t(`access.${a}Hint`) }))}
+          />
+        </Section>
         <Section title={t("failover.title")} description={t("failover.intro")}>
           <FailoverEditor primary={{ model: choice.model, accountId: choice.accountId }} value={failover} onChange={setFailover} />
         </Section>

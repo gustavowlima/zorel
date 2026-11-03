@@ -1,6 +1,6 @@
 // Database schema (Drizzle). Mirrors the tables the MVP created with hand-written SQL, column by column,
 // so the existing database is adopted without copying (see migrate.ts). Changed something here? `bun run db:generate`.
-import type { AccountUsage, FailoverTarget, Switch } from "@zero/contracts"
+import type { AccountUsage, FailoverTarget, FileChange, Switch } from "@zero/contracts"
 import { sql } from "drizzle-orm"
 import { check, index, integer, primaryKey, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
 
@@ -25,6 +25,7 @@ export const projects = sqliteTable("projects", {
   id: text().primaryKey(),
   name: text().notNull(),
   brief: text().notNull().default(""),
+  path: text(), // workspace folder on disk (ARCHITECTURE §9.1); null: agents work in an empty Zero folder
   createdAt: integer("created_at").notNull()
 })
 
@@ -37,6 +38,7 @@ export const agents = sqliteTable("agents", {
   accountId: text("account_id"), // null: the default account of the model's provider
   effort: text({ enum: ["low", "medium", "high", "max"] }), // null: the model's default
   failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>().notNull().default([]), // alternatives in order (§6.1)
+  access: text({ enum: ["workspace", "ask", "full"] }).notNull().default("workspace"), // §9.2, chosen only by you
   createdAt: integer("created_at").notNull()
 })
 
@@ -75,6 +77,9 @@ export const messages = sqliteTable(
     error: text(),
     steps: text().notNull().default("[]"), // JSON of Step[]
     switches: text({ mode: "json" }).$type<ReadonlyArray<Switch>>().notNull().default([]), // failover moves before this reply
+    turnId: text("turn_id"), // the turn that wrote this reply (its workspace changes and checkpoint)
+    changes: text({ mode: "json" }).$type<ReadonlyArray<FileChange>>().notNull().default([]), // files the turn changed
+    revertedAt: integer("reverted_at"), // the turn's changes were undone
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
     at: integer().notNull()
@@ -139,7 +144,10 @@ export const turns = sqliteTable(
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
     cachedTokens: integer("cached_tokens").notNull().default(0),
-    switches: text({ mode: "json" }).$type<ReadonlyArray<Switch>>().notNull().default([]) // failover moves in this turn (per-turn metrics)
+    switches: text({ mode: "json" }).$type<ReadonlyArray<Switch>>().notNull().default([]), // failover moves in this turn (per-turn metrics)
+    // Workspace checkpoints (git trees in Zero's shadow repo of the project): before and after the turn.
+    treeBefore: text("tree_before"),
+    treeAfter: text("tree_after")
   },
   (t) => [index("turns_by_chat").on(t.chatId, t.state, t.createdAt)]
 )

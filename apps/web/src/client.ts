@@ -26,7 +26,7 @@ export class Live extends AtomRpc.Service<Live>()("Live", {
 
 // ---------- CRUD queries (one key per resource) ----------
 
-export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences"
+export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace"
 
 export const projectsAtom = Zero.query("projects", "list", { reactivityKeys: ["projects"] })
 export const agentsAtom = Zero.query("agents", "list", { reactivityKeys: ["agents"] })
@@ -39,6 +39,12 @@ export const modelsAtom = Zero.query("settings", "models", { reactivityKeys: ["m
 export const usageAtom = Zero.query("settings", "usage", { reactivityKeys: ["usage"] })
 export const preferencesAtom = Zero.query("settings", "preferences", { reactivityKeys: ["preferences"] })
 export const approvalsAtom = Live.query("approvals", undefined, { reactivityKeys: ["approvals"] })
+
+// Workspace (ARCHITECTURE §9.1): one turn's diff, the project's files marked with what this chat changed,
+// and the commands the agents ran. All refetch when a turn settles ("workspace" key).
+export const diffAtom = (turnId: string) => Zero.query("chats", "diff", { params: { id: turnId }, reactivityKeys: ["workspace"] })
+export const filesAtom = (projectId: string, chatId: string) => Zero.query("projects", "files", { params: { id: projectId }, query: { chatId }, reactivityKeys: ["workspace"] })
+export const runsAtom = (chatId: string) => Live.query("runs", { chatId }, { reactivityKeys: ["workspace"] })
 
 // ---------- mutations ----------
 
@@ -63,6 +69,7 @@ export const mutations = {
   removeAccount: Zero.mutation("accounts", "remove"),
   login: Zero.mutation("accounts", "login"),
   setKey: Zero.mutation("settings", "setKey"),
+  undo: Zero.mutation("chats", "undo"),
   acceptFailoverTerms: Zero.mutation("settings", "acceptFailoverTerms"),
   send: Live.mutation("send"),
   steer: Live.mutation("steer"),
