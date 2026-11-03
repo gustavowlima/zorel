@@ -3,7 +3,7 @@ import type { Agent, Memory, Message } from "@zero/contracts"
 import { Effect, Stream } from "effect"
 import { buildTurn, mentioned, parseConsolidation, pinned } from "./context.ts"
 import { claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, Engines, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
-import { codexFailure, usageOf } from "./engines/codex.ts"
+import { codexFailure, windowsOf } from "./engines/codex.ts"
 import { Secrets } from "./secrets.ts"
 import { classify, exposedName, needsApproval } from "./tools.ts"
 
@@ -37,7 +37,7 @@ test("args das CLIs: sem sessão, sem ferramentas, modelo do id", () => {
 
 const mem = (text: string, confirmedAt: number, scope = "user", kind: Memory["kind"] = "fact", title = ""): Memory => ({ id: text, scope, kind, title, text, state: "active", origin: "manual", chatId: null, createdAt: 0, confirmedAt })
 const agentOf = (id: string, name: string, instructions = ""): Agent => ({ id, projectId: "p", name, instructions, model: "x/y", accountId: null, effort: null, failover: [], access: "workspace", createdAt: 0 })
-const msg = (role: "user" | "assistant", text: string, agentId: string | null = null): Message => ({ id: text, chatId: "c", role, agentId, text, model: null, error: null, steps: [], attachments: [], switches: [], turnId: null, changes: [], revertedAt: null, inputTokens: 0, outputTokens: 0, at: 1 })
+const msg = (role: "user" | "assistant", text: string, agentId: string | null = null): Message => ({ id: text, chatId: "c", role, agentId, text, model: null, error: null, steps: [], attachments: [], switches: [], turnId: null, changes: [], revertedAt: null, accountId: null, cost: null, inputTokens: 0, outputTokens: 0, at: 1 })
 
 test("contexto: orçamento de memórias prioriza as recentes; camadas na ordem estável → volátil", () => {
   expect(pinned([mem("velha", 1), mem("nova", 2), mem("x".repeat(50), 3)], 59).map((m) => m.id)).toEqual(["x".repeat(50)])
@@ -167,8 +167,8 @@ test("engine de API com ferramentas: modelo pede a ferramenta, o Zero executa e 
 test("claude: a rejected rate_limit_event turns the failed result into a limit with its reset; readings become limits", () => {
   const p = claudeParser()
   const line = (v: object) => p.line(JSON.stringify(v))
-  expect(line({ type: "rate_limit_event", rate_limit_info: { status: "allowed_warning", utilization: 0.82, resetsAt: 1_900_000_000 } })).toEqual([
-    { type: "limits", usage: { usedPercent: 82, resetsAt: 1_900_000_000_000 } }
+  expect(line({ type: "rate_limit_event", rate_limit_info: { status: "allowed_warning", utilization: 0.82, resetsAt: 1_900_000_000, rateLimitType: "seven_day" } })).toEqual([
+    { type: "limits", windows: [{ id: "seven_day", usedPercent: 82, resetsAt: 1_900_000_000_000 }] }
   ])
   line({ type: "rate_limit_event", rate_limit_info: { status: "rejected", resetsAt: 1_900_000_600 } })
   const [err] = line({ type: "result", subtype: "error_during_execution", is_error: true, result: "limit" })
@@ -187,11 +187,14 @@ test("claude: assistant error codes map to reasons; request errors don't switch"
 })
 
 test("codex: codexErrorInfo maps to reasons; a usage limit comes back when the top window resets", () => {
-  const usage = usageOf({ primary: { usedPercent: 100, resetsAt: 1_900_000_000 }, secondary: { usedPercent: 40, resetsAt: 1_900_500_000 } })
-  expect(usage).toEqual({ usedPercent: 100, resetsAt: 1_900_000_000_000 })
-  expect(codexFailure({ message: "x", codexErrorInfo: "usageLimitExceeded" }, usage)).toEqual({ reason: "limit", until: 1_900_000_000_000 })
-  expect(codexFailure({ message: "x", codexErrorInfo: { httpConnectionFailed: { httpStatusCode: null } } }, undefined)).toEqual({ reason: "network" })
-  expect(codexFailure({ message: "x", codexErrorInfo: "contextWindowExceeded" }, undefined)).toBeUndefined()
+  const windows = windowsOf({ primary: { usedPercent: 100, resetsAt: 1_900_000_000, windowDurationMins: 300 }, secondary: { usedPercent: 40, resetsAt: 1_900_500_000, windowDurationMins: 10_080 } })
+  expect(windows).toEqual([
+    { id: "five_hour", usedPercent: 100, resetsAt: 1_900_000_000_000 },
+    { id: "seven_day", usedPercent: 40, resetsAt: 1_900_500_000_000 }
+  ])
+  expect(codexFailure({ message: "x", codexErrorInfo: "usageLimitExceeded" }, windows)).toEqual({ reason: "limit", until: 1_900_000_000_000 })
+  expect(codexFailure({ message: "x", codexErrorInfo: { httpConnectionFailed: { httpStatusCode: null } } }, [])).toEqual({ reason: "network" })
+  expect(codexFailure({ message: "x", codexErrorInfo: "contextWindowExceeded" }, [])).toBeUndefined()
 })
 
 test("message heuristics for engines without structured errors", () => {

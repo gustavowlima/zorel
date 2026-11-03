@@ -21,3 +21,4 @@
 2026-11-03 | GET /api/usage e RPC approvals | telas Usage e Needs you
 2026-11-03 | failover por agente/chat, espera por limite, leitura de uso por conta | fase 2b
 2026-11-03 | workspace com git sombra, acesso por agente, ferramentas nativas, diff/desfazer, vigia de turno | fase 3
+2026-11-03 | consumo (custo, janelas de limite) e nomes reais dos modelos das CLIs | fase 2c

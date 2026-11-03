@@ -1,15 +1,24 @@
 // Provider accounts (ARCHITECTURE §6.1): several logins per provider, each in its own CLI folder.
 // Zero runs the official login/status/logout commands with that folder and only keeps what the CLI
 // reports for display (e-mail, plan). It never reads or stores the token.
-import type { AccountProvider, AccountUsage, ProviderAccount } from "@zero/contracts"
-import { Context, Effect, Layer } from "effect"
+import type { AccountProvider, AccountUsage, AccountWindow, ProviderAccount } from "@zero/contracts"
+import { Context, Effect, Layer, Semaphore } from "effect"
 import { existsSync, mkdirSync, rmSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
 import { DataDir } from "./chat.ts"
 import { type AccountRow, Store } from "./db.ts"
-import { splitModel } from "./engines.ts"
+import { type CliModel, splitModel } from "./engines.ts"
+import { readClaudeLimits, readClaudeModels } from "./engines/claude-sdk.ts"
+import { readCodexLimits, readCodexModels } from "./engines/codex.ts"
 
 const STATUS_TTL_MS = 30_000
+// Limit readings (ARCHITECTURE §10.2): cached 4 min; a failure waits 5, 10, 20, 40 min, then 1 h.
+const LIMITS_TTL_MS = 4 * 60_000
+const LIMITS_BACKOFF_MS = 5 * 60_000
+const LIMITS_BACKOFF_MAX_MS = 60 * 60_000
+
+// The stored reading; older rows kept a single { usedPercent, resetsAt } and read as nothing.
+const usageOf = (a: AccountRow): AccountUsage | null => (a.usage && Array.isArray((a.usage as AccountUsage).windows) ? (a.usage as AccountUsage) : null)
 const URL_WAIT_MS = 8_000
 
 // Which account provider serves a model provider.
@@ -67,8 +76,19 @@ export interface AccountsService {
   readonly resolve: (model: string, accountId: string | null) => Effect.Effect<AccountRow | undefined>
   // Failover (§6.1): a subscription that hit its limit waits until `until`; the last limit reading is kept.
   readonly hold: (id: string, until: number) => Effect.Effect<void>
-  readonly observe: (id: string, usage: AccountUsage) => Effect.Effect<void>
+  // A reading from a running session: its windows replace the ones with the same id.
+  readonly observe: (id: string, windows: ReadonlyArray<AccountWindow>) => Effect.Effect<void>
+  // Reads all windows now from the CLI (§10.2): one reading at a time, cached 4 min, failures back off.
+  readonly refreshLimits: (id: string) => Effect.Effect<ProviderAccount | undefined>
+  // The models the default logins offer, with their real names ("opus" → "Opus 5.5"). Kept in preferences,
+  // served at once and re-read in the background after an hour; a failed read keeps the last list.
+  readonly cliModels: Effect.Effect<CliModels>
 }
+
+export type CliModels = Partial<Record<"claude-cli" | "codex-cli", ReadonlyArray<CliModel>>>
+const CLI_MODELS_KEY = "cliModels"
+const CLI_MODELS_TTL_MS = 60 * 60_000
+const CLI_MODELS_RETRY_MS = 5 * 60_000
 
 export class Accounts extends Context.Service<Accounts, AccountsService>()("Accounts") {
   static layer = Layer.effect(
@@ -83,6 +103,8 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
       yield* store.ensureAccount({ id: defaultId("codex"), label: "Codex", kind: "subscription", provider: "codex", home: join(root, defaultId("codex")), secret: null, baseUrl: null, identity: null })
 
       const cache = new Map<string, { at: number; status: Status }>()
+      const readingLock = yield* Semaphore.make(1) // one limit reading at a time, across accounts
+      const failures = new Map<string, { count: number; next: number }>()
       const logins = new Set<string>()
       const status = (a: AccountRow) =>
         Effect.promise(async () => {
@@ -96,7 +118,7 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
         Effect.map(status(a), (s): ProviderAccount => ({
           id: a.id, label: a.label, kind: a.kind, provider: a.provider, isDefault: a.id === defaultId(a.provider as AccountProvider),
           loggedIn: s.loggedIn, identity: s.identity ?? a.identity, loggingIn: logins.has(a.id),
-          limitedUntil: a.limitedUntil && a.limitedUntil > Date.now() ? a.limitedUntil : null, usage: a.usage ?? null, createdAt: a.createdAt
+          limitedUntil: a.limitedUntil && a.limitedUntil > Date.now() ? a.limitedUntil : null, usage: usageOf(a), createdAt: a.createdAt
         }))
       // Only folders Zero created can be deleted.
       const owned = (home: string | null) => !!home && resolve(home).startsWith(root + sep)
@@ -165,7 +187,57 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
             return chosen?.provider === provider ? chosen : yield* store.account(defaultId(provider))
           }),
         hold: (id, until) => Effect.asVoid(store.updateAccount(id, { limitedUntil: until })),
-        observe: (id, usage) => Effect.asVoid(store.updateAccount(id, { usage }))
+        observe: (id, windows) =>
+          Effect.gen(function* () {
+            const a = yield* store.account(id)
+            if (!a) return
+            const kept = (usageOf(a)?.windows ?? []).filter((w) => !windows.some((n) => n.id === w.id))
+            yield* store.updateAccount(id, { usage: { windows: [...kept, ...windows], readAt: Date.now() } })
+          }),
+        refreshLimits: (id) =>
+          Effect.gen(function* () {
+            const a = yield* store.account(id)
+            if (!a) return undefined
+            const cached = usageOf(a)
+            const backoff = failures.get(id)
+            const fresh = cached && Date.now() - cached.readAt < LIMITS_TTL_MS
+            if (!fresh && (!backoff || Date.now() >= backoff.next)) {
+              const read = a.provider === "codex" ? () => readCodexLimits(a.home!) : () => readClaudeLimits(a.home ?? undefined)
+              const windows = yield* readingLock.withPermits(1)(Effect.tryPromise(read).pipe(Effect.option))
+              if (windows._tag === "Some") {
+                failures.delete(id)
+                yield* store.updateAccount(id, { usage: { windows: windows.value, readAt: Date.now() } })
+              } else {
+                const n = (backoff?.count ?? 0) + 1
+                failures.set(id, { count: n, next: Date.now() + Math.min(LIMITS_BACKOFF_MAX_MS, LIMITS_BACKOFF_MS * 2 ** (n - 1)) })
+              }
+            }
+            return yield* toPublic((yield* store.account(id))!)
+          }),
+        cliModels: Effect.gen(function* () {
+          const raw = yield* store.preference(CLI_MODELS_KEY)
+          let saved: { at: number; models: CliModels } | undefined
+          try {
+            saved = raw ? JSON.parse(raw) : undefined
+          } catch {
+            saved = undefined // re-read below
+          }
+          if (saved && Date.now() - saved.at < CLI_MODELS_TTL_MS) return saved.models
+          const previous = saved?.models ?? {}
+          const read = Effect.promise(async () => {
+            const [claude, codex] = await Promise.allSettled([readClaudeModels(undefined), readCodexModels(join(root, defaultId("codex")))])
+            const models: CliModels = { ...previous }
+            if (claude.status === "fulfilled" && claude.value.length) models["claude-cli"] = claude.value
+            if (codex.status === "fulfilled" && codex.value.length) models["codex-cli"] = codex.value
+            const failed = claude.status === "rejected" || codex.status === "rejected"
+            return { models, at: failed ? Date.now() - CLI_MODELS_TTL_MS + CLI_MODELS_RETRY_MS : Date.now() }
+          }).pipe(Effect.tap((s) => store.setPreference(CLI_MODELS_KEY, JSON.stringify(s))))
+          if (saved) {
+            yield* Effect.forkDetach(read)
+            return previous
+          }
+          return (yield* read).models
+        })
       }
       return service
     })

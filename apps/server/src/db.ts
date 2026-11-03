@@ -163,16 +163,18 @@ export const repository = (db: Db) => {
       withFiles(db.select().from(messages).where(and(eq(messages.chatId, chatId), gt(messages.at, at))).orderBy(asc(messages.at))),
     // attachmentIds: files uploaded to this chat beforehand; linked to the message here.
     addMessage: (
-      input: Omit<Message, "id" | "at" | "attachments" | "switches" | "turnId" | "changes" | "revertedAt"> & {
+      input: Omit<Message, "id" | "at" | "attachments" | "switches" | "turnId" | "changes" | "revertedAt" | "accountId" | "cost"> & {
         attachmentIds?: ReadonlyArray<string> | undefined
         switches?: ReadonlyArray<Switch> | undefined
         turnId?: string | null | undefined
         changes?: ReadonlyArray<FileChange> | undefined
+        accountId?: string | null | undefined
+        cost?: number | null | undefined
       }
     ) =>
       Effect.gen(function* () {
-        const { attachmentIds = [], switches = [], turnId = null, changes = [], ...rest } = input
-        const base = { id: crypto.randomUUID(), ...rest, switches, turnId, changes, revertedAt: null, at: now() }
+        const { attachmentIds = [], switches = [], turnId = null, changes = [], accountId = null, cost = null, ...rest } = input
+        const base = { id: crypto.randomUUID(), ...rest, switches, turnId, changes, accountId, cost, revertedAt: null, at: now() }
         yield* db.insert(messages).values({ ...base, steps: JSON.stringify(base.steps) })
         let files: Attachment[] = []
         if (attachmentIds.length) {
@@ -323,11 +325,11 @@ export const repository = (db: Db) => {
       orDie(db.update(turns).set({ state: "running", startedAt: now() }).where(eq(turns.id, id)).returning().pipe(Effect.map((r) => r[0]!))),
     markFirstToken: (id: string) => orDie(db.update(turns).set({ firstTokenAt: now() }).where(and(eq(turns.id, id), isNull(turns.firstTokenAt))).pipe(Effect.asVoid)),
     savePartial: (id: string, partialText: string) => orDie(db.update(turns).set({ partialText }).where(eq(turns.id, id)).pipe(Effect.asVoid)),
-    finishTurn: (id: string, end: { state: "completed" | "failed" | "interrupted"; error: string | null; messageId: string | null; usage?: { inputTokens: number; outputTokens: number; cachedTokens?: number }; route?: { model: string; accountId: string | null; switches: ReadonlyArray<Switch> }; trees?: { treeBefore: string; treeAfter: string } }) =>
+    finishTurn: (id: string, end: { state: "completed" | "failed" | "interrupted"; error: string | null; messageId: string | null; usage?: { inputTokens: number; outputTokens: number; cachedTokens?: number }; cost?: number | null; route?: { model: string; accountId: string | null; switches: ReadonlyArray<Switch> }; trees?: { treeBefore: string; treeAfter: string } }) =>
       orDie(
         db
           .update(turns)
-          .set({ state: end.state, error: end.error, messageId: end.messageId, endedAt: now(), ...(end.route && end.route), ...(end.trees && end.trees), ...(end.usage && { inputTokens: end.usage.inputTokens, outputTokens: end.usage.outputTokens, cachedTokens: end.usage.cachedTokens ?? 0 }) })
+          .set({ state: end.state, error: end.error, messageId: end.messageId, endedAt: now(), ...(end.route && end.route), ...(end.trees && end.trees), ...(end.cost !== undefined && { cost: end.cost }), ...(end.usage && { inputTokens: end.usage.inputTokens, outputTokens: end.usage.outputTokens, cachedTokens: end.usage.cachedTokens ?? 0 }) })
           .where(eq(turns.id, id))
           .returning()
           .pipe(Effect.map((r) => toTurn(r[0]!)))
@@ -395,6 +397,21 @@ export const repository = (db: Db) => {
           .pipe(Effect.map((r) => r.map(toApproval)))
       ),
 
+    // The most expensive finished turns since `since`, with their chat.
+    topTurns: (since: number, limit = 10) =>
+      orDie(
+        db
+          .select({
+            turnId: turns.id, chatId: turns.chatId, chatTitle: chats.title, agentId: turns.agentId, model: turns.model, accountId: turns.accountId,
+            inputTokens: turns.inputTokens, outputTokens: turns.outputTokens, cost: turns.cost, at: turns.createdAt
+          })
+          .from(turns)
+          .innerJoin(chats, eq(chats.id, turns.chatId))
+          .where(and(gt(turns.createdAt, since), sql`${turns.cost} > 0`))
+          .orderBy(desc(turns.cost))
+          .limit(limit)
+      ),
+
     // ---------- preferences ----------
     preference: (key: string) => orDie(db.select().from(preferences).where(eq(preferences.key, key)).pipe(Effect.map((r) => r[0]?.value))),
     setPreference: (key: string, value: string) =>
@@ -416,7 +433,8 @@ export const repository = (db: Db) => {
             inputTokens: sql<number>`sum(${turns.inputTokens})`,
             outputTokens: sql<number>`sum(${turns.outputTokens})`,
             cachedTokens: sql<number>`sum(${turns.cachedTokens})`,
-            durationMs: sql<number>`coalesce(sum(${turns.endedAt} - ${turns.startedAt}), 0)`
+            durationMs: sql<number>`coalesce(sum(${turns.endedAt} - ${turns.startedAt}), 0)`,
+            cost: sql<number | null>`sum(${turns.cost})`
           })
           .from(turns)
           .innerJoin(chats, eq(chats.id, turns.chatId))

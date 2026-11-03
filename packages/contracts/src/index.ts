@@ -14,9 +14,14 @@ export const ModelId = Schema.String.check(Schema.isPattern(/^[a-z-]+\/\S+$/), S
 // Provider account (ARCHITECTURE §6.1). The CLI login stays in its own folder; Zero only shows identity.
 export const AccountProvider = Schema.Literals(["claude", "codex"])
 export type AccountProvider = typeof AccountProvider.Type
-// Last limit reading of a subscription (Claude rate_limit_event, Codex account/rateLimits).
-export const AccountUsage = Schema.Struct({ usedPercent: Schema.Number, resetsAt: Schema.NullOr(Schema.Number) })
+// Limit windows of a subscription (ARCHITECTURE §10.2), as the harness reports them: Claude's 5-hour and
+// weekly windows (rate_limit_event, /usage), Codex's primary and secondary (account/rateLimits).
+// id: "five_hour", "seven_day", "seven_day_opus"… or "<minutes>m" for a window known only by its length.
+export const AccountWindow = Schema.Struct({ id: Schema.String, usedPercent: Schema.Number, resetsAt: Schema.NullOr(Schema.Number) })
+export type AccountWindow = typeof AccountWindow.Type
+export const AccountUsage = Schema.Struct({ windows: Schema.Array(AccountWindow), readAt: Schema.Number })
 export type AccountUsage = typeof AccountUsage.Type
+export const LIMIT_ALERT = 0.8 // a window at 80% or more is flagged before it runs out
 
 export const ProviderAccount = Schema.Struct({
   id: Id,
@@ -140,6 +145,8 @@ export const Message = Schema.Struct({
   turnId: Schema.NullOr(Id), // the turn that wrote it: its workspace diff and checkpoint
   changes: Schema.Array(FileChange), // files the turn changed in the workspace
   revertedAt: Schema.NullOr(Schema.Number), // the turn's changes were undone
+  accountId: Schema.NullOr(Id), // the account that answered (multi-account, failover)
+  cost: Schema.NullOr(Schema.Number), // estimated USD; for subscriptions, the API equivalent
   inputTokens: Schema.Number,
   outputTokens: Schema.Number,
   at: Schema.Number
@@ -170,7 +177,10 @@ export const ModelInfo = Schema.Struct({
   provider: Schema.String,
   kind: Schema.Literals(["subscription", "api"]),
   available: Schema.Boolean,
-  hint: Schema.String
+  hint: Schema.String,
+  // Subscription CLIs: the name and line they give the model today ("Opus 5.5").
+  name: Schema.optional(Schema.String),
+  note: Schema.optional(Schema.String)
 })
 export type ModelInfo = typeof ModelInfo.Type
 
@@ -208,10 +218,28 @@ export const UsageRow = Schema.Struct({
   inputTokens: Schema.Number,
   outputTokens: Schema.Number,
   cachedTokens: Schema.Number,
-  durationMs: Schema.Number
+  durationMs: Schema.Number,
+  cost: Schema.NullOr(Schema.Number), // estimated USD (null: no price known for the model)
+  billing: Schema.Literals(["api", "subscription", "local"]) // subscription costs are the API equivalent
 })
 export type UsageRow = typeof UsageRow.Type
-export const USAGE_DAYS = 30
+export const USAGE_DAYS = 62 // covers this month and the last 30 days
+
+// The most expensive turns of the range, with where they happened.
+export const TopTurn = Schema.Struct({
+  turnId: Id,
+  chatId: Id,
+  chatTitle: Schema.String,
+  agentId: Schema.NullOr(Id),
+  model: Schema.String,
+  accountId: Schema.NullOr(Id),
+  inputTokens: Schema.Number,
+  outputTokens: Schema.Number,
+  cost: Schema.Number,
+  billing: Schema.Literals(["api", "subscription", "local"]),
+  at: Schema.Number
+})
+export type TopTurn = typeof TopTurn.Type
 
 // ---------- inputs ----------
 
@@ -326,12 +354,15 @@ export const Api = HttpApi.make("zero")
       // Default accounts can't be removed; removing logs out and deletes the account's folder.
       .add(HttpApiEndpoint.delete("remove", "/api/accounts/:id", { params: idParam, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
       .add(HttpApiEndpoint.post("login", "/api/accounts/:id/login", { params: idParam, success: LoginStarted, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
+      // Reads the account's limit windows now (cached for 4 min; failures back off up to 1 h).
+      .add(HttpApiEndpoint.post("limits", "/api/accounts/:id/limits", { params: idParam, success: ProviderAccount, error: HttpApiError.NotFound }))
   )
   .add(
     HttpApiGroup.make("settings")
       .add(HttpApiEndpoint.get("models", "/api/models", { success: Schema.Array(ModelInfo) }))
       .add(HttpApiEndpoint.get("keys", "/api/keys", { success: Schema.Array(KeyInfo) }))
       .add(HttpApiEndpoint.get("usage", "/api/usage", { success: Schema.Array(UsageRow) })) // last USAGE_DAYS days
+      .add(HttpApiEndpoint.get("topTurns", "/api/usage/top", { query: { since: Schema.NumberFromString }, success: Schema.Array(TopTurn) }))
       .add(HttpApiEndpoint.get("preferences", "/api/preferences", { success: Preferences }))
       .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))

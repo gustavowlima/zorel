@@ -17,6 +17,7 @@ import { Actor } from "./access.ts"
 import { LoggerLive } from "./observability.ts"
 import { Runtime } from "./runtime.ts"
 import { Tools } from "./tools.ts"
+import { billingOf, Pricing } from "./pricing.ts"
 import { Workspace } from "./workspace.ts"
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
@@ -208,6 +209,7 @@ const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
           r === "not-found" ? notFound() : r === "busy" ? Effect.fail(new HttpApiError.Conflict()) : Effect.succeed(r)
         )
       )
+      .handle("limits", ({ params }) => found(accounts.refreshLimits(params.id)))
   })
 )
 
@@ -219,10 +221,14 @@ const preferencesOf = (store: Repository) =>
 const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
   Effect.gen(function* () {
     const secrets = yield* Secrets
+    const accounts = yield* Accounts
     const store = yield* Store
     return h
-      .handle("models", () => Effect.promise(() => listModels(secrets)))
-      .handle("usage", () => store.usage(Date.now() - USAGE_DAYS * 86_400_000))
+      .handle("models", () => Effect.flatMap(accounts.cliModels, (cli) => Effect.promise(() => listModels(secrets, cli))))
+      .handle("usage", () => Effect.map(store.usage(Date.now() - USAGE_DAYS * 86_400_000), (rows) => rows.map((r) => ({ ...r, billing: billingOf(r.model) }))))
+      .handle("topTurns", ({ query }) =>
+        Effect.map(store.topTurns(query.since), (rows) => rows.map((r) => ({ ...r, cost: r.cost ?? 0, billing: billingOf(r.model) })))
+      )
       .handle("preferences", () => preferencesOf(store))
       .handle("acceptFailoverTerms", () => Effect.andThen(store.setPreference(FAILOVER_TERMS, String(Date.now())), preferencesOf(store)))
       .handle("keys", () => Effect.sync(() => API_KEYS.map((name) => ({ name, set: !!secrets.get(name), fromEnv: secrets.fromEnv(name) }))))
@@ -340,7 +346,7 @@ export const services = (dbPath: string, dataDir: string, secrets?: Layer.Layer<
   const store = Store.layer(dbPath)
   const withSecrets = Layer.provideMerge(secrets ?? Secrets.layer, store)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(Engines.layer, Tools.layer), withSecrets), DataDir.layer(dataDir))
-  const withAccounts = Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer), base)
+  const withAccounts = Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.layer), base)
   return Layer.mergeAll(Layer.provideMerge(Runtime.layer, withAccounts), Actor.local)
 }
 

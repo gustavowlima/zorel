@@ -32,3 +32,7 @@ updated: 2026-11-03
 - regra CSS global fora de @layer (ex.: `* { border-color }`): vence os utilitários do Tailwind v4
 - Focusable em volta de botão React Aria no Tooltip (aviso no console); o TooltipTrigger aceita o Button direto
 - formatAge para datas muito antigas: acima de 8 semanas mostra a data
+- consumo (fase 2c): usage.tsx (intervalos, totais com custo, gráfico por dia UTC, assinaturas, top turnos, CSV, alerta 80%); limits.tsx (LimitWindows, compacto no seletor); FullestLimit na sidebar; custo e conta no rodapé da resposta
+- dias de uso são UTC: o mês começa em Date.UTC e o rótulo do dia usa meio-dia (dayLabel) para não voltar um dia no fuso local
+- useReadOnOpen lê os limites uma conta por vez: o átomo de mutação é compartilhado e uma segunda chamada aborta a primeira (499)
+- labels.rememberModels (chamado no App) guarda os nomes reais dos modelos; modelName/modelNote usam e caem nos apelidos

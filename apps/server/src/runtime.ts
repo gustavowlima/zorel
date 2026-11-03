@@ -10,6 +10,7 @@ import { MAX_DEPTH, mentioned } from "./context.ts"
 import { type AccountRow, Store, type Repository, type TurnRow } from "./db.ts"
 import { type EngineFailure, Engines, isImage, type NativeStep, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
+import { Pricing } from "./pricing.ts"
 import { Workspace } from "./workspace.ts"
 import { exposedName, type GatewayHandle, needsApproval, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
 
@@ -46,6 +47,7 @@ export const makeRuntime = Effect.gen(function* () {
   const store = yield* Store
   const accounts = yield* Accounts
   const workspace = yield* Workspace
+  const pricing = yield* Pricing
   const engines = yield* Engines
   const dataDir = yield* DataDir
   const { hub, gateway } = yield* Tools
@@ -303,13 +305,14 @@ export const makeRuntime = Effect.gen(function* () {
           acc.saved = true
           const treeAfter = treeBefore ? yield* workspace.snapshot(project) : null
           const changes: FileChange[] = treeBefore && treeAfter && chat.projectId ? yield* workspace.changes(chat.projectId, treeBefore, treeAfter) : []
+          const cost = pricing.cost(route.model, acc.usage)
           const message = yield* store.addMessage({
             chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model: route.model, error, steps: acc.steps, switches,
-            turnId: row.id, changes, inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens
+            turnId: row.id, changes, accountId: route.accountId, cost, inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens
           })
           markSeen(message.at) // the session has everything up to its own reply
           const trees = treeBefore && treeAfter ? { treeBefore, treeAfter } : undefined
-          const turn = yield* store.finishTurn(row.id, { state, error, messageId: message.id, usage: acc.usage, route: { ...route, switches }, ...(trees && { trees }) })
+          const turn = yield* store.finishTurn(row.id, { state, error, messageId: message.id, usage: acc.usage, cost, route: { ...route, switches }, ...(trees && { trees }) })
           const tag = state === "completed" ? "turn-completed" : state === "failed" ? "turn-failed" : "interrupted"
           yield* publish(chatId, ev(tag, { turn, message }))
         })
@@ -397,7 +400,7 @@ export const makeRuntime = Effect.gen(function* () {
                   if (e.type === "text") delta += e.delta
                   else if (e.type === "done") acc.usage = { cachedTokens: 0, ...e.usage }
                   else if (e.type === "limits") {
-                    if (account) yield* accounts.observe(account.id, e.usage)
+                    if (account) yield* accounts.observe(account.id, e.windows)
                   } else if (e.type === "step") yield* onStep(e.step)
                   else {
                     acc.error = e.message

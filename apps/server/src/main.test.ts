@@ -26,7 +26,11 @@ import { Actor } from "./access.ts"
 import { Runtime } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
 import { Tools } from "./tools.ts"
+import { Pricing } from "./pricing.ts"
 import { Workspace } from "./workspace.ts"
+
+// Prices for tests (USD per million tokens): no network.
+const PRICES = { anthropic: { "claude-sonnet-5-5": { cost: { input: 2, output: 10, cache_read: 0.1 }, family: "claude-sonnet", release_date: "2026-09-28" } } }
 
 // ---------- test MCP server ----------
 const toolCalls: string[] = []
@@ -97,7 +101,7 @@ beforeAll(async () => {
   const store = Store.layer(":memory:")
   const secrets = Layer.provideMerge(Secrets.memory(), store)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(FakeEngines, Tools.layer), secrets), DataDir.layer(join(tmpdir(), "zero-test")))
-  const services = Layer.mergeAll(Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer), base)), Actor.local)
+  const services = Layer.mergeAll(Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.fixed(PRICES)), base)), Actor.local)
   const server = AppLive().pipe(HttpRouter.serve, Layer.provide(services), Layer.provide(BunHttpServer.layer({ port })))
   const fiber = Effect.runFork(Layer.launch(server))
   stop = () => Effect.runPromise(Fiber.interrupt(fiber)).then(() => void mcp.stop(true))
@@ -193,6 +197,12 @@ test("projeto → agente → chat: streaming, contexto em camadas, troca de mode
   const usage = (await api((c) => c.settings.usage())).filter((u) => u.projectId === project.id)
   const byModel = Object.fromEntries(usage.map((u) => [u.model, [u.turns, u.agentId, u.inputTokens > 0]]))
   expect(byModel).toEqual({ "claude-cli/sonnet": [1, agent.id, true], "anthropic/claude-sonnet-5-5": [3, agent.id, true] }) // the switch sticks to the chat
+  // Cost: priced from the catalog; the subscription row is the API equivalent (claude-cli/sonnet → newest Sonnet).
+  const billed = Object.fromEntries(usage.map((u) => [u.model, [u.billing, (u.cost ?? 0) > 0]]))
+  expect(billed).toEqual({ "claude-cli/sonnet": ["subscription", true], "anthropic/claude-sonnet-5-5": ["api", true] })
+  const top = await api((c) => c.settings.topTurns({ query: { since: 0 } }))
+  expect(top[0]!.cost).toBeGreaterThan(0)
+  expect(top.every((t, i) => i === 0 || t.cost <= top[i - 1]!.cost)).toBe(true)
 })
 
 test("canal: @menção escolhe quem responde; agente passa a vez mencionando outro; limite de repasses", async () => {

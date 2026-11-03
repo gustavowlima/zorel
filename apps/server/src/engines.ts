@@ -8,7 +8,7 @@
 // CLI arguments and parsers derive from Tucano (Apache-2.0), see NOTICE.
 import { AnthropicClient, AnthropicLanguageModel } from "@effect/ai-anthropic"
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
-import type { Access, AccountUsage, FailureReason, ModelInfo } from "@zero/contracts"
+import type { Access, AccountWindow, FailureReason, ModelInfo } from "@zero/contracts"
 import { Context, Effect, Layer, Queue, Redacted, Stream } from "effect"
 import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
@@ -68,7 +68,7 @@ export type EngineEvent =
   | { readonly type: "done"; readonly usage: Usage }
   | { readonly type: "error"; readonly message: string; readonly failure?: EngineFailure | undefined }
   // A limit reading of the account the session runs on (Claude rate_limit_event, Codex account/rateLimits).
-  | { readonly type: "limits"; readonly usage: AccountUsage }
+  | { readonly type: "limits"; readonly windows: ReadonlyArray<AccountWindow> }
   // A native tool call (read, edit, command…): sent when it starts and again when it ends, same id.
   | { readonly type: "step"; readonly step: NativeStep }
 
@@ -152,13 +152,26 @@ async function probe(url: string): Promise<string[] | undefined> {
   }
 }
 
+// A model a subscription CLI offers today, as the CLI names it ("opus" → "Opus 5.5").
+export interface CliModel {
+  readonly id: string
+  readonly name: string
+  readonly note: string
+}
+
 // Known suggestions (or those the local server lists) + free "<provider>/…": any model can be typed.
-export async function listModels(secrets: SecretStore): Promise<ModelInfo[]> {
+export async function listModels(secrets: SecretStore, cli: Partial<Record<string, ReadonlyArray<CliModel>>> = {}): Promise<ModelInfo[]> {
   const entries = Object.entries(PROVIDERS)
   const found = await Promise.all(entries.map(([id, p]) => (p.local ? probe(COMPAT[id]!()) : Promise.resolve(undefined))))
   return entries.flatMap(([provider, p], i) => {
     const local = found[i]
     const available = p.local ? !!local : p.key ? !!secrets.get(p.key) : !!Bun.which(p.bin!)
+    const named = cli[provider]
+    if (named?.length) {
+      // Codex keeps "default" (its own pick) ahead of the listed models.
+      const all = provider === "codex-cli" ? [{ id: "default", name: undefined, note: undefined }, ...named] : named
+      return all.map((m) => ({ id: `${provider}/${m.id}`, provider, kind: p.kind, available, hint: p.hint, name: m.name, note: m.note }))
+    }
     const suggestions = local?.length ? local : p.suggestions
     return (suggestions.length ? suggestions : ["…"]).map((m) => ({ id: `${provider}/${m}`, provider, kind: p.kind, available, hint: p.hint }))
   })
@@ -243,7 +256,8 @@ export function claudeParser(): Parser {
         const resetsAt = typeof info.resetsAt === "number" ? toMillis(info.resetsAt) : null
         if (info.status === "rejected") rejectedUntil = resetsAt ?? Date.now() + 60 * 60_000
         const used = typeof info.utilization === "number" ? (info.utilization <= 1 ? info.utilization * 100 : info.utilization) : info.status === "rejected" ? 100 : undefined
-        return used === undefined ? [] : [{ type: "limits", usage: { usedPercent: used, resetsAt } }]
+        const id = typeof info.rateLimitType === "string" ? info.rateLimitType : "five_hour"
+        return used === undefined ? [] : [{ type: "limits", windows: [{ id, usedPercent: used, resetsAt }] }]
       }
       if (ev.type === "stream_event") {
         const e = ev.event ?? {}

@@ -7,9 +7,9 @@
 // memories) never reaches Zero's agents (D8). Zero never reads the login inside it.
 import { Effect, Queue, Stream } from "effect"
 import { mkdirSync } from "node:fs"
-import type { Access, AccountUsage, FailureReason } from "@zero/contracts"
+import type { Access, AccountWindow, FailureReason } from "@zero/contracts"
 import { relative } from "node:path"
-import { classifyMessage, CODEX_DISABLED, type EngineEvent, type EngineFailure, type NativeStep, splitModel, toMillis, type Usage } from "#server/engines.ts"
+import { type CliModel, classifyMessage, CODEX_DISABLED, type EngineEvent, type EngineFailure, type NativeStep, splitModel, toMillis, type Usage } from "#server/engines.ts"
 import { approvalFor } from "#server/engines/policy.ts"
 import type { Approver, EngineSession, SessionTurnInput } from "#server/engines/session.ts"
 
@@ -147,17 +147,22 @@ const CODEX_ERRORS: Record<string, FailureReason> = {
 }
 const errorKey = (info: unknown) => (typeof info === "string" ? info : info && typeof info === "object" ? Object.keys(info)[0] : undefined)
 
-// The most used window of a rate-limit snapshot: its percentage and when it resets.
-export function usageOf(snapshot: Json | undefined): AccountUsage | undefined {
-  const windows = [snapshot?.primary, snapshot?.secondary].filter((w): w is Json => !!w && typeof w.usedPercent === "number")
-  const top = windows.sort((a, b) => b.usedPercent - a.usedPercent)[0]
-  return top && { usedPercent: top.usedPercent, resetsAt: typeof top.resetsAt === "number" ? toMillis(top.resetsAt) : null }
+// A window known by its length: Codex's 5-hour and weekly ones get the same ids as Claude's.
+const windowId = (minutes: unknown) => (minutes === 300 ? "five_hour" : minutes === 10_080 ? "seven_day" : typeof minutes === "number" ? `${minutes}m` : "window")
+
+// The windows of a rate-limit snapshot (primary, secondary).
+export function windowsOf(snapshot: Json | undefined): AccountWindow[] {
+  return [snapshot?.primary, snapshot?.secondary]
+    .filter((w): w is Json => !!w && typeof w.usedPercent === "number")
+    .map((w) => ({ id: windowId(w.windowDurationMins), usedPercent: w.usedPercent, resetsAt: typeof w.resetsAt === "number" ? toMillis(w.resetsAt) : null }))
 }
 
-export function codexFailure(error: Json | undefined, usage: AccountUsage | undefined): EngineFailure | undefined {
+export function codexFailure(error: Json | undefined, windows: ReadonlyArray<AccountWindow>): EngineFailure | undefined {
   const key = errorKey(error?.codexErrorInfo)
   const reason = key ? CODEX_ERRORS[key] : undefined
-  if (reason === "limit") return { reason, until: usage?.resetsAt ?? Date.now() + 60 * 60_000 }
+  // A limit comes back when the fullest window resets.
+  const full = [...windows].sort((a, b) => b.usedPercent - a.usedPercent)[0]
+  if (reason === "limit") return { reason, until: full?.resetsAt ?? Date.now() + 60 * 60_000 }
   if (reason) return { reason }
   return key ? undefined : classifyMessage(String(error?.message ?? ""))
 }
@@ -273,12 +278,12 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
         if (!threadId) return yield* Queue.end(out)
         let usage: Usage = { inputTokens: 0, outputTokens: 0 }
         let lastItem: string | undefined
-        let limits: AccountUsage | undefined
+        let limits: ReadonlyArray<AccountWindow> = []
         const readLimits = (snapshot: Json | undefined) => {
-          const u = usageOf(snapshot)
-          if (!u) return
-          limits = u
-          emit({ type: "limits", usage: u })
+          const windows = windowsOf(snapshot)
+          if (!windows.length) return
+          limits = windows
+          emit({ type: "limits", windows })
         }
         listener = (method, p) => {
           if (method === "zero/exited") {
@@ -369,3 +374,31 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
     close: Effect.sync(() => rpc.kill())
   }
 }
+
+// Reads the account's limit windows on demand: a short-lived app-server on the account's CODEX_HOME.
+// A short-lived app-server for one read (limits, models); killed afterwards.
+async function withAppServer<A>(home: string, command: ReadonlyArray<string> | undefined, read: (rpc: Rpc) => Promise<A>): Promise<A> {
+  const bin = command?.[0] ?? Bun.which("codex")
+  if (!bin) throw new Error("codex não está instalado ou não está no PATH.")
+  mkdirSync(home, { recursive: true })
+  const rpc = Rpc.start(bin, command?.slice(1) ?? ["app-server"], home, childEnv(home))
+  try {
+    await rpc.request("initialize", { clientInfo: { name: "zero", title: "Zero", version: "0.1.0" }, capabilities: null }, 15_000)
+    rpc.notify("initialized")
+    return await read(rpc)
+  } finally {
+    rpc.kill()
+  }
+}
+
+export const readCodexLimits = (home: string, command?: ReadonlyArray<string>): Promise<AccountWindow[]> =>
+  withAppServer(home, command, async (rpc) => windowsOf((await rpc.request("account/rateLimits/read", {}, 15_000))?.rateLimits))
+
+// The models this Codex login offers, with their display names.
+export const readCodexModels = (home: string, command?: ReadonlyArray<string>): Promise<CliModel[]> =>
+  withAppServer(home, command, async (rpc) => {
+    const r = await rpc.request("model/list", {}, 15_000)
+    return ((r?.data ?? []) as Json[])
+      .filter((m) => typeof m.model === "string" && !m.hidden)
+      .map((m) => ({ id: m.model, name: typeof m.displayName === "string" ? m.displayName : m.model, note: typeof m.description === "string" ? m.description : "" }))
+  })

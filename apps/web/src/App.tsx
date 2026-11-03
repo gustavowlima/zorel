@@ -6,7 +6,7 @@ import { useAtomValue } from "@effect/atom-react"
 import { t } from "@zero/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { useEffect, useRef } from "react"
-import { agentsAtom, chatsAtom, projectsAtom, useInvalidate, useList, useStatuses } from "./client.ts"
+import { agentsAtom, chatsAtom, modelsAtom, projectsAtom, useInvalidate, useList, useStatuses } from "./client.ts"
 import { AgentView } from "./features/agent.tsx"
 import { ChatView } from "./features/chat.tsx"
 import { HomeView } from "./features/home.tsx"
@@ -16,6 +16,7 @@ import { ProjectView } from "./features/project.tsx"
 import { SettingsView } from "./features/settings.tsx"
 import { Sidebar } from "./features/sidebar.tsx"
 import { UsageView } from "./features/usage.tsx"
+import { rememberModels } from "./labels.ts"
 import { go, type Route, useRoute } from "./state.ts"
 import { Button, CircleAlert, EmptyState, Spinner } from "@/ui"
 
@@ -24,6 +25,7 @@ export function App() {
   const projectsResult = useAtomValue(projectsAtom)
   const chats = useList(chatsAtom)
   const agents = useList(agentsAtom)
+  rememberModels(useList(modelsAtom)) // real model names ("Opus 5.5") for every label below
   const chat = route.view === "chat" ? chats.find((c) => c.id === route.id) : undefined
   const agent = route.view === "agent" ? agents.find((a) => a.id === route.id) : undefined
   const activeProjectId =

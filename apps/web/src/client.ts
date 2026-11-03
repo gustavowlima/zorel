@@ -38,6 +38,7 @@ export const keysAtom = Zero.query("settings", "keys", { reactivityKeys: ["keys"
 export const modelsAtom = Zero.query("settings", "models", { reactivityKeys: ["models"] })
 export const usageAtom = Zero.query("settings", "usage", { reactivityKeys: ["usage"] })
 export const preferencesAtom = Zero.query("settings", "preferences", { reactivityKeys: ["preferences"] })
+export const topTurnsAtom = (since: number) => Zero.query("settings", "topTurns", { query: { since }, reactivityKeys: ["usage"] })
 export const approvalsAtom = Live.query("approvals", undefined, { reactivityKeys: ["approvals"] })
 
 // Workspace (ARCHITECTURE §9.1): one turn's diff, the project's files marked with what this chat changed,
@@ -70,6 +71,7 @@ export const mutations = {
   login: Zero.mutation("accounts", "login"),
   setKey: Zero.mutation("settings", "setKey"),
   undo: Zero.mutation("chats", "undo"),
+  readLimits: Zero.mutation("accounts", "limits"),
   acceptFailoverTerms: Zero.mutation("settings", "acceptFailoverTerms"),
   send: Live.mutation("send"),
   steer: Live.mutation("steer"),

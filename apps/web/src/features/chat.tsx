@@ -2,14 +2,14 @@
 // right, each agent's reply with its activity pill, approvals waiting for you, handoffs between agents),
 // and the message box. State is the chat atom: snapshot + live events, so a turn keeps going if the tab
 // closes and the screen catches up when it reopens.
-import type { Agent, Chat, FailoverTarget, Message } from "@zero/contracts"
+import type { Agent, Chat, FailoverTarget, Message, ProviderAccount } from "@zero/contracts"
 import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zero/contracts/events"
 import { formatCompact, formatDuration, t } from "@zero/i18n"
 import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { accountsAtom, agentsAtom, attachmentUrl, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
-import { agentName, chatTitle, handleOf, modelLabel, switchText } from "../labels.ts"
+import { agentName, chatTitle, formatCost, handleOf, modelLabel, switchText } from "../labels.ts"
 import { go } from "../state.ts"
 import { Composer } from "./composer.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
@@ -428,14 +428,17 @@ function AgentMessage({ message: m, agents, onView }: { message: Message; agents
         // biome-ignore lint/suspicious/noArrayIndexKey: a saved message's switches never change
         <Separator key={i}>{switchText(sw, accounts)}</Separator>
       ))}
-      <AgentReply message={m} agents={agents} onView={onView} />
+      <AgentReply message={m} agents={agents} accounts={accounts} onView={onView} />
     </div>
   )
 }
 
-function AgentReply({ message: m, agents, onView }: { message: Message; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void }) {
+function AgentReply({ message: m, agents, accounts, onView }: { message: Message; agents: ReadonlyArray<Agent>; accounts: ReadonlyArray<ProviderAccount>; onView: (f: Focus) => void }) {
   const ending = endingOf(m.error)
   const tokens = m.inputTokens || m.outputTokens ? t("chat.tokens", { input: formatCompact(m.inputTokens), output: formatCompact(m.outputTokens) }) : null
+  // Which account answered and what it cost; a subscription shows the API equivalent, not a charge.
+  const account = accounts.find((a) => a.id === m.accountId)
+  const cost = m.cost === null ? null : account?.kind === "subscription" ? `${t("usage.apiEquivalent")} ${formatCost(m.cost)}` : formatCost(m.cost)
   return (
     <Reply
       agentId={m.agentId}
@@ -443,7 +446,7 @@ function AgentReply({ message: m, agents, onView }: { message: Message; agents: 
       agents={agents}
       pill={m.steps.length > 0 && <StoredActivity steps={m.steps} />}
       footer={
-        (ending || tokens) && (
+        (ending || tokens || cost) && (
           <div className="flex flex-wrap items-center gap-2 text-sm text-dim">
             {ending && (
               <span className={cx("inline-flex items-center gap-1.5", ending.tone === "danger" ? "text-danger" : "text-warning")}>
@@ -452,6 +455,8 @@ function AgentReply({ message: m, agents, onView }: { message: Message; agents: 
               </span>
             )}
             {tokens && <span>{tokens}</span>}
+            {account && <span>{account.label}</span>}
+            {cost && <span title={t("usage.costHint")}>{cost}</span>}
           </div>
         )
       }
