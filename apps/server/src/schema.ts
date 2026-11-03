@@ -87,3 +87,70 @@ export const mcpServers = sqliteTable("mcp_servers", {
   enabled: integer({ mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at").notNull()
 })
+
+// ---------- runtime de turnos (ARCHITECTURE §5) ----------
+
+export const turns = sqliteTable(
+  "turns",
+  {
+    id: text().primaryKey(),
+    chatId: text("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+    agentId: text("agent_id"),
+    model: text().notNull(),
+    accountId: text("account_id"),
+    clientId: text("client_id").unique(), // idempotência do `send`; turnos encadeados não têm
+    state: text({ enum: ["queued", "running", "completed", "failed", "interrupted"] }).notNull(),
+    depth: integer().notNull().default(0), // respostas seguidas entre agentes sem mensagem sua
+    createdAt: integer("created_at").notNull(),
+    startedAt: integer("started_at"),
+    endedAt: integer("ended_at"),
+    error: text(),
+    partialText: text("partial_text").notNull().default(""), // texto até agora: um kill -9 não perde o que já veio
+    messageId: text("message_id"),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    cachedTokens: integer("cached_tokens").notNull().default(0)
+  },
+  (t) => [index("turns_by_chat").on(t.chatId, t.state, t.createdAt)]
+)
+
+export const steps = sqliteTable(
+  "steps",
+  {
+    id: text().primaryKey(),
+    turnId: text("turn_id").notNull().references(() => turns.id, { onDelete: "cascade" }),
+    kind: text({ enum: ["read", "edit", "run", "search", "tool", "delegate"] }).notNull(),
+    title: text().notNull(),
+    tool: text(),
+    files: text().notNull().default("[]"), // JSON de string[]
+    status: text({ enum: ["running", "waiting", "ok", "error", "refused"] }).notNull(),
+    startedAt: integer("started_at").notNull(),
+    durationMs: integer("duration_ms"),
+    changes: text().notNull().default("[]"), // JSON de FileChange[]
+    output: text().notNull().default("")
+  },
+  (t) => [index("steps_by_turn").on(t.turnId, t.startedAt)]
+)
+
+export const approvals = sqliteTable(
+  "approvals",
+  {
+    id: text().primaryKey(),
+    chatId: text("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+    turnId: text("turn_id").notNull().references(() => turns.id, { onDelete: "cascade" }),
+    stepId: text("step_id"),
+    agentId: text("agent_id"),
+    kind: text({ enum: ["command", "edit", "tool", "network"] }).notNull(),
+    tool: text().notNull(),
+    summary: text().notNull(),
+    args: text().notNull(), // JSON com segredos mascarados
+    cwd: text(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    outcome: text({ enum: ["approved", "always", "denied", "expired"] }), // null: aberta
+    reason: text(),
+    decidedBy: text("decided_by", { enum: ["user", "rule", "expiry"] }),
+    decidedAt: integer("decided_at")
+  },
+  (t) => [index("approvals_open").on(t.outcome, t.chatId)]
+)

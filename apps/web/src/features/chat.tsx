@@ -1,16 +1,16 @@
-// Chat/canal: histórico, streaming das respostas (uma por agente), aprovação de ferramentas no meio do turno,
-// troca de modelo e de membros a qualquer momento, e compactação manual.
-import type { Agent, Chat, Message, SendEvent, Step } from "@zero/contracts"
+// Chat/canal: segue os eventos do runtime (snapshot + ao vivo), então o turno continua se a aba fechar e reabrir.
+// Respostas uma por agente, aprovação de ferramentas no meio do turno, troca de modelo e membros, compactação manual.
+import type { Agent, Chat, Message } from "@zero/contracts"
+import type { Approval, ChatEvent, WorkStep } from "@zero/contracts/events"
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { call, sendMessage } from "../api.ts"
+import { call, decideApproval, interruptChat, sendMessage, subscribeChat } from "../api.ts"
 import { go, useApp } from "../state.ts"
 import { Badge, Button, Card, ConfirmButton, cx, Select, Textarea, Tooltip } from "@/ui"
 import { ModelPicker } from "./model-picker.tsx"
 
-type Live = { agentId: string | null; model: string; text: string; steps: Step[] }
-type Approval = Extract<SendEvent, { type: "approval" }>
+type Live = { turnId: string; agentId: string | null; model: string; text: string; steps: WorkStep[] }
 
 const handle = (a: Agent) => a.name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "")
 
@@ -19,19 +19,66 @@ export function ChatView({ chat }: { chat: Chat }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [live, setLive] = useState<Live>()
   const [busy, setBusy] = useState(false)
-  const [approvals, setApprovals] = useState<Approval[]>([])
-  const [notice, setNotice] = useState<string>()
+  const [approvals, setApprovals] = useState<ReadonlyArray<Approval>>([])
   const [text, setText] = useState("")
   const [error, setError] = useState<string>()
   const [compacting, setCompacting] = useState(false)
-  const abort = useRef<AbortController>(undefined)
   const bottom = useRef<HTMLDivElement>(null)
+  const reloadRef = useRef(reload)
+  reloadRef.current = reload
 
   useEffect(() => {
     setMessages([])
+    setLive(undefined)
+    setApprovals([])
     setError(undefined)
-    call((c) => c.chats.messages({ params: { id: chat.id } })).then((m) => setMessages([...m]), (e) => setError(String(e)))
-    return () => abort.current?.abort()
+    const onEvent = (ev: ChatEvent) => {
+      switch (ev._tag) {
+        case "snapshot": {
+          const s = ev.snapshot
+          const running = s.turns.find((t) => t.state === "running")
+          setError(undefined) // (re)conectou: some o aviso de conexão caída
+          setMessages([...s.messages])
+          setApprovals(s.approvals)
+          setBusy(s.turns.length > 0)
+          setLive(
+            running && {
+              turnId: running.id, agentId: running.agentId, model: running.model,
+              text: s.partial.find((p) => p.turnId === running.id)?.text ?? "", steps: s.steps.filter((x) => x.turnId === running.id)
+            }
+          )
+          return
+        }
+        case "message":
+          return setMessages((m) => [...m, ev.message])
+        case "queued":
+          return setBusy(true)
+        case "turn-started":
+          return setLive({ turnId: ev.turn.id, agentId: ev.turn.agentId, model: ev.turn.model, text: "", steps: [] })
+        case "text":
+          return setLive((l) => (l?.turnId === ev.turnId ? { ...l, text: l.text + ev.delta } : l))
+        case "step-started":
+        case "step-finished":
+          return setLive((l) => (l?.turnId === ev.step.turnId ? { ...l, steps: [...l.steps.filter((x) => x.id !== ev.step.id), ev.step] } : l))
+        case "approval":
+          return setApprovals((a) => [...a, ev.approval])
+        case "approval-resolved":
+          return setApprovals((a) => a.filter((x) => x.id !== ev.approvalId))
+        case "turn-completed":
+        case "turn-failed":
+        case "interrupted": {
+          const message = ev.message
+          setLive((l) => (l?.turnId === ev.turn.id ? undefined : l))
+          if (message) setMessages((m) => [...m, message]) // erro do engine vem dentro da mensagem salva
+          return
+        }
+        case "status":
+          setBusy(ev.status.state !== "idle")
+          if (ev.status.state === "idle") void reloadRef.current() // título, consolidação e memórias pendentes podem ter mudado
+          return
+      }
+    }
+    return subscribeChat(chat.id, onEvent, (e) => setError(String(e)))
   }, [chat.id])
   // biome-ignore lint/correctness/useExhaustiveDependencies: as dependências são o gatilho (rolar quando chega conteúdo)
   useEffect(() => {
@@ -46,45 +93,22 @@ export function ChatView({ chat }: { chat: Chat }) {
   const update = (payload: { model?: string; agentIds?: ReadonlyArray<string> }) =>
     call((c) => c.chats.update({ params: { id: chat.id }, payload })).then(reload, (e) => setError(String(e)))
 
-  const onEvent = (ev: SendEvent) => {
-    if (ev.type === "user") setMessages((m) => [...m, ev.message])
-    else if (ev.type === "start") setLive({ agentId: ev.agentId, model: ev.model, text: "", steps: [] })
-    else if (ev.type === "text") setLive((l) => l && { ...l, text: l.text + ev.delta })
-    else if (ev.type === "tool") setLive((l) => l && { ...l, steps: [...l.steps, ev.step] })
-    else if (ev.type === "approval") setApprovals((a) => [...a, ev])
-    else if (ev.type === "done") {
-      setLive(undefined)
-      setApprovals([])
-      setMessages((m) => [...m, ev.message]) // erro do engine vem dentro da mensagem salva
-    } else setNotice(ev.message)
-  }
-
-  const submit = async (e?: FormEvent) => {
+  // Com o chat ocupado, a mensagem entra na fila do runtime e é respondida depois.
+  const submit = (e?: FormEvent) => {
     e?.preventDefault()
     const input = text.trim()
-    if (!input || busy) return
+    if (!input) return
     setText("")
     setError(undefined)
-    setNotice(undefined)
-    setBusy(true)
-    abort.current = new AbortController()
-    try {
-      await sendMessage(chat.id, { text: input }, onEvent, abort.current.signal)
-    } catch (err) {
-      if (!abort.current.signal.aborted) setError(String(err instanceof Error ? err.message : err))
+    sendMessage(chat.id, input).catch((err) => {
+      setError(String(err instanceof Error ? err.message : err))
       setText((t) => t || input)
-    } finally {
-      setBusy(false)
-      setLive(undefined)
-      setApprovals([])
-      void reload() // título, consolidação e memórias pendentes podem ter mudado
-      if (abort.current.signal.aborted) call((c) => c.chats.messages({ params: { id: chat.id } })).then((m) => setMessages([...m]))
-    }
+    })
   }
 
   const decide = (a: Approval, approve: boolean) => {
     setApprovals((list) => list.filter((x) => x.id !== a.id))
-    call((c) => c.tools.decide({ params: { id: a.id }, payload: { approve } })).catch(() => setError("Esse pedido já expirou."))
+    decideApproval(a.id, approve ? "approved" : "denied").catch(() => setError("Esse pedido já expirou."))
   }
 
   const compact = () => {
@@ -168,11 +192,20 @@ export function ChatView({ chat }: { chat: Chat }) {
               <Bubble message={m} author={agentName(m.agentId)} multi={team.length > 1} />
             </div>
           ))}
-          {live && <Bubble message={{ role: "assistant", text: live.text || "…", model: live.model, error: null, steps: live.steps }} author={agentName(live.agentId)} multi={team.length > 1} live />}
+          {live && (
+            <div className="flex flex-col gap-1">
+              {live.steps.map((s) => (
+                <div key={s.id} className="text-xs text-muted">
+                  <Badge tone={s.status === "ok" ? "neutral" : s.status === "error" ? "danger" : s.status === "refused" || s.status === "waiting" ? "warning" : "accent"}>{s.status}</Badge> <code>{s.title}</code>
+                </div>
+              ))}
+              <Bubble message={{ role: "assistant", text: live.text || "…", model: live.model, error: null, steps: [] }} author={agentName(live.agentId)} multi={team.length > 1} live />
+            </div>
+          )}
           {approvals.map((a) => (
             <Card key={a.id} className="flex flex-col gap-2 border-strong">
               <div className="text-sm">
-                <span className="font-medium">{agentName(live?.agentId ?? null)}</span> quer usar <code className="text-accent-text">{a.tool}</code>
+                <span className="font-medium">{agentName(a.agentId)}</span> quer usar <code className="text-accent-text">{a.tool}</code>
               </div>
               <pre className="max-h-48 overflow-auto rounded-control bg-control p-2 text-xs">{a.args}</pre>
               <div className="flex gap-2">
@@ -185,7 +218,6 @@ export function ChatView({ chat }: { chat: Chat }) {
               </div>
             </Card>
           ))}
-          {notice && <div className="rounded-card bg-surface p-3 text-sm text-warning">{notice}</div>}
           {error && <div className="rounded-card bg-danger-soft p-3 text-sm text-danger">{error}</div>}
           <div ref={bottom} />
         </div>
@@ -206,9 +238,14 @@ export function ChatView({ chat }: { chat: Chat }) {
           autoFocus
         />
         {busy ? (
-          <Button size="lg" onPress={() => abort.current?.abort()}>
-            Parar
-          </Button>
+          <>
+            <Button type="submit" variant="secondary" size="lg" isDisabled={!text.trim()}>
+              Na fila
+            </Button>
+            <Button size="lg" onPress={() => void interruptChat(chat.id).catch((e) => setError(String(e)))}>
+              Parar
+            </Button>
+          </>
         ) : (
           <Button type="submit" variant="default" size="lg" isDisabled={!text.trim()}>
             Enviar
@@ -219,6 +256,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   )
 }
 
+const interrupted = (error: string) => error.startsWith("interrompido")
 const stepTone = { ok: "neutral", error: "danger", refused: "warning" } as const
 
 function Bubble({ message: m, author, multi, live }: { message: Pick<Message, "role" | "text" | "model" | "error" | "steps"> & Partial<Message>; author: string; multi: boolean; live?: boolean }) {
@@ -245,9 +283,9 @@ function Bubble({ message: m, author, multi, live }: { message: Pick<Message, "r
       <div className="flex items-center gap-2 text-xs text-dim">
         {m.model && <span>{m.model}</span>}
         {!live && m.inputTokens ? <span>{`${m.inputTokens.toLocaleString()} → ${m.outputTokens?.toLocaleString()} tokens`}</span> : null}
-        {m.error && <Badge tone={m.error === "interrompido" ? "warning" : "danger"}>{m.error === "interrompido" ? "interrompido" : "erro"}</Badge>}
+        {m.error && <Badge tone={interrupted(m.error) ? "warning" : "danger"}>{interrupted(m.error) ? "interrompido" : "erro"}</Badge>}
       </div>
-      {m.error && m.error !== "interrompido" && <div className="whitespace-pre-wrap text-sm text-danger">{m.error}</div>}
+      {m.error && !interrupted(m.error) && <div className="whitespace-pre-wrap text-sm text-danger">{m.error}</div>}
     </div>
   )
 }

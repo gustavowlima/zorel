@@ -108,6 +108,7 @@ export type ContextUsage = typeof ContextUsage.Type
 export const ChatSnapshot = Schema.Struct({
   messages: Schema.Array(Message), // desde o resumo
   turns: Schema.Array(Turn), // em andamento e na fila
+  partial: Schema.Array(Schema.Struct({ turnId: Id, text: Schema.String })), // texto até agora dos que estão rodando
   steps: Schema.Array(WorkStep), // dos turnos em andamento
   approvals: Schema.Array(Approval), // abertas
   status: ChatStatus
@@ -116,6 +117,7 @@ export type ChatSnapshot = typeof ChatSnapshot.Type
 
 export const ChatEvent = Schema.TaggedUnion({
   snapshot: { snapshot: ChatSnapshot }, // sempre o primeiro; reconectar = assinar de novo
+  message: { message: Message }, // mensagem nova sua (a do agente chega no turn-completed)
   queued: { turn: Turn },
   "turn-started": { turn: Turn },
   text: { turnId: Id, delta: Schema.String }, // agrupado a cada 100 ms ou 8 KiB
@@ -137,6 +139,9 @@ export type ChatEvent = typeof ChatEvent.Type
 
 // ---------- RPC sobre WebSocket em /rpc ----------
 
+export class ChatNotFound extends Schema.TaggedError<ChatNotFound>()("ChatNotFound", { chatId: Id }) {}
+export class ApprovalNotFound extends Schema.TaggedError<ApprovalNotFound>()("ApprovalNotFound", { approvalId: Id }) {} // já decidida ou expirada
+
 export const SendPayload = {
   chatId: Id,
   clientId: Schema.String.check(Schema.isMinLength(8), Schema.isMaxLength(64)),
@@ -145,10 +150,10 @@ export const SendPayload = {
 }
 
 export const ZeroRpc = RpcGroup.make(
-  Rpc.make("send", { payload: SendPayload, success: Schema.Struct({ turnId: Id }) }),
-  Rpc.make("steer", { payload: { chatId: Id, text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100_000)) } }),
+  Rpc.make("send", { payload: SendPayload, success: Schema.Struct({ turnId: Id }), error: ChatNotFound }),
+  Rpc.make("steer", { payload: { chatId: Id, text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100_000)) }, error: ChatNotFound }),
   Rpc.make("interrupt", { payload: { chatId: Id } }),
-  Rpc.make("decide", { payload: { approvalId: Id, outcome: Schema.Literals(["approved", "always", "denied"]), reason: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))) } }),
-  Rpc.make("subscribeChat", { payload: { chatId: Id }, success: ChatEvent, stream: true }),
+  Rpc.make("decide", { payload: { approvalId: Id, outcome: Schema.Literals(["approved", "always", "denied"]), reason: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))) }, error: ApprovalNotFound }),
+  Rpc.make("subscribeChat", { payload: { chatId: Id }, success: ChatEvent, error: ChatNotFound, stream: true }),
   Rpc.make("subscribeStatus", { success: ChatStatus, stream: true }) // todos os chats: barra lateral e "Precisa de você"
 )

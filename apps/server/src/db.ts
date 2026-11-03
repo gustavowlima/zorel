@@ -2,12 +2,13 @@
 // erro de banco é defeito (orDie): não há o que o chamador faça além de falhar o pedido.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import type { Agent, Chat, McpServer, Memory, Message, Project } from "@zero/contracts"
+import type { Approval, ApprovalOutcome, FileChange, Turn, WorkStep } from "@zero/contracts/events"
 import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
 import { Context, Effect, Layer } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
-import { agents, chatMembers, chats, mcpServers, memories, messages, projects } from "./schema.ts"
+import { agents, approvals, chatMembers, chats, mcpServers, memories, messages, projects, steps, turns } from "./schema.ts"
 
 // "Prefere PRs pequenos." e "prefere prs pequenos" são a mesma memória.
 export const normalize = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
@@ -28,6 +29,17 @@ const memoryRow = (r: Row): Memory => ({
   id: r.id, scope: r.scope, kind: r.kind, title: r.title, text: r.text, state: r.state, origin: r.origin, chatId: r.chat_id,
   createdAt: r.created_at, confirmedAt: r.confirmed_at
 })
+const toTurn = (r: typeof turns.$inferSelect): Turn => ({
+  id: r.id, chatId: r.chatId, agentId: r.agentId, model: r.model, accountId: r.accountId, clientId: r.clientId, state: r.state,
+  startedAt: r.startedAt, endedAt: r.endedAt, error: r.error,
+  usage: { inputTokens: r.inputTokens, outputTokens: r.outputTokens, cachedTokens: r.cachedTokens }
+})
+const toStep = (r: typeof steps.$inferSelect): WorkStep => ({ ...r, files: JSON.parse(r.files), changes: JSON.parse(r.changes) })
+const toApproval = (r: typeof approvals.$inferSelect): Approval => ({
+  id: r.id, chatId: r.chatId, turnId: r.turnId, stepId: r.stepId, agentId: r.agentId, kind: r.kind, tool: r.tool,
+  summary: r.summary, args: r.args, cwd: r.cwd, createdAt: r.createdAt, expiresAt: r.expiresAt
+})
+export type TurnRow = typeof turns.$inferSelect
 const defined = <T extends Record<string, unknown>>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>
 
 const makeDb = Drizzle.makeWithDefaults()
@@ -233,7 +245,74 @@ export const repository = (db: Db) => {
         if (Object.keys(set).length) yield* db.update(mcpServers).set(set).where(eq(mcpServers.id, id))
         return yield* mcpServer(id)
       }).pipe(orDie),
-    removeMcpServer: (id: string) => orDie(db.delete(mcpServers).where(eq(mcpServers.id, id)).pipe(Effect.asVoid))
+    removeMcpServer: (id: string) => orDie(db.delete(mcpServers).where(eq(mcpServers.id, id)).pipe(Effect.asVoid)),
+
+    // ---------- turnos (fila por chat) ----------
+    turnRow: (id: string) => orDie(db.select().from(turns).where(eq(turns.id, id)).pipe(Effect.map(first))),
+    turnByClientId: (clientId: string) => orDie(db.select().from(turns).where(eq(turns.clientId, clientId)).pipe(Effect.map(first))),
+    enqueueTurn: (input: { chatId: string; agentId: string | null; model: string; clientId: string | null; depth: number }) =>
+      orDie(db.insert(turns).values({ id: crypto.randomUUID(), ...input, state: "queued", createdAt: now() }).returning().pipe(Effect.map((r) => r[0]!))),
+    nextQueued: (chatId: string) =>
+      orDie(db.select().from(turns).where(and(eq(turns.chatId, chatId), eq(turns.state, "queued"))).orderBy(asc(turns.createdAt)).limit(1).pipe(Effect.map(first))),
+    turnsIn: (state: TurnRow["state"]) => orDie(db.select().from(turns).where(eq(turns.state, state)).orderBy(asc(turns.createdAt))),
+    activeTurns: (chatId: string) =>
+      orDie(db.select().from(turns).where(and(eq(turns.chatId, chatId), inArray(turns.state, ["queued", "running"]))).orderBy(asc(turns.createdAt)).pipe(Effect.map((r) => r.map(toTurn)))),
+    startTurn: (id: string) =>
+      orDie(db.update(turns).set({ state: "running", startedAt: now() }).where(eq(turns.id, id)).returning().pipe(Effect.map((r) => r[0]!))),
+    savePartial: (id: string, partialText: string) => orDie(db.update(turns).set({ partialText }).where(eq(turns.id, id)).pipe(Effect.asVoid)),
+    finishTurn: (id: string, end: { state: "completed" | "failed" | "interrupted"; error: string | null; messageId: string | null; usage?: { inputTokens: number; outputTokens: number; cachedTokens?: number } }) =>
+      orDie(
+        db
+          .update(turns)
+          .set({ state: end.state, error: end.error, messageId: end.messageId, endedAt: now(), ...(end.usage && { inputTokens: end.usage.inputTokens, outputTokens: end.usage.outputTokens, cachedTokens: end.usage.cachedTokens ?? 0 }) })
+          .where(eq(turns.id, id))
+          .returning()
+          .pipe(Effect.map((r) => toTurn(r[0]!)))
+      ),
+    toTurn: (r: TurnRow) => toTurn(r),
+
+    // ---------- passos ----------
+    addStep: (input: Omit<WorkStep, "id" | "startedAt" | "durationMs" | "changes" | "output"> & { changes?: ReadonlyArray<FileChange> }) =>
+      Effect.gen(function* () {
+        const step: WorkStep = { id: crypto.randomUUID(), startedAt: now(), durationMs: null, output: "", ...input, changes: input.changes ?? [] }
+        yield* db.insert(steps).values({ ...step, files: JSON.stringify(step.files), changes: JSON.stringify(step.changes) })
+        return step
+      }).pipe(orDie),
+    finishStep: (step: WorkStep, end: { status: WorkStep["status"]; output?: string; changes?: ReadonlyArray<FileChange> }) =>
+      Effect.gen(function* () {
+        const done: WorkStep = { ...step, status: end.status, output: end.output ?? step.output, changes: end.changes ?? step.changes, durationMs: end.status === "waiting" ? null : now() - step.startedAt }
+        yield* db.update(steps).set({ status: done.status, output: done.output, changes: JSON.stringify(done.changes), durationMs: done.durationMs }).where(eq(steps.id, step.id))
+        return done
+      }).pipe(orDie),
+    stepsOf: (turnIds: ReadonlyArray<string>) =>
+      orDie(db.select().from(steps).where(inArray(steps.turnId, [...turnIds])).orderBy(asc(steps.startedAt)).pipe(Effect.map((r) => r.map(toStep)))),
+
+    // ---------- aprovações ----------
+    addApproval: (input: Omit<Approval, "id" | "createdAt">) =>
+      Effect.gen(function* () {
+        const a: Approval = { id: crypto.randomUUID(), createdAt: now(), ...input }
+        yield* db.insert(approvals).values(a)
+        return a
+      }).pipe(orDie),
+    // Só fecha uma aberta: devolve undefined se já foi decidida ou não existe.
+    resolveApproval: (id: string, outcome: ApprovalOutcome, reason: string | null, by: "user" | "rule" | "expiry") =>
+      orDie(
+        db
+          .update(approvals)
+          .set({ outcome, reason, decidedBy: by, decidedAt: now() })
+          .where(and(eq(approvals.id, id), isNull(approvals.outcome)))
+          .returning()
+          .pipe(Effect.map((r) => (r[0] ? toApproval(r[0]) : undefined)))
+      ),
+    openApprovals: (chatId?: string) =>
+      orDie(
+        db
+          .select()
+          .from(approvals)
+          .where(chatId ? and(isNull(approvals.outcome), eq(approvals.chatId, chatId)) : isNull(approvals.outcome))
+          .orderBy(asc(approvals.createdAt))
+          .pipe(Effect.map((r) => r.map(toApproval)))
+      )
   }
 }
 

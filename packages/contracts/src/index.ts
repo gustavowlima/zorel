@@ -136,18 +136,7 @@ export const NewMcpServer = Schema.Struct({
 export const McpServerPatch = Schema.Struct({ mode: Schema.optional(ToolMode), enabled: Schema.optional(Schema.Boolean) })
 export const KeyInput = Schema.Struct({ value: LongText(500) }) // vazio apaga
 
-// POST /api/chats/:id/send responde Server-Sent Events (fora do HttpApi, que não faz streaming).
-export const SendInput = Schema.Struct({ text: Short(100_000), model: Schema.optional(ModelId) })
-export type SendInput = typeof SendInput.Type
-export type SendEvent =
-  | { type: "user"; message: Message }
-  | { type: "start"; agentId: string | null; model: string } // começa a resposta de um agente
-  | { type: "text"; delta: string }
-  | { type: "tool"; step: Step }
-  | { type: "approval"; id: string; tool: string; args: string } // turno parado esperando POST /api/approvals/:id
-  | { type: "done"; message: Message } // fim da resposta de um agente (pode vir outra depois)
-  | { type: "error"; message: string }
-
+// Turnos (envio, eventos, interromper, aprovar): ver events.ts (RPC sobre WebSocket em /rpc).
 export const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
 
 // ---------- API ----------
