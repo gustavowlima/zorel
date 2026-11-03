@@ -55,3 +55,4 @@ usando assinaturas (CLI oficial: Claude Code, Codex, ACP) ou token de API (effec
 
 - comentários de código em inglês (pedido do usuário em 2026-11-03; substitui o "comments in the project language" do AGENTS.md para este projeto). Textos de interface e prompts de modelo não são comentários: ficam como estão até o i18n da fase UI
 - alias no server: `#server/*` (package.json "imports"), não `paths` do tsconfig: o desktop empacota o server e só o imports é resolvido pelo package.json do próprio server
+- commits em inglês a partir de 2026-11-03 (pedido do usuário); comentários no código também em inglês; histórico anterior fica em português

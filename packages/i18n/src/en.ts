@@ -279,6 +279,7 @@ export const en = {
     name: "Name",
     brief: "Brief",
     briefHint: "Stable context every agent and chat of the project receives: goal, stack, decisions, tone.",
+    briefHintShort: "Optional. You can write it later.",
     create: "Create project",
     overview: "Overview",
     agents: "Agents",

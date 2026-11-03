@@ -12,7 +12,6 @@ export type Route =
   | { view: "knowledge"; id?: string }
   | { view: "usage" }
   | { view: "settings"; tab: SettingsTab }
-  | { view: "new-project" }
   | { view: "project"; id: string; tab: ProjectTab }
   | { view: "chat"; id: string }
   | { view: "agent"; id: string }
@@ -25,7 +24,6 @@ export function parseRoute(hash: string): Route {
   switch (view) {
     case "inbox":
     case "usage":
-    case "new-project":
       return { view }
     case "knowledge":
       return a ? { view, id: a } : { view }
