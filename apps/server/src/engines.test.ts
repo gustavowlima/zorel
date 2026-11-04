@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test"
+
+process.env.ZERO_API_ENGINE = "direct" // these tests drive the direct API engine against a mock server
 import { type Agent, DEFAULT_PERMISSIONS, type Memory, type Message, namedSkills, skillHandle } from "@zero/contracts"
 import { Effect, Stream } from "effect"
 import { buildTurn, mentioned, parseConsolidation, pinned } from "./context.ts"
