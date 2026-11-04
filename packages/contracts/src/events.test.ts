@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
-import { ChatEvent, ZeroRpc } from "./events.ts"
+import { ChatEvent, ZorelRpc } from "./events.ts"
 
 const decode = Schema.decodeUnknownSync(ChatEvent)
 const turn = { id: "t1", chatId: "c1", agentId: "a1", model: "claude-cli/opus", accountId: null, clientId: "client-0001", state: "running", startedAt: 1, endedAt: null, firstTokenAt: null, error: null, usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0 } }
@@ -22,6 +22,6 @@ describe("ChatEvent", () => {
   })
 
   test("o grupo RPC tem os procedimentos da arquitetura", () => {
-    expect([...ZeroRpc.requests.keys()].sort()).toEqual(["approvals", "decide", "interrupt", "runs", "send", "steer", "subscribeChat", "subscribeStatus"])
+    expect([...ZorelRpc.requests.keys()].sort()).toEqual(["approvals", "decide", "interrupt", "runs", "send", "steer", "subscribeChat", "subscribeStatus"])
   })
 })

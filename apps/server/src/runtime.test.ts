@@ -1,7 +1,7 @@
 // Phase 1 criteria (ARCHITECTURE §13): resend doesn't duplicate, interrupt keeps the partial,
 // kill -9 mid-turn becomes `interrupted` with the partial text on the next boot.
 import { expect, test } from "bun:test"
-import type { ChatEvent } from "@zero/contracts/events"
+import type { ChatEvent } from "@zorel/contracts/events"
 import { Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -31,7 +31,7 @@ const Echo = Layer.succeed(Engines, {
 
 const layer = (dbPath: string, engines: Layer.Layer<Engines>) => {
   const store = Store.layer(dbPath)
-  const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(engines, Tools.layer), Layer.provideMerge(Secrets.memory(), store)), DataDir.layer(join(tmpdir(), "zero-rt")))
+  const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(engines, Tools.layer), Layer.provideMerge(Secrets.memory(), store)), DataDir.layer(join(tmpdir(), "zorel-rt")))
   return Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.fixed(PRICES), Audit.layer, BrowserService.layer), base))
 }
 const runWith = <A, E>(dbPath: string, engines: Layer.Layer<Engines>, f: Effect.Effect<A, E, Runtime | Store>) =>
@@ -89,9 +89,9 @@ test("interromper guarda o texto parcial e emite interrupted", () =>
   })))
 
 test("kill -9 no meio do turno: na próxima subida o turno vira interrupted com o parcial", async () => {
-  const dir = join(tmpdir(), `zero-rt-${crypto.randomUUID()}`)
+  const dir = join(tmpdir(), `zorel-rt-${crypto.randomUUID()}`)
   mkdirSync(dir)
-  const path = join(dir, "zero.db")
+  const path = join(dir, "zorel.db")
   // First life: a turn stays `running` with partial text saved (as if the process died here).
   const chatId = await Effect.runPromise(
     Effect.scoped(
@@ -190,8 +190,8 @@ test("accounts: the chat's account reaches the session as its login folder; swit
   runWith(":memory:", Sessions, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    yield* store.ensureAccount({ id: "work", label: "Claude trabalho", kind: "subscription", provider: "claude", home: "/tmp/zero-acc-work", secret: null, baseUrl: null, identity: null })
-    yield* store.ensureAccount({ id: "cdx", label: "Codex 2", kind: "subscription", provider: "codex", home: "/tmp/zero-acc-cdx", secret: null, baseUrl: null, identity: null })
+    yield* store.ensureAccount({ id: "work", label: "Claude trabalho", kind: "subscription", provider: "claude", home: "/tmp/zorel-acc-work", secret: null, baseUrl: null, identity: null })
+    yield* store.ensureAccount({ id: "cdx", label: "Codex 2", kind: "subscription", provider: "codex", home: "/tmp/zorel-acc-cdx", secret: null, baseUrl: null, identity: null })
     const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/haiku", accountId: "work" })
     const turnOnce = (text: string) =>
       Effect.gen(function* () {
@@ -203,7 +203,7 @@ test("accounts: the chat's account reaches the session as its login folder; swit
     const before = sessionLog.opened.length
     const t1 = yield* turnOnce("a")
     expect(t1.accountId).toBe("work")
-    expect(sessionLog.homes.at(-1)).toBe("/tmp/zero-acc-work")
+    expect(sessionLog.homes.at(-1)).toBe("/tmp/zorel-acc-work")
     // An account of another provider doesn't apply: falls back to Claude's default (the CLI's own login).
     yield* store.updateChat(chat.id, { accountId: "cdx" })
     yield* turnOnce("b")
@@ -396,7 +396,7 @@ test("failover: when every route fails, the turn fails once and lists each attem
 // ---------- workspace (ARCHITECTURE §9.1) ----------
 
 test("workspace: the agent works in the project folder; the turn records what it changed; the next turn knows", () => {
-  const folder = mkdtempSync(join(tmpdir(), "zero-proj-"))
+  const folder = mkdtempSync(join(tmpdir(), "zorel-proj-"))
   writeFileSync(join(folder, "a.ts"), "export const a = 1\n")
   const prompts: string[] = []
   const editing = Layer.succeed(Engines, {

@@ -31,3 +31,4 @@
 2026-11-04 | Settings › Connectors em cartões; catálogo de pílulas do formulário removido | usuário pediu conectores tipo GitHub/Notion
 2026-11-04 | conectores com logos (simple-icons) e estado Reconnect | usuário pediu logos e o padrão do a reference app
 2026-11-04 | Test connection nos conectores + teste ao conectar | usuário pediu teste na conexão
+2026-11-04 | renomeado Zero → Zorel (textos, pacotes, localStorage migrado) | usuário escolheu o nome Zorel

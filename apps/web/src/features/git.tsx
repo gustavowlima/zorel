@@ -3,8 +3,8 @@
 // (message written or drafted by the chat's model), push, open a pull request (or see the one already open), or
 // move the work to a new branch, or give the chat its own worktree (a folder on its own branch, so its agents
 // don't touch the project folder). Shown only when the folder is a git repository. Errors are git's own words.
-import type { Chat } from "@zero/contracts"
-import { formatTime, t } from "@zero/i18n"
+import type { Chat } from "@zorel/contracts"
+import { formatTime, t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { useAtomValue } from "@effect/atom-react"
 import { useEffect, useState } from "react"

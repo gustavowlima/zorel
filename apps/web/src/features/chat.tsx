@@ -2,11 +2,11 @@
 // right, each agent's reply with its activity pill, approvals waiting for you, handoffs between agents),
 // and the message box. State is the chat atom: snapshot + live events, so a turn keeps going if the tab
 // closes and the screen catches up when it reopens.
-import { type Agent, type Chat, type FailoverTarget, type Message, type ProviderAccount, skillHandle, type WorkspaceFile } from "@zero/contracts"
+import { type Agent, type Chat, type FailoverTarget, type Message, type ProviderAccount, skillHandle, type WorkspaceFile } from "@zorel/contracts"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
-import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zero/contracts/events"
-import { formatCompact, formatDuration, formatTime, t } from "@zero/i18n"
+import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zorel/contracts/events"
+import { formatCompact, formatDuration, formatTime, t } from "@zorel/i18n"
 import { type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -62,7 +62,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   // The side panel and its tab (Changes, Files, Browser, Terminal); undefined: closed.
   const [panel, setPanel] = useState<SideTab>()
   const pins = usePins(chat.id)
-  // A turn ended: an agent may have created or changed a teammate (zero_create_agent / zero_update_agent).
+  // A turn ended: an agent may have created or changed a teammate (zorel_create_agent / zorel_update_agent).
   const invalidate = useInvalidate()
   const turns = state.messages.length
   useEffect(() => {
@@ -84,7 +84,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   const newChat = () => go(chat.projectId ? { view: "home", projectId: chat.projectId } : { view: "home" })
   const memories = useList(memoriesAtom)
   const engineCommands = AsyncResult.getOrElse(useAtomValue(commandsAtom(chat.id)), () => [])
-  // What "@", "$" and "/" offer in this chat: its agents, the skills it can use, Zero's commands.
+  // What "@", "$" and "/" offer in this chat: its agents, the skills it can use, Zorel's commands.
   const scopes = new Set(["user", ...(chat.projectId ? [`project:${chat.projectId}`] : []), ...chat.agentIds.map((id) => `agent:${id}`)])
   // "#": every agent this chat can use; the one picked answers from now on (joins the chat if it wasn't in it).
   const available = agents.filter((a) => !a.builtin && (a.projectId === null || a.projectId === chat.projectId))

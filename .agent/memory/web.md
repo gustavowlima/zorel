@@ -8,14 +8,14 @@ updated: 2026-11-03
 
 - fase UI concluída (2026-11-03): todas as telas reescritas pelo protótipo, em inglês, com átomos
 - rotas no hash (state.ts): #/ (home = novo chat), #/new/:projectId, #/chat/:id, #/project/:id[/agents|tools], #/agent/:id, #/agent/new/:projectId|global, #/knowledge[/:id], #/inbox, #/usage, #/settings/:tab
-- dados = átomos (client.ts, D4): `Zero` (AtomHttpApi) e `Live` (AtomRpc). Query por recurso com reactivityKey; mutation passa `reactivityKeys` e refaz as queries. `useList(atom)` dá array; `useMutation(atom)` dá promise
+- dados = átomos (client.ts, D4): `Zorel` (AtomHttpApi) e `Live` (AtomRpc). Query por recurso com reactivityKey; mutation passa `reactivityKeys` e refaz as queries. `useList(atom)` dá array; `useMutation(atom)` dá promise
 - chat = Atom.family(subscribeChat) + Stream.scan(reduceChat); NÃO usar a query de stream do AtomRpc (acumula em lotes PullResult)
 - status ao vivo: statusAtom (keepAlive) sobre subscribeStatus; App invalida chats/memories/usage/approvals quando um chat sai de running (o server muda título e memórias sozinho)
-- invalidação manual: invalidateAtom (Zero.runtime.fn + Reactivity.invalidate); os runtimes dividem o memoMap, então um Reactivity só
+- invalidação manual: invalidateAtom (Zorel.runtime.fn + Reactivity.invalidate); os runtimes dividem o memoMap, então um Reactivity só
 - telas: sidebar.tsx (árvore + status), home.tsx (cria o chat no 1º envio/anexo), chat.tsx (timeline, pílula, aprovação, recibo, handoff), composer.tsx, model-picker.tsx (trilho de contas + raciocínio), people.tsx (avatar do autor, TeamPicker), inbox.tsx, knowledge.tsx, usage.tsx, settings.tsx, mcp.tsx, project.tsx, agent.tsx
 - labels.ts: nomes de modelo/provider, escopo, título ("Novo chat" legado vira "New chat"), status, agentTone (posição no projeto)
-- texto só por t() de @zero/i18n; check:i18n (AST com @babel/parser) no CI
-- tema: preferência em localStorage "zero.theme" (system/dark/light), Settings › Appearance
+- texto só por t() de @zorel/i18n; check:i18n (AST com @babel/parser) no CI
+- tema: preferência em localStorage "zorel.theme" (system/dark/light), Settings › Appearance
 - vite dev faz proxy de /api e /rpc (ws) para 4317
 
 - novo projeto: popover no "+" da barra lateral (NewProjectButton em project.tsx: nome + brief opcional), não página; ao criar vai para o overview
@@ -52,7 +52,7 @@ updated: 2026-11-03
 - TerminalPanel: ▷ Run a script (aba com label do script) e Servers (abre localhost:N no BrowserPanel via chat.openInBrowser → prop openUrl, que envia newtab+nav)
 - git.tsx: GitControl no cabeçalho do chat (só repo git); popover com commit (Write it for me → gitDraft), push/publish, PR (rascunho editável; escondido na branch base), New branch
 - painel lateral (pedido do usuário, padrão T3 Code): workspace.tsx SidePanel com abas changes/files/browser/terminal (type SideTab); chat.tsx guarda só `panel: SideTab | undefined`; cabeçalho = GitControl + um botão de painel (sem botões Changes/Browser/Terminal). BrowserPanel e TerminalPanel não têm mais aside/altura/fechar próprios; o último shell fechado remonta o terminal (shellKey)
-- fixar (usePins em workspace.tsx): localStorage zero.pins.side (global) e zero.pins.shell.<chat>; ContextMenu nas abas do SidePanel (data-side-tab) e do Terminal (data-shell-tab); atalhos no ChatHeader (data-pin "side:x"/"shell:id"); fechar o shell tira o pin. Menu ⋯ do chat perdeu "Summarize and learn" (duplicava o Compact now do medidor de contexto)
+- fixar (usePins em workspace.tsx): localStorage zorel.pins.side (global) e zorel.pins.shell.<chat>; ContextMenu nas abas do SidePanel (data-side-tab) e do Terminal (data-shell-tab); atalhos no ChatHeader (data-pin "side:x"/"shell:id"); fechar o shell tira o pin. Menu ⋯ do chat perdeu "Summarize and learn" (duplicava o Compact now do medidor de contexto)
 - Git é aba "git" do SidePanel (GitPanel em git.tsx; useIsRepo); GitControl no cabeçalho só abre essa aba. GitStatus.commits (últimos 15, pushed = fora do ahead). Abas do painel: rótulo sr-only abaixo de @3xl do container (aside @container)
 - diff-view.tsx: enableLineSelection + onLineSelectionEnd → selectedLines controlado + lineAnnotations com CommentBox (renderAnnotation); onComment → texto simples no composer (SidePanel.onAddToChat é texto puro; o Terminal cerca com ``` ele mesmo). Testar seleção por script: pointerdown/up no pai de [data-line-number-content] dentro do shadowRoot de diffs-container
 - GitControl só aparece no título quando a aba git está fixada (pins.side inclui "git")
@@ -62,12 +62,12 @@ updated: 2026-11-03
 - trilho de ícones (pedido do usuário, como a reference app): Rail em sidebar.tsx (lugares + UsageFoot vertical + Settings), Sidebar só com Chats/Projects; App.tsx renderiza Rail + Sidebar; rota #/routines (RoutinesView); Tooltip ganhou placement
 - ChatItem na barra: 2 linhas sem ícone (NavTreeItem detail; nested usa pl-10): título + idade/spinner; embaixo avatares 16px + nomes dos membros, ou modelo, ou estado ao vivo. NavLabel das seções sem ícone (pedido do usuário: menos aglomerado)
 - projeto na barra: subtítulo alinhado (sem pasta/negrito), seta slot="chevron" depois do nome, contagem dim à direita; chats aninhados pl-6 com fio em left-3
-- barra lateral recolhível: useSidebar em state.ts (localStorage zero.sidebar.hidden, ⌘B); Rail tem botão PanelLeftClose/Open e Chats ativo alterna; trilho com border-r
+- barra lateral recolhível: useSidebar em state.ts (localStorage zorel.sidebar.hidden, ⌘B); Rail tem botão PanelLeftClose/Open e Chats ativo alterna; trilho com border-r
 - motion 12.43.0 (pedido do usuário: animar a sidebar): ui/motion.tsx exporta spring, Fold (altura auto com AnimatePresence), SlideWidth (largura, mantém montado, inert quando fechado), Marker (layoutId) e MotionConfig (reducedMotion user em main.tsx). Não misturar classes transition-* em elementos motion
-- notify.tsx: useNotifications(route) em App (Notification API, transições via noteworthy() em labels.ts), NotifySetting em Settings › General (localStorage zero.notify). Pausa: botão no trilho + faixa no App
+- notify.tsx: useNotifications(route) em App (Notification API, transições via noteworthy() em labels.ts), NotifySetting em Settings › General (localStorage zorel.notify). Pausa: botão no trilho + faixa no App
 - Cmd+K: ui/command.tsx (CommandPalette com RAC Autocomplete+Menu, sem filtro interno) e features/palette.tsx (lugares, chats/projetos/agentes filtrados no cliente, mensagens via GET /api/search com debounce 180ms)
 - editar daqui: MessageActions onEdit (só msg do usuário, sem turno vivo) → RewindDialog → mutations.rewind → useAtomRefresh(chatAtom) + setDraft com o texto
 - mcp.tsx CATALOG (presets que preenchem o NewServer; sem OAuth). project.tsx Agents: Select de agente padrão
 - pages.tsx (PageView com Markdown prose-chat, edição, Versions; NewPage); knowledge.tsx ganhou filtro "page"
-- 2026-11-04: Agents com um botão New agent (menu: Build with AI, Blank, Import) e ⋯ por linha (abrir, exportar, apagar); NewAgentMenu/useDeleteAgent em agents.tsx também na aba Agents do projeto. Tela Build with AI = features/builder.tsx (rota builder, #/build/<p>): Timeline exportada do chat.tsx + Composer, prévia parseando args do zero_create_agent (draftsOf). Builder (a.builtin) excluído de listas e pickers. Página do agente em abas (Profile, Tools and access = features/permissions.tsx, Knowledge and activity)
+- 2026-11-04: Agents com um botão New agent (menu: Build with AI, Blank, Import) e ⋯ por linha (abrir, exportar, apagar); NewAgentMenu/useDeleteAgent em agents.tsx também na aba Agents do projeto. Tela Build with AI = features/builder.tsx (rota builder, #/build/<p>): Timeline exportada do chat.tsx + Composer, prévia parseando args do zorel_create_agent (draftsOf). Builder (a.builtin) excluído de listas e pickers. Página do agente em abas (Profile, Tools and access = features/permissions.tsx, Knowledge and activity)
 - testes da web agora rodam no bun test raiz (apps/web incluído)

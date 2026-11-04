@@ -1,8 +1,8 @@
 // Connectors and MCP servers (global in Settings, or per project). Connectors: services people use most, one click
 // (OAuth in the browser, or a token, or nothing). Servers: mode, on/off, test the connection and see the tools each
 // mode exposes, add local (command) or remote (URL) servers. Secrets go to the system keychain.
-import type { McpServer, ToolInfo } from "@zero/contracts"
-import { t } from "@zero/i18n"
+import type { McpServer, ToolInfo } from "@zorel/contracts"
+import { t } from "@zorel/i18n"
 import { type FormEvent, type ReactNode, useEffect, useState } from "react"
 import { type SimpleIcon, siAtlassian, siFigma, siGithub, siLinear, siNotion, siSentry, siStripe, siSupabase, siVercel } from "simple-icons"
 import { splitCommand } from "../labels.ts"
@@ -262,7 +262,7 @@ function Connectors({ servers }: { servers: ReadonlyArray<McpServer> }) {
       <div className="grid items-start gap-2 sm:grid-cols-2">
         {CONNECTORS.map((c) => {
           const server = servers.find((s) => matches(c, s))
-          // attention: the service refused what Zero holds, or an OAuth sign-in never finished.
+          // attention: the service refused what Zorel holds, or an OAuth sign-in never finished.
           const status: Status = !server ? "idle" : state.refused.includes(server.id) || (c.auth === "oauth" && !signedIn.includes(server.id)) ? "attention" : "connected"
           return <ConnectorCard key={c.id} connector={c} server={server} status={status} waiting={!!server && waiting === server.id} onWaiting={setWaiting} />
         })}

@@ -5,7 +5,8 @@ import { registerSecret } from "./observability.ts"
 import { Context, Effect, Layer } from "effect"
 import { Store } from "./db.ts"
 
-const SERVICE = "dev.zero.app"
+const SERVICE = "dev.zorel.app"
+const LEGACY_SERVICE = "dev.zero.app" // before the rename to Zorel: read once, copied to SERVICE
 export const API_KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY"] as const
 
 export interface SecretStore {
@@ -20,12 +21,17 @@ export class Secrets extends Context.Service<Secrets, SecretStore>()("Secrets") 
     Secrets,
     Effect.gen(function* () {
       const store = yield* Store
-      const names = [...API_KEYS, ...(yield* store.mcpServers()).map((s) => mcpEnvName(s.id))]
+      const servers = yield* store.mcpServers()
+      const names = [...API_KEYS, ...servers.map((s) => mcpEnvName(s.id)), ...servers.filter((s) => s.auth === "oauth").map((s) => oauthKey(s.id))]
       return yield* Effect.promise(async () => {
         const cache = new Map<string, string>()
         await Promise.all(
           names.map(async (name) => {
-            const v = await Bun.secrets.get({ service: SERVICE, name }).catch(() => null)
+            let v = await Bun.secrets.get({ service: SERVICE, name }).catch(() => null)
+            if (!v) {
+              v = await Bun.secrets.get({ service: LEGACY_SERVICE, name }).catch(() => null)
+              if (v) await Bun.secrets.set({ service: SERVICE, name, value: v }).catch(() => {})
+            }
             if (v) cache.set(name, v)
           })
         )
@@ -58,6 +64,8 @@ function memoryStore(cache: Map<string, string>, persist: (name: string, value: 
 
 // An MCP server's variables, stored together as JSON.
 export const mcpEnvName = (serverId: string) => `mcp:${serverId}`
+// An OAuth connector's client registration and tokens (oauth.ts).
+export const oauthKey = (serverId: string) => `mcp-oauth:${serverId}`
 export const mcpEnv = (s: SecretStore, serverId: string): Record<string, string> => {
   try {
     return JSON.parse(s.get(mcpEnvName(serverId)) ?? "{}")

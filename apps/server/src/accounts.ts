@@ -1,7 +1,7 @@
 // Provider accounts (ARCHITECTURE §6.1): several logins per provider, each in its own CLI folder.
-// Zero runs the official login/status/logout commands with that folder and only keeps what the CLI
+// Zorel runs the official login/status/logout commands with that folder and only keeps what the CLI
 // reports for display (e-mail, plan). It never reads or stores the token.
-import type { AccountProvider, AccountUsage, AccountWindow, ProviderAccount } from "@zero/contracts"
+import type { AccountProvider, AccountUsage, AccountWindow, ProviderAccount } from "@zorel/contracts"
 import { Context, Effect, Layer, Semaphore } from "effect"
 import { existsSync, mkdirSync, rmSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
@@ -97,7 +97,7 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
       const store = yield* Store
       const dataDir = yield* DataDir
       const root = resolve(dataDir, "accounts")
-      // Default accounts: Claude uses the CLI's own login; Codex always gets a Zero-owned folder (the
+      // Default accounts: Claude uses the CLI's own login; Codex always gets a Zorel-owned folder (the
       // app-server would load the user's config.toml otherwise; see engines/codex.ts).
       yield* store.ensureAccount({ id: defaultId("claude"), label: "Claude", kind: "subscription", provider: "claude", home: null, secret: null, baseUrl: null, identity: null })
       yield* store.ensureAccount({ id: defaultId("codex"), label: "Codex", kind: "subscription", provider: "codex", home: join(root, defaultId("codex")), secret: null, baseUrl: null, identity: null })
@@ -120,7 +120,7 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
           loggedIn: s.loggedIn, identity: s.identity ?? a.identity, loggingIn: logins.has(a.id),
           limitedUntil: a.limitedUntil && a.limitedUntil > Date.now() ? a.limitedUntil : null, usage: usageOf(a), createdAt: a.createdAt
         }))
-      // Only folders Zero created can be deleted.
+      // Only folders Zorel created can be deleted.
       const owned = (home: string | null) => !!home && resolve(home).startsWith(root + sep)
 
       const service: AccountsService = {

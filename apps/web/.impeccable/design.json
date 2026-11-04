@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-11-03T18:00:00Z",
-  "title": "Design System: Zero",
+  "title": "Design System: Zorel",
   "extensions": {
     "colorMeta": {
       "signal-blue": {
@@ -213,7 +213,7 @@
   ],
   "narrative": {
     "northStar": "A Bancada Noturna",
-    "overview": "O Zero é uma bancada de trabalho para quem passa horas com agentes no fim do dia: escura, compacta e silenciosa. A interface some atrás do trabalho. Quem fala é o conteúdo do chat, o código e as decisões dos agentes. O cromo é feito de cinzas quase pretos que se separam por tom, não por linha, e um único azul de sinal marca o que é acionável ou exige atenção.",
+    "overview": "O Zorel é uma bancada de trabalho para quem passa horas com agentes no fim do dia: escura, compacta e silenciosa. A interface some atrás do trabalho. Quem fala é o conteúdo do chat, o código e as decisões dos agentes. O cromo é feito de cinzas quase pretos que se separam por tom, não por linha, e um único azul de sinal marca o que é acionável ou exige atenção.",
     "keyCharacteristics": [
       "Escuro por padrão, profundidade por camadas de tom.",
       "Barra lateral em árvore sobre a moldura e um único cartão de conteúdo.",

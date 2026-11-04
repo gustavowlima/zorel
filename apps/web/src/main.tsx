@@ -1,11 +1,19 @@
 import "./styles.css"
 import { RegistryProvider } from "@effect/atom-react"
-import { locale } from "@zero/i18n"
+import { locale } from "@zorel/i18n"
 import { StrictMode } from "react"
 import { I18nProvider, MotionConfig } from "@/ui"
 import { createRoot } from "react-dom/client"
 import { App } from "./App.tsx"
 import { applyTheme } from "./state.ts"
+
+// Preferences saved before the rename to Zorel (zero.*): copied once to zorel.*.
+try {
+  for (const key of Object.keys(localStorage)) {
+    const next = key.startsWith("zero.") ? `zorel.${key.slice(5)}` : null
+    if (next && localStorage.getItem(next) === null) localStorage.setItem(next, localStorage.getItem(key) ?? "")
+  }
+} catch {} // storage blocked: defaults apply
 
 // Theme: the saved preference, else the system (dark is the tokens' default).
 applyTheme()
@@ -13,7 +21,7 @@ applyTheme()
 // window buttons.
 if (new URLSearchParams(location.search).get("shell") === "desktop") document.documentElement.dataset.shell = "desktop"
 
-// No browser right-click menu over the app: Zero's own menus open where it has one (ContextMenu). Text fields and
+// No browser right-click menu over the app: Zorel's own menus open where it has one (ContextMenu). Text fields and
 // the terminal keep the native one, for copy and paste.
 document.addEventListener("contextmenu", (e) => {
   const el = e.target instanceof Element ? e.target : null
@@ -23,7 +31,7 @@ document.addEventListener("contextmenu", (e) => {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RegistryProvider>
-      {/* React Aria's own strings (drag and drop, tree) follow Zero's language, not the browser's. */}
+      {/* React Aria's own strings (drag and drop, tree) follow Zorel's language, not the browser's. */}
       <I18nProvider locale={locale()}>
         {/* Motion follows the system: no movement when it asks for reduced motion. */}
         <MotionConfig reducedMotion="user">

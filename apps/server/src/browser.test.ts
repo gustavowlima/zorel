@@ -32,7 +32,7 @@ const site = Bun.serve({
       headers: { "content-type": "text/html" }
     })
 })
-const b = new Browsers(mkdtempSync(join(tmpdir(), "zero-browser-")))
+const b = new Browsers(mkdtempSync(join(tmpdir(), "zorel-browser-")))
 afterAll(async () => {
   await b.close()
   site.stop(true)

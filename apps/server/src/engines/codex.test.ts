@@ -11,7 +11,7 @@ const open = (env?: string) => {
   if (env) process.env.FAKE_CODEX = env
   else delete process.env.FAKE_CODEX
   const s = openCodexSession({
-    model: "codex-cli/default", system: "S", cwd: join(tmpdir(), "zero-codex-test"), home: join(tmpdir(), "zero-codex-home"), web: false,
+    model: "codex-cli/default", system: "S", cwd: join(tmpdir(), "zorel-codex-test"), home: join(tmpdir(), "zorel-codex-home"), web: false,
     gatewayUrl: "http://127.0.0.1:9/mcp", access: "ask", approve: async () => false, command: [process.execPath, fake]
   })
   if (typeof s === "string") throw new Error(s)
@@ -28,7 +28,7 @@ test("codex: one process, text across messages, usage and completion per turn", 
   await Effect.runPromise(s.close)
 })
 
-test("codex: without a Zero login the turn fails fast with the login hint", async () => {
+test("codex: without a Zorel login the turn fails fast with the login hint", async () => {
   const s = open("nologin")
   const ev = await turn(s, "oi")
   expect(ev).toHaveLength(1)

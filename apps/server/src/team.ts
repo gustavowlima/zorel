@@ -1,10 +1,10 @@
 // Team tools (ARCHITECTURE §13, phase 4): agents read the team and create or change teammates from the
-// conversation. Four tools, Zero's own like the browser's: zero_list_agents and zero_read_agent only read;
-// zero_create_agent and zero_update_agent always show the person a proposal card (the approval) and write only
+// conversation. Four tools, Zorel's own like the browser's: zorel_list_agents and zorel_read_agent only read;
+// zorel_create_agent and zorel_update_agent always show the person a proposal card (the approval) and write only
 // on their OK. A teammate never gets more access than the agent proposing it has (ask < workspace < full), and
 // an agent can only narrow a teammate's access, never widen it: widening is the person's, on the agent's page.
 // Models are checked by provider (any model of a known provider can be typed, as in the picker).
-import { type Access, type Agent, type AgentPermissions, DEFAULT_PERMISSIONS, type Effort, type Grant } from "@zero/contracts"
+import { type Access, type Agent, type AgentPermissions, DEFAULT_PERMISSIONS, type Effort, type Grant } from "@zorel/contracts"
 import { handleOf } from "./context.ts"
 import { PROVIDERS } from "./engines.ts"
 
@@ -19,22 +19,22 @@ const POWERS = {
 
 export const TEAM_TOOLS = [
   {
-    name: "zero_list_agents",
+    name: "zorel_list_agents",
     description:
       "List the agents you can work with: id, @handle, name, title, description (first 300 characters), model, access, scope (this project or global) and whether one is working now. Match work outside your remit to titles and descriptions.",
     inputSchema: { properties: {} },
     writes: false
   },
   {
-    name: "zero_read_agent",
+    name: "zorel_read_agent",
     description: "Read one agent's whole setup: profile, instructions, model, effort, fallbacks and access. agent: an id or @handle.",
     inputSchema: { properties: { agent: { type: "string" } }, required: ["agent"] },
     writes: false
   },
   {
-    name: "zero_create_agent",
+    name: "zorel_create_agent",
     description:
-      "Propose new persistent teammates when the user asks for them: one (the fields below) or a whole team at once (agents: a list of the same fields, up to 8). The user sees every profile in one card and approves before any exists. Without model, each gets yours. Access is at most yours. scope: 'project' (default, this chat's project) or 'global'. Use zero_update_agent for an existing agent.",
+      "Propose new persistent teammates when the user asks for them: one (the fields below) or a whole team at once (agents: a list of the same fields, up to 8). The user sees every profile in one card and approves before any exists. Without model, each gets yours. Access is at most yours. scope: 'project' (default, this chat's project) or 'global'. Use zorel_update_agent for an existing agent.",
     inputSchema: {
       properties: {
         agents: {
@@ -70,7 +70,7 @@ export const TEAM_TOOLS = [
     writes: true
   },
   {
-    name: "zero_update_agent",
+    name: "zorel_update_agent",
     description:
       "Propose changes to an agent's name, title, description, instructions, model, effort or access, from the user's request; the user approves them first. You can narrow access, never widen it. agent: an id or @handle.",
     inputSchema: {
@@ -94,7 +94,7 @@ export type TeamToolName = (typeof TEAM_TOOLS)[number]["name"]
 // Memory beyond the prompt's budget: the agent searches it when it needs to (the turn already brings the most
 // recently confirmed and the few that match the message). Read only; scopes are the chat's.
 export const MEMORY_TOOL = {
-  name: "zero_search_memories",
+  name: "zorel_search_memories",
   description:
     "Search what you and the team learned (the user's preferences, this project's facts, your own work notes) beyond what is already in your context. query: words to look for. Returns up to 10 memories, best match first.",
   inputSchema: { properties: { query: { type: "string" } }, required: ["query"] },
@@ -105,13 +105,13 @@ export const MEMORY_TOOL = {
 // the reason. Proposals wait for the person in Knowledge, who sees what changes before approving.
 export const SKILL_TOOLS = [
   {
-    name: "zero_read_skill",
+    name: "zorel_read_skill",
     description: "Read the full steps of a skill listed in your context (by its title). Follow it when the task matches.",
     inputSchema: { properties: { skill: { type: "string" } }, required: ["skill"] },
     writes: false
   },
   {
-    name: "zero_propose_skill",
+    name: "zorel_propose_skill",
     description:
       "Propose a skill: a procedure worth repeating (steps that worked, a fix for a dead end, how the user wants something done). title: short name; steps: the recipe, up to 15 lines; reason: why, in a sentence. To improve an existing skill, pass its title in improves (the user sees the change before approving). scope: 'project' (default in a project), 'agent' (yours) or 'user'. Nothing changes until the user approves it.",
     inputSchema: {
@@ -294,7 +294,7 @@ export const proposalText = (fields: Record<string, unknown>) =>
 
 // Routines from the conversation (phase 7): list them, or propose one or its removal (both are approval cards).
 export const ROUTINES_TOOL = {
-  name: "zero_routines",
+  name: "zorel_routines",
   description:
     "Recurring work. action 'list': the routines of the agents here. action 'create': propose one (name, prompt = what the agent should do each run, cron = 5-field pattern like '0 9 * * 1-5', agent = who runs it, default you); the user approves it first. action 'cancel': propose removing one (routine = its id).",
   inputSchema: {
@@ -320,10 +320,10 @@ export const BUILDER = {
   instructions: [
     "You design agents for the user. You do no other work.",
     "1. Understand the goal: what should get done, in which project, how often, with what tools or accounts. Ask at most 3 short questions, only what you can't infer; otherwise propose right away.",
-    "2. Call zero_list_agents first so you don't duplicate an existing teammate; prefer improving one (zero_update_agent) over adding a near-copy.",
-    "3. Propose the whole team in ONE zero_create_agent call (agents: [...]): one clear responsibility each, a title of a few words, a one-sentence description other agents can route by, and focused instructions (what to do, how to report, when to hand off to whom by @handle). Small teams win: 1 to 4 agents unless the user asks for more.",
+    "2. Call zorel_list_agents first so you don't duplicate an existing teammate; prefer improving one (zorel_update_agent) over adding a near-copy.",
+    "3. Propose the whole team in ONE zorel_create_agent call (agents: [...]): one clear responsibility each, a title of a few words, a one-sentence description other agents can route by, and focused instructions (what to do, how to report, when to hand off to whom by @handle). Small teams win: 1 to 4 agents unless the user asks for more.",
     "4. Give each agent the least it needs (as in a good hire's first day): web and browser only if the work needs them, connectors by name with read unless it must write, access 'workspace' for code work. Leave model unset unless the user asks. Add reason (why this agent, one sentence). Code work belongs to a project: if this chat has no project (no project section in your context) and the user didn't ask for a global agent, don't propose yet; ask them to pick the project in the Project selector above the message box, or to say it's for every project.",
-    "5. If the work is recurring, propose routines with zero_routines (action create) after the agents exist.",
+    "5. If the work is recurring, propose routines with zorel_routines (action create) after the agents exist.",
     "6. End with what each agent does and how to start: which one to @mention for what."
   ].join("\n"),
   access: "ask" as const
@@ -333,19 +333,19 @@ export const BUILDER = {
 // write is a version the user can restore); a page about the user waits for the user's OK.
 export const KNOWLEDGE_TOOLS = [
   {
-    name: "zero_knowledge_search",
+    name: "zorel_knowledge_search",
     description: "Search the knowledge pages (decisions, how-tos, references, notes) of the user, this project and you. Returns titles, ids and the words around the match.",
     inputSchema: { properties: { query: { type: "string" } }, required: ["query"] },
     writes: false
   },
   {
-    name: "zero_knowledge_read",
+    name: "zorel_knowledge_read",
     description: "Read a whole knowledge page. page: its id (from the search or the pinned list) or its exact title.",
     inputSchema: { properties: { page: { type: "string" } }, required: ["page"] },
     writes: false
   },
   {
-    name: "zero_knowledge_write",
+    name: "zorel_knowledge_write",
     description:
       "Create or update a knowledge page in Markdown: a decision and why, a how-to that worked, a gotcha, a reference. page: an existing page's id to update (send the whole new body). scope: 'project' (default), 'agent' (your own notes) or 'user' (about the user: they approve it first). Keep pages short and current; update instead of duplicating.",
     inputSchema: {

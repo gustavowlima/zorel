@@ -14,11 +14,11 @@ web
 
 **Trabalho a ser feito:** levar uma tarefa de código do pedido ao resultado com agentes que conhecem o projeto, continuar de onde parou (qualquer pessoa, qualquer modelo) e manter controle sobre o que os agentes fazem.
 
-**Decisão em aberto:** como a equipe compartilha o Zero antes do modo hospedado (fase 8 da arquitetura). Opções: um server do Zero acessado pela rede da equipe ou adiantar parte da fase 8 (login e papéis simples). Nada desta decisão está implementado.
+**Decisão em aberto:** como a equipe compartilha o Zorel antes do modo hospedado (fase 8 da arquitetura). Opções: um server do Zorel acessado pela rede da equipe ou adiantar parte da fase 8 (login e papéis simples). Nada desta decisão está implementado.
 
 ## Product Purpose
 
-O Zero é um workspace de agentes de IA organizado em **projetos**, com uma **equipe de agentes** por projeto e **chats** avulsos. Ele roda os harnesses que a pessoa já usa (Claude Code, Codex, OpenCode e outras CLIs via ACP) e guarda o contexto e o conhecimento do trabalho.
+O Zorel é um workspace de agentes de IA organizado em **projetos**, com uma **equipe de agentes** por projeto e **chats** avulsos. Ele roda os harnesses que a pessoa já usa (Claude Code, Codex, OpenCode e outras CLIs via ACP) e guarda o contexto e o conhecimento do trabalho.
 
 **Sucesso:** abrir um chat novo, ou trocar de modelo, e o agente já sabe o que foi decidido, o que falhou e como as coisas são feitas no projeto, sem ninguém reexplicar. Tudo que um agente faz que muda algo fica visível e passa pelo nível de aprovação escolhido.
 
@@ -26,7 +26,7 @@ O Zero é um workspace de agentes de IA organizado em **projetos**, com uma **eq
 
 O que T3 Code, a reference app e Claude Code não podem dizer com verdade:
 
-1. **O contexto é do Zero, não da sessão da CLI.** Trocar de modelo ou de provider a qualquer momento não perde nada. O contexto é montado em camadas pelo Zero e serve de ponto de retomada para qualquer harness.
+1. **O contexto é do Zorel, não da sessão da CLI.** Trocar de modelo ou de provider a qualquer momento não perde nada. O contexto é montado em camadas pelo Zorel e serve de ponto de retomada para qualquer harness.
 2. **Aprende trabalhando.** O trabalho vira conhecimento do projeto (decisões, armadilhas, como-fazer, sessões) com versões e desfazer. O que é sobre a pessoa passa pela aprovação dela.
 3. **Equipe de agentes com responsabilidades.** Os agentes delegam entre si, com aprovações claras e a troca entre eles visível no chat.
 4. **Usa o que você já paga.** Assinaturas pela CLI oficial e chaves de API (via OpenCode), com várias contas por provider, troca automática opcional quando o limite acaba e consumo visível.
@@ -34,7 +34,7 @@ O que T3 Code, a reference app e Claude Code não podem dizer com verdade:
 ## Operating Context
 
 - **Uso:** no desktop (app Electrobun) e no navegador local. O modo hospedado vem depois.
-- **Rotina:** abrir um projeto, falar com o agente líder ou mencionar um colega com `@`, aprovar ações, revisar o que o Zero aprendeu e alternar modelo ou conta conforme custo e limite.
+- **Rotina:** abrir um projeto, falar com o agente líder ou mencionar um colega com `@`, aprovar ações, revisar o que o Zorel aprendeu e alternar modelo ou conta conforme custo e limite.
 - **Ferramentas ao redor:** git, editor, terminal e servidores MCP (GitHub, Linear, Notion…), sempre escolhidos por projeto.
 
 ## Capabilities and Constraints
@@ -46,12 +46,12 @@ O que T3 Code, a reference app e Claude Code não podem dizer com verdade:
 - **Ferramentas:** MCP por projeto, com política leitura / aprovação / automático.
 - **Interface só em inglês por enquanto**, com i18n desde o início. O conteúdo do usuário nunca é traduzido.
 - **Leve:** um processo, um arquivo de banco, nenhum serviço externo obrigatório.
-- **Termos dos providers:** o Zero nunca lê nem guarda o login das CLIs. Assinatura via app de terceiros é zona cinzenta e é avisada.
+- **Termos dos providers:** o Zorel nunca lê nem guarda o login das CLIs. Assinatura via app de terceiros é zona cinzenta e é avisada.
 - **Detalhes técnicos e fases:** `docs/ARCHITECTURE.md` na raiz do repositório.
 
 ## Brand Commitments
 
-- **Nome definitivo: Zero.** Existe uma CLI de agente chamada "gitlawb/zero" com o mesmo nome. A decisão de manter o nome está tomada e é consciente.
+- **Nome: Zorel** (trocado de "Zero" em 2026-11-04: "Zero" colidia com outros produtos e não tinha domínio). Domínio próprio: zorel.dev.
 - **Open source, Apache-2.0.**
 - **Tom:** direto, técnico, sem jargão vazio.
 - **Direção visual:** escolhida pelo usuário como compromisso, **inspirada no a reference app** (só referência; nenhum código ou CSS copiado). Os detalhes vivem no `DESIGN.md`.

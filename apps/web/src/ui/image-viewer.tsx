@@ -1,4 +1,4 @@
-// An image opened inside Zero: a modal over the dimmed app with the image as large as fits, its name, a link to
+// An image opened inside Zorel: a modal over the dimmed app with the image as large as fits, its name, a link to
 // the original and a close button. React Aria's modal: Esc, a click outside or the button closes it, focus is
 // trapped inside and returns to the thumbnail. The trigger is the thumbnail itself (a pressable button).
 import type { ReactNode } from "react"

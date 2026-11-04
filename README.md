@@ -1,10 +1,10 @@
-# Zero
+# Zorel
 
 Workspace open source de agentes de IA com **projetos**, **agentes de projeto**, **canais com vários agentes** e **chats**. O contexto é otimizado e o aprendizado é contínuo (memórias e skills). Os agentes usam **ferramentas MCP** com a sua aprovação. Você troca de modelo a qualquer mensagem, usando sua **assinatura** (Claude Code, Codex) ou um **token de API** (Anthropic, OpenAI, OpenRouter, Ollama, LM Studio). Roda como app web ou desktop.
 
 ## Por que
 
-Ferramentas como o a reference app mantêm uma sessão longa por agente, e o contexto acumula ali dentro. No Zero, nenhuma sessão de CLI guarda estado. Cada turno é montado do zero, em camadas e com orçamento:
+Ferramentas como o a reference app mantêm uma sessão longa por agente, e o contexto acumula ali dentro. No Zorel, nenhuma sessão de CLI guarda estado. Cada turno é montado do zero, em camadas e com orçamento:
 
 ```
 base → agente → canal → memórias do usuário → projeto (brief + memórias) → memórias do agente
@@ -51,7 +51,7 @@ bun run test
 bun run typecheck
 ```
 
-Os dados ficam em `~/.zero` (mude com `ZERO_HOME`). O server escuta só em `127.0.0.1`.
+Os dados ficam em `~/.zorel` (mude com `ZOREL_HOME`). O server escuta só em `127.0.0.1`.
 
 ## Modelos
 
@@ -69,9 +69,9 @@ O id é `<provider>/<modelo>`, e qualquer modelo pode ser digitado no seletor.
 
 As chaves salvas pela interface vão para o chaveiro do sistema (`Bun.secrets`). Uma variável de ambiente tem precedência.
 
-As assinaturas sempre rodam a **CLI oficial** que você já tem logada. O Zero nunca lê nem guarda o login OAuth dela. A CLI roda sem sessão salva, sem shell nem arquivos, sem seus hooks ou plugins, e só com as ferramentas do gateway. Cada provider tem termos próprios para uso por apps de terceiros. Usar uma assinatura de várias pessoas por um único Zero é arriscado.
+As assinaturas sempre rodam a **CLI oficial** que você já tem logada. O Zorel nunca lê nem guarda o login OAuth dela. A CLI roda sem sessão salva, sem shell nem arquivos, sem seus hooks ou plugins, e só com as ferramentas do gateway. Cada provider tem termos próprios para uso por apps de terceiros. Usar uma assinatura de várias pessoas por um único Zorel é arriscado.
 
-`ZERO_MEMORY_MODEL` define o modelo da consolidação. Sem ela, usa o modelo do chat.
+`ZOREL_MEMORY_MODEL` define o modelo da consolidação. Sem ela, usa o modelo do chat.
 
 ## Estrutura
 
@@ -79,7 +79,7 @@ As assinaturas sempre rodam a **CLI oficial** que você já tem logada. O Zero n
 packages/contracts   API e entidades (Effect Schema): fonte única de tipos do server e do web
 apps/server          Bun + Effect HttpApi + Drizzle sobre SQLite (@effect/sql-sqlite-bun)
   schema.ts          tabelas (Drizzle); `bun run --cwd apps/server db:generate` gera a migration em drizzle/
-  migrate.ts         adoção do banco do MVP e backup em ~/.zero/backups antes de migrar
+  migrate.ts         adoção do banco do MVP e backup em ~/.zorel/backups antes de migrar
   db.ts              repositório (Effect), índice FTS5 de memórias e skills
   engines.ts         engines de CLI (Claude Code, Codex) e de API (effect/ai, com loop de ferramentas)
   context.ts         montagem do turno em camadas, menções, prompt e parser da consolidação

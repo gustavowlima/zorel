@@ -1,7 +1,7 @@
 // Per-agent permissions (ARCHITECTURE §9.2; ideas from a reference app, own code): which MCP tools an agent sees and which
 // wait for the person, whether it may use the browser, and the "always allow" rules it was given. `access`
 // (files and shell) stays the engine's sandbox; this covers everything that reaches past the folder.
-import { type AgentPermissions, DEFAULT_PERMISSIONS, type Grant, type McpServer, type ToolInfo } from "@zero/contracts"
+import { type AgentPermissions, DEFAULT_PERMISSIONS, type Grant, type McpServer, type ToolInfo } from "@zorel/contracts"
 
 export const permissionsOf = (agent: { permissions?: AgentPermissions } | undefined): AgentPermissions => agent?.permissions ?? DEFAULT_PERMISSIONS
 
@@ -35,9 +35,9 @@ export function browserRoute(p: AgentPermissions, name: string, args: Record<str
   return { approve: false, alwaysKey: null }
 }
 
-// An agent asking for more than it has (zero_request_access): the person approves on a card.
+// An agent asking for more than it has (zorel_request_access): the person approves on a card.
 export const REQUEST_ACCESS_TOOL = {
-  name: "zero_request_access",
+  name: "zorel_request_access",
   description:
     "Ask the user for access you don't have: what = 'web' (search and read pages), 'browser' (your own browser) or a connector's name (an MCP server here) with level 'read' or 'write'. Say why in reason. The user approves or declines on a card; granted access works from your next turn.",
   inputSchema: {

@@ -1,10 +1,10 @@
-# Desktop package (D11). The app is only the Electron main process; the Zero server (compiled Bun binary), the web
+# Desktop package (D11). The app is only the Electron main process; the Zorel server (compiled Bun binary), the web
 # build and the migrations ship as resources next to it. Signing: with CSC_LINK + CSC_KEY_PASSWORD (and APPLE_ID +
 # APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID to notarize) it's a Developer ID build, the only kind current macOS
 # runs: ad hoc builds and builds signed with an "Apple Development" certificate are refused by AMFI (tested
 # 2026-11-04). Without a Developer ID, run the app with `bun run desktop` (dev).
-appId: dev.zero.app
-productName: Zero
+appId: dev.zorel.app
+productName: Zorel
 directories:
   output: artifacts
   buildResources: assets
@@ -15,7 +15,7 @@ files:
   - package.json
 asar: true
 extraResources:
-  - { from: build/zero-server, to: zero-server }
+  - { from: build/zorel-server, to: zorel-server }
   - { from: build/web, to: web }
   - { from: build/drizzle, to: drizzle }
 # Only the app's languages: drops ~40 MB of Chromium locales.
@@ -24,8 +24,8 @@ electronLanguages: [en, pt-BR]
 # environment; without them the app is built the same and just never finds an update.
 publish:
   provider: github
-  owner: ${env.ZERO_RELEASE_OWNER}
-  repo: ${env.ZERO_RELEASE_REPO}
+  owner: ${env.ZOREL_RELEASE_OWNER}
+  repo: ${env.ZOREL_RELEASE_REPO}
 mac:
   target: [dmg, zip] # zip: what the updater downloads on macOS
   icon: assets/icon.png

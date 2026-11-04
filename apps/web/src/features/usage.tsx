@@ -3,9 +3,9 @@
 // day, the token totals, the subscriptions' limit windows, a breakdown table (model, agent, project, account,
 // day: the day view is the chart as a table) and the most expensive turns. Filters (agent, metric, range) sit
 // in one row in the header and scope everything below. Subscriptions show the API equivalent, not a charge.
-import { LIMIT_ALERT, type ProviderAccount, type UsageRow } from "@zero/contracts"
+import { LIMIT_ALERT, type ProviderAccount, type UsageRow } from "@zorel/contracts"
 import { useAtomValue } from "@effect/atom-react"
-import { formatAge, formatCompact, formatDate, formatDuration, formatPercent, t } from "@zero/i18n"
+import { formatAge, formatCompact, formatDate, formatDuration, formatPercent, t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { type KeyboardEvent, type PointerEvent, useEffect, useMemo, useState } from "react"
 import { accountsAtom, agentsAtom, mutations, projectsAtom, topTurnsAtom, usageAtom, useList, useMutation } from "../client.ts"

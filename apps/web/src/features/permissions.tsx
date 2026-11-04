@@ -3,8 +3,8 @@
 // (no access / read), its own browser (no access / use it), and each connector (no access / read / read and
 // write). Under them, the actions allowed for good from an approval card, each removable. Destructive actions
 // always ask (server rule). Used by the agent page and by Build with AI.
-import type { Access, AgentPermissions, Grant, McpServer } from "@zero/contracts"
-import { t } from "@zero/i18n"
+import type { Access, AgentPermissions, Grant, McpServer } from "@zorel/contracts"
+import { t } from "@zorel/i18n"
 import type { ReactNode } from "react"
 import { cx, Globe, IconButton, MousePointerClick, Plug, Segmented, SquareTerminal, X } from "@/ui"
 

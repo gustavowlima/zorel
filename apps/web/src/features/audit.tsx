@@ -2,9 +2,9 @@
 // every approval or undo, newest first by day, with who did it and the fields before → after. Filters by kind,
 // words and a span of days run on the server, which sends one page of 50 and the total. Records come from the server's Audit service (evlog audit events in SQLite).
 import { useAtomValue } from "@effect/atom-react"
-import type { AuditEntry, AuditKind } from "@zero/contracts"
+import type { AuditEntry, AuditKind } from "@zorel/contracts"
 import { AsyncResult } from "effect/reactivity"
-import { formatDate, formatTime, type MessageKey, t } from "@zero/i18n"
+import { formatDate, formatTime, type MessageKey, t } from "@zorel/i18n"
 import { type ReactNode, useEffect, useState } from "react"
 import { agentsAtom, auditAtom, useInvalidate, useList } from "../client.ts"
 import { ReadingState } from "./reading.tsx"

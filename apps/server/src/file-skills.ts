@@ -1,11 +1,11 @@
 // Skills already on this computer (as in a reference app's local skills): the person's own SKILL.md files for Claude Code,
-// Codex and other agents, and Claude Code plugins'. Zero lists them (name, description, where from); the person
-// picks which ones Zero's agents use. A picked skill is read from its file when an agent reads it, so it stays
+// Codex and other agents, and Claude Code plugins'. Zorel lists them (name, description, where from); the person
+// picks which ones Zorel's agents use. A picked skill is read from its file when an agent reads it, so it stays
 // current and nothing is copied. Only a path found by this scan can be picked (never an arbitrary file).
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import type { Memory } from "@zero/contracts"
+import type { Memory } from "@zorel/contracts"
 
 export interface FileSkill {
   readonly path: string // the SKILL.md (real path)

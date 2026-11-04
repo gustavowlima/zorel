@@ -1,12 +1,12 @@
 # Referências: o que foi aproveitado e o que não foi
 
-Mapa de rastreabilidade. Para cada boa prática das três referências estudadas, diz onde ela está aplicada no Zero, com o arquivo e o teste que a cobre, ou por que ficou de fora. Atualize ao mudar a decisão.
+Mapa de rastreabilidade. Para cada boa prática das três referências estudadas, diz onde ela está aplicada no Zorel, com o arquivo e o teste que a cobre, ou por que ficou de fora. Atualize ao mudar a decisão.
 
 Licenças: a reference app é Apache-2.0 e o código derivado tem atribuição no `NOTICE`. T3 Code é MIT, e dele vieram ideias de arquitetura, não código. a reference app é PolyForm Noncommercial: **só ideias, nenhum código**.
 
 ## a reference app
 
-| Prática | No Zero | Verificação |
+| Prática | No Zorel | Verificação |
 |---|---|---|
 | CLI sem sessão: o contexto é montado pelo app a cada turno | `engines.ts` (`--no-session-persistence`, `--ephemeral`), `context.ts` | `engines.test.ts` (args), turno real com 658 tokens de entrada |
 | CLI isolada: sem ferramentas próprias, sem config, hooks ou plugins do usuário | `claudeArgs`, `codexArgs` | `engines.test.ts` |
@@ -29,20 +29,20 @@ Licenças: a reference app é Apache-2.0 e o código derivado tem atribuição n
 
 ## T3 Code
 
-| Prática | No Zero | Verificação |
+| Prática | No Zorel | Verificação |
 |---|---|---|
 | Contrato único com Effect Schema; server e clientes seguem o schema | `packages/contracts` + `HttpApiClient` no web | `tsc` nos dois lados, 400 na fronteira (`main.test.ts`) |
 | Effect services e Layers, com teste trocando a implementação | `Store`, `Secrets`, `Engines`, `Tools`, `DataDir` | `main.test.ts` (Secrets.memory, engine falso) |
 | "Toda entrada tem saída" (reverse states) | apagar projeto/agente/chat/servidor; esquecer → **restaurar** memória; desligar → ligar servidor | `main.test.ts` (aprendizado) |
 | Não fixar origens no bundle | o web usa `location.origin` e o proxy do Vite | — |
 | Single origin em produção | o server serve `apps/web/dist` (`WebRoute`) | `.app` estável testado |
-| Troca de provider sem perder contexto | trivial: contexto é do Zero, não da sessão | `main.test.ts` (troca), teste real Claude → Codex |
-| **Fora:** checkpoints de git, worktrees, mobile, túnel remoto, integrações de source control | — | Foco em coding remoto. Fora do escopo do Zero. |
+| Troca de provider sem perder contexto | trivial: contexto é do Zorel, não da sessão | `main.test.ts` (troca), teste real Claude → Codex |
+| **Fora:** checkpoints de git, worktrees, mobile, túnel remoto, integrações de source control | — | Foco em coding remoto. Fora do escopo do Zorel. |
 | **Fora:** compactação antes do cache expirar | — | Não se aplica: não há sessão nativa para compactar. |
 
 ## a reference app (só ideias)
 
-| Prática | No Zero | Verificação |
+| Prática | No Zorel | Verificação |
 |---|---|---|
 | Fronteira de confiança estrita no server local | `LocalOnly`: Host local contra DNS rebinding, Origin local contra CSRF; escuta só 127.0.0.1 | `main.test.ts` (só local) |
 | Segredo nunca em arquivo nem log; redigido | valores no chaveiro; `envKeys` guarda só nomes; chaves nunca voltam na API | `main.test.ts` (chaves) |
@@ -59,7 +59,7 @@ Licenças: a reference app é Apache-2.0 e o código derivado tem atribuição n
 
 ## Outras referências avaliadas
 
-| Projeto | Licença | O que veio para o Zero | O que não veio |
+| Projeto | Licença | O que veio para o Zorel | O que não veio |
 |---|---|---|---|
 | [Zeron](https://github.com/zeronsh/zeron) (Rust) | MIT | Marcação "até onde cada sessão leu" por provider: na troca, só o delta é reenviado (ARCHITECTURE §7). Server do desktop em background separado da janela (D11) | Sincronização por CRDT e relay; interface em gpui |
 | [ai-memory](https://github.com/akitaonrails/ai-memory) (Rust) | MIT | Handoff tipado oferecido, não consumido; retenção por uso sem LLM; contexto L0/L1; limpeza de segredos; versões; avaliação de recall (§8, memória 2) | Markdown em git como fonte da verdade; captura por hooks; servidor multiusuário |

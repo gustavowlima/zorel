@@ -2,8 +2,8 @@
 // Placeholders: {name}. User content (briefs, memories, messages, names) never comes through here.
 export const en = {
   app: {
-    name: "Zero",
-    offline: "Can't reach the Zero server. Retrying…",
+    name: "Zorel",
+    offline: "Can't reach the Zorel server. Retrying…",
     loading: "Loading…"
   },
   time: {
@@ -28,7 +28,7 @@ export const en = {
     retry: "Try again",
     checking: "Checking…",
     loadFailed: "Couldn't read this",
-    loadFailedHint: "Zero's server didn't answer. Check that it is running, then try again.",
+    loadFailedHint: "Zorel's server didn't answer. Check that it is running, then try again.",
     copy: "Copy",
     copied: "Copied",
     assistant: "Assistant",
@@ -286,7 +286,7 @@ export const en = {
     titleField: "Title",
     steps: "Steps",
     empty: "Nothing here yet",
-    emptyHint: "Summarize a chat and Zero proposes what's worth keeping.",
+    emptyHint: "Summarize a chat and Zorel proposes what's worth keeping.",
     noMatch: "Nothing matches",
     select: "Pick a memory to read it",
     approve: "Approve",
@@ -308,7 +308,7 @@ export const en = {
   },
   usage: {
     title: "Usage",
-    subtitle: "What your agents used, from Zero's own records",
+    subtitle: "What your agents used, from Zorel's own records",
     range: "Range",
     thisMonth: "This month",
     days: { one: "Last day", other: "Last {count} days" },
@@ -436,7 +436,7 @@ export const en = {
     },
     export: "Export",
     import: "Import",
-    importNotAgent: "That file isn't an agent exported from Zero.",
+    importNotAgent: "That file isn't an agent exported from Zorel.",
     importFailed: "Couldn't import that file.",
     newTitle: "New agent",
     name: "Name",
@@ -484,14 +484,14 @@ export const en = {
     hint: {
       general: "Theme and other preferences",
       providers: "Subscriptions, API keys and local servers",
-      storage: "What Zero keeps on this computer",
+      storage: "What Zorel keeps on this computer",
       audit: "Who changed what, and when",
       mcp: "GitHub, Notion and other tools agents use",
       skills: "Procedures agents follow"
     }
   },
   accounts: {
-    intro: "Each account signs in with the provider's official CLI, in its own folder. Zero never reads or stores the login: it only shows who is connected. Using several subscriptions to get around limits may break the provider's terms.",
+    intro: "Each account signs in with the provider's official CLI, in its own folder. Zorel never reads or stores the login: it only shows who is connected. Using several subscriptions to get around limits may break the provider's terms.",
     default: "Default",
     signedIn: "Signed in",
     addFailed: "Couldn't add the account. Try again.",
@@ -535,7 +535,7 @@ export const en = {
     checking: "Checking…",
     checkAgain: "Check again",
     loadFailed: "Couldn't read the providers",
-    loadFailedHint: "Zero's server didn't answer. Check that it is running, then retry.",
+    loadFailedHint: "Zorel's server didn't answer. Check that it is running, then retry.",
     addKey: "Add key",
     replaceKey: "Replace key",
     server: "Local server",
@@ -561,7 +561,7 @@ export const en = {
     emptyHint: "Type an address above, or ask an agent to open one. Sites you sign into here stay signed in."
   },
   storage: {
-    onThisComputer: "Zero on this computer",
+    onThisComputer: "Zorel on this computer",
     measured: "Measured {age}",
     free: "{size} free on this disk",
     measure: "Measure again",
@@ -671,7 +671,7 @@ export const en = {
     windowUnknown: "{used} tokens (the model's window isn't known)",
     parts: { instructions: "Instructions and project", memories: "Memories", skills: "Skills", summary: "Summary", messages: "Messages" },
     free: "Free",
-    autoCompact: "Zero compacts on its own after {after} messages ({now} now).",
+    autoCompact: "Zorel compacts on its own after {after} messages ({now} now).",
     estimate: "The parts are estimated at about 4 characters a token; the engine adds its own prompt and tools on top.",
     lastRead: "The last reply read {tokens} tokens, with the engine's own prompt and tools.",
     compactNow: "Compact now",
@@ -719,7 +719,7 @@ export const en = {
     }
   },
   mcp: {
-    intro: "Servers you added. Secrets live in the system keychain, never in Zero's database.",
+    intro: "Servers you added. Secrets live in the system keychain, never in Zorel's database.",
     projectIntro: "Available in this project's chats, on top of the global ones.",
     empty: "No custom servers",
     emptyHint: "Any other MCP server: a command on this computer or a remote URL. Agents use its tools with your approval.",
@@ -767,12 +767,12 @@ export const en = {
   },
   skills: {
     intro: "Learned while working or added by you. A skill enters an agent's context only when the message needs it.",
-    listTitle: "Zero's skills",
+    listTitle: "Zorel's skills",
     nativeTitle: "Your models' skills",
     native: "Let Claude Code and Codex use their own skills",
-    nativeHint: "The skills you set up in them (~/.claude/skills, plugins, Codex's) work in Zero's chats as in their own apps. Applies from each chat's next session.",
+    nativeHint: "The skills you set up in them (~/.claude/skills, plugins, Codex's) work in Zorel's chats as in their own apps. Applies from each chat's next session.",
     files: "From this computer",
-    filesHint: "Skills you already have for Claude Code, Codex and other agents, and your plugins'. Turn on the ones Zero's agents should use: they're read from the file each time, so edits show up right away.",
+    filesHint: "Skills you already have for Claude Code, Codex and other agents, and your plugins'. Turn on the ones Zorel's agents should use: they're read from the file each time, so edits show up right away.",
     inUse: { one: "1 in use", other: "{count} in use" },
     search: "Search {count} skills",
     show: "Show",
@@ -781,7 +781,7 @@ export const en = {
     source: { claude: "Claude Code", agents: "Agents", codex: "Codex", plugin: "Claude Code plugins" },
     use: "Use {name}",
     noFiles: "No skill files found",
-    noFilesHint: "Zero looks in ~/.claude/skills, ~/.codex/skills, ~/.agents/skills and Claude Code's plugins.",
+    noFilesHint: "Zorel looks in ~/.claude/skills, ~/.codex/skills, ~/.agents/skills and Claude Code's plugins.",
     noMatch: "No skill matches.",
     emptyHint: "Agents propose skills as they work, and you can write one in Knowledge.",
     empty: "No skills yet",
@@ -797,7 +797,7 @@ export const en = {
   appearance: {
     notifications: "Notifications",
     startup: "Startup",
-    openAtLogin: "Open Zero when you log in",
+    openAtLogin: "Open Zorel when you log in",
     openAtLoginHint: "It starts without a window, so routines and agents keep running after a restart. Open it from the Dock or the tray.",
     title: "Appearance",
     theme: "Theme",
@@ -885,13 +885,13 @@ export const en = {
   },
   workspace: {
     folder: "Folder",
-    folderHint: "The project folder on this computer, e.g. /Users/you/dev/app. Agents read, edit and run commands in it. Empty: they work in an empty Zero folder.",
+    folderHint: "The project folder on this computer, e.g. /Users/you/dev/app. Agents read, edit and run commands in it. Empty: they work in an empty Zorel folder.",
     folderPlaceholder: "/path/to/project",
     invalid: {
       relative: "Use the full path, starting with /.",
       missing: "That folder doesn't exist.",
       not_directory: "That's a file, not a folder.",
-      forbidden: "Zero won't use the disk root, your home folder or its own data folder."
+      forbidden: "Zorel won't use the disk root, your home folder or its own data folder."
     },
     changes: "Changes",
     files: "Files",

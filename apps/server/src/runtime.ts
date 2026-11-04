@@ -2,8 +2,8 @@
 // The turn doesn't depend on the client: closing the tab stops nothing; reconnect = subscribe again (snapshot + events).
 // Chaining: a reply that mentions another member queues that member's turn (up to MAX_DEPTH without a message from you).
 import { APPROVAL_MS } from "./engines/session.ts"
-import type { Access, Agent, Chat, Effort, FailoverTarget, FailureReason, FileChange, Step, Switch } from "@zero/contracts"
-import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zero/contracts/events"
+import type { Access, Agent, Chat, Effort, FailoverTarget, FailureReason, FileChange, Step, Switch } from "@zorel/contracts"
+import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
 import { consolidate, DataDir, members, prepare } from "./chat.ts"
@@ -238,7 +238,7 @@ export const makeRuntime = Effect.gen(function* () {
         defs.push({ name, description: t.description, inputSchema: t.inputSchema })
       }
     }
-    // The chat's browser: Zero's own tools, always there. Reading never asks; acting asks when the agent's
+    // The chat's browser: Zorel's own tools, always there. Reading never asks; acting asks when the agent's
     // access is "ask", like any tool that writes.
     if (perms.browser) for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
@@ -251,18 +251,18 @@ export const makeRuntime = Effect.gen(function* () {
     const teamCall = async (name: string, args: Record<string, unknown>) => {
       const all = await run(store.agents())
       const visible = visibleTo(all, chat.projectId)
-      // The Builder (Zero's own) does no work itself: what it proposes is capped at workspace, not at its own "ask";
+      // The Builder (Zorel's own) does no work itself: what it proposes is capped at workspace, not at its own "ask";
       // full access is only ever the person's choice on the agent's page.
       const caller = { model: agent?.model ?? chat.model, effort: agent?.effort ?? chat.effort, access: agent?.builtin === "builder" ? ("workspace" as const) : (agent?.access ?? ("workspace" as const)) }
       const working = (id: string) => [...statuses.values()].some((st) => st.agentId === id && st.state !== "idle")
-      if (name === "zero_list_agents") return textResult(listText(visible, working))
-      const target = name === "zero_create_agent" ? undefined : findAgent(visible, args.agent)
-      if (name !== "zero_create_agent" && !target) return textResult(`No agent "${String(args.agent ?? "")}" here. Call zero_list_agents.`, true)
-      if (name === "zero_read_agent") return textResult(readText(target!))
+      if (name === "zorel_list_agents") return textResult(listText(visible, working))
+      const target = name === "zorel_create_agent" ? undefined : findAgent(visible, args.agent)
+      if (name !== "zorel_create_agent" && !target) return textResult(`No agent "${String(args.agent ?? "")}" here. Call zorel_list_agents.`, true)
+      if (name === "zorel_read_agent") return textResult(readText(target!))
       // Create or update: check, show the proposal card, write only on the person's OK.
       let proposal: { title: string; text: string; fields: Record<string, unknown>; apply: () => Promise<Agent[]> }
       try {
-        if (name === "zero_create_agent") {
+        if (name === "zorel_create_agent") {
           const inputs = createInputs(args, caller, chat.projectId, await run(store.mcpServersFor(chat.projectId)))
           // On the card: the profile, what it may reach, its first task and why (the preview reads these lines).
           const fieldsOf = ({ permissions, notes, ...input }: (typeof inputs)[number]) => ({
@@ -310,12 +310,12 @@ export const makeRuntime = Effect.gen(function* () {
       const actor = { type: "agent" as const, id: agent?.id ?? "assistant" }
       for (const d of done)
         await run(
-          name === "zero_create_agent"
+          name === "zorel_create_agent"
             ? audit.record(Actions.agentCreated, { target: d, after: { name: d.name, model: d.model, access: d.access }, actor })
             : audit.record(Actions.agentUpdated, { target: d, ...changed(target!, d, Object.keys(proposal.fields)), actor })
         )
       const out =
-        name === "zero_create_agent"
+        name === "zorel_create_agent"
           ? `Created ${done.map((d) => `${d.name} (@${handleOf(d)}, id ${d.id})`).join(", ")}. Mention them to give them work.`
           : `Updated ${done[0]!.name}.`
       legacy.push({ tool: name, args: "", status: "ok", result: out })
@@ -340,9 +340,9 @@ export const makeRuntime = Effect.gen(function* () {
         const want = String(v ?? "").trim().toLowerCase()
         return skills.find((m) => m.title.toLowerCase() === want) ?? skills.find((m) => m.title.toLowerCase().includes(want) && want.length > 2)
       }
-      if (name === "zero_read_skill") {
+      if (name === "zorel_read_skill") {
         const m = byTitle(args.skill)
-        // A skill from a file is read now (it stays current); Zero's own are stored.
+        // A skill from a file is read now (it stays current); Zorel's own are stored.
         const file = m && files.find((f) => `file:${f.path}` === m.id)
         if (file) return textResult(`# ${file.name}\n\n${readSkill(file.path)}`)
         return m ? textResult(`# ${m.title}\n\n${m.text}`) : textResult(`No skill "${String(args.skill ?? "")}". The ones here: ${skills.map((s) => s.title).join(", ") || "(none)"}.`, true)
@@ -364,7 +364,7 @@ export const makeRuntime = Effect.gen(function* () {
       return added ? textResult(`Proposed. The user reviews it in Knowledge${target ? ", seeing what changes" : ""}; it applies once approved.`) : textResult("The same skill is already there.")
     }
 
-    // zero_routines: list freely; create or cancel only on the person's OK (an approval card with the routine).
+    // zorel_routines: list freely; create or cancel only on the person's OK (an approval card with the routine).
     const routinesCall = async (args: Record<string, unknown>) => {
       const all = visibleTo(await run(store.agents()), chat.projectId)
       const mine = (await run(store.routines())).filter((r) => all.some((a) => a.id === r.agentId))
@@ -409,16 +409,16 @@ export const makeRuntime = Effect.gen(function* () {
     const knowledgeCall = async (name: string, args: Record<string, unknown>) => {
       const scopes = scopesOf(chat, agent?.id ?? null)
       const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "")
-      if (name === "zero_knowledge_search") {
+      if (name === "zorel_knowledge_search") {
         const found = await run(store.searchPages(scopes, str(args.query, 500), 8))
         const q = str(args.query, 500).split(/\s+/)[0] ?? ""
         return textResult(found.length ? found.map((p) => `- ${p.title} [${p.id}] (${p.scope}): ${snippet(p.body, q, 80)}`).join("\n") : "No page matches. Try other words.")
       }
       const all = (await run(store.pages())).filter((p) => scopes.includes(p.scope))
-      if (name === "zero_knowledge_read") {
+      if (name === "zorel_knowledge_read") {
         const ref = str(args.page, 200)
         const p = all.find((x) => x.id === ref) ?? all.find((x) => x.title.toLowerCase() === ref.toLowerCase())
-        return p ? textResult(`# ${p.title}\n\n${p.body}`) : textResult(`No page "${ref}" here. Search with zero_knowledge_search.`, true)
+        return p ? textResult(`# ${p.title}\n\n${p.body}`) : textResult(`No page "${ref}" here. Search with zorel_knowledge_search.`, true)
       }
       const title = str(args.title, 120)
       const body = typeof args.body === "string" ? args.body.slice(0, 100_000) : ""

@@ -4,7 +4,7 @@
 // tabs; the agents drive them through the tools below (read the page as an accessibility snapshot with
 // [ref=eN] handles, act on a ref), and the Browser panel watches the chat's active tab live (CDP screencast)
 // and can take over: while a person holds the browser, every agent tool on that chat is refused.
-// In the desktop app (ZERO_DESKTOP_* set by Electron) there is no headless Chrome: each tab is a native
+// In the desktop app (ZOREL_DESKTOP_* set by Electron) there is no headless Chrome: each tab is a native
 // WebContentsView the Electron main process creates (Electron refuses Target.createTarget), in a persistent
 // partition per agent (own cookies and logins), and the server drives it over CDP like any page. The panel shows
 // the view itself instead of frames.
@@ -54,7 +54,7 @@ export interface NativeHost {
   readonly token: string
 }
 export const nativeHostFromEnv = (env = process.env): NativeHost | undefined =>
-  env.ZERO_DESKTOP_CDP && env.ZERO_DESKTOP_CONTROL && env.ZERO_DESKTOP_TOKEN ? { cdp: env.ZERO_DESKTOP_CDP, control: env.ZERO_DESKTOP_CONTROL, token: env.ZERO_DESKTOP_TOKEN } : undefined
+  env.ZOREL_DESKTOP_CDP && env.ZOREL_DESKTOP_CONTROL && env.ZOREL_DESKTOP_TOKEN ? { cdp: env.ZOREL_DESKTOP_CDP, control: env.ZOREL_DESKTOP_CONTROL, token: env.ZOREL_DESKTOP_TOKEN } : undefined
 // A partition name from an agent id ("you" for tabs a person opens, "assistant" without an agent).
 export const profileOf = (agentId: string | undefined) => (agentId ?? "assistant").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 64) || "assistant"
 
@@ -148,10 +148,10 @@ export class Browsers {
     return id
   }
 
-  // The desktop app opens a view on about:blank#zero-tab-<id>; its page shows up in the CDP context shortly after.
+  // The desktop app opens a view on about:blank#zorel-tab-<id>; its page shows up in the CDP context shortly after.
   private async nativePage(context: BrowserContext, id: string, profile: string): Promise<Page> {
     await this.host("POST", "/tabs", { id, profile })
-    const mark = `#zero-tab-${id}`
+    const mark = `#zorel-tab-${id}`
     for (let i = 0; i < 200; i++) {
       const page = context.pages().find((p) => p.url().endsWith(mark))
       if (page) return page

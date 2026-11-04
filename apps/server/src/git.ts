@@ -2,7 +2,7 @@
 // what changed, and the three steps that ship it — commit, push, open a pull request (GitHub, through the `gh`
 // CLI when it is installed and signed in). Messages are written by the person or drafted by the chat's model from
 // the diff, in the style of the repository's recent commits. Nothing here runs without the person pressing it.
-import type { GitStatus } from "@zero/contracts"
+import type { GitStatus } from "@zorel/contracts"
 
 const MAX_DIFF = 40_000 // diff text handed to the model for a draft
 const OUT_CAP = 2_000 // git's message kept for an error
@@ -161,9 +161,9 @@ export async function removeWorktree(repo: string, dir: string, force = false): 
   return true
 }
 
-// A branch name from a chat title: "Add min() to sum.ts" → "zero/add-min-to-sum-ts".
+// A branch name from a chat title: "Add min() to sum.ts" → "zorel/add-min-to-sum-ts".
 export const branchFor = (title: string, id: string) =>
-  `zero/${
+  `zorel/${
     title
       .toLowerCase()
       .normalize("NFKD")

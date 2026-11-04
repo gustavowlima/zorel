@@ -1,4 +1,4 @@
-// Desktop app (ARCHITECTURE D11). Electron only owns the window; the Zero server runs as its own process: the
+// Desktop app (ARCHITECTURE D11). Electron only owns the window; the Zorel server runs as its own process: the
 // compiled Bun binary when packaged, `bun apps/server/src/main.ts` in dev. Closing the window frees its renderer
 // but keeps the app and the server alive, so turns and routines go on (Dock on macOS, tray elsewhere); Quit stops
 // the server. One instance per user: opening the app again focuses the window.
@@ -62,21 +62,21 @@ const freePort = () =>
 async function startServer() {
   const port = await freePort()
   const log = openSync(join(app.getPath("logs"), "server.log"), "a")
-  const [cmd, args] = dev ? ["bun", [join(root, "apps/server/src/main.ts")]] : [join(root, "zero-server"), []]
+  const [cmd, args] = dev ? ["bun", [join(root, "apps/server/src/main.ts")]] : [join(root, "zorel-server"), []]
   server = spawn(cmd, args, {
     env: {
       ...process.env,
       PORT: String(port),
-      ZERO_PARENT_PID: String(process.pid), // the server exits if this process dies without stopping it
-      ...(browser ? { ZERO_DESKTOP_CDP: await cdpUrl(), ZERO_DESKTOP_CONTROL: browser.control, ZERO_DESKTOP_TOKEN: browser.token } : {}),
-      ZERO_WEB_DIR: dev ? join(root, "apps/web/dist") : join(root, "web"),
-      ...(dev ? {} : { ZERO_MIGRATIONS: join(root, "drizzle") })
+      ZOREL_PARENT_PID: String(process.pid), // the server exits if this process dies without stopping it
+      ...(browser ? { ZOREL_DESKTOP_CDP: await cdpUrl(), ZOREL_DESKTOP_CONTROL: browser.control, ZOREL_DESKTOP_TOKEN: browser.token } : {}),
+      ZOREL_WEB_DIR: dev ? join(root, "apps/web/dist") : join(root, "web"),
+      ...(dev ? {} : { ZOREL_MIGRATIONS: join(root, "drizzle") })
     },
     stdio: ["ignore", dev ? "inherit" : log, dev ? "inherit" : log]
   })
   server.once("exit", (code) => {
     if (quitting) return
-    dialog.showErrorBox("Zero", `The Zero server stopped (code ${code}). See ${join(app.getPath("logs"), "server.log")}.`)
+    dialog.showErrorBox("Zorel", `The Zorel server stopped (code ${code}). See ${join(app.getPath("logs"), "server.log")}.`)
     app.quit()
   })
   url = `http://127.0.0.1:${port}`
@@ -84,13 +84,13 @@ async function startServer() {
     if (await fetch(`${url}/`).then((r) => r.ok, () => false)) return
     await new Promise((r) => setTimeout(r, 50))
   }
-  throw new Error("The Zero server didn't start in 10 s.")
+  throw new Error("The Zorel server didn't start in 10 s.")
 }
 
 function openWindow() {
   if (win) return win.isMinimized() ? win.restore() : win.focus()
   win = new BrowserWindow({
-    title: "Zero",
+    title: "Zorel",
     width: 1280,
     height: 820,
     minWidth: 800,
@@ -122,7 +122,7 @@ function openWindow() {
   void win.loadURL(`${url}/?shell=desktop`)
 }
 
-// Open at login (Settings › General, desktop only): started that way, Zero runs without a window (the server and
+// Open at login (Settings › General, desktop only): started that way, Zorel runs without a window (the server and
 // its routines), until you open it from the Dock or the tray. Only the app window may ask.
 const HIDDEN = "--hidden" // Windows passes it at login; macOS reports wasOpenedAtLogin
 const openedAtLogin = () => process.argv.includes(HIDDEN) || (process.platform === "darwin" && app.getLoginItemSettings().wasOpenedAtLogin)
@@ -137,7 +137,7 @@ function loginItemIpc() {
 }
 
 // Updates (packaged builds; a release needs a signed app on macOS): checked at start and every 6 hours, downloaded
-// in the background and installed when Zero quits. Without a publish target in the build it stays quiet.
+// in the background and installed when Zorel quits. Without a publish target in the build it stays quiet.
 function updates() {
   if (dev) return
   autoUpdater.autoInstallOnAppQuit = true
@@ -150,8 +150,8 @@ function updates() {
 function addTray() {
   if (process.platform === "darwin") return
   tray = new Tray(nativeImage.createFromPath(join(appDir, "assets", "icon.png")).resize({ width: 16, height: 16 }))
-  tray.setToolTip("Zero")
-  tray.setContextMenu(Menu.buildFromTemplate([{ label: "Open Zero", click: openWindow }, { type: "separator" }, { label: "Quit", role: "quit" }]))
+  tray.setToolTip("Zorel")
+  tray.setContextMenu(Menu.buildFromTemplate([{ label: "Open Zorel", click: openWindow }, { type: "separator" }, { label: "Quit", role: "quit" }]))
   tray.on("click", openWindow)
 }
 
@@ -178,7 +178,7 @@ else {
       updates()
     })
     .catch((e: unknown) => {
-      dialog.showErrorBox("Zero", e instanceof Error ? e.message : String(e))
+      dialog.showErrorBox("Zorel", e instanceof Error ? e.message : String(e))
       quitting = true
       server?.kill("SIGTERM")
       app.quit()

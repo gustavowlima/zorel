@@ -31,7 +31,7 @@ describe("acp confinement", () => {
   })
   test.skipIf(process.platform !== "darwin")("the sandbox blocks writes outside the roots", () => {
     const cwd = mkdtempSync(join(tmpdir(), "acp-"))
-    const outside = mkdtempSync(join(homedir(), ".zero-acp-test-"))
+    const outside = mkdtempSync(join(homedir(), ".zorel-acp-test-"))
     try {
       const cmd = commandFor("/bin/sh", { args: ["-c", `touch ${cwd}/in && touch ${outside}/out`], access: "workspace", cwd, state: [] })!
       const r = Bun.spawnSync(cmd)
@@ -49,8 +49,8 @@ describe("opencode as the API-key harness", () => {
     const env = opencodeEnv("openrouter", "anthropic/claude-sonnet", { key: "sk-1", baseURL: "https://openrouter.ai/api/v1" })
     const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!)
     expect(config.model).toBe("openrouter/anthropic/claude-sonnet")
-    expect(config.provider.openrouter.options).toEqual({ apiKey: "{env:ZERO_PROVIDER_KEY}" })
-    expect(env.ZERO_PROVIDER_KEY).toBe("sk-1")
+    expect(config.provider.openrouter.options).toEqual({ apiKey: "{env:ZOREL_PROVIDER_KEY}" })
+    expect(env.ZOREL_PROVIDER_KEY).toBe("sk-1")
     expect(env.OPENCODE_CONFIG_CONTENT).not.toContain("sk-1")
     const local = JSON.parse(opencodeEnv("ollama", "qwen3", { baseURL: "http://localhost:11434/v1" }).OPENCODE_CONFIG_CONTENT!)
     expect(local.provider.ollama).toEqual({ npm: "@ai-sdk/openai-compatible", name: "ollama", options: { baseURL: "http://localhost:11434/v1" }, models: { qwen3: { name: "qwen3" } } })

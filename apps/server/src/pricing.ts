@@ -10,7 +10,7 @@ import { splitModel } from "./engines.ts"
 
 const CATALOG_URL = "https://models.dev/api.json"
 const MAX_AGE_MS = 24 * 60 * 60_000
-const PROVIDERS = ["anthropic", "openai", "openrouter"] as const // the only ones Zero prices today
+const PROVIDERS = ["anthropic", "openai", "openrouter"] as const // the only ones Zorel prices today
 
 // USD per million tokens.
 export interface Price {
@@ -35,7 +35,7 @@ const newestOf = (models: Record<string, Model> | undefined, family: string) =>
     .filter((m) => m.family === family && m.cost)
     .sort((a, b) => (b.release_date ?? "").localeCompare(a.release_date ?? ""))[0]
 
-// The catalog entry a Zero model id runs today (subscription aliases resolve to the newest of the family).
+// The catalog entry a Zorel model id runs today (subscription aliases resolve to the newest of the family).
 function entryOf(catalog: Catalog, model: string): Model | undefined {
   const { provider, model: id } = splitModel(model)
   if (provider === "claude-cli") return catalog.anthropic?.[id] ?? newestOf(catalog.anthropic, `claude-${id}`)

@@ -1,6 +1,6 @@
 // Activity indicators. The spinner takes the text color (so it fits a filled button) and rotates only
 // while motion is allowed; with "reduce motion" it is a still arc, so the state still reads.
-import { t } from "@zero/i18n"
+import { t } from "@zorel/i18n"
 import { CircleAlert, Clock } from "lucide-react"
 import { cn } from "@/lib/utils"
 

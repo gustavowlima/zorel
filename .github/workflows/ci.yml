@@ -45,7 +45,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       - uses: actions/upload-artifact@v4
         with:
-          name: zero-macos
+          name: zorel-macos
           path: apps/desktop/artifacts/
 
   release:
@@ -65,8 +65,8 @@ jobs:
       - run: bun run --cwd apps/desktop release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ZERO_RELEASE_OWNER: ${{ github.repository_owner }}
-          ZERO_RELEASE_REPO: ${{ github.event.repository.name }}
+          ZOREL_RELEASE_OWNER: ${{ github.repository_owner }}
+          ZOREL_RELEASE_REPO: ${{ github.event.repository.name }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}

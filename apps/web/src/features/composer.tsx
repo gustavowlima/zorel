@@ -4,8 +4,8 @@
 // (@handle, $skill-handle), which it already reads; commands never leave the browser. Enter sends,
 // Shift+Enter breaks the line. "#" picks who answers (the chat's lead) and, like "/", leaves nothing in the text.
 // Attachments sit as chips above the bar.
-import { type Attachment, MAX_ATTACHMENTS } from "@zero/contracts"
-import { t } from "@zero/i18n"
+import { type Attachment, MAX_ATTACHMENTS } from "@zorel/contracts"
+import { t } from "@zorel/i18n"
 import Document from "@tiptap/extension-document"
 import Mention from "@tiptap/extension-mention"
 import Paragraph from "@tiptap/extension-paragraph"

@@ -2,8 +2,8 @@
 // before acting. Used by the agent (its own list) and the chat (an override for the lead).
 // A second subscription account of the same provider shows the terms warning once; API fallbacks say they
 // cost per token.
-import { type FailoverTarget, MAX_FAILOVER } from "@zero/contracts"
-import { t } from "@zero/i18n"
+import { type FailoverTarget, MAX_FAILOVER } from "@zorel/contracts"
+import { t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { useAtomValue } from "@effect/atom-react"
 import { accountsAtom, modelsAtom, mutations, preferencesAtom, useList, useMutation } from "../client.ts"

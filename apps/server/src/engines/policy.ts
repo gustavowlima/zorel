@@ -2,7 +2,7 @@
 //   workspace: read anywhere in the folder, edit inside it, run commands that aren't destructive or online
 //   ask:       read only; every edit and command waits for the person
 //   full:      everything
-import type { Access } from "@zero/contracts"
+import type { Access } from "@zorel/contracts"
 import { isAbsolute, relative, resolve } from "node:path"
 import type { NativeApproval } from "#server/engines/session.ts"
 

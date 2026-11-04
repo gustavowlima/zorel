@@ -4,8 +4,8 @@ import { Database } from "bun:sqlite"
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs"
 import { dirname, join } from "node:path"
 
-// Read at call time (not on import): the desktop app sets ZERO_MIGRATIONS before starting the server.
-export const migrationsDir = () => process.env.ZERO_MIGRATIONS ?? join(import.meta.dir, "..", "drizzle")
+// Read at call time (not on import): the desktop app sets ZOREL_MIGRATIONS before starting the server.
+export const migrationsDir = () => process.env.ZOREL_MIGRATIONS ?? join(import.meta.dir, "..", "drizzle")
 
 // MVP migrations (hand-written SQL + PRAGMA user_version). Frozen: they only bring an old database
 // up to version 3, which is exactly the Drizzle baseline (drizzle/*_baseline).
@@ -113,17 +113,19 @@ export const LEGACY_MIGRATIONS = [
 
 const ts = () => new Date().toISOString().replace(/[:.]/g, "-")
 const KEEP = 7
+// zero-: backups from before the rename to Zorel, still kept and pruned with the new ones.
+export const BACKUP = /^(zorel|zero)-.*\.db$/
 const DAY = 24 * 60 * 60_000
 const backupsOf = (path: string) => {
   const dir = join(dirname(path), "backups")
-  return existsSync(dir) ? readdirSync(dir).filter((f) => f.startsWith("zero-") && f.endsWith(".db")).sort().map((f) => join(dir, f)) : []
+  return existsSync(dir) ? readdirSync(dir).filter((f) => BACKUP.test(f)).sort().map((f) => join(dir, f)) : []
 }
 
 // Consistent copy (WAL included) to <database folder>/backups/.
 export function backup(db: Database, path: string): string {
   const dir = join(dirname(path), "backups")
   mkdirSync(dir, { recursive: true })
-  const file = join(dir, `zero-${ts()}.db`)
+  const file = join(dir, `zorel-${ts()}.db`)
   db.run(`VACUUM INTO '${file.replaceAll("'", "''")}'`)
   for (const old of backupsOf(path).slice(0, -KEEP)) rmSync(old) // name with ISO date: alphabetical order = chronological
   return file

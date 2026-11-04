@@ -39,7 +39,7 @@ for await (const abs of new Glob("src/**/*.tsx").scan({ cwd: ROOT, absolute: tru
 }
 
 if (problems.length) {
-  console.error(`check:i18n falhou, texto fora do catálogo (use t() de @zero/i18n):\n${problems.join("\n")}`)
+  console.error(`check:i18n falhou, texto fora do catálogo (use t() de @zorel/i18n):\n${problems.join("\n")}`)
   process.exit(1)
 }
 console.log("check:i18n ok")

@@ -17,7 +17,7 @@ test("parsePrDraft takes JSON, or falls back to the first line", () => {
 })
 
 test("status, draft, commit and branch in a real repository", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "zero-git-"))
+  const dir = mkdtempSync(join(tmpdir(), "zorel-git-"))
   expect((await status(dir)).repo).toBe(false)
   const sh = (...cmd: string[]) => Bun.spawnSync(cmd, { cwd: dir })
   sh("git", "init", "-q", "-b", "main")
@@ -46,13 +46,13 @@ test("status, draft, commit and branch in a real repository", async () => {
 })
 
 test("branchFor makes a safe branch name from a chat title", () => {
-  expect(branchFor("Add min() to sum.ts", "abcd1234")).toBe("zero/add-min-to-sum-ts-abcd")
-  expect(branchFor("Ação rápida!", "ffff0000")).toBe("zero/acao-rapida-ffff")
-  expect(branchFor("???", "12345678")).toBe("zero/chat-1234")
+  expect(branchFor("Add min() to sum.ts", "abcd1234")).toBe("zorel/add-min-to-sum-ts-abcd")
+  expect(branchFor("Ação rápida!", "ffff0000")).toBe("zorel/acao-rapida-ffff")
+  expect(branchFor("???", "12345678")).toBe("zorel/chat-1234")
 })
 
 test("a worktree on its own branch, removed only when clean", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "zero-wt-"))
+  const dir = mkdtempSync(join(tmpdir(), "zorel-wt-"))
   const sh = (...cmd: string[]) => Bun.spawnSync(cmd, { cwd: dir })
   sh("git", "init", "-q", "-b", "main")
   sh("git", "config", "user.email", "t@t")
@@ -60,15 +60,15 @@ test("a worktree on its own branch, removed only when clean", async () => {
   writeFileSync(join(dir, "a.ts"), "1\n")
   sh("git", "add", "-A")
   sh("git", "commit", "-qm", "first")
-  const wt = join(mkdtempSync(join(tmpdir(), "zero-wts-")), "chat")
-  await addWorktree(dir, wt, "zero/x")
-  expect((await status(wt)).branch).toBe("zero/x")
+  const wt = join(mkdtempSync(join(tmpdir(), "zorel-wts-")), "chat")
+  await addWorktree(dir, wt, "zorel/x")
+  expect((await status(wt)).branch).toBe("zorel/x")
   expect((await status(dir)).branch).toBe("main") // the project folder stays where it was
   writeFileSync(join(wt, "a.ts"), "2\n")
   expect(await removeWorktree(dir, wt)).toBe(false) // uncommitted work: kept
   await commit(wt, "second")
   expect(await removeWorktree(dir, wt)).toBe(true)
-  expect(Bun.spawnSync(["git", "branch", "--list", "zero/x"], { cwd: dir }).stdout.toString()).toContain("zero/x") // the branch stays
-  await addWorktree(dir, wt, "zero/x") // back on the same branch
-  expect((await status(wt)).branch).toBe("zero/x")
+  expect(Bun.spawnSync(["git", "branch", "--list", "zorel/x"], { cwd: dir }).stdout.toString()).toContain("zorel/x") // the branch stays
+  await addWorktree(dir, wt, "zorel/x") // back on the same branch
+  expect((await status(wt)).branch).toBe("zorel/x")
 })

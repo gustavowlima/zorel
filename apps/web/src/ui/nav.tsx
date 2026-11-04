@@ -1,4 +1,4 @@
-// Sidebar rows (the chosen redesign, "Zero — main screen"): 32px rows on the frame, a quiet hover wash, section
+// Sidebar rows (the chosen redesign, "Zorel — main screen"): 32px rows on the frame, a quiet hover wash, section
 // titles in sentence case. A project is a subtitle aligned with the chats: its name, a small arrow that opens it,
 // and on the right its chat count or its state (a dot when waiting for you, a spinner while working); its chats
 // sit slightly indented on a hairline, on two lines when agents are in them (title, then who / what is happening);

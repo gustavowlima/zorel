@@ -1,6 +1,6 @@
-// Workspace checkpoints with a real git: what a turn changed, its diff, undo, and the folders Zero refuses.
+// Workspace checkpoints with a real git: what a turn changed, its diff, undo, and the folders Zorel refuses.
 import { expect, test } from "bun:test"
-import type { Project } from "@zero/contracts"
+import type { Project } from "@zorel/contracts"
 import { Effect, Exit, Layer } from "effect"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
@@ -9,7 +9,7 @@ import { DataDir } from "./chat.ts"
 import { Workspace } from "./workspace.ts"
 
 const setup = () => {
-  const root = mkdtempSync(join(tmpdir(), "zero-ws-"))
+  const root = mkdtempSync(join(tmpdir(), "zorel-ws-"))
   const data = join(root, "data")
   const folder = join(root, "app")
   mkdirSync(join(folder, "src"), { recursive: true })
@@ -40,7 +40,7 @@ test("a turn's changes, diff and undo come from checkpoints; the project's own f
   ])
   const diff = await run(Effect.flatMap(Workspace, (w) => w.diff(project.id, before, after)))
   expect(diff.find((d) => d.path === "src/a.ts")!.patch).toContain("+export const b = 3")
-  expect(existsSync(join(folder, ".git"))).toBe(false) // the shadow repository lives in Zero's data folder
+  expect(existsSync(join(folder, ".git"))).toBe(false) // the shadow repository lives in Zorel's data folder
 
   const files = await run(Effect.flatMap(Workspace, (w) => w.files(project, before)))
   expect(files.find((f) => f.path === "src/new.ts")!.status).toBe("added")
@@ -66,7 +66,7 @@ test("undo refuses when a file the turn touched changed afterwards", async () =>
   rmSync(root, { recursive: true, force: true })
 })
 
-test("folders Zero refuses: relative, missing, a file, the disk root, home and its own data folder", async () => {
+test("folders Zorel refuses: relative, missing, a file, the disk root, home and its own data folder", async () => {
   const { root, data, folder, runExit, run } = setup()
   mkdirSync(data, { recursive: true })
   const reason = async (p: string) => {

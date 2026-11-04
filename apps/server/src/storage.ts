@@ -1,12 +1,13 @@
-// Storage (Settings › Storage): how much of the disk Zero's data folder takes, where it goes and what can be
+// Storage (Settings › Storage): how much of the disk Zorel's data folder takes, where it goes and what can be
 // freed. Measured on demand by walking the folder; nothing is cached. Cleanups only touch what no live chat or
 // project uses: old database backups (the newest stays) and the folders left by deleted chats and projects.
 // Workspace snapshots are never compacted: their trees have no refs, so `git gc` would delete the history
 // diff and undo read.
-import type { StorageReport } from "@zero/contracts"
+import type { StorageReport } from "@zorel/contracts"
 import { existsSync, readdirSync, rmSync, statfsSync } from "node:fs"
 import { lstat, readdir } from "node:fs/promises"
 import { join } from "node:path"
+import { BACKUP } from "./migrate.ts"
 
 // Bytes under a path (files and folders, symlinks not followed); 0 when it doesn't exist.
 export async function sizeOf(path: string): Promise<{ bytes: number; files: number }> {
@@ -21,7 +22,7 @@ export async function sizeOf(path: string): Promise<{ bytes: number; files: numb
 const list = (dir: string) => (existsSync(dir) ? readdirSync(dir) : [])
 const backups = (dataDir: string) =>
   list(join(dataDir, "backups"))
-    .filter((f) => f.startsWith("zero-") && f.endsWith(".db"))
+    .filter((f) => BACKUP.test(f))
     .sort() // ISO date in the name: alphabetical = chronological
     .map((f) => join(dataDir, "backups", f))
 
@@ -44,7 +45,7 @@ export async function measure(
     messages: ReadonlyMap<string, number>
   }
 ): Promise<StorageReport> {
-  const db = await sum(["zero.db", "zero.db-wal", "zero.db-shm"].map((f) => join(dataDir, f)))
+  const db = await sum(["zorel.db", "zorel.db-wal", "zorel.db-shm", "zero.db", "zero.db-wal", "zero.db-shm"].map((f) => join(dataDir, f)))
   const categories = {
     workspaces: (await sizeOf(join(dataDir, "workspaces"))).bytes,
     attachments: (await sizeOf(join(dataDir, "attachments"))).bytes,

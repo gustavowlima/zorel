@@ -1,7 +1,7 @@
 // Project: overview (name, brief: the stable context of every turn, and its chats), its agents, and the
 // MCP servers only its chats see. The chats themselves live in the sidebar tree.
-import type { Project } from "@zero/contracts"
-import { formatAge, t } from "@zero/i18n"
+import type { Project } from "@zorel/contracts"
+import { formatAge, t } from "@zorel/i18n"
 import { type FormEvent, useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
 import { chatTitle, statusLabel } from "../labels.ts"

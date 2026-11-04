@@ -1,7 +1,7 @@
 // Who is talking: the author avatar (agent color, or the model's logo for the plain assistant) and the
 // team picker (who answers in a chat: the lead first, members, add or remove).
-import type { Agent, Chat } from "@zero/contracts"
-import { t } from "@zero/i18n"
+import type { Agent, Chat } from "@zorel/contracts"
+import { t } from "@zorel/i18n"
 import { agentsAtom, mutations, useList, useMutation } from "../client.ts"
 import { agentTone, handleOf, modelLabel, splitModel } from "../labels.ts"
 import { AgentAvatar, Badge, Button, IconButton, ModelAvatar, Plus, Popover, X } from "@/ui"

@@ -1,9 +1,9 @@
-// Audit log (Settings › Audit log): who changed what in Zero, with the fields before → after. Built on evlog's
+// Audit log (Settings › Audit log): who changed what in Zorel, with the fields before → after. Built on evlog's
 // audit helpers: the action vocabulary (defineAuditAction), the event shape and idempotency key (audit) and the
 // redacted diff (auditDiff). The event is written straight to SQLite inside the Effect that made the change, so
 // a change and its record share one process and tests stay isolated (no global drain). Secrets never enter:
 // API keys and MCP env values are recorded by name only, and *key/*token/*secret paths are redacted anyway.
-import { AUDIT_PAGE, type AuditEntry, type AuditKind, type AuditPage } from "@zero/contracts"
+import { AUDIT_PAGE, type AuditEntry, type AuditKind, type AuditPage } from "@zorel/contracts"
 import { Context, Effect, Layer } from "effect"
 import { type AuditActor, audit, auditDiff, defineAuditAction, initLogger } from "evlog"
 import { LOCAL_ACTOR } from "./access.ts"

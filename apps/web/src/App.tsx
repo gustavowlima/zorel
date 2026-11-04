@@ -1,9 +1,9 @@
 // Shell: the sidebar on the frame and one card for the current screen (DESIGN.md layout). Also watches the
 // live statuses: when a chat settles, what the server changed on its own (title, proposed memories,
 // usage, open approvals) is refetched.
-import type { ChatStatus } from "@zero/contracts/events"
+import type { ChatStatus } from "@zorel/contracts/events"
 import { useAtomValue } from "@effect/atom-react"
-import { t } from "@zero/i18n"
+import { t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { useEffect, useRef } from "react"
 import { agentsAtom, chatsAtom, modelsAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useStatuses } from "./client.ts"

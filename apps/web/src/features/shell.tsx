@@ -9,7 +9,7 @@ import "@xterm/xterm/css/xterm.css"
 import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
 import { type ILink, Terminal } from "@xterm/xterm"
-import { t } from "@zero/i18n"
+import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
 import { Button, MessageCircle } from "@/ui"
 

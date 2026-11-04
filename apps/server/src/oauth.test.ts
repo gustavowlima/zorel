@@ -8,7 +8,7 @@ const memory = (): SecretStore => {
 }
 const url = async () => "https://example.invalid/mcp"
 
-test("the callback only accepts a state Zero issued, once", async () => {
+test("the callback only accepts a state Zorel issued, once", async () => {
   const secrets = memory()
   await expect(finishSignIn(secrets, "made-up", "code", url)).rejects.toThrow("expired")
   const state = new McpOAuth(secrets, "s1").state()

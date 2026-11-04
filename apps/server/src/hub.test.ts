@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test"
-import type { McpServer } from "@zero/contracts"
+import type { McpServer } from "@zorel/contracts"
 import { Hub } from "./tools.ts"
 
 // A service that rejects every credential, as a revoked token gets.

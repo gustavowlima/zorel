@@ -1,8 +1,8 @@
 // Local database: SQLite via Drizzle over Effect's SqliteClient (D9). Every method returns an Effect;
 // a database error is a defect (orDie): the caller can do nothing but fail the request.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import { type Access, type Agent, type AgentPermissions, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type Switch } from "@zero/contracts"
-import type { Approval, ApprovalOutcome, Turn, WorkStep } from "@zero/contracts/events"
+import { type Access, type Agent, type AgentPermissions, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type Switch } from "@zorel/contracts"
+import type { Approval, ApprovalOutcome, Turn, WorkStep } from "@zorel/contracts/events"
 import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
