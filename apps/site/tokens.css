@@ -1,0 +1,30 @@
+/* Hallmark · route: custom (tuned) · vibe: "a technical memo, set at night" · axes: dark / roman-serif / cool */
+:root {
+  --color-paper: oklch(17.5% 0.01 255);
+  --color-paper-2: oklch(21% 0.012 255);
+  --color-ink: oklch(93% 0.006 85);
+  --color-ink-2: oklch(76% 0.01 250);
+  --color-ink-3: oklch(60% 0.012 250);
+  --color-rule: oklch(31% 0.012 255);
+  --color-rule-strong: oklch(44% 0.014 255);
+  --color-accent: oklch(68% 0.16 252); /* the brand blue, lifted for dark paper */
+  --color-on-accent: oklch(17.5% 0.01 255);
+  --color-focus: oklch(78% 0.13 252);
+
+  --font-display: "Newsreader", ui-serif, Georgia, serif;
+  --font-body: "Newsreader", ui-serif, Georgia, serif;
+  --font-outlier: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --space-3xs: 0.25rem; --space-2xs: 0.5rem; --space-xs: 0.75rem;
+  --space-sm: 1rem; --space-md: 1.5rem; --space-lg: 2rem;
+  --space-xl: 3rem; --space-2xl: 4.5rem; --space-3xl: 7rem;
+
+  --text-xs: 0.8125rem; --text-sm: 0.9375rem; --text-md: 1.1875rem;
+  --text-lg: 1.375rem; --text-xl: 1.75rem; --text-display: clamp(2.5rem, 5.2vw + 1rem, 5.25rem);
+
+  --rule-hair: 1px;
+  --radius-sm: 3px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-short: 180ms;
+  --measure: 62ch;
+}
