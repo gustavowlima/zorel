@@ -212,7 +212,7 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
     if (t.model && t.model !== "default") await request("session/set_model", { sessionId, modelId: t.model }).catch(() => undefined) // not every agent has it
     return request("session/prompt", { sessionId, prompt: [{ type: "text", text: t.prompt }] })
   })()
-  let done: { stopReason?: string } | undefined
+  let done: { stopReason?: string; usage?: { inputTokens?: number; outputTokens?: number; cachedReadTokens?: number } } | undefined
   let failed: Error | undefined
   void turn.then(
     (r) => {
@@ -245,7 +245,9 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
       return
     }
     if (refused) yield { type: "text", delta: `\n\n_(${refused} action${refused > 1 ? "s" : ""} refused: this agent's access is "Ask first", which this engine can't ask for yet.)_` }
-    yield { type: "done", usage: { inputTokens: 0, outputTokens: 0 } }
+    // The prompt's answer carries the turn's tokens (OpenCode does; an agent that doesn't counts 0).
+    const u = done?.usage
+    yield { type: "done", usage: { inputTokens: Number(u?.inputTokens) || 0, outputTokens: Number(u?.outputTokens) || 0, ...(u?.cachedReadTokens ? { cachedTokens: Number(u.cachedReadTokens) } : {}) } }
   } finally {
     proc.kill()
   }
