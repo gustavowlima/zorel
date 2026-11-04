@@ -89,7 +89,7 @@ const FakeEngines = Layer.succeed(Engines, {
         { type: "done" as const, usage: { inputTokens: 1, outputTokens: 1 } }
       )
     const last = t.messages.at(-1)!.text
-    const me = /## Você é (.+)\n/.exec(t.system)?.[1]
+    const me = /## You are (.+)\n/.exec(t.system)?.[1]
     const call = /^tool:(\S+)(?:\s+(\{[\s\S]*\}))?/.exec(last)
     const tool = call?.[1]
     if (tool)
@@ -261,7 +261,7 @@ test("ferramentas MCP: modo leitura esconde escrita; modo aprovação pede e res
   expect(r.events.some((e) => e._tag === "approval-resolved" && e.outcome === "denied")).toBe(true)
   expect(r.openWhileWaiting.map((a) => [a.chatId, a.tool])).toEqual([[chat.id, "docs__delete_page"]])
   expect(await rpc((c) => c.approvals())).toEqual([]) // decided: gone from "Needs you"
-  expect(msg.text).toContain("O usuário recusou")
+  expect(msg.text).toContain("The user declined")
   expect(msg.steps.at(-1)!.status).toBe("refused")
   expect(toolCalls).toEqual(["search_docs"]) // denied one never reached the server
 
@@ -327,7 +327,7 @@ test("aprendizado: esquecidas vão para a consolidação e podem ser restauradas
   const before = (await api((c) => c.memories.list())).filter((m) => m.state === "pending" && m.scope === "user").length
   await api((c) => c.chats.consolidate({ params: { id: chat.id } }))
   manyMemories = 0
-  expect(turns.at(-1)!.messages[0]!.text).toContain("mandou esquecer (não proponha de novo, nem com outras palavras):\n- Gosta de emojis")
+  expect(turns.at(-1)!.messages[0]!.text).toContain("asked to forget (don't propose it again, not even in other words):\n- Gosta de emojis")
   const pending = (await api((c) => c.memories.list())).filter((m) => m.state === "pending" && m.scope === "user")
   expect(pending.length).toBe(Math.max(before, 20))
 

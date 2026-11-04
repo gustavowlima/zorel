@@ -225,7 +225,7 @@ export const makeRuntime = Effect.gen(function* () {
       run(store.finishStep(s, { status, output: output.slice(0, 300) }).pipe(Effect.tap((done) => publish(chat.id, ev("step-finished", { step: done }))), Effect.tap((done) => Effect.sync(() => onFinished(done)))))
     for (const s of await run(store.mcpServersFor(chat.projectId))) {
       const listed = await hub.tools(s).catch(async (e: unknown) => {
-        const msg = `Não conectou: ${e instanceof Error ? e.message : e}`
+        const msg = `Didn't connect: ${e instanceof Error ? e.message : e}`
         legacy.push({ tool: s.name, args: "", status: "error", result: msg })
         await finish(await step(`Connect ${s.name}`, s.name), "error", msg)
         return []
@@ -504,7 +504,7 @@ export const makeRuntime = Effect.gen(function* () {
           if (outcome === "denied" || outcome === "expired") {
             legacy.push({ tool: name, args: shown, status: "refused", result: "" })
             await finish(s, "refused")
-            return textResult("O usuário recusou esta ação. Não tente de novo sem pedir.", true)
+            return textResult("The user declined this action. Don't try it again without asking.", true)
           }
         }
         if (builtin.writes) onWrite()
@@ -520,7 +520,7 @@ export const makeRuntime = Effect.gen(function* () {
       }
       const route = routes.get(name)
       const server = route && (await run(store.mcpServer(route.server)))
-      if (!route || !server) return textResult(`Ferramenta não permitida: ${name}`, true)
+      if (!route || !server) return textResult(`Tool not allowed: ${name}`, true)
       const shown = JSON.stringify(args).slice(0, 300)
       const s = await step(name, name)
       if (route.approve) {
@@ -528,7 +528,7 @@ export const makeRuntime = Effect.gen(function* () {
         if (outcome === "denied" || outcome === "expired") {
           legacy.push({ tool: name, args: shown, status: "refused", result: "" })
           await finish(s, "refused")
-          return textResult("O usuário recusou esta ação. Não tente de novo sem pedir.", true)
+          return textResult("The user declined this action. Don't try it again without asking.", true)
         }
       }
       if (route.writes) onWrite() // even a failed call may have changed something
@@ -821,7 +821,7 @@ export const makeRuntime = Effect.gen(function* () {
     Effect.gen(function* () {
       const next = mentioned(done.text, done.team.filter((a) => a.id !== done.agent?.id)).slice(0, MAX_MENTIONS)
       if (!next.length) return
-      if (row.depth + 1 >= MAX_DEPTH) return yield* Effect.logInfo("encadeamento parado no limite", { chatId: row.chatId, depth: row.depth })
+      if (row.depth + 1 >= MAX_DEPTH) return yield* Effect.logInfo("chaining stopped at the limit", { chatId: row.chatId, depth: row.depth })
       yield* publish(row.chatId, ev("handoff", { turnId: row.id, from: done.agent?.id ?? null, to: next.map((a) => a.id), via: "mention" }))
       for (const a of next) {
         const t = yield* store.enqueueTurn({ chatId: row.chatId, agentId: a.id, model: a.model, accountId: a.accountId, clientId: null, depth: row.depth + 1 })
@@ -951,7 +951,7 @@ export const makeRuntime = Effect.gen(function* () {
         let chat = yield* store.chat(input.chatId)
         if (!chat) return yield* new ChatNotFound({ chatId: input.chatId })
         if (input.model && input.model !== chat.model) chat = (yield* store.updateChat(chat.id, { model: input.model }))!
-        if (chat.title === "Novo chat") chat = (yield* store.updateChat(chat.id, { title: input.text.replace(/\s+/g, " ").slice(0, 60) }))!
+        if (chat.title === "New chat" || chat.title === "Novo chat") chat = (yield* store.updateChat(chat.id, { title: input.text.replace(/\s+/g, " ").slice(0, 60) }))!
         if (chat.resumeAt && !input.clientId.startsWith("resume:")) yield* store.setResumeAt(chat.id, null) // you went on yourself
         yield* addUserMessage(chat.id, input.text, input.attachmentIds)
         return { turnId: yield* enqueueFor(chat, input.text, input.clientId) }

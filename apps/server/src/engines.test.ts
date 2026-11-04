@@ -34,7 +34,7 @@ test("args das CLIs: sem sessão, sem ferramentas, modelo do id", () => {
   expect(codexArgs({ ...t, model: "codex-cli/default" })).not.toContain("-m")
   expect(codexArgs({ ...t, model: "codex-cli/gpt-5" }).join(" ")).toContain("-m gpt-5")
   expect(splitModel("openrouter/meta/llama-4")).toEqual({ provider: "openrouter", model: "meta/llama-4" })
-  expect(transcript([{ role: "user", text: "a" }, { role: "assistant", text: "b" }, { role: "user", text: "c" }])).toContain("Nova mensagem do usuário:\nc")
+  expect(transcript([{ role: "user", text: "a" }, { role: "assistant", text: "b" }, { role: "user", text: "c" }])).toContain("New message from the user:\nc")
 })
 
 const mem = (text: string, confirmedAt: number, scope = "user", kind: Memory["kind"] = "fact", title = ""): Memory => ({ id: text, scope, kind, title, text, state: "active", origin: "manual", chatId: null, createdAt: 0, confirmedAt })

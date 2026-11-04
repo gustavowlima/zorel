@@ -50,9 +50,9 @@ export const providerHint = (provider: string) => (has(HINTS, provider) ? t(`mod
 // Account provider that serves a model provider (multi-account subscriptions).
 export const ACCOUNT_OF_MODEL: Record<string, "claude" | "codex"> = { "claude-cli": "claude", "codex-cli": "codex" }
 
-// Chats start untitled; the server names them after the first message. "Novo chat" is the legacy
+// Chats start untitled; the server names them after the first message. "New chat" ("Novo chat" before) is the
 // placeholder stored before i18n.
-export const chatTitle = (chat: Pick<Chat, "title">) => (chat.title && chat.title !== "Novo chat" ? chat.title : t("chat.untitled"))
+export const chatTitle = (chat: Pick<Chat, "title">) => (chat.title && chat.title !== "New chat" && chat.title !== "Novo chat" ? chat.title : t("chat.untitled"))
 
 export function scopeLabel(scope: string, projects: ReadonlyArray<Project>, agents: ReadonlyArray<Agent>): string {
   if (scope === "user") return t("scope.user")

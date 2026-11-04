@@ -424,7 +424,7 @@ test("workspace: the agent works in the project folder; the turn records what it
     expect(turn.treeBefore && turn.treeAfter && turn.treeBefore !== turn.treeAfter).toBe(true)
 
     yield* sendAndWait(chat.id, "e agora?")
-    expect(prompts[1]).toContain("[Feito neste turno: editou a.ts (+1 −1)]")
+    expect(prompts[1]).toContain("[Done in this turn: edited a.ts (+1 −1)]")
     rmSync(folder, { recursive: true, force: true })
   }))
 })

@@ -81,7 +81,7 @@ export const LEGACY_MIGRATIONS = [
   ALTER TABLE messages ADD COLUMN steps TEXT NOT NULL DEFAULT '[]';
   ALTER TABLE memories ADD COLUMN kind TEXT NOT NULL DEFAULT 'fact' CHECK (kind IN ('fact', 'skill'));
   ALTER TABLE memories ADD COLUMN title TEXT NOT NULL DEFAULT '';
-  -- Índice de busca próprio (título + texto), para skills casarem pelo nome do procedimento.
+  -- Own search index (title + text), so skills match by the name of the procedure.
   DROP TRIGGER memories_ai;
   DROP TRIGGER memories_ad;
   DROP TRIGGER memories_au;
