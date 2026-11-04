@@ -10,6 +10,7 @@ directories:
   buildResources: assets
 files:
   - dist/main.cjs
+  - dist/preload.cjs
   - assets/icon.png
   - package.json
 asar: true

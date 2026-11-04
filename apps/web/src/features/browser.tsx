@@ -2,18 +2,23 @@
 // (GET /api/browser): the chat's tabs and whether a person holds it come as JSON, the active tab as JPEG frames.
 // Clicking, scrolling or typing on the page, or using the address bar, takes control: while it is held, the
 // agents' browser tools are refused; "Hand back" returns it. Positions go up as fractions of the frame.
+// In the desktop app the page is a native view instead of frames: the panel keeps its place empty and tells the
+// app where to draw the active tab (window.zeroDesktop); a person's click on it takes over.
 import { t } from "@zero/i18n"
-import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react"
+import { type KeyboardEvent, type MouseEvent, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ArrowRight, Button, ChevronRight, cx, Globe, IconButton, Input, Plus, RefreshCw, Tooltip, X } from "@/ui"
 
 type Tab = { id: string; title: string; url: string; active: boolean }
+type Rect = { x: number; y: number; width: number; height: number }
+// The desktop app's bridge (apps/desktop/src/preload.ts); undefined in a browser.
+const desktop = (window as { zeroDesktop?: { browser: (s: { tab: string; rect: Rect; overlay: boolean } | null) => void; onTake: (cb: () => void) => () => void } }).zeroDesktop
 type Frame =
   | { t: "click"; x: number; y: number; button?: "left" | "right"; clicks?: number }
   | { t: "wheel"; x: number; y: number; dx: number; dy: number }
   | { t: "key"; key: string }
   | { t: "text"; text: string }
   | { t: "nav"; url: string }
-  | { t: "back" | "forward" | "reload" | "newtab" | "release" }
+  | { t: "back" | "forward" | "reload" | "newtab" | "release" | "take" }
   | { t: "tab" | "close"; id: string }
 
 // A key event as Playwright names it ("Control+A", "Enter"); printable text without modifiers goes as text.
@@ -79,6 +84,10 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
     send({ t: "newtab" })
     send({ t: "nav", url: openUrl.url })
   }, [openUrl])
+  // Desktop: a click on the native page means a person takes over.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: send only reads the socket ref
+  useEffect(() => desktop?.onTake(() => send({ t: "take" })), [])
+
   const at = (e: MouseEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect()
     return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }
@@ -151,7 +160,9 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
       </div>
       {error && <p className="px-3 py-1.5 text-sm text-danger">{error}</p>}
       <div className="flex min-h-0 flex-1 items-start justify-center overflow-auto bg-code p-2">
-        {active && frame ? (
+        {desktop && active ? (
+          <NativeView tab={active.id} overlay={!held} />
+        ) : active && frame ? (
           <div
             role="application"
             aria-label={t("browser.page", { title: active.title || active.url })}
@@ -187,4 +198,27 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
       </div>
     </section>
   )
+}
+
+// Where the desktop app draws the active tab: this box's rectangle, kept in step with resizes; nothing on unmount.
+function NativeView({ tab, overlay }: { tab: string; overlay: boolean }) {
+  const box = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!el || !desktop) return
+    const place = () => {
+      const r = el.getBoundingClientRect()
+      desktop.browser({ tab, overlay, rect: { x: r.left, y: r.top, width: r.width, height: r.height } })
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    observer.observe(el)
+    window.addEventListener("resize", place)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener("resize", place)
+      desktop.browser(null)
+    }
+  }, [tab, overlay])
+  return <div ref={box} className="size-full rounded-control border border-subtle bg-surface" />
 }

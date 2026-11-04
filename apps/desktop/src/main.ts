@@ -3,21 +3,40 @@
 // but keeps the app and the server alive, so turns and routines go on (Dock on macOS, tray elsewhere); Quit stops
 // the server. One instance per user: opening the app again focuses the window.
 import { type ChildProcess, execFile, spawn } from "node:child_process"
-import { openSync } from "node:fs"
+import { openSync, readFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { join } from "node:path"
 import { app, BrowserWindow, dialog, Menu, nativeImage, nativeTheme, shell, Tray } from "electron"
+import { type BrowserHost, startBrowserHost } from "./browser-host.ts"
 
 const dev = !app.isPackaged
-const root = dev ? join(__dirname, "..", "..", "..") : process.resourcesPath
+// app.getAppPath(): apps/desktop in dev, the app.asar when packaged (the bundler bakes __dirname at build time).
+const appDir = app.getAppPath()
+const root = dev ? join(appDir, "..", "..") : process.resourcesPath
 let server: ChildProcess | undefined
 let url = ""
 let win: BrowserWindow | undefined
 let tray: Tray | undefined
 let quitting = false
+let browser: BrowserHost | undefined
 
 // Fewer idle processes: no spare renderer kept warm, no media-key or cast services the app never uses.
 app.commandLine.appendSwitch("disable-features", "SpareRendererForSitePerProcess,HardwareMediaKeyHandling,MediaRouter")
+// CDP for the server to drive the agents' tabs: a free port on 127.0.0.1 only, read back from DevToolsActivePort.
+app.commandLine.appendSwitch("remote-debugging-port", "0")
+
+const cdpUrl = async () => {
+  for (let i = 0; i < 100; i++) {
+    try {
+      const port = readFileSync(join(app.getPath("userData"), "DevToolsActivePort"), "utf8").split("\n")[0]?.trim()
+      if (port) return `http://127.0.0.1:${port}`
+    } catch {
+      // not written yet
+    }
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  throw new Error("The browser debugging port didn't open.")
+}
 
 // Apps opened from Finder/Dock don't inherit the shell PATH; without it `claude`, `codex` and `opencode` aren't found.
 const loginShellPath = () =>
@@ -48,6 +67,7 @@ async function startServer() {
       ...process.env,
       PORT: String(port),
       ZERO_PARENT_PID: String(process.pid), // the server exits if this process dies without stopping it
+      ...(browser ? { ZERO_DESKTOP_CDP: await cdpUrl(), ZERO_DESKTOP_CONTROL: browser.control, ZERO_DESKTOP_TOKEN: browser.token } : {}),
       ZERO_WEB_DIR: dev ? join(root, "apps/web/dist") : join(root, "web"),
       ...(dev ? {} : { ZERO_MIGRATIONS: join(root, "drizzle") })
     },
@@ -78,9 +98,10 @@ function openWindow() {
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0d0d0d" : "#ececec", // --z-bg-frame: no white flash
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 22, y: 18 },
-    webPreferences: { sandbox: true, contextIsolation: true, spellcheck: false }
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false, preload: join(appDir, "dist", "preload.cjs") }
   })
   win.once("ready-to-show", () => win?.show())
+  win.on("close", () => browser?.release())
   win.on("closed", () => {
     win = undefined
   })
@@ -103,7 +124,7 @@ function openWindow() {
 // Off macOS there's no Dock to reopen a closed window: a tray icon does it (and quits).
 function addTray() {
   if (process.platform === "darwin") return
-  tray = new Tray(nativeImage.createFromPath(join(__dirname, "..", "assets", "icon.png")).resize({ width: 16, height: 16 }))
+  tray = new Tray(nativeImage.createFromPath(join(appDir, "assets", "icon.png")).resize({ width: 16, height: 16 }))
   tray.setToolTip("Zero")
   tray.setContextMenu(Menu.buildFromTemplate([{ label: "Open Zero", click: openWindow }, { type: "separator" }, { label: "Quit", role: "quit" }]))
   tray.on("click", openWindow)
@@ -121,6 +142,9 @@ else {
   void app
     .whenReady()
     .then(loginShellPath)
+    .then(async () => {
+      browser = await startBrowserHost(() => win)
+    })
     .then(startServer)
     .then(() => {
       openWindow()

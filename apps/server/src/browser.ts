@@ -4,6 +4,10 @@
 // tabs; the agents drive them through the tools below (read the page as an accessibility snapshot with
 // [ref=eN] handles, act on a ref), and the Browser panel watches the chat's active tab live (CDP screencast)
 // and can take over: while a person holds the browser, every agent tool on that chat is refused.
+// In the desktop app (ZERO_DESKTOP_* set by Electron) there is no headless Chrome: each tab is a native
+// WebContentsView the Electron main process creates (Electron refuses Target.createTarget), in a persistent
+// partition per agent (own cookies and logins), and the server drives it over CDP like any page. The panel shows
+// the view itself instead of frames.
 import { join } from "node:path"
 import { Context, Effect, Layer } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -43,16 +47,43 @@ export interface Watcher {
 
 export class BrowserError extends Error {}
 
+// The desktop app's browser host: its CDP endpoint and the control endpoint that creates and closes views.
+export interface NativeHost {
+  readonly cdp: string
+  readonly control: string
+  readonly token: string
+}
+export const nativeHostFromEnv = (env = process.env): NativeHost | undefined =>
+  env.ZERO_DESKTOP_CDP && env.ZERO_DESKTOP_CONTROL && env.ZERO_DESKTOP_TOKEN ? { cdp: env.ZERO_DESKTOP_CDP, control: env.ZERO_DESKTOP_CONTROL, token: env.ZERO_DESKTOP_TOKEN } : undefined
+// A partition name from an agent id ("you" for tabs a person opens, "assistant" without an agent).
+export const profileOf = (agentId: string | undefined) => (agentId ?? "assistant").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 64) || "assistant"
+
 export class Browsers {
   private context: Promise<BrowserContext> | undefined
   private chats = new Map<string, ChatBrowser>()
   private screencast: { page: Page; cdp: CDPSession } | undefined
 
-  constructor(private readonly profileDir: string) {}
+  constructor(
+    private readonly profileDir: string,
+    private readonly native?: NativeHost
+  ) {}
+
+  private async host(method: string, path: string, body?: unknown) {
+    const r = await fetch(`${this.native!.control}${path}`, { method, headers: { authorization: `Bearer ${this.native!.token}`, "content-type": "application/json" }, body: body ? JSON.stringify(body) : null })
+    if (!r.ok) throw new BrowserError(`The desktop browser refused: ${await r.text()}`)
+  }
 
   // Opened on first use; the installed Chrome when there is one, else Playwright's Chromium.
   private open(): Promise<BrowserContext> {
     this.context ??= (async () => {
+      if (this.native) {
+        try {
+          return (await chromium.connectOverCDP(this.native.cdp)).contexts()[0]!
+        } catch (e) {
+          this.context = undefined
+          throw new BrowserError(`The desktop browser is not reachable (${e instanceof Error ? e.message.split("\n")[0] : e}).`)
+        }
+      }
       const options = { headless: true, viewport: VIEWPORT, acceptDownloads: false }
       try {
         return await chromium.launchPersistentContext(this.profileDir, { ...options, channel: "chrome" })
@@ -92,10 +123,10 @@ export class Browsers {
     for (const w of c.watchers) w.state(state)
   }
 
-  async newTab(chatId: string, url?: string): Promise<string> {
+  async newTab(chatId: string, url?: string, profile = "assistant"): Promise<string> {
     const context = await this.open()
-    const page = await context.newPage()
     const id = crypto.randomUUID()
+    const page = this.native ? await this.nativePage(context, id, profile) : await context.newPage()
     const c = this.chat(chatId)
     c.tabs.set(id, page)
     c.active = id
@@ -115,6 +146,18 @@ export class Browsers {
     await this.watch(chatId)
     changed()
     return id
+  }
+
+  // The desktop app opens a view on about:blank#zero-tab-<id>; its page shows up in the CDP context shortly after.
+  private async nativePage(context: BrowserContext, id: string, profile: string): Promise<Page> {
+    await this.host("POST", "/tabs", { id, profile })
+    const mark = `#zero-tab-${id}`
+    for (let i = 0; i < 200; i++) {
+      const page = context.pages().find((p) => p.url().endsWith(mark))
+      if (page) return page
+      await Bun.sleep(25)
+    }
+    throw new BrowserError("The desktop browser didn't open the tab.")
   }
 
   // A page's alert/confirm/prompt never blocks the agent: it is answered (dismissed unless the agent asked to
@@ -152,14 +195,14 @@ export class Browsers {
   }
 
   // The active tab, opening one when the chat has none.
-  async page(chatId: string, tabId?: string): Promise<Page> {
+  async page(chatId: string, tabId?: string, profile?: string): Promise<Page> {
     const c = this.chat(chatId)
     if (tabId) {
       const p = c.tabs.get(tabId)
       if (!p) throw new BrowserError(`No tab ${tabId} in this chat. Call browser_tabs to list them.`)
       return p
     }
-    if (!c.active || !c.tabs.get(c.active)) await this.newTab(chatId)
+    if (!c.active || !c.tabs.get(c.active)) await this.newTab(chatId, undefined, profile)
     return c.tabs.get(c.active!)!
   }
 
@@ -172,7 +215,14 @@ export class Browsers {
   }
 
   async closeTab(chatId: string, tabId: string) {
-    await this.chat(chatId).tabs.get(tabId)?.close()
+    const page = this.chat(chatId).tabs.get(tabId)
+    if (!page) return
+    if (this.native) await this.host("DELETE", `/tabs/${tabId}`)
+    else await page.close()
+  }
+
+  get isNative() {
+    return !!this.native
   }
 
   // Agent tools pass here first: a person holding the browser blocks them.
@@ -202,6 +252,7 @@ export class Browsers {
   // Screencasts the active tab of a chat that a panel watches (one screencast at a time: the last watched chat).
   private async watch(chatId: string) {
     const c = this.chat(chatId)
+    if (this.native) return // the panel shows the native view itself
     const page = c.watchers.size && c.active ? c.tabs.get(c.active) : undefined
     if (this.screencast?.page === page) return
     if (this.screencast) {
@@ -223,6 +274,7 @@ export class Browsers {
   }
 
   async close() {
+    if (this.native) return // Electron's own context: disconnecting is enough, and the process is ending
     const context = await this.context?.catch(() => undefined)
     await context?.close().catch(() => undefined)
   }
@@ -328,9 +380,10 @@ const pageLine = async (page: Page) => `${(await page.title().catch(() => "")) |
 
 // One tool call on the chat's browser; the text the model gets back (with any dialog the page opened meanwhile).
 // root: the chat's folder (uploads come only from inside it).
-export async function runBrowserTool(b: Browsers, chatId: string, name: BrowserToolName, args: Record<string, unknown>, root?: string): Promise<string> {
+// profile: whose cookies a tab the agent opens uses (profileOf(agentId)).
+export async function runBrowserTool(b: Browsers, chatId: string, name: BrowserToolName, args: Record<string, unknown>, root?: string, profile?: string): Promise<string> {
   b.guard(chatId)
-  const text = await browserStep(b, chatId, name, args, root)
+  const text = await browserStep(b, chatId, name, args, root, profile)
   const dialogs = b.takeDialogs(chatId)
   return dialogs.length ? `${text}\nDialogs: ${dialogs.join("; ")}` : text
 }
@@ -349,41 +402,42 @@ export function stepOf(step: Record<string, unknown>): { name: BrowserToolName; 
   return undefined
 }
 
-async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, args: Record<string, unknown>, root?: string): Promise<string> {
+async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, args: Record<string, unknown>, root?: string, profile?: string): Promise<string> {
+  const page_ = () => b.page(chatId, undefined, profile)
   switch (name) {
     case "browser_navigate": {
-      const page = await b.page(chatId)
+      const page = await page_()
       const url = normalizeUrl(str(args.url))
       if (!/^https?:\/\//i.test(url)) throw new BrowserError("Only http and https addresses.")
       await page.goto(url, { timeout: NAV_MS, waitUntil: "domcontentloaded" })
       return `Opened ${await pageLine(page)}`
     }
     case "browser_snapshot": {
-      const page = await b.page(chatId)
+      const page = await page_()
       const snap = await page.ariaSnapshot({ mode: "ai" })
       const head = `Page: ${await pageLine(page)}\n`
       return head + (snap.length > MAX_SNAPSHOT_CHARS ? `${snap.slice(0, MAX_SNAPSHOT_CHARS)}\n… (cut; scroll or narrow down)` : snap)
     }
     case "browser_click": {
-      const page = await b.page(chatId)
+      const page = await page_()
       await page.locator(`aria-ref=${str(args.ref)}`).click({ timeout: ACTION_MS })
       await page.waitForLoadState("domcontentloaded", { timeout: ACTION_MS }).catch(() => undefined)
       return `Clicked. Now: ${await pageLine(page)}`
     }
     case "browser_type": {
-      const page = await b.page(chatId)
+      const page = await page_()
       const field = page.locator(`aria-ref=${str(args.ref)}`)
       await field.fill(str(args.text), { timeout: ACTION_MS })
       if (args.submit === true) await field.press("Enter", { timeout: ACTION_MS })
       return args.submit === true ? `Typed and submitted. Now: ${await pageLine(page)}` : "Typed."
     }
     case "browser_press": {
-      const page = await b.page(chatId)
+      const page = await page_()
       await page.keyboard.press(str(args.key))
       return `Pressed ${str(args.key)}. Now: ${await pageLine(page)}`
     }
     case "browser_wait": {
-      const page = await b.page(chatId)
+      const page = await page_()
       if (str(args.text)) {
         await page.getByText(str(args.text)).first().waitFor({ state: "visible", timeout: ACTION_MS })
         return `"${str(args.text)}" is on the page.`
@@ -394,30 +448,30 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
     }
     case "browser_tabs": {
       const action = str(args.action) || "list"
-      if (action === "new") await b.newTab(chatId, str(args.url) || undefined)
+      if (action === "new") await b.newTab(chatId, str(args.url) || undefined, profile)
       else if (action === "select") await b.select(chatId, str(args.id))
       else if (action === "close") await b.closeTab(chatId, str(args.id))
       const tabs = await b.tabs(chatId)
       return tabs.length ? tabs.map((t) => `${t.active ? "*" : " "} ${t.id}  ${t.title || "(untitled)"} — ${t.url}`).join("\n") : "No tabs."
     }
     case "browser_back": {
-      const page = await b.page(chatId)
+      const page = await page_()
       await page.goBack({ timeout: NAV_MS, waitUntil: "domcontentloaded" })
       return `Back. Now: ${await pageLine(page)}`
     }
     case "browser_hover": {
-      const page = await b.page(chatId)
+      const page = await page_()
       await page.locator(`aria-ref=${str(args.ref)}`).hover({ timeout: ACTION_MS })
       return "Hovered."
     }
     case "browser_select": {
-      const page = await b.page(chatId)
+      const page = await page_()
       const values = Array.isArray(args.values) ? args.values.map(String) : [str(args.values)]
       const chosen = await page.locator(`aria-ref=${str(args.ref)}`).selectOption(values, { timeout: ACTION_MS })
       return `Selected ${chosen.join(", ") || "nothing"}.`
     }
     case "browser_scroll": {
-      const page = await b.page(chatId)
+      const page = await page_()
       await page.mouse.wheel(0, Number(args.dy) || 0)
       return "Scrolled."
     }
@@ -426,7 +480,7 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
       const paths = (Array.isArray(args.paths) ? args.paths : []).map((p) => resolve(root, String(p)))
       const outside = paths.find((p) => !(p === root || p.startsWith(root + sep)) || !existsSync(p))
       if (!paths.length || outside) throw new BrowserError(`Only existing files inside the chat's folder${outside ? ` (not ${outside})` : ""}.`)
-      const page = await b.page(chatId)
+      const page = await page_()
       const target = page.locator(`aria-ref=${str(args.ref)}`)
       // A file input takes the files directly; a button that opens a picker gets them through the chooser.
       await target.setInputFiles(paths, { timeout: ACTION_MS }).catch(async () => {
@@ -445,12 +499,12 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
         const step = stepOf((raw ?? {}) as Record<string, unknown>)
         if (!step || step.name === "browser_run") throw new BrowserError(`Step ${i + 1} is not one of navigate, click, type, press, hover, select, scroll, wait.`)
         try {
-          await browserStep(b, chatId, step.name, step.args, root)
+          await browserStep(b, chatId, step.name, step.args, root, profile)
         } catch (e) {
           throw new BrowserError(`Step ${i + 1} (${step.name.replace("browser_", "")}) failed: ${e instanceof Error ? e.message.split("\n")[0] : e}`)
         }
       }
-      return `Did ${steps.length} step${steps.length === 1 ? "" : "s"}.\n${await browserStep(b, chatId, "browser_snapshot", {}, root)}`
+      return `Did ${steps.length} step${steps.length === 1 ? "" : "s"}.\n${await browserStep(b, chatId, "browser_snapshot", {}, root, profile)}`
     }
   }
 }
@@ -461,7 +515,7 @@ export class BrowserService extends Context.Service<BrowserService, Browsers>()(
     Effect.gen(function* () {
       const dataDir = yield* DataDir
       return yield* Effect.acquireRelease(
-        Effect.sync(() => new Browsers(join(dataDir, "browser", "profile"))),
+        Effect.sync(() => new Browsers(join(dataDir, "browser", "profile"), nativeHostFromEnv())),
         (b) => Effect.promise(() => b.close())
       )
     })
@@ -477,7 +531,7 @@ export type PanelFrame =
   | { t: "key"; key: string }
   | { t: "text"; text: string }
   | { t: "nav"; url: string }
-  | { t: "back" | "forward" | "reload" | "newtab" | "release" }
+  | { t: "back" | "forward" | "reload" | "newtab" | "release" | "take" }
   | { t: "tab" | "close"; id: string }
 
 const frac = (n: unknown) => (typeof n === "number" && n >= 0 && n <= 1 ? n : undefined)
@@ -503,6 +557,7 @@ export function parsePanelFrame(raw: string): PanelFrame | undefined {
       case "reload":
       case "newtab":
       case "release":
+      case "take":
         return { t: f.t }
       case "tab":
       case "close":
@@ -516,10 +571,11 @@ export function parsePanelFrame(raw: string): PanelFrame | undefined {
 async function applyPanelFrame(b: Browsers, chatId: string, f: PanelFrame) {
   if (f.t === "release") return b.setControl(chatId, false)
   b.setControl(chatId, true)
-  if (f.t === "newtab") return void (await b.newTab(chatId))
+  if (f.t === "take") return // the desktop app: a person clicked the native view
+  if (f.t === "newtab") return void (await b.newTab(chatId, undefined, "you"))
   if (f.t === "tab") return b.select(chatId, f.id)
   if (f.t === "close") return b.closeTab(chatId, f.id)
-  const page = await b.page(chatId)
+  const page = await b.page(chatId, undefined, "you")
   const at = (x: number, y: number) => ({ x: x * VIEWPORT.width, y: y * VIEWPORT.height })
   switch (f.t) {
     case "click": {
