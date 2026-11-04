@@ -4,10 +4,10 @@
 // the server. One instance per user: opening the app again focuses the window.
 import { type ChildProcess, execFile, spawn } from "node:child_process"
 import { randomBytes } from "node:crypto"
-import { openSync, readFileSync } from "node:fs"
+import { openSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { join } from "node:path"
-import { app, BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, session, shell, Tray } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, powerMonitor, powerSaveBlocker, session, shell, Tray } from "electron"
 import { SESSION_BYTES, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
 import { autoUpdater } from "electron-updater"
 
@@ -237,9 +237,10 @@ function appMenu() {
   app.setAboutPanelOptions({ applicationName: "Zorel", applicationVersion: app.getVersion(), website: "https://zorel.dev" })
 }
 
-// The page may show notifications and write to the clipboard; camera, microphone, location and the rest are refused.
+// The page may show notifications and write to the clipboard (Copy buttons); reading it, the camera, microphone,
+// location and the rest are refused: nothing in the app needs them.
 function permissions() {
-  const allowed = new Set(["notifications", "clipboard-sanitized-write", "clipboard-read", "fullscreen"])
+  const allowed = new Set(["notifications", "clipboard-sanitized-write", "fullscreen"])
   session.defaultSession.setPermissionRequestHandler((wc, permission, done) => done(wc === win?.webContents && allowed.has(permission)))
   session.defaultSession.setPermissionCheckHandler((wc, permission) => wc === win?.webContents && allowed.has(permission))
 }
@@ -250,6 +251,54 @@ function auth() {
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ["http://127.0.0.1/*", "ws://127.0.0.1/*"] }, (d, done) =>
     done({ requestHeaders: URL.canParse(d.url) && new URL(d.url).host === host ? { ...d.requestHeaders, [SESSION_HEADER]: secret } : d.requestHeaders })
   )
+}
+
+// Where the system's own notification switch for Zorel lives (Settings › General › Notifications links there).
+const NOTIFICATION_SETTINGS: Partial<Record<NodeJS.Platform, string>> = {
+  darwin: "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
+  win32: "ms-settings:notifications"
+}
+
+// Preferences of this app that live outside the page (the main process acts on them before any window opens).
+const prefsFile = () => join(app.getPath("userData"), "desktop.json")
+const readPrefs = (): { keepAwake?: boolean } => {
+  try {
+    return JSON.parse(readFileSync(prefsFile(), "utf8"))
+  } catch {
+    return {}
+  }
+}
+
+// "Keep this computer awake" (Settings › General): while on power, the computer doesn't sleep when idle, so routines
+// run on time; the display can still turn off, and closing the lid still sleeps. On battery it sleeps as usual.
+let awake: number | undefined
+function keepAwake() {
+  const want = !!readPrefs().keepAwake && !powerMonitor.isOnBatteryPower()
+  if (want && awake === undefined) awake = powerSaveBlocker.start("prevent-app-suspension")
+  if (!want && awake !== undefined) {
+    powerSaveBlocker.stop(awake)
+    awake = undefined
+  }
+}
+
+function systemIpc() {
+  const fromApp = (e: Electron.IpcMainInvokeEvent) => !!win && e.sender === win.webContents
+  ipcMain.handle("notifications:settings", (e) => {
+    const target = NOTIFICATION_SETTINGS[process.platform]
+    if (!fromApp(e) || !target) return false
+    void shell.openExternal(target)
+    return true
+  })
+  ipcMain.handle("awake:get", (e) => (fromApp(e) ? !!readPrefs().keepAwake : false))
+  ipcMain.handle("awake:set", (e, on: unknown) => {
+    if (!fromApp(e) || typeof on !== "boolean") return false
+    writeFileSync(prefsFile(), JSON.stringify({ ...readPrefs(), keepAwake: on }))
+    keepAwake()
+    return on
+  })
+  powerMonitor.on("on-ac", keepAwake)
+  powerMonitor.on("on-battery", keepAwake)
+  keepAwake()
 }
 
 // Off macOS there's no Dock to reopen a closed window: a tray icon does it (and quits).
@@ -277,6 +326,7 @@ else {
     .then(() => {
       auth()
       loginItemIpc()
+      systemIpc()
       appMenu()
       permissions()
       if (dev) app.dock?.setIcon(icon()) // a packaged app shows the bundle's icon; dev would show Electron's

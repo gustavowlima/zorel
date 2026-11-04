@@ -9,7 +9,7 @@ import { agentsAtom, fileSkillsAtom, memoriesAtom, mutations, preferencesAtom, p
 import { scopeLabel } from "../labels.ts"
 import { go, SETTINGS_TABS, type SettingsTab, setThemePref, themePref, type ThemePref } from "../state.ts"
 import { AuditSection } from "./audit.tsx"
-import { NotifySetting } from "./notify.tsx"
+import { NotifySetting, SoundSetting } from "./notify.tsx"
 import { McpSection } from "./mcp.tsx"
 import { ProvidersSection } from "./providers.tsx"
 import { ReadingState } from "./reading.tsx"
@@ -221,22 +221,30 @@ function FileSkills() {
 // Desktop only: open Zorel when you log in, without a window, so routines run after a restart.
 type LoginItem = { get: () => Promise<boolean>; set: (on: boolean) => Promise<boolean> }
 const loginItem = (window as { zorelDesktop?: { openAtLogin?: LoginItem } }).zorelDesktop?.openAtLogin
-function StartupSetting() {
+const keepAwake = (window as { zorelDesktop?: { keepAwake?: LoginItem } }).zorelDesktop?.keepAwake
+// A desktop switch kept by the main process: its value, then what the main process confirms.
+function DesktopSwitch({ item, title, hint }: { item: LoginItem; title: string; hint: string }) {
   const [on, setOn] = useState<boolean>()
   useEffect(() => {
-    void loginItem?.get().then(setOn)
-  }, [])
+    void item.get().then(setOn)
+  }, [item])
+  return (
+    <div className="flex items-center gap-3 py-3.5">
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="font-medium">{title}</span>
+        <span className="text-sm text-muted">{hint}</span>
+      </span>
+      <Switch aria-label={title} isSelected={!!on} isDisabled={on === undefined} onChange={(v) => void item.set(v).then(setOn)} />
+    </div>
+  )
+}
+function StartupSetting() {
   if (!loginItem) return null
   return (
     <Section title={t("appearance.startup")}>
       <Rows>
-        <div className="flex items-center gap-3 py-3.5">
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="font-medium">{t("appearance.openAtLogin")}</span>
-            <span className="text-sm text-muted">{t("appearance.openAtLoginHint")}</span>
-          </span>
-          <Switch aria-label={t("appearance.openAtLogin")} isSelected={!!on} isDisabled={on === undefined} onChange={(v) => void loginItem.set(v).then(setOn)} />
-        </div>
+        <DesktopSwitch item={loginItem} title={t("appearance.openAtLogin")} hint={t("appearance.openAtLoginHint")} />
+        {keepAwake && <DesktopSwitch item={keepAwake} title={t("appearance.keepAwake")} hint={t("appearance.keepAwakeHint")} />}
       </Rows>
     </Section>
   )
@@ -303,6 +311,7 @@ function General() {
     <Section title={t("appearance.notifications")}>
       <Rows>
         <NotifySetting />
+        <SoundSetting />
       </Rows>
     </Section>
     <StartupSetting />

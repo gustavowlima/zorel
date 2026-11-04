@@ -879,6 +879,8 @@ export const en = {
     updateFound: "A new version is on its way",
     checkFailed: "Couldn't check. Try again later.",
     checkUnsupported: "Updates come with the installed app",
+    keepAwake: "Keep this computer awake",
+    keepAwakeHint: "While it's plugged in, it doesn't sleep when idle, so routines run on time. The screen can still turn off; on battery it sleeps as usual.",
     openAtLoginHint: "It starts without a window, so routines and agents keep running after a restart. Open it from the Dock or the tray.",
     title: "Appearance",
     theme: "Theme",
@@ -1082,7 +1084,14 @@ export const en = {
     title: "Desktop notifications",
     hint: "When a chat waits for you, fails or finishes while you're elsewhere.",
     denied: "Blocked by the system or the browser. Allow them there to turn this on.",
-    done: "Finished."
+    done: "Finished.",
+    sendTest: "Send a test",
+    test: "Notifications work. You'll see one like this when a chat needs you.",
+    systemHint: "Not seeing them? Your system decides too: allow Zorel in its notification settings.",
+    systemSettings: "Open system settings",
+    sound: "Play a sound",
+    soundHint: "A short chime when a chat waits for you, fails or finishes while you're elsewhere.",
+    listen: "Listen"
   },
   pause: {
     all: "Pause all agents",

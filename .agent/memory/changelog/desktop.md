@@ -8,3 +8,4 @@
 2026-11-04 | versão 0.2.0; install.sh + assinatura ad hoc + update manual no macOS; macOS 27 recusa ad hoc | pedido: estratégia sem certificado (testada: não roda no macOS 27)
 2026-11-04 | segredo da sessão por header do main; navegação por origem | auditoria: API sem credencial; prefixo aceitava http://127.0.0.1:PORT@outro
 2026-11-04 | removido browser-host.ts e remote-debugging-port; agentes usam o Chrome do server por pipe | CDP do Electron sem autenticação
+2026-11-04 | sem clipboard-read na janela; manter acordado na tomada; atalho para ajustes de notificação | comparação com as permissões do a reference app
