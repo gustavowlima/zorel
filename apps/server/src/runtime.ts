@@ -370,7 +370,7 @@ export const makeRuntime = Effect.gen(function* () {
           }
         }
         if (builtin.writes) onWrite()
-        const r = await runBrowserTool(browsers, chat.id, name as BrowserToolName, args).then(
+        const r = await runBrowserTool(browsers, chat.id, name as BrowserToolName, args, workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined))).then(
           (text) => textResult(text),
           (e: unknown) => textResult(e instanceof Error ? e.message.split("\n")[0]! : String(e), true)
         )
@@ -880,6 +880,12 @@ function browserStepTitle(name: string, args: Record<string, unknown>): string {
   if (name === "browser_snapshot") return "Read the page"
   if (name === "browser_wait") return s(args.text) ? `Wait for "${s(args.text)}"` : "Wait"
   if (name === "browser_back") return "Go back"
+  if (name === "browser_hover") return `Hover ${s(args.ref)}`
+  if (name === "browser_select") return `Choose an option in ${s(args.ref)}`
+  if (name === "browser_scroll") return "Scroll"
+  if (name === "browser_upload") return `Upload ${Array.isArray(args.paths) ? args.paths.join(", ") : "files"}`
+  if (name === "browser_dialog") return args.accept === true ? "Accept the next dialog" : "Dismiss the next dialog"
+  if (name === "browser_run") return `Run ${Array.isArray(args.steps) ? args.steps.length : 0} browser steps`
   return "Browser tabs"
 }
 
