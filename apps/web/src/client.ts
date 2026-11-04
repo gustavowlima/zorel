@@ -41,6 +41,7 @@ export const storageAtom = Zero.query("settings", "storage", { reactivityKeys: [
 // How full the next turn of a chat is (the composer's context meter); read again when the meter opens.
 export const commandsAtom = (id: string) => Zero.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
 export const terminalsAtom = (id: string) => Zero.query("chats", "terminals", { params: { id }, reactivityKeys: ["terminals"] })
+export const agentVersionsAtom = (id: string) => Zero.query("agents", "versions", { params: { id }, reactivityKeys: ["agents"] })
 export const gitAtom = (id: string) => Zero.query("chats", "git", { params: { id }, reactivityKeys: ["git"] })
 export const scriptsAtom = (id: string) => Zero.query("chats", "scripts", { params: { id }, reactivityKeys: ["scripts"] })
 export const localServersAtom = (id: string) => Zero.query("chats", "servers", { params: { id }, reactivityKeys: ["localServers"] })
@@ -65,6 +66,7 @@ export const mutations = {
   createAgent: Zero.mutation("agents", "create"),
   updateAgent: Zero.mutation("agents", "update"),
   removeAgent: Zero.mutation("agents", "remove"),
+  restoreAgent: Zero.mutation("agents", "restore"),
   createChat: Zero.mutation("chats", "create"),
   updateChat: Zero.mutation("chats", "update"),
   reorderChats: Zero.mutation("chats", "reorder"),

@@ -30,3 +30,4 @@
 2026-11-03 | git no chat: status, commit com mensagem rascunhada pelo modelo, push, PR via gh, nova branch; auditado | lacuna vs T3 Code
 2026-11-03 | worktree por chat (POST/DELETE /api/chats/:id/worktree) | lacuna vs T3 Code
 2026-11-03 | agentes criam/editam agentes por ferramentas com cartão de aprovação; acesso limitado ao de quem propõe | fase 4
+2026-11-03 | versões de agente com restaurar; exportar/importar perfil sem conta | fase 4

@@ -45,6 +45,28 @@ export const agents = sqliteTable("agents", {
   createdAt: integer("created_at").notNull()
 })
 
+// Every saved state of an agent's profile (phase 4: versions and restore). n counts up per agent; `by` is who
+// made the change ("you", or the proposing agent's name). Restoring writes the old profile as a new version.
+export const agentVersions = sqliteTable("agent_versions", {
+  id: text().primaryKey(),
+  agentId: text("agent_id").notNull().references(() => agents.id, { onDelete: "cascade" }),
+  n: integer().notNull(),
+  profile: text({ mode: "json" }).$type<AgentProfile>().notNull(),
+  by: text().notNull(),
+  at: integer().notNull()
+})
+export type AgentProfile = {
+  name: string
+  title: string
+  description: string
+  instructions: string
+  model: string
+  accountId: string | null
+  effort: "low" | "medium" | "high" | "max" | null
+  failover: ReadonlyArray<FailoverTarget>
+  access: "workspace" | "ask" | "full"
+}
+
 export const chats = sqliteTable("chats", {
   id: text().primaryKey(),
   projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),

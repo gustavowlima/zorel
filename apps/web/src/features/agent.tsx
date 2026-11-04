@@ -1,17 +1,17 @@
 // Agent page, in four groups after who it is (name, title, one-line description): Brain (default model with
 // account and reasoning, fallbacks), Knows (instructions, its memories and skills), Does (its usage), Rules
 // (access, the tools its chats reach). Without an id it creates one, in a project or global.
-import type { Access, Agent, FailoverTarget } from "@zero/contracts"
-import { t } from "@zero/i18n"
+import type { Access, Agent, AgentVersion, FailoverTarget } from "@zero/contracts"
+import { formatAge, t } from "@zero/i18n"
 import { useEffect, useState } from "react"
-import { agentsAtom, memoriesAtom, mutations, projectsAtom, serversAtom, useList, useMutation } from "../client.ts"
+import { agentsAtom, agentVersionsAtom, memoriesAtom, mutations, projectsAtom, serversAtom, useList, useMutation, useReading } from "../client.ts"
 import { agentTone } from "../labels.ts"
 import { go } from "../state.ts"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import type { ReactNode } from "react"
 import {
-  AgentAvatar, BookOpen, Button, ChartColumn, ChevronRight, ChoiceCards, ConfirmDialog, Field, IconButton, Input, Menu, MenuItem, MoreHorizontal, Rows, Screen, Section, Sparkles, Textarea,
+  AgentAvatar, BookOpen, Button, ChartColumn, Download, Undo2, ChevronRight, ChoiceCards, ConfirmDialog, Field, IconButton, Input, Menu, MenuItem, MoreHorizontal, Rows, Screen, Section, Sparkles, Textarea,
   Trash2
 } from "@/ui"
 
@@ -92,6 +92,9 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
                 </IconButton>
               }
             >
+              <MenuItem icon={<Download />} onAction={() => exportAgent(agent)}>
+                {t("agent.export")}
+              </MenuItem>
               <MenuItem icon={<Trash2 />} tone="danger" onAction={() => setConfirm(true)}>
                 {t("agent.deleteAction")}
               </MenuItem>
@@ -163,6 +166,8 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
           </Section>
         )}
 
+        {agent && <History agent={agent} />}
+
         <Section title={t("agent.rules")}>
           <ChoiceCards
             label={t("access.title")}
@@ -203,6 +208,92 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
       )}
     </Screen>
   )
+}
+
+// ---------- versions ----------
+
+const VERSION_FIELDS = ["name", "title", "description", "instructions", "model", "accountId", "effort", "failover", "access"] as const
+
+// Every saved state of the profile, newest first: who changed it, when, which fields; any older one can come back
+// (restoring is itself a new version).
+function History({ agent }: { agent: Agent }) {
+  const versions = useReading(agentVersionsAtom(agent.id)).items
+  const restore = useMutation(mutations.restoreAgent)
+  const [open, setOpen] = useState<AgentVersion>()
+  if (versions.length < 2) return null
+  return (
+    <Section title={t("agent.history")} description={t("agent.historyHint")}>
+      <Rows>
+        {versions.map((v, i) => {
+          const prev = versions[i + 1]
+          const fields = prev ? VERSION_FIELDS.filter((f) => JSON.stringify(v.profile[f]) !== JSON.stringify(prev.profile[f])) : []
+          return (
+            <div key={v.id} className="flex items-center gap-3 py-2.5">
+              <span className="w-8 shrink-0 font-mono text-sm text-muted">{`v${v.n}`}</span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm first-letter:uppercase">{prev ? fields.map((f) => t(`agent.field.${f}`)).join(", ") || t("agent.noFieldChange") : t("agent.created")}</span>
+                <span className="text-sm text-muted">{`${v.by === "you" ? t("agent.byYou") : v.by} · ${formatAge(v.at)}`}</span>
+              </span>
+              {i === 0 ? (
+                <span className="text-sm text-muted">{t("agent.current")}</span>
+              ) : (
+                <Button size="sm" variant="ghost" onPress={() => setOpen(v)}>
+                  <Undo2 />
+                  {t("agent.restore")}
+                </Button>
+              )}
+            </div>
+          )
+        })}
+      </Rows>
+      <ConfirmDialog
+        isOpen={!!open}
+        onOpenChange={(o) => !o && setOpen(undefined)}
+        title={t("agent.restoreTitle", { n: open?.n ?? 0 })}
+        description={t("agent.restoreBody")}
+        confirmLabel={t("agent.restore")}
+        onConfirm={() => open && void restore({ params: { id: agent.id, n: open.n }, reactivityKeys: ["agents"] })}
+      />
+    </Section>
+  )
+}
+
+// ---------- export / import: the profile as JSON, without the account (it is this computer's) ----------
+
+export const EXPORT_KIND = "zero.agent"
+
+function exportAgent(a: Agent) {
+  const data = {
+    kind: EXPORT_KIND,
+    version: 1,
+    name: a.name, title: a.title, description: a.description, instructions: a.instructions, model: a.model, effort: a.effort,
+    failover: a.failover.map((f) => ({ model: f.model, accountId: null })),
+    access: a.access
+  }
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }))
+  const link = document.createElement("a")
+  link.href = url
+  link.download = `${a.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "agent"}.agent.json`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+// A file from exportAgent back to a create payload (the server validates every field).
+export function importedAgent(text: string, projectId: string | null) {
+  const v = JSON.parse(text) as Record<string, unknown>
+  if (v.kind !== EXPORT_KIND) throw new Error(t("agent.importNotAgent"))
+  const str = (x: unknown) => (typeof x === "string" ? x : "")
+  return {
+    projectId,
+    name: str(v.name),
+    title: str(v.title),
+    description: str(v.description),
+    instructions: str(v.instructions),
+    model: str(v.model),
+    effort: (["low", "medium", "high", "max"] as const).find((e) => e === v.effort) ?? null,
+    failover: Array.isArray(v.failover) ? (v.failover as Array<{ model?: unknown }>).flatMap((f) => (typeof f.model === "string" ? [{ model: f.model, accountId: null }] : [])) : [],
+    access: (["ask", "workspace", "full"] as const).find((a) => a === v.access) ?? "workspace"
+  }
 }
 
 // A row that opens somewhere (Knowledge, Usage).

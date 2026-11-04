@@ -3,10 +3,12 @@
 // zero_update_agent): they show up here once the person approves the proposal.
 import type { Agent } from "@zero/contracts"
 import { t } from "@zero/i18n"
-import { agentsAtom, projectsAtom, useList, useStatuses } from "../client.ts"
+import { useState } from "react"
+import { agentsAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
+import { importedAgent } from "./agent.tsx"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { AgentAvatar, Bot, Button, ChevronRight, Column, Dot, EmptyState, IconButton, Plus, Screen, Section, Tooltip } from "@/ui"
+import { AgentAvatar, Bot, Button, ChevronRight, Column, pickFiles, Upload, Dot, EmptyState, IconButton, Plus, Screen, Section, Tooltip } from "@/ui"
 
 // The agents working now (a chat of theirs is running or waiting).
 export function useWorking() {
@@ -51,10 +53,13 @@ export function AgentsView() {
       title={t("agents.title")}
       subtitle={t("agents.subtitle")}
       actions={
-        <Button size="sm" variant="secondary" onPress={() => go({ view: "new-agent", projectId: null })}>
-          <Plus />
-          {t("nav.newAgent")}
-        </Button>
+        <>
+          <ImportAgent />
+          <Button size="sm" variant="secondary" onPress={() => go({ view: "new-agent", projectId: null })}>
+            <Plus />
+            {t("nav.newAgent")}
+          </Button>
+        </>
       }
     >
       <Column>
@@ -92,5 +97,32 @@ export function AgentsView() {
       )}
       </Column>
     </Screen>
+  )
+}
+
+// An agent exported from Zero (a .agent.json): it comes in as a global agent, then opens.
+function ImportAgent() {
+  const create = useMutation(mutations.createAgent)
+  const [error, setError] = useState<string>()
+  const pick = () =>
+    void pickFiles({ accept: ".json,application/json" })
+      .then(([file]) => file?.text())
+      .then((text) => (text ? create({ payload: importedAgent(text, null), reactivityKeys: ["agents"] }).then((a) => go({ view: "agent", id: a.id })) : undefined))
+      .catch((err: unknown) => setError(err instanceof Error && err.message ? err.message : t("agent.importFailed")))
+  return (
+    <>
+      {error && <span className="text-sm text-danger">{error}</span>}
+      <Button
+        size="sm"
+        variant="ghost"
+        onPress={() => {
+          setError(undefined)
+          pick()
+        }}
+      >
+        <Upload />
+        {t("agent.import")}
+      </Button>
+    </>
   )
 }

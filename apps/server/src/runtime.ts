@@ -235,14 +235,14 @@ export const makeRuntime = Effect.gen(function* () {
           proposal = {
             title: `${nameOf(agent)} proposes a new agent: ${input.name}`,
             fields: { ...input, projectId: undefined, scope: input.projectId ? "project" : "global" },
-            apply: () => run(store.createAgent(input))
+            apply: () => run(store.createAgent(input, nameOf(agent)))
           }
         } else {
           const changes = updateInput(args, target!, caller.access)
           proposal = {
             title: `${nameOf(agent)} proposes changes to ${target!.name}`,
             fields: changes,
-            apply: async () => (await run(store.updateAgent(target!.id, changes)))!
+            apply: async () => (await run(store.updateAgent(target!.id, changes, nameOf(agent))))!
           }
         }
       } catch (e) {

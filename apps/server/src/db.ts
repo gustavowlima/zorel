@@ -8,7 +8,13 @@ import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
 import { Context, Effect, Layer } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
-import { agents, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
+import { type AgentProfile, agents, agentVersions, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
+
+// The part of an agent a version keeps (everything but its id, project and creation time).
+export const profileOf = (a: Agent): AgentProfile => ({
+  name: a.name, title: a.title, description: a.description, instructions: a.instructions, model: a.model,
+  accountId: a.accountId, effort: a.effort, failover: a.failover, access: a.access
+})
 
 // "Prefere PRs pequenos." and "prefere prs pequenos" are the same memory.
 export const normalize = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
@@ -91,6 +97,11 @@ export const repository = (db: Db) => {
   const mcpServer = (id: string) => orDie(db.select().from(mcpServers).where(eq(mcpServers.id, id)).pipe(Effect.map((r) => (r[0] ? toMcpServer(r[0]) : undefined))))
   const project = (id: string) => orDie(db.select().from(projects).where(eq(projects.id, id)).pipe(Effect.map(first)))
   const agent = (id: string) => orDie(db.select().from(agents).where(eq(agents.id, id)).pipe(Effect.map(first)))
+  const addVersion = (a: Agent, by: string) =>
+    Effect.gen(function* () {
+      const [{ n = 0 } = {}] = yield* db.select({ n: sql<number>`coalesce(max(${agentVersions.n}), 0)` }).from(agentVersions).where(eq(agentVersions.agentId, a.id))
+      yield* db.insert(agentVersions).values({ id: crypto.randomUUID(), agentId: a.id, n: n + 1, profile: profileOf(a), by, at: now() })
+    })
 
   return {
     // ---------- projects ----------
@@ -132,18 +143,28 @@ export const repository = (db: Db) => {
     // ---------- agents ----------
     agents: (): Effect.Effect<Agent[]> => orDie(db.select().from(agents).orderBy(asc(agents.createdAt))),
     agent,
-    createAgent: (input: { projectId: string | null; name: string; title?: string | undefined; description?: string | undefined; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined }) =>
+    createAgent: (input: { projectId: string | null; name: string; title?: string | undefined; description?: string | undefined; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined }, by = "you") =>
       Effect.gen(function* () {
         const a: Agent = { id: crypto.randomUUID(), ...input, title: input.title ?? "", description: input.description ?? "", accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], access: input.access ?? "workspace", createdAt: now() }
         yield* db.insert(agents).values(a)
+        yield* addVersion(a, by)
         return a
       }).pipe(orDie),
-    updateAgent: (id: string, input: { name?: string | undefined; title?: string | undefined; description?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined }) =>
+    updateAgent: (id: string, input: { name?: string | undefined; title?: string | undefined; description?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined }, by = "you") =>
       Effect.gen(function* () {
+        const before = yield* agent(id)
         const set = defined(input)
-        if (Object.keys(set).length) yield* db.update(agents).set(set).where(eq(agents.id, id))
-        return yield* agent(id)
+        if (!before || !Object.keys(set).length) return before
+        // An agent from before versions existed: its current profile becomes version 1 first.
+        const [{ count = 0 } = {}] = yield* db.select({ count: sql<number>`count(*)` }).from(agentVersions).where(eq(agentVersions.agentId, id))
+        if (!count) yield* addVersion(before, "you")
+        yield* db.update(agents).set(set).where(eq(agents.id, id))
+        const after = (yield* agent(id))!
+        if (JSON.stringify(profileOf(after)) !== JSON.stringify(profileOf(before))) yield* addVersion(after, by)
+        return after
       }).pipe(orDie),
+    // Newest first.
+    agentVersions: (agentId: string) => orDie(db.select().from(agentVersions).where(eq(agentVersions.agentId, agentId)).orderBy(desc(agentVersions.n))),
     removeAgent: (id: string) =>
       orDie(
         db.transaction((tx) =>

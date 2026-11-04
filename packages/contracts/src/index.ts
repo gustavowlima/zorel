@@ -103,6 +103,19 @@ export const Agent = Schema.Struct({
 })
 export type Agent = typeof Agent.Type
 
+// A saved state of an agent's profile (newest first in lists). by: "you" or the agent that proposed it.
+export const AgentVersion = Schema.Struct({
+  id: Schema.String,
+  n: Schema.Number,
+  by: Schema.String,
+  at: Schema.Number,
+  profile: Schema.Struct({
+    name: Schema.String, title: Schema.String, description: Schema.String, instructions: Schema.String, model: Schema.String,
+    accountId: Schema.NullOr(Schema.String), effort: Schema.NullOr(Effort), failover: FailoverList, access: Access
+  })
+})
+export type AgentVersion = typeof AgentVersion.Type
+
 export const Chat = Schema.Struct({
   id: Id,
   projectId: Schema.NullOr(Id), // null: standalone chat
@@ -444,6 +457,8 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.post("create", "/api/agents", { payload: NewAgent, success: Agent, error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.patch("update", "/api/agents/:id", { params: idParam, payload: AgentPatch, success: Agent, error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("remove", "/api/agents/:id", { params: idParam }))
+      .add(HttpApiEndpoint.get("versions", "/api/agents/:id/versions", { params: idParam, success: Schema.Array(AgentVersion), error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("restore", "/api/agents/:id/versions/:n/restore", { params: Schema.Struct({ id: Schema.String, n: Schema.NumberFromString }), success: Agent, error: HttpApiError.NotFound }))
   )
   .add(
     HttpApiGroup.make("chats")

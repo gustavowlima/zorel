@@ -353,6 +353,10 @@ Compactos e diretos, com aperto físico ao pressionar.
 - Linha do agente (a mesma da aba Agents do projeto): avatar, nome com "● working" em accent quando um chat dele está rodando, título (ou descrição, ou a 1ª linha das instruções), modelo, acesso e ›.
 - Agentes também nascem no chat: um agente usa `zero_create_agent` / `zero_update_agent` e o pedido vira um **cartão de aprovação** com o perfil campo a campo; nada é criado sem o OK. A lista se atualiza ao fim do turno.
 
+### Versões do agente
+- Na página do agente, a seção **History** (só a partir de duas versões): uma linha por versão, a mais nova primeiro — `vN` em mono, os campos que mudaram em relação à anterior ("Instructions, model"; a primeira diz "Created"), quem mudou ("You" ou o nome do agente que propôs) e quando. A atual diz "Current"; as outras têm "Restore", que confirma antes e grava o perfil antigo como uma versão nova (nada se perde).
+- Menu ⋯ do agente: **Export** baixa `<nome>.agent.json` (perfil sem conta: a conta é deste computador). Na tela Agents, **Import** lê esse arquivo e cria um agente global, que abre em seguida; um arquivo que não é de agente do Zero mostra o erro ao lado do botão.
+
 ### Página do agente
 - Quem é: nome e título lado a lado (o papel em poucas palavras, mostrado no seletor `#`), depois a descrição (uma frase; os outros agentes do chat a leem para saber quando passar trabalho a ele).
 - Quatro grupos: **Brain** (modelo padrão com conta e raciocínio; fallbacks), **Knows** (instruções; memórias e skills do agente, com contagem e até 5 de cada abrindo no Knowledge), **Does** (Usage já filtrado por ele), **Rules** (nível de acesso; ferramentas MCP que os chats alcançam).
