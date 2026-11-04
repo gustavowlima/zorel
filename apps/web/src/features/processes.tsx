@@ -2,20 +2,20 @@
 // an agent left listening on a port in a chat's folder, open shells, engine sessions kept between turns (a
 // Claude Code or Codex process each) and MCP connections. Settings › Processes lists them all by kind; a chat's
 // header shows how many belong to it, and opens the same rows for that chat. Everything here can be stopped.
-// CPU and memory are live (read while the page is visible): 100% CPU is one full core.
+// CPU and memory are live (read while the page is visible): 100% CPU is one full core. Zorel's own processes (its
+// server, the desktop app) are rows too, so the list adds up to the total on top.
 import { useAtomValue } from "@effect/atom-react"
 import type { ProcessList } from "@zorel/contracts"
 import { formatAge, formatBytes, formatNumber, t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import { type ReactNode, useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, mutations, processesAtom, projectsAtom, useInvalidate, useList, useMutation, useStatuses } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
-import { Activity, Button, EmptyState, Globe, IconButton, ListRow, Meter, Plug, Popover, Rows, Section, Server, Sparkles, SquareTerminal, Tooltip } from "@/ui"
+import { Activity, AppWindow, Button, CircleStop, Cpu, Dot, EmptyState, Globe, IconButton, MemoryStick, Plug, Popover, RowHit, Section, Server, Sparkles, SquareTerminal, Tooltip, X } from "@/ui"
 
 const EMPTY: ProcessList = { servers: [], terminals: [], sessions: [], connections: [], usage: { cpu: 0, memory: 0, cores: 1, totalMemory: 1, parts: [] } }
 const cpuText = (cpu: number) => `${formatNumber(Math.round(cpu))}%`
-const useText = (u: { cpu: number; memory: number }) => `${cpuText(u.cpu)} · ${formatBytes(u.memory)}`
 
 // The list, read again every `every` ms while the page is visible (each read lists listening ports: cheap, not free).
 function useProcesses(every: number): ProcessList {
@@ -30,17 +30,17 @@ function useProcesses(every: number): ProcessList {
 
 interface Row {
   readonly key: string
-  readonly kind: "turn" | "server" | "terminal" | "session" | "connection"
+  readonly kind: "turn" | "server" | "terminal" | "session" | "connection" | "zorel"
   readonly chatIds: ReadonlyArray<string>
   readonly icon: ReactNode
   readonly title: string
   readonly owner: string // the chat or project it belongs to (left out inside a chat)
   readonly detail: string
-  readonly use?: { cpu: number; memory: number } // a turn has none of its own (it runs in its session)
+  readonly use?: { cpu: number; memory: number } | undefined // none: a turn (it runs in its session), a remote connection
   readonly nested?: boolean // runs inside another row (a server in a shell): left out of sums
   readonly stopLabel: string
-  readonly stop: () => Promise<unknown>
-  readonly open: () => void
+  readonly stop?: () => Promise<unknown> // none: Zorel's own (stop it by quitting)
+  readonly open?: () => void
 }
 
 // Every process as a row, from the list plus the live chat statuses (agents working).
@@ -123,7 +123,7 @@ function useRows(list: ProcessList): Row[] {
       kind: "connection",
       chatIds: [],
       icon: <Plug />,
-      use: c,
+      use: c.local ? c : undefined, // a remote one runs elsewhere: nothing to measure here
       title: c.name,
       owner: "",
       detail: c.local ? t("processes.localConnection") : t("processes.remoteConnection"),
@@ -134,108 +134,132 @@ function useRows(list: ProcessList): Row[] {
   ]
 }
 
+// The row's action (stop, close, disconnect): a quiet icon with its name in a tooltip.
 function StopButton({ row }: { row: Row }) {
   const [busy, setBusy] = useState(false)
+  if (!row.stop) return <span className="size-7" />
+  const stop = row.stop
   return (
-    <Button
-      size="sm"
-      variant="secondary"
-      isPending={busy}
-      aria-label={`${row.stopLabel}: ${row.title}`}
-      onPress={() => {
-        setBusy(true)
-        void row.stop().finally(() => setBusy(false))
-      }}
-    >
-      {row.stopLabel}
-    </Button>
+    <Tooltip content={row.stopLabel}>
+      <IconButton
+        size="sm"
+        label={`${row.stopLabel}: ${row.title}`}
+        isPending={busy}
+        className="text-muted data-hovered:text-danger"
+        onPress={() => {
+          setBusy(true)
+          void stop().finally(() => setBusy(false))
+        }}
+      >
+        {row.kind === "server" || row.kind === "turn" ? <CircleStop /> : <X />}
+      </IconButton>
+    </Tooltip>
   )
 }
 
-const KINDS = ["turn", "server", "terminal", "session", "connection"] as const
+// One process: what it is, whose, and its CPU and memory in fixed columns (so they read down the list).
+function ProcessRow({ row, compact = false }: { row: Row; compact?: boolean }) {
+  const sub = compact ? row.detail : row.owner || row.detail
+  return (
+    <div className="relative flex items-center gap-3 py-2">
+      {row.open && <RowHit label={row.title} onPress={row.open} />}
+      <span className="pointer-events-none relative flex w-5 shrink-0 justify-center text-muted [&_svg]:size-4">{row.icon}</span>
+      <span className="pointer-events-none relative flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-medium">{row.title}</span>
+        {sub && <span className="truncate text-xs text-muted">{sub}</span>}
+      </span>
+      <span className="pointer-events-none relative w-16 shrink-0 text-right text-sm tabular-nums text-secondary">{row.use ? cpuText(row.use.cpu) : "–"}</span>
+      <span className="pointer-events-none relative w-20 shrink-0 text-right text-sm tabular-nums text-secondary">{row.use ? formatBytes(row.use.memory) : "–"}</span>
+      <span className="relative flex w-7 shrink-0 justify-end">
+        <StopButton row={row} />
+      </span>
+    </div>
+  )
+}
 
-// Settings › Processes.
+// The columns' names, once, with their icons.
+const Columns = () => (
+  <div className="flex items-center gap-3 pb-1.5 text-xs text-muted">
+    <span className="w-5 shrink-0" />
+    <span className="flex-1">{t("processes.process")}</span>
+    <span className="flex w-16 shrink-0 items-center justify-end gap-1 [&_svg]:size-3.5">
+      <Cpu />
+      {t("processes.usage.cpu")}
+    </span>
+    <span className="flex w-20 shrink-0 items-center justify-end gap-1 [&_svg]:size-3.5">
+      <MemoryStick />
+      {t("processes.usage.memory")}
+    </span>
+    <span className="w-7 shrink-0" />
+  </div>
+)
+
+const KINDS = ["turn", "server", "terminal", "session", "connection", "zorel"] as const
+
+// Settings › Processes: Zorel's total on one line, then every process in one list, grouped by kind.
 export function ProcessesSection() {
   const list = useProcesses(3000)
-  const rows = useRows(list)
+  const rows = [...useRows(list), ...zorelRows(list.usage)]
+  const { usage } = list
   return (
-    <>
-      <ZorelUsage usage={list.usage} />
-      {!rows.length && <EmptyState icon={<Activity />} title={t("processes.empty")} hint={t("processes.emptyHint")} />}
-      {KINDS.map((kind) => {
-        const of = rows.filter((r) => r.kind === kind)
-        if (!of.length) return null
-        return (
-          <Section key={kind} title={t(`processes.kinds.${kind}`)} description={t(`processes.hints.${kind}`)}>
-            <Rows>
-              {of.map((r) => (
-                <ListRow key={r.key} icon={r.icon} title={r.title} hint={[r.owner, r.detail].filter(Boolean).join(" · ")} aside={r.use && useText(r.use)} label={r.title} onPress={r.open} trailing={<StopButton row={r} />} />
-              ))}
-            </Rows>
-          </Section>
-        )
-      })}
-    </>
-  )
-}
-
-// Zorel as a whole, now: CPU and memory, the last minutes of CPU as a line, and each part's share.
-function ZorelUsage({ usage }: { usage: ProcessList["usage"] }) {
-  const history = useRef<number[]>([])
-  const last = useRef(usage)
-  if (last.current !== usage && usage.memory > 0) {
-    last.current = usage
-    history.current = [...history.current, usage.cpu].slice(-40)
-  }
-  if (!usage.memory) return null
-  return (
-    <Section title={t("processes.usage.title")} description={t("processes.usage.hint", { cores: usage.cores })}>
-      <div className="flex items-start gap-8">
-        <Figure label={t("processes.usage.cpu")} value={cpuText(usage.cpu)} />
-        <Figure label={t("processes.usage.memory")} value={formatBytes(usage.memory)} sub={t("processes.usage.ofMemory", { total: formatBytes(usage.totalMemory) })} />
-        <Spark values={history.current} label={t("processes.usage.history")} />
-      </div>
-      <Rows>
-        {usage.parts
-          .filter((p) => p.memory > 0)
-          .map((p) => (
-            <div key={p.id} className="grid grid-cols-12 items-center gap-4 py-3">
-              <span className="col-span-4 flex min-w-0 flex-col">
-                <span className="truncate font-medium">{t(`processes.usage.parts.${p.id}`)}</span>
-              </span>
-              <Meter value={p.memory / usage.memory} label={t(`processes.usage.parts.${p.id}`)} className="col-span-5" />
-              <span className="col-span-3 text-right text-sm text-muted tabular-nums">{useText(p)}</span>
-            </div>
-          ))}
-      </Rows>
+    <Section title={t("processes.title")}>
+      {usage.memory > 0 && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+          <Stat icon={<Cpu />} value={cpuText(usage.cpu)} label={t("processes.usage.cpu")} hint={t("processes.usage.cores", { count: usage.cores })} />
+          <Stat icon={<MemoryStick />} value={formatBytes(usage.memory)} label={t("processes.usage.memory")} hint={t("processes.usage.ofMemory", { total: formatBytes(usage.totalMemory) })} />
+          <span className="ml-auto flex items-center gap-1.5 text-xs text-muted">
+            <Dot tone="success" />
+            {t("processes.usage.live")}
+          </span>
+        </div>
+      )}
+      {rows.length === 0 ? (
+        <EmptyState icon={<Activity />} title={t("processes.empty")} hint={t("processes.emptyHint")} />
+      ) : (
+        <div className="flex flex-col">
+          <Columns />
+          <div className="flex flex-col border-t border-subtle">
+            {KINDS.map((kind) => {
+              const of = rows.filter((r) => r.kind === kind)
+              if (!of.length) return null
+              return (
+                <div key={kind} className="flex flex-col border-b border-subtle pt-2.5 pb-1.5">
+                  <span className="text-xs text-muted">{t(`processes.kinds.${kind}`)}</span>
+                  {of.map((r) => (
+                    <ProcessRow key={r.key} row={r} />
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </Section>
   )
 }
 
-const Figure = ({ label, value, sub }: { label: string; value: string; sub?: string }) => (
-  <span className="flex flex-col">
-    <span className="text-sm text-muted">{label}</span>
-    <span className="text-2xl font-semibold tabular-nums">{value}</span>
-    {sub && <span className="text-xs text-dim">{sub}</span>}
+// CPU or memory in the summary line: icon, value, what it is and its scale.
+const Stat = ({ icon, value, label, hint }: { icon: ReactNode; value: string; label: string; hint: string }) => (
+  <span className="flex items-center gap-2">
+    <span className="flex size-7 items-center justify-center rounded-control bg-control text-secondary [&_svg]:size-4">{icon}</span>
+    <span className="flex flex-col leading-tight">
+      <span className="font-semibold tabular-nums">
+        {value} <span className="font-normal text-muted">{label}</span>
+      </span>
+      <span className="text-xs text-dim">{hint}</span>
+    </span>
   </span>
 )
 
-// The last readings of total CPU as a thin line, scaled to its own peak (at least one core).
-function Spark({ values, label }: { values: ReadonlyArray<number>; label: string }) {
-  if (values.length < 2) return null
-  const max = Math.max(100, ...values)
-  const w = 240
-  const h = 40
-  const points = values.map((v, i) => `${(i / (values.length - 1)) * w},${h - (v / max) * (h - 2) - 1}`).join(" ")
-  return (
-    <svg role="img" aria-label={label} viewBox={`0 0 ${w} ${h}`} className="ml-auto h-10 w-60 self-center text-accent" preserveAspectRatio="none">
-      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-    </svg>
-  )
+// Zorel's own processes (its server, the desktop app, what else they started) as rows of their own.
+function zorelRows(usage: ProcessList["usage"]): Row[] {
+  return usage.parts
+    .filter((p) => (p.id === "server" || p.id === "app" || p.id === "other") && p.memory > 0)
+    .map((p) => ({ key: `zorel:${p.id}`, kind: "zorel", chatIds: [], icon: p.id === "app" ? <AppWindow /> : <Server />, title: t(`processes.usage.parts.${p.id}`), owner: "", detail: "", use: p, stopLabel: "" }))
 }
 
 // A chat's header: how many processes this chat keeps running in the background (servers, shells, its engine
-// sessions); opens them with Stop. Nothing shows when there are none.
+// sessions); opens them with their CPU, memory and Stop. Nothing shows when there are none.
 export function ChatProcesses({ chatId }: { chatId: string }) {
   const rows = useRows(useProcesses(5000)).filter((r) => r.chatIds.includes(chatId) && r.kind !== "turn")
   if (!rows.length) return null
@@ -245,7 +269,7 @@ export function ChatProcesses({ chatId }: { chatId: string }) {
     <Popover
       label={label}
       placement="bottom end"
-      className="w-96"
+      className="w-104"
       trigger={
         <Tooltip content={label}>
           <IconButton label={label} shape="pill" className="w-auto gap-1 px-2 text-muted">
@@ -255,22 +279,24 @@ export function ChatProcesses({ chatId }: { chatId: string }) {
         </Tooltip>
       }
     >
-      <div className="flex flex-col p-1.5">
-        <span className="flex justify-between gap-3 px-2 pt-1 pb-2 text-sm text-muted">
-          <span>{label}</span>
-          <span className="tabular-nums">{useText(total)}</span>
-        </span>
-        {rows.map((r) => (
-          <div key={r.key} className="flex items-center gap-3 rounded-control px-2 py-1.5">
-            <span className="flex size-5 shrink-0 items-center justify-center text-muted [&_svg]:size-4">{r.icon}</span>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-sm font-medium">{r.title}</span>
-              <span className="truncate text-xs text-muted">{[r.use && useText(r.use), r.detail].filter(Boolean).join(" · ")}</span>
-            </span>
-            <StopButton row={r} />
-          </div>
-        ))}
-        <Button size="sm" variant="ghost" className="mt-1 justify-start text-muted" onPress={() => go({ view: "settings", tab: "processes" })}>
+      <div className="flex flex-col px-3.5 pt-3 pb-2">
+        <div className="flex items-center gap-4 pb-2.5 text-sm">
+          <span className="font-medium">{label}</span>
+          <span className="ml-auto flex items-center gap-1 text-muted tabular-nums [&_svg]:size-3.5">
+            <Cpu />
+            {cpuText(total.cpu)}
+          </span>
+          <span className="flex items-center gap-1 text-muted tabular-nums [&_svg]:size-3.5">
+            <MemoryStick />
+            {formatBytes(total.memory)}
+          </span>
+        </div>
+        <div className="flex flex-col border-t border-subtle pt-1">
+          {rows.map((r) => (
+            <ProcessRow key={r.key} row={r} compact />
+          ))}
+        </div>
+        <Button size="sm" variant="ghost" className="mt-1 -ml-2 self-start text-muted" onPress={() => go({ view: "settings", tab: "processes" })}>
           {t("processes.seeAll")}
         </Button>
       </div>

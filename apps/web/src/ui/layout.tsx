@@ -84,6 +84,15 @@ export const Code = ({ children, className }: { children: ReactNode; className?:
 // A row of a list between hairlines (Rows) that opens something: content flush with the section heading, a chevron,
 // and on hover a faint wash inset inside the hairlines (never a card over them). The whole row is one button (an
 // overlay under the content); `trailing` holds a control of its own (a "Sign in"), pressable on top of it.
+// A whole row as one press target (the row's content stays on top, unpressable): hover tint inside the hairlines.
+export const RowHit = ({ label, onPress }: { label: string; onPress: () => void }) => (
+  <AriaButton
+    aria-label={label}
+    onPress={onPress}
+    className="absolute -inset-x-2.5 inset-y-1 cursor-default rounded-control outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:bg-hover data-pressed:bg-control-active motion-reduce:transition-none"
+  />
+)
+
 export function ListRow({
   icon,
   title,
@@ -105,11 +114,7 @@ export function ListRow({
 }) {
   return (
     <div className="relative flex min-h-14 items-center gap-3.5 py-2.5">
-      <AriaButton
-        aria-label={label}
-        onPress={onPress}
-        className="absolute -inset-x-2.5 inset-y-1 cursor-default rounded-control outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:bg-hover data-pressed:bg-control-active motion-reduce:transition-none"
-      />
+      <RowHit label={label} onPress={onPress} />
       {icon && <span className="pointer-events-none relative flex size-5 shrink-0 items-center justify-center">{icon}</span>}
       <span className="pointer-events-none relative flex min-w-0 flex-1 flex-col">
         <span className="truncate font-medium">{title}</span>

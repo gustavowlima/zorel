@@ -35,3 +35,4 @@
 2026-11-04 | ponytail review+audit: removidos signOut, AvatarStack, Card, windowShort, SessionAccess, TeamToolName, MODEL_OF_ACCOUNT/accountProviderOf, dep shadcn | código sem uso
 2026-11-04 | logo Z do Zorel; barra lateral relê chats criados pelo servidor | renomeação e tarefas entre agentes
 2026-11-04 | Settings › Processes e contagem de processos no cabeçalho do chat | usuário pediu página de processos em segundo plano, também por conversa
+2026-11-04 | Processes enxuta: resumo com ícones de CPU/memória, uma lista com colunas, ação por ícone; sem hero, sparkline e barras | usuário achou a página poluída
