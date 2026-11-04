@@ -132,13 +132,13 @@ const COMPAT: Record<string, () => string> = {
 
 export const PROVIDERS: Record<string, Provider> = {
   "claude-cli": { kind: "subscription", hint: "Claude Code logado (claude auth login)", suggestions: ["sonnet", "opus", "haiku"], bin: "claude" },
-  "codex-cli": { kind: "subscription", hint: "Codex logado (codex login); 'default' usa o modelo padrão dele", suggestions: ["default"], bin: "codex" },
+  "codex-cli": { kind: "subscription", hint: "Codex signed in (codex login); 'default' uses its default model", suggestions: ["default"], bin: "codex" },
   anthropic: { kind: "api", hint: "ANTHROPIC_API_KEY", suggestions: ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"], key: "ANTHROPIC_API_KEY" },
   openai: { kind: "api", hint: "OPENAI_API_KEY (OPENAI_BASE_URL opcional)", suggestions: [], key: "OPENAI_API_KEY" },
   openrouter: { kind: "api", hint: "OPENROUTER_API_KEY", suggestions: [], key: "OPENROUTER_API_KEY" },
   // ACP agents (phase 5): any CLI that speaks the Agent Client Protocol, through one adapter (engines/acp.ts).
   "gemini-cli": { kind: "subscription", hint: "Gemini CLI logado (gemini, then sign in)", suggestions: ["default", "gemini-2.5-pro", "gemini-2.5-flash"], bin: "gemini" },
-  opencode: { kind: "subscription", hint: "OpenCode configurado (opencode auth login); usa os providers e chaves dele", suggestions: ["default"], bin: "opencode" },
+  opencode: { kind: "subscription", hint: "OpenCode set up (opencode auth login); uses its own providers and keys", suggestions: ["default"], bin: "opencode" },
   ollama: { kind: "api", hint: "Ollama rodando (OLLAMA_URL)", suggestions: [], local: true },
   lmstudio: { kind: "api", hint: "LM Studio rodando (LMSTUDIO_URL)", suggestions: [], local: true }
 }
@@ -227,7 +227,7 @@ export function transcript(messages: ReadonlyArray<TurnMessage>): string {
   const before = messages.slice(0, -1)
   if (!before.length) return withFiles(last)
   const lines = before.map((m) => `<${m.role}>\n${withFiles(m)}\n</${m.role}>`).join("\n")
-  return `Conversa até aqui, da mais antiga para a mais nova:\n${lines}\n\nNova mensagem do usuário:\n${withFiles(last)}`
+  return `Conversation so far, oldest first:\n${lines}\n\nNew message from the user:\n${withFiles(last)}`
 }
 
 const GATEWAY = "zorel"
@@ -282,7 +282,7 @@ export function claudeParser(): Parser {
       if (ev.type !== "result") return []
       finished = true
       if (ev.is_error === true || ev.subtype !== "success") {
-        const message = (typeof ev.result === "string" && ev.result) || `Claude Code terminou com erro (${ev.subtype}).`
+        const message = (typeof ev.result === "string" && ev.result) || `Claude Code ended with an error (${ev.subtype}).`
         const mapped = errorCode ? CLAUDE_ERRORS[errorCode] : undefined
         const failure: EngineFailure | undefined = rejectedUntil ? { reason: "limit", until: rejectedUntil } : mapped ? { reason: mapped } : errorCode ? undefined : classifyMessage(message)
         return [{ type: "error", message, failure }]
@@ -291,7 +291,7 @@ export function claudeParser(): Parser {
       return [{ type: "done", usage: { inputTokens: num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens), outputTokens: num(u.output_tokens), cachedTokens: num(u.cache_read_input_tokens) } }]
     },
     end(code, stderr) {
-      return finished ? [] : [{ type: "error", message: `Claude Code saiu sem resposta (código ${code ?? "?"}).\n${tail(stderr)}`.trim(), failure: classifyMessage(stderr) ?? { reason: "unavailable" } }]
+      return finished ? [] : [{ type: "error", message: `Claude Code exited without an answer (code ${code ?? "?"}).\n${tail(stderr)}`.trim(), failure: classifyMessage(stderr) ?? { reason: "unavailable" } }]
     }
   }
 }
@@ -339,13 +339,13 @@ export function codexParser(): Parser {
       }
       if (ev.type === "turn.failed" || ev.type === "error") {
         finished = true
-        const message = ev.error?.message || ev.message || "Codex terminou com erro."
+        const message = ev.error?.message || ev.message || "Codex ended with an error."
         return [{ type: "error", message, failure: classifyMessage(message) }]
       }
       return []
     },
     end(code, stderr) {
-      return finished ? [] : [{ type: "error", message: `Codex saiu sem resposta (código ${code ?? "?"}).\n${tail(stderr)}`.trim(), failure: classifyMessage(stderr) ?? { reason: "unavailable" } }]
+      return finished ? [] : [{ type: "error", message: `Codex exited without an answer (code ${code ?? "?"}).\n${tail(stderr)}`.trim(), failure: classifyMessage(stderr) ?? { reason: "unavailable" } }]
     }
   }
 }
@@ -373,7 +373,7 @@ async function* runCli(bin: string, args: string[], stdin: string, cwd: string, 
 
 const cli = (bin: string, args: string[], stdin: string, cwd: string, parser: Parser): Stream.Stream<EngineEvent> => {
   const path = Bun.which(bin)
-  if (!path) return one({ type: "error", message: `${bin} não está instalado ou não está no PATH.`, failure: { reason: "unavailable" } })
+  if (!path) return one({ type: "error", message: `${bin} isn't installed or isn't on the PATH.`, failure: { reason: "unavailable" } })
   return Stream.fromAsyncIterable(runCli(path, args, stdin, cwd, parser), (e) => e).pipe(Stream.catch((e) => one({ type: "error", message: String(e), failure: classifyMessage(String(e)) })))
 }
 
@@ -383,7 +383,7 @@ function apiLayer(secrets: SecretStore, provider: string, model: string): Layer.
   const p = PROVIDERS[provider]
   if (p?.kind !== "api") return `Provider desconhecido: ${provider}.`
   const key = p.key ? secrets.get(p.key) : undefined
-  if (p.key && !key) return `Defina ${p.key} (em Configurações ou no ambiente) para usar ${provider}.`
+  if (p.key && !key) return `Set ${p.key} (in Settings or the environment) to use ${provider}.`
   if (provider === "anthropic")
     return AnthropicLanguageModel.layer({ model, config: { max_tokens: 8192 } }).pipe(
       Layer.provide(AnthropicClient.layer({ apiKey: Redacted.make(key!) })),
@@ -506,7 +506,7 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
           // ZOREL_API_ENGINE=direct keeps the direct engine (tests, or if OpenCode misbehaves).
           if (p?.kind === "api" && t.tools && process.env.ZOREL_API_ENGINE !== "direct" && Bun.which("opencode")) {
             const key = p.key ? secrets.get(p.key) : undefined
-            if (p.key && !key) return one({ type: "error", message: `Defina ${p.key} (em Configurações ou no ambiente) para usar ${provider}.`, failure: { reason: "auth" } })
+            if (p.key && !key) return one({ type: "error", message: `Set ${p.key} (in Settings or the environment) to use ${provider}.`, failure: { reason: "auth" } })
             const { model } = splitModel(t.model)
             return acpRun({
               ...ACP.opencode!("default"),

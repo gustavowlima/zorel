@@ -57,7 +57,7 @@ class Rpc {
     void new Response(rpc.proc.stderr).text().then((t) => {
       rpc.stderr = t.trim().split("\n").slice(-5).join("\n")
     })
-    void rpc.proc.exited.then((code) => rpc.fail(`codex app-server saiu (código ${code}).${rpc.stderr ? `\n${rpc.stderr}` : ""}`))
+    void rpc.proc.exited.then((code) => rpc.fail(`codex app-server exited (code ${code}).${rpc.stderr ? `\n${rpc.stderr}` : ""}`))
     return rpc
   }
 
@@ -67,7 +67,7 @@ class Rpc {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
-        reject(new Error(`codex app-server não respondeu a ${method} em ${timeoutMs / 1000}s.`))
+        reject(new Error(`codex app-server didn't answer ${method} in ${timeoutMs / 1000}s.`))
       }, timeoutMs)
       this.pending.set(id, { resolve, reject, timer })
       this.write({ id, method, params })
@@ -102,7 +102,7 @@ class Rpc {
     try {
       for await (const chunk of this.proc.stdout.pipeThrough(new TextDecoderStream())) {
         buf += chunk
-        if (buf.length > MAX_LINE) return this.fail("codex app-server mandou uma linha grande demais.")
+        if (buf.length > MAX_LINE) return this.fail("codex app-server sent a line that is too long.")
         for (let nl = buf.indexOf("\n"); nl >= 0; nl = buf.indexOf("\n")) {
           const line = buf.slice(0, nl)
           buf = buf.slice(nl + 1)
@@ -126,13 +126,13 @@ class Rpc {
       if (!p) return
       this.pending.delete(m.id)
       clearTimeout(p.timer)
-      if (m.error) p.reject(new Error(m.error.message ?? "erro do codex app-server"))
+      if (m.error) p.reject(new Error(m.error.message ?? "codex app-server error"))
       else p.resolve(m.result)
     } else if (m.id !== undefined) {
       // A request from Codex (approvals, user input): answered when the person decides.
       const id = m.id
       void this.onRequest(m.method, m.params ?? {}).then(
-        (result) => this.write(result === undefined ? { id, error: { code: -32601, message: "não suportado pelo Zorel" } } : { id, result }),
+        (result) => this.write(result === undefined ? { id, error: { code: -32601, message: "not supported by Zorel" } } : { id, result }),
         () => this.write({ id, result: { decision: "decline" } })
       )
     } else if (m.method) this.onNotification(m.method, m.params ?? {})
@@ -187,11 +187,11 @@ export interface CodexSessionOptions {
   readonly command?: ReadonlyArray<string> // tests: a fake app-server instead of `codex`
 }
 
-export const codexLoginHint = (home: string) => `Entre no Codex do Zorel (uma vez): rode no terminal \`CODEX_HOME=${home} codex login\`.`
+export const codexLoginHint = (home: string) => `Sign in to Zorel's Codex (once): run \`CODEX_HOME=${home} codex login\` in a terminal.`
 
 export function openCodexSession(o: CodexSessionOptions): EngineSession | string {
   const bin = o.command?.[0] ?? Bun.which("codex")
-  if (!bin) return "codex não está instalado ou não está no PATH."
+  if (!bin) return "codex isn't installed or isn't on the PATH."
   mkdirSync(o.cwd, { recursive: true })
   mkdirSync(o.home, { recursive: true })
   // Skills on this machine (~/.agents/skills…) are the person's, not Zorel's (D8): host discovery off unless the person lets Codex use its own.
@@ -313,7 +313,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
           } else if (method === "turn/completed") {
             const t = p.turn ?? {}
             if (t.status === "completed") emit({ type: "done", usage })
-            else emit({ type: "error", message: t.error?.message ?? (t.status === "interrupted" ? "O Codex interrompeu o turno." : "O Codex falhou neste turno."), failure: t.status === "interrupted" ? undefined : codexFailure(t.error, limits) })
+            else emit({ type: "error", message: t.error?.message ?? (t.status === "interrupted" ? "Codex interrupted the turn." : "Codex failed this turn."), failure: t.status === "interrupted" ? undefined : codexFailure(t.error, limits) })
             finish()
           }
         }
@@ -384,7 +384,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
 // A short-lived app-server for one read (limits, models); killed afterwards.
 async function withAppServer<A>(home: string, command: ReadonlyArray<string> | undefined, read: (rpc: Rpc) => Promise<A>): Promise<A> {
   const bin = command?.[0] ?? Bun.which("codex")
-  if (!bin) throw new Error("codex não está instalado ou não está no PATH.")
+  if (!bin) throw new Error("codex isn't installed or isn't on the PATH.")
   mkdirSync(home, { recursive: true })
   const rpc = Rpc.start(bin, command?.slice(1) ?? ["app-server"], home, childEnv(home))
   try {

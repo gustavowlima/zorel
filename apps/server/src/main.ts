@@ -689,7 +689,7 @@ const AttachmentUpload = HttpRouter.add(
     if (declared > MAX_ATTACHMENT_BYTES) return HttpServerResponse.jsonUnsafe({ error: "too_large" }, { status: 413 })
     const body = new Uint8Array(yield* req.arrayBuffer)
     if (!body.length || body.length > MAX_ATTACHMENT_BYTES) return HttpServerResponse.jsonUnsafe({ error: body.length ? "too_large" : "empty" }, { status: body.length ? 413 : 400 })
-    const name = decodeURIComponent(req.headers["x-file-name"] ?? "arquivo").replace(/[/\\]/g, "_").slice(0, 200) || "arquivo"
+    const name = decodeURIComponent(req.headers["x-file-name"] ?? "file").replace(/[/\\]/g, "_").slice(0, 200) || "file"
     const mime = (req.headers["content-type"] ?? "application/octet-stream").split(";")[0]!.trim().slice(0, 100)
     const id = crypto.randomUUID()
     const dir = join(dataDir, "attachments", chatId)

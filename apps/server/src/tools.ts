@@ -127,7 +127,7 @@ export interface GatewayHandle {
 }
 
 // No tools: what a native session's gateway serves between turns.
-export const NO_TOOLS: Session = { tools: [], call: async (name) => textResult(`Ferramenta não permitida: ${name}`, true) }
+export const NO_TOOLS: Session = { tools: [], call: async (name) => textResult(`Tool not allowed: ${name}`, true) }
 
 export class Gateway {
   private sessions = new Map<string, Session>()
@@ -161,7 +161,7 @@ export class Gateway {
     server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: session.tools.map((t) => ({ ...t, inputSchema: { type: "object" as const, ...t.inputSchema } })) }))
     server.setRequestHandler(CallToolRequestSchema, async (r) => {
       // Defense in depth: a tool outside the turn's list never runs.
-      if (!session.tools.some((t) => t.name === r.params.name)) return textResult(`Ferramenta não permitida: ${r.params.name}`, true)
+      if (!session.tools.some((t) => t.name === r.params.name)) return textResult(`Tool not allowed: ${r.params.name}`, true)
       return session.call(r.params.name, (r.params.arguments ?? {}) as Record<string, unknown>)
     })
     const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true }) // no sessionIdGenerator: stateless mode

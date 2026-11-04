@@ -64,55 +64,55 @@ export interface TurnInput {
   readonly tools?: TurnTools | undefined
 }
 
-// "[Feito neste turno: editou src/a.ts (+2 −1); rodou `bun test` (ok)]", or nothing.
+// "[Done in this turn: edited src/a.ts (+2 −1); ran `bun test` (ok)]", or nothing.
 export function workNote(m: Message): string {
-  const files = m.changes.map((c) => `${c.status === "added" ? "criou" : c.status === "deleted" ? "apagou" : "editou"} ${c.path} (+${c.added} −${c.removed})`)
-  const runs = m.steps.filter((s) => s.tool === "run").map((s) => `rodou \`${s.args.slice(0, 120)}\` (${s.status === "ok" ? "ok" : s.status === "refused" ? "recusado" : "falhou"})`)
+  const files = m.changes.map((c) => `${c.status === "added" ? "created" : c.status === "deleted" ? "deleted" : "edited"} ${c.path} (+${c.added} −${c.removed})`)
+  const runs = m.steps.filter((s) => s.tool === "run").map((s) => `ran \`${s.args.slice(0, 120)}\` (${s.status === "ok" ? "ok" : s.status === "refused" ? "refused" : "failed"})`)
   const all = [...files, ...runs]
   if (!all.length) return ""
-  return `\n\n[Feito neste turno: ${all.join("; ")}${m.revertedAt ? ". O usuário desfez essas mudanças depois." : ""}]`
+  return `\n\n[Done in this turn: ${all.join("; ")}${m.revertedAt ? ". The user undid these changes later." : ""}]`
 }
 
 export function buildTurn(i: TurnInput): Turn {
   const of = (scope: string) => i.pinned.filter((m) => m.scope === scope)
   const others = i.members.filter((a) => a.id !== i.agent?.id)
-  const name = (id: string | null) => i.members.find((a) => a.id === id)?.name ?? "assistente"
+  const name = (id: string | null) => i.members.find((a) => a.id === id)?.name ?? "assistant"
   const channel =
     others.length > 0 &&
     [
-      "Outros agentes neste chat (as mensagens deles chegam com o nome entre colchetes):",
-      ...others.map((a) => `- @${handleOf(a)} (${[a.name, a.title].filter(Boolean).join(", ")}): ${a.description || a.instructions.split("\n")[0]?.slice(0, 140) || "sem descrição"}`),
-      "Para passar parte do trabalho a um deles, mencione @handle na resposta: ele responde em seguida. Mencione só quando precisar; para só citar alguém, escreva o nome sem @."
+      "Other agents in this chat (their messages arrive with their name in brackets):",
+      ...others.map((a) => `- @${handleOf(a)} (${[a.name, a.title].filter(Boolean).join(", ")}): ${a.description || a.instructions.split("\n")[0]?.slice(0, 140) || "no description"}`),
+      "To pass part of the work to one of them, mention their @handle in your reply: they answer next. Mention only when you need to; to just refer to someone, write the name without @."
     ].join("\n")
 
   // Stable: opens the native session (rarely changes; if it does, the session reopens from the resume point).
   const instructions = [
-    "Você é um assistente num workspace de projetos. Responda no idioma do usuário, de forma direta.",
-    "Use o contexto abaixo quando ajudar; não invente fatos que não estão nele.",
-    i.tools?.defs.length && "Você tem ferramentas. Use quando a tarefa pedir; ações que mudam algo podem esperar a aprovação do usuário.",
+    "You are an assistant in a project workspace. Be direct.",
+    "Use the context below when it helps; don't make up facts that aren't in it.",
+    i.tools?.defs.length && "You have tools. Use them when the task calls for it; actions that change something may wait for the user's approval.",
     i.tools?.defs.some((d) => d.name === "zorel_start_task") &&
-      "Trabalho que é de um colega (veja zorel_list_agents) ou que pode correr em paralelo: passe com zorel_start_task. A resposta dele volta a este chat sozinha e você continua dali; não espere nem pergunte por ela.",
-    i.agent && section(`Você é ${[i.agent.name, i.agent.title].filter(Boolean).join(", ")}`, [i.agent.description, i.agent.instructions].filter(Boolean).join("\n\n")),
-    channel && section("Canal", channel)
+      "Work that belongs to a teammate (see zorel_list_agents) or can run in parallel: hand it over with zorel_start_task. Their answer comes back to this chat by itself and you continue from there; don't wait or ask about it.",
+    i.agent && section(`You are ${[i.agent.name, i.agent.title].filter(Boolean).join(", ")}`, [i.agent.description, i.agent.instructions].filter(Boolean).join("\n\n")),
+    channel && section("Channel", channel)
   ]
-  const userMemories = section("O que você sabe sobre o usuário", bullets(of("user")))
+  const userMemories = section("What you know about the user", bullets(of("user")))
   const projectParts = [
-    i.project && section(`Projeto: ${i.project.name}`, i.project.brief),
+    i.project && section(`Project: ${i.project.name}`, i.project.brief),
     i.project?.path &&
       section(
         "Workspace",
-        `Você trabalha na pasta do projeto: ${i.project.path}. Leia, edite e rode comandos nela com as suas ferramentas; o Zorel pede a aprovação do usuário quando o seu nível de acesso exige. Cada turno vira um ponto de restauração, e o usuário pode desfazer o que você mudou.`
+        `You work in the project folder: ${i.project.path}. Read, edit and run commands in it with your tools; Zorel asks for the user's approval when your access level requires it. Every turn becomes a restore point, and the user can undo what you changed.`
       )
   ]
-  const workMemories = [i.project && section("Memórias do projeto", bullets(of(`project:${i.project.id}`))), i.agent && section("Suas memórias de trabalho", bullets(of(`agent:${i.agent.id}`)))]
-  const skillList = section("Skills disponíveis (procedimentos aprovados; siga quando a tarefa casar: leia os passos com zorel_read_skill; se achar um jeito melhor, proponha com zorel_propose_skill e improves)", i.skills.all.slice(0, SKILL_TITLES).map((s) => `- ${s.title}`).join("\n"))
+  const workMemories = [i.project && section("Project memories", bullets(of(`project:${i.project.id}`))), i.agent && section("Your work memories", bullets(of(`agent:${i.agent.id}`)))]
+  const skillList = section("Available skills (approved procedures; follow one when the task matches: read its steps with zorel_read_skill; if you find a better way, propose it with zorel_propose_skill and improves)", i.skills.all.slice(0, SKILL_TITLES).map((s) => `- ${s.title}`).join("\n"))
   // Pinned pages: titles only (stable, cheap); the body comes with zorel_knowledge_read when needed.
-  const pageList = section("Páginas de conhecimento fixadas (leia com zorel_knowledge_read; busque outras com zorel_knowledge_search)", (i.pages ?? []).map((p) => `- ${p.title} [${p.id}]`).join("\n"))
+  const pageList = section("Pinned knowledge pages (read with zorel_knowledge_read; search others with zorel_knowledge_search)", (i.pages ?? []).map((p) => `- ${p.title} [${p.id}]`).join("\n"))
   const stable = [...instructions, userMemories, ...projectParts, ...workMemories, skillList, pageList].filter(Boolean).join("\n\n")
   // Dynamic: depends on the current message; in a native session it goes with the turn's message.
   const skillBodies = i.skills.relevant.map((s) => section(`Skill: ${s.title}`, s.text))
-  const summary = section("Resumo do que veio antes nesta conversa", i.chat.summary)
-  const retrieved = section("Memórias possivelmente relevantes para a mensagem atual", bullets(i.retrieved))
+  const summary = section("Summary of what came before in this conversation", i.chat.summary)
+  const retrieved = section("Memories that may be relevant to the current message", bullets(i.retrieved))
   const dynamic = [...skillBodies, summary, retrieved].filter(Boolean).join("\n\n")
   const system = [stable, dynamic].filter(Boolean).join("\n\n")
   const size = (xs: ReadonlyArray<unknown>) => xs.reduce<number>((n, x) => n + (typeof x === "string" ? x.length : 0), 0)
@@ -143,20 +143,20 @@ export function buildTurn(i: TurnInput): Turn {
 // ---------- consolidation (continuous learning) ----------
 
 export const CONSOLIDATION_SYSTEM = [
-  "Você mantém a memória de um chat entre uma pessoa e agentes de IA.",
-  "Recebe o resumo atual, um trecho de mensagens que vai sair da janela, as memórias e as skills que já existem.",
-  "Responda SOMENTE com JSON, sem texto em volta, no formato:",
+  "You keep the memory of a chat between a person and AI agents.",
+  "You get the current summary, a stretch of messages about to leave the window, and the memories and skills that already exist.",
+  "Answer ONLY with JSON, no text around it, in this shape:",
   '{"summary": "...", "memories": [{"scope": "user" | "project" | "agent", "text": "...", "evidence": [3]}], "confirm": ["m2"], "skills": [{"scope": "user" | "project" | "agent", "title": "...", "text": "..."}]}',
-  '- "summary": o novo resumo, juntando o anterior e o trecho. Até 400 palavras. Guarde decisões, pendências, números, nomes e o estado do trabalho.',
-  '- "memories": só fatos duráveis que valem fora desta conversa. Lista vazia é o normal.',
-  '  - "user": preferências e jeito de trabalhar da pessoa (vale em tudo).',
-  '  - "project": fatos e decisões do projeto (só quando a conversa é de um projeto).',
-  '  - "agent": como fazer melhor o trabalho do agente que respondeu (só quando há um agente).',
-  "  - Uma ideia por memória, frase curta, autossuficiente, em terceira pessoa. Não repita memórias existentes.",
-  '  - "evidence": os números (#) das mensagens do trecho que provam o fato. Só valem mensagens da pessoa ([usuário]): um palpite, plano ou suposição de um agente nunca vira memória.',
-  '- "confirm": os ids (m1, m2…) das memórias existentes que o trecho confirma de novo. Lista vazia é o normal.',
-  '- "skills": procedimentos que valem repetir — algo resolvido em vários passos, uma saída de beco sem saída, ou uma correção do usuário sobre como fazer. Lista vazia é o normal.',
-  '  - "title": nome curto do procedimento. "text": passo a passo objetivo, até 15 linhas. Não repita skills existentes.'
+  '- "summary": the new summary, merging the previous one and the stretch. Up to 400 words. Keep decisions, open items, numbers, names and the state of the work.',
+  '- "memories": only durable facts that hold outside this conversation. An empty list is the norm.',
+  '  - "user": the person\'s preferences and way of working (holds everywhere).',
+  '  - "project": facts and decisions of the project (only when the conversation belongs to a project).',
+  '  - "agent": how the agent that replied can do its work better (only when there is an agent).',
+  "  - One idea per memory, a short self-contained sentence in the third person. Don't repeat existing memories.",
+  '  - "evidence": the numbers (#) of the messages in the stretch that prove the fact. Only the person\'s messages ([user]) count: an agent\'s guess, plan or assumption never becomes a memory.',
+  '- "confirm": the ids (m1, m2…) of existing memories the stretch confirms again. An empty list is the norm.',
+  '- "skills": procedures worth repeating — something solved in several steps, a way out of a dead end, or the user correcting how to do something. An empty list is the norm.',
+  '  - "title": a short name for the procedure. "text": concise steps, up to 15 lines. Don\'t repeat existing skills.'
 ].join("\n")
 
 export function consolidationPrompt(o: {
@@ -170,12 +170,12 @@ export function consolidationPrompt(o: {
   names: (agentId: string | null) => string
 }): string {
   return [
-    `Escopos permitidos: user${o.hasProject ? ", project" : ""}${o.hasAgent ? ", agent" : ""}.`,
-    `Resumo atual:\n${o.summary || "(vazio)"}`,
-    `Memórias existentes:\n${o.existing.map((m, i) => `- [m${i + 1}] ${m.text}`).join("\n") || "(nenhuma)"}`,
-    `Skills existentes:\n${o.skills.map((s) => `- ${s.title}`).join("\n") || "(nenhuma)"}`,
-    `O que a pessoa mandou esquecer (não proponha de novo, nem com outras palavras):\n${o.forgotten.map((m) => `- ${m.title || m.text}`).join("\n") || "(nada)"}`,
-    `Trecho que sai da janela:\n${o.chunk.map((m, i) => `#${i + 1} [${m.role === "user" ? "usuário" : o.names(m.agentId)}] ${m.text}`).join("\n\n")}`
+    `Allowed scopes: user${o.hasProject ? ", project" : ""}${o.hasAgent ? ", agent" : ""}.`,
+    `Current summary:\n${o.summary || "(empty)"}`,
+    `Existing memories:\n${o.existing.map((m, i) => `- [m${i + 1}] ${m.text}`).join("\n") || "(none)"}`,
+    `Existing skills:\n${o.skills.map((s) => `- ${s.title}`).join("\n") || "(none)"}`,
+    `What the person asked to forget (don't propose it again, not even in other words):\n${o.forgotten.map((m) => `- ${m.title || m.text}`).join("\n") || "(nothing)"}`,
+    `Stretch leaving the window:\n${o.chunk.map((m, i) => `#${i + 1} [${m.role === "user" ? "user" : o.names(m.agentId)}] ${m.text}`).join("\n\n")}`
   ].join("\n\n")
 }
 

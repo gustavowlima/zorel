@@ -111,7 +111,7 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, f
     const allowed = ["user", ...(chat.projectId ? ["project"] : []), ...(lead ? ["agent"] : [])]
     const parsed = result.error ? undefined : parseConsolidation(result.text, allowed, (n) => chunk[n - 1]?.role === "user")
     if (!parsed) {
-      yield* Effect.logWarning("consolidação falhou", result.error ?? result.text.slice(0, 300))
+      yield* Effect.logWarning("consolidation failed", result.error ?? result.text.slice(0, 300))
       return chat
     }
     const scopeOf = { user: "user", project: `project:${chat.projectId}`, agent: `agent:${lead}` }
@@ -123,7 +123,7 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, f
       ...parsed.skills.map((s) => ({ scope: scopeOf[s.scope], kind: "skill" as const, title: s.title, text: s.text }))
     ]
     const room = Math.max(0, MAX_PENDING - (yield* store.pendingCount(scopes)))
-    if (proposals.length > room) yield* Effect.logInfo("propostas acima do teto de pendentes; excedentes descartadas", { room, proposed: proposals.length })
+    if (proposals.length > room) yield* Effect.logInfo("proposals over the pending cap; the extra ones were dropped", { room, proposed: proposals.length })
     for (const p of proposals.slice(0, room)) yield* store.addMemory({ ...p, state: "pending", origin: "auto", chatId: chat.id })
     return (yield* store.chat(chat.id))!
   }).pipe(Effect.ensuring(Effect.sync(() => consolidating.delete(chatId))))

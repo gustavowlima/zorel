@@ -6,6 +6,8 @@ Ele vem antes do código: ao mudar uma decisão, atualize aqui e em `.agent/memo
 
 Revisado em 2026-11-04.
 
+**Idioma dos prompts (2026-11-04):** tudo o que vai ao modelo (prompt base, consolidação, resultados de ferramentas, erros dos engines) é em inglês, e nada manda responder num idioma: o modelo segue o idioma de quem escreve.
+
 **Nome (2026-11-04):** o projeto se chamava **Zero** e passou a **Zorel** ("Zero" colidia com outros produtos e não tinha domínio; zorel.dev é do autor). O que já existia continua funcionando: a pasta `~/.zero` (com `zero.db`) segue em uso quando existe e `~/.zorel` não, sem ser movida, porque o banco guarda caminhos absolutos de anexos e contas; segredos do keychain são lidos do serviço antigo `dev.zero.app` e copiados para `dev.zorel.app`; preferências `zero.*` do navegador são copiadas para `zorel.*`; backups `zero-*.db` continuam sendo podados; agentes exportados como `zero.agent` ainda são importados. O app desktop muda de appId (`dev.zorel.app`), então a pasta de dados do Electron é nova (logins das abas dos agentes recomeçam).
 
 **Propósito:** o Zorel é, **agora**, uma plataforma de agentes **para código**: desktop e web local, projetos, equipe de agentes, memória e contexto próprios. **Depois**, evolui para **hospedado e automação**, sem reescrever, porque as portas para isso ficam abertas desde já (D17).

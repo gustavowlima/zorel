@@ -161,7 +161,7 @@ export interface ClaudeSessionOptions {
 
 export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | string {
   const bin = Bun.which("claude")
-  if (!bin) return "claude não está instalado ou não está no PATH."
+  if (!bin) return "claude isn't installed or isn't on the PATH."
   mkdirSync(o.cwd, { recursive: true })
   const box = inbox()
   let model = splitModel(o.model).model
@@ -192,9 +192,9 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
   void (async () => {
     try {
       for await (const m of q) listener?.(m)
-      ended = "Claude Code encerrou a sessão."
+      ended = "Claude Code ended the session."
     } catch (e) {
-      ended = `Claude Code falhou: ${e instanceof Error ? e.message : String(e)}`
+      ended = `Claude Code failed: ${e instanceof Error ? e.message : String(e)}`
     }
     listener?.(undefined)
   })()
@@ -269,7 +269,7 @@ const CLAUDE_WINDOWS = ["five_hour", "seven_day", "seven_day_opus", "seven_day_s
 // A Claude Code session that only answers control requests (usage, models); closed afterwards.
 async function withControl<A>(configDir: string | undefined, read: (q: Query) => Promise<A>, cwd?: string): Promise<A> {
   const bin = Bun.which("claude")
-  if (!bin) throw new Error("claude não está instalado ou não está no PATH.")
+  if (!bin) throw new Error("claude isn't installed or isn't on the PATH.")
   const box = inbox() // never gets a message
   // With a folder: that project's settings load too (its commands); without, none (limits, models).
   const settings = cwd ? { ...SETTINGS, cwd } : { settingSources: [] }
@@ -278,7 +278,7 @@ async function withControl<A>(configDir: string | undefined, read: (q: Query) =>
     return await Promise.race([
       read(q),
       Bun.sleep(20_000).then(() => {
-        throw new Error("Claude Code não respondeu.")
+        throw new Error("Claude Code didn't answer.")
       })
     ])
   } finally {
