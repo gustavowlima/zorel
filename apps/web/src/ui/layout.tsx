@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 export function PageHeader({ className, children }: { className?: string; children: ReactNode }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null)
   useLayoutEffect(() => setSlot(document.getElementById("titlebar-slot")), [])
-  if (slot) return createPortal(<div className="flex min-w-0 flex-1 items-center gap-x-3 pr-3 pl-7">{children}</div>, slot)
+  if (slot) return createPortal(<div className="flex min-w-0 flex-1 items-center gap-x-3 pr-3 pl-3">{children}</div>, slot)
   return <header className={cn("flex shrink-0 flex-wrap items-center border-b border-subtle", className)}>{children}</header>
 }
 

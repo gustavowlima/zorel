@@ -65,7 +65,7 @@ export function Rail({
   ]
   return (
     <nav aria-label={t("nav.label")} className="flex w-15 shrink-0 flex-col items-center gap-1 border-r border-subtle pt-3 pb-3">
-      <span className="rail-logo mb-1 flex size-10 items-center justify-center">
+      <span className="mb-1 flex size-10 items-center justify-center">
         <Logo className="size-5" />
       </span>
       <RailItem label={sidebar.hidden ? t("nav.showSidebar") : t("nav.hideSidebar")} active={false} onPress={sidebar.toggle}>
@@ -544,17 +544,14 @@ function UsageDetail({ rows }: { rows: ReadonlyArray<{ account: ProviderAccount;
 const toneOf = (p: Pace): RingTone => (p.used >= 0.95 ? "critical" : p.runsOutAt || p.used >= LIMIT_ALERT ? "warning" : "ok")
 
 // The desktop app's title bar (as in a reference app): the whole window width above the rail, the sidebar and the card. It
-// drags the window, leaves room for the macOS window buttons, holds the brand, back/forward and New chat, and the
-// current page's header.
+// drags the window, leaves room for the macOS window buttons, holds back/forward and the current page's header.
+// The brand stays on the rail.
 export function TitleBar({ sidebarHidden }: { sidebarHidden: boolean }) {
   return (
     <header className="app-drag flex h-12 shrink-0 items-center">
-      {/* Left: as wide as the rail plus the sidebar, so the page header (the slot) lines up with the card. */}
-      <div className={cx("flex shrink-0 items-center gap-1 pl-21", !sidebarHidden && "w-77")}>
-        <span className="flex items-center gap-2 pr-3 font-semibold">
-          <Logo className="size-4.5" />
-          {t("app.name")}
-        </span>
+      {/* Left: the window buttons and back/forward, as wide as the rail plus the sidebar so the page header starts
+          on the card's edge. With the sidebar hidden the window buttons own that corner: the header follows them. */}
+      <div className={cx("flex shrink-0 items-center gap-0.5 pl-21", !sidebarHidden && "w-77")}>
         <Tooltip content={t("nav.back")}>
           <IconButton label={t("nav.back")} size="sm" onPress={() => history.back()}>
             <ChevronRight className="size-4 rotate-180" />
@@ -563,11 +560,6 @@ export function TitleBar({ sidebarHidden }: { sidebarHidden: boolean }) {
         <Tooltip content={t("nav.forward")}>
           <IconButton label={t("nav.forward")} size="sm" onPress={() => history.forward()}>
             <ChevronRight className="size-4" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip content={t("nav.newChat")}>
-          <IconButton label={t("nav.newChat")} size="sm" onPress={() => go({ view: "home" })}>
-            <Plus className="size-4" />
           </IconButton>
         </Tooltip>
       </div>
