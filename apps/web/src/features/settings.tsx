@@ -31,7 +31,8 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
         ))}
       </nav>
       <div className="min-w-0 flex-1 overflow-y-auto">
-        <div className="flex w-full max-w-2xl flex-col gap-8 px-8 py-7">
+        {/* One column for every page: it fills the space up to a reading width, then stays centered. */}
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-8 py-7">
           {tab === "providers" && <ProvidersSection provider={provider} />}
           {tab === "processes" && <ProcessesSection />}
           {tab === "storage" && <StorageSection />}

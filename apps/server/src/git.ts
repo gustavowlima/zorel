@@ -29,8 +29,16 @@ export function parsePorcelain(out: string) {
     upstream: m?.[2] ?? null,
     ahead: Number(m?.[3] ?? 0),
     behind: Number(m?.[4] ?? 0),
-    files: rest.filter((l) => l.trim()).map((l) => l.slice(3))
+    files: rest.filter((l) => l.trim()).map(fileOf)
   }
+}
+
+// One " M file" line: "??" and A are new, D gone, R renamed ("old -> new": the new name), the rest modified.
+const fileOf = (line: string) => {
+  const xy = line.slice(0, 2)
+  const path = line.slice(3)
+  const status = xy === "??" || xy.includes("A") ? "added" : xy.includes("D") ? "deleted" : xy.includes("R") ? "renamed" : "modified"
+  return { path: status === "renamed" ? path.slice(path.indexOf(" -> ") + 4) : path, status } as const
 }
 
 export async function status(cwd: string): Promise<GitStatus> {

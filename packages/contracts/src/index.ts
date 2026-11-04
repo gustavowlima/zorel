@@ -527,7 +527,7 @@ export const GitStatus = Schema.Struct({
   upstream: Schema.NullOr(Schema.String),
   ahead: Schema.Number,
   behind: Schema.Number,
-  files: Schema.Array(Schema.String),
+  files: Schema.Array(Schema.Struct({ path: Schema.String, status: Schema.Literals(["added", "modified", "deleted", "renamed"]) })),
   remote: Schema.Boolean,
   gh: Schema.Boolean,
   pr: Schema.NullOr(Schema.Struct({ number: Schema.Number, url: Schema.String, state: Schema.String, title: Schema.String })),

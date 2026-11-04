@@ -16,7 +16,7 @@ const FileView = lazy(() => import("./file-view.tsx"))
 const commentText = (c: LineComment) =>
   t("diff.commentRef", { path: c.path, lines: c.start === c.end ? t("diff.line", { n: c.start }) : t("diff.lines", { from: c.start, to: c.end }), side: c.side === "deletions" ? t("diff.old") : t("diff.new"), text: c.text.trim() })
 import {
-  Button, ChevronDown, ChevronRight, ChevronsDownUp, ConfirmButton, Copy, cx, Dialog, EmptyState, ExternalLink, Field, File, FileIcon, FilePlus, FileTree, Folder, FolderOpen, IconButton, Input, MenuSeparator, Pencil, Search, Spinner, Tab, TabList, Trash2, Undo2,
+  Button, ChevronDown, ChevronRight, ChevronsDownUp, ConfirmButton, Copy, cx, Dialog, EmptyState, ExternalLink, Field, File, FileIcon, FilePlus, FileTree, Folder, FolderOpen, IconButton, Input, MenuSeparator, Pencil, Search, Spinner, StatusMark, Tab, TabList, Trash2, Undo2,
   Columns2, ConfirmDialog, ContextMenu, GitBranch, Globe, Menu, MenuItem, PanelRight, Pin, PinOff, Play, Plus, Popover, Rows2, Server, Square, SquareTerminal, TabPanel, Tabs, Tooltip, X
 } from "@/ui"
 import { Shell } from "./shell.tsx"
@@ -360,19 +360,6 @@ function TurnFiles({ message, path, onPath, onAddToChat }: { message: Message; p
     </div>
   )
 }
-
-const StatusMark = ({ status }: { status: FileChange["status"] | null }) =>
-  status ? (
-    <span
-      role="img"
-      aria-label={t(`workspace.${status}`)}
-      className={cx("w-3 shrink-0 text-center font-mono text-xs font-semibold", status === "added" && "text-success", status === "deleted" && "text-danger", status === "modified" && "text-warning")}
-    >
-      {status === "added" ? "A" : status === "deleted" ? "D" : "M"}
-    </span>
-  ) : (
-    <span className="w-3 shrink-0" />
-  )
 
 // ---------- files tree ----------
 
