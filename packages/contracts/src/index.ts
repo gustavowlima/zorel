@@ -397,6 +397,26 @@ export class UndoConflict extends Schema.Error<UndoConflict>("zero/UndoConflict"
   { _tag: Schema.tag("UndoConflict"), files: Schema.Array(Schema.String) },
   { httpApiStatus: 409 }
 ) {}
+// Git in the chat's folder (apps/server/src/git.ts). files: the changed paths (porcelain), pr: the open pull
+// request of the branch when the GitHub CLI finds one.
+export const GitStatus = Schema.Struct({
+  repo: Schema.Boolean,
+  branch: Schema.NullOr(Schema.String),
+  base: Schema.NullOr(Schema.String), // the default branch pull requests go into (origin's HEAD, else main/master)
+  upstream: Schema.NullOr(Schema.String),
+  ahead: Schema.Number,
+  behind: Schema.Number,
+  files: Schema.Array(Schema.String),
+  remote: Schema.Boolean,
+  gh: Schema.Boolean,
+  pr: Schema.NullOr(Schema.Struct({ number: Schema.Number, url: Schema.String, state: Schema.String, title: Schema.String }))
+})
+export type GitStatus = typeof GitStatus.Type
+// git or gh refused (its message, shown as is).
+export class GitFailed extends Schema.Error<GitFailed>("zero/GitFailed")({ _tag: Schema.tag("GitFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
+const GitText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(20_000))
+export const GitDraft = Schema.Struct({ title: Schema.String, body: Schema.String })
+export type GitDraft = typeof GitDraft.Type
 export const WorkspaceFile = Schema.Struct({ path: Schema.String, status: Schema.NullOr(Schema.Literals(["added", "modified", "deleted"])) })
 export type WorkspaceFile = typeof WorkspaceFile.Type
 export const MAX_WORKSPACE_FILES = 5000
@@ -435,6 +455,12 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.get("commands", "/api/chats/:id/commands", { params: idParam, success: Schema.Array(EngineCommand), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.get("terminals", "/api/chats/:id/terminals", { params: idParam, success: Schema.Array(TerminalSession), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("closeTerminal", "/api/chats/:id/terminals/:terminal", { params: Schema.Struct({ id: Schema.String, terminal: Schema.String }) }))
+      .add(HttpApiEndpoint.get("git", "/api/chats/:id/git", { params: idParam, success: GitStatus, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("gitDraft", "/api/chats/:id/git/draft", { params: idParam, payload: Schema.Struct({ kind: Schema.Literals(["commit", "pr"]) }), success: GitDraft, error: [HttpApiError.NotFound, GitFailed] }))
+      .add(HttpApiEndpoint.post("gitCommit", "/api/chats/:id/git/commit", { params: idParam, payload: Schema.Struct({ message: GitText }), success: Schema.Struct({ sha: Schema.String }), error: [HttpApiError.NotFound, GitFailed] }))
+      .add(HttpApiEndpoint.post("gitPush", "/api/chats/:id/git/push", { params: idParam, error: [HttpApiError.NotFound, GitFailed] }))
+      .add(HttpApiEndpoint.post("gitPr", "/api/chats/:id/git/pr", { params: idParam, payload: Schema.Struct({ title: GitText.check(Schema.isMaxLength(200)), body: Schema.String.check(Schema.isMaxLength(20_000)) }), success: Schema.Struct({ url: Schema.String }), error: [HttpApiError.NotFound, GitFailed] }))
+      .add(HttpApiEndpoint.post("gitBranch", "/api/chats/:id/git/branch", { params: idParam, payload: Schema.Struct({ name: GitText.check(Schema.isMaxLength(200)) }), error: [HttpApiError.NotFound, GitFailed] }))
       .add(HttpApiEndpoint.get("scripts", "/api/chats/:id/scripts", { params: idParam, success: Schema.Array(ProjectScript), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.get("servers", "/api/chats/:id/servers", { params: idParam, success: Schema.Array(LocalServer), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("stopServer", "/api/chats/:id/servers/:pid", { params: Schema.Struct({ id: Schema.String, pid: Schema.NumberFromString }), error: HttpApiError.NotFound }))

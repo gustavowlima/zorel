@@ -30,7 +30,11 @@ export const Actions = {
   approvalApproved: action("approval.approved", "approval"),
   approvalDenied: action("approval.denied", "approval"),
   turnUndone: action("turn.undone", "turn"),
-  storageCleaned: action("storage.cleaned", "storage")
+  storageCleaned: action("storage.cleaned", "storage"),
+  gitCommitted: action("git.committed", "project"),
+  gitPushed: action("git.pushed", "project"),
+  gitBranched: action("git.branched", "project"),
+  gitPrCreated: action("git.pr_created", "project")
 } as const
 type Action = (typeof Actions)[keyof typeof Actions]
 
@@ -63,7 +67,7 @@ export interface AuditFilter {
 // A kind of change, as the action prefixes it covers.
 const KIND_PREFIXES: Record<Exclude<AuditKind, "all">, ReadonlyArray<string>> = {
   providers: ["account", "api_key", "failover_terms"],
-  projects: ["project", "agent"],
+  projects: ["project", "agent", "git"],
   tools: ["mcp_server"],
   approvals: ["approval", "turn"]
 }

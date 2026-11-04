@@ -320,6 +320,14 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Servidores** (ícone de servidor): popover com os processos que escutam uma porta TCP e cuja pasta de trabalho é a do chat (os dev servers que um agente ou um shell subiu), cada porta como link `localhost:N` que abre no Navegador do chat, e ■ para parar (SIGTERM). Lido de novo a cada abertura.
 - xterm.js com as cores dos tokens (fundo `code`, texto secundário, seleção accent-soft) e a fonte mono; o tamanho segue o painel.
 
+### Git no chat
+- Botão no cabeçalho do chat (só quando a pasta do projeto é um repositório git): ícone de branch, o nome da branch, o número de arquivos mudados (warning) e os commits a enviar (↑N, accent). Abre um popover de 416px:
+  - cabeçalho com a branch e uma linha de estado ("2 files changed · 1 commit to push · no remote");
+  - com mudanças: campo da mensagem (mono), "Write it for me" (o modelo do chat escreve a partir do diff, no estilo dos commits recentes do repositório) e "Commit N files" (tudo o que está na pasta entra);
+  - "Push N commits" ou "Publish branch" (sem upstream); o PR aberto da branch como link (#12 título ↗), ou "Create pull request" (fora da branch principal, com `gh` instalado): o modelo rascunha título e descrição, editáveis antes de abrir;
+  - "New branch" leva o trabalho atual para uma branch nova.
+- Erros aparecem com as palavras do git, em mono e danger; cada passo concluído vira uma linha success. Commit, push, branch e PR entram no Audit log (tipo Projects).
+
 ### Menu de contexto
 - O menu nativo do navegador não aparece no app (só em campos de texto e no terminal, para copiar e colar). Onde há ações, o clique direito (ou a tecla Menu / Shift+F10) abre o `ContextMenu` do Zero, o mesmo visual do menu ⋯, ancorado no ponteiro (ou sob o item focado). Na barra lateral: chat → Open, Rename, Delete; projeto → Open, New chat in…, Settings of…, Delete project. Excluir sempre confirma.
 
