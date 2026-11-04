@@ -16,7 +16,7 @@ const FileView = lazy(() => import("./file-view.tsx"))
 const commentText = (c: LineComment) =>
   t("diff.commentRef", { path: c.path, lines: c.start === c.end ? t("diff.line", { n: c.start }) : t("diff.lines", { from: c.start, to: c.end }), side: c.side === "deletions" ? t("diff.old") : t("diff.new"), text: c.text.trim() })
 import {
-  Button, ChevronDown, ChevronRight, ChevronsDownUp, ConfirmButton, Copy, cx, Dialog, EmptyState, ExternalLink, Field, File, FileIcon, FilePlus, type FileNode, FileTree, Folder, FolderOpen, IconButton, Input, MenuSeparator, Pencil, Spinner, Tab, TabList, Trash2, Undo2,
+  Button, ChevronDown, ChevronRight, ChevronsDownUp, ConfirmButton, Copy, cx, Dialog, EmptyState, ExternalLink, Field, File, FileIcon, FilePlus, FileTree, Folder, FolderOpen, IconButton, Input, MenuSeparator, Pencil, Search, Spinner, Tab, TabList, Trash2, Undo2,
   Columns2, ConfirmDialog, ContextMenu, GitBranch, Globe, Menu, MenuItem, PanelRight, Pin, PinOff, Play, Plus, Popover, Rows2, Server, Square, SquareTerminal, TabPanel, Tabs, Tooltip, X
 } from "@/ui"
 import { Shell } from "./shell.tsx"
@@ -258,7 +258,7 @@ export function SidePanel({
           </TabPanel>
         )}
         {folder && project && (
-          <TabPanel id="files" className="min-h-0 flex-1 overflow-y-auto">
+          <TabPanel id="files" className="flex min-h-0 flex-1 flex-col">
             <FilesTab project={project} chat={chat} messages={messages} onFocus={onFocus} onAddToChat={onAddToChat} />
           </TabPanel>
         )}
@@ -405,6 +405,7 @@ function treeOf(files: ReadonlyArray<WorkspaceFile>): Node[] {
   return sort(top)
 }
 
+const openFiles = new Map<string, { tabs: string[]; tab: string }>()
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
 const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")))
 
@@ -421,17 +422,37 @@ function FilesTab({ project, chat, messages, onFocus, onAddToChat }: { project: 
   const [creating, setCreating] = useState<string | null>(null) // the folder a new file goes in ("" is the top)
   const [deleted, setDeleted] = useState<{ id: string; count: number }>()
   const [error, setError] = useState<string>()
+  const [query, setQuery] = useState("")
+  // Open files as tabs after the tree's own ("files", always first); kept per chat while the app runs.
+  const [view, setView] = useState(() => openFiles.get(chat.id) ?? { tabs: [] as string[], tab: "files" })
+  useEffect(() => {
+    openFiles.set(chat.id, view)
+  }, [chat.id, view])
   if (!nodes)
     return (
       <div className="flex justify-center py-10 text-muted">
         <Spinner />
       </div>
     )
-  // One file selected: its code shows under the tree.
-  const only = selected.size === 1 ? findNode(nodes, [...selected][0]!) : undefined
-  const preview = only && !only.children ? only : undefined
+  const openTab = (path: string) => setView((v) => ({ tabs: v.tabs.includes(path) ? v.tabs : [...v.tabs, path], tab: path }))
+  const closeTab = (path: string) =>
+    setView((v) => {
+      const i = v.tabs.indexOf(path)
+      const tabs = v.tabs.filter((p) => p !== path)
+      return { tabs, tab: v.tab === path ? (tabs[Math.min(i, tabs.length - 1)] ?? "files") : v.tab }
+    })
+  // Renamed or deleted on disk: its tabs follow (a folder takes the tabs of what's inside).
+  const retab = (from: string, to: string | null) =>
+    setView((v) => {
+      const map = (p: string) => (p === from || p.startsWith(`${from}/`) ? (to === null ? null : to + p.slice(from.length)) : p)
+      const tabs = v.tabs.map(map).filter((p): p is string => p !== null)
+      return { tabs, tab: v.tab === "files" ? "files" : (map(v.tab) ?? "files") }
+    })
+  // Searching: only what matches (and the folders on its way, open); a matching folder keeps all it holds.
+  const q = query.trim().toLowerCase()
+  const shown = q ? matching(nodes, q) : nodes
   // At first, the top folders holding changes are open.
-  const open = expanded ?? new Set(nodes.filter((n) => n.children && n.status).map((n) => n.path))
+  const open = q ? foldersIn(shown) : (expanded ?? new Set(nodes.filter((n) => n.children && n.status).map((n) => n.path)))
   const root = chat.worktree ?? project.path ?? ""
   const sep = root.includes("\\") ? "\\" : "/"
   const lastTurnOf = (path: string) => [...messages].reverse().find((m) => m.turnId && m.changes.some((c) => c.path === path))?.turnId
@@ -453,6 +474,7 @@ function FilesTab({ project, chat, messages, onFocus, onAddToChat }: { project: 
     paths.length &&
     void run({ op: "delete", paths: [...paths] }).then((r) => {
       if (!r?.trashId) return
+      for (const p of paths) retab(p, null)
       setDeleted({ id: r.trashId, count: paths.length })
       setSelected(new Set())
     })
@@ -460,12 +482,11 @@ function FilesTab({ project, chat, messages, onFocus, onAddToChat }: { project: 
     setRenaming(null)
     if (!name) return
     const to = parentOf(path) ? `${parentOf(path)}/${name}` : name
-    void run({ op: "rename", path, to }).then((r) => r && setSelected(new Set([to])))
-  }
-  const openFile = (n: FileNode & { status?: Node["status"] }) => {
-    const turnId = lastTurnOf(n.path)
-    if (turnId) onFocus({ turnId, path: n.path })
-    else void run({ op: "open", path: n.path })
+    void run({ op: "rename", path, to }).then((r) => {
+      if (!r) return
+      setSelected(new Set([to]))
+      retab(path, to)
+    })
   }
   const copy = (paths: ReadonlyArray<string>, absolute: boolean) =>
     void navigator.clipboard.writeText(paths.map((p) => (absolute ? [root, ...p.split("/")].join(sep) : p)).join("\n"))
@@ -484,9 +505,14 @@ function FilesTab({ project, chat, messages, onFocus, onAddToChat }: { project: 
     return (
       <>
         {one && !node?.children && (
-          <MenuItem icon={<ExternalLink />} onAction={() => void run({ op: "open", path })}>
-            {t("explorer.open")}
-          </MenuItem>
+          <>
+            <MenuItem icon={<File />} onAction={() => openTab(path)}>
+              {t("explorer.open")}
+            </MenuItem>
+            <MenuItem icon={<ExternalLink />} onAction={() => void run({ op: "open", path })}>
+              {t("explorer.openInApp")}
+            </MenuItem>
+          </>
         )}
         {one && lastTurnOf(path) && (
           <MenuItem icon={<GitBranch />} onAction={() => onFocus({ turnId: lastTurnOf(path)!, path })}>
@@ -525,51 +551,96 @@ function FilesTab({ project, chat, messages, onFocus, onAddToChat }: { project: 
   }
   return (
     <div className="flex h-full flex-col">
-      <div className={cx("flex min-h-0 flex-col overflow-y-auto", preview ? "max-h-2/5 shrink-0 border-b border-subtle" : "flex-1")}>
-      <div className="sticky top-0 z-10 flex h-control-sm shrink-0 items-center justify-end gap-0.5 bg-canvas px-2">
-        <IconButton label={t("explorer.newFile")} size="xs" onPress={() => setCreating(selected.size === 1 ? folderOf([...selected][0]!) : "")}>
-          <FilePlus className="size-3.5" />
-        </IconButton>
-        <IconButton label={t("explorer.collapse")} size="xs" onPress={() => setExpanded(new Set())}>
-          <ChevronsDownUp className="size-3.5" />
-        </IconButton>
-      </div>
-      <ContextMenu label={t("explorer.label")} menuFor={menuFor} className="flex-1 px-2">
-        <FileTree
-          label={t("explorer.label")}
-          nodes={nodes}
-          expanded={open}
-          onExpandedChange={setExpanded}
-          selected={selected}
-          onSelectionChange={setSelected}
-          renaming={renaming}
-          onRenamed={(name) => renaming && rename(renaming, name)}
-          onAction={(n) => (n.children ? setExpanded(new Set(open.has(n.path) ? [...open].filter((p) => p !== n.path) : [...open, n.path])) : openFile(n))}
-          onMove={(paths, folder) => {
-            const moving = paths.filter((p) => parentOf(p) !== folder)
-            if (moving.length) void run({ op: "move", paths: moving, to: folder }).then(() => folder && setExpanded(new Set([...open, folder])))
+      <Tabs selectedKey={view.tab} onSelectionChange={(k) => setView((v) => ({ ...v, tab: String(k) }))} className="min-h-0 flex-1 gap-0">
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: listens to keys bubbling from the focused tab; no interaction of its own */}
+        <div
+          className="flex items-center gap-1 px-3 py-1.5"
+          onKeyDown={(e) => {
+            // Delete or Backspace on a focused file tab closes it, as the terminal's tabs.
+            if ((e.key === "Delete" || e.key === "Backspace") && view.tab !== "files" && (e.target as HTMLElement).getAttribute("role") === "tab") closeTab(view.tab)
           }}
-          // F2 / Delete everywhere; on macOS also Finder's keys: Enter renames, Backspace (or Cmd+Backspace) deletes.
-          onKey={(key, e) => {
-            if ((key === "F2" || (MAC && key === "Enter" && !e.metaKey)) && selected.size === 1) setRenaming([...selected][0]!)
-            else if ((key === "Delete" || (key === "Backspace" && (MAC || e.metaKey || e.ctrlKey))) && selected.size) remove([...selected])
-            else return false
-            return true
-          }}
-          trailing={(n) => <StatusMark status={(n as Node).children ? null : (n as Node).status} />}
-          strong={(n) => !!(n as Node).status}
-        />
-      </ContextMenu>
-      </div>
-      {preview && (
-        <FilePreview
-          chatId={chat.id}
-          node={preview}
-          onChanges={lastTurnOf(preview.path) ? () => onFocus({ turnId: lastTurnOf(preview.path)!, path: preview.path }) : undefined}
-          onOpen={() => void run({ op: "open", path: preview.path })}
-          onClose={() => setSelected(new Set())}
-        />
-      )}
+        >
+          <TabList label={t("workspace.files")} className="min-w-0 flex-1 flex-nowrap overflow-x-auto">
+            <Tab id="files">{t("workspace.files")}</Tab>
+            {view.tabs.map((path) => {
+              const name = path.slice(path.lastIndexOf("/") + 1)
+              return (
+                <Tab key={path} id={path} onClose={() => closeTab(path)} closeLabel={t("explorer.closeFile", { name })}>
+                  <span className="flex items-center gap-1.5 whitespace-nowrap" title={path}>
+                    <FileIcon name={name} className="size-3.5" />
+                    {name}
+                  </span>
+                </Tab>
+              )
+            })}
+          </TabList>
+          {view.tab === "files" && (
+            <>
+              <IconButton label={t("explorer.newFile")} size="xs" onPress={() => setCreating(selected.size === 1 ? folderOf([...selected][0]!) : "")}>
+                <FilePlus className="size-3.5" />
+              </IconButton>
+              <IconButton label={t("explorer.collapse")} size="xs" onPress={() => setExpanded(new Set())}>
+                <ChevronsDownUp className="size-3.5" />
+              </IconButton>
+            </>
+          )}
+        </div>
+        <TabPanel id="files" className="flex min-h-0 flex-1 flex-col">
+          <div className="relative shrink-0 px-3 pb-1.5">
+            <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-5 size-3.5 -translate-y-1/2 text-dim" />
+            <Input
+              aria-label={t("explorer.search")}
+              placeholder={t("explorer.search")}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+              className="h-control-sm pl-7 text-sm"
+            />
+          </div>
+          {q && !shown.length && <p className="px-3 py-6 text-center text-sm text-muted">{t("explorer.noMatch")}</p>}
+          <ContextMenu label={t("explorer.label")} menuFor={menuFor} className="min-h-0 flex-1 px-2">
+            <FileTree
+              label={t("explorer.label")}
+              nodes={shown}
+              expanded={open}
+              onExpandedChange={(keys) => !q && setExpanded(keys)}
+              selected={selected}
+              onSelectionChange={setSelected}
+              renaming={renaming}
+              onRenamed={(name) => renaming && rename(renaming, name)}
+              onAction={(n) => (n.children ? setExpanded(new Set(open.has(n.path) ? [...open].filter((p) => p !== n.path) : [...open, n.path])) : openTab(n.path))}
+              onMove={(paths, folder) => {
+                const moving = paths.filter((p) => parentOf(p) !== folder)
+                if (moving.length)
+                  void run({ op: "move", paths: moving, to: folder }).then((r) => {
+                    if (!r) return
+                    for (const p of moving) retab(p, folder ? `${folder}/${p.slice(p.lastIndexOf("/") + 1)}` : p.slice(p.lastIndexOf("/") + 1))
+                    if (folder) setExpanded(new Set([...open, folder]))
+                  })
+              }}
+              // F2 / Delete everywhere; on macOS also Finder's keys: Enter renames, Backspace (or Cmd+Backspace) deletes.
+              onKey={(key, e) => {
+                if ((key === "F2" || (MAC && key === "Enter" && !e.metaKey)) && selected.size === 1) setRenaming([...selected][0]!)
+                else if ((key === "Delete" || (key === "Backspace" && (MAC || e.metaKey || e.ctrlKey))) && selected.size) remove([...selected])
+                else return false
+                return true
+              }}
+              trailing={(n) => <StatusMark status={(n as Node).children ? null : (n as Node).status} />}
+              strong={(n) => !!(n as Node).status}
+            />
+          </ContextMenu>
+        </TabPanel>
+        {view.tabs.map((path) => (
+          <TabPanel key={path} id={path} className="flex min-h-0 flex-1 flex-col">
+            <FileTab
+              chatId={chat.id}
+              path={path}
+              onChanges={lastTurnOf(path) ? () => onFocus({ turnId: lastTurnOf(path)!, path }) : undefined}
+              onOpen={() => void run({ op: "open", path })}
+            />
+          </TabPanel>
+        ))}
+      </Tabs>
       {(deleted || error) && (
         <div role="status" className="sticky bottom-0 flex items-center gap-2 border-t border-subtle bg-canvas px-3 py-2 text-sm">
           <span className={cx("min-w-0 flex-1", error ? "text-danger" : "text-secondary")}>{error ?? t("explorer.deleted", { count: deleted!.count })}</span>
@@ -620,27 +691,24 @@ function FilesTab({ project, chat, messages, onFocus, onAddToChat }: { project: 
   )
 }
 
-// The selected file's code, read only, with its name and the ways out (its diff, its own app).
-function FilePreview({ chatId, node, onChanges, onOpen, onClose }: { chatId: string; node: Node; onChanges: (() => void) | undefined; onOpen: () => void; onClose: () => void }) {
-  const result = useAtomValue(fileTextAtom(chatId, node.path))
+// An open file's tab: its code, read only, under its path and the ways out (its diff, its own app).
+function FileTab({ chatId, path, onChanges, onOpen }: { chatId: string; path: string; onChanges: (() => void) | undefined; onOpen: () => void }) {
+  const result = useAtomValue(fileTextAtom(chatId, path))
   const text = AsyncResult.getOrElse(result, () => undefined)
+  const name = path.slice(path.lastIndexOf("/") + 1)
   return (
-    <section aria-label={node.path} className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-control-sm shrink-0 items-center gap-1.5 px-3">
-        <FileIcon name={node.name} />
-        <span className="min-w-0 flex-1 truncate font-mono text-sm text-secondary" title={node.path}>
-          {node.path}
+    <>
+      <div className="flex h-control-sm shrink-0 items-center gap-1.5 border-b border-subtle px-3">
+        <span className="min-w-0 flex-1 truncate font-mono text-sm text-muted" title={path}>
+          {path}
         </span>
         {onChanges && (
           <Button size="sm" variant="ghost" className="h-6 px-2" onPress={onChanges}>
             {t("explorer.showChanges")}
           </Button>
         )}
-        <IconButton label={t("explorer.open")} size="xs" onPress={onOpen}>
+        <IconButton label={t("explorer.openInApp")} size="xs" onPress={onOpen}>
           <ExternalLink className="size-3.5" />
-        </IconButton>
-        <IconButton label={t("common.close")} size="xs" onPress={onClose}>
-          <X className="size-3.5" />
         </IconButton>
       </div>
       <div className="min-h-0 flex-1 overflow-auto bg-code">
@@ -648,7 +716,7 @@ function FilePreview({ chatId, node, onChanges, onOpen, onClose }: { chatId: str
           <p className="px-3 py-6 text-center text-sm text-muted">{t("explorer.cantShow")}</p>
         ) : text ? (
           <Suspense fallback={<Spinner />}>
-            <FileView name={node.name} contents={text.contents} />
+            <FileView name={name} contents={text.contents} />
           </Suspense>
         ) : (
           <div className="flex justify-center py-6 text-muted">
@@ -656,8 +724,24 @@ function FilePreview({ chatId, node, onChanges, onOpen, onClose }: { chatId: str
           </div>
         )}
       </div>
-    </section>
+    </>
   )
+}
+
+function matching(ns: ReadonlyArray<Node>, q: string): Node[] {
+  return ns.flatMap((n) => {
+    if (n.name.toLowerCase().includes(q)) return [n]
+    const inside = n.children ? matching(n.children, q) : []
+    return inside.length ? [{ ...n, children: inside }] : []
+  })
+}
+const foldersIn = (ns: ReadonlyArray<Node>, out = new Set<string>()): Set<string> => {
+  for (const n of ns)
+    if (n.children) {
+      out.add(n.path)
+      foldersIn(n.children, out)
+    }
+  return out
 }
 
 const findNode = (ns: ReadonlyArray<Node>, path: string): Node | undefined => {
