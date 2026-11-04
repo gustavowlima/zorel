@@ -2,7 +2,7 @@
 // The runtime owns the lifecycle: opens it on the first turn, sends only what the session has not
 // seen yet (watermark), and closes it when the stable context, the provider or the account changes.
 import type { Effect, Stream } from "effect"
-import type { Access, Effort } from "@zorel/contracts"
+import type { Effort } from "@zorel/contracts"
 import type { EngineEvent, TurnFile, TurnTools } from "#server/engines.ts"
 
 export interface SessionTurnInput {
@@ -24,12 +24,6 @@ export interface NativeApproval {
   readonly cwd: string | null
 }
 export type Approver = (request: NativeApproval) => Promise<boolean>
-
-// What a session gets about where and how freely it works.
-export interface SessionAccess {
-  readonly access: Access
-  readonly approve: Approver
-}
 
 export interface EngineSession {
   // Interrupting the stream interrupts the turn; the session stays usable.

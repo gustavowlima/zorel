@@ -356,9 +356,7 @@ export const en = {
       seven_day_sonnet: "Weekly · Sonnet",
       seven_day_oauth_apps: "Weekly · apps",
       hours: "{count}-hour",
-      days: "{count}-day",
-      shortHours: "{count}h",
-      shortDays: "{count}d"
+      days: "{count}-day"
     },
     topTurns: "Most expensive turns",
     noTopTurns: "No priced turns in this range",

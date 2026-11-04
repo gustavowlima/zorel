@@ -59,6 +59,3 @@ export const Badge = ({ tone = "neutral", children }: { tone?: "neutral" | "acce
   </span>
 )
 
-export const Card = ({ className, children }: { className?: string; children: ReactNode }) => (
-  <div className={cx("rounded-card border border-subtle bg-surface p-4", className)}>{children}</div>
-)

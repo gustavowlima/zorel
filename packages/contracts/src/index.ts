@@ -609,7 +609,6 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.delete("remove", "/api/mcp/:id", { params: idParam }))
       // Sign in (oauth connectors): the URL to open in the browser, or null when already signed in.
       .add(HttpApiEndpoint.post("signIn", "/api/mcp/:id/sign-in", { params: idParam, success: Schema.Struct({ authorizeUrl: Schema.NullOr(Schema.String) }), error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
-      .add(HttpApiEndpoint.delete("signOut", "/api/mcp/:id/sign-in", { params: idParam, error: HttpApiError.NotFound }))
       // signedIn: oauth servers holding a token; refused: servers whose credentials were rejected (sign in again).
       .add(HttpApiEndpoint.get("signedIn", "/api/mcp/signed-in", { success: Schema.Struct({ signedIn: Schema.Array(Schema.String), refused: Schema.Array(Schema.String) }) }))
       // Connects and lists the tools, already classified; a connection failure comes in `error`.

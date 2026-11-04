@@ -49,8 +49,6 @@ export const providerHint = (provider: string) => (has(HINTS, provider) ? t(`mod
 
 // Account provider that serves a model provider (multi-account subscriptions).
 export const ACCOUNT_OF_MODEL: Record<string, "claude" | "codex"> = { "claude-cli": "claude", "codex-cli": "codex" }
-export const MODEL_OF_ACCOUNT = { claude: "claude-cli", codex: "codex-cli" } as const
-export const accountProviderOf = (model: string) => ACCOUNT_OF_MODEL[splitModel(model).provider]
 
 // Chats start untitled; the server names them after the first message. "Novo chat" is the legacy
 // placeholder stored before i18n.
@@ -119,13 +117,6 @@ export function windowMinutes(id: string): number | null {
   if (id.startsWith("model:")) return null
   const minutes = WINDOW_MINUTES[id] ?? Number(id.replace(/m$/, ""))
   return Number.isFinite(minutes) ? minutes : null
-}
-
-// A window's name in a narrow column: "5h", "7d", "30d".
-export function windowShort(id: string): string {
-  const minutes = windowMinutes(id)
-  if (minutes === null) return windowLabel(id)
-  return minutes % 1440 === 0 ? t("usage.windows.shortDays", { count: minutes / 1440 }) : t("usage.windows.shortHours", { count: Math.round(minutes / 60) })
 }
 
 // How a limit window is going at `now`: used and elapsed (0..1) and, when the burn so far would empty it before

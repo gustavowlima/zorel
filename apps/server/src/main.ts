@@ -1,5 +1,5 @@
 import { discovered, pickedPaths } from "./file-skills.ts"
-import { finishSignIn, isSignedIn, oauthKey, startSignIn } from "./oauth.ts"
+import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
 import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS } from "@zorel/contracts"
 import { ZorelRpc } from "@zorel/contracts/events"
@@ -18,7 +18,7 @@ const CHARS_PER_TOKEN = 4 // rough, provider-neutral: the meter says it is an es
 import { Store, type Repository } from "./db.ts"
 import { Engines, listModels, splitModel } from "./engines.ts"
 import { claudeCommands } from "./engines/claude-sdk.ts"
-import { API_KEYS, mcpEnvName, Secrets } from "./secrets.ts"
+import { API_KEYS, mcpEnvName, oauthKey, Secrets } from "./secrets.ts"
 import { Accounts } from "./accounts.ts"
 import { Actor } from "./access.ts"
 import { Actions, Audit, changed } from "./audit.ts"
@@ -528,15 +528,6 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
           )
           yield* Effect.promise(() => hub.close(server.id))
           return { authorizeUrl }
-        })
-      )
-      .handle("signOut", ({ params }) =>
-        Effect.gen(function* () {
-          const server = yield* found(store.mcpServer(params.id))
-          yield* Effect.promise(async () => {
-            await hub.close(server.id)
-            await secrets.set(oauthKey(server.id), "")
-          })
         })
       )
       .handle("signedIn", () =>

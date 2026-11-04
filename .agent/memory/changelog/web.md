@@ -32,3 +32,4 @@
 2026-11-04 | conectores com logos (simple-icons) e estado Reconnect | usuário pediu logos e o padrão do OpenBot
 2026-11-04 | Test connection nos conectores + teste ao conectar | usuário pediu teste na conexão
 2026-11-04 | renomeado Zero → Zorel (textos, pacotes, localStorage migrado) | usuário escolheu o nome Zorel
+2026-11-04 | ponytail review+audit: removidos signOut, AvatarStack, Card, windowShort, SessionAccess, TeamToolName, MODEL_OF_ACCOUNT/accountProviderOf, dep shadcn | código sem uso

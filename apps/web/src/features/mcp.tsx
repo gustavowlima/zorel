@@ -223,6 +223,7 @@ const CONNECTORS: ReadonlyArray<Connector> = [
 ]
 const matches = (c: Connector, s: McpServer) => (c.url ? s.url === c.url : [s.command, ...s.args].join(" ") === c.command)
 const WAIT_MS = 5 * 60_000
+const FAILED = () => ({ ok: false, text: t("connectors.failed") })
 
 // A brand's mark (simple-icons, CC0) in one color on a neutral tile, like the rest of the UI; a plug when there's none.
 function ConnectorLogo({ icon }: { icon: SimpleIcon | undefined }) {
@@ -284,7 +285,6 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
   const [result, setResult] = useState<{ ok: boolean; text: string }>() // the last connection test
   const [asking, setAsking] = useState(false) // the token field (GitHub)
   const [token, setToken] = useState("")
-  const [failed, setFailed] = useState(false)
   // Connect for real and list the tools: proves the sign-in works (a refused one turns the card to Reconnect).
   const test = async (id: string) => {
     setResult(undefined)
@@ -294,7 +294,6 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
   }
   const connect = async () => {
     setBusy(true)
-    setFailed(false)
     setResult(undefined)
     try {
       const env = c.auth === "token" ? { Authorization: `Bearer ${token.trim()}` } : {}
@@ -322,13 +321,13 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
       setAsking(false)
       setToken("")
     } catch {
-      setFailed(true)
+      setResult(FAILED())
     } finally {
       setBusy(false)
     }
   }
-  const disconnect = () => server && void remove({ params: { id: server.id }, reactivityKeys: ["servers"] }).catch(() => setFailed(true))
-  const hint: ReactNode = failed ? t("connectors.failed") : result && !busy ? result.text : waiting ? t("connectors.waiting") : status === "attention" ? t("connectors.attention") : t(`connectors.about.${c.id}` as "connectors.about.github")
+  const disconnect = () => server && void remove({ params: { id: server.id }, reactivityKeys: ["servers"] }).catch(() => setResult(FAILED()))
+  const hint: ReactNode = result && !busy ? result.text : waiting ? t("connectors.waiting") : status === "attention" ? t("connectors.attention") : t(`connectors.about.${c.id}` as "connectors.about.github")
   const menu = server && (
     <Menu
       label={t("connectors.actions", { name: c.name })}
@@ -354,7 +353,7 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
         <ConnectorLogo icon={c.icon} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate font-medium">{c.name}</span>
-          <span className={failed || result?.ok === false ? "truncate text-sm text-danger" : result?.ok ? "truncate text-sm text-success" : status === "attention" && !waiting ? "truncate text-sm text-warning" : "truncate text-sm text-muted"}>{hint}</span>
+          <span className={result?.ok === false ? "truncate text-sm text-danger" : result?.ok ? "truncate text-sm text-success" : status === "attention" && !waiting ? "truncate text-sm text-warning" : "truncate text-sm text-muted"}>{hint}</span>
         </span>
         {status === "connected" ? (
           <Badge tone="success">
