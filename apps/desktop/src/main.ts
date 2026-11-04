@@ -154,6 +154,17 @@ function updates() {
     win?.webContents.send("update", update)
   }
   ipcMain.handle("update:get", (e) => (win && e.sender === win.webContents ? update : null))
+  // "Check for updates" (Settings › General › About): now, not at the next 6-hour check. A new version then shows
+  // as usual (the card under the chats).
+  ipcMain.handle("update:check", async (e) => {
+    if (!win || e.sender !== win.webContents) return "failed"
+    if (dev) return "unsupported" // an unpackaged app can't update itself
+    const r = await autoUpdater.checkForUpdates().catch((err: unknown) => {
+      console.error("update check failed", err)
+      return null
+    })
+    return !r ? "failed" : r.isUpdateAvailable ? "available" : "latest"
+  })
   ipcMain.handle("update:install", (e) => {
     if (!win || e.sender !== win.webContents || !update?.ready) return false
     if (manual) return runInstaller()
