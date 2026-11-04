@@ -12,14 +12,14 @@ import { classify, exposedName, needsApproval } from "./tools.ts"
 const feed = (p: Parser, file: string) =>
   Bun.file(new URL(`./fixtures/${file}`, import.meta.url)).text().then((t) => [...t.split("\n").flatMap((l) => p.line(l)), ...p.end(0, "")] as EngineEvent[])
 
-test("parser do Claude Code: texto em streaming + uso no fim", async () => {
+test("Claude Code parser: streamed text + usage at the end", async () => {
   const ev = await feed(claudeParser(), "claude-stream.jsonl")
   expect(ev.filter((e) => e.type === "text").map((e) => (e as any).delta).join("")).toBe("oi, tudo certo.")
   expect(ev.at(-1)).toMatchObject({ type: "done" })
   expect(claudeParser().end(1, "boom")[0]).toMatchObject({ type: "error" })
 })
 
-test("parser do Codex: agent_message + turn.completed; ignora itens de erro de hook", async () => {
+test("Codex parser: agent_message + turn.completed; ignores hook error items", async () => {
   const ev = await feed(codexParser(), "codex-exec.jsonl")
   expect(ev).toEqual([
     { type: "text", delta: "oi, tudo certo." },
@@ -27,8 +27,8 @@ test("parser do Codex: agent_message + turn.completed; ignora itens de erro de h
   ])
 })
 
-test("args das CLIs: sem sessão, sem ferramentas, modelo do id", () => {
-  const t = { model: "claude-cli/opus", system: "S", messages: [{ role: "user" as const, text: "oi" }], cwd: "/tmp/x" }
+test("CLI args: no session, no tools, model from the id", () => {
+  const t = { model: "claude-cli/opus", system: "S", messages: [{ role: "user" as const, text: "hi" }], cwd: "/tmp/x" }
   expect(claudeArgs(t)).toContain("--no-session-persistence")
   expect(claudeArgs(t).join(" ")).toContain("--model opus")
   expect(codexArgs({ ...t, model: "codex-cli/default" })).not.toContain("-m")
@@ -41,38 +41,38 @@ const mem = (text: string, confirmedAt: number, scope = "user", kind: Memory["ki
 const agentOf = (id: string, name: string, instructions = ""): Agent => ({ id, projectId: "p", name, title: "", description: "", instructions, model: "x/y", accountId: null, effort: null, failover: [], permissions: DEFAULT_PERMISSIONS, access: "workspace", createdAt: 0 })
 const msg = (role: "user" | "assistant", text: string, agentId: string | null = null): Message => ({ id: text, chatId: "c", role, agentId, text, model: null, error: null, steps: [], attachments: [], switches: [], turnId: null, changes: [], revertedAt: null, accountId: null, cost: null, inputTokens: 0, outputTokens: 0, at: 1 })
 
-test("contexto: orçamento de memórias prioriza as recentes; camadas na ordem estável → volátil", () => {
-  expect(pinned([mem("velha", 1), mem("nova", 2), mem("x".repeat(50), 3)], 59).map((m) => m.id)).toEqual(["x".repeat(50)])
+test("context: the memory budget favors the recent ones; layers in stable → volatile order", () => {
+  expect(pinned([mem("stale", 1), mem("fresh", 2), mem("x".repeat(50), 3)], 59).map((m) => m.id)).toEqual(["x".repeat(50)])
   const dev = agentOf("a", "Dev", "INSTR")
   const turn = buildTurn({
-    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, effort: null, model: "anthropic/m", summary: "RESUMO", summaryUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
+    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, effort: null, model: "anthropic/m", summary: "SUMMARYTEXT", summaryUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
     model: "anthropic/m",
     project: { id: "p", name: "P", brief: "BRIEF", path: null, defaultAgentId: null, createdAt: 0 },
     agent: dev,
-    members: [dev, agentOf("b", "Revisor Sênior", "Revisa PRs")],
-    pinned: [mem("EU", 1), mem("PROJ", 1, "project:p"), mem("AG", 1, "agent:a")],
-    retrieved: [mem("BUSCA", 1)],
-    skills: { all: [mem("corpo", 1, "project:p", "skill", "SKILLTITLE")], relevant: [mem("SKILLBODY", 1, "project:p", "skill", "S")] },
-    messages: [msg("user", "oi"), msg("assistant", "minha fala", "a"), msg("assistant", "fala do revisor", "b"), msg("user", "e aí?")],
+    members: [dev, agentOf("b", "Senior Reviewer", "Reviews PRs")],
+    pinned: [mem("MINE", 1), mem("PROJ", 1, "project:p"), mem("AG", 1, "agent:a")],
+    retrieved: [mem("FOUND", 1)],
+    skills: { all: [mem("body", 1, "project:p", "skill", "SKILLTITLE")], relevant: [mem("SKILLBODY", 1, "project:p", "skill", "S")] },
+    messages: [msg("user", "hi"), msg("assistant", "my line", "a"), msg("assistant", "the reviewer's line", "b"), msg("user", "so?")],
     cwd: "/tmp"
   })
-  const order = ["INSTR", "@revisor-senior", "EU", "BRIEF", "PROJ", "AG", "SKILLTITLE", "SKILLBODY", "RESUMO", "BUSCA"].map((s) => turn.system.indexOf(s))
+  const order = ["INSTR", "@senior-reviewer", "MINE", "BRIEF", "PROJ", "AG", "SKILLTITLE", "SKILLBODY", "SUMMARYTEXT", "FOUND"].map((s) => turn.system.indexOf(s))
   expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]!))).toBe(true)
   expect(turn.messages.map(({ role, text }) => ({ role, text }))).toEqual([
-    { role: "user", text: "oi" },
-    { role: "assistant", text: "minha fala" },
-    { role: "user", text: "[Revisor Sênior]\nfala do revisor" },
-    { role: "user", text: "e aí?" }
+    { role: "user", text: "hi" },
+    { role: "assistant", text: "my line" },
+    { role: "user", text: "[Senior Reviewer]\nthe reviewer's line" },
+    { role: "user", text: "so?" }
   ])
 })
 
-test("menções: por handle sem acento, na ordem, ignorando código", () => {
+test("mentions: by handle without accents, in order, ignoring code", () => {
   const a = [agentOf("1", "Léo"), agentOf("2", "Ana Paula"), agentOf("3", "Nico")]
-  expect(mentioned("@ana-paula e @leo, vejam; `@nico` não", a).map((x) => x.id)).toEqual(["2", "1"])
+  expect(mentioned("@ana-paula and @leo, take a look; `@nico` not", a).map((x) => x.id)).toEqual(["2", "1"])
   expect(mentioned("email@nico.com", a).map((x) => x.id)).toEqual(["3"]) // ponytail: simple heuristic, same as a reference app
 })
 
-test("política de ferramentas: anotação > nome; sensível vence leitura", () => {
+test("tool policy: annotation > name; sensitive beats read", () => {
   expect(classify({ name: "search_docs" })).toBe("read")
   expect(classify({ name: "listAndDeleteFiles" })).toBe("sensitive")
   expect(classify({ name: "create_issue" })).toBe("write")
@@ -82,17 +82,17 @@ test("política de ferramentas: anotação > nome; sensível vence leitura", () 
   expect(exposedName("Meu Jira", "get.issue")).toBe("Meu_Jira__get_issue")
 })
 
-test("consolidação: aceita JSON com texto em volta, filtra escopos não permitidos", () => {
-  const r = parseConsolidation('ok:\n{"summary":"S","memories":[{"scope":"user","text":"A","evidence":[1]},{"scope":"project","text":"B","evidence":[1]}],"confirm":["m2","x"],"skills":[{"scope":"user","title":"T","text":"passos"},{"scope":"user","text":"sem título"}]}', ["user"])
-  expect(r).toEqual({ summary: "S", memories: [{ scope: "user", text: "A" }], confirm: [1], skills: [{ scope: "user", title: "T", text: "passos" }] })
-  expect(parseConsolidation("nada", ["user"])).toBeUndefined()
+test("consolidation: takes JSON with text around it, drops scopes not allowed", () => {
+  const r = parseConsolidation('ok:\n{"summary":"S","memories":[{"scope":"user","text":"A","evidence":[1]},{"scope":"project","text":"B","evidence":[1]}],"confirm":["m2","x"],"skills":[{"scope":"user","title":"T","text":"steps"},{"scope":"user","text":"no title"}]}', ["user"])
+  expect(r).toEqual({ summary: "S", memories: [{ scope: "user", text: "A" }], confirm: [1], skills: [{ scope: "user", title: "T", text: "steps" }] })
+  expect(parseConsolidation("nothing", ["user"])).toBeUndefined()
   expect(parseConsolidation('{"summary":""}', ["user"])).toBeUndefined()
 })
 
-test("consolidação: só vira memória o que a pessoa disse (evidência de mensagem dela)", () => {
-  const json = '{"summary":"S","memories":[{"scope":"user","text":"Gosta de Bun","evidence":[1]},{"scope":"user","text":"Usa Postgres","evidence":[2]},{"scope":"user","text":"Sem prova"}]}'
+test("consolidation: only what the person said becomes a memory (evidence from their message)", () => {
+  const json = '{"summary":"S","memories":[{"scope":"user","text":"Likes Bun","evidence":[1]},{"scope":"user","text":"Uses Postgres","evidence":[2]},{"scope":"user","text":"No proof"}]}'
   const fromUser = (n: number) => n === 1 // #1 is the person's, #2 an agent's
-  expect(parseConsolidation(json, ["user"], fromUser)?.memories.map((m) => m.text)).toEqual(["Gosta de Bun"])
+  expect(parseConsolidation(json, ["user"], fromUser)?.memories.map((m) => m.text)).toEqual(["Likes Bun"])
 })
 
 // OpenAI-compatible mock: answers each request with the next chunk script.
@@ -112,10 +112,10 @@ function mockOpenAi(scripts: object[][]) {
 const runApi = (turn: Turn) =>
   Effect.runPromise(Effect.gen(function* () { const e = yield* Engines; return yield* Stream.runCollect(e.run(turn)) }).pipe(Effect.provide(Engines.layer), Effect.provide(Secrets.memory())))
 
-test("engine de API (OpenAI-compatível): system + histórico vão como mensagens; stream vira text/done", async () => {
+test("API engine (OpenAI-compatible): system + history go as messages; the stream becomes text/done", async () => {
   const { sent, server } = mockOpenAi([[
-    { choices: [{ index: 0, delta: { role: "assistant", content: "pro" }, finish_reason: null }] },
-    { choices: [{ index: 0, delta: { content: "nto" }, finish_reason: null }] },
+    { choices: [{ index: 0, delta: { role: "assistant", content: "do" }, finish_reason: null }] },
+    { choices: [{ index: 0, delta: { content: "ne" }, finish_reason: null }] },
     { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
     { choices: [], usage: { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 } }
   ]])
@@ -124,7 +124,7 @@ test("engine de API (OpenAI-compatível): system + histórico vão como mensagen
     const events = await runApi({ model: "ollama/llama3", system: "S", messages: [{ role: "user", text: "a" }, { role: "assistant", text: "b" }, { role: "user", text: "c" }], cwd: "/tmp" })
     expect(sent[0].model).toBe("llama3")
     expect(sent[0].messages.map((m: any) => [m.role, m.content])).toEqual([["system", "S"], ["user", "a"], ["assistant", "b"], ["user", "c"]])
-    expect(events.filter((e) => e.type === "text").map((e: any) => e.delta).join("")).toBe("pronto")
+    expect(events.filter((e) => e.type === "text").map((e: any) => e.delta).join("")).toBe("done")
     expect(events.at(-1)).toEqual({ type: "done", usage: { inputTokens: 7, outputTokens: 2 } })
   } finally {
     server.stop()
@@ -132,7 +132,7 @@ test("engine de API (OpenAI-compatível): system + histórico vão como mensagen
   }
 })
 
-test("engine de API com ferramentas: modelo pede a ferramenta, o Zorel executa e devolve o resultado, o modelo conclui", async () => {
+test("API engine with tools: the model asks for the tool, Zorel runs it and returns the result, the model concludes", async () => {
   const { sent, server } = mockOpenAi([
     [
       { choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "docs__search", arguments: '{"q":"deploy"}' } }] }, finish_reason: null }] },
@@ -140,7 +140,7 @@ test("engine de API com ferramentas: modelo pede a ferramenta, o Zorel executa e
       { choices: [], usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 } }
     ],
     [
-      { choices: [{ index: 0, delta: { role: "assistant", content: "Achei: Vercel." }, finish_reason: null }] },
+      { choices: [{ index: 0, delta: { role: "assistant", content: "Found it: Vercel." }, finish_reason: null }] },
       { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
       { choices: [], usage: { prompt_tokens: 9, completion_tokens: 3, total_tokens: 12 } }
     ]
@@ -149,20 +149,20 @@ test("engine de API com ferramentas: modelo pede a ferramenta, o Zorel executa e
   const calls: unknown[] = []
   try {
     const events = await runApi({
-      model: "ollama/llama3", system: "S", messages: [{ role: "user", text: "onde é o deploy?" }], cwd: "/tmp",
+      model: "ollama/llama3", system: "S", messages: [{ role: "user", text: "where is the deploy?" }], cwd: "/tmp",
       tools: {
         url: "http://unused",
         defs: [{ name: "docs__search", description: "busca", inputSchema: { type: "object", properties: { q: { type: "string" } } } }],
         call: async (name, args) => {
           calls.push([name, args])
-          return { content: [{ type: "text", text: "deploy na Vercel" }] }
+          return { content: [{ type: "text", text: "deploy on Vercel" }] }
         }
       }
     })
     expect(calls).toEqual([["docs__search", { q: "deploy" }]])
     expect(sent[0].tools.map((t: any) => t.function.name)).toEqual(["docs__search"])
-    expect(JSON.stringify(sent[1].messages)).toContain("deploy na Vercel") // result went back to the model
-    expect(events.filter((e) => e.type === "text").map((e: any) => e.delta).join("")).toBe("Achei: Vercel.")
+    expect(JSON.stringify(sent[1].messages)).toContain("deploy on Vercel") // result went back to the model
+    expect(events.filter((e) => e.type === "text").map((e: any) => e.delta).join("")).toBe("Found it: Vercel.")
     expect(events.at(-1)).toEqual({ type: "done", usage: { inputTokens: 14, outputTokens: 4 } })
   } finally {
     server.stop()
@@ -213,9 +213,9 @@ test("message heuristics for engines without structured errors", () => {
   expect(classifyMessage("prompt is too long")).toBeUndefined()
 })
 
-test("skills por $handle: título vira handle; só o handle exato chama a skill", () => {
-  const skills = [{ title: "Deploy na Vercel" }, { title: "Revisar PR" }]
-  expect(skillHandle("Deploy na Vercel")).toBe("deploy-na-vercel")
-  expect(namedSkills("faça o $deploy-na-vercel agora", skills).map((s) => s.title)).toEqual(["Deploy na Vercel"])
-  expect(namedSkills("custa $5 e $deploy-na-vercelx", skills)).toEqual([])
+test("skills by $handle: the title becomes the handle; only the exact handle calls the skill", () => {
+  const skills = [{ title: "Deploy to Vercel" }, { title: "Review PR" }]
+  expect(skillHandle("Deploy to Vercel")).toBe("deploy-to-vercel")
+  expect(namedSkills("run $deploy-to-vercel now", skills).map((s) => s.title)).toEqual(["Deploy to Vercel"])
+  expect(namedSkills("custa $5 e $deploy-to-vercelx", skills)).toEqual([])
 })

@@ -21,12 +21,12 @@ import { Workspace } from "./workspace.ts"
 // Prices for tests (USD per million tokens): no network.
 const PRICES = { anthropic: { "claude-sonnet-5-5": { cost: { input: 2, output: 10, cache_read: 0.1 }, family: "claude-sonnet", release_date: "2026-09-28" } } }
 
-// Engine that sends "parte" and then hangs: leaves time to interrupt.
+// Engine that sends "part" and then hangs: leaves time to interrupt.
 const Hanging = Layer.succeed(Engines, {
-  run: () => Stream.concat(Stream.make<EngineEvent[]>({ type: "text", delta: "parte" }), Stream.never)
+  run: () => Stream.concat(Stream.make<EngineEvent[]>({ type: "text", delta: "part" }), Stream.never)
 })
 const Echo = Layer.succeed(Engines, {
-  run: (t) => Stream.make<EngineEvent[]>({ type: "text", delta: `eco: ${t.messages.at(-1)!.text}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+  run: (t) => Stream.make<EngineEvent[]>({ type: "text", delta: `echo: ${t.messages.at(-1)!.text}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
 })
 
 const layer = (dbPath: string, engines: Layer.Layer<Engines>) => {
@@ -53,30 +53,30 @@ const collect = (chatId: string, until: (e: ChatEvent) => boolean) =>
     return { events, done: Fiber.join(fiber).pipe(Effect.timeout("3 seconds")) }
   })
 
-test("reenviar o mesmo clientId devolve o mesmo turno e não duplica a mensagem", () =>
+test("resending the same clientId returns the same turn and doesn't duplicate the message", () =>
   runWith(":memory:", Echo, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
     const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
     const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
-    const a = yield* runtime.send({ chatId: chat.id, clientId: "client-123", text: "oi" })
-    const b = yield* runtime.send({ chatId: chat.id, clientId: "client-123", text: "oi" })
+    const a = yield* runtime.send({ chatId: chat.id, clientId: "client-123", text: "hi" })
+    const b = yield* runtime.send({ chatId: chat.id, clientId: "client-123", text: "hi" })
     expect(b.turnId).toBe(a.turnId)
     yield* c.done
     const msgs = yield* store.messages(chat.id)
-    expect(msgs.map((m) => [m.role, m.text])).toEqual([["user", "oi"], ["assistant", "eco: oi"]])
+    expect(msgs.map((m) => [m.role, m.text])).toEqual([["user", "hi"], ["assistant", "echo: hi"]])
     // per-turn metrics: start, first text and end recorded, in order
     const t = (yield* store.turnRow(a.turnId))!
     expect(t.startedAt! <= t.firstTokenAt! && t.firstTokenAt! <= t.endedAt!).toBe(true)
   })))
 
-test("interromper guarda o texto parcial e emite interrupted", () =>
+test("interrupting keeps the partial text and emits interrupted", () =>
   runWith(":memory:", Hanging, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
     const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
     const c = yield* collect(chat.id, (e) => e._tag === "interrupted")
-    yield* runtime.send({ chatId: chat.id, clientId: "client-456", text: "oi" })
+    yield* runtime.send({ chatId: chat.id, clientId: "client-456", text: "hi" })
     // waits for the first text before interrupting
     while (!c.events.some((e) => e._tag === "text")) yield* Effect.sleep("10 millis")
     yield* runtime.interrupt(chat.id)
@@ -84,11 +84,11 @@ test("interromper guarda o texto parcial e emite interrupted", () =>
     const last = c.events.at(-1)!
     expect(last._tag).toBe("interrupted")
     const msgs = yield* store.messages(chat.id)
-    expect(msgs.at(-1)).toMatchObject({ role: "assistant", text: "parte" })
+    expect(msgs.at(-1)).toMatchObject({ role: "assistant", text: "part" })
     expect(msgs.at(-1)!.error).toBeTruthy()
   })))
 
-test("kill -9 no meio do turno: na próxima subida o turno vira interrupted com o parcial", async () => {
+test("kill -9 mid-turn: on the next boot the turn becomes interrupted with the partial text", async () => {
   const dir = join(tmpdir(), `zorel-rt-${crypto.randomUUID()}`)
   mkdirSync(dir)
   const path = join(dir, "zorel.db")
@@ -100,7 +100,7 @@ test("kill -9 no meio do turno: na próxima subida o turno vira interrupted com 
         const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
         const t = yield* store.enqueueTurn({ chatId: chat.id, agentId: null, model: "x/y", clientId: "client-789", depth: 0 })
         yield* store.startTurn(t.id)
-        yield* store.savePartial(t.id, "meio caminho")
+        yield* store.savePartial(t.id, "halfway")
         return chat.id
       })
     ).pipe(Effect.provide(Store.layer(path)))
@@ -112,7 +112,7 @@ test("kill -9 no meio do turno: na próxima subida o turno vira interrupted com 
     const [turn] = yield* store.turnsIn("interrupted")
     expect(turn!.error).toBe("server_restarted")
     const msgs = yield* store.messages(chatId)
-    expect(msgs.at(-1)).toMatchObject({ role: "assistant", text: "meio caminho" })
+    expect(msgs.at(-1)).toMatchObject({ role: "assistant", text: "halfway" })
   }))
 })
 
@@ -131,7 +131,7 @@ const Sessions = Layer.succeed(Engines, {
         sessionLog.prompts.push(input.prompt)
         sessionLog.efforts.push(input.effort)
         if (input.prompt.includes("slow"))
-          return Stream.concat(Stream.make<EngineEvent[]>({ type: "text", delta: "parte" }), Stream.never).pipe(
+          return Stream.concat(Stream.make<EngineEvent[]>({ type: "text", delta: "part" }), Stream.never).pipe(
             Stream.onExit((exit) => Effect.sync(() => void (Exit.hasInterrupts(exit) && sessionLog.interrupts++)))
           )
         return Stream.make<EngineEvent[]>({ type: "text", delta: "ok" }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
@@ -151,20 +151,20 @@ test("native session: opens once, later turns send only what is new, a stable-co
         yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text })
         yield* c.done
       })
-    yield* turnOnce("primeira")
-    yield* turnOnce("segunda")
+    yield* turnOnce("first")
+    yield* turnOnce("second")
     expect(sessionLog.opened).toHaveLength(1)
-    expect(sessionLog.prompts[0]).toContain("primeira")
-    expect(sessionLog.prompts[1]).toContain("segunda")
-    expect(sessionLog.prompts[1]).not.toContain("primeira") // the session already has it
+    expect(sessionLog.prompts[0]).toContain("first")
+    expect(sessionLog.prompts[1]).toContain("second")
+    expect(sessionLog.prompts[1]).not.toContain("first") // the session already has it
 
     // A new user memory changes the stable context: new session, which gets the whole checkpoint.
     yield* store.addMemory({ scope: "user", text: "Prefere respostas curtas", state: "active", origin: "manual", chatId: null })
-    yield* turnOnce("terceira")
+    yield* turnOnce("third")
     expect(sessionLog.opened).toHaveLength(2)
     expect(sessionLog.opened[1]).toContain("Prefere respostas curtas")
-    expect(sessionLog.prompts[2]).toContain("primeira")
-    expect(sessionLog.prompts[2]).toContain("terceira")
+    expect(sessionLog.prompts[2]).toContain("first")
+    expect(sessionLog.prompts[2]).toContain("third")
   })))
 
 test("native session: interrupting stops the turn but keeps the session", () =>
@@ -180,7 +180,7 @@ test("native session: interrupting stops the turn but keeps the session", () =>
     yield* c.done
     expect(sessionLog.interrupts).toBe(1)
     const d = yield* collect(chat.id, (e) => e._tag === "turn-completed")
-    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "de novo" })
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "again" })
     yield* d.done
     expect(sessionLog.opened.length - before).toBe(1) // same session after the interrupt
     expect(sessionLog.prompts.at(-1)).not.toContain("slow") // the partial reply is already in the session
@@ -190,7 +190,7 @@ test("accounts: the chat's account reaches the session as its login folder; swit
   runWith(":memory:", Sessions, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    yield* store.ensureAccount({ id: "work", label: "Claude trabalho", kind: "subscription", provider: "claude", home: "/tmp/zorel-acc-work", secret: null, baseUrl: null, identity: null })
+    yield* store.ensureAccount({ id: "work", label: "Claude work", kind: "subscription", provider: "claude", home: "/tmp/zorel-acc-work", secret: null, baseUrl: null, identity: null })
     yield* store.ensureAccount({ id: "cdx", label: "Codex 2", kind: "subscription", provider: "codex", home: "/tmp/zorel-acc-cdx", secret: null, baseUrl: null, identity: null })
     const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/haiku", accountId: "work" })
     const turnOnce = (text: string) =>
@@ -228,7 +228,7 @@ const Steerable = Layer.succeed(Engines, {
       turn: (input) =>
         input.prompt.includes("slow")
           ? Stream.concat(
-              Stream.make<EngineEvent[]>({ type: "text", delta: "parte" }),
+              Stream.make<EngineEvent[]>({ type: "text", delta: "part" }),
               Stream.fromEffect(Effect.promise(() => new Promise<string>((r) => { steered = r }))).pipe(
                 Stream.flatMap((t) => Stream.make<EngineEvent[]>({ type: "text", delta: ` + ${t}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })),
                 Stream.ensuring(Effect.sync(() => { steered = undefined }))
@@ -250,12 +250,12 @@ test("steering: joins the running turn when the session can; otherwise it become
     yield* runtime.steer(chat.id, "use src")
     yield* c.done
     const msgs = yield* store.messages(chat.id)
-    expect(msgs.map((m) => [m.role, m.text])).toEqual([["user", "slow"], ["user", "use src"], ["assistant", "parte + use src"]])
+    expect(msgs.map((m) => [m.role, m.text])).toEqual([["user", "slow"], ["user", "use src"], ["assistant", "part + use src"]])
     expect(yield* store.activeTurns(chat.id)).toEqual([]) // nothing extra queued
 
     // No turn running: the correction is just the next turn.
     const d = yield* collect(chat.id, (e) => e._tag === "turn-completed")
-    yield* runtime.steer(chat.id, "e agora?")
+    yield* runtime.steer(chat.id, "and now?")
     yield* d.done
     expect((yield* store.messages(chat.id)).at(-1)).toMatchObject({ role: "assistant", text: "ok" })
   })))
@@ -266,7 +266,7 @@ test("effort: the chat's level reaches the session on every turn", () =>
     const runtime = yield* Runtime
     const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/haiku", effort: "high" })
     const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
-    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "pensa" })
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "think" })
     yield* c.done
     expect(sessionLog.efforts.at(-1)).toBe("high")
   })))
@@ -283,14 +283,14 @@ test("switching Claude → Codex → Claude: the Claude session survives and get
         yield* c.done
       })
     const before = sessionLog.opened.length
-    yield* turnOnce("um", "claude-cli/haiku")
-    yield* turnOnce("dois", "codex-cli/default")
-    yield* turnOnce("tres", "claude-cli/haiku")
+    yield* turnOnce("alpha", "claude-cli/haiku")
+    yield* turnOnce("bravo", "codex-cli/default")
+    yield* turnOnce("charlie", "claude-cli/haiku")
     expect(sessionLog.opened.length - before).toBe(2) // Claude once, Codex once
     const back = sessionLog.prompts.at(-1)!
-    expect(back).not.toContain("um") // Claude already has it
-    expect(back).toContain("dois") // what happened on Codex
-    expect(back).toContain("tres")
+    expect(back).not.toContain("alpha") // Claude already has it
+    expect(back).toContain("bravo") // what happened on Codex
+    expect(back).toContain("charlie")
   })))
 
 // ---------- failover (ARCHITECTURE §6.1) ----------
@@ -324,7 +324,7 @@ test("failover: a provider error before acting moves the turn to the next route;
     const agent = yield* store.createAgent({ projectId: null, name: "Dev", instructions: "", model: "a/m", failover: [{ model: "b/m", accountId: null }] })
     const chat = yield* store.createChat({ projectId: null, agentIds: [agent.id], model: "a/m" })
 
-    const events = yield* sendAndWait(chat.id, "oi")
+    const events = yield* sendAndWait(chat.id, "hi")
     expect(calls).toEqual(["a/m", "b/m"])
     const sw = events.find((e) => e._tag === "failover")
     expect(sw?._tag === "failover" && [sw.switch.fromModel, sw.switch.toModel, sw.switch.reason]).toEqual(["a/m", "b/m", "unavailable"])
@@ -333,7 +333,7 @@ test("failover: a provider error before acting moves the turn to the next route;
     expect(reply.switches.map((s) => s.reason)).toEqual(["unavailable"])
 
     // Within 10 minutes the failed route is skipped without trying it.
-    yield* sendAndWait(chat.id, "de novo")
+    yield* sendAndWait(chat.id, "again")
     expect(calls).toEqual(["a/m", "b/m", "b/m"])
   }))
 })
@@ -344,12 +344,12 @@ test("failover: errors another model would repeat, or a turn without alternative
     const store = yield* Store
     const agent = yield* store.createAgent({ projectId: null, name: "Dev", instructions: "", model: "a/m", failover: [{ model: "b/m", accountId: null }] })
     const withList = yield* store.createChat({ projectId: null, agentIds: [agent.id], model: "a/m" })
-    yield* sendAndWait(withList.id, "oi")
+    yield* sendAndWait(withList.id, "hi")
     expect(calls).toEqual(["a/m"]) // content error: no switch
     expect((yield* store.messages(withList.id)).at(-1)).toMatchObject({ error: "prompt too long", switches: [] })
 
     const noList = yield* store.createChat({ projectId: null, agentIds: [], model: "a/m" })
-    yield* sendAndWait(noList.id, "oi")
+    yield* sendAndWait(noList.id, "hi")
     expect(calls).toEqual(["a/m", "a/m"]) // failover off: empty list
   }))
 })
@@ -362,17 +362,17 @@ test("failover: a subscription limit holds the account until its reset, then the
     const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/sonnet" })
     yield* store.updateChat(chat.id, { failover: [{ model: "b/m", accountId: null }] }) // the chat's own list
 
-    yield* sendAndWait(chat.id, "um")
+    yield* sendAndWait(chat.id, "one")
     expect(calls).toEqual(["claude-cli/sonnet", "b/m"])
     expect((yield* store.account("claude-default"))!.limitedUntil).toBe(until)
 
-    const held = yield* sendAndWait(chat.id, "dois") // still limited: straight to the alternative
+    const held = yield* sendAndWait(chat.id, "two") // still limited: straight to the alternative
     expect(calls).toEqual(["claude-cli/sonnet", "b/m", "b/m"])
     const sw = held.find((e) => e._tag === "failover")
     expect(sw?._tag === "failover" && [sw.switch.reason, sw.switch.until]).toEqual(["limit", until])
 
     yield* Effect.sleep("450 millis")
-    yield* sendAndWait(chat.id, "três") // reset passed: back on the primary
+    yield* sendAndWait(chat.id, "three") // reset passed: back on the primary
     expect(calls.at(-1)).toBe("claude-cli/sonnet")
   }))
 })
@@ -384,7 +384,7 @@ test("failover: when every route fails, the turn fails once and lists each attem
     const store = yield* Store
     const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "a/m" })
     yield* store.updateChat(chat.id, { failover: [{ model: "b/m", accountId: null }] })
-    const events = yield* sendAndWait(chat.id, "oi")
+    const events = yield* sendAndWait(chat.id, "hi")
     expect(calls).toEqual(["a/m", "b/m"])
     expect(events.filter((e) => e._tag === "turn-failed")).toHaveLength(1)
     const error = (yield* store.messages(chat.id)).at(-1)!.error!
@@ -415,7 +415,7 @@ test("workspace: the agent works in the project folder; the turn records what it
     const store = yield* Store
     const project = yield* store.createProject({ name: "app", brief: "", path: folder })
     const chat = yield* store.createChat({ projectId: project.id, agentIds: [], model: "x/y" })
-    const events = yield* sendAndWait(chat.id, "mude a")
+    const events = yield* sendAndWait(chat.id, "change a")
     expect(events.some((e) => e._tag === "step-finished" && e.step.kind === "edit" && e.step.status === "ok")).toBe(true)
     const reply = (yield* store.messages(chat.id)).at(-1)!
     expect(reply.text).toBe(`cwd=${folder}`)
@@ -423,7 +423,7 @@ test("workspace: the agent works in the project folder; the turn records what it
     const turn = (yield* store.turnRow(reply.turnId!))!
     expect(turn.treeBefore && turn.treeAfter && turn.treeBefore !== turn.treeAfter).toBe(true)
 
-    yield* sendAndWait(chat.id, "e agora?")
+    yield* sendAndWait(chat.id, "and now?")
     expect(prompts[1]).toContain("[Done in this turn: edited a.ts (+1 −1)]")
     rmSync(folder, { recursive: true, force: true })
   }))

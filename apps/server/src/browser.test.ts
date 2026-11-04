@@ -28,7 +28,7 @@ const site = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
   fetch: () =>
-    new Response(`<title>Loja</title><h1>Loja</h1><label>Email <input></label><button onclick="document.querySelector('h1').textContent='ok '+document.querySelector('input').value">Comprar</button><button onclick="document.querySelector('h1').textContent=confirm('Sure?')?'yes':'no'">Ask</button>`, {
+    new Response(`<title>Shop</title><h1>Shop</h1><label>Email <input></label><button onclick="document.querySelector('h1').textContent='ok '+document.querySelector('input').value">Buy</button><button onclick="document.querySelector('h1').textContent=confirm('Sure?')?'yes':'no'">Ask</button>`, {
       headers: { "content-type": "text/html" }
     })
 })
@@ -41,10 +41,10 @@ afterAll(async () => {
 test.skipIf(!chrome)(
   "browser tools: navigate, snapshot with refs, type and click by ref; a person's hold refuses the agent",
   async () => {
-    expect(await runBrowserTool(b, "chat-1", "browser_navigate", { url: `http://127.0.0.1:${site.port}/` })).toContain("Loja")
+    expect(await runBrowserTool(b, "chat-1", "browser_navigate", { url: `http://127.0.0.1:${site.port}/` })).toContain("Shop")
     const snap = await runBrowserTool(b, "chat-1", "browser_snapshot", {})
     const input = /textbox "Email" \[ref=(e\d+)\]/.exec(snap)?.[1]
-    const button = /button "Comprar" \[ref=(e\d+)\]/.exec(snap)?.[1]
+    const button = /button "Buy" \[ref=(e\d+)\]/.exec(snap)?.[1]
     expect(input && button).toBeTruthy()
     await runBrowserTool(b, "chat-1", "browser_type", { ref: input, text: "a@b.c" })
     await runBrowserTool(b, "chat-1", "browser_click", { ref: button })
@@ -62,7 +62,7 @@ test.skipIf(!chrome)(
     b.setControl("chat-1", true)
     await expect(runBrowserTool(b, "chat-1", "browser_snapshot", {})).rejects.toThrow(/controlling the browser/)
     b.setControl("chat-1", false)
-    expect(await runBrowserTool(b, "chat-1", "browser_snapshot", {})).toContain("Loja")
+    expect(await runBrowserTool(b, "chat-1", "browser_snapshot", {})).toContain("Shop")
   },
   30_000
 )
