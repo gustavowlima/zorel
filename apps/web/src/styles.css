@@ -188,9 +188,13 @@
   --radius-xl: 12px;
   --radius-2xl: 16px;
   --text-xs: 11px;
+  --text-xs--line-height: 16px;
   --text-sm: 12px;
+  --text-sm--line-height: 16px;
   --text-base: 13px;
+  --text-base--line-height: 20px;
   --text-lg: 15px;
+  --text-lg--line-height: 22px; /* whole-pixel lines: controls and text blocks land on the grid */
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 

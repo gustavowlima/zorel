@@ -242,7 +242,7 @@ Janela inteira em quatro camadas: moldura; o **trilho de ícones** (60px) e a ba
 
 O ritmo interno usa a escala de 4px, quase sempre 4, 8, 12 e 16px; entre mensagens, 24px.
 
-A altura dos controles segue a escala fixa: 24px (ícones e ações inline), 28px (itens de lista e da barra lateral, botões pequenos), 32px (padrão de botões e campos) e 36px (ação principal de destaque).
+A altura dos controles segue a escala fixa: 24px (ícones e ações inline), 28px (itens de lista, botões pequenos, tooltip de uma linha, segmentado, abas), 32px (padrão de botões e campos; as linhas de chat da barra lateral têm 32px por terem avatar) e 36px (ação principal de destaque). As linhas de texto têm altura inteira (11 e 12px → 16px, 13px → 20px, 15px → 22px, tokens `--text-*--line-height`), para que nenhum controle ou bloco caia em meio pixel.
 
 **A Regra da Escala.** Nenhuma altura de controle fora de 24 / 28 / 32 / 36px.
 
@@ -292,8 +292,11 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Field:** rótulo de 12px muted acima, dica de 11px dim abaixo.
 
 ### Select
-- **Gatilho:** mesmo corpo do campo (32px, ou 28px no tamanho sm) com chevron muted.
-- **Lista:** popover em raised com borda forte, cantos de 8px, sem sombra; itens de 28px, foco com control-hover, selecionado com check azul.
+- **Gatilho:** mesmo corpo do campo (32px, ou 28px no tamanho sm) com chevron muted. Variante `ghost` (28px, sem borda, texto muted, ícone opcional à esquerda, chevron de 14px) para escolhas ao lado de uma caixa de mensagem, igual ao gatilho do seletor de modelo — é a da tela inicial (projeto e agente acima da caixa).
+- **Lista:** a mesma superfície de lista do Menu: raised com borda forte, cantos de 12px, padding de 4px, sem sombra; itens de 28px com cantos de 6px (concêntricos: 12 − 4 − 1 ≈ 6), foco com control-hover, selecionado com check azul.
+- **Superfícies flutuantes:** Select, Menu, Popover e Tooltip abrem a 6px do gatilho (o menu de contexto, no ponteiro, a 2px); Select, Menu e Popover entram com fade + zoom de 0,98, o Tooltip só com fade.
+- **Segmentado e abas:** o segmentado tem 28px no total (borda de 1px, inset de 2px, pílulas de 22px com cantos de 6px dentro dos 8px do trilho); as abas têm 28px numa linha só e rolam de lado quando não cabem, nunca quebram.
+- **Anéis de foco:** controles de ação (botões, abas, segmentado) usam o anel accent; campos de texto, o accent-soft, porque o cursor já mostra o foco.
 
 ### Dialog / Tooltip
 - **Dialog:** folha de 16px de raio em raised com borda forte sobre overlay escuro; título 15px semibold; ações à direita. Ação destrutiva sempre confirmada por diálogo (nunca `window.confirm`), com foco inicial no botão de confirmar.

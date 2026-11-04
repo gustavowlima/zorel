@@ -1,4 +1,4 @@
-// Home = a new chat: pick the project (above the box), the agent (or none) and the model, and type. The chat
+// Home = a new chat: pick the project and the agent (or none) above the box, the model in it, and type. The chat
 // is created on the first send (or the first attachment, which needs a chat to belong to), then the screen
 // moves to it.
 import { t } from "@zero/i18n"
@@ -7,7 +7,7 @@ import { agentsAtom, mutations, projectsAtom, uploadAttachment, useList, useMuta
 import { go } from "../state.ts"
 import { Composer } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
-import { Select } from "@/ui"
+import { Bot, Folder, Select } from "@/ui"
 
 const DEFAULT_MODEL: ModelChoice = { model: "claude-cli/sonnet", accountId: null, effort: null }
 
@@ -61,39 +61,40 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
           <h1 className="text-lg font-semibold">{t("home.title")}</h1>
           <p className="text-muted">{t("home.subtitle")}</p>
         </div>
-        <div className="flex flex-col gap-2">
-          {/* Where the chat lives comes first: the project sets the context, the agents and the folder. */}
-          <Select
-            size="sm"
-            className="w-auto max-w-64 self-start"
-            aria-label={t("home.project")}
-            value={projectId ?? ""}
-            onChange={(v) => {
-              setProjectId(v || null)
-              pickAgent(null)
-            }}
-            options={[{ value: "", label: t("home.noProject") }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
-          />
+        <div className="flex flex-col gap-1.5">
+          {/* Where the chat lives and who answers, above the box (the box is the chat's own: attach, text,
+              model). The project sets the context, the agents and the folder. */}
+          <div className="flex items-center gap-1">
+            <Select
+              variant="ghost"
+              icon={<Folder />}
+              className="w-auto max-w-64"
+              aria-label={t("home.project")}
+              value={projectId ?? ""}
+              onChange={(v) => {
+                setProjectId(v || null)
+                pickAgent(null)
+              }}
+              options={[{ value: "", label: t("home.noProject") }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+            />
+            {available.length > 0 && (
+              <Select
+                variant="ghost"
+                icon={<Bot />}
+                className="w-auto max-w-56"
+                aria-label={t("home.agent")}
+                value={agentId ?? ""}
+                onChange={(v) => pickAgent(v || null)}
+                options={[{ value: "", label: t("home.noAgent") }, ...available.map((a) => ({ value: a.id, label: a.name }))]}
+              />
+            )}
+          </div>
           <Composer
             autoFocus
             onSubmit={submit}
             upload={(f) => ensureChat().then((id) => uploadAttachment(id, f))}
             placeholder={t("composer.placeholder")}
-            tools={
-              <>
-                {available.length > 0 && (
-                  <Select
-                    size="sm"
-                    className="w-auto max-w-44"
-                    aria-label={t("home.agent")}
-                    value={agentId ?? ""}
-                    onChange={(v) => pickAgent(v || null)}
-                    options={[{ value: "", label: t("home.noAgent") }, ...available.map((a) => ({ value: a.id, label: a.name }))]}
-                  />
-                )}
-                <ModelPicker value={choice} onChange={setChoice} />
-              </>
-            }
+            tools={<ModelPicker value={choice} onChange={setChoice} />}
           />
         </div>
       </div>

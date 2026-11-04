@@ -21,7 +21,7 @@ export function Segmented<K extends string>({ label, options, value, onChange, c
         <ToggleButton
           key={o.id}
           id={o.id}
-          className="flex h-6 cursor-default items-center rounded-control px-2.5 text-sm text-muted outline-none transition-colors duration-150 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:text-fg data-selected:bg-surface data-selected:text-fg motion-reduce:transition-none"
+          className="flex h-5.5 cursor-default items-center rounded-md px-2.5 text-sm text-muted outline-none transition-colors duration-150 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:text-fg data-selected:bg-surface data-selected:text-fg motion-reduce:transition-none"
         >
           {o.label}
         </ToggleButton>

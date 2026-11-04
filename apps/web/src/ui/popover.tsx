@@ -23,7 +23,7 @@ export function Popover({
       {trigger}
       <PopoverPrimitive
         placement={placement}
-        offset={8}
+        offset={6}
         className={cn(
           "z-50 overflow-hidden rounded-sheet border border-strong bg-raised text-fg outline-none data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.98] data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none",
           className
