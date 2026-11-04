@@ -17,9 +17,10 @@ import { Composer, type ComposerSources } from "./composer.tsx"
 import { ContextMeter } from "./context-meter.tsx"
 import { QueuePanel, useQueue } from "./queue.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
-import { chatDelta, Delta, type Focus, SidePanel, type SideTab, TurnChanges } from "./workspace.tsx"
+import { chatDelta, Delta, type Focus, PinItem, type Pins, type ShellPin, SIDE_ICON, SidePanel, type SideTab, sideLabel, TurnChanges, usePins } from "./workspace.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { GitControl } from "./git.tsx"
+import { ContextMenu } from "@/ui"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import {
   Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
@@ -57,6 +58,8 @@ export function ChatView({ chat }: { chat: Chat }) {
   const project = projects.find((p) => p.id === chat.projectId)
   // The side panel and its tab (Changes, Files, Browser, Terminal); undefined: closed.
   const [panel, setPanel] = useState<SideTab>()
+  const pins = usePins(chat.id)
+  const [shellFocus, setShellFocus] = useState<{ session: string }>() // a new object each time a pinned shell is pressed
   const [browserUrl, setBrowserUrl] = useState<{ url: string }>() // a new object each time, so the same URL opens again
   const openInBrowser = (url: string) => {
     setBrowserUrl({ url })
@@ -111,6 +114,13 @@ export function ChatView({ chat }: { chat: Chat }) {
         panelOpen={!!panel}
         onPanel={() => setPanel(panel ? undefined : "changes")}
         workspace={!!project?.path}
+        pins={pins}
+        panel={panel}
+        onSide={(tab) => setPanel(panel === tab ? undefined : tab)}
+        onShell={(pin) => {
+          setShellFocus({ session: pin.session })
+          setPanel("terminal")
+        }}
       />
       <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -170,6 +180,8 @@ export function ChatView({ chat }: { chat: Chat }) {
           browserUrl={browserUrl}
           onOpenUrl={openInBrowser}
           onAddToChat={(text) => insertRef.current?.(`\`\`\`\n${text.trimEnd()}\n\`\`\``)}
+          pins={pins}
+          shellFocus={shellFocus}
         />
       )}
       </div>
@@ -193,7 +205,11 @@ function ChatHeader({
   delta,
   panelOpen,
   onPanel,
-  workspace
+  workspace,
+  pins,
+  panel,
+  onSide,
+  onShell
 }: {
   chat: Chat
   team: ReadonlyArray<Agent>
@@ -201,26 +217,16 @@ function ChatHeader({
   panelOpen: boolean
   onPanel: () => void
   workspace: boolean
+  pins: Pins
+  panel: SideTab | undefined
+  onSide: (tab: SideTab) => void
+  onShell: (pin: ShellPin) => void
 }) {
   const projects = useList(projectsAtom)
   const project = projects.find((p) => p.id === chat.projectId)
   const update = useMutation(mutations.updateChat)
   const remove = useMutation(mutations.removeChat)
-  const consolidate = useMutation(mutations.consolidate)
   const [dialog, setDialog] = useState<"rename" | "delete" | "failover">()
-  const [note, setNote] = useState<{ tone: "ok" | "error"; text: string }>()
-  const [compacting, setCompacting] = useState(false)
-
-  const compact = () => {
-    setCompacting(true)
-    setNote(undefined)
-    consolidate({ params: { id: chat.id }, reactivityKeys: ["chats", "memories"] })
-      .then(
-        () => setNote({ tone: "ok", text: t("chat.compacted") }),
-        () => setNote({ tone: "error", text: t("chat.compactFailed") })
-      )
-      .finally(() => setCompacting(false))
-  }
 
   return (
     <>
@@ -231,12 +237,44 @@ function ChatHeader({
             {project?.name ?? t("common.general")}
           </Button>
         </div>
-        {compacting && (
-          <span className="inline-flex items-center gap-1.5 text-sm text-muted">
-            <Spinner size={12} /> {t("chat.compacting")}
-          </span>
-        )}
         {workspace && <GitControl chat={chat} />}
+        {/* What was pinned from the side panel (a tab, a shell): one press opens it there. Right-click unpins. */}
+        {(pins.side.length > 0 || pins.shells.length > 0) && (
+          <ContextMenu
+            label={t("workspace.pinned")}
+            className="flex items-center gap-1"
+            menuFor={(el) => {
+              const b = el.closest<HTMLElement>("[data-pin]")
+              if (!b) return undefined
+              const [kind, id] = (b.dataset.pin ?? "").split(":") as [string, string]
+              return (
+                <PinItem
+                  pinned
+                  onAction={() => (kind === "side" ? pins.toggleSide(id as SideTab) : pins.toggleShell({ session: id, label: "" }))}
+                />
+              )
+            }}
+          >
+            {pins.side
+              .filter((tab) => workspace || (tab !== "files" && tab !== "terminal"))
+              .map((tab) => {
+                const Icon = SIDE_ICON[tab]
+                return (
+                  <Button key={tab} data-pin={`side:${tab}`} size="sm" variant={panel === tab ? "secondary" : "ghost"} aria-pressed={panel === tab} onPress={() => onSide(tab)} className="rounded-full">
+                    <Icon />
+                    {sideLabel(tab)}
+                  </Button>
+                )
+              })}
+            {workspace &&
+              pins.shells.map((pin) => (
+                <Button key={pin.session} data-pin={`shell:${pin.session}`} size="sm" variant="ghost" onPress={() => onShell(pin)} className="max-w-40 rounded-full">
+                  <SquareTerminal />
+                  <span className="truncate">{pin.label}</span>
+                </Button>
+              ))}
+          </ContextMenu>
+        )}
         {/* One control for the side panel (Changes, Files, Browser, Terminal live in its tabs); what this chat
             changed shows on it. */}
         <Tooltip content={panelOpen ? t("workspace.closePanel") : t("workspace.openPanel")}>
@@ -257,9 +295,6 @@ function ChatHeader({
           <MenuItem icon={<Pencil />} onAction={() => setDialog("rename")}>
             {t("common.rename")}
           </MenuItem>
-          <MenuItem icon={<Sparkles />} onAction={compact}>
-            {t("chat.compact")}
-          </MenuItem>
           <MenuItem icon={<Shuffle />} onAction={() => setDialog("failover")}>
             {t("failover.menu")}
           </MenuItem>
@@ -269,16 +304,6 @@ function ChatHeader({
           </MenuItem>
         </Menu>
       </header>
-      {note && (
-        <div className={cx("flex items-center justify-center gap-3 border-b border-subtle px-7 py-2 text-sm", note.tone === "ok" ? "text-secondary" : "text-danger")}>
-          <span>{note.text}</span>
-          {note.tone === "ok" && (
-            <Button size="sm" variant="secondary" onPress={() => go({ view: "inbox" })}>
-              {t("chat.review")}
-            </Button>
-          )}
-        </div>
-      )}
       <FailoverDialog isOpen={dialog === "failover"} onClose={() => setDialog(undefined)} chat={chat} lead={team[0]} />
       <RenameDialog isOpen={dialog === "rename"} onClose={() => setDialog(undefined)} title={chatTitle(chat)} onSave={(title) => void update({ params: { id: chat.id }, payload: { title }, reactivityKeys: ["chats"] })} />
       <ConfirmDialog

@@ -12,7 +12,7 @@ import { agentName } from "../labels.ts"
 const DiffView = lazy(() => import("./diff-view.tsx"))
 import {
   Button, ChevronDown, ChevronRight, ConfirmButton, cx, EmptyState, File, Folder, FolderOpen, IconButton, Spinner, Tab, TabList,
-  Columns2, ConfirmDialog, Globe, Menu, MenuItem, PanelRight, Play, Plus, Popover, Rows2, Server, Square, SquareTerminal, TabPanel, Tabs, Tooltip, X
+  Columns2, ConfirmDialog, ContextMenu, Globe, Menu, MenuItem, PanelRight, Pin, PinOff, Play, Plus, Popover, Rows2, Server, Square, SquareTerminal, TabPanel, Tabs, Tooltip, X
 } from "@/ui"
 import { Shell } from "./shell.tsx"
 import { BrowserPanel } from "./browser.tsx"
@@ -81,6 +81,51 @@ export function TurnChanges({ message, onView }: { message: Message; onView: (f:
 // ---------- side panel (T3 Code's pattern: one panel, its surfaces as tabs) ----------
 
 export type SideTab = "changes" | "files" | "browser" | "terminal"
+
+// ---------- pins: a side-panel tab or a shell, put up in the chat's title row as a shortcut ----------
+// Side tabs are pinned for every chat (this computer); shells, for their chat (a shell lives in one chat).
+export type ShellPin = { readonly session: string; readonly label: string }
+const SIDE_PINS_KEY = "zero.pins.side"
+const SHELL_PINS_KEY = (chatId: string) => `zero.pins.shell.${chatId}`
+const readJson = <A,>(key: string, fallback: A): A => {
+  try {
+    return (JSON.parse(store.get(key) ?? "null") as A) ?? fallback
+  } catch {
+    return fallback
+  }
+}
+
+export function usePins(chatId: string) {
+  const [side, setSide] = useState<ReadonlyArray<SideTab>>(() => readJson(SIDE_PINS_KEY, []))
+  const [shells, setShells] = useState<ReadonlyArray<ShellPin>>(() => readJson(SHELL_PINS_KEY(chatId), []))
+  useEffect(() => setShells(readJson(SHELL_PINS_KEY(chatId), [])), [chatId])
+  const saveSide = (next: ReadonlyArray<SideTab>) => {
+    setSide(next)
+    store.set(SIDE_PINS_KEY, JSON.stringify(next))
+  }
+  const saveShells = (next: ReadonlyArray<ShellPin>) => {
+    setShells(next)
+    store.set(SHELL_PINS_KEY(chatId), JSON.stringify(next))
+  }
+  return {
+    side,
+    shells,
+    toggleSide: (tab: SideTab) => saveSide(side.includes(tab) ? side.filter((x) => x !== tab) : [...side, tab]),
+    toggleShell: (pin: ShellPin) => saveShells(shells.some((x) => x.session === pin.session) ? shells.filter((x) => x.session !== pin.session) : [...shells, pin]),
+    dropShell: (session: string) => shells.some((x) => x.session === session) && saveShells(shells.filter((x) => x.session !== session))
+  }
+}
+export type Pins = ReturnType<typeof usePins>
+
+export const SIDE_ICON: Record<SideTab, typeof PanelRight> = { changes: PanelRight, files: Folder, browser: Globe, terminal: SquareTerminal }
+export const sideLabel = (tab: SideTab) => (tab === "browser" ? t("browser.title") : t(`workspace.${tab}`))
+
+// The pin/unpin item of a right-click menu.
+export const PinItem = ({ pinned, onAction }: { pinned: boolean; onAction: () => void }) => (
+  <MenuItem icon={pinned ? <PinOff /> : <Pin />} onAction={onAction}>
+    {pinned ? t("workspace.unpin") : t("workspace.pin")}
+  </MenuItem>
+)
 const WIDTH_KEY = "zero.side.width"
 const MIN_WIDTH = 360
 
@@ -99,7 +144,9 @@ export function SidePanel({
   onClose,
   browserUrl,
   onOpenUrl,
-  onAddToChat
+  onAddToChat,
+  pins,
+  shellFocus
 }: {
   chat: Chat
   project: Project | undefined
@@ -113,6 +160,8 @@ export function SidePanel({
   browserUrl: { url: string } | undefined
   onOpenUrl: (url: string) => void
   onAddToChat: (text: string) => void
+  pins: Pins
+  shellFocus: { session: string } | undefined // a pinned shell was pressed: show it
 }) {
   const [width, setWidth] = useState(() => Number(store.get(WIDTH_KEY)) || 560)
   const [opened, setOpened] = useState<ReadonlySet<SideTab>>(() => new Set([tab]))
@@ -161,37 +210,33 @@ export function SidePanel({
       />
       <Tabs selectedKey={tab} onSelectionChange={(k) => onTab(k as SideTab)} className="min-h-0 flex-1 gap-0">
         <div className="flex items-center gap-2 border-b border-subtle px-3 py-2">
-          <TabList label={t("workspace.panel")} className="min-w-0 flex-1 flex-nowrap overflow-x-auto">
-            <Tab id="changes">
-              <span className="flex items-center gap-1.5 whitespace-nowrap">
-                <PanelRight className="size-3.5" />
-                {t("workspace.changes")}
-                {delta.added + delta.removed > 0 && <Delta {...delta} />}
-              </span>
-            </Tab>
-            {folder && (
-              <Tab id="files">
-                <span className="flex items-center gap-1.5 whitespace-nowrap">
-                  <Folder className="size-3.5" />
-                  {t("workspace.files")}
-                </span>
-              </Tab>
-            )}
-            <Tab id="browser">
-              <span className="flex items-center gap-1.5 whitespace-nowrap">
-                <Globe className="size-3.5" />
-                {t("browser.title")}
-              </span>
-            </Tab>
-            {folder && (
-              <Tab id="terminal">
-                <span className="flex items-center gap-1.5 whitespace-nowrap">
-                  <SquareTerminal className="size-3.5" />
-                  {t("workspace.terminal")}
-                </span>
-              </Tab>
-            )}
-          </TabList>
+          {/* Right-click a tab: pin it to the chat's title row. */}
+          <ContextMenu
+            label={t("workspace.panel")}
+            className="min-w-0 flex-1"
+            menuFor={(el) => {
+              const id = el.closest('[role="tab"]')?.querySelector<HTMLElement>("[data-side-tab]")?.dataset.sideTab as SideTab | undefined
+              return id && <PinItem pinned={pins.side.includes(id)} onAction={() => pins.toggleSide(id)} />
+            }}
+          >
+            <TabList label={t("workspace.panel")} className="min-w-0 flex-nowrap overflow-x-auto">
+              {(["changes", "files", "browser", "terminal"] as const)
+                .filter((id) => folder || (id !== "files" && id !== "terminal"))
+                .map((id) => {
+                  const Icon = SIDE_ICON[id]
+                  return (
+                    <Tab key={id} id={id}>
+                      <span data-side-tab={id} className="flex items-center gap-1.5 whitespace-nowrap">
+                        <Icon className="size-3.5" />
+                        {sideLabel(id)}
+                        {id === "changes" && delta.added + delta.removed > 0 && <Delta {...delta} />}
+                        {pins.side.includes(id) && <Pin className="size-3 text-dim" aria-label={t("workspace.pinned")} />}
+                      </span>
+                    </Tab>
+                  )
+                })}
+            </TabList>
+          </ContextMenu>
           <IconButton label={t("workspace.closePanel")} size="sm" onPress={onClose}>
             <X className="size-3.5" />
           </IconButton>
@@ -209,7 +254,18 @@ export function SidePanel({
         </TabPanel>
         {folder && (
           <TabPanel id="terminal" keepMounted={opened.has("terminal")} className="flex min-h-0 flex-1 flex-col">
-            {opened.has("terminal") && <TerminalPanel key={shellKey} chatId={chat.id} visible={tab === "terminal"} onClose={() => setShellKey((k) => k + 1)} onAddToChat={onAddToChat} onOpenUrl={onOpenUrl} />}
+            {opened.has("terminal") && (
+              <TerminalPanel
+                key={shellKey}
+                chatId={chat.id}
+                visible={tab === "terminal"}
+                onClose={() => setShellKey((k) => k + 1)}
+                onAddToChat={onAddToChat}
+                onOpenUrl={onOpenUrl}
+                pins={pins}
+                focus={shellFocus}
+              />
+            )}
           </TabPanel>
         )}
       </Tabs>
@@ -407,9 +463,13 @@ export function TerminalPanel({
   visible,
   onClose,
   onAddToChat,
-  onOpenUrl
+  onOpenUrl,
+  pins,
+  focus
 }: {
   chatId: string
+  pins: Pins
+  focus: { session: string } | undefined // show the tab holding this shell (a pinned shell was pressed)
   visible: boolean // its tab in the side panel is the one shown
   onClose: () => void // the last shell closed
   onAddToChat: (text: string) => void
@@ -466,7 +526,11 @@ export function TerminalPanel({
   // End these panes' shells and drop them (a tab goes when its last pane does).
   const drop = (keys: ReadonlyArray<string>) => {
     const gone = tabs.flatMap((t) => t.panes).filter((p) => keys.includes(p.key))
-    for (const p of gone) if (p.session) void closeTerminal({ params: { id: chatId, terminal: p.session }, reactivityKeys: ["terminals"] })
+    for (const p of gone) {
+      if (!p.session) continue
+      void closeTerminal({ params: { id: chatId, terminal: p.session }, reactivityKeys: ["terminals"] })
+      pins.dropShell(p.session) // its pin goes with it
+    }
     const next = tabs.map((t) => ({ ...t, panes: t.panes.filter((p) => !keys.includes(p.key)) })).filter((t) => t.panes.length)
     setTabs(next)
     if (!next.length) onClose() // the last shell closed: the tab starts over with a fresh one
@@ -482,6 +546,12 @@ export function TerminalPanel({
       .catch(() => drop(keys))
   }
   const current = tabs.find((t) => t.key === tab)
+  // A pinned shell pressed in the title row: its tab comes to the front.
+  useEffect(() => {
+    const holder = focus && tabs.find((x) => x.panes.some((p) => p.session === focus.session))
+    if (holder) setTab(holder.key)
+  }, [focus, tabs])
+  const nameOf = (s: ShellTab) => s.label || t("workspace.shell", { n: tabs.indexOf(s) + 1 })
 
   return (
     <section aria-label={t("workspace.terminal")} className="flex min-h-0 flex-1 flex-col">
@@ -494,17 +564,38 @@ export function TerminalPanel({
             if ((e.key === "Delete" || e.key === "Backspace") && current && (e.target as HTMLElement).getAttribute("role") === "tab") close(current.panes.map((p) => p.key))
           }}
         >
-          <TabList label={t("workspace.terminal")} className="min-w-0 flex-1 flex-nowrap overflow-x-auto">
-            {tabs.map((s, i) => (
-              <Tab key={s.key} id={s.key} onClose={() => close(s.panes.map((p) => p.key))} closeLabel={t("workspace.closeShellNamed", { name: s.label || t("workspace.shell", { n: i + 1 }) })}>
-                <span className={cx("flex items-center gap-1.5 whitespace-nowrap", s.panes.every((p) => p.ended) && "text-dim")}>
-                  {s.label && <Play className="size-3" />}
-                  {s.label || t("workspace.shell", { n: i + 1 })}
-                  {s.panes.length > 1 && <span className="text-dim">{` · ${s.panes.length}`}</span>}
-                </span>
-              </Tab>
-            ))}
-          </TabList>
+          {/* Right-click a shell tab: pin it to the chat's title row, or close it. */}
+          <ContextMenu
+            label={t("workspace.terminal")}
+            className="min-w-0 flex-1"
+            menuFor={(el) => {
+              const key = el.closest('[role="tab"]')?.querySelector<HTMLElement>("[data-shell-tab]")?.dataset.shellTab
+              const s = tabs.find((x) => x.key === key)
+              const session = s?.panes[0]?.session
+              if (!s || !session) return undefined
+              return (
+                <>
+                  <PinItem pinned={pins.shells.some((x) => x.session === session)} onAction={() => pins.toggleShell({ session, label: nameOf(s) })} />
+                  <MenuItem icon={<X />} onAction={() => close(s.panes.map((p) => p.key))}>
+                    {t("workspace.closeShellNamed", { name: nameOf(s) })}
+                  </MenuItem>
+                </>
+              )
+            }}
+          >
+            <TabList label={t("workspace.terminal")} className="min-w-0 flex-nowrap overflow-x-auto">
+              {tabs.map((s) => (
+                <Tab key={s.key} id={s.key} onClose={() => close(s.panes.map((p) => p.key))} closeLabel={t("workspace.closeShellNamed", { name: nameOf(s) })}>
+                  <span data-shell-tab={s.key} className={cx("flex items-center gap-1.5 whitespace-nowrap", s.panes.every((p) => p.ended) && "text-dim")}>
+                    {s.label && <Play className="size-3" />}
+                    {nameOf(s)}
+                    {s.panes.length > 1 && <span className="text-dim">{` · ${s.panes.length}`}</span>}
+                    {pins.shells.some((x) => s.panes.some((p) => p.session === x.session)) && <Pin className="size-3 text-dim" aria-label={t("workspace.pinned")} />}
+                  </span>
+                </Tab>
+              ))}
+            </TabList>
+          </ContextMenu>
           {current && current.panes.length < MAX_PANES && (
             <>
               <Tooltip content={t("workspace.splitRight")}>

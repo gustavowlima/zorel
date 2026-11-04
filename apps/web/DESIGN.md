@@ -310,8 +310,9 @@ Compactos e diretos, com aperto físico ao pressionar.
 - Uma imagem do chat abre dentro do Zero (`ImageViewer`), nunca numa aba nova: modal sobre o app escurecido, a imagem o maior que couber (object-contain, borda forte, cantos de 12px) e, acima, uma barra com o nome, "Open original" e o fechar. Esc, clique fora ou o botão fecham; o foco volta à miniatura.
 
 ### Painel lateral (padrão do T3 Code)
-- O cabeçalho do chat não tem um botão por superfície: tem o controle de Git e **um** botão de painel (ícone de painel + o +N −M do que o chat mudou). Ele abre o painel lateral, à direita do chat, com as superfícies como abas em pílula: **Changes** (com o delta), **Files**, **Browser** e **Terminal** (Files e Terminal só com pasta de projeto), e × para fechar.
+- O cabeçalho do chat não tem um botão por superfície: tem o controle de Git, os atalhos fixados e **um** botão de painel (ícone de painel + o +N −M do que o chat mudou). Ele abre o painel lateral, à direita do chat, com as superfícies como abas em pílula: **Changes** (com o delta), **Files**, **Browser** e **Terminal** (Files e Terminal só com pasta de projeto), e × para fechar.
 - Largura ajustável pela borda esquerda (arraste, ou foco + setas), lembrada no computador: 560px por padrão, mín. 360px, máx. 70% da janela.
+- **Fixar:** clique direito numa aba do painel ("Pin to the title bar") ou numa aba de shell do Terminal (também "Close") põe um atalho na linha do título, entre o Git e o botão do painel: pílula ghost com ícone e nome (o de uma aba fica `secondary` enquanto ela está aberta). Clicar abre o painel naquela aba (ou naquele shell); de novo, fecha. Clique direito no atalho: "Unpin". Abas fixadas valem para todos os chats (neste computador); shells, para o chat deles, e o atalho some quando o shell fecha. Um alfinete pequeno (dim) marca a aba fixada.
 - Browser e Terminal ficam montados depois de abertos: trocar de aba não derruba a conexão. "View" de um turno abre em Changes; um servidor aberto do Terminal abre em Browser; `/terminal` e `/changes` no composer abrem a aba.
 
 ### Terminal
