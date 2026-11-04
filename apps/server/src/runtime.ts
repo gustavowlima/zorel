@@ -13,7 +13,8 @@ import type { Approver, EngineSession, NativeApproval } from "#server/engines/se
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, runBrowserTool } from "./browser.ts"
-import { createInput, findAgent, listText, MEMORY_TOOL, proposalText, readText, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
+import { createInput, findAgent, listText, MEMORY_TOOL, proposalText, readText, ROUTINES_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
+import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
@@ -231,7 +232,7 @@ export const makeRuntime = Effect.gen(function* () {
     const askFirst = (agent?.access ?? "workspace") === "ask"
     for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
-    for (const t of [...TEAM_TOOLS, MEMORY_TOOL]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    for (const t of [...TEAM_TOOLS, MEMORY_TOOL, ROUTINES_TOOL]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
       return { tools: undefined as TurnTools | undefined, close: () => {} }
@@ -295,7 +296,48 @@ export const makeRuntime = Effect.gen(function* () {
       return textResult(found.length ? found.map((m) => `- ${m.text}`).join("\n") : "Nothing found. Try other words.")
     }
 
+    // zero_routines: list freely; create or cancel only on the person's OK (an approval card with the routine).
+    const routinesCall = async (args: Record<string, unknown>) => {
+      const all = visibleTo(await run(store.agents()), chat.projectId)
+      const mine = (await run(store.routines())).filter((r) => all.some((a) => a.id === r.agentId))
+      const who = (id: string) => all.find((a) => a.id === id)?.name ?? "?"
+      if (args.action === "list")
+        return textResult(
+          JSON.stringify(mine.map((r) => ({ id: r.id, name: r.name, agent: who(r.agentId), cron: r.cron, enabled: r.enabled, nextRunAt: r.nextRunAt && new Date(r.nextRunAt).toISOString(), webhook: !!r.token })), null, 2)
+        )
+      const ask = async (title: string, fields: Record<string, unknown>) => {
+        const s = await step(title, ROUTINES_TOOL.name)
+        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: ROUTINES_TOOL.name, summary: title, args: proposalText(fields), cwd: null }))
+        const ok = outcome === "approved" || outcome === "always"
+        await finish(s, ok ? "ok" : "refused")
+        return ok
+      }
+      if (args.action === "cancel") {
+        const r = mine.find((x) => x.id === args.routine)
+        if (!r) return textResult("No such routine here. Call with action 'list'.", true)
+        if (!(await ask(`${nameOf(agent)} proposes removing the routine ${r.name}`, { name: r.name, agent: who(r.agentId), cron: r.cron }))) return textResult("The user declined.", true)
+        onWrite()
+        await run(store.removeRoutine(r.id))
+        return textResult(`Removed the routine ${r.name}.`)
+      }
+      if (args.action !== "create") return textResult("action must be list, create or cancel.", true)
+      const target = args.agent ? findAgent(all, args.agent) : agent
+      const name = typeof args.name === "string" ? args.name.trim().slice(0, 80) : ""
+      const prompt = typeof args.prompt === "string" ? args.prompt.trim().slice(0, 8000) : ""
+      const cron = typeof args.cron === "string" && args.cron.trim() ? args.cron.trim() : null
+      if (!target) return textResult("Name the agent that runs it (agent: id or @handle).", true)
+      if (!name || !prompt) return textResult("name and prompt are required.", true)
+      const next = cron ? nextRun(cron) : { at: null }
+      if ("error" in next) return textResult(`Not a cron pattern: ${next.error}`, true)
+      const fields = { name, agent: target.name, prompt, cron, firstRun: next.at && new Date(next.at).toLocaleString() }
+      if (!(await ask(`${nameOf(agent)} proposes a routine: ${name}`, fields))) return textResult("The user declined. Don't propose it again unless they ask.", true)
+      onWrite()
+      const r = await run(createRoutineFor(store, target, { name, prompt, cron, webhook: false }).pipe(Effect.orDie))
+      return textResult(`Created the routine ${r.name} (id ${r.id}); it runs in its own chat${r.nextRunAt ? `, first at ${new Date(r.nextRunAt).toISOString()}` : ""}.`)
+    }
+
     const call: Session["call"] = async (name, args) => {
+      if (name === ROUTINES_TOOL.name) return routinesCall(args)
       if (name === MEMORY_TOOL.name) return memoryCall(args)
       if (TEAM_TOOLS.some((t) => t.name === name)) return teamCall(name, args)
       const builtin = BROWSER_TOOLS.find((t) => t.name === name)

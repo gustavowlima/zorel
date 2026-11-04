@@ -265,3 +265,21 @@ export const auditEvents = sqliteTable(
   (t) => [index("audit_events_at").on(t.at)]
 )
 
+
+// Routines (phase 7): an agent's recurring or triggered work. Each has its own chat; a run is a message in it.
+// cron: when it runs by itself (null: only "Run now" or the webhook). token: the secret of its local webhook
+// (POST /api/hooks/:token), null when it has none. next_run_at is the next due time (null: not scheduled).
+export const routines = sqliteTable("routines", {
+  id: text().primaryKey(),
+  agentId: text("agent_id").notNull().references(() => agents.id, { onDelete: "cascade" }),
+  chatId: text("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+  name: text().notNull(),
+  prompt: text().notNull(),
+  cron: text(),
+  token: text().unique(),
+  enabled: integer({ mode: "boolean" }).notNull().default(true),
+  nextRunAt: integer("next_run_at"),
+  lastRunAt: integer("last_run_at"),
+  lastStatus: text("last_status", { enum: ["started", "skipped", "failed"] }),
+  createdAt: integer("created_at").notNull()
+})

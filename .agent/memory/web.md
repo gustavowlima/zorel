@@ -57,3 +57,4 @@ updated: 2026-11-03
 - GitControl só aparece no título quando a aba git está fixada (pins.side inclui "git")
 - Terminal: closable(tab) = mais de uma aba ou shell terminado; drop() que esvazia cria um shell novo (sem remontar: a lista do servidor em cache trazia de volta o shell fechado → "The shell ended")
 - agents.tsx: rota #/agents (AgentsView, AgentRow, useWorking); chat invalida "agents" quando muda o nº de mensagens (agente pode ter criado um colega)
+- routines.tsx: AgentRoutines na página do agente, FORA do <form> do perfil (form aninhado quebrava o envio)

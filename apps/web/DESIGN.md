@@ -357,6 +357,11 @@ Compactos e diretos, com aperto físico ao pressionar.
 - Na página do agente, a seção **History** (só a partir de duas versões): uma linha por versão, a mais nova primeiro — `vN` em mono, os campos que mudaram em relação à anterior ("Instructions, model"; a primeira diz "Created"), quem mudou ("You" ou o nome do agente que propôs) e quando. A atual diz "Current"; as outras têm "Restore", que confirma antes e grava o perfil antigo como uma versão nova (nada se perde).
 - Menu ⋯ do agente: **Export** baixa `<nome>.agent.json` (perfil sem conta: a conta é deste computador). Na tela Agents, **Import** lê esse arquivo e cria um agente global, que abre em seguida; um arquivo que não é de agente do Zero mostra o erro ao lado do botão.
 
+### Rotinas
+- Seção **Routines** na página do agente (fora do formulário do perfil): "New routine" abre um formulário em cartão (nome, "What to do each run", "When" com atalhos — toda hora, todo dia 9:00, dias úteis 9:00, segundas 9:00, só sob demanda, personalizado com padrão cron em mono — e um switch para o webhook local).
+- Linha da rotina: nome; embaixo, em muted, "Next <quando>" (ou "On demand"/"Off"), o padrão cron e o último resultado ("ran 5m", "skipped … (chat was busy)", "failed …"); à direita abrir o chat dela, ▷ Run now, lixeira (confirma) e o switch liga/desliga. Com webhook, uma linha mono `POST <url>` com copiar.
+- Cada rotina tem o próprio chat ("<nome> (routine)") na barra lateral; é ali que o agente responde cada execução.
+
 ### Página do agente
 - Quem é: nome e título lado a lado (o papel em poucas palavras, mostrado no seletor `#`), depois a descrição (uma frase; os outros agentes do chat a leem para saber quando passar trabalho a ele).
 - Quatro grupos: **Brain** (modelo padrão com conta e raciocínio; fallbacks), **Knows** (instruções; memórias e skills do agente, com contagem e até 5 de cada abrindo no Knowledge), **Does** (Usage já filtrado por ele), **Rules** (nível de acesso; ferramentas MCP que os chats alcançam).
