@@ -9,7 +9,7 @@ import { useAtomValue } from "@effect/atom-react"
 import { accountsAtom, modelsAtom, mutations, preferencesAtom, useList, useMutation } from "../client.ts"
 import { ACCOUNT_OF_MODEL, splitModel } from "../labels.ts"
 import { ModelPicker } from "./model-picker.tsx"
-import { Button, ChevronDown, CircleAlert, IconButton, Plus, X } from "@/ui"
+import { Button, CircleAlert, IconButton, Plus, SortableList, X } from "@/ui"
 
 
 // True while the list mixes two subscription accounts of one provider and the warning isn't accepted yet.
@@ -39,33 +39,31 @@ export function FailoverEditor({ primary, value, onChange }: { primary: Failover
     return { model: ids.find((m) => !used.has(m.id))?.id ?? primary.model, accountId: null }
   }
   const set = (i: number, r: FailoverTarget) => onChange(value.map((x, j) => (j === i ? r : x)))
-  const move = (i: number, by: -1 | 1) => {
-    const next = [...value]
-    const [item] = next.splice(i, 1)
-    next.splice(i + by, 0, item!)
-    onChange(next)
-  }
 
   return (
     <div className="flex flex-col gap-2">
       {value.length === 0 && <p className="text-muted">{t("failover.empty")}</p>}
-      {value.map((r, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: the position is the identity of a fallback
-        <div key={i} className="flex items-center gap-2">
-          <span className="w-5 shrink-0 text-right text-sm text-muted tabular-nums">{i + 1}</span>
-          <ModelPicker variant="field" className="min-w-0 flex-1" value={{ ...r, effort: null }} onChange={(v) => set(i, { model: v.model, accountId: v.accountId })} />
-          {isApi(r.model) && <span className="shrink-0 text-sm text-dim">{t("failover.perToken")}</span>}
-          <IconButton label={t("failover.moveUp")} size="xs" isDisabled={i === 0} onPress={() => move(i, -1)}>
-            <ChevronDown className="size-3.5 rotate-180" />
-          </IconButton>
-          <IconButton label={t("failover.moveDown")} size="xs" isDisabled={i === value.length - 1} onPress={() => move(i, 1)}>
-            <ChevronDown className="size-3.5" />
-          </IconButton>
-          <IconButton label={t("failover.remove")} size="xs" onPress={() => onChange(value.filter((_, j) => j !== i))}>
-            <X className="size-3.5" />
-          </IconButton>
-        </div>
-      ))}
+      {/* Order is the order they're tried: drag a row by its handle (or keyboard) to change it. */}
+      {value.length > 0 && (
+        <SortableList
+          items={value}
+          label={t("failover.title")}
+          handleLabel={(_r, i) => t("failover.reorder", { n: i + 1 })}
+          textOf={(r) => r.model}
+          onReorder={onChange}
+        >
+          {(r, i) => (
+            <>
+              <span className="w-4 shrink-0 text-right text-sm text-muted tabular-nums">{i + 1}</span>
+              <ModelPicker variant="field" className="min-w-0 flex-1" value={{ ...r, effort: null }} onChange={(v) => set(i, { model: v.model, accountId: v.accountId })} />
+              {isApi(r.model) && <span className="shrink-0 text-sm text-dim">{t("failover.perToken")}</span>}
+              <IconButton label={t("failover.remove")} size="xs" onPress={() => onChange(value.filter((_, j) => j !== i))}>
+                <X className="size-3.5" />
+              </IconButton>
+            </>
+          )}
+        </SortableList>
+      )}
       <div className="flex items-center gap-3">
         <Button size="sm" variant="secondary" isDisabled={value.length >= MAX_FAILOVER} onPress={() => onChange([...value, fresh()])}>
           <Plus />
