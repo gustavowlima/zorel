@@ -5,6 +5,8 @@ updated: 2026-11-04
 
 ## current
 
+- CI/release em matriz macOS, Windows, Linux (2026-11-04); binário zorel-server(.exe); CSC_LINK só no runner macOS (Windows usaria WIN_CSC_LINK); repo ainda sem remote
+
 - D11 implementado (2026-11-04): apps/desktop é Electron 45 (main em src/main.ts, bundle cjs por `bun build --target=node`); o server roda como processo filho: `bun apps/server/src/main.ts` em dev, binário `bun build --compile` (build/zorel-server, ~95 MB) empacotado em Resources, com web/ e drizzle/ (ZOREL_WEB_DIR, ZOREL_MIGRATIONS)
 - chromium-bidi fica external no compile (playwright-core o requer só no modo BiDi, que o Zorel não usa)
 - fechar a janela destrói o renderer mas mantém app + server (rotinas e turnos seguem); Dock (macOS) ou tray (outros) reabre; Quit mata o server (SIGTERM)

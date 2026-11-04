@@ -17,10 +17,14 @@ describe("acp", () => {
 })
 
 describe("acp confinement", () => {
-  test("full runs as is; others are sandboxed on macOS and refused elsewhere", () => {
+  test("full runs as is; others run in bubblewrap on Linux, and are refused where there's no sandbox", () => {
     const t = { args: ["acp"], access: "full" as const, cwd: "/tmp", state: [] }
-    expect(commandFor("/bin/oc", t, "linux")).toEqual(["/bin/oc", "acp"])
-    expect(commandFor("/bin/oc", { ...t, access: "workspace" }, "linux")).toBeUndefined()
+    expect(commandFor("/bin/oc", t, "linux", null)).toEqual(["/bin/oc", "acp"])
+    expect(commandFor("/bin/oc", { ...t, access: "workspace" }, "linux", null)).toBeUndefined() // bwrap not installed
+    expect(commandFor("/bin/oc", { ...t, access: "workspace" }, "win32", null)).toBeUndefined()
+    const linux = commandFor("/bin/oc", { ...t, access: "workspace" }, "linux", "/usr/bin/bwrap")!
+    expect(linux.slice(0, 5)).toEqual(["/usr/bin/bwrap", "--ro-bind", "/", "/", "--dev"])
+    expect(linux.slice(-3)).toEqual(["--", "/bin/oc", "acp"])
   })
   test("the chat folder is writable only in workspace", () => {
     const cwd = mkdtempSync(join(tmpdir(), "acp-"))
@@ -29,7 +33,8 @@ describe("acp confinement", () => {
     expect(roots).toContain("/Users/someone/.opencode-x")
     expect(writableRoots("ask", cwd, [], "/Users/someone")).not.toContain(realpathSync(cwd))
   })
-  test.skipIf(process.platform !== "darwin")("the sandbox blocks writes outside the roots", () => {
+  // macOS (Seatbelt), or Linux with bubblewrap installed.
+  test.skipIf(process.platform !== "darwin" && !(process.platform === "linux" && Bun.which("bwrap")))("the sandbox blocks writes outside the roots", () => {
     const cwd = mkdtempSync(join(tmpdir(), "acp-"))
     const outside = mkdtempSync(join(homedir(), ".zorel-acp-test-"))
     try {

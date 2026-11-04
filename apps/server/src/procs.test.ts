@@ -1,6 +1,6 @@
 // The process table and ports on the three systems, from sample output of each (CI runs on macOS only).
 import { expect, test } from "bun:test"
-import { listProcs, parseCpuTime, parseNetstat, parseProcStat, parsePs, parseSs, parseWin, subtree } from "./procs.ts"
+import { listeners, listProcs, parseCpuTime, parseNetstat, parseProcStat, parsePs, parseSs, parseWin, subtree } from "./procs.ts"
 
 test("cpu time from ps: minutes, hours and days", () => {
   expect(parseCpuTime("0:01.50")).toBe(1500) // macOS
@@ -51,4 +51,5 @@ test("a process's tree, and this machine's table includes this process", async (
   expect(subtree(procs, 10).sort()).toEqual([10, 11, 12])
   expect(subtree(procs, 99)).toEqual([])
   expect((await listProcs()).some((p) => p.pid === process.pid)).toBe(true)
+  expect(listeners()).toBeInstanceOf(Map) // this system's port tool runs and parses (CI: Linux, macOS, Windows)
 })

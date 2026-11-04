@@ -124,11 +124,17 @@ export function scriptsOf(cwd: string): Array<{ name: string; command: string }>
 // The line typed into a new shell to run one of those scripts, or undefined when it isn't one of them.
 export const runLine = (cwd: string, name: string) => (scriptsOf(cwd).some((s) => s.name === name) ? `${managerOf(cwd)} run ${name}\r` : undefined)
 
+// The person's shell, as a login shell: PowerShell on Windows (pwsh when installed), $SHELL elsewhere, else zsh or bash.
+export function shellCommand(platform = process.platform, env = process.env): string[] {
+  if (platform === "win32") return [Bun.which("pwsh") ? "pwsh.exe" : "powershell.exe", "-NoLogo"]
+  return [env.SHELL || (existsSync("/bin/zsh") ? "/bin/zsh" : "/bin/bash"), "-l"]
+}
+
 function open(chatId: string, cwd: string, cols: number, rows: number, run?: { name: string; line: string }): Session {
   const n = Math.max(0, ...[...sessions.values()].filter((s) => s.chatId === chatId).map((s) => s.n)) + 1
   const output = new Ring(SCROLLBACK)
   let session: Session | undefined
-  const proc = Bun.spawn([process.env.SHELL || "/bin/zsh", "-l"], {
+  const proc = Bun.spawn(shellCommand(), {
     cwd,
     env: { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor" },
     terminal: {
