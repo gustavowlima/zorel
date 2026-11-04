@@ -127,6 +127,7 @@ export const en = {
   },
   activity: {
     working: "Working",
+    waitingFor: "Waiting for {provider}",
     usedTools: { one: "Used 1 tool", other: "Used {count} tools" },
     steps: { one: "1 step", other: "{count} steps" },
     refused: { one: "1 refused", other: "{count} refused" },
@@ -157,6 +158,9 @@ export const en = {
     skip: "Skip",
     answered: "Answered",
     skipped: "Skipped"
+  },
+  code: {
+    plain: "text"
   },
   composer: {
     label: "Message",

@@ -312,6 +312,7 @@ export const Message = Schema.Struct({
   cost: Schema.NullOr(Schema.Number), // estimated USD; for subscriptions, the API equivalent
   inputTokens: Schema.Number,
   outputTokens: Schema.Number,
+  durationMs: Schema.NullOr(Schema.Number), // how long the turn that wrote it took (null: not a reply, or older data)
   at: Schema.Number
 })
 export type Message = typeof Message.Type
