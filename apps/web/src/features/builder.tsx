@@ -1,8 +1,8 @@
-// Build with AI (as in a reference app): a screen of its own in three steps, one at a time. 1 Describe: a conversation with
-// the Builder (Zero's own agent) on the left, the proposed agent on the right as it takes shape. 2 Powers: what it
-// may reach, as plain choices (no access / read / read and write), prefilled with the least the Builder proposed.
-// 3 First task: what to try it on; "Create … and send" creates it, applies the powers and opens its chat with the
-// task sent. A team is created as proposed from step 1. Each visit starts fresh; "Build it myself" opens the form.
+// Build with AI (as in a reference app): a screen of its own in two steps, one at a time. 1 Describe: a conversation with the
+// Builder (Zero's own agent) on the left, the proposed agent on the right as it takes shape. 2 Powers: what it may
+// reach, as plain choices (no access / read / read and write), prefilled with the least the Builder proposed;
+// Create makes it with those powers and opens its page. A team is created as proposed from step 1. Each visit
+// starts fresh; "Build it myself" opens the form.
 import { type Access, type Agent, type AgentPermissions, type Chat, DEFAULT_PERMISSIONS, type Grant, type McpServer } from "@zero/contracts"
 import type { Approval } from "@zero/contracts/events"
 import { t } from "@zero/i18n"
@@ -14,11 +14,11 @@ import { Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
-import { AgentAvatar, Button, Check, ChevronRight, cx, PageHeader, Pencil, Section, Sparkles, Spinner, Textarea } from "@/ui"
+import { AgentAvatar, Button, Check, ChevronRight, cx, PageHeader, Pencil, Section, Sparkles, Spinner } from "@/ui"
 
 const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builder.suggest.docs", "builder.suggest.team"] as const
-type Step = "describe" | "powers" | "first"
-const STEPS: ReadonlyArray<Step> = ["describe", "powers", "first"]
+type Step = "describe" | "powers"
+const STEPS: ReadonlyArray<Step> = ["describe", "powers"]
 
 export function BuilderView({ projectId }: { projectId: string | null }) {
   const builder = useMutation(mutations.builder)
@@ -169,8 +169,6 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
   const servers = useList(serversAtom).filter((s) => s.projectId === null || s.projectId === chat.projectId)
   const decide = useMutation(mutations.decide)
   const updateAgent = useMutation(mutations.updateAgent)
-  const createChat = useMutation(mutations.createChat)
-  const send = useMutation(mutations.send)
   const invalidate = useInvalidate()
   const open: Approval | undefined = state.approvals.findLast((a) => a.tool === "zero_create_agent")
   const drafts = open ? draftsOf(open.args) : []
@@ -179,10 +177,9 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
   const [step, setStep] = useState<Step>("describe")
   const [access, setAccess] = useState<Access>("workspace")
   const [perms, setPerms] = useState<AgentPermissions>(DEFAULT_PERMISSIONS)
-  const [task, setTask] = useState("")
   const [busy, setBusy] = useState(false)
-  // After Create: the agent appears once the Builder's turn applies the proposal; then its powers, chat and task.
-  const [finishing, setFinishing] = useState<{ name: string; access: Access; permissions: AgentPermissions; task: string; at: number }>()
+  // After Create: the agent appears once the Builder's turn applies the proposal; then its powers, and its page.
+  const [finishing, setFinishing] = useState<{ name: string; access: Access; permissions: AgentPermissions; at: number }>()
 
   // A new proposal is prefilled into the next steps.
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new proposal resets
@@ -191,7 +188,6 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
     const f = single.fields
     setAccess(f.access === "ask" || f.access === "full" ? f.access : "workspace")
     setPerms(permissionsOf(f, servers))
-    setTask(f.first_task ?? "")
   }, [open?.id])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the agent shows up (stable mutations)
@@ -206,10 +202,7 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
     setFinishing(undefined)
     void (async () => {
       await updateAgent({ params: { id: made.id }, payload: { access: finishing.access, permissions: finishing.permissions }, reactivityKeys: ["agents"] })
-      if (!finishing.task.trim()) return go({ view: "agent", id: made.id })
-      const c = await createChat({ payload: { projectId: made.projectId, agentIds: [made.id], model: made.model }, reactivityKeys: ["chats"] })
-      await send({ payload: { chatId: c.id, clientId: crypto.randomUUID(), text: finishing.task.trim() } })
-      go({ view: "chat", id: c.id })
+      go({ view: "agent", id: made.id })
     })().finally(() => setBusy(false))
     return undefined
   }, [finishing, created.length])
@@ -218,9 +211,9 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
     setBusy(true)
     void decide({ payload: { approvalId: a.id, outcome }, reactivityKeys: ["approvals", "agents"] }).finally(() => outcome === "denied" && setBusy(false))
   }
-  const create = (withTask: boolean) => {
+  const create = () => {
     if (!open || !single) return
-    setFinishing({ name: single.name, access, permissions: perms, task: withTask ? task : "", at: Date.now() })
+    setFinishing({ name: single.name, access, permissions: perms, at: Date.now() })
     choose(open, "approved")
   }
   const name = single?.name ?? ""
@@ -277,12 +270,12 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
           hint={t("builder.powersHint")}
           footer={
             <>
-              <Button size="sm" variant="ghost" onPress={() => setStep("describe")}>
+              <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => setStep("describe")}>
                 {t("nav.back")}
               </Button>
-              <Button size="sm" variant="default" onPress={() => setStep("first")}>
-                {t("builder.next")}
-                <ChevronRight />
+              <span className="flex-1" />
+              <Button size="sm" variant="default" isPending={busy} isDisabled={busy} onPress={create}>
+                {t("builder.createNamed", { name })}
               </Button>
             </>
           }
@@ -291,33 +284,11 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
         </StepPage>
       )}
 
-      {step === "first" && single && (
-        <StepPage
-          title={t("builder.firstTitle", { name })}
-          hint={t("builder.firstTaskHint")}
-          footer={
-            <>
-              <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => setStep("powers")}>
-                {t("nav.back")}
-              </Button>
-              <span className="flex-1" />
-              <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => create(false)}>
-                {t("builder.justCreate")}
-              </Button>
-              <Button size="sm" variant="default" isPending={busy} isDisabled={busy || !task.trim()} onPress={() => create(true)}>
-                {t("builder.createAndSend", { name })}
-              </Button>
-            </>
-          }
-        >
-          <Textarea aria-label={t("builder.firstTask")} value={task} onChange={(e) => setTask(e.target.value)} rows={6} maxLength={2000} placeholder={t("builder.firstTaskPlaceholder")} autoFocus />
-        </StepPage>
-      )}
     </div>
   )
 }
 
-// 1 Describe — 2 Powers — 3 First task: done steps get a check, the current one is filled.
+// 1 Describe — 2 Powers: done steps get a check, the current one is filled.
 function Stepper({ step }: { step: Step }) {
   const at = STEPS.indexOf(step)
   return (

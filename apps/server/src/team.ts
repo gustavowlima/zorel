@@ -9,13 +9,11 @@ import { handleOf } from "./context.ts"
 import { PROVIDERS } from "./engines.ts"
 
 // What a proposed agent may reach (as in a reference app): the least the work needs. connectors: MCP servers here by name,
-// each read or write (any not listed: no access); first_task: what to send it once it exists; reason: why this
-// agent, in a sentence. The person reviews and can change all of it before it is created.
+// each read or write (any not listed: no access); reason: why this agent, in a sentence. The person reviews and can change all of it before it is created.
 const POWERS = {
   web: { type: "boolean", description: "Search and read the web. Only if the work needs it." },
   browser: { type: "boolean", description: "Its own browser (open pages, click, type). Only if the work needs it." },
   connectors: { type: "array", items: { type: "object", properties: { name: { type: "string" }, level: { type: "string", enum: ["read", "write"] } }, required: ["name"] } },
-  first_task: { type: "string", description: "A first task to try it on, in the user's words" },
   reason: { type: "string", description: "Why this agent, in a sentence" }
 } as const
 
@@ -188,7 +186,7 @@ export interface NewAgentInput {
   readonly effort: Effort | null
   readonly access: Access
   readonly permissions: AgentPermissions
-  readonly notes: { readonly firstTask: string; readonly reason: string; readonly connectors: string } // shown on the card, not stored
+  readonly notes: { readonly reason: string; readonly connectors: string } // shown on the card, not stored
 }
 
 // The powers asked for, as permissions: web as given (default on), the browser only when asked for (as in a reference app:
@@ -232,7 +230,7 @@ export function createInput(args: Record<string, unknown>, caller: { model: stri
     access: narrower(oneOf(args.access, ["ask", "workspace", "full"] as const, "access") ?? caller.access, caller.access),
     ...(() => {
       const p = powersOf(args, servers)
-      return { permissions: p.permissions, notes: { firstTask: str(args.first_task, 2000, "first_task") ?? "", reason: str(args.reason, 300, "reason") ?? "", connectors: p.connectors } }
+      return { permissions: p.permissions, notes: { reason: str(args.reason, 300, "reason") ?? "", connectors: p.connectors } }
     })()
   }
 }
@@ -324,7 +322,7 @@ export const BUILDER = {
     "1. Understand the goal: what should get done, in which project, how often, with what tools or accounts. Ask at most 3 short questions, only what you can't infer; otherwise propose right away.",
     "2. Call zero_list_agents first so you don't duplicate an existing teammate; prefer improving one (zero_update_agent) over adding a near-copy.",
     "3. Propose the whole team in ONE zero_create_agent call (agents: [...]): one clear responsibility each, a title of a few words, a one-sentence description other agents can route by, and focused instructions (what to do, how to report, when to hand off to whom by @handle). Small teams win: 1 to 4 agents unless the user asks for more.",
-    "4. Give each agent the least it needs (as in a good hire's first day): web and browser only if the work needs them, connectors by name with read unless it must write, access 'workspace' for code work. Leave model unset unless the user asks. Add first_task (a real first thing to try, in the user's words) and reason (why this agent, one sentence).",
+    "4. Give each agent the least it needs (as in a good hire's first day): web and browser only if the work needs them, connectors by name with read unless it must write, access 'workspace' for code work. Leave model unset unless the user asks. Add reason (why this agent, one sentence).",
     "5. If the work is recurring, propose routines with zero_routines (action create) after the agents exist.",
     "6. End with what each agent does and how to start: which one to @mention for what."
   ].join("\n"),

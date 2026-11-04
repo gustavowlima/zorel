@@ -25,3 +25,4 @@
 2026-11-03 | Cmd+K com busca nas mensagens | item 3 da lista (T3 Code)
 2026-11-04 | Build with AI vira tela fixa; Builder interno; página Agents com menu único | pedido do usuário (reference apps)
 2026-11-04 | Build with AI em três passos como no a reference app (poderes, primeira tarefa); teto do Builder = workspace; navegador só se pedido | teste ao vivo mostrou acesso errado e cartão duplicado
+2026-11-04 | Build with AI sem o passo de primeira tarefa (Describe → Powers → página do agente) | pedido do usuário
