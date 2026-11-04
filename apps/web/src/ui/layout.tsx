@@ -1,17 +1,27 @@
 // Screen scaffolding shared by every page: a header bar (title, a muted line, actions) over a scrolling
 // body; sections with small muted headings; the empty state; a thin meter for shares and limits.
-import type { ReactNode } from "react"
+import { type ReactNode, useLayoutEffect, useState } from "react"
+import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
+
+// A page's header bar. In the desktop app it moves up into the window's title bar (the #titlebar-slot the shell
+// renders), as in a reference app: the card starts with the page itself. Elsewhere it is the card's top bar.
+export function PageHeader({ className, children }: { className?: string; children: ReactNode }) {
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
+  useLayoutEffect(() => setSlot(document.getElementById("titlebar-slot")), [])
+  if (slot) return createPortal(<div className="flex min-w-0 flex-1 items-center gap-x-3 pr-3 pl-7">{children}</div>, slot)
+  return <header className={cn("flex shrink-0 flex-wrap items-center border-b border-subtle", className)}>{children}</header>
+}
 
 export function Screen({ title, subtitle, actions, children, bodyClassName }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children: ReactNode; bodyClassName?: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="app-drag flex min-h-14 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-subtle px-7 py-3">
+      <PageHeader className="min-h-14 gap-x-4 gap-y-2 px-7 py-3">
         <h1 className="truncate text-lg font-semibold">{title}</h1>
         {subtitle && <span className="min-w-0 flex-1 truncate text-muted">{subtitle}</span>}
         {!subtitle && <span className="flex-1" />}
         {actions && <div className="flex items-center gap-2">{actions}</div>}
-      </header>
+      </PageHeader>
       <div className={cn("min-h-0 flex-1 overflow-auto", bodyClassName)}>{children}</div>
     </div>
   )

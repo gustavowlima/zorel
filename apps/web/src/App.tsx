@@ -47,7 +47,7 @@ export function App() {
 
   return (
     <div className="flex h-full flex-col bg-frame">
-      {desktop && <TitleBar />}
+      {desktop && <TitleBar sidebarHidden={sidebar.hidden} />}
     <div className="flex min-h-0 flex-1">
       <Palette onToggleSidebar={sidebar.toggle} />
       <Rail route={route} sidebar={sidebar} paused={paused} onPause={(p) => void setPause({ payload: { paused: p }, reactivityKeys: ["preferences"] })} />

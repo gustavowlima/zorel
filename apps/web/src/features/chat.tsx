@@ -20,7 +20,7 @@ import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { chatDelta, Delta, type Focus, PinItem, type Pins, type ShellPin, SIDE_ICON, SidePanel, type SideTab, sideLabel, TurnChanges, usePins } from "./workspace.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { GitControl } from "./git.tsx"
-import { ContextMenu } from "@/ui"
+import { ContextMenu, PageHeader } from "@/ui"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import {
   Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
@@ -259,7 +259,7 @@ function ChatHeader({
 
   return (
     <>
-      <header className="app-drag flex min-h-13 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-subtle py-2 pr-4 pl-7">
+      <PageHeader className="min-h-13 gap-x-3 gap-y-2 py-2 pr-4 pl-7">
         <div className="flex min-w-0 flex-1 items-baseline gap-3">
           <h1 className="truncate text-lg font-semibold">{chatTitle(chat)}</h1>
           <Button size="sm" variant="ghost" className="-ml-2 shrink-0 text-muted" onPress={() => go(project ? { view: "project", id: project.id, tab: "overview" } : { view: "home" })}>
@@ -338,7 +338,7 @@ function ChatHeader({
             {t("common.delete")}
           </MenuItem>
         </Menu>
-      </header>
+      </PageHeader>
       <FailoverDialog isOpen={dialog === "failover"} onClose={() => setDialog(undefined)} chat={chat} lead={team[0]} />
       <RenameDialog isOpen={dialog === "rename"} onClose={() => setDialog(undefined)} title={chatTitle(chat)} onSave={(title) => void update({ params: { id: chat.id }, payload: { title }, reactivityKeys: ["chats"] })} />
       <ConfirmDialog
