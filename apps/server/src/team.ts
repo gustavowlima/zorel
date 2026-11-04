@@ -63,6 +63,16 @@ export const TEAM_TOOLS = [
 ] as const
 export type TeamToolName = (typeof TEAM_TOOLS)[number]["name"]
 
+// Memory beyond the prompt's budget: the agent searches it when it needs to (the turn already brings the most
+// recently confirmed and the few that match the message). Read only; scopes are the chat's.
+export const MEMORY_TOOL = {
+  name: "zero_search_memories",
+  description:
+    "Search what you and the team learned (the user's preferences, this project's facts, your own work notes) beyond what is already in your context. query: words to look for. Returns up to 10 memories, best match first.",
+  inputSchema: { properties: { query: { type: "string" } }, required: ["query"] },
+  writes: false
+} as const
+
 const RANK: Record<Access, number> = { ask: 0, workspace: 1, full: 2 }
 export const narrower = (a: Access, b: Access): Access => (RANK[a] <= RANK[b] ? a : b)
 const LIMITS = { name: 80, title: 60, description: 300, instructions: 8000 } as const

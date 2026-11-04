@@ -296,8 +296,14 @@ export const repository = (db: Db) => {
         const m: Memory = { id: crypto.randomUUID(), kind: "fact", title: "", ...rest, createdAt: at, confirmedAt: at }
         const audience = m.scope === "user" ? "owner" : "project"
         const inserted = yield* db.insert(memories).values({ ...m, owner, audience, normalized: normalize(m.text) }).onConflictDoNothing().returning({ id: memories.id })
+        // Said again: the existing active one is confirmed (it ranks first for the prompt's budget).
+        if (!inserted.length)
+          yield* db.update(memories).set({ confirmedAt: at }).where(and(eq(memories.scope, m.scope), eq(memories.normalized, normalize(m.text)), eq(memories.state, "active")))
         return inserted.length ? m : undefined
       }).pipe(orDie),
+    // Still true (consolidation saw it again): ranks first for the prompt's budget.
+    confirmMemories: (ids: ReadonlyArray<string>) =>
+      ids.length ? orDie(db.update(memories).set({ confirmedAt: now() }).where(and(inArray(memories.id, [...ids]), eq(memories.state, "active"))).pipe(Effect.asVoid)) : Effect.void,
     updateMemory: (id: string, input: { state?: Memory["state"] | undefined; title?: string | undefined; text?: string | undefined }) =>
       Effect.gen(function* () {
         const set = defined({ ...input, normalized: input.text && normalize(input.text), confirmedAt: now() })

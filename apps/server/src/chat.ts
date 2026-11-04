@@ -106,13 +106,14 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, f
       })
     )
     const allowed = ["user", ...(chat.projectId ? ["project"] : []), ...(lead ? ["agent"] : [])]
-    const parsed = result.error ? undefined : parseConsolidation(result.text, allowed)
+    const parsed = result.error ? undefined : parseConsolidation(result.text, allowed, (n) => chunk[n - 1]?.role === "user")
     if (!parsed) {
       yield* Effect.logWarning("consolidação falhou", result.error ?? result.text.slice(0, 300))
       return chat
     }
     const scopeOf = { user: "user", project: `project:${chat.projectId}`, agent: `agent:${lead}` }
     yield* store.setSummary(chat.id, parsed.summary, chunk.at(-1)!.at)
+    yield* store.confirmMemories(parsed.confirm.flatMap((i) => (existing[i] ? [existing[i].id] : [])))
     // Pending cap: human review is the bottleneck; above it, new proposals are dropped.
     const proposals = [
       ...parsed.memories.map((m) => ({ scope: scopeOf[m.scope], kind: "fact" as const, title: "", text: m.text })),

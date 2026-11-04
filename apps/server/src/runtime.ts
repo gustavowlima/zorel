@@ -6,14 +6,14 @@ import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, t
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
 import { consolidate, DataDir, members, prepare } from "./chat.ts"
-import { handleOf, MAX_DEPTH, mentioned } from "./context.ts"
+import { handleOf, MAX_DEPTH, mentioned, scopesOf } from "./context.ts"
 import { type AccountRow, Store, type Repository, type TurnRow } from "./db.ts"
 import { type EngineFailure, Engines, isImage, type NativeStep, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, runBrowserTool } from "./browser.ts"
-import { createInput, findAgent, listText, proposalText, readText, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
+import { createInput, findAgent, listText, MEMORY_TOOL, proposalText, readText, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
@@ -212,7 +212,7 @@ export const makeRuntime = Effect.gen(function* () {
     const askFirst = (agent?.access ?? "workspace") === "ask"
     for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
-    for (const t of TEAM_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    for (const t of [...TEAM_TOOLS, MEMORY_TOOL]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
       return { tools: undefined as TurnTools | undefined, close: () => {} }
@@ -270,7 +270,14 @@ export const makeRuntime = Effect.gen(function* () {
       return textResult(out)
     }
 
+    const memoryCall = async (args: Record<string, unknown>) => {
+      const query = typeof args.query === "string" ? args.query.slice(0, 500) : ""
+      const found = await run(store.searchMemories(scopesOf(chat, agent?.id ?? null), query, [], 10))
+      return textResult(found.length ? found.map((m) => `- ${m.text}`).join("\n") : "Nothing found. Try other words.")
+    }
+
     const call: Session["call"] = async (name, args) => {
+      if (name === MEMORY_TOOL.name) return memoryCall(args)
       if (TEAM_TOOLS.some((t) => t.name === name)) return teamCall(name, args)
       const builtin = BROWSER_TOOLS.find((t) => t.name === name)
       if (builtin) {

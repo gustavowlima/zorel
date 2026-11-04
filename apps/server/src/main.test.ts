@@ -79,12 +79,12 @@ const FakeEngines = Layer.succeed(Engines, {
     turns.push(t)
     if (t.system === CONSOLIDATION_SYSTEM && manyMemories)
       return Stream.make<EngineEvent[]>(
-        { type: "text", delta: JSON.stringify({ summary: "S", memories: Array.from({ length: manyMemories }, (_, i) => ({ scope: "user", text: `Preferência número ${i}` })) }) },
+        { type: "text", delta: JSON.stringify({ summary: "S", memories: Array.from({ length: manyMemories }, (_, i) => ({ scope: "user", text: `Preferência número ${i}`, evidence: [1] })) }) },
         { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }
       )
     if (t.system === CONSOLIDATION_SYSTEM)
       return Stream.make(
-        { type: "text" as const, delta: JSON.stringify({ summary: "Falaram de deploy.", memories: [{ scope: "project", text: "Deploy é na Vercel" }, { scope: "team", text: "fora do escopo" }], skills: [{ scope: "project", title: "Publicar o site", text: "1. bun run build\n2. vercel deploy" }] }) },
+        { type: "text" as const, delta: JSON.stringify({ summary: "Falaram de deploy.", memories: [{ scope: "project", text: "Deploy é na Vercel", evidence: [1] }, { scope: "team", text: "fora do escopo", evidence: [1] }], skills: [{ scope: "project", title: "Publicar o site", text: "1. bun run build\n2. vercel deploy" }] }) },
         { type: "done" as const, usage: { inputTokens: 1, outputTokens: 1 } }
       )
     const last = t.messages.at(-1)!.text

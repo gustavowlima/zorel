@@ -81,10 +81,16 @@ test("política de ferramentas: anotação > nome; sensível vence leitura", () 
 })
 
 test("consolidação: aceita JSON com texto em volta, filtra escopos não permitidos", () => {
-  const r = parseConsolidation('ok:\n{"summary":"S","memories":[{"scope":"user","text":"A"},{"scope":"project","text":"B"}],"skills":[{"scope":"user","title":"T","text":"passos"},{"scope":"user","text":"sem título"}]}', ["user"])
-  expect(r).toEqual({ summary: "S", memories: [{ scope: "user", text: "A" }], skills: [{ scope: "user", title: "T", text: "passos" }] })
+  const r = parseConsolidation('ok:\n{"summary":"S","memories":[{"scope":"user","text":"A","evidence":[1]},{"scope":"project","text":"B","evidence":[1]}],"confirm":["m2","x"],"skills":[{"scope":"user","title":"T","text":"passos"},{"scope":"user","text":"sem título"}]}', ["user"])
+  expect(r).toEqual({ summary: "S", memories: [{ scope: "user", text: "A" }], confirm: [1], skills: [{ scope: "user", title: "T", text: "passos" }] })
   expect(parseConsolidation("nada", ["user"])).toBeUndefined()
   expect(parseConsolidation('{"summary":""}', ["user"])).toBeUndefined()
+})
+
+test("consolidação: só vira memória o que a pessoa disse (evidência de mensagem dela)", () => {
+  const json = '{"summary":"S","memories":[{"scope":"user","text":"Gosta de Bun","evidence":[1]},{"scope":"user","text":"Usa Postgres","evidence":[2]},{"scope":"user","text":"Sem prova"}]}'
+  const fromUser = (n: number) => n === 1 // #1 is the person's, #2 an agent's
+  expect(parseConsolidation(json, ["user"], fromUser)?.memories.map((m) => m.text)).toEqual(["Gosta de Bun"])
 })
 
 // OpenAI-compatible mock: answers each request with the next chunk script.
