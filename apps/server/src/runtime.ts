@@ -12,6 +12,7 @@ import { type EngineFailure, Engines, isImage, type NativeStep, splitModel, tran
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit } from "./audit.ts"
+import { BROWSER_TOOLS, type BrowserToolName, BrowserService, runBrowserTool } from "./browser.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { exposedName, type GatewayHandle, needsApproval, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
@@ -54,6 +55,7 @@ export const makeRuntime = Effect.gen(function* () {
   const engines = yield* Engines
   const dataDir = yield* DataDir
   const { hub, gateway } = yield* Tools
+  const browsers = yield* BrowserService
   const services = yield* Effect.context<Store | Engines | DataDir>()
 
   // ---------- events ----------
@@ -202,12 +204,38 @@ export const makeRuntime = Effect.gen(function* () {
         defs.push({ name, description: t.description, inputSchema: t.inputSchema })
       }
     }
+    // The chat's browser: Zero's own tools, always there. Reading never asks; acting asks when the agent's
+    // access is "ask", like any tool that writes.
+    const askFirst = (agent?.access ?? "workspace") === "ask"
+    for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
       return { tools: undefined as TurnTools | undefined, close: () => {} }
     }
 
     const call: Session["call"] = async (name, args) => {
+      const builtin = BROWSER_TOOLS.find((t) => t.name === name)
+      if (builtin) {
+        const shown = JSON.stringify(args).slice(0, 300)
+        const s = await step(browserStepTitle(name, args), name)
+        if (builtin.writes && askFirst) {
+          const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to ${browserStepTitle(name, args).toLowerCase()}`, args: JSON.stringify(args, null, 2).slice(0, 4000), cwd: null }))
+          if (outcome === "denied" || outcome === "expired") {
+            legacy.push({ tool: name, args: shown, status: "refused", result: "" })
+            await finish(s, "refused")
+            return textResult("O usuário recusou esta ação. Não tente de novo sem pedir.", true)
+          }
+        }
+        if (builtin.writes) onWrite()
+        const r = await runBrowserTool(browsers, chat.id, name as BrowserToolName, args).then(
+          (text) => textResult(text),
+          (e: unknown) => textResult(e instanceof Error ? e.message.split("\n")[0]! : String(e), true)
+        )
+        const out = resultText(r)
+        legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, 300) })
+        await finish(s, r.isError ? "error" : "ok", out)
+        return r
+      }
       const route = routes.get(name)
       const server = route && (await run(store.mcpServer(route.server)))
       if (!route || !server) return textResult(`Ferramenta não permitida: ${name}`, true)
@@ -656,3 +684,17 @@ export class Runtime extends Context.Service<Runtime, RuntimeService>()("Runtime
 
 export type { Turn }
 export type { Repository }
+
+// A browser step, in words, for the chat's activity and an approval card.
+function browserStepTitle(name: string, args: Record<string, unknown>): string {
+  const s = (v: unknown) => (typeof v === "string" ? v : "")
+  if (name === "browser_navigate") return `Open ${s(args.url)}`
+  if (name === "browser_click") return `Click ${s(args.element) || s(args.ref)}`
+  if (name === "browser_type") return `Type into ${s(args.ref)}`
+  if (name === "browser_press") return `Press ${s(args.key)}`
+  if (name === "browser_snapshot") return "Read the page"
+  if (name === "browser_wait") return s(args.text) ? `Wait for "${s(args.text)}"` : "Wait"
+  if (name === "browser_back") return "Go back"
+  return "Browser tabs"
+}
+

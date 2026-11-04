@@ -26,6 +26,7 @@ import { billingOf, Pricing } from "./pricing.ts"
 import { clean, measure } from "./storage.ts"
 import { Workspace } from "./workspace.ts"
 import { closeTerminal, TerminalSocket, terminalsOf } from "./terminals.ts"
+import { BrowserService, BrowserSocket } from "./browser.ts"
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
 const found = <A, E, R>(e: Effect.Effect<A | undefined, E, R>) => Effect.flatMap(e, (a) => (a === undefined ? notFound() : Effect.succeed(a)))
@@ -511,6 +512,7 @@ export const AppLive = (webDir?: string) =>
     AttachmentUpload,
     AttachmentFile,
     TerminalSocket,
+    BrowserSocket,
     ...(webDir && existsSync(join(webDir, "index.html")) ? [WebRoute(webDir)] : [])
   )
 
@@ -519,7 +521,7 @@ export const services = (dbPath: string, dataDir: string, secrets?: Layer.Layer<
   const store = Store.layer(dbPath)
   const withSecrets = Layer.provideMerge(secrets ?? Secrets.layer, store)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(Engines.layer, Tools.layer), withSecrets), DataDir.layer(dataDir))
-  const withAccounts = Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.layer, Audit.layer), base)
+  const withAccounts = Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.layer, Audit.layer, BrowserService.layer), base)
   return Layer.mergeAll(Layer.provideMerge(Runtime.layer, withAccounts), Actor.local)
 }
 

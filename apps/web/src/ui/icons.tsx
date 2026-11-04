@@ -2,6 +2,6 @@
 // lucide-react directly, so swapping or trimming the set touches only this file.
 export {
   ArrowRight, ArrowUp, ArrowUpRight, BookOpen, Bot, CalendarDays, ChartColumn, Columns2, Rows2, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleX, Clock, Copy, CornerDownRight, File, FilePlus,
-  Folder, FolderOpen, GripVertical, HardDrive, History, Inbox, Info, KeyRound, Maximize2, MessageCircle, Minimize2, MoreHorizontal, Palette, Paperclip, PanelBottom,
+  Folder, FolderOpen, Globe, GripVertical, HardDrive, History, Inbox, Info, KeyRound, Maximize2, MessageCircle, Minimize2, MoreHorizontal, Palette, Paperclip, PanelBottom,
   PanelRight, Pencil, Plug, Plus, RefreshCw, Search, Settings, Shield, Shuffle, Sparkles, Square, SquarePen, SquareTerminal, Trash2, Undo2, User, Wrench, X
 } from "lucide-react"
