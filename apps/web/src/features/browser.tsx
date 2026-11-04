@@ -1,4 +1,4 @@
-// The Browser tab of the chat's side panel ("Sign in in a window": the tab's profile in a real browser window): the agents' browser (apps/server/src/browser.ts) live, over a WebSocket
+// The Browser tab of the chat's side panel: the agents' browser (apps/server/src/browser.ts) live, over a WebSocket
 // (GET /api/browser): the chat's tabs and whether a person holds it come as JSON, the active tab as JPEG frames.
 // Clicking, scrolling or typing on the page, or using the address bar, takes control: while it is held, the
 // agents' browser tools are refused; "Hand back" returns it. Positions go up as fractions of the frame.
@@ -13,7 +13,7 @@ type Frame =
   | { t: "key"; key: string }
   | { t: "text"; text: string }
   | { t: "nav"; url: string }
-  | { t: "back" | "forward" | "reload" | "newtab" | "release" | "window" }
+  | { t: "back" | "forward" | "reload" | "newtab" | "release" }
   | { t: "tab" | "close"; id: string }
 
 // A key event as Playwright names it ("Control+A", "Enter"); printable text without modifiers goes as text.
@@ -144,13 +144,6 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
       {/* Who holds the browser: the agents, or you (then they wait). */}
       <div className={cx("flex items-center gap-2 px-3 py-1.5 text-sm", held ? "bg-accent-soft text-accent-text" : "text-muted")}>
         <span className="min-w-0 flex-1 truncate">{held ? t("browser.youHold") : t("browser.agentsMayUse")}</span>
-        {active && (
-          <Tooltip content={t("browser.signInWindowHint")}>
-            <Button size="sm" variant="ghost" onPress={() => send({ t: "window" })}>
-              {t("browser.signInWindow")}
-            </Button>
-          </Tooltip>
-        )}
         {held && (
           <Button size="sm" variant="secondary" onPress={() => send({ t: "release" })}>
             {t("browser.handBack")}
