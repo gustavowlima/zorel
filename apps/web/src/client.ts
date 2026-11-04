@@ -78,6 +78,8 @@ export const mutations = {
   gitPush: Zero.mutation("chats", "gitPush"),
   gitPr: Zero.mutation("chats", "gitPr"),
   gitBranch: Zero.mutation("chats", "gitBranch"),
+  enterWorktree: Zero.mutation("chats", "enterWorktree"),
+  leaveWorktree: Zero.mutation("chats", "leaveWorktree"),
   consolidate: Zero.mutation("chats", "consolidate"),
   createMemory: Zero.mutation("memories", "create"),
   updateMemory: Zero.mutation("memories", "update"),

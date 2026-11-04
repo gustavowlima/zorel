@@ -1,16 +1,19 @@
 // Git in the chat header: the branch of the chat's folder and what changed, and the steps that ship it — commit
 // (message written or drafted by the chat's model), push, open a pull request (or see the one already open), or
-// move the work to a new branch. Shown only when the folder is a git repository. Errors are git's own words.
+// move the work to a new branch, or give the chat its own worktree (a folder on its own branch, so its agents
+// don't touch the project folder). Shown only when the folder is a git repository. Errors are git's own words.
+import type { Chat } from "@zero/contracts"
 import { t } from "@zero/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { useAtomValue } from "@effect/atom-react"
 import { useState } from "react"
 import { gitAtom, mutations, useInvalidate, useMutation } from "../client.ts"
-import { ArrowUpRight, Button, GitBranch, GitPullRequest, Input, Popover, Sparkles, Spinner, Textarea } from "@/ui"
+import { ArrowUpRight, Button, FolderOpen, GitBranch, GitPullRequest, Input, Popover, Sparkles, Spinner, Textarea } from "@/ui"
 
 const errorOf = (e: unknown) => (e as { message?: string })?.message || t("git.failed")
 
-export function GitControl({ chatId }: { chatId: string }) {
+export function GitControl({ chat }: { chat: Chat }) {
+  const chatId = chat.id
   const result = useAtomValue(gitAtom(chatId))
   const invalidate = useInvalidate()
   if (!AsyncResult.isSuccess(result) || !result.value.repo) return null
@@ -22,30 +25,32 @@ export function GitControl({ chatId }: { chatId: string }) {
       onOpenChange={(open) => open && invalidate(["git"])}
       trigger={
         <Button size="sm" variant="ghost" className="max-w-56 rounded-full" aria-label={t("git.button", { branch: s.branch ?? t("git.detached"), count: s.files.length })}>
-          <GitBranch />
+          {chat.worktree ? <FolderOpen /> : <GitBranch />}
           <span className="truncate">{s.branch ?? t("git.detached")}</span>
           {s.files.length > 0 && <span className="font-mono text-sm text-warning tabular-nums">{s.files.length}</span>}
           {s.ahead > 0 && <span className="font-mono text-sm text-accent-text tabular-nums">{`↑${s.ahead}`}</span>}
         </Button>
       }
     >
-      <GitPanel chatId={chatId} />
+      <GitPanel chatId={chatId} worktree={chat.worktree} />
     </Popover>
   )
 }
 
-type Step = "commit" | "push" | "pr" | "branch" | "draft"
+type Step = "commit" | "push" | "pr" | "branch" | "draft" | "worktree"
 
-function GitPanel({ chatId }: { chatId: string }) {
+function GitPanel({ chatId, worktree }: { chatId: string; worktree: string | null }) {
   const result = useAtomValue(gitAtom(chatId))
   const draft = useMutation(mutations.gitDraft)
   const commit = useMutation(mutations.gitCommit)
   const push = useMutation(mutations.gitPush)
   const pr = useMutation(mutations.gitPr)
   const branch = useMutation(mutations.gitBranch)
+  const enterWorktree = useMutation(mutations.enterWorktree)
+  const leaveWorktree = useMutation(mutations.leaveWorktree)
   const [message, setMessage] = useState("")
   const [prForm, setPrForm] = useState<{ title: string; body: string }>()
-  const [newBranch, setNewBranch] = useState<string>()
+  const [newBranch, setNewBranch] = useState<{ name: string; worktree: boolean }>()
   const [busy, setBusy] = useState<Step>()
   const [error, setError] = useState<string>()
   const [done, setDone] = useState<string>()
@@ -167,25 +172,69 @@ function GitPanel({ chatId }: { chatId: string }) {
         </div>
       )}
 
-      <div className="flex items-center gap-2 border-t border-subtle pt-3">
-        {newBranch === undefined ? (
-          <Button size="sm" variant="ghost" onPress={() => setNewBranch("")}>
-            <GitBranch />
-            {t("git.newBranch")}
+      {worktree && (
+        <div className="flex items-center gap-2 border-t border-subtle pt-3">
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="text-sm">{t("git.inWorktree")}</span>
+            <span className="truncate font-mono text-sm text-muted" title={worktree}>
+              {worktree}
+            </span>
+          </span>
+          <Button size="sm" variant="ghost" isDisabled={!!busy} onPress={() => act("worktree", () => leaveWorktree({ params: { id: chatId }, reactivityKeys: ["git", "chats", "workspace"] }), t("git.leftWorktree"))}>
+            {busy === "worktree" && <Spinner size={12} />}
+            {t("git.leaveWorktree")}
           </Button>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-subtle pt-3">
+        {newBranch === undefined ? (
+          <>
+            <Button size="sm" variant="ghost" onPress={() => setNewBranch({ name: "", worktree: false })}>
+              <GitBranch />
+              {t("git.newBranch")}
+            </Button>
+            {!worktree && (
+              <Button size="sm" variant="ghost" onPress={() => setNewBranch({ name: "", worktree: true })}>
+                <FolderOpen />
+                {t("git.newWorktree")}
+              </Button>
+            )}
+          </>
         ) : (
           <form
-            className="flex flex-1 items-center gap-2"
+            className="flex flex-1 flex-col gap-2"
             onSubmit={(e) => {
               e.preventDefault()
-              if (newBranch.trim()) act("branch", () => branch({ params: { id: chatId }, payload: { name: newBranch.trim() }, ...keys }).then(() => setNewBranch(undefined)))
+              const name = newBranch.name.trim()
+              if (newBranch.worktree)
+                act(
+                  "worktree",
+                  () => enterWorktree({ params: { id: chatId }, payload: name ? { branch: name } : {}, reactivityKeys: ["git", "chats", "workspace", "terminals"] }).then(() => setNewBranch(undefined)),
+                  t("git.inWorktreeNow")
+                )
+              else if (name) act("branch", () => branch({ params: { id: chatId }, payload: { name }, ...keys }).then(() => setNewBranch(undefined)))
             }}
           >
-            {/* biome-ignore lint/a11y/noAutofocus: the field the person just asked for */}
-            <Input autoFocus aria-label={t("git.branchName")} placeholder={t("git.branchHint")} value={newBranch} onChange={(e) => setNewBranch(e.target.value)} className="h-control-sm flex-1 font-mono text-sm" />
-            <Button size="sm" type="submit" isDisabled={!newBranch.trim() || !!busy}>
-              {t("git.switch")}
-            </Button>
+            {newBranch.worktree && <p className="text-sm text-muted">{t("git.worktreeHint")}</p>}
+            <div className="flex items-center gap-2">
+              {/* biome-ignore lint/a11y/noAutofocus: the field the person just asked for */}
+              <Input
+                autoFocus
+                aria-label={t("git.branchName")}
+                placeholder={newBranch.worktree ? t("git.branchAuto") : t("git.branchHint")}
+                value={newBranch.name}
+                onChange={(e) => setNewBranch({ ...newBranch, name: e.target.value })}
+                className="h-control-sm flex-1 font-mono text-sm"
+              />
+              <Button size="sm" variant="ghost" onPress={() => setNewBranch(undefined)}>
+                {t("common.cancel")}
+              </Button>
+              <Button size="sm" type="submit" isDisabled={(!newBranch.worktree && !newBranch.name.trim()) || !!busy}>
+                {(busy === "branch" || busy === "worktree") && <Spinner size={12} />}
+                {newBranch.worktree ? t("git.createWorktree") : t("git.switch")}
+              </Button>
+            </div>
           </form>
         )}
       </div>

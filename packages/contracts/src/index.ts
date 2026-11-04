@@ -115,6 +115,7 @@ export const Chat = Schema.Struct({
   summaryUntil: Schema.Number, // `at` of the last message covered by the summary
   failover: Schema.NullOr(FailoverList), // null: the lead agent's list
   position: Schema.NullOr(Schema.Number), // manual order inside its group; null: by recent activity, above the placed ones
+  worktree: Schema.NullOr(Schema.String), // the git worktree the chat works in (its own branch); null: the project folder
   preview: Schema.NullOr(Schema.String), // start of the last message, one line (sidebar)
   lastAt: Schema.NullOr(Schema.Number), // when the last message was written
   createdAt: Schema.Number
@@ -461,6 +462,8 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.post("gitPush", "/api/chats/:id/git/push", { params: idParam, error: [HttpApiError.NotFound, GitFailed] }))
       .add(HttpApiEndpoint.post("gitPr", "/api/chats/:id/git/pr", { params: idParam, payload: Schema.Struct({ title: GitText.check(Schema.isMaxLength(200)), body: Schema.String.check(Schema.isMaxLength(20_000)) }), success: Schema.Struct({ url: Schema.String }), error: [HttpApiError.NotFound, GitFailed] }))
       .add(HttpApiEndpoint.post("gitBranch", "/api/chats/:id/git/branch", { params: idParam, payload: Schema.Struct({ name: GitText.check(Schema.isMaxLength(200)) }), error: [HttpApiError.NotFound, GitFailed] }))
+      .add(HttpApiEndpoint.post("enterWorktree", "/api/chats/:id/worktree", { params: idParam, payload: Schema.Struct({ branch: Schema.optionalKey(GitText.check(Schema.isMaxLength(200))) }), error: [HttpApiError.NotFound, GitFailed] }))
+      .add(HttpApiEndpoint.delete("leaveWorktree", "/api/chats/:id/worktree", { params: idParam, error: [HttpApiError.NotFound, GitFailed] }))
       .add(HttpApiEndpoint.get("scripts", "/api/chats/:id/scripts", { params: idParam, success: Schema.Array(ProjectScript), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.get("servers", "/api/chats/:id/servers", { params: idParam, success: Schema.Array(LocalServer), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("stopServer", "/api/chats/:id/servers/:pid", { params: Schema.Struct({ id: Schema.String, pid: Schema.NumberFromString }), error: HttpApiError.NotFound }))

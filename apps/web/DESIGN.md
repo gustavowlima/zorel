@@ -325,7 +325,8 @@ Compactos e diretos, com aperto físico ao pressionar.
   - cabeçalho com a branch e uma linha de estado ("2 files changed · 1 commit to push · no remote");
   - com mudanças: campo da mensagem (mono), "Write it for me" (o modelo do chat escreve a partir do diff, no estilo dos commits recentes do repositório) e "Commit N files" (tudo o que está na pasta entra);
   - "Push N commits" ou "Publish branch" (sem upstream); o PR aberto da branch como link (#12 título ↗), ou "Create pull request" (fora da branch principal, com `gh` instalado): o modelo rascunha título e descrição, editáveis antes de abrir;
-  - "New branch" leva o trabalho atual para uma branch nova.
+  - "New branch" leva o trabalho atual para uma branch nova;
+  - "Work in a worktree" dá ao chat a própria pasta numa branch nova (nome vazio = `zero/<título>-<id>`): agentes, shells novos, checkpoints e desfazer passam a usar essa pasta, e a do projeto fica como está. No chat em worktree o botão mostra o ícone de pasta e o popover mostra o caminho e "Back to the project folder", que só remove a worktree sem nada por commitar (a branch fica). Apagar o chat remove a worktree limpa.
 - Erros aparecem com as palavras do git, em mono e danger; cada passo concluído vira uma linha success. Commit, push, branch e PR entram no Audit log (tipo Projects).
 
 ### Menu de contexto

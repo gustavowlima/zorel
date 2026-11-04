@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { commit, commitDraftPrompt, parsePorcelain, parsePrDraft, push, status, switchToNewBranch } from "./git.ts"
+import { addWorktree, branchFor, commit, commitDraftPrompt, parsePorcelain, parsePrDraft, push, removeWorktree, status, switchToNewBranch } from "./git.ts"
 
 test("parsePorcelain reads the branch line and the files", () => {
   expect(parsePorcelain("## main...origin/main [ahead 2, behind 1]\n M a.ts\n?? b.ts\n")).toEqual({ branch: "main", upstream: "origin/main", ahead: 2, behind: 1, files: ["a.ts", "b.ts"] })
@@ -42,4 +42,32 @@ test("status, draft, commit and branch in a real repository", async () => {
   expect((await status(dir)).branch).toBe("feat/x")
   await expect(switchToNewBranch(dir, "bad..name")).rejects.toThrow()
   await expect(push(dir)).rejects.toThrow() // no remote
+})
+
+test("branchFor makes a safe branch name from a chat title", () => {
+  expect(branchFor("Add min() to sum.ts", "abcd1234")).toBe("zero/add-min-to-sum-ts-abcd")
+  expect(branchFor("Ação rápida!", "ffff0000")).toBe("zero/acao-rapida-ffff")
+  expect(branchFor("???", "12345678")).toBe("zero/chat-1234")
+})
+
+test("a worktree on its own branch, removed only when clean", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "zero-wt-"))
+  const sh = (...cmd: string[]) => Bun.spawnSync(cmd, { cwd: dir })
+  sh("git", "init", "-q", "-b", "main")
+  sh("git", "config", "user.email", "t@t")
+  sh("git", "config", "user.name", "t")
+  writeFileSync(join(dir, "a.ts"), "1\n")
+  sh("git", "add", "-A")
+  sh("git", "commit", "-qm", "first")
+  const wt = join(mkdtempSync(join(tmpdir(), "zero-wts-")), "chat")
+  await addWorktree(dir, wt, "zero/x")
+  expect((await status(wt)).branch).toBe("zero/x")
+  expect((await status(dir)).branch).toBe("main") // the project folder stays where it was
+  writeFileSync(join(wt, "a.ts"), "2\n")
+  expect(await removeWorktree(dir, wt)).toBe(false) // uncommitted work: kept
+  await commit(wt, "second")
+  expect(await removeWorktree(dir, wt)).toBe(true)
+  expect(Bun.spawnSync(["git", "branch", "--list", "zero/x"], { cwd: dir }).stdout.toString()).toContain("zero/x") // the branch stays
+  await addWorktree(dir, wt, "zero/x") // back on the same branch
+  expect((await status(wt)).branch).toBe("zero/x")
 })

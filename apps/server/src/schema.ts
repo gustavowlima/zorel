@@ -56,6 +56,7 @@ export const chats = sqliteTable("chats", {
   summaryUntil: integer("summary_until").notNull().default(0),
   failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>(), // null: the lead agent's list
   position: integer(), // manual order inside its group (project or General); null: by recent activity, above the placed ones
+  worktree: text(), // a git worktree of the project the chat works in (its own branch); null: the project folder
   createdAt: integer("created_at").notNull()
 })
 

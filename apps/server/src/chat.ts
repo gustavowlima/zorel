@@ -1,5 +1,5 @@
 // Turn context (layers) and consolidation (continuous learning). The turn itself runs in runtime.ts.
-import { type Agent, type Chat, namedSkills } from "@zero/contracts"
+import { type Agent, type Chat, namedSkills, type Project } from "@zero/contracts"
 import { Context, Data, Effect, Layer, Stream } from "effect"
 import { join } from "node:path"
 import {
@@ -38,7 +38,7 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
     return buildTurn({
       chat,
       model,
-      project: chat.projectId ? yield* store.project(chat.projectId) : undefined,
+      project: projectFor(chat, chat.projectId ? yield* store.project(chat.projectId) : undefined), // its worktree's folder, if any
       agent,
       members: yield* members(store, chat),
       pinned: fixed,
@@ -50,6 +50,11 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
       tools
     })
   })
+
+// The project as a chat sees it: a chat in a git worktree works (and is checkpointed) in the worktree's folder.
+// The shadow repository is the project's either way; trees are content, so diffs and undo hold across folders.
+export const projectFor = (chat: { readonly worktree: string | null }, project: Project | undefined): Project | undefined =>
+  project && chat.worktree && project.path ? { ...project, path: chat.worktree } : project
 
 // One question to a model, no tools, no history: its whole answer (git drafts).
 export const ask = Effect.fn("ask")(function* (model: string, text: string) {

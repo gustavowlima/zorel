@@ -15,6 +15,7 @@ import { Actions, Audit } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, runBrowserTool } from "./browser.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
+import { projectFor } from "./chat.ts"
 import { exposedName, type GatewayHandle, needsApproval, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
 
 const MAX_MENTIONS = 3
@@ -42,6 +43,7 @@ export interface RuntimeService {
   readonly decide: (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">, reason?: string) => Effect.Effect<void, ApprovalNotFound>
   readonly subscribeChat: (chatId: string) => Stream.Stream<ChatEvent, ChatNotFound>
   readonly subscribeStatus: Stream.Stream<ChatStatus>
+  readonly busy: (chatId: string) => boolean // a turn is running in the chat now
 }
 
 const ev = <T extends ChatEvent["_tag"]>(_tag: T, body: Omit<Extract<ChatEvent, { _tag: T }>, "_tag">) => ({ _tag, ...body }) as unknown as ChatEvent
@@ -333,7 +335,7 @@ export const makeRuntime = Effect.gen(function* () {
       const switches: Switch[] = []
       // Workspace (§9.1): the project folder is the agents' cwd; a checkpoint before the turn and one after
       // give its diff and its undo.
-      const project = chat.projectId ? yield* store.project(chat.projectId) : undefined
+      const project = projectFor(chat, chat.projectId ? yield* store.project(chat.projectId) : undefined) // a worktree, when the chat has one
       const access: Access = agent?.access ?? "workspace"
       const cwd = workspace.cwdOf(chatId, project)
       const treeBefore = yield* workspace.snapshot(project)
@@ -667,6 +669,8 @@ export const makeRuntime = Effect.gen(function* () {
           return Stream.concat(Stream.make(ev("snapshot", { snapshot })), Stream.fromSubscription(sub))
         })
       ),
+
+    busy: (chatId) => statuses.get(chatId)?.state === "running",
 
     subscribeStatus: Stream.unwrap(
       Effect.gen(function* () {

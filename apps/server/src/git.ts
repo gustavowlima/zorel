@@ -131,3 +131,35 @@ export function parsePrDraft(text: string): { title: string; body: string } {
 }
 
 export const cleanMessage = (text: string) => text.trim().replace(/^```\w*\n?|\n?```$/g, "").trim()
+
+// ---------- worktrees: a chat on its own branch, in its own folder ----------
+
+// A worktree of the repository at `repo`: on that branch when it exists (a chat coming back to its branch),
+// else on a new branch from the current HEAD.
+export async function addWorktree(repo: string, dir: string, branch: string) {
+  await git(repo, ["check-ref-format", "--branch", branch])
+  const exists = (await git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], true)).trim()
+  await git(repo, ["worktree", "add", ...(exists ? [dir, branch] : ["-b", branch, dir])])
+}
+
+// Removes the worktree when nothing in it is uncommitted (the branch and its commits stay). Returns false and
+// leaves it when it has changes, so no work is lost.
+export async function removeWorktree(repo: string, dir: string, force = false): Promise<boolean> {
+  if (!force && (await git(dir, ["status", "--porcelain"], true)).trim()) return false
+  await git(repo, ["worktree", "remove", ...(force ? ["--force"] : []), dir], true)
+  await git(repo, ["worktree", "prune"], true)
+  return true
+}
+
+// A branch name from a chat title: "Add min() to sum.ts" → "zero/add-min-to-sum-ts".
+export const branchFor = (title: string, id: string) =>
+  `zero/${
+    title
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/\p{M}/gu, "") // accents off: "ação" → "acao"
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40)
+      .replace(/-+$/, "") || "chat"
+  }-${id.slice(0, 4)}`
