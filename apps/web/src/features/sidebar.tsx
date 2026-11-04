@@ -247,7 +247,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
             onToggle={() => flip("chats")}
             action={
               <Tooltip content={t("nav.newChat")}>
-                <IconButton label={t("nav.newChat")} size="sm" onPress={() => go({ view: "home" })}>
+                <IconButton label={t("nav.newChat")} size="xs" onPress={() => go({ view: "home" })}>
                   <Plus className="size-3.5" />
                 </IconButton>
               </Tooltip>
@@ -376,10 +376,10 @@ function ProjectItem({
       }
       actions={
         <>
-          <IconButton label={t("nav.projectSettings", { name: project.name })} size="sm" onPress={() => go({ view: "project", id: project.id, tab: "overview" })}>
+          <IconButton label={t("nav.projectSettings", { name: project.name })} size="xs" onPress={() => go({ view: "project", id: project.id, tab: "overview" })}>
             <Settings className="size-3.5" />
           </IconButton>
-          <IconButton label={t("nav.newChatIn", { name: project.name })} size="sm" onPress={() => go({ view: "home", projectId: project.id })}>
+          <IconButton label={t("nav.newChatIn", { name: project.name })} size="xs" onPress={() => go({ view: "home", projectId: project.id })}>
             <Plus className="size-3.5" />
           </IconButton>
         </>
@@ -474,9 +474,10 @@ function UsageFoot({ active }: { active: boolean }) {
         <Tooltip key={r.account.id} content={<UsageDetail rows={[r]} />} placement="right">
           <Button
             variant="ghost"
+            shape="pill"
             aria-label={`${t("nav.usage")}: ${sentence(r)}`}
             onPress={() => go({ view: "usage" })}
-            className={cx("h-auto w-auto rounded-full p-1 text-fg data-hovered:text-fg", active && "ring-1 ring-strong")}
+            className={cx("size-10 p-0 text-fg data-hovered:text-fg", active && "ring-1 ring-strong")}
           >
             <LimitRing
               size={34}
@@ -553,12 +554,12 @@ export function TitleBar({ sidebarHidden }: { sidebarHidden: boolean }) {
           on the card's edge. With the sidebar hidden the window buttons own that corner: the header follows them. */}
       <Width width={sidebarHidden ? "auto" : 308} className="flex shrink-0 items-center gap-0.5 overflow-hidden pl-24">
         <Tooltip content={t("nav.back")}>
-          <IconButton label={t("nav.back")} size="sm" onPress={() => history.back()}>
+          <IconButton label={t("nav.back")} size="xs" onPress={() => history.back()}>
             <ChevronRight className="size-4 rotate-180" />
           </IconButton>
         </Tooltip>
         <Tooltip content={t("nav.forward")}>
-          <IconButton label={t("nav.forward")} size="sm" onPress={() => history.forward()}>
+          <IconButton label={t("nav.forward")} size="xs" onPress={() => history.forward()}>
             <ChevronRight className="size-4" />
           </IconButton>
         </Tooltip>

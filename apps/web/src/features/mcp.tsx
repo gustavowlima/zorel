@@ -167,7 +167,7 @@ function NewServer({ projectId, onDone }: { projectId: string | null; onDone: ()
         <span className="text-sm text-muted">{t("mcp.catalog")}</span>
         <div className="flex flex-wrap gap-1.5">
           {CATALOG.map((c) => (
-            <Button key={c.name} size="sm" variant={name === c.name ? "secondary" : "ghost"} className="rounded-full" onPress={() => pick(c)}>
+            <Button key={c.name} size="sm" variant={name === c.name ? "secondary" : "ghost"} shape="pill" onPress={() => pick(c)}>
               {c.name}
             </Button>
           ))}

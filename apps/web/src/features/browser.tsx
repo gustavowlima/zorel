@@ -103,13 +103,13 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
               <Button variant="ghost" className="h-auto min-w-0 truncate p-0 text-sm font-normal hover:bg-transparent" onPress={() => send({ t: "tab", id: tab.id })}>
                 {tab.title || tab.url || t("browser.newTab")}
               </Button>
-              <IconButton label={t("browser.closeTab")} size="sm" onPress={() => send({ t: "close", id: tab.id })}>
+              <IconButton label={t("browser.closeTab")} size="xs" onPress={() => send({ t: "close", id: tab.id })}>
                 <X className="size-3" />
               </IconButton>
             </span>
           ))}
           <Tooltip content={t("browser.newTab")}>
-            <IconButton label={t("browser.newTab")} size="sm" onPress={() => send({ t: "newtab" })}>
+            <IconButton label={t("browser.newTab")} size="xs" onPress={() => send({ t: "newtab" })}>
               <Plus className="size-3.5" />
             </IconButton>
           </Tooltip>
@@ -123,13 +123,13 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
           if (address.trim()) send({ t: "nav", url: address.trim() })
         }}
       >
-        <IconButton label={t("browser.back")} size="sm" onPress={() => send({ t: "back" })} isDisabled={!active}>
+        <IconButton label={t("browser.back")} size="xs" onPress={() => send({ t: "back" })} isDisabled={!active}>
           <ChevronRight className="size-3.5 rotate-180" />
         </IconButton>
-        <IconButton label={t("browser.forward")} size="sm" onPress={() => send({ t: "forward" })} isDisabled={!active}>
+        <IconButton label={t("browser.forward")} size="xs" onPress={() => send({ t: "forward" })} isDisabled={!active}>
           <ChevronRight className="size-3.5" />
         </IconButton>
-        <IconButton label={t("browser.reload")} size="sm" onPress={() => send({ t: "reload" })} isDisabled={!active}>
+        <IconButton label={t("browser.reload")} size="xs" onPress={() => send({ t: "reload" })} isDisabled={!active}>
           <RefreshCw className="size-3.5" />
         </IconButton>
         <Input
@@ -145,7 +145,7 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
           }}
           onChange={(e) => setAddress(e.target.value)}
         />
-        <IconButton label={t("browser.go")} size="sm" type="submit">
+        <IconButton label={t("browser.go")} size="xs" type="submit">
           <ArrowRight className="size-3.5" />
         </IconButton>
       </form>

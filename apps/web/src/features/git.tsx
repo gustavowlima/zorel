@@ -22,7 +22,7 @@ export function GitControl({ chat, open, onOpen }: { chat: Chat; open: boolean; 
       size="sm"
       variant={open ? "secondary" : "ghost"}
       aria-pressed={open}
-      className="max-w-56 rounded-full"
+      shape="pill" className="max-w-56"
       aria-label={t("git.button", { branch: s.branch ?? t("git.detached"), count: s.files.length })}
       onPress={onOpen}
     >

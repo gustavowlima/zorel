@@ -295,7 +295,7 @@ function ChatHeader({
                   )
                 const Icon = SIDE_ICON[tab]
                 return (
-                  <Button key={tab} data-pin={`side:${tab}`} size="sm" variant={panel === tab ? "secondary" : "ghost"} aria-pressed={panel === tab} onPress={() => onSide(tab)} className="rounded-full">
+                  <Button key={tab} data-pin={`side:${tab}`} size="sm" variant={panel === tab ? "secondary" : "ghost"} aria-pressed={panel === tab} onPress={() => onSide(tab)} shape="pill">
                     <Icon />
                     {sideLabel(tab)}
                   </Button>
@@ -303,7 +303,7 @@ function ChatHeader({
               })}
             {workspace &&
               pins.shells.map((pin) => (
-                <Button key={pin.session} data-pin={`shell:${pin.session}`} size="sm" variant="ghost" onPress={() => onShell(pin)} className="max-w-40 rounded-full">
+                <Button key={pin.session} data-pin={`shell:${pin.session}`} size="sm" variant="ghost" onPress={() => onShell(pin)} shape="pill" className="max-w-40">
                   <SquareTerminal />
                   <span className="truncate">{pin.label}</span>
                 </Button>
@@ -313,7 +313,7 @@ function ChatHeader({
         {/* One control for the side panel (Changes, Files, Browser, Terminal live in its tabs); what this chat
             changed shows on it. */}
         <Tooltip content={panelOpen ? t("workspace.closePanel") : t("workspace.openPanel")}>
-          <Button size="sm" variant={panelOpen ? "secondary" : "ghost"} aria-expanded={panelOpen} aria-label={panelOpen ? t("workspace.closePanel") : t("workspace.openPanel")} onPress={onPanel} className="rounded-full">
+          <Button size="sm" variant={panelOpen ? "secondary" : "ghost"} aria-expanded={panelOpen} aria-label={panelOpen ? t("workspace.closePanel") : t("workspace.openPanel")} onPress={onPanel} shape="pill">
             <PanelRight />
             {delta.added + delta.removed > 0 && <Delta {...delta} />}
           </Button>
@@ -573,21 +573,21 @@ function MessageActions({ text, at, details, align = "start", onEdit }: { text: 
     >
       {text && (
         <Tooltip content={copied ? t("common.copied") : t("common.copy")}>
-          <IconButton label={t("common.copy")} size="sm" onPress={copy}>
+          <IconButton label={t("common.copy")} size="xs" onPress={copy}>
             {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
           </IconButton>
         </Tooltip>
       )}
       {onEdit && (
         <Tooltip content={t("chat.editFromHere")}>
-          <IconButton label={t("chat.editFromHere")} size="sm" onPress={onEdit}>
+          <IconButton label={t("chat.editFromHere")} size="xs" onPress={onEdit}>
             <Pencil className="size-3.5" />
           </IconButton>
         </Tooltip>
       )}
       {details && (
         <Tooltip content={details}>
-          <IconButton label={t("chat.details")} size="sm">
+          <IconButton label={t("chat.details")} size="xs">
             <Info className="size-3.5" />
           </IconButton>
         </Tooltip>

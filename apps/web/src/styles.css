@@ -34,12 +34,12 @@
   --z-text-secondary: #dcdcdc;
   --z-text-muted: #979797;
   --z-text-dim: #8a8a8a; /* 5.3:1 on canvas: the lowest grey that still passes for reading */
-  --z-accent: #007cf7;
-  --z-accent-hover: #1f8fff;
+  --z-accent: #0071e3; /* white text on it: 4.7:1 */
+  --z-accent-hover: #0062c4; /* hover deepens: lightening would drop below 4.5:1 */
   --z-accent-text: #42a0ff;
-  --z-accent-soft: rgba(0, 124, 247, 0.16);
-  --z-accent-faint: rgba(0, 124, 247, 0.08); /* waiting-for-you cards */
-  --z-accent-line: rgba(0, 124, 247, 0.35);
+  --z-accent-soft: rgba(0, 113, 227, 0.16);
+  --z-accent-faint: rgba(0, 113, 227, 0.08); /* waiting-for-you cards */
+  --z-accent-line: rgba(0, 113, 227, 0.35);
   --z-success: #31cf76;
   --z-success-faint: rgba(49, 207, 118, 0.07); /* approved receipts */
   --z-success-line: rgba(49, 207, 118, 0.3);
@@ -102,11 +102,11 @@
   --z-border-strong: rgba(20, 20, 20, 0.14);
   --z-text: #141414;
   --z-text-secondary: #2b2b2b;
-  --z-text-muted: #666666;
-  --z-text-dim: #757575; /* 4.6:1 on white */
+  --z-text-muted: #5a5a5a; /* 5.8:1 on the frame */
+  --z-text-dim: #6b6b6b; /* 4.5:1 on the frame (the lightest background), 5.3:1 on white */
   --z-accent-text: #0066cc;
-  --z-accent-faint: rgba(0, 124, 247, 0.06);
-  --z-accent-line: rgba(0, 124, 247, 0.3);
+  --z-accent-faint: rgba(0, 113, 227, 0.06);
+  --z-accent-line: rgba(0, 113, 227, 0.3);
   --z-success: #14804a;
   --z-success-faint: rgba(26, 158, 85, 0.07);
   --z-success-line: rgba(26, 158, 85, 0.35);
@@ -201,6 +201,9 @@
 /* In the base layer, so border-* utilities (which live in a later layer) can override it. */
 @layer base { * { border-color: var(--z-border); } }
 html, body, #root { height: 100%; }
+/* An app shell: the document itself never scrolls (each region scrolls on its own). Absolutely placed helpers
+   (React Aria's hidden native selects) are contained by the card and the screen bodies, which are relative. */
+html, body { overflow: hidden; overscroll-behavior: none; }
 
 /* Browser surfaces in the palette (selection, caret, scrollbars): the parts no component draws. */
 ::selection { background: var(--z-accent-soft); color: var(--z-text); }

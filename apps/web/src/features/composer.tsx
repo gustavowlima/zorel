@@ -228,13 +228,13 @@ export function Composer({
         <span className="flex shrink-0 items-center gap-0.5">{tools}</span>
         {busy && onStop && (
           <Tooltip content={t("composer.stop")}>
-            <IconButton label={t("composer.stop")} variant="secondary" className="size-control rounded-full" onPress={onStop}>
+            <IconButton label={t("composer.stop")} variant="secondary" shape="pill" size="md" onPress={onStop}>
               <Square className="size-3 fill-current" />
             </IconButton>
           </Tooltip>
         )}
         <Tooltip content={busy ? t("composer.queue") : t("composer.send")}>
-          <IconButton label={busy ? t("composer.queue") : t("composer.send")} variant="default" type="submit" className="size-control rounded-full" isDisabled={!canSend}>
+          <IconButton label={busy ? t("composer.queue") : t("composer.send")} variant="default" type="submit" shape="pill" size="md" isDisabled={!canSend}>
             <ArrowUp />
           </IconButton>
         </Tooltip>
@@ -354,7 +354,7 @@ function AttachmentChip({ file, onRemove }: { file: Attachment; onRemove: () => 
         </span>
       )}
       <span className="truncate">{file.name}</span>
-      <IconButton label={t("composer.removeFile", { name: file.name })} size="sm" className="rounded-full" onPress={onRemove}>
+      <IconButton label={t("composer.removeFile", { name: file.name })} size="xs" shape="pill" onPress={onRemove}>
         <X className="size-3.5" />
       </IconButton>
     </span>

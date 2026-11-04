@@ -55,13 +55,13 @@ export function FailoverEditor({ primary, value, onChange }: { primary: Failover
           <span className="w-5 shrink-0 text-right text-sm text-muted tabular-nums">{i + 1}</span>
           <ModelPicker variant="field" className="min-w-0 flex-1" value={{ ...r, effort: null }} onChange={(v) => set(i, { model: v.model, accountId: v.accountId })} />
           {isApi(r.model) && <span className="shrink-0 text-sm text-dim">{t("failover.perToken")}</span>}
-          <IconButton label={t("failover.moveUp")} size="sm" isDisabled={i === 0} onPress={() => move(i, -1)}>
+          <IconButton label={t("failover.moveUp")} size="xs" isDisabled={i === 0} onPress={() => move(i, -1)}>
             <ChevronDown className="size-3.5 rotate-180" />
           </IconButton>
-          <IconButton label={t("failover.moveDown")} size="sm" isDisabled={i === value.length - 1} onPress={() => move(i, 1)}>
+          <IconButton label={t("failover.moveDown")} size="xs" isDisabled={i === value.length - 1} onPress={() => move(i, 1)}>
             <ChevronDown className="size-3.5" />
           </IconButton>
-          <IconButton label={t("failover.remove")} size="sm" onPress={() => onChange(value.filter((_, j) => j !== i))}>
+          <IconButton label={t("failover.remove")} size="xs" onPress={() => onChange(value.filter((_, j) => j !== i))}>
             <X className="size-3.5" />
           </IconButton>
         </div>

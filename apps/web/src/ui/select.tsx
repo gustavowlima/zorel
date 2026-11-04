@@ -58,7 +58,7 @@ export function Select({
           {(o) => (
             <ListBoxItem
               textValue={o.label}
-              className="relative flex h-control-sm cursor-default items-center rounded-md pr-8 pl-2 text-base text-secondary outline-none select-none data-focused:bg-control-hover data-focused:text-fg data-disabled:opacity-50"
+              className={cn("relative flex h-control-sm cursor-default items-center rounded-md pr-8 pl-2 text-secondary outline-none select-none data-focused:bg-control-hover data-focused:text-fg data-disabled:opacity-50", size === "sm" ? "text-sm" : "text-base")}
             >
               {({ isSelected }) => (
                 <>

@@ -101,7 +101,7 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
               </MenuItem>
             </Menu>
           )}
-          <Button variant="default" isPending={busy} isDisabled={!dirty || !name.trim() || busy || termsPending} onPress={save}>
+          <Button size="sm" variant="default" isPending={busy} isDisabled={!dirty || !name.trim() || busy || termsPending} onPress={save}>
             {agent ? t("common.save") : t("agent.create")}
           </Button>
         </>

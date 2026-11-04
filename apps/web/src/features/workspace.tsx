@@ -243,7 +243,7 @@ export function SidePanel({
                 })}
             </TabList>
           </ContextMenu>
-          <IconButton label={t("workspace.closePanel")} size="sm" onPress={onClose}>
+          <IconButton label={t("workspace.closePanel")} size="xs" onPress={onClose}>
             <X className="size-3.5" />
           </IconButton>
         </div>
@@ -631,12 +631,12 @@ export function TerminalPanel({
           {current && current.panes.length < MAX_PANES && (
             <>
               <Tooltip content={t("workspace.splitRight")}>
-                <IconButton label={t("workspace.splitRight")} size="sm" onPress={() => split("row")}>
+                <IconButton label={t("workspace.splitRight")} size="xs" onPress={() => split("row")}>
                   <Columns2 className="size-3.5" />
                 </IconButton>
               </Tooltip>
               <Tooltip content={t("workspace.splitDown")}>
-                <IconButton label={t("workspace.splitDown")} size="sm" onPress={() => split("col")}>
+                <IconButton label={t("workspace.splitDown")} size="xs" onPress={() => split("col")}>
                   <Rows2 className="size-3.5" />
                 </IconButton>
               </Tooltip>
@@ -646,7 +646,7 @@ export function TerminalPanel({
             <Menu
               label={t("workspace.runScript")}
               trigger={
-                <IconButton label={t("workspace.runScript")} size="sm">
+                <IconButton label={t("workspace.runScript")} size="xs">
                   <Play className="size-3.5" />
                 </IconButton>
               }
@@ -663,7 +663,7 @@ export function TerminalPanel({
           )}
           <LocalServers chatId={chatId} onOpenUrl={onOpenUrl} />
           <Tooltip content={t("workspace.newShell")}>
-            <IconButton label={t("workspace.newShell")} size="sm" onPress={() => add()}>
+            <IconButton label={t("workspace.newShell")} size="xs" onPress={() => add()}>
               <Plus className="size-3.5" />
             </IconButton>
           </Tooltip>
@@ -684,7 +684,7 @@ export function TerminalPanel({
                 />
                 {s.panes.length > 1 && (
                   <span className="absolute right-1.5 bottom-1.5 opacity-0 transition-opacity group-hover/pane:opacity-100 focus-within:opacity-100">
-                    <IconButton label={t("workspace.closePane", { n: i + 1 })} size="sm" onPress={() => close([p.key])}>
+                    <IconButton label={t("workspace.closePane", { n: i + 1 })} size="xs" onPress={() => close([p.key])}>
                       <X className="size-3.5" />
                     </IconButton>
                   </span>
@@ -719,7 +719,7 @@ function LocalServers({ chatId, onOpenUrl }: { chatId: string; onOpenUrl: (url: 
       onOpenChange={(open) => open && invalidate(["localServers"])}
       trigger={
         <Tooltip content={t("workspace.servers")}>
-          <IconButton label={t("workspace.servers")} size="sm">
+          <IconButton label={t("workspace.servers")} size="xs">
             <Server className="size-3.5" />
           </IconButton>
         </Tooltip>
@@ -765,7 +765,7 @@ function ServerList({ chatId, onOpenUrl }: { chatId: string; onOpenUrl: (url: st
               </span>
             </span>
             <Tooltip content={t("workspace.stopServer")}>
-              <IconButton label={t("workspace.stopServer")} size="sm" onPress={() => void stop({ params: { id: chatId, pid: s.pid }, reactivityKeys: ["localServers"] }).catch(() => undefined)}>
+              <IconButton label={t("workspace.stopServer")} size="xs" onPress={() => void stop({ params: { id: chatId, pid: s.pid }, reactivityKeys: ["localServers"] }).catch(() => undefined)}>
                 <Square className="size-3" />
               </IconButton>
             </Tooltip>

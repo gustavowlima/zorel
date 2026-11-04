@@ -77,7 +77,7 @@ export function AgentsView() {
               action={
                 g.id && (
                   <Tooltip content={t("nav.newAgentIn", { name: g.name })}>
-                    <IconButton label={t("nav.newAgentIn", { name: g.name })} size="sm" onPress={() => go({ view: "new-agent", projectId: g.id })}>
+                    <IconButton label={t("nav.newAgentIn", { name: g.name })} size="xs" onPress={() => go({ view: "new-agent", projectId: g.id })}>
                       <Plus className="size-3.5" />
                     </IconButton>
                   </Tooltip>
