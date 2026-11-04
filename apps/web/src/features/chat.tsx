@@ -7,7 +7,7 @@ import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zorel/contracts/events"
 import { formatCompact, formatDuration, formatTime, t } from "@zorel/i18n"
-import { type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
+import { memo, type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
 import { agentName, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText } from "../labels.ts"
 import { ChatMarkdown } from "./chat-markdown.tsx"
@@ -887,7 +887,7 @@ function LiveMessage({ live, agents, receipts, bare }: { live: LiveTurn; agents:
         </>
       }
     >
-      {live.text ? <ChatMarkdown text={live.text} /> : <TypingDots />}
+      {live.text && <LiveText text={live.text} />}
       {receipts.map((r) => (
         <ReceiptCard key={r.approval.id} receipt={r} />
       ))}
@@ -895,13 +895,61 @@ function LiveMessage({ live, agents, receipts, bare }: { live: LiveTurn; agents:
   )
 }
 
-const TypingDots = () => (
-  <span role="status" className="inline-flex h-6 items-center gap-1" aria-label={t("activity.working")}>
-    {[0, 1, 2].map((i) => (
-      <span key={i} className="size-1.5 animate-pulse rounded-full bg-dim motion-reduce:animate-none" style={{ animationDelay: `${i * 180}ms` }} />
-    ))}
-  </span>
-)
+// The reply as it streams. Text arrives in batches (the server groups deltas every 100 ms); shown as it comes it jumps,
+// so it is revealed frame by frame, catching up with what arrived in about CATCH_UP_FRAMES frames (at once with
+// reduced motion). Only the last block (paragraph or code fence) still grows: the ones before render once.
+const CATCH_UP_FRAMES = 6
+const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches
+function useSmoothText(target: string) {
+  const shown = useRef(target.length)
+  const [, redraw] = useState(0)
+  useEffect(() => {
+    if (reducedMotion() || target.length < shown.current) {
+      shown.current = target.length
+      redraw((n) => n + 1)
+      return
+    }
+    let frame = 0
+    const tick = () => {
+      const left = target.length - shown.current
+      if (left <= 0) return
+      shown.current += Math.max(1, Math.ceil(left / CATCH_UP_FRAMES))
+      redraw((n) => n + 1)
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [target])
+  return target.slice(0, shown.current)
+}
+// Blocks split on blank lines outside code fences, so a fence keeps its blank lines.
+function blocksOf(text: string): string[] {
+  const out: string[] = []
+  let fence = false
+  let current: string[] = []
+  for (const line of text.split("\n")) {
+    if (/^\s*(```|~~~)/.test(line)) fence = !fence
+    if (!fence && line.trim() === "" && current.length) {
+      out.push(current.join("\n"))
+      current = []
+    } else current.push(line)
+  }
+  if (current.length) out.push(current.join("\n"))
+  return out
+}
+const Block = memo(ChatMarkdown)
+function LiveText({ text }: { text: string }) {
+  const shown = useSmoothText(text)
+  return (
+    // The same spacing between blocks as inside one message (.prose-chat > * + *), so nothing moves when it ends.
+    <div className="prose-chat text-chat">
+      {blocksOf(shown).map((b, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: a block is its position in a text that only grows
+        <Block key={i} text={b} />
+      ))}
+    </div>
+  )
+}
 
 // ---------- approvals ----------
 
