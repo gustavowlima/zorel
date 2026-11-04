@@ -3,17 +3,18 @@
 // On the right, the proposal to review (each agent's name, role, model, access and instructions) with Create
 // and Not now, and what was created here, one press from its page (where Tools and access lives). Each visit
 // starts fresh; "Build it myself" opens the empty form.
-import type { Agent, Chat } from "@zero/contracts"
+import { type Access, type Agent, type AgentPermissions, type Chat, DEFAULT_PERMISSIONS, type Grant, type McpServer } from "@zero/contracts"
 import type { Approval } from "@zero/contracts/events"
 import { t } from "@zero/i18n"
 import { type ReactNode, useEffect, useRef, useState } from "react"
-import { agentsAtom, mutations, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
+import { agentsAtom, mutations, serversAtom, uploadAttachment, useChat, useInvalidate, useList, useMutation } from "../client.ts"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { ModelPicker } from "./model-picker.tsx"
-import { AgentAvatar, Button, ChevronRight, PageHeader, Pencil, Section, Sparkles, Spinner } from "@/ui"
+import { PermissionsEditor } from "./permissions.tsx"
+import { AgentAvatar, Button, ChevronRight, cx, Field, PageHeader, Pencil, Section, Sparkles, Spinner, Textarea } from "@/ui"
 
 const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builder.suggest.docs", "builder.suggest.team"] as const
 
@@ -102,7 +103,8 @@ function Conversation({ chat }: { chat: Chat }) {
           </div>
         </div>
       ) : (
-        <Timeline chat={chat} state={state} agents={agents} onView={() => {}} onEdit={() => {}} />
+        // The proposal is reviewed on the right: no second card for it inside the conversation.
+        <Timeline chat={chat} state={{ ...state, approvals: state.approvals.filter((a) => a.tool !== "zero_create_agent") }} agents={agents} onView={() => {}} onEdit={() => {}} />
       )}
       <div className="w-full px-8 pt-2 pb-4.5">
         <Composer
@@ -134,7 +136,7 @@ export function draftsOf(text: string): Draft[] {
     const fields: Record<string, string> = {}
     let key = ""
     for (const line of block.split("\n")) {
-      const m = /^([a-zA-Z]+): (.*)$/.exec(line)
+      const m = /^([a-z_]+): (.*)$/i.exec(line)
       if (m) {
         key = m[1]!
         fields[key] = m[2]!
@@ -152,39 +154,161 @@ export function draftsOf(text: string): Draft[] {
     })
 }
 
+// The proposal, then (one agent, as in Tucano) its powers and a first task: "Use this agent" → what it may reach
+// (prefilled from the proposal, least access) → a first task to try it on → created, its chat opens with the task
+// sent. A team is created as proposed. Nothing exists until Create.
+type Step = "review" | "powers" | "first"
+const GRANTS = new Set(["read", "write"])
+// "GitHub (read), Notion (write)" → grants by server id; "none" or unknown names: no access to the rest.
+function permissionsOf(f: Record<string, string>, servers: ReadonlyArray<McpServer>): AgentPermissions {
+  const named = new Map((f.connectors ?? "").split(",").flatMap((part) => {
+    const m = /^\s*(.+?)\s*\((read|write)\)\s*$/.exec(part)
+    return m ? [[m[1]!.toLowerCase(), m[2]! as Grant] as const] : []
+  }))
+  const grants: Record<string, Grant> = {}
+  if (f.connectors) for (const s of servers) grants[s.id] = named.get(s.name.toLowerCase()) ?? "none"
+  return { web: f.web !== "false", browser: f.browser !== "false", grants, always: [] }
+}
+
 function Proposal({ chat, since }: { chat: Chat; since: number }) {
   const state = useChat(chat.id)
   const agents = useList(agentsAtom)
+  const servers = useList(serversAtom).filter((s) => s.projectId === null || s.projectId === chat.projectId)
   const decide = useMutation(mutations.decide)
-  const [pending, setPending] = useState<"approved" | "denied">()
+  const updateAgent = useMutation(mutations.updateAgent)
+  const createChat = useMutation(mutations.createChat)
+  const send = useMutation(mutations.send)
+  const invalidate = useInvalidate()
   const open: Approval | undefined = state.approvals.findLast((a) => a.tool === "zero_create_agent")
+  const drafts = open ? draftsOf(open.args) : []
+  const single = drafts.length === 1 ? drafts[0] : undefined
   const created = agents.filter((a) => !a.builtin && a.createdAt >= since)
+  const [step, setStep] = useState<Step>("review")
+  const [access, setAccess] = useState<Access>("workspace")
+  const [perms, setPerms] = useState<AgentPermissions>(DEFAULT_PERMISSIONS)
+  const [task, setTask] = useState("")
+  const [busy, setBusy] = useState(false)
+  // After Create: the agent appears once the Builder's turn applies the proposal; then its powers, chat and task.
+  const [finishing, setFinishing] = useState<{ name: string; access: Access; permissions: AgentPermissions; task: string; at: number }>()
+
+  // A new proposal starts the steps over, prefilled from it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new proposal resets
+  useEffect(() => {
+    setStep("review")
+    if (!single) return
+    const f = single.fields
+    setAccess(f.access === "ask" || f.access === "full" ? f.access : "workspace")
+    setPerms(permissionsOf(f, servers))
+    setTask(f.first_task ?? "")
+  }, [open?.id])
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the agent shows up (stable mutations)
+  useEffect(() => {
+    if (!finishing) return
+    // By name; else the agent that appeared right after Create (the Builder may have tidied the name).
+    const made = created.find((a) => a.name.toLowerCase() === finishing.name.toLowerCase()) ?? created.filter((a) => a.createdAt >= finishing.at - 2000).at(-1)
+    if (!made) {
+      const poll = setInterval(() => invalidate(["agents"]), 700)
+      return () => clearInterval(poll)
+    }
+    setFinishing(undefined)
+    void (async () => {
+      await updateAgent({ params: { id: made.id }, payload: { access: finishing.access, permissions: finishing.permissions }, reactivityKeys: ["agents"] })
+      if (!finishing.task.trim()) return go({ view: "agent", id: made.id })
+      const c = await createChat({ payload: { projectId: made.projectId, agentIds: [made.id], model: made.model }, reactivityKeys: ["chats"] })
+      await send({ payload: { chatId: c.id, clientId: crypto.randomUUID(), text: finishing.task.trim() } })
+      go({ view: "chat", id: c.id })
+    })().finally(() => setBusy(false))
+    return undefined
+  }, [finishing, created.length])
+
   const choose = (a: Approval, outcome: "approved" | "denied") => {
-    setPending(outcome)
-    void decide({ payload: { approvalId: a.id, outcome }, reactivityKeys: ["approvals", "agents"] }).finally(() => setPending(undefined))
+    setBusy(true)
+    void decide({ payload: { approvalId: a.id, outcome }, reactivityKeys: ["approvals", "agents"] }).finally(() => outcome === "denied" && setBusy(false))
+  }
+  const createSingle = () => {
+    if (!open || !single) return
+    setFinishing({ name: single.name, access, permissions: perms, task, at: Date.now() })
+    choose(open, "approved")
   }
 
   return (
     <aside aria-label={t("builder.proposal")} className="flex w-96 shrink-0 flex-col gap-6 overflow-y-auto border-l border-subtle px-5 py-6">
-      <Section title={t("builder.proposal")}>
-        {open ? (
-          <div className="flex flex-col gap-3">
-            {draftsOf(open.args).map((d) => (
-              <DraftCard key={d.name} draft={d} />
+      {open && single ? (
+        <>
+          <ol aria-label={t("builder.steps")} className="flex items-center gap-1.5 text-sm">
+            {(["review", "powers", "first"] as const).map((k, i) => (
+              <li key={k} className={cx("flex items-center gap-1.5", step === k ? "text-fg" : "text-muted")}>
+                {i > 0 && <span aria-hidden="true" className="h-px w-3 bg-strong" />}
+                {t(`builder.step.${k}`)}
+              </li>
             ))}
-            <div className="flex items-center justify-end gap-2">
-              <Button size="sm" variant="ghost" isDisabled={!!pending} onPress={() => choose(open, "denied")}>
-                {t("builder.notNow")}
-              </Button>
-              <Button size="sm" variant="default" isPending={pending === "approved"} isDisabled={!!pending} onPress={() => choose(open, "approved")}>
-                {t("builder.create")}
-              </Button>
+          </ol>
+          {step === "review" && (
+            <div className="flex flex-col gap-3">
+              <DraftCard draft={single} />
+              {single.fields.reason && <p className="text-sm text-muted">{t("knowledge.why", { reason: single.fields.reason })}</p>}
+              <div className="flex items-center justify-end gap-2">
+                <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => choose(open, "denied")}>
+                  {t("builder.notNow")}
+                </Button>
+                <Button size="sm" variant="default" onPress={() => setStep("powers")}>
+                  {t("builder.useIt")}
+                </Button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <p className="text-sm text-muted">{t("builder.waiting")}</p>
-        )}
-      </Section>
+          )}
+          {step === "powers" && (
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-muted">{t("builder.powersHint", { name: single.name })}</p>
+              <PermissionsEditor access={access} onAccess={setAccess} value={perms} onChange={setPerms} servers={servers} />
+              <div className="flex items-center justify-between gap-2">
+                <Button size="sm" variant="ghost" onPress={() => setStep("review")}>
+                  {t("nav.back")}
+                </Button>
+                <Button size="sm" variant="default" onPress={() => setStep("first")}>
+                  {t("builder.next")}
+                </Button>
+              </div>
+            </div>
+          )}
+          {step === "first" && (
+            <div className="flex flex-col gap-4">
+              <Field label={t("builder.firstTask")} hint={t("builder.firstTaskHint")}>
+                <Textarea value={task} onChange={(e) => setTask(e.target.value)} rows={4} maxLength={2000} />
+              </Field>
+              <div className="flex items-center justify-between gap-2">
+                <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => setStep("powers")}>
+                  {t("nav.back")}
+                </Button>
+                <Button size="sm" variant="default" isPending={busy} isDisabled={busy} onPress={createSingle}>
+                  {task.trim() ? t("builder.createAndSend", { name: single.name }) : t("builder.create")}
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <Section title={t("builder.proposal")}>
+          {open ? (
+            <div className="flex flex-col gap-3">
+              {drafts.map((d) => (
+                <DraftCard key={d.name} draft={d} />
+              ))}
+              <div className="flex items-center justify-end gap-2">
+                <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => choose(open, "denied")}>
+                  {t("builder.notNow")}
+                </Button>
+                <Button size="sm" variant="default" isPending={busy} isDisabled={busy} onPress={() => choose(open, "approved")}>
+                  {t("builder.createAll", { count: drafts.length })}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted">{finishing ? t("builder.creating") : t("builder.waiting")}</p>
+          )}
+        </Section>
+      )}
       {created.length > 0 && (
         <Section title={t("builder.created")} description={t("builder.createdHint")}>
           <div className="flex flex-col gap-1">
@@ -202,6 +326,7 @@ function DraftCard({ draft }: { draft: Draft }) {
   const f = draft.fields
   const [more, setMore] = useState(false)
   const facts = [f.model && modelLabel(f.model), f.access && t(`access.${f.access as "workspace" | "ask" | "full"}`), f.scope === "project" ? t("builder.inProject") : t("builder.everywhere")].filter(Boolean)
+  const powers = [f.web === "true" && t("builder.web"), f.browser === "true" && t("builder.browser"), f.connectors && f.connectors !== "none" && f.connectors].filter(Boolean)
   return (
     <article className="flex flex-col gap-2.5 rounded-card border border-subtle bg-surface p-3.5">
       <div className="flex items-center gap-2.5">
@@ -213,6 +338,7 @@ function DraftCard({ draft }: { draft: Draft }) {
       </div>
       {f.description && <p className="text-secondary">{f.description}</p>}
       <p className="text-sm text-muted">{facts.join(" · ")}</p>
+      <p className="text-sm text-muted">{powers.length ? t("builder.reaches", { what: powers.join(", ") }) : t("builder.reachesNothing")}</p>
       {f.instructions && (
         <div className="flex flex-col gap-1">
           <p className={more ? "whitespace-pre-wrap text-sm text-secondary" : "line-clamp-3 whitespace-pre-wrap text-sm text-secondary"}>{f.instructions}</p>
