@@ -227,11 +227,13 @@ test("channel: an @mention picks who answers; an agent hands off by mentioning a
   expect(dones(r.events).map((m) => [m.agentId, m.model])).toEqual([[lia.id, "claude-cli/sonnet"]])
   expect(turns.at(-1)!.system).toContain("@leo (Leo)")
 
-  // direct mention: Leo with his model; Leo hands off to @nico, who sees Leo's line with his name
+  // direct mention: Leo with his model; Leo hands off to @nico, who sees Leo's line with his name; once Nico
+  // answers, Leo gets the wrap-up turn (and his scripted reply mentioning Nico again stops at the hop limit)
   mentionNext.set("Leo", "found the bug, @nico can you review?")
   r = await send(chat.id, { text: "@leo look into the error" })
-  expect(dones(r.events).map((m) => [m.agentId, m.model])).toEqual([[leo.id, "codex-cli/default"], [nico.id, "ollama/llama3"]])
-  expect(turns.at(-1)!.messages.at(-1)).toMatchObject({ role: "user", text: "[Leo]\nfound the bug, @nico can you review?" })
+  expect(dones(r.events).map((m) => [m.agentId, m.model])).toEqual([[leo.id, "codex-cli/default"], [nico.id, "ollama/llama3"], [leo.id, "codex-cli/default"]])
+  expect(turns.at(-2)!.messages.at(-1)).toMatchObject({ role: "user", text: "[Leo]\nfound the bug, @nico can you review?" })
+  expect(turns.at(-1)!.messages.at(-1)!.text).toStartWith("[Nico]")
 
   // ping-pong stops at the limit
   mentionNext.set("Nico", "@leo again")

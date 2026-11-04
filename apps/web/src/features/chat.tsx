@@ -160,7 +160,7 @@ export function ChatView({ chat }: { chat: Chat }) {
         )}
         <QueuePanel
           items={queue.items}
-          canSteer={busy}
+          canSteer={busy && splitModel(state.live?.model ?? chat.model).provider === "codex-cli"} // only Codex takes a correction mid-turn
           onSteer={(item) => {
             queue.remove(item.id)
             void steer({ payload: { chatId: chat.id, text: item.text, ...(item.attachmentIds.length && { attachmentIds: item.attachmentIds }) } })
@@ -183,7 +183,7 @@ export function ChatView({ chat }: { chat: Chat }) {
               onStop={() => void interrupt({ payload: { chatId: chat.id } })}
               onSubmit={submit}
               upload={(f) => uploadAttachment(chat.id, f)}
-              placeholder={team[0] && second ? t("composer.placeholderTeam", { name: team[0].name }) : t("composer.placeholder")}
+              placeholder={team[0] && second ? t("composer.placeholderTeam", { name: (followUpOf(state.messages, team) ?? team[0]).name }) : t("composer.placeholder")}
               tools={
                 <>
                   <ModelPicker
@@ -220,6 +220,18 @@ export function ChatView({ chat }: { chat: Chat }) {
       </div>
     </section>
   )
+}
+
+// Who a message that names no one goes to, as the server decides it (runtime followUp): the teammate you named last
+// time if it answered you, else the lead.
+function followUpOf(messages: ReadonlyArray<Message>, team: ReadonlyArray<Agent>): Agent | undefined {
+  const mine = messages.flatMap((m, i) => (m.role === "user" ? [i] : []))
+  const last = mine.at(-1)
+  if (last === undefined) return undefined
+  const named = team.filter((a) => new RegExp(`(^|\\s)@${handleOf(a)}\\b`, "i").test(messages[last]!.text))
+  const answered = messages.slice(last + 1).filter((m) => m.role === "assistant").at(-1)
+  const who = named.find((a) => a.id === answered?.agentId)
+  return who && who.id !== team[0]?.id ? who : undefined
 }
 
 // The project's files for "@" (only a project with a folder has them; read once, kept fresh by the workspace key).
@@ -1007,7 +1019,10 @@ function TimelineNote({ note, agents }: { note: Note; agents: ReadonlyArray<Agen
   const accounts = useList(accountsAtom)
   if (note.kind === "failover") return <Separator>{switchText(note.switch, accounts)}</Separator>
   const to = note.to.map((id) => agentName(id, agents)).join(", ")
-  return <Separator>{t("chat.handoff", { from: agentName(note.from, agents), to })}</Separator>
+  const from = agentName(note.from, agents)
+  if (note.via === "limit") return <Separator>{t("chat.chainStopped")}</Separator>
+  if (note.via === "reply") return <Separator>{t("chat.handedBack", { from, to })}</Separator>
+  return <Separator>{t("chat.handoff", { from, to })}</Separator>
 }
 
 // A centered line in the timeline (handoffs, failover moves).

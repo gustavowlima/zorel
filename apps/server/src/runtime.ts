@@ -218,6 +218,8 @@ export const makeRuntime = Effect.gen(function* () {
   const waiting = new Map<string, Deferred.Deferred<ApprovalOutcome>>()
   const answers = new Map<string, string>() // question id → the person's answer (zorel_ask_user)
   const tasked = new Map<string, Set<string>>() // turn id → teammates it gave a task to (not chained again by mention)
+  // chat id → a hand-off by mention waiting for its teammates' answers, to give the asker a wrap-up turn.
+  const wraps = new Map<string, { askerId: string; waiting: Set<string>; covered: boolean; depth: number }>()
   const nameOf = (agent: Agent | undefined) => agent?.name ?? "Assistant"
   const run = <A>(e: Effect.Effect<A>) => Effect.runPromise(e)
 
@@ -848,20 +850,45 @@ export const makeRuntime = Effect.gen(function* () {
       Effect.annotateLogs({ chatId: row.chatId, turnId: row.id })
     )
 
-  // Mentions in the reply queue the teammates (chaining, up to MAX_DEPTH consecutive replies).
-  const chain = (row: TurnRow, done: { text: string; agent: Agent | undefined; team: Agent[] }) =>
+  // Mentions in the reply queue the teammates (chaining, up to MAX_DEPTH consecutive replies). An agent that hands
+  // work over by mention gets a wrap-up turn once every teammate it called has answered (their answers read together),
+  // unless one of them already called it back. Past the limit the chain stops and the chat says so.
+  const enqueueAgent = (chat: Chat, team: ReadonlyArray<Agent>, a: Agent, depth: number) =>
     Effect.gen(function* () {
+      const isLead = a.id === team[0]?.id // the lead follows the chat's model; other members, their own
+      const t = yield* store.enqueueTurn({ chatId: chat.id, agentId: a.id, model: isLead ? chat.model : a.model, accountId: isLead ? chat.accountId : a.accountId, clientId: null, depth })
+      yield* publish(chat.id, ev("queued", { turn: store.toTurn(t) }))
+    })
+  const chain = (row: TurnRow, done: { text: string; agent: Agent | undefined; team: Agent[] } | undefined) =>
+    Effect.gen(function* () {
+      const chat = yield* store.chat(row.chatId)
+      if (!chat) return
+      const team = done?.team ?? (yield* members(store, chat))
+      const wrap = wraps.get(row.chatId)
+      const answering = !!wrap && !!row.agentId && wrap.waiting.has(row.agentId)
+      if (answering) wrap!.waiting.delete(row.agentId!)
       // A teammate already given this work as a task (zorel_start_task) in this turn isn't called again by a mention
       // of it in the reply ("I've handed it to @tester"): one piece of work, one hand-off.
       const handed = tasked.get(row.id) ?? new Set<string>()
       tasked.delete(row.id)
-      const next = mentioned(done.text, done.team.filter((a) => a.id !== done.agent?.id && !handed.has(a.id))).slice(0, MAX_MENTIONS)
-      if (!next.length) return
-      if (row.depth + 1 >= MAX_DEPTH) return yield* Effect.logInfo("chaining stopped at the limit", { chatId: row.chatId, depth: row.depth })
-      yield* publish(row.chatId, ev("handoff", { turnId: row.id, from: done.agent?.id ?? null, to: next.map((a) => a.id), via: "mention" }))
-      for (const a of next) {
-        const t = yield* store.enqueueTurn({ chatId: row.chatId, agentId: a.id, model: a.model, accountId: a.accountId, clientId: null, depth: row.depth + 1 })
-        yield* publish(row.chatId, ev("queued", { turn: store.toTurn(t) }))
+      const next = done ? mentioned(done.text, team.filter((a) => a.id !== done.agent?.id && !handed.has(a.id))).slice(0, MAX_MENTIONS) : []
+      if (answering && next.some((a) => a.id === wrap!.askerId)) wrap!.covered = true
+      if (next.length && row.depth + 1 >= MAX_DEPTH) {
+        yield* Effect.logInfo("chaining stopped at the limit", { chatId: row.chatId, depth: row.depth })
+        yield* publish(row.chatId, ev("handoff", { turnId: row.id, from: done?.agent?.id ?? null, to: [], via: "limit" }))
+      } else if (next.length) {
+        yield* publish(row.chatId, ev("handoff", { turnId: row.id, from: done?.agent?.id ?? null, to: next.map((a) => a.id), via: "mention" }))
+        for (const a of next) yield* enqueueAgent(chat, team, a, row.depth + 1)
+        // A first hand-off (not one made while answering another) waits for its answers to come back.
+        if (!answering && done?.agent && !wraps.has(row.chatId)) wraps.set(row.chatId, { askerId: done.agent.id, waiting: new Set(next.map((a) => a.id)), covered: false, depth: row.depth + 1 })
+      }
+      if (wrap && answering && wrap.waiting.size === 0) {
+        wraps.delete(row.chatId)
+        const asker = team.find((a) => a.id === wrap.askerId)
+        if (asker && !wrap.covered && wrap.depth + 1 < MAX_DEPTH + 1) {
+          yield* publish(row.chatId, ev("handoff", { turnId: row.id, from: done?.agent?.id ?? null, to: [asker.id], via: "reply" }))
+          yield* enqueueAgent(chat, team, asker, wrap.depth + 1)
+        }
       }
     })
 
@@ -872,7 +899,9 @@ export const makeRuntime = Effect.gen(function* () {
         projectId: origin.projectId, agentIds: [target.id], model: target.model, accountId: target.accountId, effort: target.effort,
         title: `${target.name}: ${task.replace(/\s+/g, " ").slice(0, 60)}`, taskOf: reply ? origin.id : null, taskBy: by?.id ?? null
       })
-      const back = reply ? `Your final answer goes back to ${nameOf(by)}; make it the result itself.` : "Nobody waits on the answer; just do the work."
+      const back = reply
+        ? `Your final answer goes back to ${nameOf(by)}. Answer in this shape, short: Status: done | partial | blocked. Result: the result itself. Evidence: what you ran or read.`
+        : "Nobody waits on the answer; just do the work."
       yield* addUserMessage(c.id, `Task from ${nameOf(by)}, in "${origin.title}":\n\n${task}\n\n${back}`)
       yield* enqueueFor(c, task, null)
       return c.id
@@ -920,7 +949,7 @@ export const makeRuntime = Effect.gen(function* () {
         const done = yield* Fiber.join(fiber).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         running.delete(chatId)
         last = done
-        if (done) yield* chain(row, done)
+        yield* chain(row, done) // also when it failed: a hand-off waiting on it must not wait forever
       }
       yield* reportTask(chatId, last)
       workers.delete(chatId)
@@ -956,13 +985,27 @@ export const makeRuntime = Effect.gen(function* () {
       const message = yield* store.addMessage({ chatId, role: "user", agentId: null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0, attachmentIds })
       yield* publish(chatId, ev("message", { message }))
     })
+  // A message that names no one, right after you spoke to a teammate by name and it answered: it goes on with that
+  // teammate (a follow-up), not back to the lead. Your current message is the last one; the one before decides.
+  const followUp = (chat: Chat, team: ReadonlyArray<Agent>) =>
+    Effect.gen(function* () {
+      if (team.length < 2) return undefined
+      const recent = (yield* store.messages(chat.id)).slice(-20)
+      const mine = recent.flatMap((m, i) => (m.role === "user" ? [i] : []))
+      const before = mine.at(-2)
+      if (before === undefined) return undefined
+      const named = mentioned(recent[before]!.text, team)
+      const answered = recent.slice(before + 1, mine.at(-1)).filter((m) => m.role === "assistant").at(-1)
+      const who = named.find((a) => a.id === answered?.agentId)
+      return who && who.id !== team[0]?.id ? who : undefined
+    })
   // Queues who answers this text: the mentioned members, or the lead.
   const enqueueFor = (chat: Chat, text: string, clientId: string | null) =>
     Effect.gen(function* () {
       const team = yield* members(store, chat)
       const lead = team[0]
       const targets: Array<Agent | undefined> = mentioned(text, team).slice(0, MAX_MENTIONS)
-      if (!targets.length) targets.push(lead)
+      if (!targets.length) targets.push((yield* followUp(chat, team)) ?? lead)
       let first: string | undefined
       for (const [i, a] of targets.entries()) {
         // The leader uses the chat model (the one you picked); other members use their own.

@@ -37,3 +37,4 @@
 2026-11-04 | Settings › Processes e contagem de processos no cabeçalho do chat | usuário pediu página de processos em segundo plano, também por conversa
 2026-11-04 | Processes enxuta: resumo com ícones de CPU/memória, uma lista com colunas, ação por ícone; sem hero, sparkline e barras | usuário achou a página poluída
 2026-11-04 | chat: coluna de leitura max-w-chat, text-chat 14px, sem avatar em chat de um agente, resumo do turno com duração, ShimmerText, PendingTray, ChatMarkdown com CodeBlock/TableFrame | ideias do OpenBot, pedido do usuário
+2026-11-04 | notas "handed back"/"agents stopped", placeholder com destino do complemento, Steer só no Codex | conversa entre agentes

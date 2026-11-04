@@ -55,3 +55,4 @@
 2026-11-04 | terminal no Windows (PowerShell) e sandbox ACP no Linux (bubblewrap) | regra: tudo nos três sistemas
 2026-11-04 | zorel_ask_user (pergunta com opções, resposta volta ao agente) | equipe: agente pergunta em vez de chutar
 2026-11-04 | exportar/importar workspace (fase 7) | mudar de computador sem perder projetos, agentes, chats e conhecimento
+2026-11-04 | fechamento do repasse por menção, complemento sem menção fica com o colega, formato Status/Result/Evidence, aviso no limite | teste real de equipe + ideias de OpenBot/Tucano

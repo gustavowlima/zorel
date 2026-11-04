@@ -425,6 +425,15 @@ Referência: OpenBot (`docs/architecture/agents.md` "Agent communication policy"
 
 - **`zorel_start_task` (2026-11-04)**, a delegação com retorno: o colega trabalha num **chat próprio** (aparece na barra lateral com status ao vivo; título "<agente>: <tarefa>"), com a tarefa como primeira mensagem; quando a fila desse chat esvazia, a última resposta volta ao chat de origem como mensagem do colega, com o link "Open the task", e quem pediu faz o próximo turno ali. `reply: false` entrega sem retorno (cobre o `send_message` sem resposta). Limites: 4 tarefas abertas por chat, 2 níveis de aninhamento; colega com acesso maior que o de quem pede só trabalha com cartão de aprovação. `chats.task_of` (o chat que espera o resultado, zerado ao entregar) e `chats.task_by` (quem pediu). Testado ao vivo com Claude Haiku: delegar, responder e continuar em ~6 s.
 
+- **Conversa entre agentes (2026-11-04, ideias do OpenBot e do Tucano, código próprio):**
+  - **Quem responde sem menção:** o líder (que roteia pelas descrições dos colegas, ver prompt do canal); mas uma mensagem sem menção logo depois de você ter falado com um colega pelo @handle, e ele ter respondido, continua com esse colega (complemento, como no Tucano). O placeholder do campo diz para quem vai.
+  - **Fechamento:** quem passa trabalho por @menção ganha um turno depois que **todos** os chamados respondem (as respostas chegam juntas, como as respostas retidas do OpenBot), salvo se um deles já o chamou de volta; uma resposta que falhou também conta, para nada esperar para sempre. Linha "X handed back to Y".
+  - **Formato de quem recebe trabalho:** Status: done | partial | blocked · Result · Evidence (curto, conferível; do OpenBot). Quem pede não repete a resposta, só fecha; nunca menciona alguém só para agradecer.
+  - **Uma entrega, um repasse:** um colega que recebeu `zorel_start_task` no turno não é chamado de novo pela menção dele na resposta.
+  - **Limite:** 3 respostas seguidas sem mensagem sua; ao parar, a linha "The agents stopped here so they don't talk in circles. Send a message to go on." (como no Tucano).
+  - **Steer** só aparece quando o motor do turno aceita correção no meio (Codex).
+  - Testado ao vivo com Claude Haiku (Tech Lead + Tester + Docsync no demo-app): pedido sem menção → líder passa ao Tester com briefing → Tester responde em Status/Result/Evidence → líder fecha; complemento sem menção fica com o Tester; pedido de README + testes → líder divide entre os dois e fecha uma vez com as duas entregas.
+
 - **`zorel_ask_user` (2026-11-04)**: o agente pergunta e espera. A pergunta é um cartão do tipo `question` no mesmo mecanismo das aprovações (chat, "Precisa de você", notificação, 30 min e depois segue): até 6 opções de um clique, resposta livre ou "Skip". A resposta viaja no `reason` do `decide` e volta como resultado da ferramenta ("The user answered: …"); sem resposta, o agente segue com o melhor palpite e diz o que assumiu. O status do chat diz "asks you something" (rótulo `question`). Testado ao vivo com Claude Haiku.
 
 **Planejado — ferramentas** (`zorel.*`):
