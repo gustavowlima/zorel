@@ -39,3 +39,4 @@
 2026-11-04 | chat: coluna de leitura max-w-chat, text-chat 14px, sem avatar em chat de um agente, resumo do turno com duração, ShimmerText, PendingTray, ChatMarkdown com CodeBlock/TableFrame | ideias do OpenBot, pedido do usuário
 2026-11-04 | notas "handed back"/"agents stopped", placeholder com destino do complemento, Steer só no Codex | conversa entre agentes
 2026-11-04 | SortableList (arrastar e teclado) nos fallbacks; grupos do Changes abrem e fecham | pedidos do usuário
+2026-11-04 | Files vira explorer (FileTree, FileIcon, mutations.fs) | usuário pediu renomear/selecionar/apagar como no VS Code
