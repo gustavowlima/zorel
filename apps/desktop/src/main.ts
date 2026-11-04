@@ -39,6 +39,8 @@ const loginShellPath = () =>
     })
   })
 
+const READY_EVERY_MS = 100
+const READY_TRIES = 1200 // 2 minutes: room for the keychain prompt on a new build's first launch
 const freePort = () =>
   new Promise<number>((resolve, reject) => {
     const probe = createServer().once("error", reject)
@@ -69,11 +71,14 @@ async function startServer() {
     app.quit()
   })
   url = `http://127.0.0.1:${port}`
-  for (let i = 0; i < 200; i++) {
-    if (await fetch(`${url}/`).then(() => true, () => false)) return // any answer: it's up (the page itself wants the secret)
-    await new Promise((r) => setTimeout(r, 50))
+  // Ready once its routes answer: it listens before its services are up, and reading the keychain at start can wait
+  // on macOS's password prompt (the first launch of a new build), so until then every path is a 404. Up to 2 minutes.
+  const ready = (r: Response) => r.status !== 404 // the page answers 401 without the secret: that's ready too
+  for (let i = 0; i < READY_TRIES; i++) {
+    if (await fetch(`${url}/`).then(ready, () => false)) return
+    await new Promise((r) => setTimeout(r, READY_EVERY_MS))
   }
-  throw new Error("The Zorel server didn't start in 10 s.")
+  throw new Error("The Zorel server didn't start in 2 minutes.")
 }
 
 function openWindow() {
