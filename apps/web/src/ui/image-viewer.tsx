@@ -29,7 +29,7 @@ export function ImageViewer({ src, name, closeLabel, openLabel, children, classN
                     {openLabel}
                     <ArrowUpRight className="size-3.5" />
                   </a>
-                  <IconButton label={closeLabel} size="sm" onPress={close} autoFocus>
+                  <IconButton label={closeLabel} size="xs" onPress={close} autoFocus>
                     <X className="size-4" />
                   </IconButton>
                 </header>

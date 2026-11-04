@@ -86,10 +86,10 @@ export function QueuePanel({
               {t("queue.steer")}
             </Button>
           )}
-          <IconButton label={t("queue.edit")} size="sm" onPress={() => onEdit(item)}>
+          <IconButton label={t("queue.edit")} size="xs" onPress={() => onEdit(item)}>
             <Pencil className="size-3.5" />
           </IconButton>
-          <IconButton label={t("queue.remove")} size="sm" onPress={() => onRemove(item)}>
+          <IconButton label={t("queue.remove")} size="xs" onPress={() => onRemove(item)}>
             <Trash2 className="size-3.5" />
           </IconButton>
         </li>

@@ -25,19 +25,22 @@ const buttonVariants = cva(
   }
 )
 
-export type ButtonProps = Omit<ButtonPrimitiveProps, "className"> & VariantProps<typeof buttonVariants> & { className?: string }
+// shape "pill": chips and round actions (pins, presets, send); the default is the 8px control corner.
+export type ButtonProps = Omit<ButtonPrimitiveProps, "className"> & VariantProps<typeof buttonVariants> & { className?: string; shape?: "control" | "pill" }
 
-export function Button({ className, variant, size, ...props }: ButtonProps) {
-  return <ButtonPrimitive data-slot="button" className={cn(buttonVariants({ variant, size }), className)} {...props} />
+export function Button({ className, variant, size, shape, ...props }: ButtonProps) {
+  return <ButtonPrimitive data-slot="button" className={cn(buttonVariants({ variant, size }), shape === "pill" && "rounded-full", className)} {...props} />
 }
 
-// Icon-only button: the label is required (screen readers, and the tooltip-less hover title).
-export function IconButton({ label, size = "md", variant = "ghost", className, ...props }: Omit<ButtonProps, "aria-label" | "size"> & { label: string; size?: "sm" | "md" }) {
+// Icon-only button: the label is required (screen readers, and the tooltip-less hover title). Sizes follow the
+// control scale like Button's: xs 24 (inline), sm 28 (default: toolbars, rows), md 32 (beside a field).
+const ICON_SIZE = { xs: "size-control-xs", sm: "size-control-sm", md: "size-control" } as const
+export function IconButton({ label, size = "sm", variant = "ghost", shape, className, ...props }: Omit<ButtonProps, "aria-label" | "size"> & { label: string; size?: keyof typeof ICON_SIZE }) {
   return (
     <ButtonPrimitive
       data-slot="icon-button"
       aria-label={label}
-      className={cn(buttonVariants({ variant, size: "icon" }), size === "sm" ? "size-control-xs" : "size-control-sm", className)}
+      className={cn(buttonVariants({ variant, size: "icon" }), ICON_SIZE[size], shape === "pill" && "rounded-full", className)}
       {...props}
     />
   )

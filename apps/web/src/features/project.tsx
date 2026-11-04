@@ -53,7 +53,7 @@ export function NewProjectButton() {
       isOpen={open}
       onOpenChange={setOpen}
       trigger={
-        <IconButton label={t("nav.newProject")} size="sm">
+        <IconButton label={t("nav.newProject")} size="xs">
           <Plus className="size-3.5" />
         </IconButton>
       }

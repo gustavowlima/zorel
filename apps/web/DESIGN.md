@@ -296,6 +296,9 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Lista:** a mesma superfície de lista do Menu: raised com borda forte, cantos de 12px, padding de 4px, sem sombra; itens de 28px com cantos de 6px (concêntricos: 12 − 4 − 1 ≈ 6), foco com control-hover, selecionado com check azul.
 - **Superfícies flutuantes:** Select, Menu, Popover e Tooltip abrem a 6px do gatilho (o menu de contexto, no ponteiro, a 2px); Select, Menu e Popover entram com fade + zoom de 0,98, o Tooltip só com fade.
 - **Segmentado e abas:** o segmentado tem 28px no total (borda de 1px, inset de 2px, pílulas de 22px com cantos de 6px dentro dos 8px do trilho); as abas têm 28px numa linha só e rolam de lado quando não cabem, nunca quebram.
+- **Ações de cabeçalho:** todo botão e campo no cabeçalho de uma tela tem 28px (`size="sm"`); no desktop o cabeçalho fica a 16px da borda direita da janela.
+- **IconButton:** mesma escala do Button — xs 24 (inline, linhas da barra lateral), sm 28 (padrão: barras de ferramenta, cabeçalhos), md 32 (ao lado de um campo, enviar/parar do composer).
+- **Forma pílula:** `shape="pill"` no Button/IconButton para chips e ações redondas (atalhos fixados, presets de conectores, enviar, anéis de consumo, membros do chat); as telas não passam `rounded-full` por className.
 - **Anéis de foco:** controles de ação (botões, abas, segmentado) usam o anel accent; campos de texto, o accent-soft, porque o cursor já mostra o foco.
 
 ### Dialog / Tooltip

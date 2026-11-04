@@ -46,7 +46,7 @@ export function TeamPicker({ chat }: { chat: Chat }) {
       className="w-80"
       placement="bottom end"
       trigger={
-        <Button size="sm" variant="ghost" aria-label={team.length ? t("chat.members", { names: team.map((a) => a.name).join(", ") }) : t("team.add")} className="gap-1.5 rounded-full px-1.5 text-muted">
+        <Button size="sm" variant="ghost" aria-label={team.length ? t("chat.members", { names: team.map((a) => a.name).join(", ") }) : t("team.add")} shape="pill" className="gap-1.5 px-1.5 text-muted">
           {team.length ? (
             <span className="flex">
               {team.map((a, i) => (
@@ -84,7 +84,7 @@ export function TeamPicker({ chat }: { chat: Chat }) {
                 {t("team.makeLead")}
               </Button>
             )}
-            <IconButton label={t("team.removeMember", { name: a.name })} size="sm" onPress={() => void setTeam(chat.agentIds.filter((x) => x !== a.id))}>
+            <IconButton label={t("team.removeMember", { name: a.name })} size="xs" onPress={() => void setTeam(chat.agentIds.filter((x) => x !== a.id))}>
               <X className="size-3.5" />
             </IconButton>
           </div>

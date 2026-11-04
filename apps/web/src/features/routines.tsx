@@ -76,14 +76,14 @@ export function AgentRoutines({ agent, title }: { agent: Agent; title?: string }
                   </span>
                 </span>
                 <Tooltip content={t("routines.openChat")}>
-                  <IconButton label={t("routines.openChat")} size="sm" onPress={() => go({ view: "chat", id: r.chatId })}>
+                  <IconButton label={t("routines.openChat")} size="xs" onPress={() => go({ view: "chat", id: r.chatId })}>
                     <MessageCircle className="size-3.5" />
                   </IconButton>
                 </Tooltip>
                 <Tooltip content={t("routines.runNow")}>
                   <IconButton
                     label={t("routines.runNow")}
-                    size="sm"
+                    size="xs"
                     onPress={() => {
                       setError(undefined)
                       void runNow({ params: { id: r.id }, ...keys })
@@ -95,7 +95,7 @@ export function AgentRoutines({ agent, title }: { agent: Agent; title?: string }
                   </IconButton>
                 </Tooltip>
                 <Tooltip content={t("common.delete")}>
-                  <IconButton label={t("common.delete")} size="sm" onPress={() => setConfirm(r)}>
+                  <IconButton label={t("common.delete")} size="xs" onPress={() => setConfirm(r)}>
                     <Trash2 className="size-3.5" />
                   </IconButton>
                 </Tooltip>
@@ -128,7 +128,7 @@ function HookUrl({ token }: { token: string }) {
       <code className="min-w-0 flex-1 truncate font-mono text-sm text-muted">{`POST ${url}`}</code>
       <IconButton
         label={copied ? t("common.copied") : t("routines.copyHook")}
-        size="sm"
+        size="xs"
         onPress={() => {
           void navigator.clipboard.writeText(url)
           setCopied(true)

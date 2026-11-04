@@ -36,7 +36,7 @@ export function ContextMeter({ chatId, onCompact, onNewChat }: { chatId: string;
       className="w-80"
       onOpenChange={(open) => open && invalidate(["context"])}
       trigger={
-        <Button variant="ghost" size="sm" aria-label={`${t("context.title")}: ${label}`} className="size-control rounded-full px-0">
+        <Button variant="ghost" size="sm" aria-label={`${t("context.title")}: ${label}`} shape="pill" className="size-control px-0">
           <Ring ratio={ratio ?? 0} />
         </Button>
       }
