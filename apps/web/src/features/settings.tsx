@@ -4,7 +4,7 @@
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { formatAge, t } from "@zero/i18n"
-import { type ReactNode, useState } from "react"
+import { type ReactNode, useEffect, useState } from "react"
 import { agentsAtom, fileSkillsAtom, memoriesAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { scopeLabel } from "../labels.ts"
 import { go, SETTINGS_TABS, type SettingsTab, setThemePref, themePref, type ThemePref } from "../state.ts"
@@ -215,6 +215,30 @@ function FileSkills() {
 
 // ---------- general ----------
 
+// Desktop only: open Zero when you log in, without a window, so routines run after a restart.
+type LoginItem = { get: () => Promise<boolean>; set: (on: boolean) => Promise<boolean> }
+const loginItem = (window as { zeroDesktop?: { openAtLogin?: LoginItem } }).zeroDesktop?.openAtLogin
+function StartupSetting() {
+  const [on, setOn] = useState<boolean>()
+  useEffect(() => {
+    void loginItem?.get().then(setOn)
+  }, [])
+  if (!loginItem) return null
+  return (
+    <Section title={t("appearance.startup")}>
+      <Rows>
+        <div className="flex items-center gap-3 py-3.5">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="font-medium">{t("appearance.openAtLogin")}</span>
+            <span className="text-sm text-muted">{t("appearance.openAtLoginHint")}</span>
+          </span>
+          <Switch aria-label={t("appearance.openAtLogin")} isSelected={!!on} isDisabled={on === undefined} onChange={(v) => void loginItem.set(v).then(setOn)} />
+        </div>
+      </Rows>
+    </Section>
+  )
+}
+
 // Preferences of this computer, one section per topic: Appearance (the theme), then Notifications.
 
 function General() {
@@ -245,6 +269,7 @@ function General() {
         <NotifySetting />
       </Rows>
     </Section>
+    <StartupSetting />
     </>
   )
 }

@@ -4,6 +4,8 @@ import { contextBridge, ipcRenderer } from "electron"
 
 contextBridge.exposeInMainWorld("zeroDesktop", {
   browser: (state: { tab: string; rect: { x: number; y: number; width: number; height: number }; overlay: boolean } | null) => ipcRenderer.send("browser:show", state),
+  // Open Zero at login (it then starts without a window).
+  openAtLogin: { get: (): Promise<boolean> => ipcRenderer.invoke("login:get"), set: (on: boolean): Promise<boolean> => ipcRenderer.invoke("login:set", on) },
   onTake: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on("browser:take", listener)
