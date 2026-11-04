@@ -544,29 +544,35 @@ function UsageDetail({ rows }: { rows: ReadonlyArray<{ account: ProviderAccount;
 const toneOf = (p: Pace): RingTone => (p.used >= 0.95 ? "critical" : p.runsOutAt || p.used >= LIMIT_ALERT ? "warning" : "ok")
 
 // The desktop app's title bar (as in OpenBot): the whole window width above the rail, the sidebar and the card. It
-// drags the window, leaves room for the macOS window buttons, and holds the brand, back/forward and New chat.
-export function TitleBar() {
+// drags the window, leaves room for the macOS window buttons, holds the brand, back/forward and New chat, and the
+// current page's header.
+export function TitleBar({ sidebarHidden }: { sidebarHidden: boolean }) {
   return (
-    <header className="app-drag flex h-12 shrink-0 items-center gap-1 pr-3 pl-21">
-      <span className="flex items-center gap-2 pr-3 font-semibold">
-        <Logo className="size-4.5" />
-        {t("app.name")}
-      </span>
-      <Tooltip content={t("nav.back")}>
-        <IconButton label={t("nav.back")} size="sm" onPress={() => history.back()}>
-          <ChevronRight className="size-4 rotate-180" />
-        </IconButton>
-      </Tooltip>
-      <Tooltip content={t("nav.forward")}>
-        <IconButton label={t("nav.forward")} size="sm" onPress={() => history.forward()}>
-          <ChevronRight className="size-4" />
-        </IconButton>
-      </Tooltip>
-      <Tooltip content={t("nav.newChat")}>
-        <IconButton label={t("nav.newChat")} size="sm" onPress={() => go({ view: "home" })}>
-          <Plus className="size-4" />
-        </IconButton>
-      </Tooltip>
+    <header className="app-drag flex h-12 shrink-0 items-center">
+      {/* Left: as wide as the rail plus the sidebar, so the page header (the slot) lines up with the card. */}
+      <div className={cx("flex shrink-0 items-center gap-1 pl-21", !sidebarHidden && "w-77")}>
+        <span className="flex items-center gap-2 pr-3 font-semibold">
+          <Logo className="size-4.5" />
+          {t("app.name")}
+        </span>
+        <Tooltip content={t("nav.back")}>
+          <IconButton label={t("nav.back")} size="sm" onPress={() => history.back()}>
+            <ChevronRight className="size-4 rotate-180" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip content={t("nav.forward")}>
+          <IconButton label={t("nav.forward")} size="sm" onPress={() => history.forward()}>
+            <ChevronRight className="size-4" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip content={t("nav.newChat")}>
+          <IconButton label={t("nav.newChat")} size="sm" onPress={() => go({ view: "home" })}>
+            <Plus className="size-4" />
+          </IconButton>
+        </Tooltip>
+      </div>
+      {/* The current page's header (PageHeader portals into it). */}
+      <div id="titlebar-slot" className="flex h-full min-w-0 flex-1 items-center" />
     </header>
   )
 }
