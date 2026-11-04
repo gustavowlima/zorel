@@ -47,3 +47,5 @@ updated: 2026-11-03
 - dev: o Vite de desenvolvimento às vezes não gera classes de arquivos novos; reiniciar resolve (o build gera)
 - composer.tsx: Tiptap (ComposerSources: # leads, @ agents, $ skills, / commands; chips viram texto @handle/$handle via renderText); queue.tsx (fila local por chat em localStorage, sai sozinha quando !busy; steer/editar/apagar); context-meter.tsx (GET /api/chats/:id/context); TeamPicker no cabeçalho
 - teste no navegador: não limpar o editor com execCommand (deixa lixo no ProseMirror); use Meta+A e Backspace
+- shell.tsx: socket desmontado antes do frame "s" (StrictMode monta 2x em dev) manda {"t":"k"} quando o id chega; sem isso cada aba nova deixava um shell órfão (e um script rodando em dobro)
+- TerminalPanel: ▷ Run a script (aba com label do script) e Servers (abre localhost:N no BrowserPanel via chat.openInBrowser → prop openUrl, que envia newtab+nav)

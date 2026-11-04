@@ -8,3 +8,4 @@
 2026-11-03 | composer em Tiptap com # @ $ /, fila de mensagens, medidor de contexto; seletor de agente saiu do campo | pedido do usuário
 2026-11-03 | sidebar: icon tabs replaced by named Chats|Projects switch; Knowledge/Settings back as fixed rows; usage foot as per-window bars | impeccable critique 21/36 (consistency 1)
 2026-11-03 | sidebar: tabs and Chats|Projects switch removed; stacked sections with icons; chats on one line | user: too cluttered, prefers no tabs
+2026-11-03 | terminal: Run a script, Servers; fix de shell órfão no StrictMode | fase 3c

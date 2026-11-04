@@ -25,7 +25,7 @@ import { Tools } from "./tools.ts"
 import { billingOf, Pricing } from "./pricing.ts"
 import { clean, measure } from "./storage.ts"
 import { Workspace } from "./workspace.ts"
-import { closeTerminal, TerminalSocket, terminalsOf } from "./terminals.ts"
+import { closeTerminal, scriptsOf, serversIn, TerminalSocket, terminalsOf } from "./terminals.ts"
 import { BrowserService, BrowserSocket } from "./browser.ts"
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
@@ -123,6 +123,13 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
     const audit = yield* Audit
     const pricing = yield* Pricing
     const services = yield* Effect.context<Store | Engines | DataDir>()
+    // The folder the chat's agents and shells work in.
+    const chatRoot = (id: string) =>
+      Effect.gen(function* () {
+        const chat = yield* store.chat(id)
+        if (!chat) return yield* notFound()
+        return workspace.cwdOf(chat.id, chat.projectId ? yield* store.project(chat.projectId) : undefined)
+      })
     // A turn with workspace checkpoints, its project and whether its changes were undone.
     const turnWithTrees = (id: string) =>
       Effect.gen(function* () {
@@ -164,13 +171,20 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           if (terminalsOf(params.id).some((s) => s.id === params.terminal)) closeTerminal(params.terminal)
         })
       )
+      .handle("scripts", ({ params }) => Effect.map(chatRoot(params.id), scriptsOf))
+      .handle("servers", ({ params }) => Effect.map(chatRoot(params.id), serversIn))
+      // Stops a server of that list (SIGTERM); a pid outside it is not found.
+      .handle("stopServer", ({ params }) =>
+        Effect.flatMap(chatRoot(params.id), (root) =>
+          serversIn(root).some((s) => s.pid === params.pid) ? Effect.sync(() => void process.kill(params.pid, "SIGTERM")) : notFound()
+        )
+      )
       // A path printed in the terminal, opened in the computer's default app; only files inside the chat's folder.
       .handle("openFile", ({ params, payload }) =>
         Effect.gen(function* () {
           const chat = yield* store.chat(params.id)
           if (!chat) return yield* notFound()
-          const project = chat.projectId ? yield* store.project(chat.projectId) : undefined
-          const root = workspace.cwdOf(chat.id, project)
+          const root = yield* chatRoot(chat.id)
           const file = resolve(root, payload.path)
           if (!(file === root || file.startsWith(`${root}/`)) || !existsSync(file)) return yield* new HttpApiError.BadRequest()
           yield* Effect.sync(() => Bun.spawn(["open", file], { stdout: "ignore", stderr: "ignore" }))

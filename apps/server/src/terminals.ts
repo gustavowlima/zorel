@@ -3,10 +3,12 @@
 // detaches it; attaching again replays the last output (a ring of SCROLLBACK bytes) and goes on live. The shell
 // ends when the tab closes ({"t":"k"}) or exits by itself (the session then stays, ended, with its output).
 //
-// GET /api/terminals?chat=…[&session=…]&cols=&rows= upgrades to a WebSocket. Up: JSON frames — input
+// GET /api/terminals?chat=…[&session=…|&run=script]&cols=&rows= upgrades to a WebSocket. Up: JSON frames — input
 // {"t":"i","d":"…"}, size {"t":"r","c":cols,"r":rows}, kill {"t":"k"}. Down: first {"t":"s","id":…} (text), then
 // the shell's output as bytes; an ended shell closes the socket with code 4000. Local only (LocalOnly checks Host
 // and Origin before the upgrade).
+import { existsSync, readFileSync } from "node:fs"
+import { join } from "node:path"
 import { Effect } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Socket } from "effect/socket"
@@ -56,6 +58,7 @@ interface Session {
   readonly id: string
   readonly chatId: string
   readonly n: number // "Shell n" in its chat
+  readonly label: string | null // the project script it runs ("dev"), or null for a plain shell
   readonly proc: Bun.Subprocess
   readonly output: Ring
   ended: boolean
@@ -74,7 +77,7 @@ function busy(s: Session): boolean {
 }
 
 export const terminalsOf = (chatId: string) =>
-  [...sessions.values()].filter((s) => s.chatId === chatId).map((s) => ({ id: s.id, n: s.n, ended: s.ended, busy: busy(s) }))
+  [...sessions.values()].filter((s) => s.chatId === chatId).map((s) => ({ id: s.id, n: s.n, label: s.label, ended: s.ended, busy: busy(s) }))
 
 function end(s: Session) {
   if (!s.ended) {
@@ -93,7 +96,32 @@ export function closeTerminal(id: string) {
   sessions.delete(id)
 }
 
-function open(chatId: string, cwd: string, cols: number, rows: number): Session {
+// ---------- project scripts: package.json "scripts", run with the package manager its lockfile names ----------
+
+const SCRIPT_NAME = /^[\w:.@/-]{1,100}$/ // safe to type into a shell unquoted
+const managerOf = (cwd: string) =>
+  existsSync(join(cwd, "bun.lock")) || existsSync(join(cwd, "bun.lockb"))
+    ? "bun"
+    : existsSync(join(cwd, "pnpm-lock.yaml"))
+      ? "pnpm"
+      : existsSync(join(cwd, "yarn.lock"))
+        ? "yarn"
+        : "npm"
+
+// The scripts of the folder's package.json (none when there is none, or it doesn't parse).
+export function scriptsOf(cwd: string): Array<{ name: string; command: string }> {
+  try {
+    const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8")) as { scripts?: Record<string, unknown> }
+    return Object.entries(pkg.scripts ?? {}).flatMap(([name, command]) => (typeof command === "string" && SCRIPT_NAME.test(name) ? [{ name, command }] : []))
+  } catch {
+    return []
+  }
+}
+
+// The line typed into a new shell to run one of those scripts, or undefined when it isn't one of them.
+export const runLine = (cwd: string, name: string) => (scriptsOf(cwd).some((s) => s.name === name) ? `${managerOf(cwd)} run ${name}\r` : undefined)
+
+function open(chatId: string, cwd: string, cols: number, rows: number, run?: { name: string; line: string }): Session {
   const n = Math.max(0, ...[...sessions.values()].filter((s) => s.chatId === chatId).map((s) => s.n)) + 1
   const output = new Ring(SCROLLBACK)
   let session: Session | undefined
@@ -110,7 +138,8 @@ function open(chatId: string, cwd: string, cols: number, rows: number): Session 
       }
     }
   })
-  session = { id: crypto.randomUUID(), chatId, n, proc, output, ended: false }
+  session = { id: crypto.randomUUID(), chatId, n, label: run?.name ?? null, proc, output, ended: false }
+  if (run) proc.terminal?.write(run.line) // the login shell reads it once it is up
   const s = session
   void proc.exited.then(() => {
     s.ended = true
@@ -136,7 +165,11 @@ export const TerminalSocket = HttpRouter.add(
     if (!s) {
       if (live() >= MAX_TERMINALS) return HttpServerResponse.jsonUnsafe({ error: "too_many_terminals" }, { status: 429 })
       const project = chat.projectId ? yield* store.project(chat.projectId) : undefined
-      s = open(chat.id, workspace.cwdOf(chat.id, project), size(Number(q.get("cols")), 1000) ?? 80, size(Number(q.get("rows")), 500) ?? 24)
+      const cwd = workspace.cwdOf(chat.id, project)
+      const script = q.get("run")
+      const line = script ? runLine(cwd, script) : undefined
+      if (script && !line) return HttpServerResponse.jsonUnsafe({ error: "script_not_found" }, { status: 404 })
+      s = open(chat.id, cwd, size(Number(q.get("cols")), 1000) ?? 80, size(Number(q.get("rows")), 500) ?? 24, script && line ? { name: script, line } : undefined)
     }
     const session = s
 
@@ -181,3 +214,46 @@ export const TerminalSocket = HttpRouter.add(
     return HttpServerResponse.empty()
   }).pipe(Effect.scoped, Effect.orDie)
 )
+
+// ---------- local servers: processes listening on a TCP port whose working folder is inside the chat's ----------
+
+export interface LocalServer {
+  readonly pid: number
+  readonly command: string
+  readonly ports: ReadonlyArray<number>
+}
+
+// lsof -F output (one field per line: p<pid>, c<command>, n<name>, f<fd>) to pid → fields.
+export function parseLsof(out: string): Map<number, { command: string; names: string[] }> {
+  const procs = new Map<number, { command: string; names: string[] }>()
+  let cur: { command: string; names: string[] } | undefined
+  for (const line of out.split("\n")) {
+    const v = line.slice(1)
+    if (line[0] === "p") {
+      cur = { command: "", names: [] }
+      procs.set(Number(v), cur)
+    } else if (line[0] === "c" && cur) cur.command = v
+    else if (line[0] === "n" && cur) cur.names.push(v)
+  }
+  return procs
+}
+
+const lsof = (args: string[]) => {
+  const r = Bun.spawnSync(["lsof", "-nP", ...args], { stdout: "pipe", stderr: "ignore" })
+  return parseLsof(r.stdout.toString())
+}
+
+// ponytail: lsof on every call (≈50 ms); cache it if the panel ever polls this often.
+export function serversIn(root: string): LocalServer[] {
+  const listening = lsof(["-iTCP", "-sTCP:LISTEN", "-Fpcn"])
+  if (!listening.size) return []
+  const cwds = lsof(["-a", "-p", [...listening.keys()].join(","), "-d", "cwd", "-Fpn"])
+  const out: LocalServer[] = []
+  for (const [pid, p] of listening) {
+    const cwd = cwds.get(pid)?.names[0]
+    if (!cwd || pid === process.pid || !(cwd === root || cwd.startsWith(`${root}/`))) continue
+    const ports = [...new Set(p.names.map((n) => Number(n.slice(n.lastIndexOf(":") + 1))).filter((n) => n > 0))].sort((a, b) => a - b)
+    if (ports.length) out.push({ pid, command: p.command, ports })
+  }
+  return out.sort((a, b) => a.ports[0]! - b.ports[0]!)
+}

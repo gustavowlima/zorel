@@ -1,5 +1,8 @@
-import { expect, test } from "bun:test"
-import { parseFrame, Ring } from "./terminals.ts"
+import { describe, expect, test } from "bun:test"
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { parseFrame, parseLsof, Ring, runLine, scriptsOf } from "./terminals.ts"
 
 test("parseFrame takes input and sane sizes, nothing else", () => {
   expect(parseFrame(`{"t":"i","d":"ls\\r"}`)).toEqual({ t: "i", d: "ls\r" })
@@ -26,4 +29,25 @@ test("Ring keeps the last bytes in order", () => {
   expect(new TextDecoder().decode(r.read())).toBe("defghijk") // "abc" dropped, 8 bytes kept
   r.push(enc("0123456789"))
   expect(new TextDecoder().decode(r.read())).toBe("23456789") // one chunk larger than the ring: its tail
+})
+
+describe("project scripts", () => {
+  test("lists package.json scripts and runs them with the lockfile's manager", () => {
+    const dir = mkdtempSync(join(tmpdir(), "zero-scripts-"))
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { dev: "vite", "test:unit": "bun test", "bad name": "x", n: 1 } }))
+    writeFileSync(join(dir, "bun.lock"), "")
+    expect(scriptsOf(dir)).toEqual([{ name: "dev", command: "vite" }, { name: "test:unit", command: "bun test" }])
+    expect(runLine(dir, "dev")).toBe("bun run dev\r")
+    expect(runLine(dir, "bad name")).toBeUndefined()
+    expect(runLine(dir, "rm -rf /")).toBeUndefined()
+    expect(scriptsOf(join(dir, "nope"))).toEqual([])
+  })
+})
+
+describe("parseLsof", () => {
+  test("groups fields by process", () => {
+    const m = parseLsof("p10\ncnode\nf3\nn*:5173\nf4\nn[::1]:5173\np11\ncbun\nn127.0.0.1:4000\n")
+    expect(m.get(10)).toEqual({ command: "node", names: ["*:5173", "[::1]:5173"] })
+    expect(m.get(11)?.names).toEqual(["127.0.0.1:4000"])
+  })
 })

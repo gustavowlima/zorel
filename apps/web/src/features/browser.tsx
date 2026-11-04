@@ -24,7 +24,7 @@ function keyFrame(e: KeyboardEvent): Frame | undefined {
   return { t: "key", key: [...mods, e.key === " " ? "Space" : e.key].join("+") }
 }
 
-export function BrowserPanel({ chatId, onClose }: { chatId: string; onClose: () => void }) {
+export function BrowserPanel({ chatId, openUrl, onClose }: { chatId: string; openUrl?: { url: string } | undefined; onClose: () => void }) {
   const [tabs, setTabs] = useState<ReadonlyArray<Tab>>([])
   const [held, setHeld] = useState(false)
   const [frame, setFrame] = useState<string>()
@@ -70,7 +70,15 @@ export function BrowserPanel({ chatId, onClose }: { chatId: string; onClose: () 
   const send = (f: Frame) => {
     setError(undefined)
     if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify(f))
+    else ws.current?.addEventListener("open", () => ws.current?.send(JSON.stringify(f)), { once: true })
   }
+  // Asked to open a URL (a server from the Terminal panel): in a new tab of the chat's browser.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new request opens it
+  useEffect(() => {
+    if (!openUrl) return
+    send({ t: "newtab" })
+    send({ t: "nav", url: openUrl.url })
+  }, [openUrl])
   const at = (e: MouseEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect()
     return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }

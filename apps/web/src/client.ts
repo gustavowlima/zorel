@@ -26,7 +26,7 @@ export class Live extends AtomRpc.Service<Live>()("Live", {
 
 // ---------- CRUD queries (one key per resource) ----------
 
-export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "context"
+export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "context" | "terminals" | "scripts" | "localServers"
 
 export const projectsAtom = Zero.query("projects", "list", { reactivityKeys: ["projects"] })
 export const agentsAtom = Zero.query("agents", "list", { reactivityKeys: ["agents"] })
@@ -41,6 +41,8 @@ export const storageAtom = Zero.query("settings", "storage", { reactivityKeys: [
 // How full the next turn of a chat is (the composer's context meter); read again when the meter opens.
 export const commandsAtom = (id: string) => Zero.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
 export const terminalsAtom = (id: string) => Zero.query("chats", "terminals", { params: { id }, reactivityKeys: ["terminals"] })
+export const scriptsAtom = (id: string) => Zero.query("chats", "scripts", { params: { id }, reactivityKeys: ["scripts"] })
+export const localServersAtom = (id: string) => Zero.query("chats", "servers", { params: { id }, reactivityKeys: ["localServers"] })
 export const contextAtom = (id: string) => Zero.query("chats", "context", { params: { id }, reactivityKeys: ["context"] })
 export const modelsAtom = Zero.query("settings", "models", { reactivityKeys: ["models"] })
 export const usageAtom = Zero.query("settings", "usage", { reactivityKeys: ["usage"] })
@@ -69,6 +71,7 @@ export const mutations = {
   removeChat: Zero.mutation("chats", "remove"),
   closeTerminal: Zero.mutation("chats", "closeTerminal"),
   openFile: Zero.mutation("chats", "openFile"),
+  stopServer: Zero.mutation("chats", "stopServer"),
   consolidate: Zero.mutation("chats", "consolidate"),
   createMemory: Zero.mutation("memories", "create"),
   updateMemory: Zero.mutation("memories", "update"),
