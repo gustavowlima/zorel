@@ -24,7 +24,7 @@ h1, h2, h3 { font-family: var(--font-display); font-style: normal; font-weight: 
 p, figure, dl, dd { margin: 0; }
 a { color: inherit; }
 :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; border-radius: var(--radius-sm); }
-code, pre, .lines, .n { font-family: var(--font-outlier); font-variant-ligatures: none; }
+code, pre, .lines, .n { font-family: var(--font-outlier); font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
 svg.i { width: 1em; height: 1em; flex: none; vertical-align: -0.125em; }
 .mark { width: 24px; height: 24px; flex: none; }
 
@@ -134,23 +134,73 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 .lines div { padding-inline: 12px; width: max-content; min-width: 100%; }
 .lines .plus { background: var(--color-add-bg); color: var(--color-add); } .lines .minus { background: var(--color-del-bg); color: var(--color-del); }
 
-/* ---------- sections: centred head, then 2×2 cards ---------- */
+/* ---------- sections: centred head, then 2×2 cards, each with a stage that plays its scene ---------- */
 .band { padding-block: var(--space-3xl) 0; }
 .head { text-align: center; max-width: 40rem; margin-inline: auto; }
 .head h2 { font-size: var(--text-2xl); line-height: 1.1; letter-spacing: -0.035em; }
 .head p { margin-top: var(--space-sm); font-size: var(--text-lg); color: var(--color-ink-2); }
 .grid { margin-top: var(--space-xl); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-sm); }
-.card { border-radius: var(--radius-lg); background: var(--color-card); box-shadow: inset 0 0 0 1px var(--color-rim); padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-lg); min-width: 0; }
+.card { position: relative; border-radius: var(--radius-lg); background: var(--color-card); box-shadow: inset 0 0 0 1px var(--color-rim); display: flex; flex-direction: column; min-width: 0; overflow: hidden; transition: box-shadow var(--dur-short) var(--ease-out); }
+.card:hover { box-shadow: inset 0 0 0 1px var(--color-rim-strong); }
+/* A soft light that follows the pointer across the card. */
+.card::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 300ms var(--ease-out); background: radial-gradient(28rem circle at var(--mx, 50%) var(--my, 0%), var(--color-glow-soft), transparent 45%); }
+.card:hover::before { opacity: 1; }
+.card .txt { padding: var(--space-lg) var(--space-lg) var(--space-md); }
 .card h3 { font-size: var(--text-xl); letter-spacing: -0.02em; line-height: 1.25; }
-.card h3 + p { margin-top: var(--space-2xs); color: var(--color-ink-2); }
-.card .show { margin-top: auto; display: flex; flex-direction: column; gap: var(--space-2xs); font-size: var(--text-sm); }
-.card.wide { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; }
-.bubble { padding: 10px 14px; border-radius: 14px; background: var(--color-raised); color: var(--color-ink); max-width: 28rem; }
+.card h3 + p { margin-top: var(--space-2xs); color: var(--color-ink-2); max-width: 34rem; }
+.stage { position: relative; margin: auto var(--space-md) var(--space-md); min-height: 15.5rem; padding: var(--space-md); border-radius: 14px; background: var(--color-app); box-shadow: inset 0 0 0 1px var(--color-rim); display: flex; flex-direction: column; justify-content: center; gap: var(--space-2xs); font-size: var(--text-sm); overflow: hidden; }
+.stage::before { content: ""; position: absolute; inset: -40% 10% auto; height: 70%; pointer-events: none; background: radial-gradient(closest-side, var(--color-glow-soft), transparent); }
+.stage > * { position: relative; }
+.card.wide { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: center; }
+.card.wide .stage { margin: var(--space-md); min-height: 0; }
+
+/* scene 1: a harness at its limit, the next one picks up */
+.meter { width: 3.5rem; height: 4px; border-radius: 4px; background: var(--color-raised); overflow: hidden; flex: none; }
+.meter i { display: block; height: 100%; width: var(--fill, 72%); border-radius: inherit; background: var(--color-add); transition: width 1.2s var(--ease-out), background-color 300ms; }
+.s1 .meter i { --fill: 100%; }
+.s2 .meter i { background: var(--color-del); }
+.swap { display: inline-grid; margin-left: auto; flex: none; }
+.swap > * { grid-area: 1 / 1; justify-self: end; transition: opacity 300ms var(--ease-out), translate 300ms var(--ease-out); }
+.swap > :last-child { opacity: 0; translate: 0 6px; }
+.s2 .swap.at2 > :first-child, .s3 .swap.at3 > :first-child { opacity: 0; translate: 0 -6px; }
+.s2 .swap.at2 > :last-child, .s3 .swap.at3 > :last-child { opacity: 1; translate: 0 0; }
+.st.limit { background: var(--color-del-bg); color: var(--color-del); }
+.task .st { margin-left: 0; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; margin-right: 5px; vertical-align: 1px; animation: blink 1.4s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: 0.3; } }
+.later { opacity: 0; translate: 0 8px; transition: opacity 400ms var(--ease-out), translate 400ms var(--ease-out); }
+.s3 .later.at3, .s2 .later.at2, .s1 .later.at1 { opacity: 1; translate: 0 0; }
+
+/* scene 2: approve, and it runs */
+.ui-btn { transition: background-color 200ms var(--ease-out), scale 150ms var(--ease-out), box-shadow 300ms var(--ease-out); }
+.s1 .ui-btn.primary.press, .on .ui-btn.primary.press { scale: 0.94; box-shadow: 0 0 0 4px var(--color-glow-soft); }
+.tray .swap { margin-left: 0; display: grid; }
+.tray .swap > * { justify-self: stretch; }
+.okline { display: flex; align-items: center; gap: 8px; color: var(--color-add); font-weight: 500; }
+.okline small { color: var(--color-ink-3); font-weight: 400; font-size: var(--text-xs); }
+
+/* scene 3: a memory, kept */
+.bubble { align-self: flex-end; padding: 10px 14px; border-radius: 16px; background: var(--color-raised); color: var(--color-ink); max-width: 22rem; }
+.reply { display: flex; gap: 8px; align-items: center; color: var(--color-ink); }
 .noted { align-self: center; display: inline-flex; align-items: center; gap: 6px; margin-top: var(--space-2xs); font-size: var(--text-xs); color: var(--color-ink-3); }
-.noted .tag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 3px 4px; border-radius: var(--radius-pill); background: var(--color-accent-soft); color: var(--color-ink); }
+.noted .tag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 4px; border-radius: var(--radius-pill); background: var(--color-accent-soft); color: var(--color-ink); box-shadow: 0 0 0 0 var(--color-glow-soft); transition: box-shadow 600ms var(--ease-out); }
+.s2 .noted .tag { box-shadow: 0 0 0 6px transparent, 0 0 24px 2px var(--color-glow-soft); }
 .noted .av { width: 16px; height: 16px; border-radius: 5px; font-size: 9px; }
-.chips { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
-.chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: var(--radius-pill); background: var(--color-raised); font-size: var(--text-sm); white-space: nowrap; }
+
+/* scene 4: one click, the folder is back */
+.lines div { transition: opacity 500ms var(--ease-out); }
+.s2 .lines div { opacity: 0.25; text-decoration: line-through; }
+.diff .h .swap { margin-left: auto; align-items: center; }
+.swap > * { align-self: center; }
+.lines { scrollbar-width: none; } .lines::-webkit-scrollbar { display: none; }
+.s1 .btn.press { scale: 0.94; background: var(--color-card); }
+
+/* the wide card: tools as tiles */
+.tools { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2xs); }
+.tool { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: var(--space-sm) var(--space-2xs); border-radius: 12px; background: var(--color-card); box-shadow: inset 0 0 0 1px var(--color-rim); color: var(--color-ink-2); font-size: var(--text-xs); white-space: nowrap; transition: color 300ms var(--ease-out), box-shadow 300ms var(--ease-out); }
+.tool svg { width: 20px; height: 20px; }
+.tool svg.l { width: 20px; height: 20px; }
+.tool:hover { color: var(--color-ink); box-shadow: inset 0 0 0 1px var(--color-rim-strong); }
 
 /* ---------- questions ---------- */
 .qa { margin: var(--space-xl) auto 0; max-width: 46rem; border-top: 1px solid var(--color-rim); }
@@ -173,6 +223,33 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 .foot nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 0 var(--space-md); }
 .foot nav a { text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; } .foot nav a:hover { color: var(--color-ink); }
 
+/* ---------- life: a light behind the app, its top edge lit, the scenes play once as they come into view ---------- */
+body { background: radial-gradient(70rem 36rem at 50% -14rem, var(--color-glow-soft), transparent 70%) no-repeat, var(--color-paper); }
+.app-wrap { position: relative; margin-top: var(--space-xl); isolation: isolate; }
+.app-wrap .app { margin-top: 0; }
+.app-wrap::before { content: ""; position: absolute; z-index: -1; left: 50%; top: -9rem; width: min(64rem, 92%); height: 22rem; translate: -50% 0; background: radial-gradient(closest-side, var(--color-glow), transparent); filter: blur(24px); animation: breathe 8s ease-in-out infinite alternate; }
+.app-wrap::after { content: ""; position: absolute; z-index: 2; top: 0; left: 8%; right: 8%; height: 1px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--color-edge), transparent) no-repeat; background-size: 35% 100%; animation: sweep 7s var(--ease-in-out) infinite; }
+@keyframes breathe { to { opacity: 0.65; scale: 1.06 1.1; } }
+@keyframes sweep { from { background-position: -50% 0; } to { background-position: 150% 0; } }
+.feed { justify-content: flex-end; }
+.app > * { min-height: 0; } .main, .rail { overflow: hidden; }
+.app .tray.gone { display: none; } /* decided: the card leaves, as in the app */
+.after-allow { display: none; }
+.by .swap { margin-left: 0; } .by .swap > * { justify-self: start; }
+.swap.hs > :last-child { color: inherit; }
+html.anim .after-allow { display: grid; }
+html.anim .app [data-at]:not(.on) { opacity: 0; translate: 0 10px; }
+html.anim .app [data-at] { transition: opacity 500ms var(--ease-out), translate 500ms var(--ease-out); }
+html.anim .app [data-at]:not(.on).after-allow { display: none; }
+.app.press .ui-btn.primary.press { scale: 0.94; box-shadow: 0 0 0 4px var(--color-glow-soft); }
+.app.done .swap.hs > :first-child { opacity: 0; translate: 0 -6px; }
+.app.done .swap.hs > :last-child { opacity: 1; translate: 0 0; }
+html.anim .reveal { opacity: 0; translate: 0 18px; transition: opacity 700ms var(--ease-out), translate 700ms var(--ease-out); }
+html.anim .reveal.in { opacity: 1; translate: 0 0; }
+html:not(.anim) .later { opacity: 1; translate: 0 0; }
+/* after every `font:` shorthand, which resets them: code reads as typed, "=>" stays two characters */
+code, pre, .lines, .n { font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+
 @media (max-width: 60rem) {
   .app { grid-template-columns: minmax(0, 1fr); height: auto; }
   .rail, .list { display: none; }
@@ -184,11 +261,14 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
   .links { display: none; }
   .bar .stack, .composer .model { display: none; }
   .hero { padding-top: var(--space-xl); }
-  .card { padding: var(--space-md); }
+  .card .txt { padding: var(--space-md) var(--space-md) var(--space-sm); }
+  .stage, .card.wide .stage { margin: auto var(--space-xs) var(--space-xs); padding: var(--space-sm); }
+  .meter { display: none; }
+  .tools { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; } .tool { padding-inline: 2px; }
   .cmd code { white-space: normal; overflow-wrap: anywhere; }
   .foot nav { margin-left: 0; }
 }
-@media (prefers-reduced-motion: reduce) { * { transition-duration: 0ms !important; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0ms !important; animation: none !important; } }
 </style>
 </head>
 <body>
@@ -214,6 +294,7 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
     <p class="sub">You ask once. Your team's lead hands each part to the agent it fits, on <b><svg class="i"><use href="#claude"/></svg>Claude Code</b>, <b><svg class="i"><use href="#codex"/></svg>Codex</b> and <b><svg class="i"><use href="#opencode"/></svg>OpenCode</b>, with the sign-ins you already have.</p>
     <div class="ctas"><a class="btn" href="#install">Install Zorel</a><a class="btn dark" href="#how">See how it works</a></div>
 
+    <div class="app-wrap">
     <figure class="app" id="how" aria-label="Zorel with a request in progress: you asked once, Lead handed the work to the team, and Tester waits for your OK to run the tests">
       <svg width="0" height="0" style="position:absolute" aria-hidden="true">
         <symbol id="l-chat" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
@@ -246,7 +327,7 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
       </nav>
       <div class="list" aria-hidden="true">
         <div class="h"><span>Chats <svg class="l"><use href="#l-down"/></svg></span><svg class="l"><use href="#l-plus"/></svg></div>
-        <div class="item on"><b>Get v1 ready</b><time>now</time><span class="by wait">Tester waits for your OK</span></div>
+        <div class="item on"><b>Get v1 ready</b><time>now</time><span class="by wait"><span class="swap hs"><span>Tester waits for your OK</span><span>Tester is running the tests</span></span></span></div>
         <div class="item"><b>Release notes for 0.2</b><time>12m</time><span class="by"><span class="av d">D</span>Docsync</span></div>
         <div class="item"><b>Why is the build slow?</b><time>1h</time><span class="by"><span class="stack"><span class="av l">L</span><span class="av c">C</span></span>Lead, Coder</span></div>
         <div class="item"><b>Plan the onboarding flow</b><time>3h</time><span class="by"><span class="av l">L</span>Lead</span></div>
@@ -259,23 +340,27 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
           <span class="r"><span class="act"><svg class="l"><use href="#l-activity"/></svg>3</span><svg class="l"><use href="#l-panel-r"/></svg><span class="stack"><span class="av l">L</span><span class="av c">C</span><span class="av t">T</span><span class="av d">D</span></span><svg class="l"><use href="#l-more"/></svg></span></div>
         <div class="feed">
           <p class="you">Get v1 ready: fix the empty-array bug, add tests for it and a README that matches the code.</p>
-          <div class="msg"><span class="av l">L</span><span class="who">Lead</span>
+          <div class="msg" data-at="1"><span class="av l">L</span><span class="who">Lead</span>
             <p>The fix goes to @coder, the tests to @tester and the README to @docsync. They all know tests run from <code>apps/server</code>.</p></div>
-          <div class="msg"><span class="av c">C</span><span class="who">Coder</span>
+          <div class="msg" data-at="2"><span class="av c">C</span><span class="who">Coder</span>
             <p>Fixed: <code>sum()</code> now starts from 0, so an empty array returns 0.</p></div>
-          <div class="handed">Coder handed the turn to Tester</div>
-          <div class="msg"><span class="av t">T</span><span class="who">Tester</span>
+          <div class="handed" data-at="3">Coder handed the turn to Tester</div>
+          <div class="msg" data-at="4"><span class="av t">T</span><span class="who">Tester</span>
             <p>Two tests in <code>sum.test.ts</code>: an empty array and negatives. Running them now.</p></div>
+          <div class="msg after-allow" data-at="6"><span class="av t">T</span><span class="who">Tester</span>
+            <p>2 passed, 0 failed. v1 is ready for review.</p></div>
         </div>
         <div class="dock">
-          <div class="tray">
+          <div class="tray" data-at="5">
             <span class="lab"><svg class="l"><use href="#l-shield"/></svg>Tester waits for your OK</span>
-            <div class="row"><span class="what"><b>Run the tests</b><code>bun test src/sum.test.ts in apps/server</code></span><span class="ui-btn">Deny</span><span class="ui-btn primary">Allow</span></div>
+            <div class="swap hs"><div class="row"><span class="what"><b>Run the tests</b><code>bun test src/sum.test.ts in apps/server</code></span><span class="ui-btn">Deny</span><span class="ui-btn primary press">Allow</span></div>
+              <div class="okline">✓ Allowed <small>· Tester is running the tests</small></div></div>
           </div>
           <div class="composer"><svg class="l"><use href="#l-plus"/></svg><span class="ph">Message · # who answers, @ mention, $ skill, / command</span><span class="model"><svg class="i"><use href="#claude"/></svg>Sonnet 5.5</span><span class="send"><svg class="l"><use href="#l-up"/></svg></span></div>
         </div>
       </div>
     </figure>
+    </div>
   </section>
 
   <section class="band wrap" id="team" aria-labelledby="team-title">
@@ -284,29 +369,42 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
       <p>Each agent has a role, a harness and its own sign-in. Zorel briefs them, keeps them out of each other's way and brings back what needs you.</p>
     </div>
     <div class="grid">
-      <article class="card"><div><h3>Every harness, one team</h3><p>Claude Code, Codex and OpenCode in the same chat. When one hits its limit, the next in the fallback list picks up.</p></div>
-        <div class="show">
-          <div class="task"><span class="av c">C</span><span>Coder</span><span class="st"><svg class="i"><use href="#claude"/></svg> Claude Code</span></div>
-          <div class="task"><span class="av t">T</span><span>Tester</span><span class="st"><svg class="i"><use href="#codex"/></svg> Codex</span></div>
-          <div class="task"><span class="av d">D</span><span>Docsync</span><span class="st"><svg class="i"><use href="#opencode"/></svg> OpenCode</span></div>
+      <article class="card reveal" data-steps="600,1900,2700"><div class="txt"><h3>Every harness, one team</h3><p>Claude Code, Codex and OpenCode in the same chat, each on your own sign-in. When one hits its limit, the next in the fallback list picks up.</p></div>
+        <div class="stage">
+          <div class="task"><span class="av c">C</span><span>Coder</span><span class="meter" aria-hidden="true"><i></i></span><span class="swap at2"><span class="st"><svg class="i"><use href="#claude"/></svg> Claude Code</span><span class="st limit">at its limit</span></span></div>
+          <div class="task later at3"><span class="av c">C</span><span>Coder</span><span class="st ok" style="margin-left:auto"><svg class="i"><use href="#codex"/></svg> on Codex</span></div>
+          <div class="task"><span class="av t">T</span><span>Tester</span><span class="st" style="margin-left:auto"><svg class="i"><use href="#codex"/></svg> Codex</span></div>
+          <div class="task"><span class="av d">D</span><span>Docsync</span><span class="st" style="margin-left:auto"><span class="dot"></span>OpenCode</span></div>
         </div></article>
-      <article class="card"><div><h3>Nothing risky without your yes</h3><p>Commands, deletes, pushes and payments stop at Zorel and wait. Below full access, the agents run in your system's sandbox.</p></div>
-        <div class="show"><div class="tray">
+      <article class="card reveal" data-steps="1100,1500,2300"><div class="txt"><h3>Nothing risky without your yes</h3><p>Commands, deletes, pushes and payments stop and wait for you. Below full access, the agents run inside your system's sandbox.</p></div>
+        <div class="stage"><div class="tray">
           <span class="lab"><svg class="l"><use href="#l-shield"/></svg>Coder waits for your OK</span>
-          <div class="row"><span class="what"><b>Push to main</b><code>git push origin main</code></span><span class="ui-btn">Deny</span><span class="ui-btn primary">Allow</span></div>
-        </div></div></article>
-      <article class="card"><div><h3>It learns how you work</h3><p>Decisions, project notes and skills stay with the team. You see each memory before it's kept.</p></div>
-        <div class="show">
+          <div class="swap at2"><div class="row"><span class="what"><b>Push to main</b><code>git push origin main</code></span><span class="ui-btn">Deny</span><span class="ui-btn primary press">Allow</span></div>
+            <div class="okline">✓ Allowed <small>· Coder is pushing to main</small></div></div>
+        </div>
+        <p class="reply later at3"><span class="av c">C</span>Pushed: <code>a3f9c21</code> is on main.</p></div></article>
+      <article class="card reveal" data-steps="700,1600"><div class="txt"><h3>It learns how you work</h3><p>Decisions, project notes and skills stay with the team, and you see each memory before it's kept.</p></div>
+        <div class="stage">
           <p class="bubble">Tests always run from apps/server, never from the root.</p>
-          <span class="noted">Memory kept for <span class="tag"><span class="av c">C</span>Coder</span></span>
+          <p class="reply later at1"><span class="av c">C</span>Got it. I'll remember that.</p>
+          <span class="noted later at2">Memory kept for <span class="tag"><span class="av c">C</span>Coder</span></span>
         </div></article>
-      <article class="card"><div><h3>Every turn can be undone</h3><p>The turn's changes sit under the reply, whichever harness made them. One click puts the folder back.</p></div>
-        <div class="show"><div class="diff">
-          <div class="h"><span>sum.ts</span><span class="n"><span class="a">+1</span> <span class="d">−1</span></span><span class="btn dark sm">Undo</span></div>
+      <article class="card reveal" data-steps="1200,1600"><div class="txt"><h3>Every turn can be undone</h3><p>The turn's changes sit under the reply, whichever harness made them. One click puts the folder back.</p></div>
+        <div class="stage"><div class="diff">
+          <div class="h"><span>sum.ts</span><span class="n"><span class="a">+1</span> <span class="d">−1</span></span><span class="swap at2"><span class="btn dark sm press">Undo</span><span class="st">Undone</span></span></div>
           <div class="lines"><div class="minus">- export const sum = (v) =&gt; v.reduce((a, b) =&gt; a + b)</div><div class="plus">+ export const sum = (v: number[]) =&gt; v.reduce((a, b) =&gt; a + b, 0)</div></div>
         </div></div></article>
-      <article class="card wide"><div><h3>Your tools and your project, beside the chat</h3><p>Connect GitHub, Notion, Linear and others once; writing anywhere asks first. Files, Git, terminals and a browser the agents drive sit in one side panel.</p></div>
-        <div class="chips"><span class="chip">GitHub</span><span class="chip">Notion</span><span class="chip">Linear</span><span class="chip">Sentry</span><span class="chip">Files</span><span class="chip">Git</span><span class="chip">Terminal</span><span class="chip">Browser</span></div></article>
+      <article class="card wide reveal"><div class="txt"><h3>Your tools and your project, beside the chat</h3><p>Connect GitHub, Notion, Linear and others once; writing anywhere asks first. Files, Git, terminals and a browser the agents drive sit in one side panel.</p></div>
+        <div class="stage"><div class="tools">
+          <span class="tool"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>GitHub</span>
+          <span class="tool"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/></svg>Notion</span>
+          <span class="tool"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.624 0 24 5.376 24 12.009c0 3.64-1.62 6.903-4.18 9.105L2.887 4.18ZM1.817 5.626l16.556 16.556c-.524.33-1.075.62-1.65.866L.951 7.277c.247-.575.537-1.126.866-1.65ZM.322 9.163l14.515 14.515c-.71.172-1.443.282-2.195.322L0 11.358a12 12 0 0 1 .322-2.195Zm-.17 4.862 9.823 9.824a12.02 12.02 0 0 1-9.824-9.824Z"/></svg>Linear</span>
+          <span class="tool"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.91 2.505c-.873-1.448-2.972-1.448-3.844 0L6.904 7.92a15.478 15.478 0 0 1 8.53 12.811h-2.221A13.301 13.301 0 0 0 5.784 9.814l-2.926 5.06a7.65 7.65 0 0 1 4.435 5.848H2.194a.365.365 0 0 1-.298-.534l1.413-2.402a5.16 5.16 0 0 0-1.614-.913L.296 19.275a2.182 2.182 0 0 0 .812 2.999 2.24 2.24 0 0 0 1.086.288h6.983a9.322 9.322 0 0 0-3.845-8.318l1.11-1.922a11.47 11.47 0 0 1 4.95 10.24h5.915a17.242 17.242 0 0 0-7.885-15.28l2.244-3.845a.37.37 0 0 1 .504-.13c.255.14 9.75 16.708 9.928 16.9a.365.365 0 0 1-.327.543h-2.287c.029.612.029 1.223 0 1.831h2.297a2.206 2.206 0 0 0 1.922-3.31z"/></svg>Sentry</span>
+          <span class="tool"><svg class="l" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>Files</span>
+          <span class="tool"><svg class="l" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>Git</span>
+          <span class="tool"><svg class="l" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6M12 19h8"/></svg>Terminal</span>
+          <span class="tool"><svg class="l" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></svg>Browser</span>
+        </div></div></article>
     </div>
   </section>
 
@@ -346,6 +444,36 @@ document.querySelectorAll("[data-copy]").forEach((btn) => {
     try { navigator.clipboard.writeText(code.textContent).then(done, select) } catch { select() }
   })
 })
+// Life, only with motion allowed: sections rise into view, each card plays its scene once, and the app plays the
+// request: the team answers, the card waits, it's allowed, the tests pass. Without it the page shows the waiting state.
+if (!matchMedia("(prefers-reduced-motion: reduce)").matches && "IntersectionObserver" in window) {
+  document.documentElement.classList.add("anim")
+  const later = (ms, f) => setTimeout(f, ms)
+  const scene = (card) => card.dataset.steps.split(",").forEach((ms, i) => later(Number(ms), () => card.classList.add(`s${i + 1}`)))
+  const HERO = { 1: 500, 2: 1500, 3: 2400, 4: 2900, 5: 3800 }
+  const hero = (app) => {
+    app.querySelectorAll("[data-at]").forEach((el) => HERO[el.dataset.at] && later(HERO[el.dataset.at], () => el.classList.add("on")))
+    later(5400, () => app.classList.add("press"))
+    later(5800, () => app.classList.add("done"))
+    later(6800, () => app.querySelector(".tray").classList.add("gone"))
+    later(6900, () => app.querySelector('[data-at="6"]').classList.add("on"))
+  }
+  const io = new IntersectionObserver((entries) => entries.forEach((e) => {
+    if (!e.isIntersecting) return
+    io.unobserve(e.target)
+    e.target.classList.add("in")
+    if (e.target.dataset.steps) scene(e.target)
+    if (e.target.classList.contains("app")) hero(e.target)
+  }), { threshold: 0.35 })
+  document.querySelectorAll(".head, .qa, .cmd").forEach((el) => el.classList.add("reveal"))
+  document.querySelectorAll(".reveal, .app").forEach((el) => io.observe(el))
+}
+// The cards' light follows the pointer.
+document.querySelectorAll(".card").forEach((card) => card.addEventListener("pointermove", (e) => {
+  const r = card.getBoundingClientRect()
+  card.style.setProperty("--mx", `${e.clientX - r.left}px`)
+  card.style.setProperty("--my", `${e.clientY - r.top}px`)
+}))
 </script>
 </body>
 </html>
