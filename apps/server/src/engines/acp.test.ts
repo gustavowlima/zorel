@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { commandFor, gitCommonDir, kindOf, opencodeEnv, permission, writableRoots } from "./acp.ts"
 
 describe("acp", () => {
@@ -29,9 +29,9 @@ describe("acp confinement", () => {
   test("the chat folder is writable only in workspace", () => {
     const cwd = mkdtempSync(join(tmpdir(), "acp-"))
     const roots = writableRoots("workspace", cwd, [".opencode-x"], "/Users/someone")
-    expect(roots).toContain(realpathSync(cwd))
-    expect(roots).toContain("/Users/someone/.opencode-x")
-    expect(writableRoots("ask", cwd, [], "/Users/someone")).not.toContain(realpathSync(cwd))
+    expect(roots).toContain(realpathSync.native(cwd))
+    expect(roots).toContain(resolve("/Users/someone/.opencode-x")) // D:\Users\… on Windows
+    expect(writableRoots("ask", cwd, [], "/Users/someone")).not.toContain(realpathSync.native(cwd))
   })
   test("a worktree's main .git is writable; a .git file the agent wrote (gitdir: /etc/x) adds nothing", () => {
     const dir = mkdtempSync(join(tmpdir(), "acp-git-"))
@@ -40,7 +40,7 @@ describe("acp confinement", () => {
       Bun.spawnSync(["git", "init", "-q", "repo"], { cwd: dir })
       git("commit", "-q", "--allow-empty", "-m", "x")
       git("worktree", "add", "-q", join(dir, "wt"))
-      expect(gitCommonDir(join(dir, "wt"))).toBe(realpathSync(join(dir, "repo", ".git")))
+      expect(gitCommonDir(join(dir, "wt"))).toBe(realpathSync.native(join(dir, "repo", ".git")))
       for (const forged of ["gitdir: /etc/x", "gitdir: /usr/x", `gitdir: ${join(dir, "repo", ".git", "worktrees", "other")}`]) {
         writeFileSync(join(dir, "wt", ".git"), forged)
         expect(gitCommonDir(join(dir, "wt"))).toBeUndefined()
