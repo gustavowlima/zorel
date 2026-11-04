@@ -139,6 +139,10 @@ export const RoutinePatch = Schema.Struct({ name: Schema.optional(Name), prompt:
 // A cron pattern Zero refuses (with croner's reason).
 export class CronInvalid extends Schema.Error<CronInvalid>("zero/CronInvalid")({ _tag: Schema.tag("CronInvalid"), message: Schema.String }, { httpApiStatus: 400 }) {}
 
+// A message that matched a search (Cmd+K): where it is and the words around the match.
+export const SearchHit = Schema.Struct({ chatId: Id, messageId: Id, snippet: Schema.String, at: Schema.Number })
+export type SearchHit = typeof SearchHit.Type
+
 export const Chat = Schema.Struct({
   id: Id,
   projectId: Schema.NullOr(Id), // null: standalone chat
@@ -516,6 +520,7 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.post("gitBranch", "/api/chats/:id/git/branch", { params: idParam, payload: Schema.Struct({ name: GitText.check(Schema.isMaxLength(200)) }), error: [HttpApiError.NotFound, GitFailed] }))
       .add(HttpApiEndpoint.post("enterWorktree", "/api/chats/:id/worktree", { params: idParam, payload: Schema.Struct({ branch: Schema.optionalKey(GitText.check(Schema.isMaxLength(200))) }), error: [HttpApiError.NotFound, GitFailed] }))
       .add(HttpApiEndpoint.delete("leaveWorktree", "/api/chats/:id/worktree", { params: idParam, error: [HttpApiError.NotFound, GitFailed] }))
+      .add(HttpApiEndpoint.get("search", "/api/search", { query: Schema.Struct({ q: Schema.String.check(Schema.isMinLength(2), Schema.isMaxLength(200)) }), success: Schema.Array(SearchHit) }))
       .add(HttpApiEndpoint.get("scripts", "/api/chats/:id/scripts", { params: idParam, success: Schema.Array(ProjectScript), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.get("servers", "/api/chats/:id/servers", { params: idParam, success: Schema.Array(LocalServer), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("stopServer", "/api/chats/:id/servers/:pid", { params: Schema.Struct({ id: Schema.String, pid: Schema.NumberFromString }), error: HttpApiError.NotFound }))

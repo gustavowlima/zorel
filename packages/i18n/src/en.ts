@@ -833,6 +833,14 @@ export const en = {
     loadingDiff: "Loading diff…",
     turnBy: "{agent} · {time}"
   },
+  palette: {
+    label: "Go to or search",
+    placeholder: "Search chats, messages, agents… or go to a page",
+    messages: "In messages",
+    go: "Go to",
+    toggleSidebar: "Show or hide the chats sidebar",
+    empty: "Nothing found."
+  },
   notify: {
     title: "Desktop notifications",
     hint: "When a chat waits for you, fails or finishes while you're elsewhere.",

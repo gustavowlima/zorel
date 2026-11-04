@@ -17,6 +17,7 @@ export { Code, Column, EmptyState, Meter, Rows, Screen, Section } from "./layout
 export { LimitRing, type RingTone } from "./limit-ring"
 export { Logo } from "./logo"
 export { Menu, MenuItem, MenuSeparator } from "./menu"
+export { type CommandItem, CommandPalette, type CommandSection } from "./command"
 export { Fold, Marker, MotionConfig, SlideWidth, spring } from "./motion"
 export { Segmented } from "./segmented"
 export { NavItem, NavLabel, NavTree, NavTreeItem, type NavKey, useNavReorder } from "./nav"
