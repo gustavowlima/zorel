@@ -4,7 +4,9 @@ on:
   push:
     branches: [main]
     tags: ["v*"] # a release
+    paths-ignore: [apps/site/**] # the landing is a static page, deployed with wrangler: no app checks for it
   pull_request:
+    paths-ignore: [apps/site/**]
 
 permissions:
   contents: read
@@ -128,21 +130,3 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }} # through env, never pasted into the script
 
-
-  # The downloads, served from R2 (latest/): install.sh and the apps' updater read them there, so they work while the
-  # repository is private. Secrets: CLOUDFLARE_API_TOKEN (R2 edit) and CLOUDFLARE_ACCOUNT_ID.
-  release-r2:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [release]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.4
-      - run: sh apps/desktop/scripts/r2-sync.sh "$TAG"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
