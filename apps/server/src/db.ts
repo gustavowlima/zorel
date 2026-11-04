@@ -248,6 +248,8 @@ export const repository = (db: Db) => {
           .limit(limit)
       )
     },
+    // "Edit from here": the message at `at` and everything after it go.
+    deleteMessagesFrom: (chatId: string, at: number) => orDie(db.delete(messages).where(and(eq(messages.chatId, chatId), sql`${messages.at} >= ${at}`)).pipe(Effect.asVoid)),
     removeChat: (id: string) => orDie(db.delete(chats).where(eq(chats.id, id)).pipe(Effect.asVoid)),
     messages: (chatId: string) => withFiles(db.select().from(messages).where(eq(messages.chatId, chatId)).orderBy(asc(messages.at))),
     messagesAfter: (chatId: string, at: number) =>

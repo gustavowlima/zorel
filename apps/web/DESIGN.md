@@ -343,6 +343,9 @@ Compactos e diretos, com aperto físico ao pressionar.
   - "Work in a worktree" dá ao chat a própria pasta numa branch nova (nome vazio = `zero/<título>-<id>`): agentes, shells novos, checkpoints e desfazer passam a usar essa pasta, e a do projeto fica como está. No chat em worktree o botão mostra o ícone de pasta e o popover mostra o caminho e "Back to the project folder", que só remove a worktree sem nada por commitar (a branch fica). Apagar o chat remove a worktree limpa.
 - Erros aparecem com as palavras do git, em mono e danger; cada passo concluído vira uma linha success. Commit, push, branch e PR entram no Audit log (tipo Projects).
 
+### Editar daqui
+- Nas ações da sua mensagem (hover), um lápis "Edit from here" (fora enquanto um turno roda). Confirma num diálogo: a mensagem e o que veio depois saem da conversa e ela volta ao campo para você mudar e mandar de novo; se houve mudanças de arquivo depois, um switch (ligado) desfaz elas também. Conflito de arquivo aparece no diálogo com os arquivos.
+
 ### Cmd+K
 - ⌘K / Ctrl+K abre a paleta (como no T3 Code): modal no alto da tela (12% do topo), 576px, campo de busca de 48px com lupa e uma lista em seções. Vazia, mostra "Go to": novo chat, Needs you, Agents, novo agente, Routines, Knowledge, Usage, Settings e mostrar/esconder a barra. Digitando, filtra isso e acha chats, projetos e agentes pelo nome; a partir de 2 letras, também "In messages": o trecho em volta da palavra, com o chat e a idade embaixo. Setas andam, Enter abre, Esc limpa e depois fecha.
 

@@ -509,3 +509,16 @@ test("snippet: the words around the first match, one line", () => {
   const long = `${"x".repeat(100)} alvo ${"y".repeat(100)}`
   expect(snippet(long, "ALVO", 10)).toBe(`…${"x".repeat(9)} alvo ${"y".repeat(9)}…`)
 })
+
+test("editar daqui: a conversa volta para antes da mensagem e ela volta como texto", async () => {
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "claude-cli/sonnet" } }))
+  await send(chat.id, { text: "primeira" })
+  await send(chat.id, { text: "segunda" })
+  const msgs = await api((c) => c.chats.messages({ params: { id: chat.id } }))
+  expect(msgs.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"])
+  const r = await api((c) => c.chats.rewind({ params: { id: chat.id }, payload: { messageId: msgs[2]!.id, files: false } }))
+  expect(r.text).toBe("segunda")
+  expect((await api((c) => c.chats.messages({ params: { id: chat.id } }))).map((m) => m.text.slice(0, 8))).toEqual(["primeira", msgs[1]!.text.slice(0, 8)])
+  const notUser = await api((c) => c.chats.rewind({ params: { id: chat.id }, payload: { messageId: msgs[1]!.id, files: false } })).catch((e: unknown) => e)
+  expect((notUser as { _tag?: string })._tag).toBe("NotFound") // only a message of yours
+})
