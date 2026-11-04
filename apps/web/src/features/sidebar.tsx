@@ -7,8 +7,8 @@
 import { type AccountWindow, type Agent, type Chat, LIMIT_ALERT, type Project, type ProviderAccount } from "@zorel/contracts"
 import type { ChatStatus } from "@zorel/contracts/events"
 import { formatAge, formatPercent, formatTime, t } from "@zorel/i18n"
-import { type ReactNode, useLayoutEffect, useRef, useState } from "react"
-import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useInvalidate, useList, useMutation, useStatuses } from "../client.ts"
 import { agentTone, chatTitle, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
 import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
@@ -119,6 +119,16 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   const chats = useList(chatsAtom)
   const agents = useList(agentsAtom)
   const statuses = useStatuses()
+  // A chat the server started (a task one agent gave another, a routine's) shows up by its status: read the list
+  // again, once per unknown chat (hidden ones, like the Builder's, never join the list).
+  const invalidate = useInvalidate()
+  const asked = useRef(new Set<string>())
+  useEffect(() => {
+    const fresh = Object.keys(statuses).filter((id) => !asked.current.has(id) && !chats.some((c) => c.id === id))
+    if (!fresh.length) return
+    for (const id of fresh) asked.current.add(id)
+    invalidate(["chats"])
+  }, [statuses, chats, invalidate])
 
   const [expanded, setExpanded] = useState(() => readSet(EXPANDED_KEY))
   const [all, setAll] = useState<ReadonlySet<string>>(new Set()) // groups showing every chat

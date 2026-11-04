@@ -90,6 +90,8 @@ export function buildTurn(i: TurnInput): Turn {
     "Você é um assistente num workspace de projetos. Responda no idioma do usuário, de forma direta.",
     "Use o contexto abaixo quando ajudar; não invente fatos que não estão nele.",
     i.tools?.defs.length && "Você tem ferramentas. Use quando a tarefa pedir; ações que mudam algo podem esperar a aprovação do usuário.",
+    i.tools?.defs.some((d) => d.name === "zorel_start_task") &&
+      "Trabalho que é de um colega (veja zorel_list_agents) ou que pode correr em paralelo: passe com zorel_start_task. A resposta dele volta a este chat sozinha e você continua dali; não espere nem pergunte por ela.",
     i.agent && section(`Você é ${[i.agent.name, i.agent.title].filter(Boolean).join(", ")}`, [i.agent.description, i.agent.instructions].filter(Boolean).join("\n\n")),
     channel && section("Canal", channel)
   ]

@@ -2,7 +2,7 @@
 // so the existing database is adopted without copying (see migrate.ts). Changed something here? `bun run db:generate`.
 import type { AccountUsage, AgentPermissions, FailoverTarget, FileChange, Switch } from "@zorel/contracts"
 import { sql } from "drizzle-orm"
-import { check, index, integer, primaryKey, real, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
+import { type AnySQLiteColumn, check, index, integer, primaryKey, real, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
 
 // Provider accounts (ARCHITECTURE §6.1). Subscription logins live in `home` (a CLI config folder);
 // Zorel never reads the token inside it. `identity` is what the CLI reports (e-mail, plan), for display.
@@ -95,6 +95,10 @@ export const chats = sqliteTable("chats", {
   worktree: text(), // a git worktree of the project the chat works in (its own branch); null: the project folder
   resumeAt: integer("resume_at"), // every route hit its usage limit: the chat continues by itself at this time (null: no)
   hidden: integer({ mode: "boolean" }).notNull().default(false), // a screen's own conversation (the Builder's): not in the chats list
+  // A task an agent started (zorel_start_task): the chat its result goes back to, until it does (then null), and
+  // the agent that asked (null: the chat's assistant).
+  taskOf: text("task_of").references((): AnySQLiteColumn => chats.id, { onDelete: "set null" }),
+  taskBy: text("task_by"),
   createdAt: integer("created_at").notNull()
 })
 

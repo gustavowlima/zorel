@@ -49,3 +49,4 @@
 2026-11-04 | conectores OAuth (oauth.ts, mcp_servers.auth, rotas sign-in/callback) | usuário pediu seção de conectores com um clique
 2026-11-04 | Hub.refused + env no patch de servidor MCP | reconectar conector com credencial recusada
 2026-11-04 | renomeado Zero → Zorel (env, keychain, ferramentas, pasta de dados com legado) | usuário escolheu o nome Zorel (dono de zorel.dev)
+2026-11-04 | zorel_start_task (delegação com retorno ao chat de origem) | fase de equipe: agentes viram equipe
