@@ -61,6 +61,9 @@ export interface RuntimeService {
   // Corrects the agent mid-turn when the engine supports it (Codex); otherwise queues it like `send`.
   readonly steer: (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) => Effect.Effect<void, ChatNotFound>
   readonly interrupt: (chatId: string) => Effect.Effect<void>
+  // Pause everything (Tucano's "pause all"): running turns stop, new ones wait queued, routines don't fire.
+  readonly paused: () => boolean
+  readonly setPaused: (paused: boolean) => Effect.Effect<void>
   readonly decide: (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">, reason?: string) => Effect.Effect<void, ApprovalNotFound>
   readonly subscribeChat: (chatId: string) => Stream.Stream<ChatEvent, ChatNotFound>
   readonly subscribeStatus: Stream.Stream<ChatStatus>
@@ -698,8 +701,11 @@ export const makeRuntime = Effect.gen(function* () {
       yield* Effect.forkDetach(consolidate(chatId).pipe(Effect.provide(services), Effect.ignore))
     }).pipe(Effect.ensuring(Effect.sync(() => workers.delete(chatId))))
 
+  const PAUSED_KEY = "paused"
+  let paused = (yield* store.preference(PAUSED_KEY)) === "1"
   const ensureWorker = (chatId: string) =>
     Effect.suspend(() => {
+      if (paused) return Effect.void // the turn stays queued until resume
       const w = workers.get(chatId)
       if (w) {
         w.kicked = true
@@ -779,6 +785,19 @@ export const makeRuntime = Effect.gen(function* () {
         }
         const fiber = running.get(chatId)
         if (fiber) yield* Fiber.interrupt(fiber)
+      }),
+
+    paused: () => paused,
+    setPaused: (next) =>
+      Effect.gen(function* () {
+        paused = next
+        yield* store.setPreference(PAUSED_KEY, next ? "1" : "0")
+        if (next) {
+          for (const chatId of new Set([...running.keys(), ...(yield* store.turnsIn("running")).map((t) => t.chatId)])) {
+            const fiber = running.get(chatId)
+            if (fiber) yield* Fiber.interrupt(fiber)
+          }
+        } else for (const chatId of new Set((yield* store.turnsIn("queued")).map((t) => t.chatId))) yield* ensureWorker(chatId)
       }),
 
     decide: (approvalId, outcome, reason) =>

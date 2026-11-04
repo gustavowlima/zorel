@@ -405,7 +405,7 @@ export const NewMcpServer = Schema.Struct({
 export const McpServerPatch = Schema.Struct({ mode: Schema.optional(ToolMode), enabled: Schema.optional(Schema.Boolean) })
 export const KeyInput = Schema.Struct({ value: LongText(500) }) // empty deletes
 // One-time choices recorded on the server (the failover terms warning is shown once).
-export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number) })
+export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean })
 
 // Turns (send, events, interrupt, approve): see events.ts (RPC over WebSocket at /rpc).
 export const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
@@ -561,6 +561,8 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.get("usage", "/api/usage", { success: Schema.Array(UsageRow) })) // last USAGE_DAYS days
       .add(HttpApiEndpoint.get("topTurns", "/api/usage/top", { query: { since: Schema.NumberFromString }, success: Schema.Array(TopTurn) }))
       .add(HttpApiEndpoint.get("preferences", "/api/preferences", { success: Preferences }))
+      // Pause everything: running turns stop, new ones wait queued, routines wait; false resumes.
+      .add(HttpApiEndpoint.put("pause", "/api/pause", { payload: Schema.Struct({ paused: Schema.Boolean }) }))
       .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))
   )

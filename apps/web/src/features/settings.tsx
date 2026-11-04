@@ -7,6 +7,7 @@ import { agentsAtom, memoriesAtom, mutations, projectsAtom, useInvalidate, useLi
 import { scopeLabel } from "../labels.ts"
 import { go, SETTINGS_TABS, type SettingsTab, setThemePref, themePref, type ThemePref } from "../state.ts"
 import { AuditSection } from "./audit.tsx"
+import { NotifySetting } from "./notify.tsx"
 import { McpSection } from "./mcp.tsx"
 import { ProvidersSection } from "./providers.tsx"
 import { ReadingState } from "./reading.tsx"
@@ -120,6 +121,7 @@ function General() {
             options={(["system", "dark", "light"] as const).map((p) => ({ id: p, label: t(`appearance.${p}`) }))}
           />
         </div>
+        <NotifySetting />
       </Rows>
     </Section>
   )

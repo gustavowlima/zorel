@@ -120,6 +120,9 @@ RpcGroup.make(
   - **loop:** o mesmo passo (tipo, título e começo da saída) 4 vezes seguidas encerra o turno dizendo qual;
   - **falhas:** 6 passos seguidos com erro encerram o turno.
   
+- **Pausar tudo** (ideia do Tucano): `PUT /api/pause` grava a preferência `paused`; pausar interrompe os turnos rodando, e enquanto pausado os turnos novos ficam `queued` (o worker do chat não começa) e as rotinas não disparam (seguem devidas); despausar acorda a fila de cada chat. Sobrevive a reiniciar o servidor.
+- **Notificações** (no cliente): o fluxo `subscribeStatus` que já alimenta a barra dispara uma notificação do sistema quando um chat passa a esperar você, falha ou termina enquanto você olha outro lugar; ligada em Settings › General.
+
   Loop e falhas valem para os passos nativos e para as ferramentas do gateway. Não são falha de provider, então não disparam failover. O failover em si só troca de rota se o turno ainda não agiu (editou, rodou ou chamou ferramenta que escreve), para nunca repetir um efeito.
 
 ---

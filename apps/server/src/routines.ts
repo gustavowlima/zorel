@@ -34,6 +34,7 @@ export const runRoutine = (id: string, key: string, payload?: unknown) =>
 // its next time.
 const tick = Effect.gen(function* () {
   const store = yield* Store
+  if ((yield* Runtime).paused()) return // paused: due routines run after resume (they stay due)
   const now = Date.now()
   for (const r of yield* store.dueRoutines(now)) {
     yield* runRoutine(r.id, String(r.nextRunAt)).pipe(Effect.catchCause((c) => Effect.logWarning("routine run failed", { routineId: r.id, cause: String(c) })))

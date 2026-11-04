@@ -63,3 +63,4 @@ updated: 2026-11-03
 - projeto na barra: subtítulo alinhado (sem pasta/negrito), seta slot="chevron" depois do nome, contagem dim à direita; chats aninhados pl-6 com fio em left-3
 - barra lateral recolhível: useSidebar em state.ts (localStorage zero.sidebar.hidden, ⌘B); Rail tem botão PanelLeftClose/Open e Chats ativo alterna; trilho com border-r
 - motion 12.43.0 (pedido do usuário: animar a sidebar): ui/motion.tsx exporta spring, Fold (altura auto com AnimatePresence), SlideWidth (largura, mantém montado, inert quando fechado), Marker (layoutId) e MotionConfig (reducedMotion user em main.tsx). Não misturar classes transition-* em elementos motion
+- notify.tsx: useNotifications(route) em App (Notification API, transições via noteworthy() em labels.ts), NotifySetting em Settings › General (localStorage zero.notify). Pausa: botão no trilho + faixa no App
