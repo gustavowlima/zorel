@@ -1,73 +1,73 @@
-# Referências: o que foi aproveitado e o que não foi
+# References: what was used and what was not
 
-Mapa de rastreabilidade. Para cada boa prática das três referências estudadas, diz onde ela está aplicada no Zorel, com o arquivo e o teste que a cobre, ou por que ficou de fora. Atualize ao mudar a decisão.
+Traceability map. For each good practice from the three references studied, it says where it is applied in Zorel, with the file and the test that covers it, or why it was left out. Update it when the decision changes.
 
-Licenças: Tucano é Apache-2.0 e o código derivado tem atribuição no `NOTICE`. T3 Code é MIT, e dele vieram ideias de arquitetura, não código. OpenBot é PolyForm Noncommercial: **só ideias, nenhum código**.
+Licenses: Tucano is Apache-2.0 and the derived code is attributed in `NOTICE`. T3 Code is MIT, and architecture ideas came from it, not code. OpenBot is PolyForm Noncommercial: **ideas only, no code**.
 
 ## Tucano
 
-| Prática | No Zorel | Verificação |
+| Practice | In Zorel | Verification |
 |---|---|---|
-| CLI sem sessão: o contexto é montado pelo app a cada turno | `engines.ts` (`--no-session-persistence`, `--ephemeral`), `context.ts` | `engines.test.ts` (args), turno real com 658 tokens de entrada |
-| CLI isolada: sem ferramentas próprias, sem config, hooks ou plugins do usuário | `claudeArgs`, `codexArgs` | `engines.test.ts` |
-| Resumo contínuo: janela de 30 mensagens literais, consolida acima de 50 | `context.ts` (`WINDOW`, `MAX_AFTER`), `chat.ts` (`consolidate`) | `main.test.ts` |
-| Memórias com escopo e aprovação humana | `db.ts` (state pending/active/forgotten), `memories.tsx` | `main.test.ts` |
-| Orçamento de memórias no prompt e o resto buscável (BM25) | `pinned()`, `searchMemories` (FTS5) | `engines.test.ts`, `db.test.ts` |
-| Consolidação recebe o que foi esquecido | `consolidationPrompt` (`forgotten`) | `main.test.ts` (aprendizado) |
-| Teto de propostas pendentes | `chat.ts` (`MAX_PENDING`) | `main.test.ts` (aprendizado) |
-| Skills propostas pelo agente e aprovadas | `parseConsolidation` (skills), `memory_index` | `main.test.ts`, `engines.test.ts` |
-| @menção e repasse com limite de profundidade | `mentioned()`, `chain()`, `MAX_DEPTH` | `main.test.ts` (canal), teste real Claude → Codex |
-| Gateway MCP por turno com URL secreta, única fonte de ferramentas | `tools.ts` (`Gateway`) | `main.test.ts`, teste real com Claude e Codex |
-| Classificação de ferramentas: anotação > nome, sensível vence leitura | `classify()` | `engines.test.ts` |
-| Aprovação da chamada exata e recusa devolvida ao modelo | `openTools()` em `chat.ts` | `main.test.ts`, teste real |
-| Resultado de ferramenta truncado | `MAX_RESULT_CHARS` | — |
-| Segredos no chaveiro do sistema | `secrets.ts` (`Bun.secrets`) | `main.test.ts` (chaves, com o armazenamento em memória) |
-| PATH do shell de login no app desktop | `apps/desktop/src/bun/index.ts` | `.app` real encontrou `claude` e `codex` |
-| **Fora:** router por LLM quando ninguém é mencionado | quem responde é o líder (★) | Decisão: custo e latência a cada mensagem. O OpenBot também começa pelo líder. Adicionar se os canais crescerem. |
-| **Fora:** limites de tokens por agente, "pausar tudo", rotinas, horário de silêncio | tokens já são gravados por mensagem | Não pedidos. Os dados para limites já existem (`input_tokens`/`output_tokens`). |
-| **Fora:** "sempre permitir" uma ferramenta | o modo do servidor (`auto`) cobre o caso | — |
+| Sessionless CLI: the context is assembled by the app on every turn | `engines.ts` (`--no-session-persistence`, `--ephemeral`), `context.ts` | `engines.test.ts` (args), real turn with 658 input tokens |
+| Isolated CLI: no tools of its own, no user config, hooks or plugins | `claudeArgs`, `codexArgs` | `engines.test.ts` |
+| Rolling summary: window of 30 verbatim messages, consolidates above 50 | `context.ts` (`WINDOW`, `MAX_AFTER`), `chat.ts` (`consolidate`) | `main.test.ts` |
+| Scoped memories with human approval | `db.ts` (state pending/active/forgotten), `memories.tsx` | `main.test.ts` |
+| Memory budget in the prompt and the rest searchable (BM25) | `pinned()`, `searchMemories` (FTS5) | `engines.test.ts`, `db.test.ts` |
+| Consolidation receives what was forgotten | `consolidationPrompt` (`forgotten`) | `main.test.ts` (learning) |
+| Cap on pending proposals | `chat.ts` (`MAX_PENDING`) | `main.test.ts` (learning) |
+| Skills proposed by the agent and approved | `parseConsolidation` (skills), `memory_index` | `main.test.ts`, `engines.test.ts` |
+| @mention and hand-off with a depth limit | `mentioned()`, `chain()`, `MAX_DEPTH` | `main.test.ts` (channel), real test Claude → Codex |
+| Per-turn MCP gateway with a secret URL, the only source of tools | `tools.ts` (`Gateway`) | `main.test.ts`, real test with Claude and Codex |
+| Tool classification: annotation > name, sensitive beats read | `classify()` | `engines.test.ts` |
+| Approval of the exact call, and refusal returned to the model | `openTools()` in `chat.ts` | `main.test.ts`, real test |
+| Truncated tool result | `MAX_RESULT_CHARS` | — |
+| Secrets in the system keychain | `secrets.ts` (`Bun.secrets`) | `main.test.ts` (keys, with in-memory storage) |
+| Login shell PATH in the desktop app | `apps/desktop/src/bun/index.ts` | real `.app` found `claude` and `codex` |
+| **Out:** LLM router when no one is mentioned | the lead (★) is the one who answers | Decision: cost and latency on every message. OpenBot also starts with the lead. Add if channels grow. |
+| **Out:** per-agent token limits, "pause everything", routines, quiet hours | tokens are already recorded per message | Not requested. The data for limits already exists (`input_tokens`/`output_tokens`). |
+| **Out:** "always allow" a tool | the server mode (`auto`) covers the case | — |
 
 ## T3 Code
 
-| Prática | No Zorel | Verificação |
+| Practice | In Zorel | Verification |
 |---|---|---|
-| Contrato único com Effect Schema; server e clientes seguem o schema | `packages/contracts` + `HttpApiClient` no web | `tsc` nos dois lados, 400 na fronteira (`main.test.ts`) |
-| Effect services e Layers, com teste trocando a implementação | `Store`, `Secrets`, `Engines`, `Tools`, `DataDir` | `main.test.ts` (Secrets.memory, engine falso) |
-| "Toda entrada tem saída" (reverse states) | apagar projeto/agente/chat/servidor; esquecer → **restaurar** memória; desligar → ligar servidor | `main.test.ts` (aprendizado) |
-| Não fixar origens no bundle | o web usa `location.origin` e o proxy do Vite | — |
-| Single origin em produção | o server serve `apps/web/dist` (`WebRoute`) | `.app` estável testado |
-| Troca de provider sem perder contexto | trivial: contexto é do Zorel, não da sessão | `main.test.ts` (troca), teste real Claude → Codex |
-| **Fora:** checkpoints de git, worktrees, mobile, túnel remoto, integrações de source control | — | Foco em coding remoto. Fora do escopo do Zorel. |
-| **Fora:** compactação antes do cache expirar | — | Não se aplica: não há sessão nativa para compactar. |
+| Single contract with Effect Schema; server and clients follow the schema | `packages/contracts` + `HttpApiClient` in web | `tsc` on both sides, 400 at the boundary (`main.test.ts`) |
+| Effect services and Layers, with tests swapping the implementation | `Store`, `Secrets`, `Engines`, `Tools`, `DataDir` | `main.test.ts` (Secrets.memory, fake engine) |
+| "Every way in has a way out" (reverse states) | delete project/agent/chat/server; forget → **restore** memory; turn off → turn on server | `main.test.ts` (learning) |
+| Do not hardcode origins in the bundle | web uses `location.origin` and the Vite proxy | — |
+| Single origin in production | the server serves `apps/web/dist` (`WebRoute`) | stable `.app` tested |
+| Provider switch without losing context | trivial: context belongs to Zorel, not to the session | `main.test.ts` (switch), real test Claude → Codex |
+| **Out:** git checkpoints, worktrees, mobile, remote tunnel, source control integrations | — | Focused on remote coding. Outside Zorel's scope. |
+| **Out:** compaction before the cache expires | — | Does not apply: there is no native session to compact. |
 
-## OpenBot (só ideias)
+## OpenBot (ideas only)
 
-| Prática | No Zorel | Verificação |
+| Practice | In Zorel | Verification |
 |---|---|---|
-| Fronteira de confiança estrita no server local | `LocalOnly`: Host local contra DNS rebinding, Origin local contra CSRF; escuta só 127.0.0.1 | `main.test.ts` (só local) |
-| Segredo nunca em arquivo nem log; redigido | valores no chaveiro; `envKeys` guarda só nomes; chaves nunca voltam na API | `main.test.ts` (chaves) |
-| Um único sistema de schema | só Effect Schema (o OpenBot sofre com Zod + Effect Schema) | — |
-| Linter no CI | Biome (`biome.json`, `bun run lint` no CI) | CI |
-| Memória em duas camadas: essencial no prompt, resto buscável | `pinned()` + FTS5 | `engines.test.ts`, `db.test.ts` |
-| Gatilhos de revisão de memória | consolidação por janela cheia ou manual (Compactar) | `main.test.ts` |
-| Mensagem salva mesmo se o turno é interrompido | `reply()` → `onExit` grava como "interrompido" | — |
-| Detecção de Ollama / LM Studio local | `probe()` em `engines.ts` | teste com mock compatível com OpenAI |
-| Assinatura de CLI de assinatura: nunca tocar no login | só a CLI oficial; nada de OAuth | — |
-| **Fora:** event sourcing com recibos idempotentes | a trava por chat (`Busy`, 409) evita turnos duplicados; tabelas simples | Adicionar se houver vários processos ou sincronização entre dispositivos. |
-| **Fora:** fila FIFO com recuperação após crash | — | Hoje um turno por chat, síncrono com o cliente. Necessário quando houver rotinas e agentes em background. |
-| **Fora:** lista de modelos de backup | — | Adicionar se as falhas de provider aparecerem no uso. |
+| Strict trust boundary on the local server | `LocalOnly`: local Host against DNS rebinding, local Origin against CSRF; listens only on 127.0.0.1 | `main.test.ts` (local only) |
+| Secret never in a file or log; redacted | values in the keychain; `envKeys` stores only names; keys never come back through the API | `main.test.ts` (keys) |
+| A single schema system | only Effect Schema (OpenBot suffers from Zod + Effect Schema) | — |
+| Linter in CI | Biome (`biome.json`, `bun run lint` in CI) | CI |
+| Two-layer memory: essentials in the prompt, the rest searchable | `pinned()` + FTS5 | `engines.test.ts`, `db.test.ts` |
+| Memory review triggers | consolidation on a full window or manually (Compact) | `main.test.ts` |
+| Message saved even if the turn is interrupted | `reply()` → `onExit` records it as "interrupted" | — |
+| Detection of local Ollama / LM Studio | `probe()` in `engines.ts` | test with an OpenAI-compatible mock |
+| Subscription through the subscription CLI: never touch the login | only the official CLI; no OAuth | — |
+| **Out:** event sourcing with idempotent receipts | the per-chat lock (`Busy`, 409) prevents duplicate turns; simple tables | Add if there are several processes or sync between devices. |
+| **Out:** FIFO queue with recovery after a crash | — | Today one turn per chat, synchronous with the client. Needed once there are routines and background agents. |
+| **Out:** list of fallback models | — | Add if provider failures show up in use. |
 
-## Outras referências avaliadas
+## Other references evaluated
 
-| Projeto | Licença | O que veio para o Zorel | O que não veio |
+| Project | License | What came into Zorel | What did not |
 |---|---|---|---|
-| [Zeron](https://github.com/zeronsh/zeron) (Rust) | MIT | Marcação "até onde cada sessão leu" por provider: na troca, só o delta é reenviado (ARCHITECTURE §7). Server do desktop em background separado da janela (D11) | Sincronização por CRDT e relay; interface em gpui |
-| [ai-memory](https://github.com/akitaonrails/ai-memory) (Rust) | MIT | Handoff tipado oferecido, não consumido; retenção por uso sem LLM; contexto L0/L1; limpeza de segredos; versões; avaliação de recall (§8, memória 2) | Markdown em git como fonte da verdade; captura por hooks; servidor multiusuário |
-| [AgenticOS](https://github.com/vstorm-co/agenticos) (Python) | Apache-2.0 | Agente como dado versionado com referências; construtor com teste e agente que rascunha agentes para aprovação; caixa de ferramentas por agente; escopo de memória por dono e público (fase 4, D17). Backlog: detector de loop, monitor de cache, revisor durante o run, auditoria encadeada | FastAPI, Pydantic AI, Postgres + pgvector + Redis; modelo multiempresa (fase 8 decide o que trazer) |
-| [T3 Code](https://github.com/pingdotgg/t3code) | MIT | `effect-acp` e `effect-codex-app-server` copiados (D16); RPC sobre WebSocket e átomos no front (D3, D4); multicontas com pasta de login por conta (D14) | Fork completo (D16: Node, Electron, ~600 mil linhas, sem i18n) |
+| [Zeron](https://github.com/zeronsh/zeron) (Rust) | MIT | Per-provider marker of "how far each session has read": on a switch, only the delta is resent (ARCHITECTURE §7). Desktop server in the background, separate from the window (D11) | CRDT and relay sync; gpui interface |
+| [ai-memory](https://github.com/akitaonrails/ai-memory) (Rust) | MIT | Typed handoff offered, not consumed; usage-based retention without an LLM; L0/L1 context; secret scrubbing; versions; recall evaluation (§8, memory 2) | Markdown in git as the source of truth; capture through hooks; multi-user server |
+| [AgenticOS](https://github.com/vstorm-co/agenticos) (Python) | Apache-2.0 | Agent as versioned data with references; builder with testing and an agent that drafts agents for approval; per-agent toolbox; memory scope by owner and public (phase 4, D17). Backlog: loop detector, cache monitor, reviewer during the run, chained audit | FastAPI, Pydantic AI, Postgres + pgvector + Redis; multi-company model (phase 8 decides what to bring) |
+| [T3 Code](https://github.com/pingdotgg/t3code) | MIT | `effect-acp` and `effect-codex-app-server` copied (D16); RPC over WebSocket and atoms on the front end (D3, D4); multiple accounts with a login folder per account (D14) | Full fork (D16: Node, Electron, ~600 thousand lines, no i18n) |
 
-**Descartados como dependência**, com o motivo na decisão citada:
-- **Mastra e LangGraph** (D5): dois runtimes, estado e memória duplicados, Zod.
-- **oRPC** (D1): integração experimental com Effect.
+**Rejected as a dependency**, with the reason in the cited decision:
+- **Mastra and LangGraph** (D5): two runtimes, duplicated state and memory, Zod.
+- **oRPC** (D1): experimental integration with Effect.
 - **Zod** (D2).
-- **`@effect/sql-drizzle`** (D9): só Effect 3. Usamos o `drizzle-orm` 1.0, que integra nativamente com o Effect 4.
+- **`@effect/sql-drizzle`** (D9): Effect 3 only. We use `drizzle-orm` 1.0, which integrates natively with Effect 4.

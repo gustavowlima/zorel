@@ -3,57 +3,57 @@ updated: 2026-11-04
 
 ## summary
 
-Zorel: workspace open source de agentes de IA com Projetos (agentes de projeto) e Chats avulsos.
-Contexto montado pelo app a cada turno (projeto → chat → memórias), não acumulado em sessão de CLI.
-Aprendizado contínuo via memórias e skills aprovadas pelo usuário. Troca de modelo a qualquer turno,
-usando assinaturas (CLI oficial: Claude Code, Codex, ACP) ou token de API (effect/ai).
+Zorel: open source AI agent workspace with Projects (project agents) and standalone Chats.
+Context assembled by the app every turn (project → chat → memories), not accumulated in a CLI session.
+Continuous learning via memories and skills approved by the user. Model switch on any turn,
+using subscriptions (official CLI: Claude Code, Codex, ACP) or API token (effect/ai).
 
 ## technical context
 
 - stack: Bun 1.4 workspaces, Effect 4.1.2 (HttpApi + Schema), bun:sqlite, Vite + React 19 + Tailwind v4
-- packages/contracts é a única fonte de tipos que cruza a rede; web usa HttpApiClient derivado dele
-- assinaturas: sempre spawnar a CLI oficial; nunca ler/guardar token OAuth dela (termos dos providers)
-- referências estudadas: tucano (Apache-2.0, pode copiar com atribuição), t3code (MIT, pode copiar com atribuição),
-  openbot (PolyForm Noncommercial: só ideias, nunca código)
-- decidido não fazer fork do t3code: núcleo dele depende de sessão nativa da CLI, ~1M LOC, ~150 commits/dia, Node/pnpm
-- licença Apache-2.0 (compatível com o código derivado do Tucano; patentes); repositório git próprio em zero/ (antes ficava dentro do repo de dev/)
-- assinatura macOS: usuário optou por sem assinatura por enquanto (2026-11-03); config liga sozinha se os segredos forem cadastrados
-- CI: .github/workflows/ci.yml (typecheck, test, build; app macOS em push na main)
-- lint: Biome só como linter (sem formatter), preset recommended; noNonNullAssertion e noBannedTypes desligadas com motivo em biome.json; any só como aviso
-- docs/references.md: matriz prática → arquivo → teste para Tucano, T3 Code e OpenBot, com o que ficou de fora e por quê
+- packages/contracts is the only source of types that cross the network; web uses HttpApiClient derived from it
+- subscriptions: always spawn the official CLI; never read/store its OAuth token (provider terms)
+- studied references: tucano (Apache-2.0, may copy with attribution), t3code (MIT, may copy with attribution),
+  openbot (PolyForm Noncommercial: ideas only, never code)
+- decided not to fork t3code: its core depends on the CLI's native session, ~1M LOC, ~150 commits/day, Node/pnpm
+- Apache-2.0 license (compatible with the code derived from Tucano; patents); own git repository at zero/ (previously lived inside the dev/ repo)
+- macOS signing: user chose no signing for now (2026-11-03); config turns itself on if the secrets are registered
+- CI: .github/workflows/ci.yml (typecheck, test, build; macOS app on push to main)
+- lint: Biome as linter only (no formatter), recommended preset; noNonNullAssertion and noBannedTypes off with reason in biome.json; any only as warning
+- docs/references.md: practice → file → test matrix for Tucano, T3 Code and OpenBot, with what was left out and why
 
-## arquitetura alvo (2026-11-03)
+## target architecture (2026-11-03)
 
-- fonte da verdade: docs/ARCHITECTURE.md (decisões D1–D12, módulos, fases 1–7)
-- Effect de ponta a ponta: HttpApi (CRUD) + effect/rpc via WebSocket (turnos) + átomos no front (AtomHttpApi/AtomRpc); oRPC, Zod, Mastra e LangGraph descartados
-- engines alvo (harness primeiro): assinatura → harness do dono (Claude Agent SDK, Codex App Server, ACP da CLI); API key de QUALQUER provider (inclusive Anthropic/OpenAI) → OpenCode via ACP com config por OPENCODE_CONFIG_CONTENT; effect/ai só para tarefas internas e conversa rápida sem workspace; medição por turno decide se algum provider ganha rota nativa
-- contexto híbrido: sessão nativa + contexto em camadas como ponto de retomada + marcação de leitura por sessão + passos de trabalho
-- próxima fase: 1 (runtime em background)
-- i18n (D13): todo texto de UI via packages/i18n (en.ts fonte, outros idiomas `satisfies Messages`); só inglês por enquanto; server manda código + parâmetros, não frase; prompts de modelo em inglês com "responda no idioma do usuário"; conteúdo do usuário não é traduzido; migração junto com a fase 1
-- multicontas (D14, ARCHITECTURE 6.1): tabela provider_accounts (subscription com pasta de login gerenciada ~/.zorel/accounts/<id> via CLAUDE_CONFIG_DIR/CODEX_HOME/...; api-key com chave no chaveiro); accountId em agente e chat; troca manual = troca de provider (ponto de retomada), sem shadow home; failover automático OPCIONAL (lista ordenada de até 8 {conta, modelo}, pode cruzar providers; gatilhos limite/erro; só se o turno ainda não agiu; volta à principal após reset; aviso de termos ao pôr 2ª assinatura do mesmo provider; desligado por padrão) — fase 2b; pool com rodízio fica fora (proxy externo); assinaturas na fase 2, várias chaves na fase 5
-- consumo (D15, ARCHITECTURE 10.2, fase 2c): dados de turns (tokens incl. cache, custo estimado via catálogo models.dev, latências, failover); janelas de limite por conta (Claude rate_limit_event, Codex account/rateLimits/read) lidas 1 por vez, cache 4 min, backoff 5/10/20/40 min até 1 h; alertas 80%; orçamento a 100% pede confirmação (não bloqueia em silêncio)
-- validação da arquitetura (2026-11-03): Claude Agent SDK confirmado (setModel/interrupt só em streaming input; rewindFiles; trocar modelo zera cache); harness decidido pela conta, não pelo nome do modelo; projects.path novo; desktop com server em background na fase 7; aviso de termos para assinatura Claude via Agent SDK
-- decisões 2026-11-03: D16 projeto próprio (sem fork do T3 Code; copiar packages/effect-acp e effect-codex-app-server com NOTICE); D17 portas abertas para hospedar (Actor, Drizzle+@effect/sql, Secrets, Workspace, memória owner/audience, agente versionado, Engine); D9 Drizzle 1.0 rc fixado sobre @effect/sql-sqlite-bun (Postgres depois via @effect/sql-pg; FTS5 em sql puro; contrato da API separado das tabelas)
-- propósito: código agora; hospedado + automação depois (fase 8)
-- D18 base de conhecimento (ARCHITECTURE 8.2, fase 3b): coleções por projeto/global ligadas a agentes; fontes upload/pasta local incremental/URL; busca híbrida FTS5+vetores com RRF; citações; embeddings Ollama ou API via effect/ai EmbeddingModel; modo tool (zero.knowledge_search) ou auto
-- banco local: libSQL (@effect/sql-libsql) com vetores nativos (F32_BLOB, libsql_vector_idx, vector_top_k); validar no spike da fase 1 (nativo no Bun, FTS5); plano B bun:sqlite + força bruta
-- gestão de memória (8.1): fixar/excluir do contexto, versões, retenção visível, exportar/importar, desligar por agente/projeto; inspetor de contexto "o que o modelo viu" por resposta
-- 2026-11-03 revisão "leve": D0 leve primeiro (um processo, um arquivo de banco, nenhum serviço externo obrigatório; crescer só com medição); D18 virou conhecimento APRENDIDO no modelo ai-memory (captura→consolida→recupera→bastão), página única (fato/decisão/como-fazer/armadilha/referência/sessão) substitui memórias+skills; consolidação sem LLM sempre (página de sessão + handoff) e LLM opcional; resumo de entrada ~1.5k tokens + zorel.knowledge_search FTS; D7: conhecimento do projeto entra direto com versões/desfazer/feed, o que é sobre o usuário passa por aprovação; RAG por upload, libSQL, embeddings, grafo, mem0 → backlog com critério; banco volta a @effect/sql-sqlite-bun
-- aprovações e interação entre agentes (ARCHITECTURE 9.2/9.3, fase 4, ideias do OpenBot): níveis por agente Workspace (padrão)/Perguntar antes/Acesso total mapeados por harness; cartão único p/ ferramenta nativa e MCP, vínculo por hash da chamada, aprovar uma vez/sempre permitir (regra revogável)/recusar com motivo; persistidas, expiram 30 min (=recusa); promover a Acesso total responde as pendentes; tela "Precisa de você"; rotina: recusar e reportar (padrão) ou esperar; agente só restringe, nunca amplia; criado herda limites do criador; send_message com resposta automática + espera de pedidos múltiplos + proteção de loop + idempotência; start_task (2 paralelas, até 4; 8 abertas); interrupt_agent só no que o chamador pediu; política de delegação (Status/Resultado/Evidência/Desbloqueio); canal: roteamento determinístico, depois líder sem ferramentas usando responsabilidades; bloco recolhido "conversa entre agentes"
-- arquitetura fechada (2026-11-03): seção 12 Transversal (observabilidade com mascaramento, testes em 3 camadas, migração dos dados atuais + backup VACUUM INTO, exportar/importar workspace sem segredos, notificações, anexos 10×20 MB, atualização do app com canais e espera de turnos); seção 13 Fases; agente padrão por projeto; arquivos de contexto inject/link no backlog
-- D20: sem Rust como stack principal; só peças pontuais com limite medido (2026-11-03)
-- PRODUCT.md (apps/web, impeccable init 2026-11-03): usuários = dev + pequena equipe (2–5); diferenciais = contexto é do Zorel, aprende trabalhando, equipe de agentes, usa o que você já paga; nome "Zorel" (renomeado de "Zero" em 2026-11-04; o usuário é dono de zorel.dev); Apache-2.0; tom direto/técnico; visual inspirado no OpenBot; DECISÃO EM ABERTO: como a equipe compartilha antes do hospedado (server na rede da equipe vs adiantar login/papéis da fase 8)
+- source of truth: docs/ARCHITECTURE.md (decisions D1–D12, modules, phases 1–7)
+- Effect end to end: HttpApi (CRUD) + effect/rpc over WebSocket (turns) + atoms on the front (AtomHttpApi/AtomRpc); oRPC, Zod, Mastra and LangGraph discarded
+- target engines (harness first): subscription → owner's harness (Claude Agent SDK, Codex App Server, the CLI's ACP); API key of ANY provider (including Anthropic/OpenAI) → OpenCode via ACP with config through OPENCODE_CONFIG_CONTENT; effect/ai only for internal tasks and quick conversation without workspace; per-turn measurement decides whether any provider gets a native route
+- hybrid context: native session + layered context as resume point + per-session read marking + work steps
+- next phase: 1 (background runtime)
+- i18n (D13): all UI text via packages/i18n (en.ts source, other languages `satisfies Messages`); English only for now; server sends code + parameters, not sentence; model prompts in English with "reply in the user's language"; user content is not translated; migration together with phase 1
+- multi-account (D14, ARCHITECTURE 6.1): provider_accounts table (subscription with managed login folder ~/.zorel/accounts/<id> via CLAUDE_CONFIG_DIR/CODEX_HOME/...; api-key with key in the keychain); accountId on agent and chat; manual switch = provider switch (resume point), no shadow home; OPTIONAL automatic failover (ordered list of up to 8 {account, model}, may cross providers; triggers limit/error; only if the turn has not acted yet; back to the primary after reset; terms warning when adding a 2nd subscription of the same provider; off by default) — phase 2b; pool with rotation stays out (external proxy); subscriptions in phase 2, multiple keys in phase 5
+- usage (D15, ARCHITECTURE 10.2, phase 2c): turns data (tokens incl. cache, estimated cost via models.dev catalog, latencies, failover); limit windows per account (Claude rate_limit_event, Codex account/rateLimits/read) read 1 at a time, 4 min cache, backoff 5/10/20/40 min up to 1 h; alerts at 80%; budget at 100% asks for confirmation (does not block silently)
+- architecture validation (2026-11-03): Claude Agent SDK confirmed (setModel/interrupt only in streaming input; rewindFiles; switching model resets cache); harness decided by the account, not by the model name; new projects.path; desktop with server in background in phase 7; terms warning for Claude subscription via Agent SDK
+- decisions 2026-11-03: D16 own project (no T3 Code fork; copy packages/effect-acp and effect-codex-app-server with NOTICE); D17 doors open for hosting (Actor, Drizzle+@effect/sql, Secrets, Workspace, memory owner/audience, versioned agent, Engine); D9 Drizzle 1.0 rc pinned on top of @effect/sql-sqlite-bun (Postgres later via @effect/sql-pg; FTS5 in plain sql; API contract separate from the tables)
+- purpose: code now; hosted + automation later (phase 8)
+- D18 knowledge base (ARCHITECTURE 8.2, phase 3b): per-project/global collections linked to agents; sources upload/incremental local folder/URL; hybrid search FTS5+vectors with RRF; citations; embeddings Ollama or API via effect/ai EmbeddingModel; tool mode (zero.knowledge_search) or auto
+- local database: libSQL (@effect/sql-libsql) with native vectors (F32_BLOB, libsql_vector_idx, vector_top_k); validate in the phase 1 spike (native in Bun, FTS5); plan B bun:sqlite + brute force
+- memory management (8.1): pin/exclude from context, versions, visible retention, export/import, turn off per agent/project; context inspector "what the model saw" per answer
+- 2026-11-03 "light" review: D0 light first (one process, one database file, no mandatory external service; grow only with measurement); D18 became LEARNED knowledge in the ai-memory model (capture→consolidate→retrieve→baton), single page (fact/decision/how-to/pitfall/reference/session) replaces memories+skills; consolidation without LLM always (session page + handoff) and LLM optional; entry summary ~1.5k tokens + zorel.knowledge_search FTS; D7: project knowledge goes in directly with versions/undo/feed, what is about the user goes through approval; RAG by upload, libSQL, embeddings, graph, mem0 → backlog with criterion; database back to @effect/sql-sqlite-bun
+- approvals and interaction between agents (ARCHITECTURE 9.2/9.3, phase 4, ideas from OpenBot): per-agent levels Workspace (default)/Ask before/Full access mapped per harness; single card for native tool and MCP, binding by call hash, approve once/always allow (revocable rule)/decline with reason; persisted, expire in 30 min (=decline); promoting to Full access answers the pending ones; "Needs you" screen; routine: decline and report (default) or wait; agent only restricts, never widens; created agent inherits the creator's limits; send_message with automatic reply + waiting on multiple requests + loop protection + idempotency; start_task (2 parallel, up to 4; 8 open); interrupt_agent only on what the caller requested; delegation policy (Status/Result/Evidence/Unblock); channel: deterministic routing, later a leader without tools using responsibilities; collapsed block "conversation between agents"
+- architecture closed (2026-11-03): section 12 Cross-cutting (observability with masking, tests in 3 layers, migration of current data + backup VACUUM INTO, export/import workspace without secrets, notifications, attachments 10×20 MB, app update with channels and waiting for turns); section 13 Phases; default agent per project; context files inject/link in the backlog
+- D20: no Rust as main stack; only isolated pieces with a measured limit (2026-11-03)
+- PRODUCT.md (apps/web, impeccable init 2026-11-03): users = dev + small team (2–5); differentiators = the context belongs to Zorel, learns while working, team of agents, uses what you already pay for; name "Zorel" (renamed from "Zero" on 2026-11-04; the user owns zorel.dev); Apache-2.0; direct/technical tone; visuals inspired by OpenBot; OPEN DECISION: how the team shares before hosted (server on the team's network vs bringing forward login/roles from phase 8)
 
-## ordem (2026-11-03)
+## order (2026-11-03)
 
-- engine primeiro: fase 1 (runtime) e fase 2 (engines) antes da interface; a fase UI redesenha tudo uma vez, com i18n e átomos, a partir do protótipo
-- protótipo das telas: https://claude.ai/artifact/ERkKURix2bnKAqzi97emmw (privado do dono)
-- novas fases: 3c painel de execução (terminal, tests, problems, processes, logs); catálogo de conectores com OAuth na fase 4
-- fase 1 (runtime) e fase 2 (engines vivos) concluídas em 2026-11-03; próxima pela ordem da §13: fase UI (interface nova), ou 2b/2c (failover, consumo)
+- engine first: phase 1 (runtime) and phase 2 (engines) before the interface; the UI phase redesigns everything once, with i18n and atoms, from the prototype
+- screens prototype: https://claude.ai/artifact/ERkKURix2bnKAqzi97emmw (private to the owner)
+- new phases: 3c execution panel (terminal, tests, problems, processes, logs); connector catalog with OAuth in phase 4
+- phase 1 (runtime) and phase 2 (live engines) completed on 2026-11-03; next in §13 order: UI phase (new interface), or 2b/2c (failover, usage)
 
-## convenções
+## conventions
 
-- comentários de código em inglês (pedido do usuário em 2026-11-03; substitui o "comments in the project language" do AGENTS.md para este projeto). Textos de interface e prompts de modelo não são comentários: ficam como estão até o i18n da fase UI
-- alias no server: `#server/*` (package.json "imports"), não `paths` do tsconfig: o desktop empacota o server e só o imports é resolvido pelo package.json do próprio server
-- commits em inglês a partir de 2026-11-03 (pedido do usuário); comentários no código também em inglês; histórico anterior fica em português
-- renomeado Zero → Zorel (2026-11-04): pacotes @zorel/*, env ZOREL_*, ferramentas zorel_*, gateway MCP "zorel", keychain dev.zorel.app, appId dev.zorel.app. Legado mantido: dados em ~/.zero/zero.db continuam sendo usados se existirem (não movidos: o banco guarda caminhos absolutos); keychain lê dev.zero.app e copia; localStorage zero.* copiado para zorel.*; backups zero-* ainda podados; import aceita "zero.agent". A pasta do repositório segue dev/zero
+- code comments in English (user request on 2026-11-03; replaces AGENTS.md's "comments in the project language" for this project). UI text and model prompts are not comments: they stay as they are until the UI phase i18n
+- alias in the server: `#server/*` (package.json "imports"), not tsconfig `paths`: the desktop bundles the server and only imports is resolved by the server's own package.json
+- commits in English from 2026-11-03 (user request); code comments in English too; earlier history stays in Portuguese
+- renamed Zero → Zorel (2026-11-04): packages @zorel/*, env ZOREL_*, tools zorel_*, MCP gateway "zorel", keychain dev.zorel.app, appId dev.zorel.app. Legacy kept: data in ~/.zero/zero.db keeps being used if it exists (not moved: the database stores absolute paths); keychain reads dev.zero.app and copies; localStorage zero.* copied to zorel.*; zero-* backups still pruned; import accepts "zero.agent". The repository folder stays dev/zero
