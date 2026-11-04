@@ -62,7 +62,7 @@ const freePort = () =>
 async function startServer() {
   const port = await freePort()
   const log = openSync(join(app.getPath("logs"), "server.log"), "a")
-  const [cmd, args] = dev ? ["bun", [join(root, "apps/server/src/main.ts")]] : [join(root, "zorel-server"), []]
+  const [cmd, args] = dev ? ["bun", [join(root, "apps/server/src/main.ts")]] : [join(root, process.platform === "win32" ? "zorel-server.exe" : "zorel-server"), []]
   server = spawn(cmd, args, {
     env: {
       ...process.env,

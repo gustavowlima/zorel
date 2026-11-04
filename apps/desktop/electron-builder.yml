@@ -15,7 +15,7 @@ files:
   - package.json
 asar: true
 extraResources:
-  - { from: build/zorel-server, to: zorel-server }
+  - { from: build, to: ., filter: ["zorel-server", "zorel-server.exe"] } # bun --compile adds .exe on Windows
   - { from: build/web, to: web }
   - { from: build/drizzle, to: drizzle }
 # Only the app's languages: drops ~40 MB of Chromium locales.

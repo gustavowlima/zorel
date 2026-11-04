@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { parseLsof } from "./procs.ts"
-import { parseFrame, Ring, runLine, scriptsOf } from "./terminals.ts"
+import { parseFrame, Ring, runLine, scriptsOf, shellCommand } from "./terminals.ts"
 
 test("parseFrame takes input and sane sizes, nothing else", () => {
   expect(parseFrame(`{"t":"i","d":"ls\\r"}`)).toEqual({ t: "i", d: "ls\r" })
@@ -50,5 +50,13 @@ describe("parseLsof", () => {
     const m = parseLsof("p10\ncnode\nf3\nn*:5173\nf4\nn[::1]:5173\np11\ncbun\nn127.0.0.1:4000\n")
     expect(m.get(10)).toEqual({ command: "node", names: ["*:5173", "[::1]:5173"] })
     expect(m.get(11)?.names).toEqual(["127.0.0.1:4000"])
+  })
+})
+
+describe("shellCommand", () => {
+  test("PowerShell on Windows; the person's $SHELL elsewhere, as a login shell", () => {
+    expect(shellCommand("win32", {})[0]).toMatch(/^(pwsh|powershell)\.exe$/)
+    expect(shellCommand("linux", { SHELL: "/usr/bin/fish" })).toEqual(["/usr/bin/fish", "-l"])
+    expect(shellCommand("darwin", {})[1]).toBe("-l")
   })
 })

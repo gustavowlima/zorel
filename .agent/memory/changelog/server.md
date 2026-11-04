@@ -52,3 +52,4 @@
 2026-11-04 | zorel_start_task (delegação com retorno ao chat de origem) | fase de equipe: agentes viram equipe
 2026-11-04 | prompts, resultados de ferramentas e erros em inglês; sem instrução de idioma | pedido do usuário: tudo em inglês sem forçar idioma
 2026-11-04 | procs.ts multiplataforma + consumo em tempo real em Processes | usuário pediu consumo ao vivo; tudo deve rodar em Windows, macOS e Linux
+2026-11-04 | terminal no Windows (PowerShell) e sandbox ACP no Linux (bubblewrap) | regra: tudo nos três sistemas

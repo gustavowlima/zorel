@@ -9,7 +9,9 @@
 // Confinement: below "full", the whole agent process runs in the macOS sandbox (sandbox-exec, Seatbelt), so its
 // shell, edits and every process or MCP server it starts can write only to the chat's folder ("workspace"), the
 // temporary folders, caches and the CLI's own state. Reads, network and process starts stay open, as the access
-// level says. Off macOS there is no sandbox yet: below "full" the turn is refused (idea from OpenBot, own code).
+// level says. On Linux the same rule runs in bubblewrap (bwrap: the whole system read-only, the roots bound writable),
+// when it is installed. On Windows there is no such sandbox yet: below "full" the turn is refused (idea from
+// OpenBot, own code).
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
@@ -108,11 +110,19 @@ export function seatbeltProfile(roots: ReadonlyArray<string>): string {
 }
 
 // The command line for a turn: confined below "full"; undefined when it can't be confined here.
-export function commandFor(path: string, t: Pick<AcpTurn, "args" | "access" | "cwd" | "state">, platform = process.platform): string[] | undefined {
+export function commandFor(path: string, t: Pick<AcpTurn, "args" | "access" | "cwd" | "state">, platform = process.platform, bwrap = Bun.which("bwrap")): string[] | undefined {
   if (t.access === "full") return [path, ...t.args]
-  if (platform !== "darwin" || !existsSync(SANDBOX_EXEC)) return undefined
-  return [SANDBOX_EXEC, "-p", seatbeltProfile(writableRoots(t.access, t.cwd, t.state ?? [])), path, ...t.args]
+  const roots = () => writableRoots(t.access, t.cwd, t.state ?? [])
+  if (platform === "darwin" && existsSync(SANDBOX_EXEC)) return [SANDBOX_EXEC, "-p", seatbeltProfile(roots()), path, ...t.args]
+  if (platform === "linux" && bwrap) return [...bwrapArgs(bwrap, roots().filter((r) => existsSync(r))), path, ...t.args]
+  return undefined
 }
+
+// bubblewrap: everything read-only, then each root bound writable over it; devices and /proc as usual. Network and
+// process starts stay open, as on macOS. Exits with Zorel (--die-with-parent).
+export const bwrapArgs = (bwrap: string, roots: ReadonlyArray<string>) => [
+  bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", ...roots.flatMap((r) => ["--bind", r, r]), "--die-with-parent", "--"
+]
 
 export function acpRun(t: AcpTurn): Stream.Stream<EngineEvent> {
   return Stream.fromAsyncIterable(run(t), (e) => e).pipe(Stream.catch((e) => Stream.make<EngineEvent[]>({ type: "error", message: String(e instanceof Error ? e.message : e), failure: { reason: "unavailable" } })))
@@ -126,7 +136,7 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
   }
   const cmd = commandFor(path, t)
   if (!cmd) {
-    yield { type: "error", message: `${t.bin} can only be sandboxed on macOS. Give this agent Full access to run it here.`, failure: { reason: "unavailable" } }
+    yield { type: "error", message: process.platform === "linux" ? `${t.bin} runs confined in bubblewrap, which isn't installed (install the bubblewrap package), or give this agent Full access.` : `${t.bin} can't be confined on this system yet. Give this agent Full access to run it here.`, failure: { reason: "unavailable" } }
     return
   }
   const proc = Bun.spawn(cmd, { cwd: t.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, ...t.env } })
