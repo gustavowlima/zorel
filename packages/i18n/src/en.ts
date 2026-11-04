@@ -572,6 +572,23 @@ export const en = {
     emptyHint: "Type an address above, or ask an agent to open one. Sites you sign into here stay signed in."
   },
   storage: {
+    move: {
+      title: "Move to another computer",
+      hint: "Projects, agents, chats, knowledge and attachments. API keys, sign-ins and connectors stay on this computer: sign in again on the new one.",
+      export: "Export this workspace",
+      exportHint: "One file you can copy to the other computer",
+      exportAction: "Export",
+      import: "Import a workspace",
+      importHint: "Replaces this computer's workspace when Zorel restarts. The current one is kept as a backup.",
+      importAction: "Import…",
+      notAnExport: "That file isn't a Zorel export.",
+      pending: { one: "Ready: {projects} project and {chats} chats come in when Zorel restarts.", other: "Ready: {projects} projects and {chats} chats come in when Zorel restarts." },
+      pendingShort: "An import is ready: it comes in when Zorel restarts.",
+      cancel: "Cancel import",
+      confirmTitle: "Replace this workspace?",
+      confirmBody: "{name} replaces this computer's projects, agents, chats and knowledge the next time Zorel starts. The current ones are kept in the data folder's backups.",
+      confirm: "Import"
+    },
     onThisComputer: "Zorel on this computer",
     measured: "Measured {age}",
     free: "{size} free on this disk",

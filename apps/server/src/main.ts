@@ -10,7 +10,7 @@ import { HttpApiBuilder, HttpApiError } from "effect/http-api"
 import { existsSync, mkdirSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, normalize, resolve } from "node:path"
-import { ask, consolidate, DataDir, prepare } from "./chat.ts"
+import { ask, consolidate, DataDir, DbPath, prepare } from "./chat.ts"
 import * as Git from "./git.ts"
 import { MAX_AFTER, snippet } from "./context.ts"
 
@@ -32,6 +32,7 @@ import { billingOf, Pricing } from "./pricing.ts"
 import { clean, measure } from "./storage.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
+import { applyPendingImport, cancelImport, exportWorkspace, MAX_IMPORT_BYTES, pendingImport, stageImport } from "./transfer.ts"
 import { cpus, totalmem } from "node:os"
 import { listProcs, type Proc, sample, subtree } from "./procs.ts"
 import { closeTerminal, liveTerminals, scriptsOf, serversUnder, TerminalSocket, terminalsOf } from "./terminals.ts"
@@ -796,6 +797,36 @@ const AttachmentFile = HttpRouter.add(
   }).pipe(Effect.orDie)
 )
 
+// Moving the workspace (transfer.ts): export downloads one .tar.gz; import checks an upload and leaves it pending for
+// the next start (GET says whether one is pending; DELETE drops it).
+const WorkspaceExport = HttpRouter.add(
+  "GET",
+  "/api/workspace/export",
+  Effect.gen(function* () {
+    const [dbPath, dataDir] = [yield* DbPath, yield* DataDir]
+    const bytes = yield* Effect.promise(() => exportWorkspace(dbPath, dataDir))
+    const name = `zorel-workspace-${new Date().toISOString().slice(0, 10)}.tar.gz`
+    return HttpServerResponse.uint8Array(bytes, { contentType: "application/gzip", headers: { "content-disposition": `attachment; filename="${name}"` } })
+  })
+)
+const WorkspaceImport = HttpRouter.add(
+  "*",
+  "/api/workspace/import",
+  Effect.gen(function* () {
+    const req = yield* HttpServerRequest.HttpServerRequest
+    const dataDir = yield* DataDir
+    if (req.method === "GET") return HttpServerResponse.jsonUnsafe({ pending: pendingImport(dataDir) })
+    if (req.method === "DELETE") return yield* Effect.sync(() => cancelImport(dataDir)).pipe(Effect.as(HttpServerResponse.empty({ status: 204 })))
+    if (req.method !== "POST") return HttpServerResponse.empty({ status: 405 })
+    if (Number(req.headers["content-length"] ?? 0) > MAX_IMPORT_BYTES) return HttpServerResponse.jsonUnsafe({ error: "too_large" }, { status: 413 })
+    const body = new Uint8Array(yield* req.arrayBuffer)
+    return yield* Effect.tryPromise(() => stageImport(body, dataDir)).pipe(
+      Effect.map((counts) => HttpServerResponse.jsonUnsafe({ pending: true, ...counts })),
+      Effect.catch(() => Effect.succeed(HttpServerResponse.jsonUnsafe({ error: "not_an_export" }, { status: 400 })))
+    )
+  }).pipe(Effect.orDie)
+)
+
 // Connectors (oauth.ts): the service sends the person back here after they allow Zorel.
 const escapeHtml = (v: string) => v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`) // error text comes from the service
 const page = (title: string, text: string, status = 200) =>
@@ -942,6 +973,8 @@ export const AppLive = (webDir?: string) =>
     RpcRoute,
     AttachmentUpload,
     AttachmentFile,
+    WorkspaceExport,
+    WorkspaceImport,
     OAuthCallback,
     TerminalSocket,
     BrowserSocket,
@@ -952,7 +985,7 @@ export const AppLive = (webDir?: string) =>
 export const services = (dbPath: string, dataDir: string, secrets?: Layer.Layer<Secrets, never, Store>) => {
   const store = Store.layer(dbPath)
   const withSecrets = Layer.provideMerge(secrets ?? Secrets.layer, store)
-  const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(Engines.layer, Tools.layer), withSecrets), DataDir.layer(dataDir))
+  const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(Engines.layer, Tools.layer), withSecrets), DataDir.layer(dataDir), DbPath.layer(dbPath))
   const withAccounts = Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.layer, Audit.layer, BrowserService.layer), base)
   return Layer.mergeAll(Layer.provideMerge(Runtime.layer, withAccounts), Actor.local)
 }
@@ -969,10 +1002,16 @@ export async function start(o: StartOptions = {}) {
   mkdirSync(dataDir, { recursive: true }) // don't spawn a shell just to create the folder
   const port = o.port ?? Number(process.env.PORT ?? 4317)
   process.env.ZOREL_ORIGIN ??= `http://127.0.0.1:${port}` // where OAuth services send the person back (oauth.ts)
+  const dbPath = process.env.ZOREL_DB ?? dbPathIn(dataDir)
+  const imported = await applyPendingImport(dataDir, dbPath).catch((e: unknown) => {
+    console.error("import not applied:", e)
+    return false
+  })
+  if (imported) console.info("imported workspace applied")
   const webDir = o.webDir ?? process.env.ZOREL_WEB_DIR ?? resolve(import.meta.dir, "../../web/dist")
   AppLive(resolve(webDir)).pipe(
     HttpRouter.serve,
-    Layer.provide(services(process.env.ZOREL_DB ?? dbPathIn(dataDir), dataDir)),
+    Layer.provide(services(dbPath, dataDir)),
     Layer.provide(BunHttpServer.layer({ port, hostname: "127.0.0.1" })),
     Layer.provide(LoggerLive),
     Layer.launch,

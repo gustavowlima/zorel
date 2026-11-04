@@ -16,6 +16,10 @@ export class Busy extends Data.TaggedError("Busy")<{}> {}
 export class DataDir extends Context.Service<DataDir, string>()("DataDir") {
   static layer = (dir: string) => Layer.succeed(DataDir, dir)
 }
+// The database file (exporting the workspace copies it).
+export class DbPath extends Context.Service<DbPath, string>()("DbPath") {
+  static layer = (path: string) => Layer.succeed(DbPath, path)
+}
 
 const MAX_PENDING = 20 // proposals awaiting review; above this, consolidation only updates the summary
 const consolidating = new Set<string>()
