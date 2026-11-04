@@ -108,6 +108,20 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
           return after
         })
       )
+      .handle("versions", ({ params }) =>
+        Effect.flatMap(store.agent(params.id), (a) => (a ? Effect.map(store.agentVersions(a.id), (vs) => vs.map(({ agentId: _, ...v }) => v)) : notFound()))
+      )
+      // A past profile becomes the current one (recorded as a new version; nothing is lost).
+      .handle("restore", ({ params }) =>
+        Effect.gen(function* () {
+          const before = yield* store.agent(params.id)
+          const v = before && (yield* store.agentVersions(before.id)).find((x) => x.n === params.n)
+          if (!before || !v) return yield* notFound()
+          const after = yield* found(store.updateAgent(before.id, v.profile))
+          yield* audit.record(Actions.agentUpdated, { target: after, ...changed(before, after, AGENT_FIELDS), reason: `restored version ${v.n}` })
+          return after
+        })
+      )
       .handle("remove", ({ params }) =>
         Effect.gen(function* () {
           const agent = yield* store.agent(params.id)

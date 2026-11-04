@@ -118,3 +118,21 @@ test("memória sobre a pessoa só o dono ouve; a do projeto, o projeto", async (
   ])
   rmSync(dir, { recursive: true })
 })
+
+test("agent versions: one per real change, with who made it; deleting the agent drops them", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const a = yield* r.createAgent({ projectId: null, name: "Dev", instructions: "v1", model: "x/y" })
+      yield* r.updateAgent(a.id, { instructions: "v2" }, "Lead")
+      yield* r.updateAgent(a.id, { instructions: "v2" }) // no change: no version
+      yield* r.updateAgent(a.id, { access: "ask" })
+      const vs = yield* r.agentVersions(a.id)
+      expect(vs.map((v) => [v.n, v.by, v.profile.instructions, v.profile.access])).toEqual([
+        [3, "you", "v2", "ask"],
+        [2, "Lead", "v2", "workspace"],
+        [1, "you", "v1", "workspace"]
+      ])
+      yield* r.removeAgent(a.id)
+      expect(yield* r.agentVersions(a.id)).toEqual([])
+    })
+  ))
