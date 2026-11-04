@@ -75,7 +75,7 @@ export interface RuntimeService {
   readonly busy: (chatId: string) => boolean // a turn is running in the chat now
   // Engine sessions kept open between turns (Claude Code, Codex: a process each), and closing one to free it; the
   // chat's next turn opens a new one from the resume point.
-  readonly liveSessions: () => ReadonlyArray<{ key: string; chatId: string; agentId: string | null; provider: string; usedAt: number }>
+  readonly liveSessions: () => ReadonlyArray<{ key: string; chatId: string; agentId: string | null; provider: string; usedAt: number; pid: number | undefined }>
   readonly closeSession: (key: string) => Effect.Effect<void>
 }
 
@@ -951,7 +951,7 @@ export const makeRuntime = Effect.gen(function* () {
     liveSessions: () =>
       [...sessions.entries()].map(([key, live]) => {
         const [chatId = "", agentId = "-"] = key.split(":")
-        return { key, chatId, agentId: agentId === "-" ? null : agentId, provider: live.provider, usedAt: live.used }
+        return { key, chatId, agentId: agentId === "-" ? null : agentId, provider: live.provider, usedAt: live.used, pid: live.session.pid?.() }
       }),
     closeSession: (key) => (running.has(key.split(":")[0] ?? "") ? Effect.void : closeSession(key)), // never under a running turn
     send: (input) =>

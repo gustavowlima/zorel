@@ -33,6 +33,8 @@ export interface EngineSession {
   readonly steer?: (text: string) => Promise<boolean>
   readonly alive: () => boolean
   readonly close: Effect.Effect<void>
+  // The engine's process (Settings › Processes measures it and what it started), when there is one.
+  readonly pid?: () => number | undefined
 }
 
 // How long an approval card waits for the person (ARCHITECTURE §9.2); then it counts as a denial. The engines'

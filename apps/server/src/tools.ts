@@ -52,10 +52,12 @@ export interface RemoteTool extends ToolInfo {
 
 export class Hub {
   private clients = new Map<string, Promise<Client>>()
+  private pids = new Map<string, number>() // local (stdio) servers' processes
   // Servers that refused the stored sign-in (token revoked or expired, refresh failed): Settings asks to reconnect.
   readonly refused = new Set<string>()
   // Servers with a client open now (a local one is a process of its own).
   connected = () => [...this.clients.keys()]
+  pidOf = (id: string) => this.pids.get(id)
   constructor(private secrets: SecretStore) {}
 
   private connect(s: McpServer): Promise<Client> {
@@ -71,6 +73,7 @@ export class Hub {
           })
         : new StdioClientTransport({ command: s.command, args: [...s.args], env: { ...getDefaultEnvironment(), ...env }, stderr: "ignore" })
       await client.connect(transport, { timeout: CONNECT_MS })
+      if ("pid" in transport && transport.pid) this.pids.set(s.id, transport.pid)
       this.refused.delete(s.id)
       return client
     })()
@@ -103,6 +106,7 @@ export class Hub {
     const c = this.clients.get(id)
     this.clients.delete(id)
     this.refused.delete(id) // new credentials: try again before saying it's refused
+    this.pids.delete(id)
     await c?.then((x) => x.close()).catch(() => {})
   }
 
