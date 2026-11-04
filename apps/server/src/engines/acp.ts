@@ -6,6 +6,13 @@
 // Permissions: the agent asks before acting; with access "ask" Zero refuses (no approval card in a stateless turn,
 // the reply says so), with "workspace" or "full" it allows once. Files and terminals stay the agent's own (Zero
 // declares neither capability), and Zero's checkpoints still record what changed.
+// Confinement: below "full", the whole agent process runs in the macOS sandbox (sandbox-exec, Seatbelt), so its
+// shell, edits and every process or MCP server it starts can write only to the chat's folder ("workspace"), the
+// temporary folders, caches and the CLI's own state. Reads, network and process starts stay open, as the access
+// level says. Off macOS there is no sandbox yet: below "full" the turn is refused (idea from a reference app, own code).
+import { existsSync, readFileSync, realpathSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
+import { dirname, join, resolve } from "node:path"
 import type { Access } from "@zero/contracts"
 import { Stream } from "effect"
 import type { EngineEvent, NativeStep } from "../engines.ts"
@@ -18,6 +25,7 @@ export interface AcpTurn {
   readonly prompt: string
   readonly access: Access
   readonly gatewayUrl?: string | undefined
+  readonly state?: ReadonlyArray<string> // folders under home the CLI writes its own data to
 }
 
 type Json = Record<string, any>
@@ -32,6 +40,57 @@ export function permission(options: ReadonlyArray<{ optionId: string; kind: stri
   return allow ? { outcome: { outcome: "selected", optionId: allow.optionId } } : { outcome: { outcome: "cancelled" } }
 }
 
+const SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+const real = (p: string) => {
+  try {
+    return realpathSync(p)
+  } catch {
+    return resolve(p)
+  }
+}
+const quote = (p: string) => JSON.stringify(p) // Seatbelt strings use the same escapes as JSON
+
+// A git worktree keeps its index and refs in the main repository's .git: commits there need it writable.
+function gitCommonDir(cwd: string): string | undefined {
+  const dotGit = join(cwd, ".git")
+  if (!existsSync(dotGit)) return undefined
+  const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, "utf8").toString().trim())
+  return m ? dirname(dirname(resolve(cwd, m[1]!.trim()))) : undefined // <repo>/.git/worktrees/<name> → <repo>/.git
+}
+
+// The folders a confined agent may write, by access level.
+export function writableRoots(access: Access, cwd: string, state: ReadonlyArray<string>, home = homedir()): string[] {
+  const roots = [tmpdir(), "/tmp", "/private/tmp", join(home, ".cache"), join(home, "Library/Caches"), ...state.map((s) => join(home, s))]
+  if (access === "workspace") {
+    roots.push(cwd)
+    try {
+      const common = gitCommonDir(cwd)
+      if (common) roots.push(common)
+    } catch {
+      // .git is a folder (a normal repo inside cwd): already writable
+    }
+  }
+  return [...new Set(roots.map(real))]
+}
+
+// Seatbelt profile: everything allowed except writing outside the roots (and the terminal devices a shell needs).
+export function seatbeltProfile(roots: ReadonlyArray<string>): string {
+  return [
+    "(version 1)",
+    "(allow default)",
+    "(deny file-write*)",
+    `(allow file-write* ${roots.map((r) => `(subpath ${quote(r)})`).join(" ")})`,
+    '(allow file-write* (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/ptmx") (literal "/dev/dtracehelper") (regex #"^/dev/ttys[0-9]+$") (regex #"^/dev/fd/"))'
+  ].join("\n")
+}
+
+// The command line for a turn: confined below "full"; undefined when it can't be confined here.
+export function commandFor(path: string, t: Pick<AcpTurn, "args" | "access" | "cwd" | "state">, platform = process.platform): string[] | undefined {
+  if (t.access === "full") return [path, ...t.args]
+  if (platform !== "darwin" || !existsSync(SANDBOX_EXEC)) return undefined
+  return [SANDBOX_EXEC, "-p", seatbeltProfile(writableRoots(t.access, t.cwd, t.state ?? [])), path, ...t.args]
+}
+
 export function acpRun(t: AcpTurn): Stream.Stream<EngineEvent> {
   return Stream.fromAsyncIterable(run(t), (e) => e).pipe(Stream.catch((e) => Stream.make<EngineEvent[]>({ type: "error", message: String(e instanceof Error ? e.message : e), failure: { reason: "unavailable" } })))
 }
@@ -42,7 +101,12 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
     yield { type: "error", message: `${t.bin} is not installed or not on the PATH.`, failure: { reason: "unavailable" } }
     return
   }
-  const proc = Bun.spawn([path, ...t.args], { cwd: t.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: process.env })
+  const cmd = commandFor(path, t)
+  if (!cmd) {
+    yield { type: "error", message: `${t.bin} can only be sandboxed on macOS. Give this agent Full access to run it here.`, failure: { reason: "unavailable" } }
+    return
+  }
+  const proc = Bun.spawn(cmd, { cwd: t.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: process.env })
   const queue: EngineEvent[] = []
   let wake: (() => void) | undefined
   const push = (e: EngineEvent) => {

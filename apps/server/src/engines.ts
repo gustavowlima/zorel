@@ -476,9 +476,10 @@ export interface EnginesService {
 
 const NATIVE = new Set(["claude-cli", "codex-cli"])
 // ACP agents: the binary and its arguments for a model ("default": the agent's own choice).
-const ACP: Record<string, (model: string) => { bin: string; args: string[] }> = {
-  "gemini-cli": (model) => ({ bin: "gemini", args: ["--acp", ...(model && model !== "default" ? ["-m", model] : [])] }),
-  opencode: () => ({ bin: "opencode", args: ["acp"] })
+// `state`: folders (under home) the CLI writes its own sessions, logs and caches to; the sandbox lets it write there.
+const ACP: Record<string, (model: string) => { bin: string; args: string[]; state: string[] }> = {
+  "gemini-cli": (model) => ({ bin: "gemini", args: ["--acp", ...(model && model !== "default" ? ["-m", model] : [])], state: [".gemini"] }),
+  opencode: () => ({ bin: "opencode", args: ["acp"], state: [".local/share/opencode", ".local/state/opencode", ".cache/opencode", ".config/opencode"] })
 }
 
 export class Engines extends Context.Service<Engines, EnginesService>()("Engines") {
