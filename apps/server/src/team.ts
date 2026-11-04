@@ -89,7 +89,6 @@ export const TEAM_TOOLS = [
     writes: true
   }
 ] as const
-export type TeamToolName = (typeof TEAM_TOOLS)[number]["name"]
 
 // Memory beyond the prompt's budget: the agent searches it when it needs to (the turn already brings the most
 // recently confirmed and the few that match the message). Read only; scopes are the chat's.

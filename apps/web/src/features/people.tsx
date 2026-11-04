@@ -14,19 +14,6 @@ export function AuthorAvatar({ agent, model, size = 32 }: { agent: Agent | undef
   return <ModelAvatar provider={splitModel(model ?? "").provider} size={size} />
 }
 
-// Overlapping avatars of a chat's members (header).
-export function AvatarStack({ team }: { team: ReadonlyArray<Agent> }) {
-  const agents = useList(agentsAtom)
-  if (!team.length) return null
-  return (
-    <div role="img" aria-label={t("chat.members", { names: team.map((a) => a.name).join(", ") })} className="flex">
-      {team.map((a, i) => (
-        <AgentAvatar key={a.id} id={a.id} name={a.name} tone={agentTone(a, agents)} size={28} className={i ? "-ml-1.5 ring-2 ring-canvas" : "ring-2 ring-canvas"} />
-      ))}
-    </div>
-  )
-}
-
 // Header: the chat's members as overlapping avatars (or "Add an agent" when it has none); opens the team list
 // to add, remove or pick the lead. Who answers a message is picked in the text with @.
 export function TeamPicker({ chat }: { chat: Chat }) {

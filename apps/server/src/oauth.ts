@@ -13,7 +13,6 @@ type Stored = { client?: OAuthClientInformationMixed | undefined; tokens?: OAuth
 const pending = new Map<string, { serverId: string; at: number }>()
 const PENDING_MS = 10 * 60_000
 
-export { oauthKey }
 // This server's address as the browser reaches it (set by start()).
 export const callbackUrl = () => `${process.env.ZOREL_ORIGIN ?? "http://127.0.0.1:4317"}/api/oauth/callback`
 
@@ -75,13 +74,7 @@ export class McpOAuth implements OAuthClientProvider {
   }
 }
 
-export const isSignedIn = (secrets: SecretStore, serverId: string) => {
-  try {
-    return !!(JSON.parse(secrets.get(oauthKey(serverId)) ?? "{}") as Stored).tokens?.access_token
-  } catch {
-    return false
-  }
-}
+export const isSignedIn = (secrets: SecretStore, serverId: string) => !!new McpOAuth(secrets, serverId).tokens()?.access_token
 
 // Start (or refresh) the sign-in: the URL to open, or null when Zorel already holds a working token.
 export async function startSignIn(secrets: SecretStore, serverId: string, serverUrl: string): Promise<string | null> {
