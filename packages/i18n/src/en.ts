@@ -106,6 +106,8 @@ export const en = {
     leadAnswered: "{name} answered as lead",
     handoff: "{from} handed the turn to {to}",
     handedBack: "{from} handed back to {to}",
+    routed: "Sent to {to}",
+    routedWhy: "Sent to {to} · {reason}",
     chainStopped: "The agents stopped here so they don't talk in circles. Send a message to go on.",
     compact: "Summarize and learn",
     compactHint: "Summarizes the chat so far and proposes memories and skills",

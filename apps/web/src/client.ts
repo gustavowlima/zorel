@@ -183,7 +183,7 @@ export interface LiveTurn {
 }
 // Things that happen between messages and aren't stored as messages (this session only).
 export type Note =
-  | { readonly at: number; readonly kind: "handoff"; readonly from: string | null; readonly to: ReadonlyArray<string>; readonly via: "mention" | "send_message" | "start_task" | "reply" | "limit" }
+  | { readonly at: number; readonly kind: "handoff"; readonly from: string | null; readonly to: ReadonlyArray<string>; readonly via: "mention" | "send_message" | "start_task" | "reply" | "limit" | "route"; readonly reason?: string | undefined }
   // A failover move in the running turn; once the reply is saved, the message carries it instead.
   | { readonly at: number; readonly kind: "failover"; readonly turnId: string; readonly switch: Switch }
 export interface Receipt {
@@ -247,7 +247,7 @@ export function reduceChat(s: ChatState, e: ChatEvent): ChatState {
       return { ...s, approvals: s.approvals.filter((a) => a.id !== e.approvalId), receipts: approval ? [...s.receipts, { approval, outcome: e.outcome }] : s.receipts }
     }
     case "handoff":
-      return { ...s, notes: [...s.notes, { at: Date.now(), kind: "handoff", from: e.from, to: e.to, via: e.via }] }
+      return { ...s, notes: [...s.notes, { at: Date.now(), kind: "handoff", from: e.from, to: e.to, via: e.via, reason: e.reason }] }
     case "failover":
       // The turn starts over on the next route: drop what the failed one wrote.
       return {

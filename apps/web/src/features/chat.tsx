@@ -1022,6 +1022,7 @@ function TimelineNote({ note, agents }: { note: Note; agents: ReadonlyArray<Agen
   const from = agentName(note.from, agents)
   if (note.via === "limit") return <Separator>{t("chat.chainStopped")}</Separator>
   if (note.via === "reply") return <Separator>{t("chat.handedBack", { from, to })}</Separator>
+  if (note.via === "route") return <Separator>{note.reason ? t("chat.routedWhy", { to, reason: note.reason }) : t("chat.routed", { to })}</Separator>
   return <Separator>{t("chat.handoff", { from, to })}</Separator>
 }
 

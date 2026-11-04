@@ -187,6 +187,7 @@ export const turns = sqliteTable(
     clientId: text("client_id").unique(), // `send` idempotency; chained turns have none
     state: text({ enum: ["queued", "running", "completed", "failed", "interrupted"] }).notNull(),
     depth: integer().notNull().default(0), // consecutive agent replies without a message from you
+    route: integer({ mode: "boolean" }).notNull().default(false), // who answers is picked (router.ts) when it starts
     createdAt: integer("created_at").notNull(),
     startedAt: integer("started_at"),
     endedAt: integer("ended_at"),

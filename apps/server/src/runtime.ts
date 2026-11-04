@@ -6,7 +6,8 @@ import type { Access, Agent, Chat, Effort, FailoverTarget, FailureReason, FileCh
 import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
-import { consolidate, DataDir, members, prepare } from "./chat.ts"
+import { ask, consolidate, DataDir, members, prepare } from "./chat.ts"
+import { parseRoute, ROUTER_MESSAGES, routerModel, routerPrompt } from "./router.ts"
 import { handleOf, MAX_DEPTH, mentioned, scopesOf, snippet } from "./context.ts"
 import { type AccountRow, Store, type Repository, type TurnRow } from "./db.ts"
 import { type EngineFailure, Engines, isImage, type NativeStep, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
@@ -930,6 +931,31 @@ export const makeRuntime = Effect.gen(function* () {
       yield* ensureWorker(origin.id)
     })
 
+  // ---------- routing (router.ts) ----------
+  // A turn marked to route: one cheap call picks who answers; the turn goes to that agent (the lead on any failure).
+  const routeTurn = (row: TurnRow) =>
+    Effect.gen(function* () {
+      const chat = yield* store.chat(row.chatId)
+      if (!chat) return row
+      const team = yield* members(store, chat)
+      const recent = (yield* store.messages(chat.id)).slice(-ROUTER_MESSAGES - 1)
+      const text = recent.at(-1)?.role === "user" ? recent.at(-1)!.text : ""
+      yield* setStatus(chat.id, "running", row.agentId, "")
+      const answer = yield* ask(routerModel(chat.model), routerPrompt(team, recent.slice(0, -1), text)).pipe(
+        Effect.provide(services),
+        Effect.timeoutOption("20 seconds"),
+        Effect.map((o) => (o._tag === "Some" ? o.value.text : "")),
+        Effect.catchCause(() => Effect.succeed(""))
+      )
+      const picked = parseRoute(answer, team)
+      const agent = picked?.agent ?? team[0]
+      if (!agent) return { ...row, route: false }
+      const isLead = agent.id === team[0]?.id
+      const next = yield* store.retargetTurn(row.id, { agentId: agent.id, model: isLead ? chat.model : agent.model, accountId: isLead ? chat.accountId : agent.accountId })
+      yield* publish(chat.id, ev("handoff", { turnId: row.id, from: null, to: [agent.id], via: "route", ...(picked?.reason && { reason: picked.reason }) }))
+      return next
+    })
+
   // ---------- per-chat worker ----------
   const worker = (chatId: string): Effect.Effect<void> =>
     Effect.gen(function* () {
@@ -944,7 +970,7 @@ export const makeRuntime = Effect.gen(function* () {
           }
           break
         }
-        const fiber = yield* Effect.forkDetach(runTurn(row))
+        const fiber = yield* Effect.forkDetach(runTurn(row.route ? yield* routeTurn(row) : row))
         running.set(chatId, fiber)
         const done = yield* Fiber.join(fiber).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         running.delete(chatId)
@@ -1005,14 +1031,17 @@ export const makeRuntime = Effect.gen(function* () {
       const team = yield* members(store, chat)
       const lead = team[0]
       const targets: Array<Agent | undefined> = mentioned(text, team).slice(0, MAX_MENTIONS)
-      if (!targets.length) targets.push((yield* followUp(chat, team)) ?? lead)
+      const follow = targets.length ? undefined : yield* followUp(chat, team)
+      // No one named and no follow-up in a team: the router picks who answers when the turn starts (lead meanwhile).
+      const route = !targets.length && !follow && team.length > 1
+      if (!targets.length) targets.push(follow ?? lead)
       let first: string | undefined
       for (const [i, a] of targets.entries()) {
         // The leader uses the chat model (the one you picked); other members use their own.
         const isLead = !a || a.id === lead?.id
         const t = yield* store.enqueueTurn({
           chatId: chat.id, agentId: a?.id ?? null, model: isLead ? chat.model : a.model, accountId: isLead ? chat.accountId : a.accountId,
-          clientId: i === 0 ? clientId : null, depth: 0
+          clientId: i === 0 ? clientId : null, depth: 0, route
         })
         first ??= t.id
         yield* publish(chat.id, ev("queued", { turn: store.toTurn(t) }))

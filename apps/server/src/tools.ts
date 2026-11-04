@@ -170,14 +170,48 @@ export class Gateway {
       if (!session.tools.some((t) => t.name === r.params.name)) return textResult(`Tool not allowed: ${r.params.name}`, true)
       return session.call(r.params.name, (r.params.arguments ?? {}) as Record<string, unknown>)
     })
-    const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true }) // no sessionIdGenerator: stateless mode
+    // SSE responses (no sessionIdGenerator: stateless): the headers go out at once and a ping every 30 s keeps the
+    // call open while a card waits for the person. A JSON response sent only at the end hit the engines' HTTP
+    // client limit (undici: 300 s to the first byte), so an approval or question over 5 minutes failed.
+    const transport = new WebStandardStreamableHTTPServerTransport({})
     await server.connect(transport)
-    try {
-      return await transport.handleRequest(req)
-    } finally {
+    const res = await transport.handleRequest(req).catch((e: unknown) => {
       void server.close()
+      throw e
+    })
+    if (!res.body || !res.headers.get("content-type")?.includes("text/event-stream")) {
+      void server.close()
+      return res
     }
+    return new Response(withPings(res.body, () => void server.close()), { status: res.status, headers: res.headers })
   }
+}
+
+// An SSE body with a comment line (": ping") every `every` ms until it ends; `onEnd` when it ends or is cancelled.
+export function withPings(body: ReadableStream<Uint8Array>, onEnd: () => void, every = 30_000): ReadableStream<Uint8Array> {
+  const reader = body.getReader()
+  const ping = new TextEncoder().encode(": ping\n\n")
+  let timer: ReturnType<typeof setInterval> | undefined
+  const end = () => {
+    clearInterval(timer)
+    onEnd()
+  }
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      timer = setInterval(() => controller.enqueue(ping), every)
+    },
+    async pull(controller) {
+      const { value, done } = await reader.read()
+      if (done) {
+        end()
+        controller.close()
+      } else controller.enqueue(value)
+    },
+    cancel() {
+      end()
+      void reader.cancel()
+    }
+  })
 }
 
 // Exposed name: only [a-zA-Z0-9_-], up to 64 characters (common provider limit).
