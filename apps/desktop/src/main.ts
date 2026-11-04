@@ -10,7 +10,6 @@ import { join } from "node:path"
 import { app, BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, session, shell, Tray } from "electron"
 import { SESSION_BYTES, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
 import { autoUpdater } from "electron-updater"
-import { type BrowserHost, startBrowserHost } from "./browser-host.ts"
 
 const dev = !app.isPackaged
 // app.getAppPath(): apps/desktop in dev, the app.asar when packaged (the bundler bakes __dirname at build time).
@@ -24,28 +23,11 @@ const secret = randomBytes(SESSION_BYTES).toString("hex")
 let win: BrowserWindow | undefined
 let tray: Tray | undefined
 let quitting = false
-let browser: BrowserHost | undefined
 let update: { version: string; ready: boolean } | null = null // the newest release: downloading, then ready
 const icon = () => nativeImage.createFromPath(join(appDir, "assets", "icon.png"))
 
 // Fewer idle processes: no spare renderer kept warm, no media-key or cast services the app never uses.
 app.commandLine.appendSwitch("disable-features", "SpareRendererForSitePerProcess,HardwareMediaKeyHandling,MediaRouter")
-// CDP for the server to drive the agents' tabs: a free port on 127.0.0.1 only, read back from DevToolsActivePort.
-app.commandLine.appendSwitch("remote-debugging-port", "0")
-
-const cdpUrl = async () => {
-  for (let i = 0; i < 100; i++) {
-    try {
-      const port = readFileSync(join(app.getPath("userData"), "DevToolsActivePort"), "utf8").split("\n")[0]?.trim()
-      if (port) return `http://127.0.0.1:${port}`
-    } catch {
-      // not written yet
-    }
-    await new Promise((r) => setTimeout(r, 50))
-  }
-  throw new Error("The browser debugging port didn't open.")
-}
-
 // Apps opened from Finder/Dock don't inherit the shell PATH; without it `claude`, `codex` and `opencode` aren't found.
 const loginShellPath = () =>
   new Promise<void>((resolve) => {
@@ -76,9 +58,8 @@ async function startServer() {
       PORT: String(port),
       [SESSION_ENV]: secret, // the server reads it and drops it from its env at once
       ZOREL_PARENT_PID: String(process.pid), // the server exits if this process dies without stopping it
-      ...(browser ? { ZOREL_DESKTOP_CDP: await cdpUrl(), ZOREL_DESKTOP_CONTROL: browser.control, ZOREL_DESKTOP_TOKEN: browser.token } : {}),
       ZOREL_WEB_DIR: dev ? join(root, "apps/web/dist") : join(root, "web"),
-      ...(dev ? {} : { ZOREL_MIGRATIONS: join(root, "drizzle") })
+      ...(dev ? {} : { ZOREL_MIGRATIONS: join(root, "drizzle"), PLAYWRIGHT_BROWSERS_PATH: join(root, "browsers") }) // the bundled Chromium
     },
     stdio: ["ignore", dev ? "inherit" : log, dev ? "inherit" : log]
   })
@@ -124,7 +105,6 @@ function openWindow() {
     if (items.length) Menu.buildFromTemplate(items).popup()
   })
   win.once("ready-to-show", () => win?.show())
-  win.on("close", () => browser?.release())
   win.on("closed", () => {
     win = undefined
   })
@@ -277,9 +257,6 @@ else {
   void app
     .whenReady()
     .then(loginShellPath)
-    .then(async () => {
-      browser = await startBrowserHost(() => win)
-    })
     .then(startServer)
     .then(() => {
       auth()

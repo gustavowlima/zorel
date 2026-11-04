@@ -31,6 +31,8 @@ extraResources:
   - { from: build, to: ., filter: ["zorel-server", "zorel-server.exe"] } # bun --compile adds .exe on Windows
   - { from: build/web, to: web }
   - { from: build/drizzle, to: drizzle }
+  # The agents' browser (Playwright's headless Chromium, the server's Playwright version): the app needs no Chrome.
+  - { from: build/browsers, to: browsers }
 # Only the app's languages: drops ~40 MB of Chromium locales.
 electronLanguages: [en, pt-BR]
 # Updates: a GitHub release per version (electron-updater reads it). Owner and repo come from the build's

@@ -8,7 +8,8 @@ updated: 2026-11-04
 
 - main.ts: HttpApi (contracts) + SSE POST /api/chats/:id/send + serve apps/web/dist; start() exportado (usado pelo desktop); escuta só 127.0.0.1
 - LocalOnly (middleware global): Host local; Origin, se houver, igual à própria origem (new URL(origin).host === Host); /api e /rpc exigem o segredo da sessão (header x-zorel-token ou cookie zorel), menos /api/login, /api/oauth/callback e /api/hooks/; 403 caso contrário. Nomes em @zorel/contracts/session; segredo vem de ZOREL_SESSION (desktop, dev.ts) e é apagado do env; sem ele, aleatório e o link de login é impresso
-- nunca deixar segredo em process.env: engines/terminais/MCP herdam o env (ZOREL_DESKTOP_* também são lidos e apagados em browser.ts)
+- nunca deixar segredo em process.env: engines/terminais/MCP herdam o env
+- browser.ts: chromium.launch por pipe (CHANNELS chrome → msedge → Chromium do Playwright; desktop aponta PLAYWRIGHT_BROWSERS_PATH para o headless shell embutido); nunca connectOverCDP numa porta. Um contexto por perfil (profileOf(agentId), YOU para a pessoa); estado salvo selado (seal/unseal AES-256-GCM, chave BROWSER_KEY no keychain) após ferramenta que escreve, ao devolver o controle e no close; refs por page.getByRef; signInWindow abre Chrome/Edge com janela (WINDOWED) e devolve o estado com setStorageState
 - cartão de aprovação = objeto inteiro (policy.ts cardText/MAX_CARD_TEXT); acima do limite a ferramenta recusa; nunca .slice() num cartão
 - Claude engine abaixo de full: sandbox do Claude Code no managedSettings (canSandbox: darwin, ou linux com bwrap+socat); sem sandbox decideCommand só libera leitura simples dentro da pasta
 - acp gitCommonDir: só worktree real (gitdir aponta de volta para cwd/.git); nunca confiar em arquivo que o agente escreve
