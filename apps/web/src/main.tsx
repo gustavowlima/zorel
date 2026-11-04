@@ -2,7 +2,7 @@ import "./styles.css"
 import { RegistryProvider } from "@effect/atom-react"
 import { locale } from "@zero/i18n"
 import { StrictMode } from "react"
-import { I18nProvider } from "@/ui"
+import { I18nProvider, MotionConfig } from "@/ui"
 import { createRoot } from "react-dom/client"
 import { App } from "./App.tsx"
 import { applyTheme } from "./state.ts"
@@ -25,7 +25,10 @@ createRoot(document.getElementById("root")!).render(
     <RegistryProvider>
       {/* React Aria's own strings (drag and drop, tree) follow Zero's language, not the browser's. */}
       <I18nProvider locale={locale()}>
-        <App />
+        {/* Motion follows the system: no movement when it asks for reduced motion. */}
+        <MotionConfig reducedMotion="user">
+          <App />
+        </MotionConfig>
       </I18nProvider>
     </RegistryProvider>
   </StrictMode>

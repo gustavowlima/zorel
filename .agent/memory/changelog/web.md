@@ -20,3 +20,4 @@
 2026-11-03 | projetos na barra como subtítulos alinhados aos chats | pedido do usuário
 2026-11-03 | divisória entre trilho e barra; barra lateral recolhível (botão, ⌘B, Chats) | pedido do usuário
 2026-11-03 | cartão de conteúdo com 100% da altura, colado à direita, raio só à esquerda | pedido do usuário
+2026-11-03 | Motion (motion.dev) na barra lateral: recolher, seções e destaque do trilho | pedido do usuário; dependência: animar width/height auto e layoutId sem desmontar

@@ -14,7 +14,7 @@ import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
+  Fold, Marker, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
@@ -79,11 +79,13 @@ export function Rail({ route, sidebar }: { route: Route; sidebar: { hidden: bool
 function RailItem({ label, active, onPress, count, children }: { label: string; active: boolean; onPress: () => void; count?: number | undefined; children: ReactNode }) {
   return (
     <span className="electrobun-webkit-app-region-no-drag relative">
+      {/* The current place's wash slides from the previous one. */}
+      {active && <Marker id="rail-current" className="absolute inset-0 rounded-card bg-hover" />}
       <Tooltip content={label} placement="right">
         <IconButton
           label={count ? `${label} (${count})` : label}
           onPress={onPress}
-          className={cx("size-10 rounded-card [&_svg]:size-5", active ? "bg-hover text-fg" : "text-muted")}
+          className={cx("relative size-10 rounded-card [&_svg]:size-5", active ? "text-fg data-hovered:bg-transparent" : "text-muted")}
           {...(active && { "aria-current": "page" as const })}
         >
           {children}
@@ -240,21 +242,22 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
           >
             {t("nav.chats")}
           </NavLabel>
-          {!collapsed.has("chats") &&
-            (loose.length ? (
+          <Fold open={!collapsed.has("chats")}>
+            {loose.length ? (
               <NavTree label={t("nav.chats")} dragAndDropHooks={looseDnd}>
                 {chatItems("loose", loose)}
               </NavTree>
             ) : (
-              <p className="py-1 pl-12.5 text-sm text-muted">{t("nav.noChats")}</p>
-            ))}
+              <p className="py-1 pl-2.5 text-sm text-muted">{t("nav.noChats")}</p>
+            )}
+          </Fold>
         </section>
 
         <section className="flex flex-col gap-px">
           <NavLabel expanded={!collapsed.has("projects")} onToggle={() => flip("projects")} action={<NewProjectButton />}>
             {t("nav.projects")}
           </NavLabel>
-          {!collapsed.has("projects") && (
+          <Fold open={!collapsed.has("projects")}>
             <NavTree label={t("nav.projects")} expandedKeys={expandedKeys} onExpandedChange={onExpandedChange} dragAndDropHooks={projectDnd}>
               {projects.map((p) => {
                 const list = groupOf(p.id)
@@ -265,7 +268,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
                 )
               })}
             </NavTree>
-          )}
+          </Fold>
         </section>
       </div>
 
