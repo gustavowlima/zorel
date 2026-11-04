@@ -28,7 +28,7 @@ electronFuses:
   enableCookieEncryption: true
   grantFileProtocolExtraPrivileges: false
 extraResources:
-  - { from: build, to: ., filter: ["zorel-server", "zorel-server.exe"] } # bun --compile adds .exe on Windows
+  - { from: build, to: ., filter: ["zorel-server", "zorel-server.exe", "THIRD_PARTY_LICENSES.md"] } # bun --compile adds .exe on Windows; the licenses of what ships
   - { from: build/web, to: web }
   - { from: build/drizzle, to: drizzle }
   # The agents' browser (Playwright's headless Chromium, the server's Playwright version): the app needs no Chrome.

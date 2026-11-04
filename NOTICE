@@ -21,8 +21,11 @@ Parts of this project derive from:
 Bundled with the app under their own terms:
 
 - Inter (https://github.com/rsms/inter), SIL Open Font License 1.1, Copyright 2016 The Inter
-  Project Authors. The font files ship in the web app (via @fontsource-variable/inter); the
-  license is at https://openfontlicense.org.
+  Project Authors. The font files ship in the web app (via @fontsource-variable/inter).
+
+The full license text of every package that ships inside the app (the font's included) is in
+THIRD_PARTY_LICENSES.md, generated at build time (scripts/third-party-licenses.ts) and placed
+next to the app's resources.
 
 - Claude Agent SDK (@anthropic-ai/claude-agent-sdk), Copyright Anthropic PBC, all rights reserved.
   Not covered by Zorel's license: its use is subject to Anthropic's legal agreements
