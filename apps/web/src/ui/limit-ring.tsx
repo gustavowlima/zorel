@@ -21,7 +21,8 @@ export function LimitRing({ windows, size = 44, children, className }: { windows
           return (
             // biome-ignore lint/suspicious/noArrayIndexKey: a ring is its place, outer to inner
             <g key={i} fill="none" strokeWidth={stroke}>
-              <circle cx={center} cy={center} r={r} className="stroke-control" />
+              {/* The track is a tint of the text, so it shows on any background (a lit button too). */}
+              <circle cx={center} cy={center} r={r} className="stroke-current opacity-15" />
               <circle
                 cx={center}
                 cy={center}

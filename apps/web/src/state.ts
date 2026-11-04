@@ -10,7 +10,7 @@ export type Route =
   | { view: "home"; projectId?: string }
   | { view: "inbox" }
   | { view: "knowledge"; id?: string }
-  | { view: "usage" }
+  | { view: "usage"; agentId?: string } // agentId: Usage filtered to one agent (from its page)
   | { view: "settings"; tab: SettingsTab; provider?: string } // provider: one provider's page under Providers
   | { view: "project"; id: string; tab: ProjectTab }
   | { view: "chat"; id: string }
@@ -24,7 +24,7 @@ export function parseRoute(hash: string): Route {
   switch (view) {
     case "inbox":
     case "usage":
-      return { view }
+      return a ? { view, agentId: a } : { view }
     case "knowledge":
       return a ? { view, id: a } : { view }
     case "settings":
@@ -59,6 +59,8 @@ export const hrefOf = (r: Route): string => {
       return `#/${r.view}/${r.id}`
     case "new-agent":
       return `#/agent/new/${r.projectId ?? "global"}`
+    case "usage":
+      return r.agentId ? `#/usage/${r.agentId}` : "#/usage"
     default:
       return `#/${r.view}`
   }

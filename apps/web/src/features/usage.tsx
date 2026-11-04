@@ -36,13 +36,13 @@ const startOf = (range: Range) => {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) // the month starts on a UTC day too
 }
 
-export function UsageView() {
+export function UsageView({ agentId }: { agentId?: string | undefined }) {
   const rows = useList(usageAtom)
   const agents = useList(agentsAtom)
   const accounts = useList(accountsAtom)
   const [range, setRange] = useState<Range>("month")
   const [metric, setMetric] = useState<Metric>("cost")
-  const [agent, setAgent] = useState("") // "": all agents
+  const [agent, setAgent] = useState(agentId ?? "") // "": all agents
   const since = useMemo(() => startOf(range), [range])
   const subscriptions = accounts.filter((a) => a.kind === "subscription")
   useReadOnOpen(subscriptions)

@@ -1,14 +1,19 @@
-// Agent (prototype "Agent settings"): name, default model (with account and reasoning), role, and the tools
-// its chats can reach. Without an id it creates one, in a project or global.
+// Agent page, in four groups after who it is (name, title, one-line description): Brain (default model with
+// account and reasoning, fallbacks), Knows (instructions, its memories and skills), Does (its usage), Rules
+// (access, the tools its chats reach). Without an id it creates one, in a project or global.
 import type { Access, Agent, FailoverTarget } from "@zero/contracts"
 import { t } from "@zero/i18n"
 import { useEffect, useState } from "react"
-import { agentsAtom, mutations, projectsAtom, serversAtom, useList, useMutation } from "../client.ts"
+import { agentsAtom, memoriesAtom, mutations, projectsAtom, serversAtom, useList, useMutation } from "../client.ts"
 import { agentTone } from "../labels.ts"
 import { go } from "../state.ts"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
-import { AgentAvatar, Button, ChoiceCards, ConfirmDialog, Field, IconButton, Input, Menu, MenuItem, MoreHorizontal, Screen, Section, Textarea, Trash2 } from "@/ui"
+import type { ReactNode } from "react"
+import {
+  AgentAvatar, BookOpen, Button, ChartColumn, ChevronRight, ChoiceCards, ConfirmDialog, Field, IconButton, Input, Menu, MenuItem, MoreHorizontal, Rows, Screen, Section, Sparkles, Textarea,
+  Trash2
+} from "@/ui"
 
 const DEFAULT: ModelChoice = { model: "claude-cli/sonnet", accountId: null, effort: null }
 
@@ -20,6 +25,8 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
   const update = useMutation(mutations.updateAgent)
   const remove = useMutation(mutations.removeAgent)
   const [name, setName] = useState(agent?.name ?? "")
+  const [title, setTitle] = useState(agent?.title ?? "")
+  const [description, setDescription] = useState(agent?.description ?? "")
   const [instructions, setInstructions] = useState(agent?.instructions ?? "")
   const [choice, setChoice] = useState<ModelChoice>(agent ? { model: agent.model, accountId: agent.accountId, effort: agent.effort } : DEFAULT)
   const [failover, setFailover] = useState<ReadonlyArray<FailoverTarget>>(agent?.failover ?? [])
@@ -30,6 +37,8 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
 
   useEffect(() => {
     setName(agent?.name ?? "")
+    setTitle(agent?.title ?? "")
+    setDescription(agent?.description ?? "")
     setInstructions(agent?.instructions ?? "")
     setChoice(agent ? { model: agent.model, accountId: agent.accountId, effort: agent.effort } : DEFAULT)
     setFailover(agent?.failover ?? [])
@@ -38,9 +47,15 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
 
   const project = projects.find((p) => p.id === (agent?.projectId ?? projectId))
   const tools = servers.filter((s) => s.projectId === null || s.projectId === project?.id)
+  // What it knows of its own: memories and skills scoped to this agent (made and edited in Knowledge).
+  const own = useList(memoriesAtom).filter((m) => agent && m.scope === `agent:${agent.id}` && m.state !== "forgotten")
+  const facts = own.filter((m) => m.kind === "fact")
+  const skills = own.filter((m) => m.kind === "skill")
   const dirty =
     !agent ||
     name !== agent.name ||
+    title !== agent.title ||
+    description !== agent.description ||
     instructions !== agent.instructions ||
     choice.model !== agent.model ||
     choice.accountId !== agent.accountId ||
@@ -50,7 +65,7 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
 
   const save = () => {
     setBusy(true)
-    const payload = { name: name.trim(), instructions, ...choice, failover, access }
+    const payload = { name: name.trim(), title: title.trim(), description: description.trim(), instructions, ...choice, failover, access }
     const done = agent
       ? update({ params: { id: agent.id }, payload, reactivityKeys: ["agents"] })
       : create({ payload: { ...payload, projectId: project?.id ?? null }, reactivityKeys: ["agents"] }).then((a) => go({ view: "agent", id: a.id }))
@@ -95,41 +110,82 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
           if (dirty && name.trim() && !termsPending) save()
         }}
       >
+        {/* Who it is: other agents read the title and description to know whom to hand work to. */}
         <div className="grid grid-cols-2 gap-4">
           <Field label={t("agent.name")}>
             <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required {...(!agent && { autoFocus: true })} />
           </Field>
+          <Field label={t("agent.titleField")} hint={t("agent.titleHint")}>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} placeholder={t("agent.titlePlaceholder")} />
+          </Field>
+        </div>
+        <Field label={t("agent.description")} hint={t("agent.descriptionHint")}>
+          <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={300} placeholder={t("agent.descriptionPlaceholder")} />
+        </Field>
+
+        <Section title={t("agent.brain")}>
           <Field label={t("agent.model")} hint={t("agent.modelHint")}>
             <ModelPicker variant="field" value={choice} onChange={setChoice} />
           </Field>
-        </div>
-        <Field label={t("agent.role")} hint={t("agent.roleHint")}>
-          <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={6} maxLength={8000} />
-        </Field>
-        <Section title={t("access.title")}>
+          <div className="flex flex-col gap-2 pt-2">
+            <span className="text-sm font-medium text-muted">{t("failover.title")}</span>
+            <p className="text-sm text-dim">{t("failover.intro")}</p>
+            <FailoverEditor primary={{ model: choice.model, accountId: choice.accountId }} value={failover} onChange={setFailover} />
+          </div>
+        </Section>
+
+        <Section title={t("agent.knows")}>
+          <Field label={t("agent.role")} hint={t("agent.roleHint")}>
+            <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={6} maxLength={8000} />
+          </Field>
+          {agent && (
+            <Rows className="mt-2">
+              <Group icon={<BookOpen />} label={t("agent.memories")} count={t("agent.memoryCount", { count: facts.length })}>
+                {facts.slice(0, 5).map((m) => (
+                  <Item key={m.id} text={m.text} pending={m.state === "pending"} onPress={() => go({ view: "knowledge", id: m.id })} />
+                ))}
+              </Group>
+              <Group icon={<Sparkles />} label={t("agent.skills")} count={t("agent.skillCount", { count: skills.length })}>
+                {skills.slice(0, 5).map((m) => (
+                  <Item key={m.id} text={m.title} pending={m.state === "pending"} onPress={() => go({ view: "knowledge", id: m.id })} />
+                ))}
+              </Group>
+              <LinkRow icon={<BookOpen />} label={t("agent.openKnowledge")} onPress={() => go({ view: "knowledge" })} />
+            </Rows>
+          )}
+        </Section>
+
+        {agent && (
+          <Section title={t("agent.does")}>
+            <Rows>
+              <LinkRow icon={<ChartColumn />} label={t("agent.usage")} hint={t("agent.usageHint")} onPress={() => go({ view: "usage", agentId: agent.id })} />
+            </Rows>
+          </Section>
+        )}
+
+        <Section title={t("agent.rules")}>
           <ChoiceCards
             label={t("access.title")}
             value={access}
             onChange={setAccess}
             options={(["workspace", "ask", "full"] as const).map((a) => ({ value: a, title: t(`access.${a}`), description: t(`access.${a}Hint`) }))}
           />
-        </Section>
-        <Section title={t("failover.title")} description={t("failover.intro")}>
-          <FailoverEditor primary={{ model: choice.model, accountId: choice.accountId }} value={failover} onChange={setFailover} />
-        </Section>
-        <Section title={t("agent.tools")} description={t("agent.toolsHint")}>
-          {tools.length === 0 ? (
-            <p className="text-muted">{t("agent.noTools")}</p>
-          ) : (
-            <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
-              {tools.map((s) => (
-                <div key={s.id} className="flex h-11 items-center gap-3">
-                  <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                  <span className="text-sm text-muted">{s.enabled ? t(`mcp.modes.${s.mode}`) : t("mcp.off")}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="flex flex-col gap-2 pt-2">
+            <span className="text-sm font-medium text-muted">{t("agent.tools")}</span>
+            <p className="text-sm text-dim">{t("agent.toolsHint")}</p>
+            {tools.length === 0 ? (
+              <p className="text-muted">{t("agent.noTools")}</p>
+            ) : (
+              <Rows>
+                {tools.map((s) => (
+                  <div key={s.id} className="flex h-11 items-center gap-3">
+                    <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                    <span className="text-sm text-muted">{s.enabled ? t(`mcp.modes.${s.mode}`) : t("mcp.off")}</span>
+                  </div>
+                ))}
+              </Rows>
+            )}
+          </div>
         </Section>
       </form>
       {agent && (
@@ -148,3 +204,41 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
     </Screen>
   )
 }
+
+// A row that opens somewhere (Knowledge, Usage).
+function LinkRow({ icon, label, hint, onPress }: { icon: ReactNode; label: string; hint?: string; onPress: () => void }) {
+  return (
+    <Button variant="ghost" className="h-auto justify-start gap-3 rounded-control px-3 py-3 text-left font-normal text-fg [&_svg]:text-muted" onPress={onPress}>
+      {icon}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span>{label}</span>
+        {hint && <span className="truncate text-sm text-muted">{hint}</span>}
+      </span>
+      <ChevronRight className="size-4" />
+    </Button>
+  )
+}
+
+// A kind of knowledge with its count, and up to five of its items under it.
+function Group({ icon, label, count, children }: { icon: ReactNode; label: string; count: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col py-2">
+      <div className="flex items-center gap-3 px-3 py-1.5 [&_svg]:size-4 [&_svg]:text-muted">
+        {icon}
+        <span className="flex-1">{label}</span>
+        <span className="text-sm text-muted tabular-nums">{count}</span>
+      </div>
+      <div className="flex flex-col pl-7">{children}</div>
+    </div>
+  )
+}
+
+function Item({ text, pending, onPress }: { text: string; pending: boolean; onPress: () => void }) {
+  return (
+    <Button variant="ghost" className="h-auto justify-start gap-2 rounded-control px-3 py-1.5 text-left text-sm font-normal text-secondary" onPress={onPress}>
+      <span className="min-w-0 flex-1 truncate">{text}</span>
+      {pending && <span className="shrink-0 text-xs text-accent-text">{t("agent.pending")}</span>}
+    </Button>
+  )
+}
+

@@ -80,7 +80,7 @@ export function buildTurn(i: TurnInput): Turn {
     others.length > 0 &&
     [
       "Outros agentes neste chat (as mensagens deles chegam com o nome entre colchetes):",
-      ...others.map((a) => `- @${handleOf(a)} (${a.name}): ${a.instructions.split("\n")[0]?.slice(0, 140) || "sem descrição"}`),
+      ...others.map((a) => `- @${handleOf(a)} (${[a.name, a.title].filter(Boolean).join(", ")}): ${a.description || a.instructions.split("\n")[0]?.slice(0, 140) || "sem descrição"}`),
       "Para passar parte do trabalho a um deles, mencione @handle na resposta: ele responde em seguida. Mencione só quando precisar; para só citar alguém, escreva o nome sem @."
     ].join("\n")
 
@@ -89,7 +89,7 @@ export function buildTurn(i: TurnInput): Turn {
     "Você é um assistente num workspace de projetos. Responda no idioma do usuário, de forma direta.",
     "Use o contexto abaixo quando ajudar; não invente fatos que não estão nele.",
     i.tools?.defs.length && "Você tem ferramentas. Use quando a tarefa pedir; ações que mudam algo podem esperar a aprovação do usuário.",
-    i.agent && section(`Você é ${i.agent.name}`, i.agent.instructions),
+    i.agent && section(`Você é ${[i.agent.name, i.agent.title].filter(Boolean).join(", ")}`, [i.agent.description, i.agent.instructions].filter(Boolean).join("\n\n")),
     channel && section("Canal", channel)
   ]
   const userMemories = section("O que você sabe sobre o usuário", bullets(of("user")))
