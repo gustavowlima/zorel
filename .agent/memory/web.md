@@ -61,3 +61,4 @@ updated: 2026-11-03
 - trilho de ícones (pedido do usuário, como OpenBot): Rail em sidebar.tsx (lugares + UsageFoot vertical + Settings), Sidebar só com Chats/Projects; App.tsx renderiza Rail + Sidebar; rota #/routines (RoutinesView); Tooltip ganhou placement
 - ChatItem na barra: 2 linhas sem ícone (NavTreeItem detail; nested usa pl-10): título + idade/spinner; embaixo avatares 16px + nomes dos membros, ou modelo, ou estado ao vivo. NavLabel das seções sem ícone (pedido do usuário: menos aglomerado)
 - projeto na barra: subtítulo alinhado (sem pasta/negrito), seta slot="chevron" depois do nome, contagem dim à direita; chats aninhados pl-6 com fio em left-3
+- barra lateral recolhível: useSidebar em state.ts (localStorage zero.sidebar.hidden, ⌘B); Rail tem botão PanelLeftClose/Open e Chats ativo alterna; trilho com border-r

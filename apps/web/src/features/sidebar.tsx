@@ -14,7 +14,7 @@ import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
+  PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
@@ -31,22 +31,37 @@ const idOf = (key: NavKey) => String(key).slice(2)
 // The icon rail (as in OpenBot): the logo, then the app's places — chats, what waits for you, agents, routines,
 // knowledge — and at the foot the subscriptions' rings (usage) and Settings. Each icon has its name as a tooltip;
 // the current place is marked. The chats and projects list sits to its right.
-export function Rail({ route }: { route: Route }) {
+export function Rail({ route, sidebar }: { route: Route; sidebar: { hidden: boolean; toggle: () => void; show: () => void } }) {
   const memories = useList(memoriesAtom)
   const approvals = useList(approvalsAtom)
   const needsYou = approvals.length + memories.filter((m) => m.state === "pending").length
   const places = [
-    { key: "chats", icon: <MessageCircle />, label: t("nav.chats"), active: ["home", "chat", "project"].includes(route.view), go: () => go({ view: "home" }) },
+    // Chats again while it is the current place folds or unfolds the chats list.
+    {
+      key: "chats",
+      icon: <MessageCircle />,
+      label: t("nav.chats"),
+      active: ["home", "chat", "project"].includes(route.view),
+      go: () => {
+        if (["home", "chat", "project"].includes(route.view)) return sidebar.toggle()
+        sidebar.show()
+        go({ view: "home" })
+      }
+    },
     { key: "inbox", icon: <Inbox />, label: t("nav.needsYou"), active: route.view === "inbox", go: () => go({ view: "inbox" }), count: needsYou },
     { key: "agents", icon: <Bot />, label: t("nav.agents"), active: ["agents", "agent", "new-agent"].includes(route.view), go: () => go({ view: "agents" }) },
     { key: "routines", icon: <AlarmClock />, label: t("nav.routines"), active: route.view === "routines", go: () => go({ view: "routines" }) },
     { key: "knowledge", icon: <BookOpen />, label: t("nav.knowledge"), active: route.view === "knowledge", go: () => go({ view: "knowledge" }) }
   ]
   return (
-    <nav aria-label={t("nav.label")} className="rail-top electrobun-webkit-app-region-drag flex w-15 shrink-0 flex-col items-center gap-1 pt-3 pb-3">
-      <span className="mb-3 flex size-10 items-center justify-center">
+    <nav aria-label={t("nav.label")} className="rail-top electrobun-webkit-app-region-drag flex w-15 shrink-0 flex-col items-center gap-1 border-r border-subtle pt-3 pb-3">
+      <span className="mb-1 flex size-10 items-center justify-center">
         <Logo className="size-5" />
       </span>
+      <RailItem label={sidebar.hidden ? t("nav.showSidebar") : t("nav.hideSidebar")} active={false} onPress={sidebar.toggle}>
+        {sidebar.hidden ? <PanelLeftOpen /> : <PanelLeftClose />}
+      </RailItem>
+      <span aria-hidden="true" className="mb-1 h-px w-6 bg-subtle" />
       {places.map((p) => (
         <RailItem key={p.key} label={p.label} active={p.active} onPress={p.go} count={p.count}>
           {p.icon}
@@ -203,7 +218,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   }
 
   return (
-    <nav aria-label={t("nav.chats")} className="flex w-62 shrink-0 flex-col overflow-hidden pt-0 pb-3 pl-1">
+    <nav aria-label={t("nav.chats")} className="flex w-62 shrink-0 flex-col overflow-hidden pt-0 pb-3 pl-2">
       {/* In the desktop app the top of the list is also the title bar (it drags the window). */}
       <div className="brand-row electrobun-webkit-app-region-drag h-3 shrink-0" />
 

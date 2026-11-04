@@ -19,8 +19,8 @@ import { SettingsView } from "./features/settings.tsx"
 import { Rail, Sidebar } from "./features/sidebar.tsx"
 import { UsageView } from "./features/usage.tsx"
 import { rememberModels } from "./labels.ts"
-import { go, type Route, useRoute } from "./state.ts"
-import { Button, CircleAlert, EmptyState, Spinner } from "@/ui"
+import { go, type Route, useRoute, useSidebar } from "./state.ts"
+import { Button, CircleAlert, cx, EmptyState, Spinner } from "@/ui"
 
 export function App() {
   const route = useRoute()
@@ -35,14 +35,15 @@ export function App() {
   const offline = AsyncResult.isFailure(projectsResult)
   const loading = AsyncResult.isInitial(projectsResult)
 
+  const sidebar = useSidebar()
   useRefetchOnSettle()
   useRetryWhileOffline(offline)
 
   return (
     <div className="flex h-full bg-frame">
-      <Rail route={route} />
-      <Sidebar route={route} activeProjectId={activeProjectId} />
-      <main className="flex min-w-0 flex-1 flex-col py-3 pr-3">
+      <Rail route={route} sidebar={sidebar} />
+      {!sidebar.hidden && <Sidebar route={route} activeProjectId={activeProjectId} />}
+      <main className={cx("flex min-w-0 flex-1 flex-col py-3 pr-3", sidebar.hidden && "pl-3")}>
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-sheet border border-subtle bg-canvas">
           {offline && (
             <div role="alert" className="flex items-center gap-2 border-b border-subtle bg-danger-soft px-7 py-2 text-sm text-danger">

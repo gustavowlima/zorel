@@ -42,6 +42,8 @@ export const en = {
     knowledge: "Knowledge",
     agents: "Agents",
     routines: "Routines",
+    hideSidebar: "Hide chats (⌘B)",
+    showSidebar: "Show chats (⌘B)",
     newAgentIn: "New agent in {name}",
     usage: "Usage",
     settings: "Settings",

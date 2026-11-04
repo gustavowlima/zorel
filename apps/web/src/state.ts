@@ -146,3 +146,41 @@ export function writeSet(key: string, set: ReadonlySet<string>) {
     // storage blocked: it resets on reload
   }
 }
+
+// ---------- the chats sidebar: shown or folded away (per browser); ⌘B / Ctrl+B toggles it ----------
+
+const SIDEBAR_KEY = "zero.sidebar.hidden"
+
+export function useSidebar(): { hidden: boolean; toggle: () => void; show: () => void } {
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_KEY) === "1"
+    } catch {
+      return false
+    }
+  })
+  const save = (next: boolean) => {
+    setHidden(next)
+    try {
+      localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0")
+    } catch {
+      // storage blocked: it resets on reload
+    }
+  }
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "b") {
+        e.preventDefault()
+        setHidden((h) => {
+          try {
+            localStorage.setItem(SIDEBAR_KEY, h ? "0" : "1")
+          } catch {}
+          return !h
+        })
+      }
+    }
+    addEventListener("keydown", on)
+    return () => removeEventListener("keydown", on)
+  }, [])
+  return { hidden, toggle: () => save(!hidden), show: () => save(false) }
+}
