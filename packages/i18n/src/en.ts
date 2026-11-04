@@ -700,6 +700,16 @@ export const en = {
     limitedUntil: "Limit reached · back at {time}",
     usage: "{percent} used · resets {time}"
   },
+  diff: {
+    comment: "Comment on these lines",
+    commentHint: "What should change here? It goes to the message box.",
+    addComment: "Add to chat",
+    commentRef: "Review comment on `{path}` {lines} ({side}): {text}",
+    line: "line {n}",
+    lines: "lines {from}–{to}",
+    old: "old",
+    new: "new"
+  },
   git: {
     title: "Git",
     commits: "Commits",

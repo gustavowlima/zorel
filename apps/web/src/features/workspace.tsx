@@ -8,8 +8,12 @@ import { AsyncResult } from "effect/reactivity"
 import { lazy, type PointerEvent as ReactPointerEvent, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { diffAtom, filesAtom, localServersAtom, mutations, scriptsAtom, terminalsAtom, useInvalidate, useMutation, useReading } from "../client.ts"
 import { agentName } from "../labels.ts"
+import type { LineComment } from "./diff-view.tsx"
 // The diff viewer and its highlighter load with the panel, not with the app.
 const DiffView = lazy(() => import("./diff-view.tsx"))
+// The text a line comment puts in the message box (kept out of the lazy chunk's default export).
+const commentText = (c: LineComment) =>
+  t("diff.commentRef", { path: c.path, lines: c.start === c.end ? t("diff.line", { n: c.start }) : t("diff.lines", { from: c.start, to: c.end }), side: c.side === "deletions" ? t("diff.old") : t("diff.new"), text: c.text.trim() })
 import {
   Button, ChevronDown, ChevronRight, ConfirmButton, cx, EmptyState, File, Folder, FolderOpen, IconButton, Spinner, Tab, TabList,
   Columns2, ConfirmDialog, ContextMenu, GitBranch, Globe, Menu, MenuItem, PanelRight, Pin, PinOff, Play, Plus, Popover, Rows2, Server, Square, SquareTerminal, TabPanel, Tabs, Tooltip, X
@@ -160,13 +164,12 @@ export function SidePanel({
   onClose: () => void
   browserUrl: { url: string } | undefined
   onOpenUrl: (url: string) => void
-  onAddToChat: (text: string) => void
+  onAddToChat: (text: string) => void // plain text into the message box
   pins: Pins
   shellFocus: { session: string } | undefined // a pinned shell was pressed: show it
 }) {
   const [width, setWidth] = useState(() => Number(store.get(WIDTH_KEY)) || 560)
   const [opened, setOpened] = useState<ReadonlySet<SideTab>>(() => new Set([tab]))
-  const [shellKey, setShellKey] = useState(0) // the last shell closed: a fresh terminal next time
   useEffect(() => setOpened((s) => (s.has(tab) ? s : new Set([...s, tab]))), [tab])
   const folder = !!project?.path
   const repo = useIsRepo(chat.id)
@@ -245,7 +248,7 @@ export function SidePanel({
           </IconButton>
         </div>
         <TabPanel id="changes" className="min-h-0 flex-1 overflow-y-auto">
-          <ChangesTab messages={messages} agents={agents} focus={focus} onFocus={onFocus} />
+          <ChangesTab messages={messages} agents={agents} focus={focus} onFocus={onFocus} onAddToChat={onAddToChat} />
         </TabPanel>
         {folder && repo && (
           <TabPanel id="git" className="min-h-0 flex-1 overflow-y-auto">
@@ -264,11 +267,9 @@ export function SidePanel({
           <TabPanel id="terminal" keepMounted={opened.has("terminal")} className="flex min-h-0 flex-1 flex-col">
             {opened.has("terminal") && (
               <TerminalPanel
-                key={shellKey}
                 chatId={chat.id}
                 visible={tab === "terminal"}
-                onClose={() => setShellKey((k) => k + 1)}
-                onAddToChat={onAddToChat}
+                onAddToChat={(text) => onAddToChat(`\`\`\`\n${text.trimEnd()}\n\`\`\``)} // terminal output, as a code block
                 onOpenUrl={onOpenUrl}
                 pins={pins}
                 focus={shellFocus}
@@ -281,7 +282,19 @@ export function SidePanel({
   )
 }
 
-function ChangesTab({ messages, agents, focus, onFocus }: { messages: ReadonlyArray<Message>; agents: ReadonlyArray<Agent>; focus: Focus | undefined; onFocus: (f: Focus) => void }) {
+function ChangesTab({
+  messages,
+  agents,
+  focus,
+  onFocus,
+  onAddToChat
+}: {
+  messages: ReadonlyArray<Message>
+  agents: ReadonlyArray<Agent>
+  focus: Focus | undefined
+  onFocus: (f: Focus) => void
+  onAddToChat: (text: string) => void
+}) {
   const turns = messages.filter((m) => m.changes.length && m.turnId).reverse()
   if (!turns.length) return <EmptyState icon={<File />} title={t("workspace.noChanges")} hint={t("workspace.noChangesHint")} />
   const current = focus ?? { turnId: turns[0]!.turnId!, path: null }
@@ -296,7 +309,7 @@ function ChangesTab({ messages, agents, focus, onFocus }: { messages: ReadonlyAr
               <span className="min-w-0 flex-1 truncate text-left text-secondary">{t("workspace.turnBy", { agent: agentName(m.agentId, agents), time: formatTime(m.at) })}</span>
               {m.revertedAt ? <span className="text-sm text-muted">{t("workspace.undone")}</span> : <Delta {...sumOf(m.changes)} />}
             </Button>
-            {open && <TurnFiles message={m} path={current.path} onPath={(path) => onFocus({ turnId: m.turnId!, path })} />}
+            {open && <TurnFiles message={m} path={current.path} onPath={(path) => onFocus({ turnId: m.turnId!, path })} onAddToChat={onAddToChat} />}
           </section>
         )
       })}
@@ -304,7 +317,7 @@ function ChangesTab({ messages, agents, focus, onFocus }: { messages: ReadonlyAr
   )
 }
 
-function TurnFiles({ message, path, onPath }: { message: Message; path: string | null; onPath: (p: string | null) => void }) {
+function TurnFiles({ message, path, onPath, onAddToChat }: { message: Message; path: string | null; onPath: (p: string | null) => void; onAddToChat: (text: string) => void }) {
   const result = useAtomValue(diffAtom(message.turnId!))
   const diff = AsyncResult.getOrElse(result, () => undefined)
   return (
@@ -335,7 +348,7 @@ function TurnFiles({ message, path, onPath }: { message: Message; path: string |
             </div>
             {f.patch ? (
               <Suspense fallback={<p className="px-3 py-2 text-sm text-muted">{t("workspace.loadingDiff")}</p>}>
-                <DiffView patch={f.patch} />
+                <DiffView patch={f.patch} path={f.path} onComment={(c) => onAddToChat(commentText(c))} />
               </Suspense>
             ) : (
               <p className="px-3 py-2 text-sm text-muted">{t("workspace.binary")}</p>
@@ -469,7 +482,6 @@ const newPane = (session?: string, run?: string): Pane => ({ key: `pane-${++pane
 export function TerminalPanel({
   chatId,
   visible,
-  onClose,
   onAddToChat,
   onOpenUrl,
   pins,
@@ -479,7 +491,6 @@ export function TerminalPanel({
   pins: Pins
   focus: { session: string } | undefined // show the tab holding this shell (a pinned shell was pressed)
   visible: boolean // its tab in the side panel is the one shown
-  onClose: () => void // the last shell closed
   onAddToChat: (text: string) => void
   onOpenUrl: (url: string) => void
 }) {
@@ -540,9 +551,13 @@ export function TerminalPanel({
       pins.dropShell(p.session) // its pin goes with it
     }
     const next = tabs.map((t) => ({ ...t, panes: t.panes.filter((p) => !keys.includes(p.key)) })).filter((t) => t.panes.length)
+    // The last shell can't go (only an ended one, and a fresh shell takes its place).
+    if (!next.length) {
+      const pane = newPane()
+      next.push({ key: `tab-${pane.key}`, dir: "row", panes: [pane] })
+    }
     setTabs(next)
-    if (!next.length) onClose() // the last shell closed: the tab starts over with a fresh one
-    else if (!next.some((t) => t.key === tab)) setTab(next.at(-1)!.key)
+    if (!next.some((t) => t.key === tab)) setTab(next.at(-1)!.key)
   }
   // Ask first when a shell among them is running something.
   const close = (keys: ReadonlyArray<string>) => {
@@ -560,6 +575,8 @@ export function TerminalPanel({
     if (holder) setTab(holder.key)
   }, [focus, tabs])
   const nameOf = (s: ShellTab) => s.label || t("workspace.shell", { n: tabs.indexOf(s) + 1 })
+  // The only tab closes only once its shell ended (and a fresh one replaces it): the panel always has a shell.
+  const closable = (s: ShellTab) => tabs.length > 1 || s.panes.every((p) => p.ended)
 
   return (
     <section aria-label={t("workspace.terminal")} className="flex min-h-0 flex-1 flex-col">
@@ -569,7 +586,7 @@ export function TerminalPanel({
         <div
           className="flex items-center gap-1 px-3 py-1.5"
           onKeyDown={(e) => {
-            if ((e.key === "Delete" || e.key === "Backspace") && current && (e.target as HTMLElement).getAttribute("role") === "tab") close(current.panes.map((p) => p.key))
+            if ((e.key === "Delete" || e.key === "Backspace") && current && closable(current) && (e.target as HTMLElement).getAttribute("role") === "tab") close(current.panes.map((p) => p.key))
           }}
         >
           {/* Right-click a shell tab: pin it to the chat's title row, or close it. */}
@@ -584,16 +601,23 @@ export function TerminalPanel({
               return (
                 <>
                   <PinItem pinned={pins.shells.some((x) => x.session === session)} onAction={() => pins.toggleShell({ session, label: nameOf(s) })} />
-                  <MenuItem icon={<X />} onAction={() => close(s.panes.map((p) => p.key))}>
-                    {t("workspace.closeShellNamed", { name: nameOf(s) })}
-                  </MenuItem>
+                  {closable(s) && (
+                    <MenuItem icon={<X />} onAction={() => close(s.panes.map((p) => p.key))}>
+                      {t("workspace.closeShellNamed", { name: nameOf(s) })}
+                    </MenuItem>
+                  )}
                 </>
               )
             }}
           >
             <TabList label={t("workspace.terminal")} className="min-w-0 flex-nowrap overflow-x-auto">
               {tabs.map((s) => (
-                <Tab key={s.key} id={s.key} onClose={() => close(s.panes.map((p) => p.key))} closeLabel={t("workspace.closeShellNamed", { name: nameOf(s) })}>
+                <Tab
+                  key={s.key}
+                  id={s.key}
+                  {...(closable(s) && { onClose: () => close(s.panes.map((p) => p.key)) })}
+                  closeLabel={t("workspace.closeShellNamed", { name: nameOf(s) })}
+                >
                   <span data-shell-tab={s.key} className={cx("flex items-center gap-1.5 whitespace-nowrap", s.panes.every((p) => p.ended) && "text-dim")}>
                     {s.label && <Play className="size-3" />}
                     {nameOf(s)}
