@@ -1,8 +1,8 @@
-// Build with AI (as in a reference app): a screen of its own, not a chat in the list. On the left, a conversation with the
-// Builder (Zero's own agent): describe the work and it asks a few questions, then proposes one agent or a team.
-// On the right, the proposal to review (each agent's name, role, model, access and instructions) with Create
-// and Not now, and what was created here, one press from its page (where Tools and access lives). Each visit
-// starts fresh; "Build it myself" opens the empty form.
+// Build with AI (as in a reference app): a screen of its own in three steps, one at a time. 1 Describe: a conversation with
+// the Builder (Zero's own agent) on the left, the proposed agent on the right as it takes shape. 2 Powers: what it
+// may reach, as plain choices (no access / read / read and write), prefilled with the least the Builder proposed.
+// 3 First task: what to try it on; "Create … and send" creates it, applies the powers and opens its chat with the
+// task sent. A team is created as proposed from step 1. Each visit starts fresh; "Build it myself" opens the form.
 import { type Access, type Agent, type AgentPermissions, type Chat, DEFAULT_PERMISSIONS, type Grant, type McpServer } from "@zero/contracts"
 import type { Approval } from "@zero/contracts/events"
 import { t } from "@zero/i18n"
@@ -14,9 +14,11 @@ import { Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
-import { AgentAvatar, Button, ChevronRight, cx, Field, PageHeader, Pencil, Section, Sparkles, Spinner, Textarea } from "@/ui"
+import { AgentAvatar, Button, Check, ChevronRight, cx, PageHeader, Pencil, Section, Sparkles, Spinner, Textarea } from "@/ui"
 
 const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builder.suggest.docs", "builder.suggest.team"] as const
+type Step = "describe" | "powers" | "first"
+const STEPS: ReadonlyArray<Step> = ["describe", "powers", "first"]
 
 export function BuilderView({ projectId }: { projectId: string | null }) {
   const builder = useMutation(mutations.builder)
@@ -33,14 +35,7 @@ export function BuilderView({ projectId }: { projectId: string | null }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <BuilderHeader projectId={projectId} />
-      {chat ? (
-        <div className="flex min-h-0 flex-1">
-          <Conversation chat={chat} />
-          <Proposal chat={chat} since={opened.current} />
-        </div>
-      ) : (
-        <div className="flex flex-1 items-center justify-center text-muted">{error ? t("builder.failed") : <Spinner />}</div>
-      )}
+      {chat ? <Wizard chat={chat} since={opened.current} /> : <div className="flex flex-1 items-center justify-center text-muted">{error ? t("builder.failed") : <Spinner />}</div>}
     </div>
   )
 }
@@ -154,23 +149,21 @@ export function draftsOf(text: string): Draft[] {
     })
 }
 
-// The proposal, then (one agent, as in a reference app) its powers and a first task: "Use this agent" → what it may reach
-// (prefilled from the proposal, least access) → a first task to try it on → created, its chat opens with the task
-// sent. A team is created as proposed. Nothing exists until Create.
-type Step = "review" | "powers" | "first"
 const GRANTS = new Set(["read", "write"])
-// "GitHub (read), Notion (write)" → grants by server id; "none" or unknown names: no access to the rest.
+// "GitHub (read), Notion (write)" → grants by server id; when connectors were named, the rest get no access.
 function permissionsOf(f: Record<string, string>, servers: ReadonlyArray<McpServer>): AgentPermissions {
-  const named = new Map((f.connectors ?? "").split(",").flatMap((part) => {
-    const m = /^\s*(.+?)\s*\((read|write)\)\s*$/.exec(part)
-    return m ? [[m[1]!.toLowerCase(), m[2]! as Grant] as const] : []
-  }))
+  const named = new Map(
+    (f.connectors ?? "").split(",").flatMap((part) => {
+      const m = /^\s*(.+?)\s*\((read|write)\)\s*$/.exec(part)
+      return m && GRANTS.has(m[2]!) ? [[m[1]!.toLowerCase(), m[2]! as Grant] as const] : []
+    })
+  )
   const grants: Record<string, Grant> = {}
   if (f.connectors) for (const s of servers) grants[s.id] = named.get(s.name.toLowerCase()) ?? "none"
-  return { web: f.web !== "false", browser: f.browser !== "false", grants, always: [] }
+  return { web: f.web !== "false", browser: f.browser === "true", grants, always: [] }
 }
 
-function Proposal({ chat, since }: { chat: Chat; since: number }) {
+function Wizard({ chat, since }: { chat: Chat; since: number }) {
   const state = useChat(chat.id)
   const agents = useList(agentsAtom)
   const servers = useList(serversAtom).filter((s) => s.projectId === null || s.projectId === chat.projectId)
@@ -183,7 +176,7 @@ function Proposal({ chat, since }: { chat: Chat; since: number }) {
   const drafts = open ? draftsOf(open.args) : []
   const single = drafts.length === 1 ? drafts[0] : undefined
   const created = agents.filter((a) => !a.builtin && a.createdAt >= since)
-  const [step, setStep] = useState<Step>("review")
+  const [step, setStep] = useState<Step>("describe")
   const [access, setAccess] = useState<Access>("workspace")
   const [perms, setPerms] = useState<AgentPermissions>(DEFAULT_PERMISSIONS)
   const [task, setTask] = useState("")
@@ -191,10 +184,9 @@ function Proposal({ chat, since }: { chat: Chat; since: number }) {
   // After Create: the agent appears once the Builder's turn applies the proposal; then its powers, chat and task.
   const [finishing, setFinishing] = useState<{ name: string; access: Access; permissions: AgentPermissions; task: string; at: number }>()
 
-  // A new proposal starts the steps over, prefilled from it.
+  // A new proposal is prefilled into the next steps.
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new proposal resets
   useEffect(() => {
-    setStep("review")
     if (!single) return
     const f = single.fields
     setAccess(f.access === "ask" || f.access === "full" ? f.access : "workspace")
@@ -226,99 +218,148 @@ function Proposal({ chat, since }: { chat: Chat; since: number }) {
     setBusy(true)
     void decide({ payload: { approvalId: a.id, outcome }, reactivityKeys: ["approvals", "agents"] }).finally(() => outcome === "denied" && setBusy(false))
   }
-  const createSingle = () => {
+  const create = (withTask: boolean) => {
     if (!open || !single) return
-    setFinishing({ name: single.name, access, permissions: perms, task, at: Date.now() })
+    setFinishing({ name: single.name, access, permissions: perms, task: withTask ? task : "", at: Date.now() })
     choose(open, "approved")
   }
+  const name = single?.name ?? ""
 
   return (
-    <aside aria-label={t("builder.proposal")} className="flex w-96 shrink-0 flex-col gap-6 overflow-y-auto border-l border-subtle px-5 py-6">
-      {open && single ? (
-        <>
-          <ol aria-label={t("builder.steps")} className="flex items-center gap-1.5 text-sm">
-            {(["review", "powers", "first"] as const).map((k, i) => (
-              <li key={k} className={cx("flex items-center gap-1.5", step === k ? "text-fg" : "text-muted")}>
-                {i > 0 && <span aria-hidden="true" className="h-px w-3 bg-strong" />}
-                {t(`builder.step.${k}`)}
-              </li>
-            ))}
-          </ol>
-          {step === "review" && (
-            <div className="flex flex-col gap-3">
-              <DraftCard draft={single} />
-              {single.fields.reason && <p className="text-sm text-muted">{t("knowledge.why", { reason: single.fields.reason })}</p>}
-              <div className="flex items-center justify-end gap-2">
-                <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => choose(open, "denied")}>
-                  {t("builder.notNow")}
-                </Button>
-                <Button size="sm" variant="default" onPress={() => setStep("powers")}>
-                  {t("builder.useIt")}
-                </Button>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Stepper step={step} />
+      {/* Step 1 stays mounted (the conversation keeps its scroll and draft) while the others show. */}
+      <div className={cx("min-h-0 flex-1", step === "describe" ? "flex" : "hidden")}>
+        <Conversation chat={chat} />
+        <aside aria-label={t("builder.proposal")} className="flex w-96 shrink-0 flex-col gap-6 overflow-y-auto border-l border-subtle px-5 py-6">
+          <Section title={t("builder.proposal")}>
+            {open ? (
+              <div className="flex flex-col gap-3">
+                {drafts.map((d) => (
+                  <DraftCard key={d.name} draft={d} />
+                ))}
+                {single?.fields.reason && <p className="text-sm text-muted">{t("knowledge.why", { reason: single.fields.reason })}</p>}
+                <div className="flex items-center justify-end gap-2">
+                  <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => choose(open, "denied")}>
+                    {t("builder.notNow")}
+                  </Button>
+                  {single ? (
+                    <Button size="sm" variant="default" onPress={() => setStep("powers")}>
+                      {t("builder.useIt")}
+                      <ChevronRight />
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="default" isPending={busy} isDisabled={busy} onPress={() => choose(open, "approved")}>
+                      {t("builder.createAll", { count: drafts.length })}
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
-          {step === "powers" && (
-            <div className="flex flex-col gap-4">
-              <p className="text-sm text-muted">{t("builder.powersHint", { name: single.name })}</p>
-              <PermissionsEditor access={access} onAccess={setAccess} value={perms} onChange={setPerms} servers={servers} />
-              <div className="flex items-center justify-between gap-2">
-                <Button size="sm" variant="ghost" onPress={() => setStep("review")}>
-                  {t("nav.back")}
-                </Button>
-                <Button size="sm" variant="default" onPress={() => setStep("first")}>
-                  {t("builder.next")}
-                </Button>
+            ) : (
+              <p className="text-sm text-muted">{finishing ? t("builder.creating") : t("builder.waiting")}</p>
+            )}
+          </Section>
+          {created.length > 0 && (
+            <Section title={t("builder.created")} description={t("builder.createdHint")}>
+              <div className="flex flex-col gap-1">
+                {created.map((a) => (
+                  <CreatedRow key={a.id} agent={a} agents={agents} />
+                ))}
               </div>
-            </div>
+            </Section>
           )}
-          {step === "first" && (
-            <div className="flex flex-col gap-4">
-              <Field label={t("builder.firstTask")} hint={t("builder.firstTaskHint")}>
-                <Textarea value={task} onChange={(e) => setTask(e.target.value)} rows={4} maxLength={2000} />
-              </Field>
-              <div className="flex items-center justify-between gap-2">
-                <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => setStep("powers")}>
-                  {t("nav.back")}
-                </Button>
-                <Button size="sm" variant="default" isPending={busy} isDisabled={busy} onPress={createSingle}>
-                  {task.trim() ? t("builder.createAndSend", { name: single.name }) : t("builder.create")}
-                </Button>
-              </div>
-            </div>
-          )}
-        </>
-      ) : (
-        <Section title={t("builder.proposal")}>
-          {open ? (
-            <div className="flex flex-col gap-3">
-              {drafts.map((d) => (
-                <DraftCard key={d.name} draft={d} />
-              ))}
-              <div className="flex items-center justify-end gap-2">
-                <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => choose(open, "denied")}>
-                  {t("builder.notNow")}
-                </Button>
-                <Button size="sm" variant="default" isPending={busy} isDisabled={busy} onPress={() => choose(open, "approved")}>
-                  {t("builder.createAll", { count: drafts.length })}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-muted">{finishing ? t("builder.creating") : t("builder.waiting")}</p>
-          )}
-        </Section>
+        </aside>
+      </div>
+
+      {step === "powers" && single && (
+        <StepPage
+          title={t("builder.powersTitle", { name })}
+          hint={t("builder.powersHint")}
+          footer={
+            <>
+              <Button size="sm" variant="ghost" onPress={() => setStep("describe")}>
+                {t("nav.back")}
+              </Button>
+              <Button size="sm" variant="default" onPress={() => setStep("first")}>
+                {t("builder.next")}
+                <ChevronRight />
+              </Button>
+            </>
+          }
+        >
+          <PermissionsEditor access={access} onAccess={setAccess} value={perms} onChange={setPerms} servers={servers} showAlways={false} />
+        </StepPage>
       )}
-      {created.length > 0 && (
-        <Section title={t("builder.created")} description={t("builder.createdHint")}>
-          <div className="flex flex-col gap-1">
-            {created.map((a) => (
-              <CreatedRow key={a.id} agent={a} agents={agents} />
-            ))}
+
+      {step === "first" && single && (
+        <StepPage
+          title={t("builder.firstTitle", { name })}
+          hint={t("builder.firstTaskHint")}
+          footer={
+            <>
+              <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => setStep("powers")}>
+                {t("nav.back")}
+              </Button>
+              <span className="flex-1" />
+              <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => create(false)}>
+                {t("builder.justCreate")}
+              </Button>
+              <Button size="sm" variant="default" isPending={busy} isDisabled={busy || !task.trim()} onPress={() => create(true)}>
+                {t("builder.createAndSend", { name })}
+              </Button>
+            </>
+          }
+        >
+          <Textarea aria-label={t("builder.firstTask")} value={task} onChange={(e) => setTask(e.target.value)} rows={6} maxLength={2000} placeholder={t("builder.firstTaskPlaceholder")} autoFocus />
+        </StepPage>
+      )}
+    </div>
+  )
+}
+
+// 1 Describe — 2 Powers — 3 First task: done steps get a check, the current one is filled.
+function Stepper({ step }: { step: Step }) {
+  const at = STEPS.indexOf(step)
+  return (
+    <ol aria-label={t("builder.steps")} className="flex shrink-0 items-center justify-center gap-3 border-b border-subtle py-3 text-sm">
+      {STEPS.map((k, i) => (
+        <li key={k} className="flex items-center gap-3" {...(i === at && { "aria-current": "step" as const })}>
+          {i > 0 && <span aria-hidden="true" className="h-px w-8 bg-strong" />}
+          <span className={cx("flex items-center gap-2", i === at ? "font-medium text-fg" : "text-muted")}>
+            <span
+              aria-hidden="true"
+              className={cx(
+                "flex size-5 items-center justify-center rounded-full text-xs tabular-nums",
+                i < at ? "bg-accent-soft text-accent-text" : i === at ? "bg-accent text-on-accent" : "border border-strong"
+              )}
+            >
+              {i < at ? <Check className="size-3" /> : i + 1}
+            </span>
+            {t(`builder.step.${k}`)}
+          </span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+// A step of its own: a centered column with a title, a line, the content, and the way forward at the bottom.
+function StepPage({ title, hint, footer, children }: { title: string; hint: string; footer: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-8 py-10">
+          <div className="flex flex-col gap-1.5">
+            <h2 className="text-lg font-semibold">{title}</h2>
+            <p className="text-muted">{hint}</p>
           </div>
-        </Section>
-      )}
-    </aside>
+          {children}
+        </div>
+      </div>
+      <div className="shrink-0 border-t border-subtle">
+        <div className="mx-auto flex w-full max-w-2xl items-center gap-2 px-8 py-3">{footer}</div>
+      </div>
+    </div>
   )
 }
 

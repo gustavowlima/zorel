@@ -12,3 +12,4 @@
 2026-11-04 | polish dos componentes globais (raios concêntricos, offsets, line-heights inteiras) e tela inicial com seletores ghost fora da caixa | crítica impeccable + pedido do usuário
 2026-11-04 | contraste (accent e cinzas do claro), IconButton xs/sm/md, shape pill, ações de cabeçalho sm, documento sem rolagem | varredura de todas as telas + bug crítico
 2026-11-04 | Settings refinado pela crítica impeccable: ListRow, status com ação nos provedores, nav ativo visível, estados vazios, General dividido, storage com o navegador | pedido do usuário
+2026-11-04 | Build with AI em passos de tela cheia e poderes como seletores (sem acesso / ler / ler e escrever) | usuário achou corporativo; modelo do a reference app
