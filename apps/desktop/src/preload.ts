@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("zorelDesktop", {
   update: {
     get: (): Promise<{ version: string; ready: boolean; percent?: number } | null> => ipcRenderer.invoke("update:get"),
     install: (): Promise<boolean> => ipcRenderer.invoke("update:install"),
+    check: (): Promise<"latest" | "available" | "failed" | "unsupported"> => ipcRenderer.invoke("update:check"),
     on: (callback: (u: { version: string; ready: boolean; percent?: number } | null) => void) => {
       const listener = (_e: unknown, u: { version: string; ready: boolean; percent?: number } | null) => callback(u)
       ipcRenderer.on("update", listener)

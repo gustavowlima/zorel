@@ -242,6 +242,39 @@ function StartupSetting() {
   )
 }
 
+// The app's version and, in the desktop app, a check for a new one right now.
+type Check = "checking" | "latest" | "available" | "failed" | "unsupported"
+const updates = (window as { zorelDesktop?: { update?: { check: () => Promise<Exclude<Check, "checking">> } } }).zorelDesktop?.update
+const CHECK_TEXT = { checking: "appearance.checking", latest: "appearance.upToDate", available: "appearance.updateFound", failed: "appearance.checkFailed", unsupported: "appearance.checkUnsupported" } as const
+function AboutSetting() {
+  const [check, setCheck] = useState<Check>()
+  return (
+    <Section title={t("appearance.about")}>
+      <Rows>
+        <div className="flex flex-wrap items-center gap-3 py-3.5">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="font-medium tabular-nums">{t("appearance.version", { version: __ZOREL_VERSION__ })}</span>
+            <span className="text-sm text-muted">{check ? t(CHECK_TEXT[check]) : t("appearance.versionHint")}</span>
+          </span>
+          {updates && (
+            <Button
+              size="sm"
+              variant="secondary"
+              isDisabled={check === "checking"}
+              onPress={() => {
+                setCheck("checking")
+                void updates.check().then(setCheck, () => setCheck("failed"))
+              }}
+            >
+              {t("appearance.checkUpdates")}
+            </Button>
+          )}
+        </div>
+      </Rows>
+    </Section>
+  )
+}
+
 // Preferences of this computer, one section per topic: Appearance (the theme), then Notifications.
 
 function General() {
@@ -273,6 +306,7 @@ function General() {
       </Rows>
     </Section>
     <StartupSetting />
+    <AboutSetting />
     </>
   )
 }
