@@ -1,46 +1,52 @@
-// Git in the chat header: the branch of the chat's folder and what changed, and the steps that ship it — commit
+// Git of the chat's folder: the branch button in the chat header (opens the side panel's Git tab) and that tab —
+// what changed and the latest commits, and the steps that ship it: commit
 // (message written or drafted by the chat's model), push, open a pull request (or see the one already open), or
 // move the work to a new branch, or give the chat its own worktree (a folder on its own branch, so its agents
 // don't touch the project folder). Shown only when the folder is a git repository. Errors are git's own words.
 import type { Chat } from "@zero/contracts"
-import { t } from "@zero/i18n"
+import { formatTime, t } from "@zero/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { useAtomValue } from "@effect/atom-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { gitAtom, mutations, useInvalidate, useMutation } from "../client.ts"
-import { ArrowUpRight, Button, FolderOpen, GitBranch, GitPullRequest, Input, Popover, Sparkles, Spinner, Textarea } from "@/ui"
+import { ArrowUpRight, Button, FolderOpen, GitBranch, GitCommitHorizontal, GitPullRequest, Input, Sparkles, Spinner, Textarea } from "@/ui"
 
 const errorOf = (e: unknown) => (e as { message?: string })?.message || t("git.failed")
 
-export function GitControl({ chat }: { chat: Chat }) {
-  const chatId = chat.id
-  const result = useAtomValue(gitAtom(chatId))
-  const invalidate = useInvalidate()
+export function GitControl({ chat, open, onOpen }: { chat: Chat; open: boolean; onOpen: () => void }) {
+  const result = useAtomValue(gitAtom(chat.id))
   if (!AsyncResult.isSuccess(result) || !result.value.repo) return null
   const s = result.value
   return (
-    <Popover
-      label={t("git.title")}
-      placement="bottom end"
-      onOpenChange={(open) => open && invalidate(["git"])}
-      trigger={
-        <Button size="sm" variant="ghost" className="max-w-56 rounded-full" aria-label={t("git.button", { branch: s.branch ?? t("git.detached"), count: s.files.length })}>
-          {chat.worktree ? <FolderOpen /> : <GitBranch />}
-          <span className="truncate">{s.branch ?? t("git.detached")}</span>
-          {s.files.length > 0 && <span className="font-mono text-sm text-warning tabular-nums">{s.files.length}</span>}
-          {s.ahead > 0 && <span className="font-mono text-sm text-accent-text tabular-nums">{`↑${s.ahead}`}</span>}
-        </Button>
-      }
+    <Button
+      size="sm"
+      variant={open ? "secondary" : "ghost"}
+      aria-pressed={open}
+      className="max-w-56 rounded-full"
+      aria-label={t("git.button", { branch: s.branch ?? t("git.detached"), count: s.files.length })}
+      onPress={onOpen}
     >
-      <GitPanel chatId={chatId} worktree={chat.worktree} />
-    </Popover>
+      {chat.worktree ? <FolderOpen /> : <GitBranch />}
+      <span className="truncate">{s.branch ?? t("git.detached")}</span>
+      {s.files.length > 0 && <span className="font-mono text-sm text-warning tabular-nums">{s.files.length}</span>}
+      {s.ahead > 0 && <span className="font-mono text-sm text-accent-text tabular-nums">{`↑${s.ahead}`}</span>}
+    </Button>
   )
+}
+
+// Whether the chat's folder is a git repository (the side panel shows its Git tab only then).
+export function useIsRepo(chatId: string) {
+  const result = useAtomValue(gitAtom(chatId))
+  return AsyncResult.isSuccess(result) && result.value.repo
 }
 
 type Step = "commit" | "push" | "pr" | "branch" | "draft" | "worktree"
 
-function GitPanel({ chatId, worktree }: { chatId: string; worktree: string | null }) {
+export function GitPanel({ chatId, worktree }: { chatId: string; worktree: string | null }) {
   const result = useAtomValue(gitAtom(chatId))
+  const invalidate = useInvalidate()
+  // Fresh each time the tab is shown (a shell or an agent may have committed meanwhile).
+  useEffect(() => invalidate(["git"]), [invalidate])
   const draft = useMutation(mutations.gitDraft)
   const commit = useMutation(mutations.gitCommit)
   const push = useMutation(mutations.gitPush)
@@ -54,7 +60,7 @@ function GitPanel({ chatId, worktree }: { chatId: string; worktree: string | nul
   const [busy, setBusy] = useState<Step>()
   const [error, setError] = useState<string>()
   const [done, setDone] = useState<string>()
-  if (!AsyncResult.isSuccess(result)) return <p className="w-96 p-4 text-sm text-muted">{t("common.checking")}</p>
+  if (!AsyncResult.isSuccess(result)) return <p className="p-4 text-sm text-muted">{t("common.checking")}</p>
   const s = result.value
 
   const act = (step: Step, f: () => Promise<unknown>, ok?: string) => {
@@ -71,7 +77,7 @@ function GitPanel({ chatId, worktree }: { chatId: string; worktree: string | nul
   const canPr = s.gh && s.remote && !!s.branch && s.branch !== s.base
 
   return (
-    <div className="flex w-104 flex-col gap-4 p-4">
+    <div className="flex flex-col gap-4 p-4">
       <div className="flex flex-col gap-0.5">
         <p className="flex items-center gap-2 font-medium">
           <GitBranch className="size-4 text-muted" />
@@ -91,6 +97,13 @@ function GitPanel({ chatId, worktree }: { chatId: string; worktree: string | nul
 
       {s.files.length > 0 && (
         <div className="flex flex-col gap-2">
+          <ul className="flex max-h-48 flex-col overflow-y-auto">
+            {s.files.map((f) => (
+              <li key={f} className="truncate py-0.5 font-mono text-sm text-secondary" title={f}>
+                {f}
+              </li>
+            ))}
+          </ul>
           <Textarea aria-label={t("git.message")} placeholder={t("git.messageHint")} rows={4} value={message} onChange={(e) => setMessage(e.target.value)} className="font-mono text-sm" />
           <div className="flex items-center gap-2">
             <Button
@@ -169,6 +182,24 @@ function GitPanel({ chatId, worktree }: { chatId: string; worktree: string | nul
               {t("git.openPr")}
             </Button>
           </div>
+        </div>
+      )}
+
+      {s.commits.length > 0 && (
+        <div className="flex flex-col gap-1 border-t border-subtle pt-3">
+          <p className="text-sm font-medium">{t("git.commits")}</p>
+          <ul className="flex flex-col">
+            {s.commits.map((c) => (
+              <li key={c.sha} className="flex items-center gap-2 py-1 text-sm">
+                <GitCommitHorizontal className={c.pushed ? "size-3.5 shrink-0 text-dim" : "size-3.5 shrink-0 text-accent-text"} />
+                <span className="font-mono text-muted">{c.sha}</span>
+                <span className="min-w-0 flex-1 truncate text-secondary" title={c.subject}>
+                  {c.subject}
+                </span>
+                <span className="shrink-0 text-muted tabular-nums">{formatTime(c.at)}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

@@ -35,7 +35,7 @@ export function parsePorcelain(out: string) {
 
 export async function status(cwd: string): Promise<GitStatus> {
   const inside = (await git(cwd, ["rev-parse", "--is-inside-work-tree"], true)).trim() === "true"
-  if (!inside) return { repo: false, branch: null, base: null, upstream: null, ahead: 0, behind: 0, files: [], remote: false, gh: false, pr: null }
+  if (!inside) return { repo: false, branch: null, base: null, upstream: null, ahead: 0, behind: 0, files: [], remote: false, gh: false, pr: null, commits: [] }
   const s = parsePorcelain(await git(cwd, ["status", "--porcelain=v1", "-b", "--untracked-files=all"]))
   const remote = (await git(cwd, ["remote"], true)).trim().length > 0
   let pr: GitStatus["pr"] = null
@@ -46,8 +46,18 @@ export async function status(cwd: string): Promise<GitStatus> {
       pr = { number: v.number, url: v.url, state: v.state.toLowerCase(), title: v.title }
     } catch {}
   }
-  return { repo: true, ...s, base: await baseBranch(cwd), remote, gh: !!gh(), pr }
+  return { repo: true, ...s, base: await baseBranch(cwd), remote, gh: !!gh(), pr, commits: parseLog(await git(cwd, ["log", "-15", "--format=%h%x1f%s%x1f%ct"], true), s.ahead) }
 }
+
+// `git log --format=%h%x1f%s%x1f%ct`: the first `ahead` are not on the upstream yet.
+export const parseLog = (out: string, ahead: number) =>
+  out
+    .split("\n")
+    .filter(Boolean)
+    .map((line, i) => {
+      const [sha = "", subject = "", at = "0"] = line.split("\x1f")
+      return { sha, subject, at: Number(at) * 1000, pushed: i >= ahead }
+    })
 
 // Everything in the folder goes into the commit (what the panel shows is what gets committed).
 export async function commit(cwd: string, message: string) {

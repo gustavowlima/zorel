@@ -237,7 +237,7 @@ function ChatHeader({
             {project?.name ?? t("common.general")}
           </Button>
         </div>
-        {workspace && <GitControl chat={chat} />}
+        {workspace && <GitControl chat={chat} open={panel === "git"} onOpen={() => onSide("git")} />}
         {/* What was pinned from the side panel (a tab, a shell): one press opens it there. Right-click unpins. */}
         {(pins.side.length > 0 || pins.shells.length > 0) && (
           <ContextMenu
