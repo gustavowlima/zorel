@@ -551,7 +551,7 @@ export function TitleBar({ sidebarHidden }: { sidebarHidden: boolean }) {
     <header className="app-drag flex h-12 shrink-0 items-center">
       {/* Left: the window buttons and back/forward, as wide as the rail plus the sidebar so the page header starts
           on the card's edge. With the sidebar hidden the window buttons own that corner: the header follows them. */}
-      <Width width={sidebarHidden ? "auto" : 308} className="flex shrink-0 items-center gap-0.5 overflow-hidden pl-21">
+      <Width width={sidebarHidden ? "auto" : 308} className="flex shrink-0 items-center gap-0.5 overflow-hidden pl-24">
         <Tooltip content={t("nav.back")}>
           <IconButton label={t("nav.back")} size="sm" onPress={() => history.back()}>
             <ChevronRight className="size-4 rotate-180" />
