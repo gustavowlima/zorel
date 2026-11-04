@@ -85,6 +85,7 @@ export const Approval = Schema.Struct({
   summary: Schema.String, // "Run bun test apps/server in the project folder"
   args: Schema.String, // JSON with masked secrets
   cwd: Schema.NullOr(Schema.String),
+  alwaysKey: Schema.NullOr(Schema.String), // set when "Always allow" applies: the rule it saves on the agent
   createdAt: Millis,
   expiresAt: Millis
 })

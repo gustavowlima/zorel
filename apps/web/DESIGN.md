@@ -383,6 +383,8 @@ Compactos e diretos, com aperto físico ao pressionar.
 - Novo servidor MCP: em cima do formulário, "From the catalog" com pílulas (GitHub, Notion, Context7, Figma, Playwright, Filesystem, Postgres) que preenchem nome, tipo, comando ou URL e a linha do token a colar.
 
 ### Versões do agente
+- **Página do agente em abas** (como no Tucano): **Profile** (nome, título, descrição, modelo e alternativas, instruções), **Tools and access** (cartões de nível de acesso em "Computer and files"; "Web and browser" com dois switches; "Connectors", uma linha por servidor MCP com segmentado No access / Read / Read and write; "Always allowed", chips com × para revogar; uma linha dim lembrando que apagar, enviar, publicar e pagar sempre esperam você) e **Knowledge and activity** (memórias e skills, uso, rotinas, histórico; só com o agente criado). Um "Save" no cabeçalho salva todas as abas.
+- No cartão de aprovação, **Always allow** (secundário, entre Deny e Allow) só aparece quando a ação pode ser liberada de vez; o tooltip diz onde desfazer.
 - Na página do agente, a seção **History** (só a partir de duas versões): uma linha por versão, a mais nova primeiro — `vN` em mono, os campos que mudaram em relação à anterior ("Instructions, model"; a primeira diz "Created"), quem mudou ("You" ou o nome do agente que propôs) e quando. A atual diz "Current"; as outras têm "Restore", que confirma antes e grava o perfil antigo como uma versão nova (nada se perde).
 - Menu ⋯ do agente: **Export** baixa `<nome>.agent.json` (perfil sem conta: a conta é deste computador). Na tela Agents, **Import** lê esse arquivo e cria um agente global, que abre em seguida; um arquivo que não é de agente do Zero mostra o erro ao lado do botão.
 

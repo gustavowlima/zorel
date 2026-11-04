@@ -872,12 +872,12 @@ const TypingDots = () => (
 function ApprovalCard({ approval: a }: { approval: Approval }) {
   const decide = useMutation(mutations.decide)
   const agents = useList(agentsAtom)
-  const [pending, setPending] = useState<"approved" | "denied">()
+  const [pending, setPending] = useState<"approved" | "always" | "denied">()
   const [error, setError] = useState<string>()
   const [details, setDetails] = useState(false)
-  const choose = (outcome: "approved" | "denied") => {
+  const choose = (outcome: "approved" | "always" | "denied") => {
     setPending(outcome)
-    decide({ payload: { approvalId: a.id, outcome }, reactivityKeys: ["approvals"] }).catch(() => {
+    decide({ payload: { approvalId: a.id, outcome }, reactivityKeys: ["approvals", "agents"] }).catch(() => {
       setPending(undefined)
       setError(t("chat.approvalGone"))
     })
@@ -898,6 +898,14 @@ function ApprovalCard({ approval: a }: { approval: Approval }) {
       <Button size="sm" variant="ghost" isDisabled={!!pending} onPress={() => choose("denied")}>
         {t("approval.deny")}
       </Button>
+      {/* Only when the action can be allowed for good (an MCP tool, the browser): it saves a rule on the agent. */}
+      {a.alwaysKey && (
+        <Tooltip content={t("approval.allowAlwaysHint")}>
+          <Button size="sm" variant="secondary" isPending={pending === "always"} isDisabled={!!pending} onPress={() => choose("always")}>
+            {t("approval.allowAlways")}
+          </Button>
+        </Tooltip>
+      )}
       <Button size="sm" variant="default" isPending={pending === "approved"} isDisabled={!!pending} onPress={() => choose("approved")}>
         {t("approval.allow")}
       </Button>

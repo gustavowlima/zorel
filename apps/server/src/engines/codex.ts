@@ -181,6 +181,7 @@ export interface CodexSessionOptions {
   readonly home: string // Zero-owned CODEX_HOME for the account
   readonly gatewayUrl: string // this session's stable gateway URL (tools change per turn behind it)
   readonly access: Access
+  readonly web: boolean
   readonly approve: Approver
   readonly command?: ReadonlyArray<string> // tests: a fake app-server instead of `codex`
 }
@@ -194,7 +195,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
   mkdirSync(o.home, { recursive: true })
   // Skills on this machine (~/.agents/skills…) are the person's, not Zero's (D8): host discovery off.
   const args = o.command?.slice(1) ?? [
-    "app-server", "-c", "project_doc_max_bytes=0", "-c", 'web_search="disabled"',
+    "app-server", "-c", "project_doc_max_bytes=0", "-c", `web_search="${o.web ? "live" : "disabled"}"`,
     ...appServerDisabled().flatMap((f) => ["--disable", f]), "--disable", "skill_search", "--enable", "skip_host_skill_discovery"
   ]
   const rpc = Rpc.start(bin, args, o.cwd, childEnv(o.home))

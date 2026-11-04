@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test"
-import type { Agent } from "@zero/contracts"
+import { type Agent, DEFAULT_PERMISSIONS } from "@zero/contracts"
 import { createInput, createInputs, findAgent, narrower, updateInput, visibleTo } from "./team.ts"
 
 const agent = (over: Partial<Agent>): Agent => ({
   id: "a1", projectId: null, name: "Code Reviewer", title: "", description: "", instructions: "x", model: "claude-cli/claude-sonnet-5-5",
-  accountId: null, effort: null, failover: [], access: "workspace", createdAt: 0, ...over
+  accountId: null, effort: null, failover: [], access: "workspace", permissions: DEFAULT_PERMISSIONS, createdAt: 0, ...over
 })
 const caller = { model: "codex-cli/default", effort: "high" as const, access: "workspace" as const }
 

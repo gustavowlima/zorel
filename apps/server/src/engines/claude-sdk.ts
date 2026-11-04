@@ -15,8 +15,10 @@ import { approvalFor, decideCommand, decideEdit, decideRead } from "#server/engi
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
 
 const GATEWAY = "zero"
-// Claude Code's own tools Zero turns on: files and shell. No web, no subagents, no notebooks.
+// Claude Code's own tools Zero turns on: files and shell, plus web search and fetch when the agent may use the web.
+// No subagents, no notebooks.
 const NATIVE_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write", "Bash"]
+const WEB_TOOLS = ["WebSearch", "WebFetch"]
 const DENIED = "The user denied this. Don't try it again without asking."
 
 const kindOf = (tool: string): NativeStep["kind"] =>
@@ -53,11 +55,12 @@ function stepTracker(cwd: string) {
 }
 
 // canUseTool: the access level decides; what needs the person goes to Zero's approval card.
-export function permissions(access: Access, cwd: string, approve: Approver): CanUseTool {
+export function permissions(access: Access, cwd: string, approve: Approver, web = false): CanUseTool {
   return async (tool, input, { blockedPath }) => {
     const allow = { behavior: "allow" as const, updatedInput: input }
     const deny = { behavior: "deny" as const, message: DENIED }
     if (tool.startsWith("mcp__")) return allow // the gateway applies the server's mode and its approvals
+    if (WEB_TOOLS.includes(tool)) return web ? allow : deny // the agent's web permission
     const path = typeof input.file_path === "string" ? input.file_path : (blockedPath ?? undefined)
     let decision: "allow" | "ask"
     let request: NativeApproval
@@ -148,6 +151,7 @@ export interface ClaudeSessionOptions {
   readonly gatewayUrl: string
   readonly configDir?: string | undefined // account login folder (§6.1); undefined = the CLI's default login
   readonly access: Access
+  readonly web: boolean
   readonly approve: Approver
 }
 
@@ -167,9 +171,9 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
       systemPrompt: o.system,
       cwd: o.cwd,
       pathToClaudeCodeExecutable: bin,
-      tools: NATIVE_TOOLS,
+      tools: o.web ? [...NATIVE_TOOLS, ...WEB_TOOLS] : NATIVE_TOOLS,
       allowedTools: [`mcp__${GATEWAY}`], // the gateway applies policy and approvals
-      canUseTool: permissions(o.access, o.cwd, o.approve),
+      canUseTool: permissions(o.access, o.cwd, o.approve, o.web),
       ...SETTINGS,
       mcpServers: { [GATEWAY]: { type: "http", url: o.gatewayUrl } },
       strictMcpConfig: true,

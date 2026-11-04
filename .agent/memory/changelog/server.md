@@ -43,3 +43,4 @@
 2026-11-03 | páginas de conhecimento com versões e ferramentas dos agentes | item 7, fase 3b (Tucano)
 2026-11-03 | ACP: OpenCode e Gemini CLI por um adaptador | item 8, fase 5
 2026-11-04 | agentes ACP confinados no sandbox do macOS abaixo de acesso total | antes o nível Workspace permitia tudo
+2026-11-04 | permissões por agente (web, browser, conectores, sempre permitir, pedir acesso) | pedido do usuário, modelo do Tucano

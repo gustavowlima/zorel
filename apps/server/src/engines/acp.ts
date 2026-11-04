@@ -25,6 +25,7 @@ export interface AcpTurn {
   readonly prompt: string
   readonly access: Access
   readonly gatewayUrl?: string | undefined
+  readonly web?: boolean // the agent may fetch and search the web
   readonly state?: ReadonlyArray<string> // folders under home the CLI writes its own data to
 }
 
@@ -135,7 +136,8 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
       return
     }
     if (m.method === "session/request_permission") {
-      const answer = permission(m.params?.options ?? [], t.access)
+      const webAsk = m.params?.toolCall?.kind === "fetch" && !t.web
+      const answer = webAsk ? { outcome: { outcome: "cancelled" } } : permission(m.params?.options ?? [], t.access)
       if (answer.outcome.outcome === "cancelled") refused++
       send({ id: m.id, result: answer })
       return

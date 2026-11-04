@@ -18,7 +18,8 @@ import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
-import { exposedName, type GatewayHandle, needsApproval, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
+import { exposedName, type GatewayHandle, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
+import { accessChange, browserRoute, mcpRoute, permissionsOf, REQUEST_ACCESS_TOOL, withAlways } from "./permissions.ts"
 
 const MAX_MENTIONS = 3
 const MAX_SESSIONS = 8 // live engine processes; the least recently used one closes first
@@ -155,14 +156,14 @@ export const makeRuntime = Effect.gen(function* () {
 
   // The approver of the turn each session is running now (a session outlives turns; approvals go to the current one).
   const approvers = new Map<string, Approver>()
-  const engineStream = (row: TurnRow, turn: EngineTurn, account: AccountRow | undefined, effort: Effort | null, access: Access, onSeen: (set: (at: number) => void) => void) =>
+  const engineStream = (row: TurnRow, turn: EngineTurn, account: AccountRow | undefined, effort: Effort | null, access: Access, web: boolean, onSeen: (set: (at: number) => void) => void) =>
     Effect.gen(function* () {
       const key = sessionKey(row)
       const provider = splitModel(row.model).provider
       // Tool names are part of the stable context: a session lists tools once, so a new set means a new session.
       // The account too: switching accounts opens a new session with the checkpoint (§6.1, no shared native session).
       // So are the folder and the access level: the engine's sandbox is set when the session opens.
-      const stable = `${turn.stable ?? turn.system}\n#tools:${(turn.tools?.defs ?? []).map((d) => d.name).sort().join(",")}\n#account:${account?.id ?? "-"}\n#cwd:${turn.cwd}\n#access:${access}`
+      const stable = `${turn.stable ?? turn.system}\n#tools:${(turn.tools?.defs ?? []).map((d) => d.name).sort().join(",")}\n#account:${account?.id ?? "-"}\n#cwd:${turn.cwd}\n#access:${access}\n#web:${web}`
       let live = sessions.get(key)
       if (live && (!live.session.alive() || live.stable !== stable)) {
         yield* closeSession(key)
@@ -171,9 +172,9 @@ export const makeRuntime = Effect.gen(function* () {
       if (!live) {
         const opened = engines.open?.({
           model: row.model, system: turn.stable ?? turn.system, cwd: turn.cwd, gatewayUrl: gatewayOf(key).url, dataDir, account: account && { id: account.id, home: account.home },
-          access, approve: (req) => (approvers.get(key) ?? (async () => false))(req)
+          access, web, approve: (req) => (approvers.get(key) ?? (async () => false))(req)
         })
-        if (opened === undefined) return engines.run({ ...turn, access })
+        if (opened === undefined) return engines.run({ ...turn, access, web })
         if (typeof opened === "string") return Stream.make<EngineEvent[]>({ type: "error", message: opened })
         if (sessions.size >= MAX_SESSIONS) {
           const oldest = [...sessions.entries()].sort((a, b) => a[1].used - b[1].used)[0]
@@ -213,7 +214,9 @@ export const makeRuntime = Effect.gen(function* () {
   // `fixed`: a native session's gateway (one URL for the whole session); without it, one URL per turn.
   // `onWrite`: a tool that writes (or is sensitive) is about to run; the turn has acted, so failover won't repeat it.
   const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, legacy: Step[], onWrite: () => void, fixed?: GatewayHandle, onFinished: (s: WorkStep) => void = () => {}) => {
-    const routes = new Map<string, { server: string; tool: string; approve: boolean; writes: boolean }>()
+    const routes = new Map<string, { server: string; tool: string; approve: boolean; writes: boolean; alwaysKey: string }>()
+    const perms = permissionsOf(agent)
+    const askFirst = (agent?.access ?? "workspace") === "ask"
     const defs: ToolDef[] = []
     const step = (title: string, tool: string) => run(store.addStep({ turnId: row.id, kind: "tool", title, tool, files: [], status: "running" }).pipe(Effect.tap((s) => publish(chat.id, ev("step-started", { step: s })))))
     const finish = (s: WorkStep, status: WorkStep["status"], output = "") =>
@@ -226,18 +229,18 @@ export const makeRuntime = Effect.gen(function* () {
         return []
       })
       for (const t of listed) {
-        if (s.mode === "read" && t.cls !== "read") continue
+        const r = mcpRoute(perms, s, t, askFirst)
+        if (!r.expose) continue
         const name = exposedName(s.name, t.name)
-        routes.set(name, { server: s.id, tool: t.name, approve: needsApproval(s.mode, t.cls), writes: t.cls !== "read" })
+        routes.set(name, { server: s.id, tool: t.name, approve: r.approve, writes: t.cls !== "read", alwaysKey: r.alwaysKey })
         defs.push({ name, description: t.description, inputSchema: t.inputSchema })
       }
     }
     // The chat's browser: Zero's own tools, always there. Reading never asks; acting asks when the agent's
     // access is "ask", like any tool that writes.
-    const askFirst = (agent?.access ?? "workspace") === "ask"
-    for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    if (perms.browser) for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
-    for (const t of [...TEAM_TOOLS, MEMORY_TOOL, ROUTINES_TOOL, ...KNOWLEDGE_TOOLS]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    for (const t of [...TEAM_TOOLS, MEMORY_TOOL, ROUTINES_TOOL, ...KNOWLEDGE_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
       return { tools: undefined as TurnTools | undefined, close: () => {} }
@@ -394,14 +397,32 @@ export const makeRuntime = Effect.gen(function* () {
     const call: Session["call"] = async (name, args) => {
       if (KNOWLEDGE_TOOLS.some((t) => t.name === name)) return knowledgeCall(name, args)
       if (name === ROUTINES_TOOL.name) return routinesCall(args)
+      if (name === REQUEST_ACCESS_TOOL.name && agent) {
+        const servers = await run(store.mcpServersFor(chat.projectId))
+        const change = accessChange(permissionsOf(agent), String(args.what ?? ""), typeof args.level === "string" ? args.level : undefined, servers)
+        if (typeof change === "string") return textResult(change, true)
+        const title = `${nameOf(agent)} asks to ${change.label}`
+        const s = await step(title, name)
+        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: title, args: String(args.reason ?? "").slice(0, 2000), cwd: null }))
+        if (outcome === "denied" || outcome === "expired") {
+          await finish(s, "refused")
+          return textResult("The user declined. Work with what you have, or ask them.", true)
+        }
+        // Applied to the agent as it is now (its permissions may have changed while the card waited).
+        const fresh = accessChange(permissionsOf((await run(store.agent(agent.id))) ?? agent), String(args.what ?? ""), typeof args.level === "string" ? args.level : undefined, servers)
+        if (typeof fresh !== "string") await run(store.updateAgent(agent.id, { permissions: fresh.next }))
+        await finish(s, "ok", change.label)
+        return textResult(`Granted: ${change.label}. It works from your next turn.`)
+      }
       if (name === MEMORY_TOOL.name) return memoryCall(args)
       if (TEAM_TOOLS.some((t) => t.name === name)) return teamCall(name, args)
       const builtin = BROWSER_TOOLS.find((t) => t.name === name)
       if (builtin) {
         const shown = JSON.stringify(args).slice(0, 300)
         const s = await step(browserStepTitle(name, args), name)
-        if (builtin.writes && askFirst) {
-          const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to ${browserStepTitle(name, args).toLowerCase()}`, args: JSON.stringify(args, null, 2).slice(0, 4000), cwd: null }))
+        const gate = browserRoute(perms, name, args, builtin.writes, askFirst)
+        if (gate.approve) {
+          const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to ${browserStepTitle(name, args).toLowerCase()}`, args: JSON.stringify(args, null, 2).slice(0, 4000), cwd: null }, gate.alwaysKey))
           if (outcome === "denied" || outcome === "expired") {
             legacy.push({ tool: name, args: shown, status: "refused", result: "" })
             await finish(s, "refused")
@@ -425,7 +446,7 @@ export const makeRuntime = Effect.gen(function* () {
       const shown = JSON.stringify(args).slice(0, 300)
       const s = await step(name, name)
       if (route.approve) {
-        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to use ${name}`, args: JSON.stringify(args, null, 2).slice(0, 4000), cwd: null }))
+        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to use ${name}`, args: JSON.stringify(args, null, 2).slice(0, 4000), cwd: null }, agent ? route.alwaysKey : null))
         if (outcome === "denied" || outcome === "expired") {
           legacy.push({ tool: name, args: shown, status: "refused", result: "" })
           await finish(s, "refused")
@@ -452,12 +473,13 @@ export const makeRuntime = Effect.gen(function* () {
   }
 
   // One approval card (MCP tool or native call): persisted, published, waited on; expiry counts as denial.
-  const askApproval = (chat: Chat, row: TurnRow, agent: Agent | undefined, s: WorkStep | undefined, req: NativeApproval) =>
+  // alwaysKey: the rule "Always allow" would save on the agent (null: this call can only be allowed once).
+  const askApproval = (chat: Chat, row: TurnRow, agent: Agent | undefined, s: WorkStep | undefined, req: NativeApproval, alwaysKey: string | null = null) =>
     Effect.gen(function* () {
       const now = Date.now()
       const approval = yield* store.addApproval({
         chatId: chat.id, turnId: row.id, stepId: s?.id ?? null, agentId: agent?.id ?? null, kind: req.kind, tool: req.tool,
-        summary: req.summary, args: req.args, cwd: req.cwd, expiresAt: now + APPROVAL_MS
+        summary: req.summary, args: req.args, cwd: req.cwd, alwaysKey: agent ? alwaysKey : null, expiresAt: now + APPROVAL_MS
       })
       const d = yield* Deferred.make<ApprovalOutcome>()
       waiting.set(approval.id, d)
@@ -610,7 +632,7 @@ export const makeRuntime = Effect.gen(function* () {
             })
           )
           const turn = yield* prepare(store, (yield* store.chat(chatId))!, agent, model, dataDir, opened.tools, cwd)
-          const stream = yield* engineStream(attemptRow, turn, account, effort, access, (set) => {
+          const stream = yield* engineStream(attemptRow, turn, account, effort, access, permissionsOf(agent).web, (set) => {
             markSeen = set
           })
           yield* stream.pipe(
@@ -862,7 +884,11 @@ export const makeRuntime = Effect.gen(function* () {
           after: { tool: a.tool, chatId: a.chatId, agentId: a.agentId },
           ...(reason && { reason })
         })
-        // ponytail: "always" approves only this call; the persistent "always allow" rule is phase 4.
+        // "Always allow": the rule goes on the agent (its Tools tab lists it, with a way to take it back).
+        if (outcome === "always" && a.alwaysKey && a.agentId) {
+          const target = yield* store.agent(a.agentId)
+          if (target) yield* store.updateAgent(target.id, { permissions: withAlways(permissionsOf(target), a.alwaysKey) })
+        }
         const d = waiting.get(approvalId)
         if (d) yield* Deferred.succeed(d, outcome)
         yield* publish(a.chatId, ev("approval-resolved", { approvalId, outcome, reason: reason ?? null, by: "user" }))

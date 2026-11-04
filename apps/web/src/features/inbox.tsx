@@ -71,13 +71,13 @@ function ApprovalItem({ approval: a }: { approval: Approval }) {
   const agents = useList(agentsAtom)
   const chats = useList(chatsAtom)
   const decide = useMutation(mutations.decide)
-  const [pending, setPending] = useState<"approved" | "denied">()
+  const [pending, setPending] = useState<"approved" | "always" | "denied">()
   const chat = chats.find((c) => c.id === a.chatId)
   const agent = agents.find((x) => x.id === a.agentId)
-  const choose = (outcome: "approved" | "denied") => {
+  const choose = (outcome: "approved" | "always" | "denied") => {
     setPending(outcome)
     // Already decided elsewhere: the refetch removes it from the list either way.
-    decide({ payload: { approvalId: a.id, outcome }, reactivityKeys: ["approvals"] }).catch(() => setPending(undefined))
+    decide({ payload: { approvalId: a.id, outcome }, reactivityKeys: ["approvals", "agents"] }).catch(() => setPending(undefined))
   }
   return (
     <Item
@@ -90,6 +90,11 @@ function ApprovalItem({ approval: a }: { approval: Approval }) {
           <Button size="sm" variant="default" isPending={pending === "approved"} isDisabled={!!pending} onPress={() => choose("approved")}>
             {t("approval.allow")}
           </Button>
+          {a.alwaysKey && (
+            <Button size="sm" variant="secondary" isPending={pending === "always"} isDisabled={!!pending} onPress={() => choose("always")}>
+              {t("approval.allowAlways")}
+            </Button>
+          )}
           <Button size="sm" variant="ghost" isDisabled={!!pending} onPress={() => choose("denied")}>
             {t("approval.deny")}
           </Button>

@@ -1,7 +1,8 @@
-// Agent page, in four groups after who it is (name, title, one-line description): Brain (default model with
-// account and reasoning, fallbacks), Knows (instructions, its memories and skills), Does (its usage), Rules
-// (access, the tools its chats reach). Without an id it creates one, in a project or global.
-import type { Access, Agent, AgentVersion, FailoverTarget } from "@zero/contracts"
+// Agent page, in three tabs (as in Tucano): Profile (who it is, its model and fallbacks, its instructions), Tools
+// and access (folder access, web, browser, connectors, what was allowed for good), and Knowledge and activity
+// (its memories and skills, usage, routines, versions). One Save in the header saves every tab. Without an id it
+// creates one, in a project or global.
+import { type Access, type Agent, type AgentPermissions, type AgentVersion, DEFAULT_PERMISSIONS, type FailoverTarget } from "@zero/contracts"
 import { formatAge, t } from "@zero/i18n"
 import { useEffect, useState } from "react"
 import { agentsAtom, agentVersionsAtom, memoriesAtom, mutations, projectsAtom, serversAtom, useList, useMutation, useReading } from "../client.ts"
@@ -9,11 +10,12 @@ import { agentTone } from "../labels.ts"
 import { go } from "../state.ts"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { AgentRoutines } from "./routines.tsx"
+import { PermissionsEditor } from "./permissions.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import type { ReactNode } from "react"
 import {
-  AgentAvatar, BookOpen, Button, ChartColumn, Download, Undo2, ChevronRight, ChoiceCards, ConfirmDialog, Field, IconButton, Input, Menu, MenuItem, MoreHorizontal, Rows, Screen, Section, Sparkles, Textarea,
-  Trash2
+  AgentAvatar, BookOpen, Button, ChartColumn, Download, Undo2, ChevronRight, ConfirmDialog, Field, IconButton, Input, Menu, MenuItem, MoreHorizontal, Rows, Screen, Section, Sparkles, Tab, TabList,
+  TabPanel, Tabs, Textarea, Trash2
 } from "@/ui"
 
 const DEFAULT: ModelChoice = { model: "claude-cli/sonnet", accountId: null, effort: null }
@@ -32,6 +34,8 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
   const [choice, setChoice] = useState<ModelChoice>(agent ? { model: agent.model, accountId: agent.accountId, effort: agent.effort } : DEFAULT)
   const [failover, setFailover] = useState<ReadonlyArray<FailoverTarget>>(agent?.failover ?? [])
   const [access, setAccess] = useState<Access>(agent?.access ?? "workspace")
+  const [permissions, setPermissions] = useState<AgentPermissions>(agent?.permissions ?? DEFAULT_PERMISSIONS)
+  const [tab, setTab] = useState<"profile" | "tools" | "activity">("profile")
   const termsPending = useTermsPending({ model: choice.model, accountId: choice.accountId }, failover)
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -44,6 +48,7 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
     setChoice(agent ? { model: agent.model, accountId: agent.accountId, effort: agent.effort } : DEFAULT)
     setFailover(agent?.failover ?? [])
     setAccess(agent?.access ?? "workspace")
+    setPermissions(agent?.permissions ?? DEFAULT_PERMISSIONS)
   }, [agent])
 
   const project = projects.find((p) => p.id === (agent?.projectId ?? projectId))
@@ -62,11 +67,12 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
     choice.accountId !== agent.accountId ||
     choice.effort !== agent.effort ||
     JSON.stringify(failover) !== JSON.stringify(agent.failover) ||
-    access !== agent.access
+    access !== agent.access ||
+    JSON.stringify(permissions) !== JSON.stringify(agent.permissions)
 
   const save = () => {
     setBusy(true)
-    const payload = { name: name.trim(), title: title.trim(), description: description.trim(), instructions, ...choice, failover, access }
+    const payload = { name: name.trim(), title: title.trim(), description: description.trim(), instructions, ...choice, failover, access, permissions }
     const done = agent
       ? update({ params: { id: agent.id }, payload, reactivityKeys: ["agents"] })
       : create({ payload: { ...payload, projectId: project?.id ?? null }, reactivityKeys: ["agents"] }).then((a) => go({ view: "agent", id: a.id }))
@@ -108,94 +114,80 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
       }
     >
       <form
-        className="mx-auto flex w-full max-w-2xl flex-col gap-7 px-8 py-7"
+        className="mx-auto flex w-full max-w-2xl flex-col px-8 py-6"
         onSubmit={(e) => {
           e.preventDefault()
           if (dirty && name.trim() && !termsPending) save()
         }}
       >
-        {/* Who it is: other agents read the title and description to know whom to hand work to. */}
-        <div className="grid grid-cols-2 gap-4">
-          <Field label={t("agent.name")}>
-            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required {...(!agent && { autoFocus: true })} />
-          </Field>
-          <Field label={t("agent.titleField")} hint={t("agent.titleHint")}>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} placeholder={t("agent.titlePlaceholder")} />
-          </Field>
-        </div>
-        <Field label={t("agent.description")} hint={t("agent.descriptionHint")}>
-          <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={300} placeholder={t("agent.descriptionPlaceholder")} />
-        </Field>
+        <Tabs selectedKey={tab} onSelectionChange={(k) => setTab(k as typeof tab)} className="gap-7">
+          <TabList label={t("agent.newTitle")}>
+            <Tab id="profile">{t("agent.tabs.profile")}</Tab>
+            <Tab id="tools">{t("agent.tabs.tools")}</Tab>
+            {agent && <Tab id="activity">{t("agent.tabs.activity")}</Tab>}
+          </TabList>
 
-        <Section title={t("agent.brain")}>
-          <Field label={t("agent.model")} hint={t("agent.modelHint")}>
-            <ModelPicker variant="field" value={choice} onChange={setChoice} />
-          </Field>
-          <div className="flex flex-col gap-2 pt-2">
-            <span className="text-sm font-medium text-muted">{t("failover.title")}</span>
-            <p className="text-sm text-dim">{t("failover.intro")}</p>
-            <FailoverEditor primary={{ model: choice.model, accountId: choice.accountId }} value={failover} onChange={setFailover} />
-          </div>
-        </Section>
+          <TabPanel id="profile" className="flex flex-col gap-7">
+            {/* Who it is: other agents read the title and description to know whom to hand work to. */}
+            <div className="grid grid-cols-2 gap-4">
+              <Field label={t("agent.name")}>
+                <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required {...(!agent && { autoFocus: true })} />
+              </Field>
+              <Field label={t("agent.titleField")} hint={t("agent.titleHint")}>
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} placeholder={t("agent.titlePlaceholder")} />
+              </Field>
+            </div>
+            <Field label={t("agent.description")} hint={t("agent.descriptionHint")}>
+              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={300} placeholder={t("agent.descriptionPlaceholder")} />
+            </Field>
+            <Section title={t("agent.brain")}>
+              <Field label={t("agent.model")} hint={t("agent.modelHint")}>
+                <ModelPicker variant="field" value={choice} onChange={setChoice} />
+              </Field>
+              <div className="flex flex-col gap-2 pt-2">
+                <span className="text-sm font-medium text-muted">{t("failover.title")}</span>
+                <p className="text-sm text-dim">{t("failover.intro")}</p>
+                <FailoverEditor primary={{ model: choice.model, accountId: choice.accountId }} value={failover} onChange={setFailover} />
+              </div>
+            </Section>
+            <Field label={t("agent.role")} hint={t("agent.roleHint")}>
+              <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={8} maxLength={8000} />
+            </Field>
+          </TabPanel>
 
-        <Section title={t("agent.knows")}>
-          <Field label={t("agent.role")} hint={t("agent.roleHint")}>
-            <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={6} maxLength={8000} />
-          </Field>
+          <TabPanel id="tools">
+            <PermissionsEditor access={access} onAccess={setAccess} value={permissions} onChange={setPermissions} servers={tools} />
+          </TabPanel>
+
           {agent && (
-            <Rows className="mt-2">
-              <Group icon={<BookOpen />} label={t("agent.memories")} count={t("agent.memoryCount", { count: facts.length })}>
-                {facts.slice(0, 5).map((m) => (
-                  <Item key={m.id} text={m.text} pending={m.state === "pending"} onPress={() => go({ view: "knowledge", id: m.id })} />
-                ))}
-              </Group>
-              <Group icon={<Sparkles />} label={t("agent.skills")} count={t("agent.skillCount", { count: skills.length })}>
-                {skills.slice(0, 5).map((m) => (
-                  <Item key={m.id} text={m.title} pending={m.state === "pending"} onPress={() => go({ view: "knowledge", id: m.id })} />
-                ))}
-              </Group>
-              <LinkRow icon={<BookOpen />} label={t("agent.openKnowledge")} onPress={() => go({ view: "knowledge" })} />
-            </Rows>
+            <TabPanel id="activity" className="flex flex-col gap-8">
+              <Section title={t("agent.knows")}>
+                <Rows>
+                  <Group icon={<BookOpen />} label={t("agent.memories")} count={t("agent.memoryCount", { count: facts.length })}>
+                    {facts.slice(0, 5).map((m) => (
+                      <Item key={m.id} text={m.text} pending={m.state === "pending"} onPress={() => go({ view: "knowledge", id: m.id })} />
+                    ))}
+                  </Group>
+                  <Group icon={<Sparkles />} label={t("agent.skills")} count={t("agent.skillCount", { count: skills.length })}>
+                    {skills.slice(0, 5).map((m) => (
+                      <Item key={m.id} text={m.title} pending={m.state === "pending"} onPress={() => go({ view: "knowledge", id: m.id })} />
+                    ))}
+                  </Group>
+                  <LinkRow icon={<BookOpen />} label={t("agent.openKnowledge")} onPress={() => go({ view: "knowledge" })} />
+                </Rows>
+              </Section>
+              <Section title={t("agent.does")}>
+                <Rows>
+                  <LinkRow icon={<ChartColumn />} label={t("agent.usage")} hint={t("agent.usageHint")} onPress={() => go({ view: "usage", agentId: agent.id })} />
+                </Rows>
+              </Section>
+              <History agent={agent} />
+            </TabPanel>
           )}
-        </Section>
-
-        {agent && (
-          <Section title={t("agent.does")}>
-            <Rows>
-              <LinkRow icon={<ChartColumn />} label={t("agent.usage")} hint={t("agent.usageHint")} onPress={() => go({ view: "usage", agentId: agent.id })} />
-            </Rows>
-          </Section>
-        )}
-
-        {agent && <History agent={agent} />}
-
-        <Section title={t("agent.rules")}>
-          <ChoiceCards
-            label={t("access.title")}
-            value={access}
-            onChange={setAccess}
-            options={(["workspace", "ask", "full"] as const).map((a) => ({ value: a, title: t(`access.${a}`), description: t(`access.${a}Hint`) }))}
-          />
-          <div className="flex flex-col gap-2 pt-2">
-            <span className="text-sm font-medium text-muted">{t("agent.tools")}</span>
-            <p className="text-sm text-dim">{t("agent.toolsHint")}</p>
-            {tools.length === 0 ? (
-              <p className="text-muted">{t("agent.noTools")}</p>
-            ) : (
-              <Rows>
-                {tools.map((s) => (
-                  <div key={s.id} className="flex h-11 items-center gap-3">
-                    <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                    <span className="text-sm text-muted">{s.enabled ? t(`mcp.modes.${s.mode}`) : t("mcp.off")}</span>
-                  </div>
-                ))}
-              </Rows>
-            )}
-          </div>
-        </Section>
+        </Tabs>
       </form>
-      {/* Outside the profile form: the routine form is a form of its own. */}
-      {agent && (
+      {/* Outside the profile form (a form of its own): the agent's routines, with its activity. */}
+      {agent && tab === "activity" && (
         <div className="mx-auto flex w-full max-w-2xl flex-col px-8 pb-10">
           <AgentRoutines agent={agent} />
         </div>
@@ -219,7 +211,7 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
 
 // ---------- versions ----------
 
-const VERSION_FIELDS = ["name", "title", "description", "instructions", "model", "accountId", "effort", "failover", "access"] as const
+const VERSION_FIELDS = ["name", "title", "description", "instructions", "model", "accountId", "effort", "failover", "access", "permissions"] as const
 
 // Every saved state of the profile, newest first: who changed it, when, which fields; any older one can come back
 // (restoring is itself a new version).

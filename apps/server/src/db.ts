@@ -1,7 +1,7 @@
 // Local database: SQLite via Drizzle over Effect's SqliteClient (D9). Every method returns an Effect;
 // a database error is a defect (orDie): the caller can do nothing but fail the request.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import { type Access, type Agent, type AccountUsage, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type Switch } from "@zero/contracts"
+import { type Access, type Agent, type AgentPermissions, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type Switch } from "@zero/contracts"
 import type { Approval, ApprovalOutcome, Turn, WorkStep } from "@zero/contracts/events"
 import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
@@ -13,7 +13,7 @@ import { type AgentProfile, agents, agentVersions, pages, pageVersions, routines
 // The part of an agent a version keeps (everything but its id, project and creation time).
 export const profileOf = (a: Agent): AgentProfile => ({
   name: a.name, title: a.title, description: a.description, instructions: a.instructions, model: a.model,
-  accountId: a.accountId, effort: a.effort, failover: a.failover, access: a.access
+  accountId: a.accountId, effort: a.effort, failover: a.failover, access: a.access, permissions: a.permissions
 })
 
 // "Prefere PRs pequenos." and "prefere prs pequenos" are the same memory.
@@ -44,7 +44,7 @@ const toTurn = (r: typeof turns.$inferSelect): Turn => ({
 const toStep = (r: typeof steps.$inferSelect): WorkStep => ({ ...r, files: JSON.parse(r.files), changes: JSON.parse(r.changes) })
 const toApproval = (r: typeof approvals.$inferSelect): Approval => ({
   id: r.id, chatId: r.chatId, turnId: r.turnId, stepId: r.stepId, agentId: r.agentId, kind: r.kind, tool: r.tool,
-  summary: r.summary, args: r.args, cwd: r.cwd, createdAt: r.createdAt, expiresAt: r.expiresAt
+  summary: r.summary, args: r.args, cwd: r.cwd, alwaysKey: r.alwaysKey, createdAt: r.createdAt, expiresAt: r.expiresAt
 })
 export type TurnRow = typeof turns.$inferSelect
 export type AccountRow = typeof providerAccounts.$inferSelect
@@ -143,14 +143,14 @@ export const repository = (db: Db) => {
     // ---------- agents ----------
     agents: (): Effect.Effect<Agent[]> => orDie(db.select().from(agents).orderBy(asc(agents.createdAt))),
     agent,
-    createAgent: (input: { projectId: string | null; name: string; title?: string | undefined; description?: string | undefined; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined }, by = "you") =>
+    createAgent: (input: { projectId: string | null; name: string; title?: string | undefined; description?: string | undefined; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined }, by = "you") =>
       Effect.gen(function* () {
-        const a: Agent = { id: crypto.randomUUID(), ...input, title: input.title ?? "", description: input.description ?? "", accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], access: input.access ?? "workspace", createdAt: now() }
+        const a: Agent = { id: crypto.randomUUID(), ...input, title: input.title ?? "", description: input.description ?? "", accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], access: input.access ?? "workspace", permissions: input.permissions ?? DEFAULT_PERMISSIONS, createdAt: now() }
         yield* db.insert(agents).values(a)
         yield* addVersion(a, by)
         return a
       }).pipe(orDie),
-    updateAgent: (id: string, input: { name?: string | undefined; title?: string | undefined; description?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined }, by = "you") =>
+    updateAgent: (id: string, input: { name?: string | undefined; title?: string | undefined; description?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined }, by = "you") =>
       Effect.gen(function* () {
         const before = yield* agent(id)
         const set = defined(input)
