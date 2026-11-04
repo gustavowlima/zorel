@@ -116,6 +116,29 @@ export const AgentVersion = Schema.Struct({
 })
 export type AgentVersion = typeof AgentVersion.Type
 
+// A routine (phase 7): an agent's recurring or triggered work, run as a message in its own chat. cron: when it
+// runs by itself (null: only on demand or by webhook). token: its local webhook (POST /api/hooks/:token).
+export const Routine = Schema.Struct({
+  id: Id,
+  agentId: Id,
+  chatId: Id,
+  name: Schema.String,
+  prompt: Schema.String,
+  cron: Schema.NullOr(Schema.String),
+  token: Schema.NullOr(Schema.String),
+  enabled: Schema.Boolean,
+  nextRunAt: Schema.NullOr(Schema.Number),
+  lastRunAt: Schema.NullOr(Schema.Number),
+  lastStatus: Schema.NullOr(Schema.Literals(["started", "skipped", "failed"])),
+  createdAt: Schema.Number
+})
+export type Routine = typeof Routine.Type
+const Cron = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(9), Schema.isMaxLength(100))
+export const NewRoutine = Schema.Struct({ agentId: Id, name: Name, prompt: Short(8000), cron: Schema.NullOr(Cron), webhook: Schema.Boolean })
+export const RoutinePatch = Schema.Struct({ name: Schema.optional(Name), prompt: Schema.optional(Short(8000)), cron: Schema.optional(Schema.NullOr(Cron)), webhook: Schema.optional(Schema.Boolean), enabled: Schema.optional(Schema.Boolean) })
+// A cron pattern Zero refuses (with croner's reason).
+export class CronInvalid extends Schema.Error<CronInvalid>("zero/CronInvalid")({ _tag: Schema.tag("CronInvalid"), message: Schema.String }, { httpApiStatus: 400 }) {}
+
 export const Chat = Schema.Struct({
   id: Id,
   projectId: Schema.NullOr(Id), // null: standalone chat
@@ -459,6 +482,16 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.delete("remove", "/api/agents/:id", { params: idParam }))
       .add(HttpApiEndpoint.get("versions", "/api/agents/:id/versions", { params: idParam, success: Schema.Array(AgentVersion), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("restore", "/api/agents/:id/versions/:n/restore", { params: Schema.Struct({ id: Schema.String, n: Schema.NumberFromString }), success: Agent, error: HttpApiError.NotFound }))
+  )
+  .add(
+    HttpApiGroup.make("routines")
+      .add(HttpApiEndpoint.get("list", "/api/routines", { success: Schema.Array(Routine) }))
+      .add(HttpApiEndpoint.post("create", "/api/routines", { payload: NewRoutine, success: Routine, error: [HttpApiError.NotFound, CronInvalid] }))
+      .add(HttpApiEndpoint.patch("update", "/api/routines/:id", { params: idParam, payload: RoutinePatch, success: Routine, error: [HttpApiError.NotFound, CronInvalid] }))
+      .add(HttpApiEndpoint.delete("remove", "/api/routines/:id", { params: idParam }))
+      .add(HttpApiEndpoint.post("run", "/api/routines/:id/run", { params: idParam, error: HttpApiError.NotFound }))
+      // A local script or service starts it; the JSON body (if any) goes into the message.
+      .add(HttpApiEndpoint.post("hook", "/api/hooks/:token", { params: Schema.Struct({ token: Schema.String }), payload: Schema.optional(Schema.Unknown), error: HttpApiError.NotFound }))
   )
   .add(
     HttpApiGroup.make("chats")

@@ -1,5 +1,5 @@
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS } from "@zero/contracts"
+import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS } from "@zero/contracts"
 import { ZeroRpc } from "@zero/contracts/events"
 import { Effect, Layer, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -22,6 +22,8 @@ import { Actor } from "./access.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { LoggerLive } from "./observability.ts"
 import { Runtime } from "./runtime.ts"
+import { RoutineScheduler, runRoutine } from "./routines.ts"
+import { createRoutineFor, newToken, nextRun } from "./schedule.ts"
 import { Tools } from "./tools.ts"
 import { billingOf, Pricing } from "./pricing.ts"
 import { clean, measure } from "./storage.ts"
@@ -631,10 +633,55 @@ const LocalOnly = HttpRouter.middleware(
   { global: true }
 )
 
+// Routines (phase 7): CRUD, run now, and the local webhook. Creating one opens its chat with its agent.
+const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
+  Effect.gen(function* () {
+    const store = yield* Store
+    const services = yield* Effect.context<Store | Runtime>()
+    const schedule = (cron: string | null) =>
+      Effect.suspend(() => {
+        if (cron === null) return Effect.succeed(null)
+        const next = nextRun(cron)
+        return "error" in next ? Effect.fail(new CronInvalid({ message: next.error })) : Effect.succeed(next.at)
+      })
+    const run = (id: string, key: string, payload?: unknown) => runRoutine(id, key, payload).pipe(Effect.provide(services))
+    return h
+      .handle("list", () => store.routines())
+      .handle("create", ({ payload }) =>
+        Effect.gen(function* () {
+          const agent = yield* store.agent(payload.agentId)
+          if (!agent) return yield* notFound()
+          return yield* createRoutineFor(store, agent, payload).pipe(Effect.mapError((message) => new CronInvalid({ message })))
+        })
+      )
+      .handle("update", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const r = yield* store.routine(params.id)
+          if (!r) return yield* notFound()
+          const cron = payload.cron === undefined ? r.cron : payload.cron
+          const enabled = payload.enabled ?? r.enabled
+          const nextRunAt = enabled ? yield* schedule(cron) : null
+          const token = payload.webhook === undefined ? r.token : payload.webhook ? (r.token ?? newToken()) : null
+          return (yield* store.updateRoutine(r.id, { name: payload.name, prompt: payload.prompt, cron, enabled, nextRunAt, token }))!
+        })
+      )
+      .handle("remove", ({ params }) => store.removeRoutine(params.id))
+      .handle("run", ({ params }) => Effect.flatMap(run(params.id, `now-${Date.now()}`), (r) => (r === "missing" ? notFound() : Effect.void)))
+      .handle("hook", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const r = yield* store.routineByToken(params.token)
+          if (!r || !r.enabled) return yield* notFound()
+          yield* run(r.id, `hook-${Date.now()}`, payload)
+        })
+      )
+  })
+)
+
 export const AppLive = (webDir?: string) =>
   Layer.mergeAll(
     LocalOnly,
-    HttpApiBuilder.layer(Api).pipe(Layer.provide([Projects, Agents, Chats, Memories, ToolsGroup, AccountsGroup, Settings])),
+    HttpApiBuilder.layer(Api).pipe(Layer.provide([Projects, Agents, Chats, Memories, ToolsGroup, AccountsGroup, Settings, RoutinesGroup])),
+    RoutineScheduler,
     RpcRoute,
     AttachmentUpload,
     AttachmentFile,

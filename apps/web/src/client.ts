@@ -26,7 +26,7 @@ export class Live extends AtomRpc.Service<Live>()("Live", {
 
 // ---------- CRUD queries (one key per resource) ----------
 
-export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "context" | "terminals" | "scripts" | "localServers" | "git"
+export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "context" | "terminals" | "scripts" | "localServers" | "git" | "routines"
 
 export const projectsAtom = Zero.query("projects", "list", { reactivityKeys: ["projects"] })
 export const agentsAtom = Zero.query("agents", "list", { reactivityKeys: ["agents"] })
@@ -41,6 +41,7 @@ export const storageAtom = Zero.query("settings", "storage", { reactivityKeys: [
 // How full the next turn of a chat is (the composer's context meter); read again when the meter opens.
 export const commandsAtom = (id: string) => Zero.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
 export const terminalsAtom = (id: string) => Zero.query("chats", "terminals", { params: { id }, reactivityKeys: ["terminals"] })
+export const routinesAtom = Zero.query("routines", "list", { reactivityKeys: ["routines"] })
 export const agentVersionsAtom = (id: string) => Zero.query("agents", "versions", { params: { id }, reactivityKeys: ["agents"] })
 export const gitAtom = (id: string) => Zero.query("chats", "git", { params: { id }, reactivityKeys: ["git"] })
 export const scriptsAtom = (id: string) => Zero.query("chats", "scripts", { params: { id }, reactivityKeys: ["scripts"] })
@@ -67,6 +68,10 @@ export const mutations = {
   updateAgent: Zero.mutation("agents", "update"),
   removeAgent: Zero.mutation("agents", "remove"),
   restoreAgent: Zero.mutation("agents", "restore"),
+  createRoutine: Zero.mutation("routines", "create"),
+  updateRoutine: Zero.mutation("routines", "update"),
+  removeRoutine: Zero.mutation("routines", "remove"),
+  runRoutine: Zero.mutation("routines", "run"),
   createChat: Zero.mutation("chats", "create"),
   updateChat: Zero.mutation("chats", "update"),
   reorderChats: Zero.mutation("chats", "reorder"),

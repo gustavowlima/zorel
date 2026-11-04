@@ -14,6 +14,7 @@
     "@effect/sql-sqlite-bun": "4.1.2",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@zero/contracts": "workspace:*",
+    "croner": "10.0.1",
     "drizzle-orm": "1.0.0-rc.5",
     "effect": "4.1.2",
     "evlog": "2.34.0",

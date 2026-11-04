@@ -8,7 +8,7 @@ import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
 import { Context, Effect, Layer } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
-import { type AgentProfile, agents, agentVersions, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
+import { type AgentProfile, agents, agentVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
 
 // The part of an agent a version keeps (everything but its id, project and creation time).
 export const profileOf = (a: Agent): AgentProfile => ({
@@ -174,6 +174,26 @@ export const repository = (db: Db) => {
           })
         )
       ),
+
+    // ---------- routines (phase 7) ----------
+    routines: () => orDie(db.select().from(routines).orderBy(asc(routines.createdAt))),
+    routine: (id: string) => orDie(db.select().from(routines).where(eq(routines.id, id)).pipe(Effect.map(first))),
+    routineByToken: (token: string) => orDie(db.select().from(routines).where(eq(routines.token, token)).pipe(Effect.map(first))),
+    createRoutine: (input: { agentId: string; chatId: string; name: string; prompt: string; cron: string | null; token: string | null; nextRunAt: number | null }) =>
+      Effect.gen(function* () {
+        const r = { id: crypto.randomUUID(), ...input, enabled: true, lastRunAt: null, lastStatus: null, createdAt: now() } as const
+        yield* db.insert(routines).values(r)
+        return r
+      }).pipe(orDie),
+    updateRoutine: (id: string, input: { [K in "name" | "prompt" | "cron" | "token" | "enabled" | "nextRunAt" | "lastRunAt" | "lastStatus"]?: (typeof routines.$inferInsert)[K] | undefined }) =>
+      Effect.gen(function* () {
+        const set = defined(input)
+        if (Object.keys(set).length) yield* db.update(routines).set(set).where(eq(routines.id, id))
+        return (yield* db.select().from(routines).where(eq(routines.id, id)))[0]
+      }).pipe(orDie),
+    removeRoutine: (id: string) => orDie(db.delete(routines).where(eq(routines.id, id)).pipe(Effect.asVoid)),
+    // Enabled, scheduled and due by `at`.
+    dueRoutines: (at: number) => orDie(db.select().from(routines).where(and(eq(routines.enabled, true), sql`${routines.nextRunAt} <= ${at}`))),
 
     // ---------- chats and messages ----------
     chats: () => orDie(db.select().from(chats).orderBy(desc(chats.createdAt)).pipe(Effect.flatMap(withMembers))),

@@ -8,6 +8,7 @@ import { agentsAtom, agentVersionsAtom, memoriesAtom, mutations, projectsAtom, s
 import { agentTone } from "../labels.ts"
 import { go } from "../state.ts"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
+import { AgentRoutines } from "./routines.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import type { ReactNode } from "react"
 import {
@@ -193,6 +194,12 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
           </div>
         </Section>
       </form>
+      {/* Outside the profile form: the routine form is a form of its own. */}
+      {agent && (
+        <div className="mx-auto flex w-full max-w-2xl flex-col px-8 pb-10">
+          <AgentRoutines agent={agent} />
+        </div>
+      )}
       {agent && (
         <ConfirmDialog
           isOpen={confirm}

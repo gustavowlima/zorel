@@ -194,3 +194,22 @@ export const proposalText = (fields: Record<string, unknown>) =>
     .filter(([, v]) => v !== undefined && v !== null && v !== "")
     .map(([k, v]) => `${k}: ${typeof v === "string" ? (v.length > 1200 ? `${v.slice(0, 1200)}…` : v) : JSON.stringify(v)}`)
     .join("\n")
+
+// Routines from the conversation (phase 7): list them, or propose one or its removal (both are approval cards).
+export const ROUTINES_TOOL = {
+  name: "zero_routines",
+  description:
+    "Recurring work. action 'list': the routines of the agents here. action 'create': propose one (name, prompt = what the agent should do each run, cron = 5-field pattern like '0 9 * * 1-5', agent = who runs it, default you); the user approves it first. action 'cancel': propose removing one (routine = its id).",
+  inputSchema: {
+    properties: {
+      action: { type: "string", enum: ["list", "create", "cancel"] },
+      name: { type: "string" },
+      prompt: { type: "string" },
+      cron: { type: "string" },
+      agent: { type: "string" },
+      routine: { type: "string" }
+    },
+    required: ["action"]
+  },
+  writes: true
+} as const
