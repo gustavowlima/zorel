@@ -35,12 +35,15 @@ extraResources:
   - { from: build/browsers, to: browsers }
 # Only the app's languages: drops ~40 MB of Chromium locales.
 electronLanguages: [en, pt-BR]
-# Updates: a GitHub release per version (electron-updater reads it), from the same repository install.sh uses.
+# Updates: the apps read R2 first (latest/, the release's files copied by scripts/r2-sync.sh; works while the
+# repository is private), the GitHub release second. Only the github entry publishes; generic is read-only.
 publish:
-  provider: github
-  owner: gustavowlima
-  repo: zorel
-  releaseType: release # published at once: install.sh and the updaters read the latest release, never a draft
+  - provider: generic
+    url: https://pub-8f59c7217f0547e39737b4e19c25cbe6.r2.dev/latest
+  - provider: github
+    owner: gustavowlima
+    repo: zorel
+    releaseType: release # published at once: install.sh and the updaters read the latest release, never a draft
 mac:
   target: [dmg, zip] # zip: what install.sh (and, with a Developer ID, the updater) downloads
   artifactName: zorel-mac-${arch}.${ext}
@@ -48,6 +51,7 @@ mac:
   category: public.app-category.developer-tools
 win:
   icon: assets/icon.png
+  artifactName: zorel-windows-setup.${ext} # one name every version: zorel.dev links it
 linux:
   icon: assets/icon.png
   executableName: zorel # the default comes from the package name, @zorel/desktop, which AppImage refuses

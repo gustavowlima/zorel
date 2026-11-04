@@ -207,8 +207,9 @@ const developerId = () =>
     execFile("codesign", ["-dv", "--verbose=2", join(process.execPath, "..", "..", "..")], (_e, out, err) => resolve(/Authority=Developer ID Application/.test(`${out}${err}`)))
   })
 
-// The release's install.sh, in its own process group so it outlives Zorel (it quits the app, then reopens it). The
-// repository comes from the build's update settings (app-update.yml, written by electron-builder).
+// The release's install.sh, in its own process group so it outlives Zorel (it quits the app, then reopens it). Where
+// the downloads live comes from the build's update settings (app-update.yml, written by electron-builder: the
+// first publish entry, R2's latest/); it reaches the shell as a variable, never pasted into the command.
 function runInstaller() {
   const config = (() => {
     try {
@@ -217,13 +218,10 @@ function runInstaller() {
       return ""
     }
   })()
-  const field = (k: string) => new RegExp(`^${k}: *(\\S+)`, "m").exec(config)?.[1]
-  const owner = field("owner")
-  const repo = field("repo")
-  if (!owner || !repo) return false
-  const script = `https://github.com/${owner}/${repo}/releases/latest/download/install.sh`
+  const url = /^url: *(https:\/\/\S+?)\/?$/m.exec(config)?.[1]
+  if (!url) return false
   const log = openSync(join(app.getPath("logs"), "update.log"), "a")
-  spawn("/bin/sh", ["-c", `curl -fsSL "${script}" | ZOREL_REPO="${owner}/${repo}" sh`], { detached: true, stdio: ["ignore", log, log] }).unref()
+  spawn("/bin/sh", ["-c", 'curl -fsSL "$ZOREL_DOWNLOAD/install.sh" | sh'], { detached: true, stdio: ["ignore", log, log], env: { ...process.env, ZOREL_DOWNLOAD: url } }).unref()
   return true
 }
 
