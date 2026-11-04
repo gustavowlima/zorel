@@ -506,3 +506,33 @@ test("ask_user: the question waits as a card and the answer comes back to the ag
     const msgs = yield* store.messages(chat.id)
     expect(msgs.at(-1)!.text).toBe("The user answered: 8080")
   })))
+
+// A lead that gives a teammate a task and also names it ("handed to @helper") hands the work over once.
+const TaskAndMention = Layer.succeed(Engines, {
+  run: (t) =>
+    Stream.unwrap(
+      Effect.promise(async () => {
+        const last = t.messages.at(-1)!.text
+        let text = "done"
+        if (last === "go") {
+          await t.tools!.call("zorel_start_task", { agent: "@helper", task: "do it", reply: false })
+          text = "I've handed it to @helper."
+        }
+        return Stream.make<EngineEvent[]>({ type: "text", delta: text }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+      })
+    )
+})
+
+test("start_task: naming the teammate it tasked doesn't also chain it in the chat", () =>
+  runWith(":memory:", TaskAndMention, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const lead = yield* store.createAgent({ projectId: null, name: "Lead", instructions: "", model: "x/y" })
+    const helper = yield* store.createAgent({ projectId: null, name: "Helper", instructions: "", model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [lead.id, helper.id], model: "x/y" })
+    yield* runtime.send({ chatId: chat.id, clientId: "tm-1", text: "go" })
+    for (let i = 0; i < 100 && runtime.busy(chat.id); i++) yield* Effect.sleep("10 millis")
+    yield* Effect.sleep("200 millis")
+    const msgs = yield* store.messages(chat.id)
+    expect(msgs.map((m) => m.text)).toEqual(["go", "I've handed it to @helper."]) // no second Helper turn here
+  })))
