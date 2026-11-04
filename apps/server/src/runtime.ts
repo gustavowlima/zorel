@@ -6,13 +6,14 @@ import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, t
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
 import { consolidate, DataDir, members, prepare } from "./chat.ts"
-import { MAX_DEPTH, mentioned } from "./context.ts"
+import { handleOf, MAX_DEPTH, mentioned } from "./context.ts"
 import { type AccountRow, Store, type Repository, type TurnRow } from "./db.ts"
 import { type EngineFailure, Engines, isImage, type NativeStep, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
 import { Pricing } from "./pricing.ts"
-import { Actions, Audit } from "./audit.ts"
+import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, runBrowserTool } from "./browser.ts"
+import { createInput, findAgent, listText, proposalText, readText, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
@@ -210,12 +211,67 @@ export const makeRuntime = Effect.gen(function* () {
     // access is "ask", like any tool that writes.
     const askFirst = (agent?.access ?? "workspace") === "ask"
     for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
+    for (const t of TEAM_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
       return { tools: undefined as TurnTools | undefined, close: () => {} }
     }
 
+    const teamCall = async (name: string, args: Record<string, unknown>) => {
+      const all = await run(store.agents())
+      const visible = visibleTo(all, chat.projectId)
+      const caller = { model: agent?.model ?? chat.model, effort: agent?.effort ?? chat.effort, access: agent?.access ?? ("workspace" as const) }
+      const working = (id: string) => [...statuses.values()].some((st) => st.agentId === id && st.state !== "idle")
+      if (name === "zero_list_agents") return textResult(listText(visible, working))
+      const target = name === "zero_create_agent" ? undefined : findAgent(visible, args.agent)
+      if (name !== "zero_create_agent" && !target) return textResult(`No agent "${String(args.agent ?? "")}" here. Call zero_list_agents.`, true)
+      if (name === "zero_read_agent") return textResult(readText(target!))
+      // Create or update: check, show the proposal card, write only on the person's OK.
+      let proposal: { title: string; fields: Record<string, unknown>; apply: () => Promise<Agent> }
+      try {
+        if (name === "zero_create_agent") {
+          const input = createInput(args, caller, chat.projectId)
+          proposal = {
+            title: `${nameOf(agent)} proposes a new agent: ${input.name}`,
+            fields: { ...input, projectId: undefined, scope: input.projectId ? "project" : "global" },
+            apply: () => run(store.createAgent(input))
+          }
+        } else {
+          const changes = updateInput(args, target!, caller.access)
+          proposal = {
+            title: `${nameOf(agent)} proposes changes to ${target!.name}`,
+            fields: changes,
+            apply: async () => (await run(store.updateAgent(target!.id, changes)))!
+          }
+        }
+      } catch (e) {
+        return textResult(e instanceof Error ? e.message : String(e), true)
+      }
+      const s = await step(proposal.title, name)
+      const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: proposal.title, args: proposalText(proposal.fields), cwd: null }))
+      if (outcome === "denied" || outcome === "expired") {
+        legacy.push({ tool: name, args: "", status: "refused", result: "" })
+        await finish(s, "refused")
+        return textResult("The user declined this proposal. Don't propose it again unless they ask.", true)
+      }
+      onWrite()
+      const done = await proposal.apply()
+      // Recorded as the agent's change (the person approved it).
+      const actor = { type: "agent" as const, id: agent?.id ?? "assistant" }
+      await run(
+        name === "zero_create_agent"
+          ? audit.record(Actions.agentCreated, { target: done, after: { name: done.name, model: done.model, access: done.access }, actor })
+          : audit.record(Actions.agentUpdated, { target: done, ...changed(target!, done, Object.keys(proposal.fields)), actor })
+      )
+      const out = name === "zero_create_agent" ? `Created ${done.name} (@${handleOf(done)}, id ${done.id}). Mention it to give it work.` : `Updated ${done.name}.`
+      legacy.push({ tool: name, args: "", status: "ok", result: out })
+      await finish(s, "ok", out)
+      return textResult(out)
+    }
+
     const call: Session["call"] = async (name, args) => {
+      if (TEAM_TOOLS.some((t) => t.name === name)) return teamCall(name, args)
       const builtin = BROWSER_TOOLS.find((t) => t.name === name)
       if (builtin) {
         const shown = JSON.stringify(args).slice(0, 300)

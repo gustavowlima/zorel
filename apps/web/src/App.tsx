@@ -10,6 +10,7 @@ import { agentsAtom, chatsAtom, modelsAtom, projectsAtom, useInvalidate, useList
 import { AgentView } from "./features/agent.tsx"
 import { ChatView } from "./features/chat.tsx"
 import { HomeView } from "./features/home.tsx"
+import { AgentsView } from "./features/agents.tsx"
 import { InboxView } from "./features/inbox.tsx"
 import { KnowledgeView } from "./features/knowledge.tsx"
 import { ProjectView } from "./features/project.tsx"
@@ -68,6 +69,8 @@ function Screen({ route }: { route: Route }) {
       return <HomeView projectId={route.projectId} />
     case "inbox":
       return <InboxView />
+    case "agents":
+      return <AgentsView />
     case "knowledge":
       return <KnowledgeView selected={route.id} />
     case "usage":

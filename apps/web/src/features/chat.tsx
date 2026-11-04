@@ -10,7 +10,7 @@ import { formatCompact, formatDuration, formatTime, t } from "@zero/i18n"
 import { type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { accountsAtom, agentsAtom, attachmentUrl, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
+import { accountsAtom, agentsAtom, attachmentUrl, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
 import { agentName, chatTitle, formatCost, handleOf, modelLabel, switchText } from "../labels.ts"
 import { go } from "../state.ts"
 import { Composer, type ComposerSources } from "./composer.tsx"
@@ -59,6 +59,12 @@ export function ChatView({ chat }: { chat: Chat }) {
   // The side panel and its tab (Changes, Files, Browser, Terminal); undefined: closed.
   const [panel, setPanel] = useState<SideTab>()
   const pins = usePins(chat.id)
+  // A turn ended: an agent may have created or changed a teammate (zero_create_agent / zero_update_agent).
+  const invalidate = useInvalidate()
+  const turns = state.messages.length
+  useEffect(() => {
+    if (turns) invalidate(["agents"])
+  }, [turns, invalidate])
   const [shellFocus, setShellFocus] = useState<{ session: string }>() // a new object each time a pinned shell is pressed
   const [browserUrl, setBrowserUrl] = useState<{ url: string }>() // a new object each time, so the same URL opens again
   const openInBrowser = (url: string) => {
