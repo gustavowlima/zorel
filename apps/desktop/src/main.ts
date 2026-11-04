@@ -97,7 +97,7 @@ function openWindow() {
     show: false,
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0d0d0d" : "#ececec", // --z-bg-frame: no white flash
     titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 22, y: 18 },
+    trafficLightPosition: { x: 18, y: 18 }, // centered in the web app title bar (48px)
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false, preload: join(appDir, "dist", "preload.cjs") }
   })
   win.once("ready-to-show", () => win?.show())

@@ -16,7 +16,7 @@ import { InboxView } from "./features/inbox.tsx"
 import { KnowledgeView } from "./features/knowledge.tsx"
 import { ProjectView } from "./features/project.tsx"
 import { SettingsView } from "./features/settings.tsx"
-import { Rail, Sidebar } from "./features/sidebar.tsx"
+import { Rail, Sidebar, TitleBar } from "./features/sidebar.tsx"
 import { UsageView } from "./features/usage.tsx"
 import { rememberModels } from "./labels.ts"
 import { go, type Route, useRoute, useSidebar } from "./state.ts"
@@ -38,6 +38,7 @@ export function App() {
   const loading = AsyncResult.isInitial(projectsResult)
 
   const sidebar = useSidebar()
+  const desktop = document.documentElement.dataset.shell === "desktop" // the desktop app: a title bar runs above everything
   useNotifications(route)
   const paused = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)?.paused ?? false
   const setPause = useMutation(mutations.pause)
@@ -45,7 +46,9 @@ export function App() {
   useRetryWhileOffline(offline)
 
   return (
-    <div className="flex h-full bg-frame">
+    <div className="flex h-full flex-col bg-frame">
+      {desktop && <TitleBar />}
+    <div className="flex min-h-0 flex-1">
       <Palette onToggleSidebar={sidebar.toggle} />
       <Rail route={route} sidebar={sidebar} paused={paused} onPause={(p) => void setPause({ payload: { paused: p }, reactivityKeys: ["preferences"] })} />
       <SlideWidth open={!sidebar.hidden} width={248}>
@@ -77,6 +80,7 @@ export function App() {
           )}
         </div>
       </main>
+    </div>
     </div>
   )
 }

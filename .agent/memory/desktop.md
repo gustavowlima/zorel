@@ -24,4 +24,4 @@ updated: 2026-11-04
 - server dentro do main do Electron: morre com a janela e exigiria Node no lugar de Bun
 - navegador nativo: src/browser-host.ts (POST/DELETE /tabs com Bearer; views em BaseWindow oculta; ipc "browser:show" {tab, rect, overlay} só do app window; overlay transparente + before-mouse-event → "browser:take" → painel manda {t:"take"}); server browser.ts modo nativo por ZERO_DESKTOP_CDP/CONTROL/TOKEN, aba achada por url about:blank#zero-tab-<id>; profileOf(agentId) = partição
 - __dirname é fixado pelo bun build no caminho de src: usar app.getAppPath() (preload, ícone, raiz em dev)
-- divisor do rail no desktop começa abaixo dos botões de janela (background-image em .rail-top)
+- barra de título do desktop (TitleBar em sidebar.tsx, h-12, pl-21, como OpenBot): botões do macOS (trafficLightPosition 18,18), marca, voltar/avançar, novo chat; rail sem logo (.rail-logo). Flag lida dentro do App (main.tsx define data-shell depois dos imports)

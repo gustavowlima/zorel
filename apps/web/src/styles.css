@@ -217,17 +217,8 @@ html, body, #root { height: 100%; }
 /* A scrolling list with more below fades out over its last 24px instead of ending on a cut row. */
 .fade-bottom { mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
 
-/* Desktop app: the brand row moves right of the window buttons. */
-[data-shell="desktop"] .brand-row { height: 2.25rem; }
-[data-shell="desktop"] .rail-top { padding-top: 2.5rem; } /* below the window buttons */
-/* The window buttons span the rail and the sidebar: the rail's divider starts below them, not through them. */
-[data-shell="desktop"] .rail-top {
-  border-right-color: transparent;
-  background-image: linear-gradient(var(--color-subtle), var(--color-subtle));
-  background-size: 1px calc(100% - 2.5rem);
-  background-position: right bottom;
-  background-repeat: no-repeat;
-}
+/* Desktop app: the title bar holds the brand, so the rail doesn't repeat it. */
+[data-shell="desktop"] .rail-logo { display: none; }
 /* Desktop app: the rail, the sidebar top and screen headers move the window; their controls stay clickable. */
 [data-shell="desktop"] .app-drag { -webkit-app-region: drag; }
 [data-shell="desktop"] .app-drag :is(button, a, input, select, textarea, [role], [contenteditable]) { -webkit-app-region: no-drag; }
