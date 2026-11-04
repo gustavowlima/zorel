@@ -14,6 +14,7 @@ import { accountsAtom, agentsAtom, attachmentUrl, commandsAtom, filesAtom, memor
 import { agentName, chatTitle, formatCost, handleOf, modelLabel, switchText } from "../labels.ts"
 import { go } from "../state.ts"
 import { Composer, type ComposerSources } from "./composer.tsx"
+import { BrowserPanel } from "./browser.tsx"
 import { ContextMeter } from "./context-meter.tsx"
 import { QueuePanel, useQueue } from "./queue.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
@@ -21,7 +22,7 @@ import { chatDelta, Delta, type Focus, TerminalPanel, TurnChanges, WorkspacePane
 import { ModelPicker } from "./model-picker.tsx"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import {
-  Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
+  Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, Globe, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
   MenuSeparator, MessageCircle, Minimize2, MoreHorizontal, PanelBottom, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
 } from "@/ui"
 
@@ -55,6 +56,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   const projects = useList(projectsAtom)
   const project = projects.find((p) => p.id === chat.projectId)
   const [panel, setPanel] = useState<"changes" | "files">()
+  const [browser, setBrowser] = useState(false)
   const [terminal, setTerminal] = useState(false)
   const [focus, setFocus] = useState<Focus>()
   const view = (f: Focus) => {
@@ -103,9 +105,17 @@ export function ChatView({ chat }: { chat: Chat }) {
         team={team}
         delta={chatDelta(state.messages)}
         panelOpen={!!panel}
-        onPanel={() => setPanel(panel ? undefined : "changes")}
+        onPanel={() => {
+          setPanel(panel ? undefined : "changes")
+          setBrowser(false)
+        }}
         terminalOpen={terminal}
         onTerminal={() => setTerminal(!terminal)}
+        browserOpen={browser}
+        onBrowser={() => {
+          setBrowser(!browser)
+          setPanel(undefined)
+        }}
         workspace={!!project?.path}
       />
       <div className="flex min-h-0 flex-1">
@@ -153,6 +163,7 @@ export function ChatView({ chat }: { chat: Chat }) {
       </div>
       {terminal && <TerminalPanel chatId={chat.id} onClose={() => setTerminal(false)} onAddToChat={(text) => insertRef.current?.(`\`\`\`\n${text.trimEnd()}\n\`\`\``)} />}
       </div>
+      {browser && <BrowserPanel chatId={chat.id} onClose={() => setBrowser(false)} />}
       {panel && (
         <WorkspacePanel chat={chat} project={project} messages={state.messages} agents={agents} tab={panel} onTab={setPanel} focus={focus} onFocus={setFocus} onClose={() => setPanel(undefined)} />
       )}
@@ -179,6 +190,8 @@ function ChatHeader({
   onPanel,
   terminalOpen,
   onTerminal,
+  browserOpen,
+  onBrowser,
   workspace
 }: {
   chat: Chat
@@ -188,6 +201,8 @@ function ChatHeader({
   onPanel: () => void
   terminalOpen: boolean
   onTerminal: () => void
+  browserOpen: boolean
+  onBrowser: () => void
   workspace: boolean
 }) {
   const projects = useList(projectsAtom)
@@ -231,6 +246,10 @@ function ChatHeader({
             {delta.added + delta.removed > 0 && <Delta {...delta} />}
           </Button>
         )}
+        <Button size="sm" variant={browserOpen ? "secondary" : "ghost"} aria-expanded={browserOpen} onPress={onBrowser} className="rounded-full">
+          <Globe />
+          {t("browser.title")}
+        </Button>
         {workspace && (
           <Button size="sm" variant={terminalOpen ? "secondary" : "ghost"} aria-expanded={terminalOpen} onPress={onTerminal} className="rounded-full">
             <PanelBottom />

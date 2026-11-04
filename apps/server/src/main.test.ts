@@ -24,6 +24,7 @@ import { Engines, type EngineEvent, type Turn } from "./engines.ts"
 import { AppLive } from "./main.ts"
 import { Accounts } from "./accounts.ts"
 import { Audit } from "./audit.ts"
+import { BrowserService } from "./browser.ts"
 import { Actor } from "./access.ts"
 import { Runtime } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
@@ -88,7 +89,7 @@ const FakeEngines = Layer.succeed(Engines, {
     const tool = /^tool:(\S+)/.exec(last)?.[1]
     if (tool)
       return Stream.fromEffect(Effect.promise(() => useTool(t, tool, { q: "deploy" }))).pipe(
-        Stream.flatMap((r) => Stream.make<EngineEvent[]>({ type: "text", delta: `${r.listed.join(",")} => ${r.text}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }))
+        Stream.flatMap((r) => Stream.make<EngineEvent[]>({ type: "text", delta: `${r.listed.filter((n) => !n.startsWith("browser_")).join(",")} => ${r.text}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }))
       )
     return Stream.make<EngineEvent[]>({ type: "text", delta: (me && mentionNext.get(me)) || `eco: ${last}` }, { type: "done", usage: { inputTokens: 10, outputTokens: 3 } })
   }
@@ -103,7 +104,7 @@ beforeAll(async () => {
   const store = Store.layer(":memory:")
   const secrets = Layer.provideMerge(Secrets.memory(), store)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(FakeEngines, Tools.layer), secrets), DataDir.layer(join(tmpdir(), "zero-test")))
-  const services = Layer.mergeAll(Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.fixed(PRICES), Audit.layer), base)), Actor.local)
+  const services = Layer.mergeAll(Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.fixed(PRICES), Audit.layer, BrowserService.layer), base)), Actor.local)
   const server = AppLive().pipe(HttpRouter.serve, Layer.provide(services), Layer.provide(BunHttpServer.layer({ port })))
   const fiber = Effect.runFork(Layer.launch(server))
   stop = () => Effect.runPromise(Fiber.interrupt(fiber)).then(() => void mcp.stop(true))
@@ -168,7 +169,7 @@ test("projeto → agente → chat: streaming, contexto em camadas, troca de mode
   expect(dones(first.events)[0]).toMatchObject({ role: "assistant", agentId: agent.id, text: "eco: oi", model: "claude-cli/sonnet", inputTokens: 10 })
   const t1 = turns.at(-1)!
   for (const s of ["Landing em Astro.", "Escreve código enxuto.", "Prefere respostas curtas"]) expect(t1.system).toContain(s)
-  expect(t1.tools).toBeUndefined()
+  expect(t1.tools?.defs.map((d) => d.name).every((n) => n.startsWith("browser_"))).toBe(true) // no MCP server: only the browser
 
   await send(chat.id, { text: "e agora?", model: "anthropic/claude-sonnet-5-5" })
   expect(turns.at(-1)!.model).toBe("anthropic/claude-sonnet-5-5")
@@ -263,7 +264,7 @@ test("ferramentas MCP: modo leitura esconde escrita; modo aprovação pede e res
   // chat outside the project doesn't see the server
   const other = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "claude-cli/sonnet" } }))
   await send(other.id, { text: "oi" })
-  expect(turns.at(-1)!.tools).toBeUndefined()
+  expect(turns.at(-1)!.tools?.defs.map((d) => d.name).every((n) => n.startsWith("browser_"))).toBe(true)
 })
 
 test("chaves de API: salvas pela interface, nunca devolvidas; nome desconhecido 404", async () => {

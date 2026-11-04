@@ -16,7 +16,8 @@
     "@zero/contracts": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5",
     "effect": "4.1.2",
-    "evlog": "2.34.0"
+    "evlog": "2.34.0",
+    "playwright-core": "1.64.1"
   },
   "devDependencies": {
     "@types/bun": "^1.4.4",

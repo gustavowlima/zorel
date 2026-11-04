@@ -321,6 +321,11 @@ Compactos e diretos, com aperto físico ao pressionar.
 ### Menu de contexto
 - O menu nativo do navegador não aparece no app (só em campos de texto e no terminal, para copiar e colar). Onde há ações, o clique direito (ou a tecla Menu / Shift+F10) abre o `ContextMenu` do Zero, o mesmo visual do menu ⋯, ancorado no ponteiro (ou sob o item focado). Na barra lateral: chat → Open, Rename, Delete; projeto → Open, New chat in…, Settings of…, Delete project. Excluir sempre confirma.
 
+### Navegador
+- Painel "Browser" à direita do chat (no lugar de Changes; um ou outro), 672px: abas em pílula com ×, +, depois voltar / avançar / recarregar e o endereço (Enter abre), uma faixa de quem segura o navegador e a página ao vivo (quadros JPEG do screencast, na proporção 1280×800).
+- É o navegador dos agentes: um Chrome sem janela no servidor, num perfil persistente (logins ficam), com abas por chat. Clicar, rolar ou digitar na página, ou usar o endereço, toma o controle: a faixa fica azul ("You're using the browser…") com "Hand back"; enquanto isso as ferramentas do navegador dos agentes são recusadas.
+- Ferramentas dos agentes: browser_navigate, browser_snapshot (a página como árvore de acessibilidade com [ref=eN]), browser_click e browser_type por ref, browser_press, browser_wait, browser_tabs, browser_back. Ler nunca pede aprovação; agir pede quando o acesso do agente é "ask". Cada uso aparece nos passos da resposta.
+
 ### Seletor de modelo
 - Popover com um trilho de ícones à esquerda (uma conta de assinatura ou provedor por botão) e, à direita, a busca em todos os modelos, os limites da conta escolhida e a lista dela.
 - O trilho só mostra o que é de fato um caminho: cada conta de assinatura (com a inicial quando há mais de uma do mesmo provedor), provedores de API com chave e servidores locais (Ollama, LM Studio) só enquanto rodam. Um provedor de API com o logo de uma assinatura (Anthropic ↔ Claude, OpenAI ↔ Codex) só aparece com chave, para não parecer uma segunda conta.

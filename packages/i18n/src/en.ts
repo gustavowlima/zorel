@@ -449,6 +449,23 @@ export const en = {
     notRunning: "Not running",
     models: "Models"
   },
+  browser: {
+    title: "Browser",
+    newTab: "New tab",
+    closeTab: "Close tab",
+    back: "Back",
+    forward: "Forward",
+    reload: "Reload",
+    address: "Address",
+    addressHint: "Type an address and press Enter",
+    go: "Go",
+    youHold: "You're using the browser: the agents wait until you hand it back.",
+    agentsMayUse: "The agents use this browser. Click or type on the page to take over.",
+    handBack: "Hand back",
+    page: "Page: {title}",
+    empty: "No page open",
+    emptyHint: "Type an address above, or ask an agent to open one. Sites you sign into here stay signed in."
+  },
   storage: {
     onThisComputer: "Zero on this computer",
     measured: "Measured {age}",
