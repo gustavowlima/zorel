@@ -8,7 +8,7 @@ import { AsyncResult } from "effect/reactivity"
 import { mutations, projectsAtom, storageAtom, useInvalidate, useList, useMutation } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
-import { Button, ChevronRight, ConfirmButton, Meter, RefreshCw, Rows, Section, ListRow} from "@/ui"
+import { Button, ChevronRight, ConfirmButton, ConfirmDialog, Download, Meter, pickFiles, RefreshCw, Rows, Section, ListRow, Upload } from "@/ui"
 import { ReadingState } from "./reading.tsx"
 import { useEffect, useState } from "react"
 
@@ -45,6 +45,7 @@ export function StorageSection() {
       <Projects report={report} />
       <LargestChats report={report} />
       <Cleanups report={report} />
+      <Move />
     </>
   )
 }
@@ -166,6 +167,82 @@ function Cleanups({ report }: { report: StorageReport }) {
         ))}
       </Rows>
       {failed && <p className="text-sm text-danger">{failed}</p>}
+    </Section>
+  )
+}
+
+// Moving to another computer (transfer.ts on the server): export downloads one file; import checks a file, then
+// replaces this computer's workspace at the next start, keeping the current one as a backup. Sign-ins and keys don't
+// travel: they stay in this computer's keychain.
+function Move() {
+  const [file, setFile] = useState<File>()
+  const [state, setState] = useState<{ pending: boolean; projects?: number; chats?: number; error?: boolean; busy?: boolean }>({ pending: false })
+  useEffect(() => {
+    fetch("/api/workspace/import")
+      .then((r) => r.json() as Promise<{ pending: boolean }>)
+      .then((r) => setState({ pending: r.pending }), () => {})
+  }, [])
+  const upload = async (f: File) => {
+    setState({ pending: false, busy: true })
+    const r = await fetch("/api/workspace/import", { method: "POST", body: f }).catch(() => undefined)
+    const body = r?.ok ? ((await r.json()) as { projects: number; chats: number }) : undefined
+    setState(body ? { pending: true, ...body } : { pending: false, error: true })
+  }
+  const cancel = () => void fetch("/api/workspace/import", { method: "DELETE" }).then(() => setState({ pending: false }))
+  return (
+    <Section title={t("storage.move.title")} description={t("storage.move.hint")}>
+      <Rows>
+        <div className="flex flex-wrap items-center gap-4 py-3.5">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="font-medium">{t("storage.move.export")}</span>
+            <span className="text-sm text-muted">{t("storage.move.exportHint")}</span>
+          </span>
+          <Button size="sm" variant="secondary" onPress={() => window.open("/api/workspace/export", "_self")}>
+            <Download />
+            {t("storage.move.exportAction")}
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-4 py-3.5">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="font-medium">{t("storage.move.import")}</span>
+            <span className={state.error ? "text-sm text-danger" : state.pending ? "text-sm text-accent-text" : "text-sm text-muted"}>
+              {state.error
+                ? t("storage.move.notAnExport")
+                : state.pending
+                  ? state.projects === undefined
+                    ? t("storage.move.pendingShort")
+                    : t("storage.move.pending", { projects: state.projects, chats: state.chats ?? 0 })
+                  : t("storage.move.importHint")}
+            </span>
+          </span>
+          {state.pending ? (
+            <Button size="sm" variant="ghost" onPress={cancel}>
+              {t("storage.move.cancel")}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="secondary"
+              isPending={!!state.busy}
+              onPress={() => void pickFiles({ multiple: false, accept: ".gz,.tgz,application/gzip" }).then(([f]) => f && setFile(f))}
+            >
+              <Upload />
+              {t("storage.move.importAction")}
+            </Button>
+          )}
+        </div>
+      </Rows>
+      <ConfirmDialog
+        isOpen={!!file}
+        onOpenChange={(open) => !open && setFile(undefined)}
+        title={t("storage.move.confirmTitle")}
+        description={t("storage.move.confirmBody", { name: file?.name ?? "" })}
+        confirmLabel={t("storage.move.confirm")}
+        onConfirm={() => {
+          if (file) void upload(file)
+          setFile(undefined)
+        }}
+      />
     </Section>
   )
 }

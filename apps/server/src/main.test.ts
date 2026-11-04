@@ -17,7 +17,7 @@ import { Socket } from "effect/socket"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { DataDir } from "./chat.ts"
+import { DataDir, DbPath } from "./chat.ts"
 import { CONSOLIDATION_SYSTEM } from "./context.ts"
 import { Store } from "./db.ts"
 import { Engines, type EngineEvent, type Turn } from "./engines.ts"
@@ -108,7 +108,7 @@ let stop: () => Promise<void>
 beforeAll(async () => {
   const store = Store.layer(":memory:")
   const secrets = Layer.provideMerge(Secrets.memory(), store)
-  const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(FakeEngines, Tools.layer), secrets), DataDir.layer(join(tmpdir(), "zorel-test")))
+  const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(FakeEngines, Tools.layer), secrets), DataDir.layer(join(tmpdir(), "zorel-test")), DbPath.layer(":memory:"))
   const services = Layer.mergeAll(Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.fixed(PRICES), Audit.layer, BrowserService.layer), base)), Actor.local)
   const server = AppLive().pipe(HttpRouter.serve, Layer.provide(services), Layer.provide(BunHttpServer.layer({ port })))
   const fiber = Effect.runFork(Layer.launch(server))
