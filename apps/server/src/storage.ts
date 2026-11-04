@@ -51,7 +51,8 @@ export async function measure(
     history: db,
     backups: (await sizeOf(join(dataDir, "backups"))).bytes,
     runs: (await sizeOf(join(dataDir, "runs"))).bytes,
-    accounts: (await sizeOf(join(dataDir, "accounts"))).bytes
+    accounts: (await sizeOf(join(dataDir, "accounts"))).bytes,
+    browser: (await sizeOf(join(dataDir, "browser"))).bytes // the agents' browser profile (logins, cache)
   }
   const total = (await sizeOf(dataDir)).bytes
   const known = Object.values(categories).reduce((n, b) => n + b, 0)

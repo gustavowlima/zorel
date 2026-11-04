@@ -8,7 +8,7 @@ import { AsyncResult } from "effect/reactivity"
 import { mutations, projectsAtom, storageAtom, useInvalidate, useList, useMutation } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
-import { Button, ChevronRight, ConfirmButton, Meter, RefreshCw, Rows, Section } from "@/ui"
+import { Button, ChevronRight, ConfirmButton, Meter, RefreshCw, Rows, Section, ListRow} from "@/ui"
 import { ReadingState } from "./reading.tsx"
 import { useEffect, useState } from "react"
 
@@ -22,6 +22,7 @@ const COLORS: Record<Category, string> = {
   backups: "var(--z-series-4)",
   runs: "var(--z-series-5)",
   accounts: "var(--z-series-7)",
+  browser: "var(--z-series-6)",
   other: "var(--z-text-dim)"
 }
 
@@ -81,6 +82,7 @@ function Overview({ report, measuring, onMeasure }: { report: StorageReport; mea
           </li>
         ))}
       </ul>
+      <p className="text-sm text-dim">{t("storage.otherHint")}</p>
     </section>
   )
 }
@@ -117,16 +119,14 @@ function LargestChats({ report }: { report: StorageReport }) {
     <Section title={t("storage.largestChats")}>
       <Rows>
         {report.chats.map((c) => (
-          <Button key={c.id} variant="ghost" className="h-auto justify-start gap-4 rounded-control px-3 py-3 text-left font-normal text-fg" onPress={() => go({ view: "chat", id: c.id })}>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate font-medium">{chatTitle(c)}</span>
-              <span className="truncate text-sm text-muted">
-                {[projects.find((p) => p.id === c.projectId)?.name ?? t("storage.noProject"), t("storage.files", { count: c.files }), t("storage.messages", { count: c.messages })].join(" · ")}
-              </span>
-            </span>
-            <span className="shrink-0 tabular-nums">{formatBytes(c.bytes)}</span>
-            <ChevronRight className="size-4 shrink-0 text-muted" />
-          </Button>
+          <ListRow
+            key={c.id}
+            label={chatTitle(c)}
+            title={chatTitle(c)}
+            hint={[projects.find((p) => p.id === c.projectId)?.name ?? t("storage.noProject"), t("storage.files", { count: c.files }), t("storage.messages", { count: c.messages })].join(" · ")}
+            aside={formatBytes(c.bytes)}
+            onPress={() => go({ view: "chat", id: c.id })}
+          />
         ))}
       </Rows>
     </Section>

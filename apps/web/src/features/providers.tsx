@@ -12,7 +12,7 @@ import { accountsAtom, agentsAtom, keysAtom, modelsAtom, mutations, useInvalidat
 import { LimitWindows } from "./limits.tsx"
 import { modelName, modelNote, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
-import { Badge, Button, ChevronRight, ConfirmButton, Input, Plus, ProviderIcon, cx } from "@/ui"
+import { Badge, Button, ChevronRight, ConfirmButton, Dot, Input, ListRow, Plus, ProviderIcon, cx } from "@/ui"
 
 type KeyInfo = typeof KeyInfoSchema.Type
 
@@ -71,7 +71,9 @@ function summary(p: Provider, s: State): { text: string; warning?: boolean } {
 function summaryText(p: Provider, s: State) {
   const signedIn = s.accounts.filter((a) => a.loggedIn)
   if (signedIn.length) {
-    const first = signedIn[0]!.identity ?? t("accounts.signedIn")
+    // An identity that only repeats the provider's name ("ChatGPT") says nothing: "Signed in" instead.
+    const id = signedIn[0]!.identity
+    const first = id && id !== t(`providers.names.${p.id}`) ? id : t("accounts.signedIn")
     return signedIn.length > 1 ? t("providers.andMore", { name: first, count: signedIn.length - 1 }) : first
   }
   if (s.key?.set) return t("providers.keySaved")
@@ -92,21 +94,41 @@ function ProviderList() {
   const stateOf = useStates()
   const { loading, failed } = useReadings()
   const invalidate = useInvalidate()
-  const row = (p: Provider, hint: { text: string; warning?: boolean }) => (
-    <Button
-      key={p.id}
-      variant="ghost"
-      className="h-auto justify-start gap-3.5 rounded-control px-3 py-3 text-left font-normal text-fg"
-      onPress={() => go({ view: "settings", tab: "providers", provider: p.id })}
-    >
-      <ProviderIcon provider={p.icon} size={20} />
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="font-medium">{t(`providers.names.${p.id}`)}</span>
-        <span className={cx("truncate text-sm", hint.warning ? "text-warning" : "text-muted")}>{hint.text}</span>
-      </span>
-      <ChevronRight className="size-4 text-muted" />
-    </Button>
-  )
+  const open = (p: Provider) => go({ view: "settings", tab: "providers", provider: p.id })
+  // One row per provider: who is connected (with a green dot), or what is missing and the next step right there
+  // (sign in, add a key); a local server that isn't running is started outside Zero, so it only says so.
+  const row = (p: Provider, hint: { text: string; warning?: boolean }, state?: State) => {
+    const on = !!state && connected(state)
+    const action = state && !on ? (p.account ? t("providers.signInAction") : p.key ? t("providers.addKey") : undefined) : undefined
+    return (
+      <ListRow
+        key={p.id}
+        label={`${t(`providers.names.${p.id}`)}: ${hint.text}`}
+        icon={<ProviderIcon provider={p.icon} size={20} />}
+        title={t(`providers.names.${p.id}`)}
+        hint={
+          on && !hint.warning ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Dot tone="success" />
+              {hint.text}
+            </span>
+          ) : (
+            hint.text
+          )
+        }
+        {...(hint.warning && { hintTone: "warning" as const })}
+        trailing={
+          action && (
+            // Outlined: readable over the row's hover wash as well as at rest.
+            <Button size="sm" variant="ghost" className="border border-strong text-fg" onPress={() => open(p)}>
+              {action}
+            </Button>
+          )
+        }
+        onPress={() => open(p)}
+      />
+    )
+  }
   if (failed)
     return (
       <Group title={t("settings.providers")}>
@@ -122,8 +144,8 @@ function ProviderList() {
   const off = PROVIDERS.filter((p) => !connected(stateOf(p)))
   return (
     <>
-      {on.length > 0 && <Group title={t("providers.connected")}>{on.map((p) => row(p, summary(p, stateOf(p))))}</Group>}
-      {off.length > 0 && <Group title={t("providers.others")}>{off.map((p) => row(p, summary(p, stateOf(p))))}</Group>}
+      {on.length > 0 && <Group title={t("providers.connected")}>{on.map((p) => row(p, summary(p, stateOf(p)), stateOf(p)))}</Group>}
+      {off.length > 0 && <Group title={t("providers.others")}>{off.map((p) => row(p, summary(p, stateOf(p)), stateOf(p)))}</Group>}
     </>
   )
 }
@@ -157,10 +179,10 @@ function ProviderPage({ provider: p }: { provider: Provider }) {
         </span>
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="flex items-center gap-2.5">
-            <h1 className="text-lg font-semibold">{name}</h1>
+            <h2 className="text-lg font-semibold">{name}</h2>
             {!loading && <Badge tone={isConnected ? "success" : "neutral"}>{isConnected ? t("providers.isConnected") : t("providers.notConnected")}</Badge>}
           </span>
-          <span className="text-sm text-muted">{t("providers.agentsUse", { count: agents.length })}</span>
+          <span className="text-sm text-muted">{agents.length ? t("providers.agentsUse", { count: agents.length }) : t("providers.noAgentsUse")}</span>
         </span>
       </div>
 
@@ -182,7 +204,7 @@ function ProviderPage({ provider: p }: { provider: Provider }) {
 
 const Group = ({ title, hint, action, children }: { title: string; hint?: string; action?: ReactNode; children: ReactNode }) => (
   <section className="flex flex-col gap-3">
-    <div className="flex items-end justify-between gap-4">
+    <div className="flex items-start justify-between gap-4">
       <span className="flex min-w-0 flex-col gap-1">
         <h2 className="text-sm font-medium text-muted">{title}</h2>
         {hint && <p className="text-sm text-dim">{hint}</p>}

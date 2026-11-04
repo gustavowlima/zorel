@@ -301,7 +301,7 @@ export const en = {
     }
   },
   scope: {
-    user: "You · every chat",
+    user: "Every chat",
     project: "Project · {name}",
     agent: "Agent · {name}",
     unknown: "Removed"
@@ -516,6 +516,8 @@ export const en = {
     }
   },
   providers: {
+    signInAction: "Sign in",
+    noAgentsUse: "No agent uses it yet",
     names: { claude: "Claude", chatgpt: "ChatGPT", openrouter: "OpenRouter", ollama: "Ollama", lmstudio: "LM Studio" },
     connected: "Connected",
     others: "Other providers",
@@ -567,6 +569,7 @@ export const en = {
     measure: "Measure again",
     measuring: "Measuring…",
     cleanFailed: "Couldn't clean {name}. Try again.",
+    otherHint: "Other: logs, caches and settings files.",
     categories: {
       workspaces: "Workspace snapshots",
       attachments: "Attachments",
@@ -574,6 +577,7 @@ export const en = {
       backups: "Database backups",
       runs: "Chat folders",
       accounts: "Sign-ins",
+      browser: "Agents' browser",
       other: "Other"
     },
     projects: "Projects",
@@ -596,6 +600,8 @@ export const en = {
     confirmBody: "Deletes {size} for good. Chats and projects you still have are not touched."
   },
   audit: {
+    by: "by {name}",
+    byYou: "by you",
     changes: "Changes",
     kind: "Kind of change",
     kinds: { all: "All changes", providers: "Providers", projects: "Projects and agents", tools: "MCP servers", approvals: "Approvals and undo" },
@@ -688,6 +694,9 @@ export const en = {
     intro: "Servers you added. Secrets live in the system keychain, never in Zero's database.",
     projectIntro: "Available in this project's chats, on top of the global ones.",
     empty: "No servers yet",
+    emptyHint: "Connect GitHub, Notion, a database or any MCP server, and agents can use its tools with your approval.",
+    servers: "Servers",
+    namePlaceholder: "github",
     updateFailed: "Couldn't change {name}. Try again.",
     removeFailed: "Couldn't remove {name}. Try again.",
     add: "Add server",
@@ -729,7 +738,9 @@ export const en = {
     }
   },
   skills: {
-    intro: "Procedures agents follow, learned while working or added by you. They enter the context only when the message needs them.",
+    intro: "Learned while working or added by you. A skill enters an agent's context only when the message needs it.",
+    listTitle: "All skills",
+    emptyHint: "Agents propose skills as they work, and you can write one in Knowledge.",
     empty: "No skills yet",
     new: "New skill",
     newInKnowledge: "New skill in Knowledge",
@@ -741,6 +752,7 @@ export const en = {
     added: "Added by you"
   },
   appearance: {
+    notifications: "Notifications",
     title: "Appearance",
     theme: "Theme",
     themeHint: "Match the system follows your computer's light or dark setting.",
