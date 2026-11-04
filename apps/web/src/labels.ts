@@ -27,6 +27,9 @@ export function modelName(id: string): string {
   if (real) return real
   const { provider, model } = splitModel(id)
   if (model === "default") return t("model.cliDefault")
+  // A full Claude id ("claude-sonnet-5-5") reads like the picker: "Sonnet 5.5".
+  const claude = /^claude-(opus|sonnet|haiku)-(\d+)-(\d+)/.exec(model)
+  if (claude) return `${claude[1]!.charAt(0).toUpperCase()}${claude[1]!.slice(1)} ${claude[2]}.${claude[3]}`
   if (provider === "claude-cli" || provider === "codex-cli") return model.charAt(0).toUpperCase() + model.slice(1)
   return model
 }

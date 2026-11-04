@@ -249,7 +249,9 @@ export const makeRuntime = Effect.gen(function* () {
     const teamCall = async (name: string, args: Record<string, unknown>) => {
       const all = await run(store.agents())
       const visible = visibleTo(all, chat.projectId)
-      const caller = { model: agent?.model ?? chat.model, effort: agent?.effort ?? chat.effort, access: agent?.access ?? ("workspace" as const) }
+      // The Builder (Zero's own) does no work itself: what it proposes is capped at workspace, not at its own "ask";
+      // full access is only ever the person's choice on the agent's page.
+      const caller = { model: agent?.model ?? chat.model, effort: agent?.effort ?? chat.effort, access: agent?.builtin === "builder" ? ("workspace" as const) : (agent?.access ?? ("workspace" as const)) }
       const working = (id: string) => [...statuses.values()].some((st) => st.agentId === id && st.state !== "idle")
       if (name === "zero_list_agents") return textResult(listText(visible, working))
       const target = name === "zero_create_agent" ? undefined : findAgent(visible, args.agent)
@@ -259,8 +261,18 @@ export const makeRuntime = Effect.gen(function* () {
       let proposal: { title: string; text: string; fields: Record<string, unknown>; apply: () => Promise<Agent[]> }
       try {
         if (name === "zero_create_agent") {
-          const inputs = createInputs(args, caller, chat.projectId)
-          const fieldsOf = (input: (typeof inputs)[number]) => ({ ...input, projectId: undefined, scope: input.projectId ? "project" : "global" })
+          const inputs = createInputs(args, caller, chat.projectId, await run(store.mcpServersFor(chat.projectId)))
+          // On the card: the profile, what it may reach, its first task and why (the preview reads these lines).
+          const fieldsOf = ({ permissions, notes, ...input }: (typeof inputs)[number]) => ({
+            ...input,
+            projectId: undefined,
+            scope: input.projectId ? "project" : "global",
+            web: permissions.web,
+            browser: permissions.browser,
+            connectors: notes.connectors || undefined,
+            first_task: notes.firstTask || undefined,
+            reason: notes.reason || undefined
+          })
           proposal = {
             title: inputs.length === 1 ? `${nameOf(agent)} proposes a new agent: ${inputs[0]!.name}` : `${nameOf(agent)} proposes a team of ${inputs.length}: ${inputs.map((i) => i.name).join(", ")}`,
             // One card for the whole team: each profile under its name.
@@ -268,7 +280,7 @@ export const makeRuntime = Effect.gen(function* () {
             fields: {},
             apply: async () => {
               const made: Agent[] = []
-              for (const input of inputs) made.push(await run(store.createAgent(input, nameOf(agent))))
+              for (const { notes: _notes, ...input } of inputs) made.push(await run(store.createAgent(input, nameOf(agent))))
               return made
             }
           }

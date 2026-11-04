@@ -4,9 +4,20 @@
 // on their OK. A teammate never gets more access than the agent proposing it has (ask < workspace < full), and
 // an agent can only narrow a teammate's access, never widen it: widening is the person's, on the agent's page.
 // Models are checked by provider (any model of a known provider can be typed, as in the picker).
-import type { Access, Agent, Effort } from "@zero/contracts"
+import { type Access, type Agent, type AgentPermissions, DEFAULT_PERMISSIONS, type Effort, type Grant } from "@zero/contracts"
 import { handleOf } from "./context.ts"
 import { PROVIDERS } from "./engines.ts"
+
+// What a proposed agent may reach (as in a reference app): the least the work needs. connectors: MCP servers here by name,
+// each read or write (any not listed: no access); first_task: what to send it once it exists; reason: why this
+// agent, in a sentence. The person reviews and can change all of it before it is created.
+const POWERS = {
+  web: { type: "boolean", description: "Search and read the web. Only if the work needs it." },
+  browser: { type: "boolean", description: "Its own browser (open pages, click, type). Only if the work needs it." },
+  connectors: { type: "array", items: { type: "object", properties: { name: { type: "string" }, level: { type: "string", enum: ["read", "write"] } }, required: ["name"] } },
+  first_task: { type: "string", description: "A first task to try it on, in the user's words" },
+  reason: { type: "string", description: "Why this agent, in a sentence" }
+} as const
 
 export const TEAM_TOOLS = [
   {
@@ -41,7 +52,8 @@ export const TEAM_TOOLS = [
               model: { type: "string" },
               effort: { type: "string", enum: ["low", "medium", "high", "max"] },
               access: { type: "string", enum: ["ask", "workspace", "full"] },
-              scope: { type: "string", enum: ["project", "global"] }
+              scope: { type: "string", enum: ["project", "global"] },
+              ...POWERS
             },
             required: ["name", "instructions"]
           }
@@ -53,7 +65,8 @@ export const TEAM_TOOLS = [
         model: { type: "string", description: "<provider>/<model>, e.g. claude-cli/claude-sonnet-5-5" },
         effort: { type: "string", enum: ["low", "medium", "high", "max"] },
         access: { type: "string", enum: ["ask", "workspace", "full"] },
-        scope: { type: "string", enum: ["project", "global"] }
+        scope: { type: "string", enum: ["project", "global"] },
+        ...POWERS
       },
     },
     writes: true
@@ -174,10 +187,35 @@ export interface NewAgentInput {
   readonly model: string
   readonly effort: Effort | null
   readonly access: Access
+  readonly permissions: AgentPermissions
+  readonly notes: { readonly firstTask: string; readonly reason: string; readonly connectors: string } // shown on the card, not stored
+}
+
+// The powers asked for, as permissions: web as given (default on), the browser only when asked for (as in a reference app:
+// the least the work needs), connectors by name among
+// the servers here (unlisted ones: no access, when any are listed); unknown names are an error to fix.
+function powersOf(args: Record<string, unknown>, servers: ReadonlyArray<{ id: string; name: string }>): { permissions: AgentPermissions; connectors: string } {
+  const listed = Array.isArray(args.connectors) ? (args.connectors as Array<Record<string, unknown>>) : undefined
+  const grants: Record<string, Grant> = {}
+  const named: string[] = []
+  if (listed) {
+    for (const s of servers) grants[s.id] = "none"
+    for (const c of listed) {
+      const s = servers.find((x) => x.name.toLowerCase() === String(c?.name ?? "").trim().toLowerCase())
+      if (!s) throw new Error(`No connector "${String(c?.name ?? "")}" here. The ones here: ${servers.map((x) => x.name).join(", ") || "(none)"}.`)
+      const level: Grant = c.level === "write" ? "write" : "read"
+      grants[s.id] = level
+      named.push(`${s.name} (${level})`)
+    }
+  }
+  return {
+    permissions: { web: args.web === undefined ? DEFAULT_PERMISSIONS.web : args.web === true, browser: args.browser === true, grants, always: [] },
+    connectors: listed ? named.join(", ") || "none" : ""
+  }
 }
 
 // A create proposal from the tool's arguments: checked, filled from the caller, access capped at the caller's.
-export function createInput(args: Record<string, unknown>, caller: { model: string; effort: Effort | null; access: Access }, projectId: string | null): NewAgentInput {
+export function createInput(args: Record<string, unknown>, caller: { model: string; effort: Effort | null; access: Access }, projectId: string | null, servers: ReadonlyArray<{ id: string; name: string }> = []): NewAgentInput {
   const name = str(args.name, LIMITS.name, "name")
   const instructions = str(args.instructions, LIMITS.instructions, "instructions")
   if (!name) throw new Error("name is required.")
@@ -191,20 +229,24 @@ export function createInput(args: Record<string, unknown>, caller: { model: stri
     instructions,
     model: model(args.model) ?? caller.model,
     effort: oneOf(args.effort, ["low", "medium", "high", "max"] as const, "effort") ?? (args.model ? null : caller.effort),
-    access: narrower(oneOf(args.access, ["ask", "workspace", "full"] as const, "access") ?? caller.access, caller.access)
+    access: narrower(oneOf(args.access, ["ask", "workspace", "full"] as const, "access") ?? caller.access, caller.access),
+    ...(() => {
+      const p = powersOf(args, servers)
+      return { permissions: p.permissions, notes: { firstTask: str(args.first_task, 2000, "first_task") ?? "", reason: str(args.reason, 300, "reason") ?? "", connectors: p.connectors } }
+    })()
   }
 }
 
 export const MAX_TEAM = 8
 
 // One profile, or a team from `agents`: each checked like a single one; names must differ from each other.
-export function createInputs(args: Record<string, unknown>, caller: { model: string; effort: Effort | null; access: Access }, projectId: string | null): NewAgentInput[] {
+export function createInputs(args: Record<string, unknown>, caller: { model: string; effort: Effort | null; access: Access }, projectId: string | null, servers: ReadonlyArray<{ id: string; name: string }> = []): NewAgentInput[] {
   const list = Array.isArray(args.agents) ? (args.agents as unknown[]) : [args]
   if (!list.length) throw new Error("agents is empty.")
   if (list.length > MAX_TEAM) throw new Error(`At most ${MAX_TEAM} agents at once.`)
   const out = list.map((a, i) => {
     try {
-      return createInput((a ?? {}) as Record<string, unknown>, caller, projectId)
+      return createInput((a ?? {}) as Record<string, unknown>, caller, projectId, servers)
     } catch (e) {
       throw new Error(`Agent ${i + 1}: ${e instanceof Error ? e.message : String(e)}`)
     }
@@ -282,7 +324,7 @@ export const BUILDER = {
     "1. Understand the goal: what should get done, in which project, how often, with what tools or accounts. Ask at most 3 short questions, only what you can't infer; otherwise propose right away.",
     "2. Call zero_list_agents first so you don't duplicate an existing teammate; prefer improving one (zero_update_agent) over adding a near-copy.",
     "3. Propose the whole team in ONE zero_create_agent call (agents: [...]): one clear responsibility each, a title of a few words, a one-sentence description other agents can route by, and focused instructions (what to do, how to report, when to hand off to whom by @handle). Small teams win: 1 to 4 agents unless the user asks for more.",
-    "4. Leave model and access unset unless the user asks; never ask for more access than the work needs.",
+    "4. Give each agent the least it needs (as in a good hire's first day): web and browser only if the work needs them, connectors by name with read unless it must write, access 'workspace' for code work. Leave model unset unless the user asks. Add first_task (a real first thing to try, in the user's words) and reason (why this agent, one sentence).",
     "5. If the work is recurring, propose routines with zero_routines (action create) after the agents exist.",
     "6. End with what each agent does and how to start: which one to @mention for what."
   ].join("\n"),

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { paceOf } from "./labels.ts"
+import { modelName, paceOf } from "./labels.ts"
 
 const H = 3_600_000
 const now = 1_000 * H
@@ -12,4 +12,9 @@ test("paceOf: on pace, ahead of the clock, and too early to tell", () => {
   expect(ahead.risk).toBeGreaterThan(1)
   expect(paceOf(five(30, 4.8), now).runsOutAt).toBeNull() // twelve minutes in
   expect(paceOf({ id: "model:Fable", usedPercent: 10, resetsAt: now }, now).elapsed).toBeNull()
+})
+
+test("a full Claude id reads like the picker", () => {
+  expect(modelName("claude-cli/claude-sonnet-5-5")).toBe("Sonnet 5.5")
+  expect(modelName("anthropic/claude-opus-5-5")).toBe("Opus 5.5")
 })
