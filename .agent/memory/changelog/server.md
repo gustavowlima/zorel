@@ -41,3 +41,4 @@
 2026-11-03 | fase 4 fechada: agente padrão por projeto e catálogo de conectores | item 5
 2026-11-03 | navegador: hover, select, scroll, upload, diálogos e browser_run | item 6 (OpenBot)
 2026-11-03 | páginas de conhecimento com versões e ferramentas dos agentes | item 7, fase 3b (Tucano)
+2026-11-03 | ACP: OpenCode e Gemini CLI por um adaptador | item 8, fase 5

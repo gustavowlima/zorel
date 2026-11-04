@@ -173,7 +173,7 @@ export const makeRuntime = Effect.gen(function* () {
           model: row.model, system: turn.stable ?? turn.system, cwd: turn.cwd, gatewayUrl: gatewayOf(key).url, dataDir, account: account && { id: account.id, home: account.home },
           access, approve: (req) => (approvers.get(key) ?? (async () => false))(req)
         })
-        if (opened === undefined) return engines.run(turn)
+        if (opened === undefined) return engines.run({ ...turn, access })
         if (typeof opened === "string") return Stream.make<EngineEvent[]>({ type: "error", message: opened })
         if (sessions.size >= MAX_SESSIONS) {
           const oldest = [...sessions.entries()].sort((a, b) => a[1].used - b[1].used)[0]

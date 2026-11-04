@@ -21,7 +21,7 @@ interface Entry {
   readonly key: string
   readonly provider: string // model provider: claude-cli, codex-cli, anthropic…
   readonly label: string
-  readonly kind: "subscription" | "api" | "local"
+  readonly kind: "subscription" | "api" | "local" | "agent"
   readonly account: ProviderAccount | undefined
   readonly badge: string | undefined
   readonly available: boolean
@@ -77,8 +77,14 @@ function entriesOf(accounts: ReadonlyArray<ProviderAccount>, models: ReadonlyArr
       models: namesOf(provider)
     })
   }
+  // ACP agent CLIs (Gemini CLI, OpenCode): shown while installed; they use their own sign-in and models.
+  for (const provider of ACP_PROVIDERS) {
+    if (!models.find((m) => m.provider === provider)?.available) continue
+    entries.push({ key: provider, provider, label: providerLabel(provider), kind: "agent", account: undefined, badge: undefined, available: true, models: namesOf(provider) })
+  }
   return entries
 }
+const ACP_PROVIDERS = ["gemini-cli", "opencode"]
 
 // The entry a choice belongs to: the chosen account, else the provider's default account, else the provider.
 const entryOf = (entries: ReadonlyArray<Entry>, v: ModelChoice) => {
@@ -199,7 +205,8 @@ function PickerBody({ entries, value, current, onChange, close }: { entries: Rea
 
 function EntryPane({ entry, isSelected, pick, close }: { entry: Entry; isSelected: (e: Entry, m: string) => boolean; pick: (e: Entry, m: string) => void; close: () => void }) {
   const [custom, setCustom] = useState("")
-  const kind = entry.kind === "subscription" ? (entry.account?.identity ?? t("model.subscription")) : entry.kind === "local" ? t("model.local") : t("model.apiKey")
+  const kind =
+    entry.kind === "subscription" ? (entry.account?.identity ?? t("model.subscription")) : entry.kind === "local" ? t("model.local") : entry.kind === "agent" ? t("model.agentCli") : t("model.apiKey")
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2 px-1.5 pt-1">
