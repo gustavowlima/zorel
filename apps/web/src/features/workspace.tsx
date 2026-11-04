@@ -12,9 +12,10 @@ import { agentName } from "../labels.ts"
 const DiffView = lazy(() => import("./diff-view.tsx"))
 import {
   Button, ChevronDown, ChevronRight, ConfirmButton, cx, EmptyState, File, Folder, FolderOpen, IconButton, Spinner, Tab, TabList,
-  Columns2, ConfirmDialog, Globe, Menu, MenuItem, Play, Plus, Popover, Rows2, Server, Square, TabPanel, Tabs, Tooltip, X
+  Columns2, ConfirmDialog, Globe, Menu, MenuItem, PanelRight, Play, Plus, Popover, Rows2, Server, Square, SquareTerminal, TabPanel, Tabs, Tooltip, X
 } from "@/ui"
 import { Shell } from "./shell.tsx"
+import { BrowserPanel } from "./browser.tsx"
 
 
 export type Focus = { readonly turnId: string; readonly path: string | null }
@@ -77,9 +78,16 @@ export function TurnChanges({ message, onView }: { message: Message; onView: (f:
   )
 }
 
-// ---------- right panel ----------
+// ---------- side panel (T3 Code's pattern: one panel, its surfaces as tabs) ----------
 
-export function WorkspacePanel({
+export type SideTab = "changes" | "files" | "browser" | "terminal"
+const WIDTH_KEY = "zero.side.width"
+const MIN_WIDTH = 360
+
+// The panel to the right of the chat: Changes, Files, Browser and Terminal as tabs (Files and Terminal only with a
+// project folder). Its left edge drags (or takes the arrow keys) to change the width, remembered on this computer.
+// The browser and the terminal stay mounted once opened, so switching tabs keeps them live.
+export function SidePanel({
   chat,
   project,
   messages,
@@ -88,40 +96,122 @@ export function WorkspacePanel({
   onTab,
   focus,
   onFocus,
-  onClose
+  onClose,
+  browserUrl,
+  onOpenUrl,
+  onAddToChat
 }: {
   chat: Chat
   project: Project | undefined
   messages: ReadonlyArray<Message>
   agents: ReadonlyArray<Agent>
-  tab: "changes" | "files"
-  onTab: (t: "changes" | "files") => void
+  tab: SideTab
+  onTab: (t: SideTab) => void
   focus: Focus | undefined
   onFocus: (f: Focus) => void
   onClose: () => void
+  browserUrl: { url: string } | undefined
+  onOpenUrl: (url: string) => void
+  onAddToChat: (text: string) => void
 }) {
+  const [width, setWidth] = useState(() => Number(store.get(WIDTH_KEY)) || 560)
+  const [opened, setOpened] = useState<ReadonlySet<SideTab>>(() => new Set([tab]))
+  const [shellKey, setShellKey] = useState(0) // the last shell closed: a fresh terminal next time
+  useEffect(() => setOpened((s) => (s.has(tab) ? s : new Set([...s, tab]))), [tab])
+  const folder = !!project?.path
+  const delta = chatDelta(messages)
+  const max = () => Math.round(window.innerWidth * 0.7)
+  const resize = (next: number) => {
+    const w = Math.min(max(), Math.max(MIN_WIDTH, Math.round(next)))
+    setWidth(w)
+    store.set(WIDTH_KEY, String(w))
+  }
+  const drag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const startX = e.clientX
+    const startW = width
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const move = (ev: PointerEvent) => resize(startW + (startX - ev.clientX))
+    const up = () => {
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", up)
+    }
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", up)
+  }
+
   return (
-    <aside aria-label={t("workspace.changes")} className="flex w-lg min-w-0 shrink-0 flex-col border-l border-subtle">
-      <Tabs selectedKey={tab} onSelectionChange={(k) => onTab(k as "changes" | "files")} className="min-h-0 flex-1 gap-0">
-        <div className="flex items-center gap-2 border-b border-subtle px-4 py-2.5">
-          <TabList label={t("workspace.changes")} className="flex-1">
-            <Tab id="changes">{t("workspace.changes")}</Tab>
-            <Tab id="files">{t("workspace.files")}</Tab>
+    <aside aria-label={t("workspace.panel")} className="relative flex min-w-0 shrink-0 flex-col border-l border-subtle" style={{ width }}>
+      {/* biome-ignore lint/a11y/useSemanticElements: a focusable splitter (ARIA window splitter); <hr> can't take focus or a value */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t("workspace.resizePanel")}
+        aria-valuemin={MIN_WIDTH}
+        aria-valuemax={max()}
+        aria-valuenow={width}
+        tabIndex={0}
+        onPointerDown={drag}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowLeft") resize(width + 32)
+          else if (e.key === "ArrowRight") resize(width - 32)
+          else return
+          e.preventDefault()
+        }}
+        className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:left-1 after:w-px after:bg-transparent hover:after:bg-accent focus-visible:after:bg-accent"
+      />
+      <Tabs selectedKey={tab} onSelectionChange={(k) => onTab(k as SideTab)} className="min-h-0 flex-1 gap-0">
+        <div className="flex items-center gap-2 border-b border-subtle px-3 py-2">
+          <TabList label={t("workspace.panel")} className="min-w-0 flex-1 flex-nowrap overflow-x-auto">
+            <Tab id="changes">
+              <span className="flex items-center gap-1.5 whitespace-nowrap">
+                <PanelRight className="size-3.5" />
+                {t("workspace.changes")}
+                {delta.added + delta.removed > 0 && <Delta {...delta} />}
+              </span>
+            </Tab>
+            {folder && (
+              <Tab id="files">
+                <span className="flex items-center gap-1.5 whitespace-nowrap">
+                  <Folder className="size-3.5" />
+                  {t("workspace.files")}
+                </span>
+              </Tab>
+            )}
+            <Tab id="browser">
+              <span className="flex items-center gap-1.5 whitespace-nowrap">
+                <Globe className="size-3.5" />
+                {t("browser.title")}
+              </span>
+            </Tab>
+            {folder && (
+              <Tab id="terminal">
+                <span className="flex items-center gap-1.5 whitespace-nowrap">
+                  <SquareTerminal className="size-3.5" />
+                  {t("workspace.terminal")}
+                </span>
+              </Tab>
+            )}
           </TabList>
-          <IconButton label={t("workspace.closePanel")} onPress={onClose}>
-            <X />
+          <IconButton label={t("workspace.closePanel")} size="sm" onPress={onClose}>
+            <X className="size-3.5" />
           </IconButton>
         </div>
         <TabPanel id="changes" className="min-h-0 flex-1 overflow-y-auto">
           <ChangesTab messages={messages} agents={agents} focus={focus} onFocus={onFocus} />
         </TabPanel>
-        <TabPanel id="files" className="min-h-0 flex-1 overflow-y-auto">
-          {project?.path ? (
+        {folder && project && (
+          <TabPanel id="files" className="min-h-0 flex-1 overflow-y-auto">
             <FilesTab project={project} chat={chat} messages={messages} onFocus={onFocus} />
-          ) : (
-            <EmptyState icon={<Folder />} title={t("workspace.noFolder")} hint={t("workspace.noFolderHint")} />
-          )}
+          </TabPanel>
+        )}
+        <TabPanel id="browser" keepMounted={opened.has("browser")} className="flex min-h-0 flex-1 flex-col">
+          {opened.has("browser") && <BrowserPanel chatId={chat.id} openUrl={browserUrl} />}
         </TabPanel>
+        {folder && (
+          <TabPanel id="terminal" keepMounted={opened.has("terminal")} className="flex min-h-0 flex-1 flex-col">
+            {opened.has("terminal") && <TerminalPanel key={shellKey} chatId={chat.id} visible={tab === "terminal"} onClose={() => setShellKey((k) => k + 1)} onAddToChat={onAddToChat} onOpenUrl={onOpenUrl} />}
+          </TabPanel>
+        )}
       </Tabs>
     </aside>
   )
@@ -286,11 +376,9 @@ function TreeNode({ node, depth, onOpen }: { node: Node; depth: number; onOpen: 
 // The Terminal panel: shell tabs (the commands the agents ran show in the chat, in each reply's steps). A tab holds
 // one to four panes (split side by side or stacked), each a shell that lives on the server: closing the panel or
 // reloading only detaches, and the tabs come back from the server's list (the layout is remembered per chat).
-// Closing a pane or a tab ends its shells, asking first when something still runs in one. The panel's height
-// follows a drag of its top edge (or the arrow keys on it) and is remembered on this computer.
-const HEIGHT_KEY = "zero.terminal.height"
+// Closing a pane or a tab ends its shells, asking first when something still runs in one. It fills the side
+// panel's Terminal tab.
 const LAYOUT_KEY = (chatId: string) => `zero.terminal.layout.${chatId}`
-const MIN_HEIGHT = 160
 const MAX_PANES = 4
 type Pane = { readonly key: string; readonly session: string | undefined; readonly ended: boolean; readonly run?: string | undefined }
 // label: the project script the tab runs ("dev"); a plain shell is "Shell n".
@@ -316,12 +404,14 @@ const newPane = (session?: string, run?: string): Pane => ({ key: `pane-${++pane
 
 export function TerminalPanel({
   chatId,
+  visible,
   onClose,
   onAddToChat,
   onOpenUrl
 }: {
   chatId: string
-  onClose: () => void
+  visible: boolean // its tab in the side panel is the one shown
+  onClose: () => void // the last shell closed
   onAddToChat: (text: string) => void
   onOpenUrl: (url: string) => void
 }) {
@@ -329,7 +419,6 @@ export function TerminalPanel({
   const scripts = useReading(scriptsAtom(chatId)).items
   const closeTerminal = useMutation(mutations.closeTerminal)
   const openFile = useMutation(mutations.openFile)
-  const [height, setHeight] = useState(() => Number(store.get(HEIGHT_KEY)) || 288)
   const [tabs, setTabs] = useState<ReadonlyArray<ShellTab>>([])
   const [tab, setTab] = useState("")
   const [confirm, setConfirm] = useState<{ keys: ReadonlyArray<string>; tabKey?: string }>()
@@ -364,25 +453,6 @@ export function TerminalPanel({
     if (restored.current) store.set(LAYOUT_KEY(chatId), JSON.stringify(tabs.map((t) => ({ dir: t.dir, sessions: t.panes.flatMap((p) => (p.session ? [p.session] : [])) }))))
   }, [tabs, chatId])
 
-  const max = () => Math.round(window.innerHeight * 0.75)
-  const resize = (next: number) => {
-    const h = Math.min(max(), Math.max(MIN_HEIGHT, Math.round(next)))
-    setHeight(h)
-    store.set(HEIGHT_KEY, String(h))
-  }
-  const drag = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const startY = e.clientY
-    const startH = height
-    e.currentTarget.setPointerCapture(e.pointerId)
-    const move = (ev: PointerEvent) => resize(startH + (startY - ev.clientY))
-    const up = () => {
-      window.removeEventListener("pointermove", move)
-      window.removeEventListener("pointerup", up)
-    }
-    window.addEventListener("pointermove", move)
-    window.addEventListener("pointerup", up)
-  }
-
   // A new tab: a plain shell, or one running a project script.
   const add = (run?: string) => {
     const pane = newPane(undefined, run)
@@ -399,7 +469,7 @@ export function TerminalPanel({
     for (const p of gone) if (p.session) void closeTerminal({ params: { id: chatId, terminal: p.session }, reactivityKeys: ["terminals"] })
     const next = tabs.map((t) => ({ ...t, panes: t.panes.filter((p) => !keys.includes(p.key)) })).filter((t) => t.panes.length)
     setTabs(next)
-    if (!next.length) onClose() // the last shell closed: the panel goes too
+    if (!next.length) onClose() // the last shell closed: the tab starts over with a fresh one
     else if (!next.some((t) => t.key === tab)) setTab(next.at(-1)!.key)
   }
   // Ask first when a shell among them is running something.
@@ -414,26 +484,7 @@ export function TerminalPanel({
   const current = tabs.find((t) => t.key === tab)
 
   return (
-    <section aria-label={t("workspace.terminal")} className="relative flex shrink-0 flex-col border-t border-subtle" style={{ height }}>
-      {/* The top edge: drag it, or focus it and use the arrows, to change the height. */}
-      {/* biome-ignore lint/a11y/useSemanticElements: a focusable splitter (ARIA window splitter); <hr> can't take focus or a value */}
-      <div
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label={t("workspace.resizeTerminal")}
-        aria-valuemin={MIN_HEIGHT}
-        aria-valuemax={max()}
-        aria-valuenow={height}
-        tabIndex={0}
-        onPointerDown={drag}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowUp") resize(height + 24)
-          else if (e.key === "ArrowDown") resize(height - 24)
-          else return
-          e.preventDefault()
-        }}
-        className="absolute inset-x-0 -top-1 z-10 h-2 cursor-row-resize touch-none outline-none after:absolute after:inset-x-0 after:top-1 after:h-px after:bg-transparent hover:after:bg-accent focus-visible:after:bg-accent"
-      />
+    <section aria-label={t("workspace.terminal")} className="flex min-h-0 flex-1 flex-col">
       <Tabs selectedKey={tab} onSelectionChange={(k) => setTab(String(k))} className="min-h-0 flex-1 gap-0">
         {/* Delete or Backspace on a focused shell tab closes it (the × in the tab is for the pointer). */}
         {/* biome-ignore lint/a11y/noStaticElementInteractions: listens to keys bubbling from the focused tab; no interaction of its own */}
@@ -493,9 +544,6 @@ export function TerminalPanel({
               <Plus className="size-3.5" />
             </IconButton>
           </Tooltip>
-          <IconButton label={t("workspace.closePanel")} size="sm" onPress={onClose}>
-            <X className="size-3.5" />
-          </IconButton>
         </div>
         {tabs.map((s) => (
           <TabPanel key={s.key} id={s.key} keepMounted className={cx("flex min-h-0 flex-1 gap-px bg-subtle", s.dir === "row" ? "flex-row" : "flex-col")}>
@@ -505,7 +553,7 @@ export function TerminalPanel({
                   chatId={chatId}
                   sessionId={p.session}
                   run={p.run}
-                  visible={tab === s.key}
+                  visible={visible && tab === s.key}
                   onSession={(id) => patchPane(p.key, { session: id })}
                   onEnded={() => patchPane(p.key, { ended: true })}
                   onAddToChat={onAddToChat}
@@ -554,7 +602,15 @@ function LocalServers({ chatId, onOpenUrl }: { chatId: string; onOpenUrl: (url: 
         </Tooltip>
       }
     >
-      {(close) => <ServerList chatId={chatId} onOpenUrl={(url) => (onOpenUrl(url), close())} />}
+      {(close) => (
+        <ServerList
+          chatId={chatId}
+          onOpenUrl={(url) => {
+            onOpenUrl(url)
+            close()
+          }}
+        />
+      )}
     </Popover>
   )
 }

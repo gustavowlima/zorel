@@ -309,9 +309,14 @@ Compactos e diretos, com aperto físico ao pressionar.
 ### Visualizador de imagem
 - Uma imagem do chat abre dentro do Zero (`ImageViewer`), nunca numa aba nova: modal sobre o app escurecido, a imagem o maior que couber (object-contain, borda forte, cantos de 12px) e, acima, uma barra com o nome, "Open original" e o fechar. Esc, clique fora ou o botão fecham; o foco volta à miniatura.
 
+### Painel lateral (padrão do T3 Code)
+- O cabeçalho do chat não tem um botão por superfície: tem o controle de Git e **um** botão de painel (ícone de painel + o +N −M do que o chat mudou). Ele abre o painel lateral, à direita do chat, com as superfícies como abas em pílula: **Changes** (com o delta), **Files**, **Browser** e **Terminal** (Files e Terminal só com pasta de projeto), e × para fechar.
+- Largura ajustável pela borda esquerda (arraste, ou foco + setas), lembrada no computador: 560px por padrão, mín. 360px, máx. 70% da janela.
+- Browser e Terminal ficam montados depois de abertos: trocar de aba não derruba a conexão. "View" de um turno abre em Changes; um servidor aberto do Terminal abre em Browser; `/terminal` e `/changes` no composer abrem a aba.
+
 ### Terminal
-- Painel embaixo do chat, de altura ajustável: arraste a borda de cima (ou foque nela e use as setas); a altura fica lembrada (mín. 160px, máx. 75% da janela).
-- Abrir o painel abre um shell (ou traz de volta os do chat): abas em pílula "Shell 1", "Shell 2"…, o + abre outra. Os comandos que os agentes rodaram ficam no chat, nos passos de cada resposta, não aqui.
+- Aba Terminal do painel lateral, ocupando a altura toda.
+- Abrir a aba abre um shell (ou traz de volta os do chat): abas em pílula "Shell 1", "Shell 2"…, o + abre outra. Os comandos que os agentes rodaram ficam no chat, nos passos de cada resposta, não aqui.
 - Cada shell vive no servidor (um shell de login num PTY na pasta onde os agentes do chat trabalham): fechar o painel ou recarregar só desconecta; ao voltar, as abas e o layout reaparecem e o fim da saída é reexibido. Fechar a aba (× ou Delete/Backspace nela) encerra o shell, perguntando antes se algo ainda roda nele; fechar a última aba fecha o painel.
 - Uma aba divide em até 4 painéis, lado a lado ou empilhados (botões na barra); cada painel é um shell, com × no hover quando há mais de um.
 - Links: URLs abrem numa aba nova; caminhos de arquivo (src/a.ts:12) abrem o arquivo no app padrão do computador, só dentro da pasta do chat.
@@ -333,7 +338,7 @@ Compactos e diretos, com aperto físico ao pressionar.
 - O menu nativo do navegador não aparece no app (só em campos de texto e no terminal, para copiar e colar). Onde há ações, o clique direito (ou a tecla Menu / Shift+F10) abre o `ContextMenu` do Zero, o mesmo visual do menu ⋯, ancorado no ponteiro (ou sob o item focado). Na barra lateral: chat → Open, Rename, Delete; projeto → Open, New chat in…, Settings of…, Delete project. Excluir sempre confirma.
 
 ### Navegador
-- Painel "Browser" à direita do chat (no lugar de Changes; um ou outro), 672px: abas em pílula com ×, +, depois voltar / avançar / recarregar e o endereço (Enter abre), uma faixa de quem segura o navegador e a página ao vivo (quadros JPEG do screencast, na proporção 1280×800).
+- Aba Browser do painel lateral: abas em pílula com ×, +, depois voltar / avançar / recarregar e o endereço (Enter abre), uma faixa de quem segura o navegador e a página ao vivo (quadros JPEG do screencast, na proporção 1280×800).
 - É o navegador dos agentes: um Chrome sem janela no servidor, num perfil persistente (logins ficam), com abas por chat. Clicar, rolar ou digitar na página, ou usar o endereço, toma o controle: a faixa fica azul ("You're using the browser…") com "Hand back"; enquanto isso as ferramentas do navegador dos agentes são recusadas.
 - Ferramentas dos agentes: browser_navigate, browser_snapshot (a página como árvore de acessibilidade com [ref=eN]), browser_click e browser_type por ref, browser_press, browser_wait, browser_tabs, browser_back. Ler nunca pede aprovação; agir pede quando o acesso do agente é "ask". Cada uso aparece nos passos da resposta.
 

@@ -218,7 +218,6 @@ function GitPanel({ chatId, worktree }: { chatId: string; worktree: string | nul
           >
             {newBranch.worktree && <p className="text-sm text-muted">{t("git.worktreeHint")}</p>}
             <div className="flex items-center gap-2">
-              {/* biome-ignore lint/a11y/noAutofocus: the field the person just asked for */}
               <Input
                 autoFocus
                 aria-label={t("git.branchName")}

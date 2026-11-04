@@ -50,3 +50,4 @@ updated: 2026-11-03
 - shell.tsx: socket desmontado antes do frame "s" (StrictMode monta 2x em dev) manda {"t":"k"} quando o id chega; sem isso cada aba nova deixava um shell órfão (e um script rodando em dobro)
 - TerminalPanel: ▷ Run a script (aba com label do script) e Servers (abre localhost:N no BrowserPanel via chat.openInBrowser → prop openUrl, que envia newtab+nav)
 - git.tsx: GitControl no cabeçalho do chat (só repo git); popover com commit (Write it for me → gitDraft), push/publish, PR (rascunho editável; escondido na branch base), New branch
+- painel lateral (pedido do usuário, padrão T3 Code): workspace.tsx SidePanel com abas changes/files/browser/terminal (type SideTab); chat.tsx guarda só `panel: SideTab | undefined`; cabeçalho = GitControl + um botão de painel (sem botões Changes/Browser/Terminal). BrowserPanel e TerminalPanel não têm mais aside/altura/fechar próprios; o último shell fechado remonta o terminal (shellKey)
