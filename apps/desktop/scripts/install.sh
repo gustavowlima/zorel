@@ -1,15 +1,17 @@
 #!/bin/sh
 # Installs or updates Zorel (macOS and Linux; on Windows, the release's installer):
-#   curl -fsSL https://github.com/__REPO__/releases/latest/download/install.sh | sh
-# The release job writes the repository in place of __REPO__ (ZOREL_REPO overrides it).
+#   curl -fsSL https://github.com/gustavowlima/zorel/releases/latest/download/install.sh | sh
+# ZOREL_REPO: another repository's releases (a fork).
 #
 # macOS: the app goes to /Applications (or ~/Applications), replacing a running one (it is asked to quit first), and
 # the download's quarantine mark is cleared: without a Developer ID the app is signed ad hoc, which macOS runs once
 # that mark is gone. Updating is running this again; the app's update button does it.
 # Linux: the AppImage in ~/.local/bin, with an entry in the applications menu.
-# ZOREL_ZIP / ZOREL_APPIMAGE: a URL or a local file instead of the latest release (to try a build).
+# ZOREL_ZIP / ZOREL_APPIMAGE: a URL or a local file instead of the latest release (to try a build; not verified).
+# A download from the release is checked against the SHA-512 the release lists for it (latest-*.yml, written by
+# electron-builder for the updaters) before anything is installed.
 set -e
-REPO="${ZOREL_REPO:-__REPO__}"
+REPO="${ZOREL_REPO:-gustavowlima/zorel}"
 LATEST="https://github.com/$REPO/releases/latest/download"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -24,6 +26,14 @@ fail() {
   echo "$1" >&2
   exit 1
 }
+# verify <file> <release metadata file> <published name>: the file's SHA-512 (base64) must be the one listed.
+verify() {
+  command -v openssl >/dev/null || fail "Can't check the download: install openssl and run this again."
+  want=$(curl -fsSL "$LATEST/$2" | awk -v f="$3" '$0 ~ ("url: " f "$") { getline; sub(/.*sha512: */, ""); print; exit }')
+  [ -n "$want" ] || fail "The release doesn't list $3: nothing was installed."
+  got=$(openssl dgst -sha512 -binary "$1" | base64 | tr -d '\n')
+  [ "$got" = "$want" ] || fail "The download of $3 doesn't match the release: nothing was installed."
+}
 
 install_mac() {
   # Ask the chip: under Rosetta, uname says x86_64 on Apple silicon too.
@@ -36,6 +46,7 @@ install_mac() {
 
   echo "Downloading Zorel…"
   fetch "${ZOREL_ZIP:-$LATEST/zorel-mac-$ARCH.zip}" "$TMP/zorel.zip"
+  [ -n "${ZOREL_ZIP:-}" ] || verify "$TMP/zorel.zip" latest-mac.yml "zorel-mac-$ARCH.zip"
   ditto -x -k "$TMP/zorel.zip" "$TMP/app"
   [ -d "$TMP/app/Zorel.app" ] || fail "The download doesn't contain Zorel.app."
 
@@ -73,6 +84,9 @@ install_linux() {
   fi
   echo "Downloading Zorel…"
   fetch "${ZOREL_APPIMAGE:-$LATEST/zorel-linux-$ARCH.AppImage}" "$TMP/Zorel.AppImage"
+  META=latest-linux.yml
+  [ "$ARCH" = arm64 ] && META=latest-linux-arm64.yml
+  [ -n "${ZOREL_APPIMAGE:-}" ] || verify "$TMP/Zorel.AppImage" "$META" "zorel-linux-$ARCH.AppImage"
   chmod +x "$TMP/Zorel.AppImage"
   mv -f "$TMP/Zorel.AppImage" "$APP"
   cat >"$HOME/.local/share/applications/zorel.desktop" <<EOF

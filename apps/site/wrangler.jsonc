@@ -1,0 +1,11 @@
+// The site is served by Cloudflare as static files (no Worker code runs):
+//   cd apps/site && bunx wrangler@4.151.3 deploy
+{
+  "name": "zorel-site",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "." },
+  "routes": [
+    { "pattern": "zorel.dev", "custom_domain": true },
+    { "pattern": "www.zorel.dev", "custom_domain": true }
+  ]
+}

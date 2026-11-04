@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { Effect, Stream } from "effect"
+import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { commandFor, gitCommonDir, kindOf, opencodeEnv, permission, writableRoots } from "./acp.ts"
+import { acpRun, commandFor, gitCommonDir, kindOf, opencodeEnv, permission, writableRoots } from "./acp.ts"
 
 describe("acp", () => {
   test("maps ACP tool kinds to step kinds", () => {
@@ -77,4 +78,46 @@ describe("opencode as the API-key harness", () => {
     const local = JSON.parse(opencodeEnv("ollama", "qwen3", { baseURL: "http://localhost:11434/v1" }).OPENCODE_CONFIG_CONTENT!)
     expect(local.provider.ollama).toEqual({ npm: "@ai-sdk/openai-compatible", name: "ollama", options: { baseURL: "http://localhost:11434/v1" }, models: { qwen3: { name: "qwen3" } } })
   })
+})
+
+// An ACP agent in a few lines: asks permission once, then says what it got.
+const FAKE_AGENT = `#!/usr/bin/env bun
+const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n")
+let buf = ""
+for await (const chunk of process.stdin) {
+  buf += chunk
+  const lines = buf.split("\\n")
+  buf = lines.pop()
+  for (const line of lines.filter(Boolean)) {
+    const m = JSON.parse(line)
+    if (m.method === "initialize") send({ id: m.id, result: { protocolVersion: 1, agentCapabilities: {} } })
+    else if (m.method === "session/new") send({ id: m.id, result: { sessionId: "s" } })
+    else if (m.method === "session/prompt") {
+      globalThis.prompt = m.id
+      send({ id: 99, method: "session/request_permission", params: { toolCall: { kind: "execute", title: "rm -rf build" }, options: [{ optionId: "yes", kind: "allow_once" }, { optionId: "no", kind: "reject_once" }] } })
+    } else if (m.id === 99) {
+      send({ method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: JSON.stringify(m.result.outcome) } } } })
+      send({ id: globalThis.prompt, result: { stopReason: "end_turn" } })
+    }
+  }
+}
+`
+describe("acp at Ask first", () => {
+  test.skipIf(process.platform !== "darwin" && !(process.platform === "linux" && Bun.which("bwrap")))("a permission request becomes the approval card; its answer goes back to the agent", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "acp-ask-"))
+    const bin = join(dir, "fake-acp")
+    writeFileSync(bin, FAKE_AGENT)
+    chmodSync(bin, 0o755)
+    const cards: string[] = []
+    const turn = (ok: boolean) =>
+      Effect.runPromise(Stream.runCollect(acpRun({ bin, args: [], model: "default", cwd: dir, prompt: "go", access: "ask", approve: async (r) => {
+            cards.push(`${r.kind}: ${r.summary}`)
+            return ok
+          } })))
+    const text = (events: ReadonlyArray<{ type: string; delta?: string }>) => events.filter((e) => e.type === "text").map((e) => e.delta).join("")
+    expect(text(await turn(true))).toContain('"optionId":"yes"')
+    expect(text(await turn(false))).toContain('"outcome":"cancelled"')
+    expect(cards).toEqual(["command: rm -rf build", "command: rm -rf build"])
+    rmSync(dir, { recursive: true, force: true })
+  }, 30_000)
 })

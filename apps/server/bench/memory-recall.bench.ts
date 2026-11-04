@@ -289,3 +289,19 @@ console.log(`\n### Leaks at ${last.total}\n`)
 for (const l of [...new Set(last.leaks)]) console.log(`- ${l}`)
 console.log(`\n### Misses at ${last.total} (not pinned, not in top ${RETRIEVED})\n`)
 for (const m of last.misses) console.log(`- ${m}`)
+
+// --check (CI): fail when an invariant breaks. Asked in the needles' own words, every one reaches the prompt; no
+// memory crosses a scope or an owner; the pinned layer stays within its budget.
+if (process.argv.includes("--check")) {
+  const broken = results.flatMap((r) => [
+    ...(r.res.lex.prompt < Q ? [`${r.total}: ${Q - r.res.lex.prompt} needles asked in their own words missed the prompt`] : []),
+    ...(r.leaks.length ? [`${r.total}: ${r.leaks.length} leaks`] : []),
+    ...(r.bobPinned ? [`${r.total}: another owner's memories pinned`] : []),
+    ...(r.pinnedChars > MEMORY_BUDGET ? [`${r.total}: pinned ${r.pinnedChars} chars, over the budget`] : [])
+  ])
+  if (broken.length) {
+    console.error(`\nmemory check failed:\n${broken.map((b) => `- ${b}`).join("\n")}`)
+    process.exit(1)
+  }
+  console.log("\nmemory check ok")
+}

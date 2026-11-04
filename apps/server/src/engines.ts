@@ -50,6 +50,7 @@ export interface Turn {
   readonly cwd: string // empty directory: the CLI gets nobody's files
   readonly tools?: TurnTools | undefined
   readonly access?: Access | undefined // what the agent may do without asking (ACP agents ask through Zorel)
+  readonly approve?: Approver | undefined // the turn's approval card, for an engine that asks mid-turn (ACP at "ask")
   readonly web?: boolean | undefined // the agent may search and read the web (its permissions)
   // Characters of each part of the context (the composer's context meter estimates tokens from them).
   readonly parts?: { readonly instructions: number; readonly memories: number; readonly skills: number; readonly summary: number }
@@ -498,7 +499,7 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
           const acp = ACP[provider]
           if (acp) {
             const { model } = splitModel(t.model)
-            return acpRun({ ...acp(model), model, cwd: t.cwd, prompt: `${t.system}\n\n${transcript(t.messages)}`, access: t.access ?? "workspace", web: t.web ?? false, gatewayUrl: t.tools?.url })
+            return acpRun({ ...acp(model), model, cwd: t.cwd, prompt: `${t.system}\n\n${transcript(t.messages)}`, access: t.access ?? "workspace", web: t.web ?? false, gatewayUrl: t.tools?.url, approve: t.approve })
           }
           // An API-key model in a chat turn runs in OpenCode (files, shell, edits, its tools) when it's installed;
           // internal tasks (summaries, titles) and machines without it keep the direct API engine.
@@ -516,6 +517,7 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
               access: t.access ?? "workspace",
               web: t.web ?? false,
               gatewayUrl: t.tools.url,
+              approve: t.approve,
               env: opencodeEnv(provider, model, { key, baseURL: COMPAT[provider]?.() })
             })
           }
