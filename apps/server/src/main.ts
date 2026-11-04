@@ -121,7 +121,9 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
         Effect.gen(function* () {
           if (!(yield* projectOk(store, payload.projectId))) return yield* notFound()
           // The Builder is Zero's own agent (builtin): out of the team lists, talked to only on the Build screen.
-          const existing = (yield* store.agents()).find((a) => a.builtin === "builder")
+          const found = (yield* store.agents()).find((a) => a.builtin === "builder")
+          // Zero's own prompt evolves with Zero: an existing Builder gets the current one (not a user edit to keep).
+          const existing = found && found.instructions !== BUILDER.instructions ? yield* store.updateAgent(found.id, { instructions: BUILDER.instructions, description: BUILDER.description }, "Zero") : found
           const builder = existing ?? (yield* store.createAgent({ projectId: null, name: BUILDER.name, title: BUILDER.title, description: BUILDER.description, instructions: BUILDER.instructions, model: payload.model, access: BUILDER.access, builtin: "builder" }))
           if (!existing) yield* audit.record(Actions.agentCreated, { target: builder, after: { name: builder.name, model: builder.model, access: builder.access } })
           // Each visit starts fresh (as in a reference app): the screen's previous conversation here goes away.

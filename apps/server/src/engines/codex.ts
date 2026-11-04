@@ -11,7 +11,7 @@ import type { Access, AccountWindow, FailureReason } from "@zero/contracts"
 import { relative } from "node:path"
 import { type CliModel, classifyMessage, CODEX_DISABLED, type EngineEvent, type EngineFailure, type NativeStep, splitModel, toMillis, type Usage } from "#server/engines.ts"
 import { approvalFor } from "#server/engines/policy.ts"
-import type { Approver, EngineSession, SessionTurnInput } from "#server/engines/session.ts"
+import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type SessionTurnInput } from "#server/engines/session.ts"
 
 // Access level → Codex sandbox and approval policy (ARCHITECTURE §9.2). The shell is on in the app-server:
 // commands run in Codex's sandbox and what leaves it asks through Zero.
@@ -250,7 +250,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
       config: {
         "mcp_servers.zero.url": o.gatewayUrl,
         "mcp_servers.zero.default_tools_approval_mode": "approve", // the gateway decides
-        "mcp_servers.zero.tool_timeout_sec": 900 // human approval can take a while
+        "mcp_servers.zero.tool_timeout_sec": GATEWAY_TOOL_TIMEOUT_MS / 1000 // outlasts an approval card
       }
     })
     return String(started.thread.id)
