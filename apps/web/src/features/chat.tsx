@@ -57,6 +57,12 @@ export function ChatView({ chat }: { chat: Chat }) {
   const project = projects.find((p) => p.id === chat.projectId)
   const [panel, setPanel] = useState<"changes" | "files">()
   const [browser, setBrowser] = useState(false)
+  const [browserUrl, setBrowserUrl] = useState<{ url: string }>() // a new object each time, so the same URL opens again
+  const openInBrowser = (url: string) => {
+    setBrowserUrl({ url })
+    setBrowser(true)
+    setPanel(undefined)
+  }
   const [terminal, setTerminal] = useState(false)
   const [focus, setFocus] = useState<Focus>()
   const view = (f: Focus) => {
@@ -161,9 +167,9 @@ export function ChatView({ chat }: { chat: Chat }) {
           )}
         </WithFiles>
       </div>
-      {terminal && <TerminalPanel chatId={chat.id} onClose={() => setTerminal(false)} onAddToChat={(text) => insertRef.current?.(`\`\`\`\n${text.trimEnd()}\n\`\`\``)} />}
+      {terminal && <TerminalPanel chatId={chat.id} onClose={() => setTerminal(false)} onAddToChat={(text) => insertRef.current?.(`\`\`\`\n${text.trimEnd()}\n\`\`\``)} onOpenUrl={openInBrowser} />}
       </div>
-      {browser && <BrowserPanel chatId={chat.id} onClose={() => setBrowser(false)} />}
+      {browser && <BrowserPanel chatId={chat.id} openUrl={browserUrl} onClose={() => setBrowser(false)} />}
       {panel && (
         <WorkspacePanel chat={chat} project={project} messages={state.messages} agents={agents} tab={panel} onTab={setPanel} focus={focus} onFocus={setFocus} onClose={() => setPanel(undefined)} />
       )}

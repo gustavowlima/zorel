@@ -6,13 +6,13 @@ import { useAtomValue } from "@effect/atom-react"
 import { formatTime, t } from "@zero/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { lazy, type PointerEvent as ReactPointerEvent, Suspense, useEffect, useMemo, useRef, useState } from "react"
-import { diffAtom, filesAtom, mutations, terminalsAtom, useMutation } from "../client.ts"
+import { diffAtom, filesAtom, localServersAtom, mutations, scriptsAtom, terminalsAtom, useInvalidate, useMutation, useReading } from "../client.ts"
 import { agentName } from "../labels.ts"
 // The diff viewer and its highlighter load with the panel, not with the app.
 const DiffView = lazy(() => import("./diff-view.tsx"))
 import {
   Button, ChevronDown, ChevronRight, ConfirmButton, cx, EmptyState, File, Folder, FolderOpen, IconButton, Spinner, Tab, TabList,
-  Columns2, ConfirmDialog, Plus, Rows2, TabPanel, Tabs, Tooltip, X
+  Columns2, ConfirmDialog, Globe, Menu, MenuItem, Play, Plus, Popover, Rows2, Server, Square, TabPanel, Tabs, Tooltip, X
 } from "@/ui"
 import { Shell } from "./shell.tsx"
 
@@ -292,8 +292,9 @@ const HEIGHT_KEY = "zero.terminal.height"
 const LAYOUT_KEY = (chatId: string) => `zero.terminal.layout.${chatId}`
 const MIN_HEIGHT = 160
 const MAX_PANES = 4
-type Pane = { readonly key: string; readonly session: string | undefined; readonly ended: boolean }
-type ShellTab = { readonly key: string; readonly dir: "row" | "col"; readonly panes: ReadonlyArray<Pane> }
+type Pane = { readonly key: string; readonly session: string | undefined; readonly ended: boolean; readonly run?: string | undefined }
+// label: the project script the tab runs ("dev"); a plain shell is "Shell n".
+type ShellTab = { readonly key: string; readonly dir: "row" | "col"; readonly panes: ReadonlyArray<Pane>; readonly label?: string | null | undefined }
 const store = {
   get: (k: string) => {
     try {
@@ -311,10 +312,21 @@ const store = {
   }
 }
 let paneCount = 0
-const newPane = (session?: string): Pane => ({ key: `pane-${++paneCount}`, session, ended: false })
+const newPane = (session?: string, run?: string): Pane => ({ key: `pane-${++paneCount}`, session, ended: false, run })
 
-export function TerminalPanel({ chatId, onClose, onAddToChat }: { chatId: string; onClose: () => void; onAddToChat: (text: string) => void }) {
+export function TerminalPanel({
+  chatId,
+  onClose,
+  onAddToChat,
+  onOpenUrl
+}: {
+  chatId: string
+  onClose: () => void
+  onAddToChat: (text: string) => void
+  onOpenUrl: (url: string) => void
+}) {
   const sessionsResult = useAtomValue(terminalsAtom(chatId))
+  const scripts = useReading(scriptsAtom(chatId)).items
   const closeTerminal = useMutation(mutations.closeTerminal)
   const openFile = useMutation(mutations.openFile)
   const [height, setHeight] = useState(() => Number(store.get(HEIGHT_KEY)) || 288)
@@ -328,6 +340,7 @@ export function TerminalPanel({ chatId, onClose, onAddToChat }: { chatId: string
     if (restored.current || !AsyncResult.isSuccess(sessionsResult)) return
     restored.current = true
     const alive = new Set(sessionsResult.value.map((x) => x.id))
+    const labelOf = (id: string | undefined) => sessionsResult.value.find((x) => x.id === id)?.label
     const saved = JSON.parse(store.get(LAYOUT_KEY(chatId)) ?? "[]") as Array<{ dir: "row" | "col"; sessions: string[] }>
     const placed = new Set<string>()
     const next: ShellTab[] = []
@@ -335,9 +348,9 @@ export function TerminalPanel({ chatId, onClose, onAddToChat }: { chatId: string
       const ids = t.sessions.filter((id) => alive.has(id) && !placed.has(id))
       for (const id of ids) placed.add(id)
       const panes = ids.map((id) => newPane(id))
-      if (panes.length) next.push({ key: `tab-${panes[0]!.key}`, dir: t.dir, panes })
+      if (panes.length) next.push({ key: `tab-${panes[0]!.key}`, dir: t.dir, panes, label: labelOf(ids[0]) })
     }
-    for (const x of sessionsResult.value) if (!placed.has(x.id)) next.push({ key: `tab-${x.id}`, dir: "row", panes: [newPane(x.id)] })
+    for (const x of sessionsResult.value) if (!placed.has(x.id)) next.push({ key: `tab-${x.id}`, dir: "row", panes: [newPane(x.id)], label: x.label })
     // Opening the panel opens a shell: the chat's own when it has some, a new one otherwise.
     if (!next.length) {
       const pane = newPane()
@@ -370,10 +383,11 @@ export function TerminalPanel({ chatId, onClose, onAddToChat }: { chatId: string
     window.addEventListener("pointerup", up)
   }
 
-  const add = () => {
-    const pane = newPane()
+  // A new tab: a plain shell, or one running a project script.
+  const add = (run?: string) => {
+    const pane = newPane(undefined, run)
     const key = `tab-${pane.key}`
-    setTabs((all) => [...all, { key, dir: "row", panes: [pane] }])
+    setTabs((all) => [...all, { key, dir: "row", panes: [pane], label: run }])
     setTab(key)
   }
   const split = (dir: "row" | "col") =>
@@ -431,9 +445,10 @@ export function TerminalPanel({ chatId, onClose, onAddToChat }: { chatId: string
         >
           <TabList label={t("workspace.terminal")} className="min-w-0 flex-1 flex-nowrap overflow-x-auto">
             {tabs.map((s, i) => (
-              <Tab key={s.key} id={s.key} onClose={() => close(s.panes.map((p) => p.key))} closeLabel={t("workspace.closeShellNamed", { n: i + 1 })}>
-                <span className={cx(s.panes.every((p) => p.ended) && "text-dim")}>
-                  {t("workspace.shell", { n: i + 1 })}
+              <Tab key={s.key} id={s.key} onClose={() => close(s.panes.map((p) => p.key))} closeLabel={t("workspace.closeShellNamed", { name: s.label || t("workspace.shell", { n: i + 1 }) })}>
+                <span className={cx("flex items-center gap-1.5 whitespace-nowrap", s.panes.every((p) => p.ended) && "text-dim")}>
+                  {s.label && <Play className="size-3" />}
+                  {s.label || t("workspace.shell", { n: i + 1 })}
                   {s.panes.length > 1 && <span className="text-dim">{` · ${s.panes.length}`}</span>}
                 </span>
               </Tab>
@@ -453,8 +468,28 @@ export function TerminalPanel({ chatId, onClose, onAddToChat }: { chatId: string
               </Tooltip>
             </>
           )}
+          {scripts.length > 0 && (
+            <Menu
+              label={t("workspace.runScript")}
+              trigger={
+                <IconButton label={t("workspace.runScript")} size="sm">
+                  <Play className="size-3.5" />
+                </IconButton>
+              }
+            >
+              {scripts.map((x) => (
+                <MenuItem key={x.name} onAction={() => add(x.name)}>
+                  <span className="flex min-w-0 items-baseline gap-3">
+                    <span className="shrink-0 text-fg">{x.name}</span>
+                    <span className="max-w-64 truncate font-mono text-sm text-muted">{x.command}</span>
+                  </span>
+                </MenuItem>
+              ))}
+            </Menu>
+          )}
+          <LocalServers chatId={chatId} onOpenUrl={onOpenUrl} />
           <Tooltip content={t("workspace.newShell")}>
-            <IconButton label={t("workspace.newShell")} size="sm" onPress={add}>
+            <IconButton label={t("workspace.newShell")} size="sm" onPress={() => add()}>
               <Plus className="size-3.5" />
             </IconButton>
           </Tooltip>
@@ -469,6 +504,7 @@ export function TerminalPanel({ chatId, onClose, onAddToChat }: { chatId: string
                 <Shell
                   chatId={chatId}
                   sessionId={p.session}
+                  run={p.run}
                   visible={tab === s.key}
                   onSession={(id) => patchPane(p.key, { session: id })}
                   onEnded={() => patchPane(p.key, { ended: true })}
@@ -500,3 +536,63 @@ export function TerminalPanel({ chatId, onClose, onAddToChat }: { chatId: string
 }
 
 
+
+// The servers running from the chat's folder (a dev server an agent or a shell started): open one in the chat's
+// browser, or stop it. Read again each time the list opens.
+function LocalServers({ chatId, onOpenUrl }: { chatId: string; onOpenUrl: (url: string) => void }) {
+  const invalidate = useInvalidate()
+  return (
+    <Popover
+      label={t("workspace.servers")}
+      placement="top end"
+      onOpenChange={(open) => open && invalidate(["localServers"])}
+      trigger={
+        <Tooltip content={t("workspace.servers")}>
+          <IconButton label={t("workspace.servers")} size="sm">
+            <Server className="size-3.5" />
+          </IconButton>
+        </Tooltip>
+      }
+    >
+      {(close) => <ServerList chatId={chatId} onOpenUrl={(url) => (onOpenUrl(url), close())} />}
+    </Popover>
+  )
+}
+
+function ServerList({ chatId, onOpenUrl }: { chatId: string; onOpenUrl: (url: string) => void }) {
+  const { items, loading, failed } = useReading(localServersAtom(chatId))
+  const stop = useMutation(mutations.stopServer)
+  return (
+    <div className="flex w-80 flex-col gap-1 p-2">
+      <p className="px-2 py-1 text-sm font-medium">{t("workspace.servers")}</p>
+      {loading ? (
+        <p className="px-2 py-1.5 text-sm text-muted">{t("common.checking")}</p>
+      ) : failed ? (
+        <p className="px-2 py-1.5 text-sm text-warning">{t("common.loadFailed")}</p>
+      ) : !items.length ? (
+        <p className="px-2 py-1.5 text-sm text-muted">{t("workspace.noServers")}</p>
+      ) : (
+        items.map((s) => (
+          <div key={s.pid} className="flex items-center gap-2 rounded-control px-2 py-1">
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-sm text-fg">{s.command}</span>
+              <span className="flex flex-wrap gap-x-2">
+                {s.ports.map((port) => (
+                  <Button key={port} variant="ghost" size="sm" className="h-auto gap-1 p-0 font-mono text-sm text-accent-text data-hovered:bg-transparent data-hovered:underline" onPress={() => onOpenUrl(`http://localhost:${port}`)}>
+                    <Globe className="size-3" />
+                    {`localhost:${port}`}
+                  </Button>
+                ))}
+              </span>
+            </span>
+            <Tooltip content={t("workspace.stopServer")}>
+              <IconButton label={t("workspace.stopServer")} size="sm" onPress={() => void stop({ params: { id: chatId, pid: s.pid }, reactivityKeys: ["localServers"] }).catch(() => undefined)}>
+                <Square className="size-3" />
+              </IconButton>
+            </Tooltip>
+          </div>
+        ))
+      )}
+    </div>
+  )
+}

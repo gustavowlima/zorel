@@ -21,6 +21,7 @@ const RETRIES = 5
 export function Shell({
   chatId,
   sessionId,
+  run,
   visible,
   onSession,
   onEnded,
@@ -29,6 +30,7 @@ export function Shell({
 }: {
   chatId: string
   sessionId: string | undefined
+  run?: string | undefined // a new session runs this project script
   visible: boolean
   onSession: (id: string) => void
   onEnded: () => void
@@ -43,6 +45,7 @@ export function Shell({
   handlers.current = { onSession, onEnded, onOpenFile }
   // The session this pane is on: known up front when reattaching, learned from the first frame when new.
   const session = useRef(sessionId)
+  const script = useRef(run) // read once: only the session's first connection runs it
 
   useEffect(() => {
     const el = box.current
@@ -83,7 +86,7 @@ export function Shell({
     const connect = () => {
       const url = new URL("/api/terminals", location.href)
       url.protocol = location.protocol === "https:" ? "wss:" : "ws:"
-      url.search = new URLSearchParams({ chat: chatId, cols: String(term.cols), rows: String(term.rows), ...(session.current && { session: session.current }) }).toString()
+      url.search = new URLSearchParams({ chat: chatId, cols: String(term.cols), rows: String(term.rows), ...(session.current ? { session: session.current } : script.current ? { run: script.current } : {}) }).toString()
       const socket = new WebSocket(url)
       ws = socket
       socket.binaryType = "arraybuffer"
@@ -138,7 +141,15 @@ export function Shell({
       resize.dispose()
       selected.dispose()
       paths.dispose()
-      ws?.close()
+      // Unmounted before the server named the session (React's dev double mount, or a quick close): that
+      // shell would run on unseen, so end it as soon as its id comes.
+      if (!session.current && ws?.readyState === WebSocket.CONNECTING) {
+        const orphan = ws
+        orphan.onclose = null
+        orphan.onmessage = (e) => {
+          if (typeof e.data === "string" && (JSON.parse(e.data) as { t?: string }).t === "s") orphan.send(JSON.stringify({ t: "k" }))
+        }
+      } else ws?.close()
       term.dispose()
     }
   }, [chatId])

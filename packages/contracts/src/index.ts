@@ -187,8 +187,14 @@ export type EngineCommand = typeof EngineCommand.Type
 
 // A shell of the chat's Terminal panel (it outlives the panel; see apps/server/src/terminals.ts). busy: something
 // runs in it, so closing it asks first.
-export const TerminalSession = Schema.Struct({ id: Schema.String, n: Schema.Number, ended: Schema.Boolean, busy: Schema.Boolean })
+export const TerminalSession = Schema.Struct({ id: Schema.String, n: Schema.Number, label: Schema.NullOr(Schema.String), ended: Schema.Boolean, busy: Schema.Boolean })
 export type TerminalSession = typeof TerminalSession.Type
+// A script of the project's package.json; running it opens a Terminal tab (GET /api/terminals?run=name).
+export const ProjectScript = Schema.Struct({ name: Schema.String, command: Schema.String })
+export type ProjectScript = typeof ProjectScript.Type
+// A process listening on TCP ports whose working folder is the chat's (a dev server an agent or a shell started).
+export const LocalServer = Schema.Struct({ pid: Schema.Number, command: Schema.String, ports: Schema.Array(Schema.Number) })
+export type LocalServer = typeof LocalServer.Type
 // A file to open in the computer's default app, from a path printed in the terminal (relative to the chat's folder).
 export const OpenFile = Schema.Struct({ path: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1000)) })
 
@@ -429,6 +435,9 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.get("commands", "/api/chats/:id/commands", { params: idParam, success: Schema.Array(EngineCommand), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.get("terminals", "/api/chats/:id/terminals", { params: idParam, success: Schema.Array(TerminalSession), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("closeTerminal", "/api/chats/:id/terminals/:terminal", { params: Schema.Struct({ id: Schema.String, terminal: Schema.String }) }))
+      .add(HttpApiEndpoint.get("scripts", "/api/chats/:id/scripts", { params: idParam, success: Schema.Array(ProjectScript), error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.get("servers", "/api/chats/:id/servers", { params: idParam, success: Schema.Array(LocalServer), error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.delete("stopServer", "/api/chats/:id/servers/:pid", { params: Schema.Struct({ id: Schema.String, pid: Schema.NumberFromString }), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("openFile", "/api/chats/:id/open", { params: idParam, payload: OpenFile, error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
       .add(HttpApiEndpoint.post("consolidate", "/api/chats/:id/consolidate", { params: idParam, success: Chat, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
       // What one turn changed in the workspace, and undoing it (restores the files to the checkpoint before it).

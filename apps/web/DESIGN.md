@@ -316,6 +316,8 @@ Compactos e diretos, com aperto físico ao pressionar.
 - Uma aba divide em até 4 painéis, lado a lado ou empilhados (botões na barra); cada painel é um shell, com × no hover quando há mais de um.
 - Links: URLs abrem numa aba nova; caminhos de arquivo (src/a.ts:12) abrem o arquivo no app padrão do computador, só dentro da pasta do chat.
 - Selecionar texto mostra "Add to chat": o trecho vai para o campo de mensagem num bloco de código, depois do que já está digitado.
+- **Rodar um script** (▷ na barra, só quando a pasta tem `package.json` com scripts): menu com nome e comando numa linha; escolher abre uma aba com o nome do script (ícone ▷) que roda `<gerenciador> run <nome>` (bun, pnpm, yarn ou npm, pelo lockfile). A aba é um shell como as outras: o processo segue rodando ao desconectar e fechar a aba o encerra.
+- **Servidores** (ícone de servidor): popover com os processos que escutam uma porta TCP e cuja pasta de trabalho é a do chat (os dev servers que um agente ou um shell subiu), cada porta como link `localhost:N` que abre no Navegador do chat, e ■ para parar (SIGTERM). Lido de novo a cada abertura.
 - xterm.js com as cores dos tokens (fundo `code`, texto secundário, seleção accent-soft) e a fonte mono; o tamanho segue o painel.
 
 ### Menu de contexto
