@@ -64,7 +64,7 @@ export function Rail({
     { key: "knowledge", icon: <BookOpen />, label: t("nav.knowledge"), active: route.view === "knowledge", go: () => go({ view: "knowledge" }) }
   ]
   return (
-    <nav aria-label={t("nav.label")} className="rail-top electrobun-webkit-app-region-drag flex w-15 shrink-0 flex-col items-center gap-1 border-r border-subtle pt-3 pb-3">
+    <nav aria-label={t("nav.label")} className="rail-top app-drag flex w-15 shrink-0 flex-col items-center gap-1 border-r border-subtle pt-3 pb-3">
       <span className="mb-1 flex size-10 items-center justify-center">
         <Logo className="size-5" />
       </span>
@@ -92,7 +92,7 @@ export function Rail({
 
 function RailItem({ label, active, onPress, count, children }: { label: string; active: boolean; onPress: () => void; count?: number | undefined; children: ReactNode }) {
   return (
-    <span className="electrobun-webkit-app-region-no-drag relative">
+    <span className="relative">
       {/* The current place's wash slides from the previous one. */}
       {active && <Marker id="rail-current" className="absolute inset-0 rounded-card bg-hover" />}
       <Tooltip content={label} placement="right">
@@ -236,7 +236,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   return (
     <nav aria-label={t("nav.chats")} className="flex w-62 shrink-0 flex-col overflow-hidden pt-0 pb-3 pl-2">
       {/* In the desktop app the top of the list is also the title bar (it drags the window). */}
-      <div className="brand-row electrobun-webkit-app-region-drag h-3 shrink-0" />
+      <div className="brand-row app-drag h-3 shrink-0" />
 
       {/* Chats (without a project) first, then Projects; each section folds, and the list scrolls under the pages.
           Right-click (or the Menu key) on a chat or a project opens its menu. */}
@@ -470,7 +470,7 @@ function UsageFoot({ active }: { active: boolean }) {
     )
   // One ring per subscription, stacked in the rail: each has its own card on hover or focus and opens Usage.
   return (
-    <div className="electrobun-webkit-app-region-no-drag flex flex-col items-center gap-1">
+    <div className="flex flex-col items-center gap-1">
       {rows.slice(0, MAX_FOOT_ROWS).map((r) => (
         <Tooltip key={r.account.id} content={<UsageDetail rows={[r]} />} placement="right">
           <Button

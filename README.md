@@ -44,8 +44,8 @@ Requer [Bun](https://bun.sh) 1.4+.
 bun install
 bun run dev            # server em :4317 e web em http://localhost:5173
 bun run start          # build do web + um processo só em http://127.0.0.1:4317
-bun run desktop        # app desktop (Electrobun) em modo dev
-bun run desktop:build  # gera .app, .dmg e pacote de atualização em apps/desktop/artifacts
+bun run desktop        # app desktop (Electron) em modo dev
+bun run desktop:build  # gera .app e .dmg em apps/desktop/artifacts
 bun run lint            # Biome
 bun run test
 bun run typecheck
@@ -91,12 +91,12 @@ apps/web             Vite + React 19 + Tailwind v4
   styles.css, ui/     design system (tokens --z-*, primitivas sobre React Aria via shadcn)
   state.ts           dados, rota (hash) e contexto
   features/          chat/canal, projeto e agentes, memórias e skills, ferramentas e configurações, seletor de modelo
-apps/desktop         Electrobun: processo principal em Bun sobe o server e abre a janela nativa
+apps/desktop         Electron: janela; o server roda como processo filho (binário Bun compilado no pacote)
 ```
 
 ## Distribuição
 
-O CI (`.github/workflows/ci.yml`) roda typecheck, testes e build em todo push e PR. Num push na `main`, ele também gera o app macOS como artefato. A assinatura e a notarização ligam sozinhas quando estes segredos existem no repositório: `ELECTROBUN_DEVELOPER_ID`, `ELECTROBUN_APPLEID`, `ELECTROBUN_APPLEIDPASS` e `ELECTROBUN_TEAMID`. Sem eles, o app sai sem assinatura e serve para uso local. O app estável é um autoextrator: na primeira execução ele se instala no lugar onde está. Rode-o a partir de `/Applications` (arraste pelo `.dmg`). Rodado de dentro de um volume externo, a instalação falha. O ícone tem como fonte `apps/desktop/assets/icon.svg`, e `bun run --cwd apps/desktop icons` gera os tamanhos.
+O CI (`.github/workflows/ci.yml`) roda typecheck, testes e build em todo push e PR. Num push na `main`, ele também gera o app macOS como artefato. A assinatura (Developer ID) e a notarização ligam quando estes segredos existem no repositório: `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` e `APPLE_TEAM_ID`. Sem eles o pacote sai sem assinatura, e o macOS atual não o executa; para uso local rode `bun run desktop`. O ícone tem como fonte `apps/desktop/assets/icon.svg`, e `bun run --cwd apps/desktop icons` gera o `icon.png` (o electron-builder faz os tamanhos).
 
 ## Arquitetura
 
