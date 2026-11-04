@@ -20,6 +20,7 @@ import { QueuePanel, useQueue } from "./queue.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { chatDelta, Delta, type Focus, TerminalPanel, TurnChanges, WorkspacePanel } from "./workspace.tsx"
 import { ModelPicker } from "./model-picker.tsx"
+import { GitControl } from "./git.tsx"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import {
   Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, Globe, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
@@ -252,6 +253,7 @@ function ChatHeader({
             {delta.added + delta.removed > 0 && <Delta {...delta} />}
           </Button>
         )}
+        {workspace && <GitControl chatId={chat.id} />}
         <Button size="sm" variant={browserOpen ? "secondary" : "ghost"} aria-expanded={browserOpen} onPress={onBrowser} className="rounded-full">
           <Globe />
           {t("browser.title")}

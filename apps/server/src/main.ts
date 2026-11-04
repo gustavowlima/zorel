@@ -1,5 +1,5 @@
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS } from "@zero/contracts"
+import { Api, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS } from "@zero/contracts"
 import { ZeroRpc } from "@zero/contracts/events"
 import { Effect, Layer, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -8,7 +8,8 @@ import { HttpApiBuilder, HttpApiError } from "effect/http-api"
 import { existsSync, mkdirSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, normalize, resolve } from "node:path"
-import { consolidate, DataDir, prepare } from "./chat.ts"
+import { ask, consolidate, DataDir, prepare } from "./chat.ts"
+import * as Git from "./git.ts"
 import { MAX_AFTER } from "./context.ts"
 
 const CHARS_PER_TOKEN = 4 // rough, provider-neutral: the meter says it is an estimate
@@ -123,6 +124,16 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
     const audit = yield* Audit
     const pricing = yield* Pricing
     const services = yield* Effect.context<Store | Engines | DataDir>()
+    // git/gh refusals go back to the person as GitFailed with git's own message.
+    const gitTry = <A>(f: () => Promise<A>) =>
+      Effect.tryPromise({ try: f, catch: (e) => new GitFailed({ message: e instanceof Error ? e.message : String(e) }) })
+    // A git step in the audit log, on the chat's project.
+    const gitAudit = (chatId: string, a: (typeof Actions)[keyof typeof Actions], after: Record<string, unknown>) =>
+      Effect.gen(function* () {
+        const chat = yield* store.chat(chatId)
+        const project = chat?.projectId ? yield* store.project(chat.projectId) : undefined
+        yield* audit.record(a, { target: { id: project?.id ?? chatId, name: project?.name ?? chat?.title ?? chatId }, after })
+      })
     // The folder the chat's agents and shells work in.
     const chatRoot = (id: string) =>
       Effect.gen(function* () {
@@ -169,6 +180,50 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
       .handle("closeTerminal", ({ params }) =>
         Effect.sync(() => {
           if (terminalsOf(params.id).some((s) => s.id === params.terminal)) closeTerminal(params.terminal)
+        })
+      )
+      .handle("git", ({ params }) => Effect.flatMap(chatRoot(params.id), (root) => Effect.promise(() => Git.status(root))))
+      // The chat's model drafts the message from the diff (commit) or the commits ahead of the default branch (PR).
+      .handle("gitDraft", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const root = yield* chatRoot(params.id)
+          const chat = (yield* store.chat(params.id))!
+          const prompt = yield* gitTry(() => (payload.kind === "commit" ? Git.commitDraftPrompt(root) : Git.prDraftPrompt(root)))
+          const answer = yield* ask(chat.model, prompt).pipe(Effect.provide(services))
+          if (answer.error || !answer.text.trim()) return yield* new GitFailed({ message: answer.error ?? "The model gave no answer." })
+          if (payload.kind === "pr") return Git.parsePrDraft(answer.text)
+          const [title = "", ...rest] = Git.cleanMessage(answer.text).split("\n")
+          return { title, body: rest.join("\n").trim() }
+        })
+      )
+      .handle("gitCommit", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const root = yield* chatRoot(params.id)
+          const sha = yield* gitTry(() => Git.commit(root, payload.message))
+          yield* gitAudit(params.id, Actions.gitCommitted, { commit: sha, message: payload.message.split("\n")[0] })
+          return { sha }
+        })
+      )
+      .handle("gitPush", ({ params }) =>
+        Effect.gen(function* () {
+          const root = yield* chatRoot(params.id)
+          yield* gitTry(() => Git.push(root))
+          yield* gitAudit(params.id, Actions.gitPushed, {})
+        })
+      )
+      .handle("gitPr", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const root = yield* chatRoot(params.id)
+          const url = yield* gitTry(() => Git.createPr(root, payload.title, payload.body))
+          yield* gitAudit(params.id, Actions.gitPrCreated, { url, title: payload.title })
+          return { url }
+        })
+      )
+      .handle("gitBranch", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const root = yield* chatRoot(params.id)
+          yield* gitTry(() => Git.switchToNewBranch(root, payload.name))
+          yield* gitAudit(params.id, Actions.gitBranched, { branch: payload.name })
         })
       )
       .handle("scripts", ({ params }) => Effect.map(chatRoot(params.id), scriptsOf))

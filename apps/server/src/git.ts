@@ -1,0 +1,133 @@
+// Git from the chat (the project's own repository, in the folder the chat's agents work in): where the branch is,
+// what changed, and the three steps that ship it — commit, push, open a pull request (GitHub, through the `gh`
+// CLI when it is installed and signed in). Messages are written by the person or drafted by the chat's model from
+// the diff, in the style of the repository's recent commits. Nothing here runs without the person pressing it.
+import type { GitStatus } from "@zero/contracts"
+
+const MAX_DIFF = 40_000 // diff text handed to the model for a draft
+const OUT_CAP = 2_000 // git's message kept for an error
+
+export class GitFailed extends Error {}
+
+async function run(cwd: string, cmd: string[], allowFail = false): Promise<string> {
+  const p = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } })
+  const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited])
+  if (code !== 0 && !allowFail) throw new GitFailed((err.trim() || out.trim() || `${cmd[0]} exited with ${code}`).slice(0, OUT_CAP))
+  return code === 0 ? out : ""
+}
+const git = (cwd: string, args: string[], allowFail = false) => run(cwd, ["git", ...args], allowFail)
+
+const ghPath = Bun.which("gh") // the GitHub CLI, if installed (looked up once)
+const gh = () => ghPath
+
+// "## main...origin/main [ahead 2, behind 1]" and one " M file" line per change.
+export function parsePorcelain(out: string) {
+  const [head = "", ...rest] = out.split("\n")
+  const m = /^## (?:No commits yet on )?([^.\s]+)(?:\.\.\.(\S+))?(?: \[(?:ahead (\d+))?(?:, )?(?:behind (\d+))?\])?/.exec(head)
+  return {
+    branch: m?.[1] && m[1] !== "HEAD" ? m[1] : null,
+    upstream: m?.[2] ?? null,
+    ahead: Number(m?.[3] ?? 0),
+    behind: Number(m?.[4] ?? 0),
+    files: rest.filter((l) => l.trim()).map((l) => l.slice(3))
+  }
+}
+
+export async function status(cwd: string): Promise<GitStatus> {
+  const inside = (await git(cwd, ["rev-parse", "--is-inside-work-tree"], true)).trim() === "true"
+  if (!inside) return { repo: false, branch: null, base: null, upstream: null, ahead: 0, behind: 0, files: [], remote: false, gh: false, pr: null }
+  const s = parsePorcelain(await git(cwd, ["status", "--porcelain=v1", "-b", "--untracked-files=all"]))
+  const remote = (await git(cwd, ["remote"], true)).trim().length > 0
+  let pr: GitStatus["pr"] = null
+  if (gh() && remote && s.branch) {
+    const out = await run(cwd, [gh()!, "pr", "view", "--json", "number,url,state,title"], true)
+    try {
+      const v = JSON.parse(out) as { number: number; url: string; state: string; title: string }
+      pr = { number: v.number, url: v.url, state: v.state.toLowerCase(), title: v.title }
+    } catch {}
+  }
+  return { repo: true, ...s, base: await baseBranch(cwd), remote, gh: !!gh(), pr }
+}
+
+// Everything in the folder goes into the commit (what the panel shows is what gets committed).
+export async function commit(cwd: string, message: string) {
+  await git(cwd, ["add", "-A"])
+  await git(cwd, ["commit", "-m", message])
+  return (await git(cwd, ["rev-parse", "--short", "HEAD"])).trim()
+}
+
+// To the branch's upstream, or a new one of the same name on origin.
+export async function push(cwd: string) {
+  const s = await status(cwd)
+  if (!s.branch) throw new GitFailed("Not on a branch.")
+  await git(cwd, s.upstream ? ["push"] : ["push", "-u", "origin", s.branch])
+}
+
+export async function createPr(cwd: string, title: string, body: string) {
+  if (!gh()) throw new GitFailed("The GitHub CLI (gh) is not installed.")
+  await push(cwd)
+  const out = await run(cwd, [gh()!, "pr", "create", "--title", title, "--body", body])
+  return out.trim().split("\n").at(-1) ?? ""
+}
+
+// A new branch from where the folder is now (the changes come along).
+export async function switchToNewBranch(cwd: string, name: string) {
+  await git(cwd, ["check-ref-format", "--branch", name])
+  await git(cwd, ["switch", "-c", name])
+}
+
+// ---------- drafts: what the model reads to write a message ----------
+
+const clip = (s: string) => (s.length > MAX_DIFF ? `${s.slice(0, MAX_DIFF)}\n[… diff cut at ${MAX_DIFF} characters]` : s)
+
+export async function commitDraftPrompt(cwd: string) {
+  // The diff against the last commit, plus new files (read, not staged: the index is left as it is).
+  const [tracked, untracked, log] = await Promise.all([
+    git(cwd, ["diff", "HEAD"], true),
+    git(cwd, ["ls-files", "--others", "--exclude-standard"], true),
+    git(cwd, ["log", "-12", "--format=%B%n---"], true)
+  ])
+  const added = await Promise.all(
+    untracked.split("\n").filter(Boolean).slice(0, 50).map(async (f) => `new file ${f}\n${(await Bun.file(`${cwd}/${f}`).text().catch(() => "")).slice(0, 4000)}`)
+  )
+  const diff = [tracked, ...added].join("\n")
+  if (!diff.trim()) throw new GitFailed("Nothing to commit.")
+  return [
+    "Write the commit message for this diff, in the style of the repository's recent commits below (language, length, prefixes, trailers).",
+    "Answer with the message only: a subject line, then a blank line and a short body if it helps. No code fences.",
+    `Recent commits:\n${log.trim() || "(none)"}`,
+    `Diff:\n${clip(diff)}`
+  ].join("\n\n")
+}
+
+// The default branch: origin's HEAD when known, else main or master if one exists.
+async function baseBranch(cwd: string): Promise<string | null> {
+  const head = (await git(cwd, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], true)).trim()
+  if (head) return head.replace(/^origin\//, "")
+  for (const b of ["main", "master"]) if ((await git(cwd, ["rev-parse", "--verify", "--quiet", b], true)).trim()) return b
+  return null
+}
+
+export async function prDraftPrompt(cwd: string) {
+  const base = `origin/${(await baseBranch(cwd)) ?? "main"}`
+  const [log, stat] = await Promise.all([git(cwd, ["log", `${base}..HEAD`, "--format=%B%n---"], true), git(cwd, ["diff", `${base}...HEAD`, "--stat"], true)])
+  if (!log.trim()) throw new GitFailed(`No commits ahead of ${base}.`)
+  return [
+    "Write the pull request for these commits.",
+    'Answer with JSON only: {"title": "…", "body": "…"}. The body is short markdown: what changed and why, then how it was tested if the commits say.',
+    `Commits:\n${clip(log)}`,
+    `Files:\n${stat}`
+  ].join("\n\n")
+}
+
+// The model's answer to a PR draft (tolerates a fence or text around the JSON).
+export function parsePrDraft(text: string): { title: string; body: string } {
+  try {
+    const v = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as { title?: unknown; body?: unknown }
+    if (typeof v.title === "string" && v.title.trim()) return { title: v.title.trim().slice(0, 200), body: typeof v.body === "string" ? v.body.trim() : "" }
+  } catch {}
+  const [title = "", ...rest] = text.trim().split("\n")
+  return { title: title.replace(/^#+\s*/, "").slice(0, 200), body: rest.join("\n").trim() }
+}
+
+export const cleanMessage = (text: string) => text.trim().replace(/^```\w*\n?|\n?```$/g, "").trim()

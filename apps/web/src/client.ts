@@ -26,7 +26,7 @@ export class Live extends AtomRpc.Service<Live>()("Live", {
 
 // ---------- CRUD queries (one key per resource) ----------
 
-export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "context" | "terminals" | "scripts" | "localServers"
+export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "context" | "terminals" | "scripts" | "localServers" | "git"
 
 export const projectsAtom = Zero.query("projects", "list", { reactivityKeys: ["projects"] })
 export const agentsAtom = Zero.query("agents", "list", { reactivityKeys: ["agents"] })
@@ -41,6 +41,7 @@ export const storageAtom = Zero.query("settings", "storage", { reactivityKeys: [
 // How full the next turn of a chat is (the composer's context meter); read again when the meter opens.
 export const commandsAtom = (id: string) => Zero.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
 export const terminalsAtom = (id: string) => Zero.query("chats", "terminals", { params: { id }, reactivityKeys: ["terminals"] })
+export const gitAtom = (id: string) => Zero.query("chats", "git", { params: { id }, reactivityKeys: ["git"] })
 export const scriptsAtom = (id: string) => Zero.query("chats", "scripts", { params: { id }, reactivityKeys: ["scripts"] })
 export const localServersAtom = (id: string) => Zero.query("chats", "servers", { params: { id }, reactivityKeys: ["localServers"] })
 export const contextAtom = (id: string) => Zero.query("chats", "context", { params: { id }, reactivityKeys: ["context"] })
@@ -72,6 +73,11 @@ export const mutations = {
   closeTerminal: Zero.mutation("chats", "closeTerminal"),
   openFile: Zero.mutation("chats", "openFile"),
   stopServer: Zero.mutation("chats", "stopServer"),
+  gitDraft: Zero.mutation("chats", "gitDraft"),
+  gitCommit: Zero.mutation("chats", "gitCommit"),
+  gitPush: Zero.mutation("chats", "gitPush"),
+  gitPr: Zero.mutation("chats", "gitPr"),
+  gitBranch: Zero.mutation("chats", "gitBranch"),
   consolidate: Zero.mutation("chats", "consolidate"),
   createMemory: Zero.mutation("memories", "create"),
   updateMemory: Zero.mutation("memories", "update"),

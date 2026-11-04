@@ -51,6 +51,13 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
     })
   })
 
+// One question to a model, no tools, no history: its whole answer (git drafts).
+export const ask = Effect.fn("ask")(function* (model: string, text: string) {
+  const engines = yield* Engines
+  const dataDir = yield* DataDir
+  return yield* collect(engines.run({ model, system: "", messages: [{ role: "user", text }], cwd: join(dataDir, "runs", "_ask") }))
+})
+
 // ---------- consolidation (continuous learning) ----------
 
 const collect = (events: Stream.Stream<EngineEvent>) =>
