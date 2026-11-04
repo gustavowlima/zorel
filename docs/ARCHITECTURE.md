@@ -120,6 +120,7 @@ RpcGroup.make(
   - **loop:** o mesmo passo (tipo, título e começo da saída) 4 vezes seguidas encerra o turno dizendo qual;
   - **falhas:** 6 passos seguidos com erro encerram o turno.
   
+- **Retomar no reset** (ideia do T3 Code, automática): quando o turno falha sem ter agido e **todas** as rotas do chat estão no limite de uso, o chat grava `resumeAt` = o reset mais próximo. O tick de 30 s das rotinas manda nessa hora "The usage limit has reset. Continue where you left off." (clientId `resume:<chat>:<hora>`, idempotente; com tudo pausado, fica na fila). O chat mostra a faixa com Cancel; escrever você mesmo também cancela.
 - **Pausar tudo** (ideia do Tucano): `PUT /api/pause` grava a preferência `paused`; pausar interrompe os turnos rodando, e enquanto pausado os turnos novos ficam `queued` (o worker do chat não começa) e as rotinas não disparam (seguem devidas); despausar acorda a fila de cada chat. Sobrevive a reiniciar o servidor.
 - **Notificações** (no cliente): o fluxo `subscribeStatus` que já alimenta a barra dispara uma notificação do sistema quando um chat passa a esperar você, falha ou termina enquanto você olha outro lugar; ligada em Settings › General.
 

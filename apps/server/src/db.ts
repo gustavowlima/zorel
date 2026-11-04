@@ -220,17 +220,20 @@ export const repository = (db: Db) => {
         )
         return (yield* chat(id))!
       }).pipe(orDie),
-    updateChat: (id: string, input: { title?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | null | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
+    updateChat: (id: string, input: { resumeAt?: null | undefined; title?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | null | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
       Effect.gen(function* () {
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            const set = defined({ title: input.title, model: input.model, accountId: input.accountId, effort: input.effort, failover: input.failover })
+            const set = defined({ title: input.title, model: input.model, accountId: input.accountId, effort: input.effort, failover: input.failover, resumeAt: input.resumeAt })
             if (Object.keys(set).length) yield* tx.update(chats).set(set).where(eq(chats.id, id))
             if (input.agentIds) yield* setMembers(tx, id, input.agentIds)
           })
         )
         return yield* chat(id)
       }).pipe(orDie),
+    setResumeAt: (id: string, resumeAt: number | null) => orDie(db.update(chats).set({ resumeAt }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
+    // Chats whose usage-limit pause is over.
+    dueResumes: (at: number) => orDie(db.select({ id: chats.id, resumeAt: chats.resumeAt }).from(chats).where(sql`${chats.resumeAt} <= ${at}`)),
     setWorktree: (id: string, worktree: string | null) => orDie(db.update(chats).set({ worktree }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
     setSummary: (id: string, summary: string, until: number) => orDie(db.update(chats).set({ summary, summaryUntil: until }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
     removeChat: (id: string) => orDie(db.delete(chats).where(eq(chats.id, id)).pipe(Effect.asVoid)),

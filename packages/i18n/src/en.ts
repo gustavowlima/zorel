@@ -83,6 +83,7 @@ export const en = {
     noAgent: "No agent"
   },
   chat: {
+    resumesAt: "Every account is at its usage limit. This chat continues by itself at {time}.",
     untitled: "New chat",
     label: "Chat",
     members: "Agents in this chat: {names}",

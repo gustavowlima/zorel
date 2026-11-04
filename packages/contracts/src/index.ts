@@ -152,6 +152,7 @@ export const Chat = Schema.Struct({
   failover: Schema.NullOr(FailoverList), // null: the lead agent's list
   position: Schema.NullOr(Schema.Number), // manual order inside its group; null: by recent activity, above the placed ones
   worktree: Schema.NullOr(Schema.String), // the git worktree the chat works in (its own branch); null: the project folder
+  resumeAt: Schema.NullOr(Schema.Number), // all routes hit their limit: it continues by itself then (null: no)
   preview: Schema.NullOr(Schema.String), // start of the last message, one line (sidebar)
   lastAt: Schema.NullOr(Schema.Number), // when the last message was written
   createdAt: Schema.Number
@@ -390,7 +391,7 @@ const AgentDescription = LongText(300)
 export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access) })
 export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access) })
 export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)) })
-export const ChatPatch = Schema.Struct({ title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
+export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000) })
 export const MemoryPatch = Schema.Struct({ state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)) })
 export const NewMcpServer = Schema.Struct({

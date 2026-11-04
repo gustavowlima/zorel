@@ -136,3 +136,17 @@ test("agent versions: one per real change, with who made it; deleting the agent 
       expect(yield* r.agentVersions(a.id)).toEqual([])
     })
   ))
+
+test("resume after limit: due chats only, cleared by setting null", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const a = yield* r.createChat({ projectId: null, agentIds: [], model: "x/y" })
+      const b = yield* r.createChat({ projectId: null, agentIds: [], model: "x/y" })
+      yield* r.setResumeAt(a.id, 1000)
+      yield* r.setResumeAt(b.id, 5000)
+      expect((yield* r.dueResumes(2000)).map((c) => c.id)).toEqual([a.id])
+      yield* r.updateChat(a.id, { resumeAt: null })
+      expect(yield* r.dueResumes(2000)).toEqual([])
+      expect((yield* r.chat(b.id))!.resumeAt).toBe(5000)
+    })
+  ))
