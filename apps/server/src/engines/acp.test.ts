@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
-import { commandFor, kindOf, opencodeEnv, permission, writableRoots } from "./acp.ts"
+import { commandFor, gitCommonDir, kindOf, opencodeEnv, permission, writableRoots } from "./acp.ts"
 
 describe("acp", () => {
   test("maps ACP tool kinds to step kinds", () => {
@@ -32,6 +32,23 @@ describe("acp confinement", () => {
     expect(roots).toContain(realpathSync(cwd))
     expect(roots).toContain("/Users/someone/.opencode-x")
     expect(writableRoots("ask", cwd, [], "/Users/someone")).not.toContain(realpathSync(cwd))
+  })
+  test("a worktree's main .git is writable; a .git file the agent wrote (gitdir: /etc/x) adds nothing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "acp-git-"))
+    try {
+      const git = (...a: string[]) => Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd: join(dir, "repo") })
+      Bun.spawnSync(["git", "init", "-q", "repo"], { cwd: dir })
+      git("commit", "-q", "--allow-empty", "-m", "x")
+      git("worktree", "add", "-q", join(dir, "wt"))
+      expect(gitCommonDir(join(dir, "wt"))).toBe(realpathSync(join(dir, "repo", ".git")))
+      for (const forged of ["gitdir: /etc/x", "gitdir: /usr/x", `gitdir: ${join(dir, "repo", ".git", "worktrees", "other")}`]) {
+        writeFileSync(join(dir, "wt", ".git"), forged)
+        expect(gitCommonDir(join(dir, "wt"))).toBeUndefined()
+        expect(writableRoots("workspace", join(dir, "wt"), [])).not.toContain("/")
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
   // macOS (Seatbelt), or Linux with bubblewrap installed.
   test.skipIf(process.platform !== "darwin" && !(process.platform === "linux" && Bun.which("bwrap")))("the sandbox blocks writes outside the roots", () => {

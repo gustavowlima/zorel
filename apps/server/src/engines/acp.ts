@@ -14,7 +14,7 @@
 // OpenBot, own code).
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 import type { Access } from "@zorel/contracts"
 import { Stream } from "effect"
 import type { EngineEvent, NativeStep } from "../engines.ts"
@@ -75,12 +75,22 @@ const real = (p: string) => {
 }
 const quote = (p: string) => JSON.stringify(p) // Seatbelt strings use the same escapes as JSON
 
-// A git worktree keeps its index and refs in the main repository's .git: commits there need it writable.
-function gitCommonDir(cwd: string): string | undefined {
+// A git worktree keeps its index and refs in the main repository's .git: commits there need it writable. cwd/.git is
+// a file the agent itself can write, so its "gitdir:" is believed only for a real worktree: <repo>/.git/worktrees/<name>
+// whose own gitdir file (outside cwd, out of the agent's reach) points back at this .git.
+export function gitCommonDir(cwd: string): string | undefined {
   const dotGit = join(cwd, ".git")
   if (!existsSync(dotGit)) return undefined
   const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, "utf8").toString().trim())
-  return m ? dirname(dirname(resolve(cwd, m[1]!.trim()))) : undefined // <repo>/.git/worktrees/<name> → <repo>/.git
+  if (!m) return undefined
+  const gitdir = real(resolve(cwd, m[1]!.trim()))
+  const common = dirname(dirname(gitdir))
+  if (basename(dirname(gitdir)) !== "worktrees" || basename(common) !== ".git") return undefined
+  try {
+    return real(readFileSync(join(gitdir, "gitdir"), "utf8").trim()) === real(dotGit) ? common : undefined
+  } catch {
+    return undefined
+  }
 }
 
 // The folders a confined agent may write, by access level.

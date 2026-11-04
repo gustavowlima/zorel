@@ -21,7 +21,8 @@ import { DataDir, DbPath } from "./chat.ts"
 import { CONSOLIDATION_SYSTEM } from "./context.ts"
 import { Store } from "./db.ts"
 import { Engines, type EngineEvent, type Turn } from "./engines.ts"
-import { AppLive } from "./main.ts"
+import { AppLive, SESSION } from "./main.ts"
+import { LOGIN_PATH, SESSION_HEADER } from "@zorel/contracts/session"
 import { snippet } from "./context.ts"
 import { Accounts } from "./accounts.ts"
 import { Audit } from "./audit.ts"
@@ -105,6 +106,21 @@ const port = 40000 + Math.floor(Math.random() * 10000)
 const base = `http://localhost:${port}`
 let stop: () => Promise<void>
 
+// The owner's UI sends the session secret on every request (the desktop app as a header): so do these clients.
+// rawFetch is a client without it.
+const rawFetch = globalThis.fetch
+globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+  const req = new Request(input, init)
+  if (new URL(req.url).port === String(port) && !req.headers.has(SESSION_HEADER)) req.headers.set(SESSION_HEADER, SESSION)
+  return rawFetch(req)
+}, rawFetch)
+const RawWebSocket = globalThis.WebSocket
+globalThis.WebSocket = class extends RawWebSocket {
+  constructor(url: string | URL, protocols?: string | string[]) {
+    super(url, { headers: { [SESSION_HEADER]: SESSION }, ...(protocols ? { protocols: typeof protocols === "string" ? [protocols] : protocols } : {}) } as unknown as string[])
+  }
+} as typeof WebSocket
+
 beforeAll(async () => {
   const store = Store.layer(":memory:")
   const secrets = Layer.provideMerge(Secrets.memory(), store)
@@ -118,7 +134,7 @@ beforeAll(async () => {
 afterAll(() => stop())
 
 const api = <A, E>(f: (c: HttpApiClient.ForApi<typeof Api>) => Effect.Effect<A, E>) =>
-  Effect.runPromise(Effect.flatMap(HttpApiClient.make(Api, { baseUrl: base }), f).pipe(Effect.provide(FetchHttpClient.layer)))
+  Effect.runPromise(Effect.flatMap(HttpApiClient.make(Api, { baseUrl: base }), f).pipe(Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, globalThis.fetch)))
 
 // Real RPC client (WebSocket at /rpc), as the web uses it.
 const rpcLayer = () =>
@@ -304,12 +320,25 @@ test("errors at the boundary: invalid input 400, missing chat 404, another proje
 
 test("local only: an odd Host (DNS rebinding) and another site's Origin (CSRF) get 403", async () => {
   const { isLocalRequest } = await import("./main.ts")
-  expect(isLocalRequest({ host: "localhost:5173" })).toBe(true)
-  expect(isLocalRequest({ host: "127.0.0.1:4317", origin: "http://127.0.0.1:4317" })).toBe(true)
-  expect(isLocalRequest({ host: "evil.example:4317" })).toBe(false)
-  expect(isLocalRequest({ host: "localhost:4317", origin: "https://evil.example" })).toBe(false)
-  expect(isLocalRequest({ host: "localhost:4317", origin: "null" })).toBe(false)
-  expect(isLocalRequest({})).toBe(false)
+  const t = { [SESSION_HEADER]: "s" }
+  expect(isLocalRequest({ host: "localhost:5173", ...t }, "/api/x", "s")).toBe(true)
+  expect(isLocalRequest({ host: "127.0.0.1:4317", origin: "http://127.0.0.1:4317", cookie: "a=1; zorel=s" }, "/rpc", "s")).toBe(true)
+  expect(isLocalRequest({ host: "evil.example:4317", ...t }, "/api/x", "s")).toBe(false)
+  expect(isLocalRequest({ host: "localhost:4317", origin: "https://evil.example", ...t }, "/api/x", "s")).toBe(false)
+  expect(isLocalRequest({ host: "localhost:4317", origin: "null", ...t }, "/api/x", "s")).toBe(false)
+  expect(isLocalRequest({ host: "127.0.0.1:4317", origin: "http://127.0.0.1:3000", ...t }, "/api/x", "s")).toBe(false) // another local port
+  expect(isLocalRequest({}, "/api/x", "s")).toBe(false)
+  // Another process on this computer (an agent): local, no Origin, but no secret.
+  expect(isLocalRequest({ host: "127.0.0.1:4317" }, "/api/agents/a", "s")).toBe(false)
+  expect(isLocalRequest({ host: "127.0.0.1:4317", [SESSION_HEADER]: "wrong" }, "/rpc", "s")).toBe(false)
+  for (const open of ["/", "/assets/a.js", LOGIN_PATH, "/api/oauth/callback", "/api/hooks/abc"]) expect(isLocalRequest({ host: "127.0.0.1:4317" }, open, "s")).toBe(true)
+  expect((await rawFetch(`${base}/api/projects`)).status).toBe(403)
+  expect((await rawFetch(`${base}${LOGIN_PATH}?t=wrong`, { redirect: "manual" })).status).toBe(403)
+  const login = await rawFetch(`${base}${LOGIN_PATH}?t=${SESSION}`, { redirect: "manual" })
+  expect(login.status).toBe(302)
+  const cookie = login.headers.get("set-cookie")!
+  expect(cookie).toContain("HttpOnly")
+  expect((await rawFetch(`${base}/api/projects`, { headers: { cookie: cookie.split(";")[0]! } })).status).toBe(200)
 
   // "Simple" POST (text/plain) from another page and WebSocket from another origin: blocked before any effect.
   const res = await fetch(`${base}/api/projects`, { method: "POST", headers: { "content-type": "text/plain", origin: "https://evil.example" }, body: '{"name":"x","brief":""}' })
@@ -379,6 +408,11 @@ test("attachments: upload, a message with files, the engine gets paths; text inl
   const served = await fetch(`${base}/api/attachments/${note.json.id}`)
   expect(served.headers.get("content-type")).toContain("text/markdown")
   expect(await served.text()).toBe("# Deploy\nVercel on Fridays ✓")
+  expect(served.headers.get("content-security-policy")).toStartWith("sandbox")
+  expect(served.headers.get("content-disposition")).toStartWith("attachment") // markdown isn't shown as a page
+  const page = await up("report.html", "text/html", "<script>fetch('/api/chats')</script>")
+  expect((await fetch(`${base}/api/attachments/${page.json.id}`)).headers.get("content-disposition")).toStartWith("attachment")
+  expect((await fetch(`${base}/api/attachments/${png.json.id}`)).headers.get("content-disposition")).toStartWith("inline")
 
   const dir = join(tmpdir(), "zorel-test", "attachments", chat.id)
   expect(require("node:fs").existsSync(dir)).toBe(true)

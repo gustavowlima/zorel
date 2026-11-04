@@ -4,10 +4,17 @@ status: active
 updated: 2026-11-04
 
 ## current
-- fs-ops.ts (2026-11-04): ops de arquivo da aba Files; todo caminho passa por inside() (relative, cross-OS); delete vai para <dataDir>/trash/<id> (7 dias), restore desfaz; open/reveal por osCommand (mac/win/linux); openFile também usa inside+osCommand (antes era só `open` do macOS)
+- fs-ops.ts (2026-11-04): ops de arquivo da aba Files; todo caminho passa por inside() (relative, cross-OS); delete vai para <dataDir>/trash/<id> (7 dias), restore desfaz; open/reveal por osCommand (mac/win/linux; Windows abre com rundll32 url.dll,FileProtocolHandler, nunca cmd); openFile também usa inside+osCommand (antes era só `open` do macOS)
 
 - main.ts: HttpApi (contracts) + SSE POST /api/chats/:id/send + serve apps/web/dist; start() exportado (usado pelo desktop); escuta só 127.0.0.1
-- LocalOnly (middleware global): Host precisa ser localhost/127.0.0.1/::1 (DNS rebinding) e Origin, se houver, também local (CSRF); 403 caso contrário
+- LocalOnly (middleware global): Host local; Origin, se houver, igual à própria origem (new URL(origin).host === Host); /api e /rpc exigem o segredo da sessão (header x-zorel-token ou cookie zorel), menos /api/login, /api/oauth/callback e /api/hooks/; 403 caso contrário. Nomes em @zorel/contracts/session; segredo vem de ZOREL_SESSION (desktop, dev.ts) e é apagado do env; sem ele, aleatório e o link de login é impresso
+- nunca deixar segredo em process.env: engines/terminais/MCP herdam o env (ZOREL_DESKTOP_* também são lidos e apagados em browser.ts)
+- cartão de aprovação = objeto inteiro (policy.ts cardText/MAX_CARD_TEXT); acima do limite a ferramenta recusa; nunca .slice() num cartão
+- Claude engine abaixo de full: sandbox do Claude Code no managedSettings (canSandbox: darwin, ou linux com bwrap+socat); sem sandbox decideCommand só libera leitura simples dentro da pasta
+- acp gitCommonDir: só worktree real (gitdir aponta de volta para cwd/.git); nunca confiar em arquivo que o agente escreve
+- import (transfer.ts): rotinas/MCP desligados, full→ask, anexos fora de <dataDir>/attachments apagados
+- anexos: inline só INLINE_TYPES, resto attachment; CSP sandbox sempre; caminho tem que estar em <dataDir>/attachments
+- browser: webUrl() (só http/https) em navigate e newTab
 - serviços: Store → Secrets → (Engines, Tools) + DataDir; testes trocam Secrets.layer por Secrets.memory()
 - db.ts: migrations em array (nunca editar publicada); chat_members (ordem = position; primeiro é líder); messages.agent_id/steps; memories.kind fact|skill + title; índice FTS próprio memory_index (title + text); mcp_servers
 - lista vazia em IN/NOT IN vira (''); NULL faria NOT IN filtrar tudo

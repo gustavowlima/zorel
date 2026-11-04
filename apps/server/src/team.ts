@@ -304,11 +304,11 @@ export function updateInput(args: Record<string, unknown>, target: Agent, caller
   return out as AgentChanges
 }
 
-// The proposal card's text: the fields, one per line (instructions cut for the card; the whole text is written).
+// The proposal card's text: the fields, one per line, in full (what's written is what was shown).
 export const proposalText = (fields: Record<string, unknown>) =>
   Object.entries(fields)
     .filter(([, v]) => v !== undefined && v !== null && v !== "")
-    .map(([k, v]) => `${k}: ${typeof v === "string" ? (v.length > 1200 ? `${v.slice(0, 1200)}…` : v) : JSON.stringify(v)}`)
+    .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
     .join("\n")
 
 // Routines from the conversation (phase 7): list them, or propose one or its removal (both are approval cards).

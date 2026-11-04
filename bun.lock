@@ -13,12 +13,13 @@
     },
     "apps/desktop": {
       "name": "@zorel/desktop",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "electron-updater": "6.8.11",
       },
       "devDependencies": {
         "@types/node": "24.19.2",
+        "@zorel/contracts": "workspace:*",
         "electron": "45.0.0",
         "electron-builder": "26.18.0",
       },

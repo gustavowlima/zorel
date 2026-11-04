@@ -15,6 +15,7 @@ import type { Approver, EngineSession, NativeApproval } from "#server/engines/se
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
+import { cardText, TOO_LARGE } from "./engines/policy.ts"
 import { ASK_TOOL, createInputs, findAgent, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
@@ -293,7 +294,7 @@ export const makeRuntime = Effect.gen(function* () {
       const s = await step(`Task for ${target.name}`, TASK_TOOL.name)
       const mine = agent?.access ?? "workspace"
       if (narrower(target.access, mine) !== target.access) {
-        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: TASK_TOOL.name, summary: `${nameOf(agent)} wants ${target.name} (more access than ${nameOf(agent)}) to work on a task`, args: task.slice(0, 4000), cwd: null }))
+        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: TASK_TOOL.name, summary: `${nameOf(agent)} wants ${target.name} (more access than ${nameOf(agent)}) to work on a task`, args: task, cwd: null }))
         if (outcome === "denied" || outcome === "expired") {
           await finish(s, "refused")
           return textResult("The user declined. Do what you can yourself, or ask them.", true)
@@ -355,8 +356,10 @@ export const makeRuntime = Effect.gen(function* () {
       } catch (e) {
         return textResult(e instanceof Error ? e.message : String(e), true)
       }
+      const card = cardText(proposal.text)
+      if (!card) return textResult(TOO_LARGE, true)
       const s = await step(proposal.title, name)
-      const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: proposal.title, args: proposal.text.slice(0, 12_000), cwd: null }))
+      const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: proposal.title, args: card, cwd: null }))
       if (outcome === "denied" || outcome === "expired") {
         legacy.push({ tool: name, args: "", status: "refused", result: "" })
         await finish(s, "refused")
@@ -433,7 +436,7 @@ export const makeRuntime = Effect.gen(function* () {
         )
       const ask = async (title: string, fields: Record<string, unknown>) => {
         const s = await step(title, ROUTINES_TOOL.name)
-        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: ROUTINES_TOOL.name, summary: title, args: proposalText(fields), cwd: null }))
+        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: ROUTINES_TOOL.name, summary: title, args: proposalText(fields), cwd: null })) // prompt ≤ 8000: fits the card
         const ok = outcome === "approved" || outcome === "always"
         await finish(s, ok ? "ok" : "refused")
         return ok
@@ -531,7 +534,9 @@ export const makeRuntime = Effect.gen(function* () {
         const s = await step(browserStepTitle(name, args), name)
         const gate = browserRoute(perms, name, args, builtin.writes, askFirst)
         if (gate.approve) {
-          const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to ${browserStepTitle(name, args).toLowerCase()}`, args: JSON.stringify(args, null, 2).slice(0, 4000), cwd: null }, gate.alwaysKey))
+          const card = cardText(JSON.stringify(args, null, 2))
+          if (!card) return textResult(TOO_LARGE, true)
+          const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to ${browserStepTitle(name, args).toLowerCase()}`, args: card, cwd: null }, gate.alwaysKey))
           if (outcome === "denied" || outcome === "expired") {
             legacy.push({ tool: name, args: shown, status: "refused", result: "" })
             await finish(s, "refused")
@@ -555,7 +560,9 @@ export const makeRuntime = Effect.gen(function* () {
       const shown = JSON.stringify(args).slice(0, 300)
       const s = await step(name, name)
       if (route.approve) {
-        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to use ${name}`, args: JSON.stringify(args, null, 2).slice(0, 4000), cwd: null }, agent ? route.alwaysKey : null))
+        const card = cardText(JSON.stringify(args, null, 2))
+        if (!card) return textResult(TOO_LARGE, true)
+        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to use ${name}`, args: card, cwd: null }, agent ? route.alwaysKey : null))
         if (outcome === "denied" || outcome === "expired") {
           legacy.push({ tool: name, args: shown, status: "refused", result: "" })
           await finish(s, "refused")

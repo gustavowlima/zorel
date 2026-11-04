@@ -42,8 +42,8 @@ Requer [Bun](https://bun.sh) 1.4+.
 
 ```bash
 bun install
-bun run dev            # server em :4317 e web em http://localhost:5173
-bun run start          # build do web + um processo só em http://127.0.0.1:4317
+bun run dev            # server em :4317 e web em :5173; abra o link de login que o server imprime
+bun run start          # build do web + um processo só; abra o link de login que ele imprime
 bun run desktop        # app desktop (Electron) em modo dev
 bun run desktop:build  # gera .app e .dmg em apps/desktop/artifacts
 bun run lint            # Biome
