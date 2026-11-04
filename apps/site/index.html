@@ -4,287 +4,204 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Zorel</title>
+<meta name="description" content="A team of agents for the work on your computer. You ask once; Zorel hands each part to the agent it fits.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5.5' fill='%23007cf7'/%3E%3Cpath d='M6.5 7.5a3 3 0 0 1 3-3h8L6.5 19.5h8a3 3 0 0 0 3-3' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="tokens.css">
 <style>
-/* Hallmark · genre: atmospheric · macrostructure: Feature Stack · theme: custom · enrichment: Tier B hand-built SVG (drawn Z + live team map) · nav: N5 · footer: Ft5
- * vibe: "brand blue, after dark, light flowing between agents" · paper oklch(15% 0.025 258) · accent oklch(60.5% 0.2 255) blue
- * display: Bricolage Grotesque (roman) + body: Inter · axes: dark / grotesk-sans / cool
- * pre-emit critique: P5 H4 E4 S5 R4 V5
- * Layout: a drawn-Z hero on a blue bloom; then a sticky stage (the team map) that changes as five real steps scroll by;
- * then what the team keeps, in uneven tiles; a closing statement with the install command. Single dark theme, on purpose. */
-:root {
-  --paper: oklch(15% 0.025 258);
-  --paper-2: oklch(19.5% 0.03 258);
-  --paper-3: oklch(24% 0.035 258);
-  --ink: oklch(96.5% 0.008 258);
-  --ink-2: oklch(78% 0.02 258);
-  --ink-3: oklch(60% 0.03 258);
-  --accent: oklch(60.5% 0.2 255);
-  --accent-soft: oklch(60.5% 0.2 255 / .22);
-  --accent-line: oklch(60.5% 0.2 255 / .55);
-  --accent-glow: oklch(70% 0.17 250);
-  --on-accent: oklch(99% 0 0);
-  --shade: oklch(0% 0 0 / .65);
-  --rim: oklch(100% 0 0 / .07);
-  --lead: oklch(72% 0.15 55);
-  --tester: oklch(70% 0.15 152);
-  --docs: oklch(65% 0.18 22);
-  --add: oklch(76% 0.16 150);
-  --add-bg: oklch(76% 0.16 150 / .1);
-  --del: oklch(70% 0.17 25);
-  --del-bg: oklch(70% 0.17 25 / .1);
-  --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --space-xs: 4px; --space-sm: 8px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px; --space-3xl: 112px;
-  --radius-sm: 10px; --radius-md: 16px; --radius-lg: 28px;
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --dur-short: 220ms; --dur-long: 480ms;
-  color-scheme: dark;
-}
+/* Hallmark · genre: editorial · macrostructure: Long Document · theme: custom (tuned) · enrichment: Tier B hand-built SVG (Fig. 1, the team) · nav: N9 · footer: Ft1
+ * vibe: "a technical memo, set at night" · paper oklch(17.5% 0.01 255) · accent oklch(68% 0.16 252) brand blue
+ * display + body: Newsreader (roman) · outlier: JetBrains Mono (the command, the figure's harness names) · axes: dark / roman-serif / cool
+ * pre-emit critique: P5 H4 E4 S5 R5 V5
+ * One column that reads like a memo; the team drawn once, in hairlines, beside the steps it explains. No motion. */
 * { box-sizing: border-box; }
 html, body { overflow-x: clip; }
 body {
-  background: radial-gradient(60% 45% at 50% 0%, var(--accent-soft), transparent 70%) no-repeat, var(--paper);
-  color: var(--ink); font: 400 16px/1.6 var(--font-body); -webkit-font-smoothing: antialiased;
+  margin: 0; background: var(--color-paper); color: var(--color-ink);
+  font: 400 var(--text-md)/1.65 var(--font-body); font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
-.wrap { width: 100%; max-width: 1180px; margin-inline: auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-a { color: inherit; }
-:focus-visible { outline: 2px solid var(--accent-glow); outline-offset: 3px; border-radius: 8px; }
-h1, h2, h3 { font-family: var(--font-display); font-style: normal; text-wrap: balance; margin: 0; overflow-wrap: anywhere; min-width: 0; }
-p { margin: 0; }
-code { font-family: var(--font-mono); font-variant-ligatures: none; }
+.page { max-width: 72rem; margin-inline: auto; padding-inline: clamp(1rem, 4vw, 2.5rem); }
+h1, h2 { font-family: var(--font-display); font-style: normal; font-weight: 500; margin: 0; text-wrap: balance; overflow-wrap: anywhere; min-width: 0; }
+p, ol, dl, dd, figure { margin: 0; }
+a { color: var(--color-ink); text-decoration-line: underline; text-decoration-color: var(--color-accent); text-decoration-thickness: 1px; text-underline-offset: 0.2em; transition: text-decoration-color var(--dur-short) var(--ease-out); }
+a:hover { text-decoration-color: var(--color-ink); }
+:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; border-radius: var(--radius-sm); }
+code { font-family: var(--font-outlier); font-size: 0.86em; font-variant-ligatures: none; }
+.mark { width: 22px; height: 22px; flex: none; }
 
-/* ---------- N5 floating pill nav ---------- */
-.nav { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 14px); z-index: 20; display: flex; justify-content: center; padding-inline: 16px; }
-.pill { display: flex; align-items: center; gap: var(--space-lg); padding: 8px 8px 8px 16px; border-radius: 999px; background: oklch(19.5% 0.03 258 / .8); backdrop-filter: blur(14px); box-shadow: 0 0 0 1px var(--rim), 0 12px 40px -12px var(--shade); }
-.brand { display: flex; align-items: center; gap: 9px; font: 700 17px/1 var(--font-display); text-decoration: none; white-space: nowrap; }
-.brand svg { width: 24px; height: 24px; flex: none; }
-.pill nav { display: flex; gap: var(--space-lg); font-size: 14.5px; color: var(--ink-2); }
-.pill nav a { text-decoration: none; white-space: nowrap; transition: color var(--dur-short) var(--ease-out); }
-.pill nav a:hover { color: var(--ink); }
-.btn { display: inline-flex; align-items: center; gap: 8px; border: 0; cursor: pointer; text-decoration: none; white-space: nowrap; font: 600 14.5px/1 var(--font-body); border-radius: 999px; padding: 11px 18px; background: var(--accent); color: var(--on-accent); transition: transform var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out); }
-.btn:hover { box-shadow: 0 8px 28px -6px var(--accent); transform: translateY(-1px); }
-.btn:active { transform: translateY(1px); }
+/* ---------- N9 edge-aligned ---------- */
+.top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding-block: var(--space-md); border-bottom: var(--rule-hair) solid var(--color-rule); }
+.brand { display: inline-flex; align-items: center; gap: var(--space-2xs); font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.01em; text-decoration: none; white-space: nowrap; }
+.top-link { display: inline-flex; align-items: center; min-height: 44px; font-size: var(--text-sm); white-space: nowrap; }
 
-/* ---------- hero: the Z draws itself, then light runs through it ---------- */
-.hero { position: relative; text-align: center; padding-block: var(--space-xl) var(--space-3xl); }
-.zmark { width: min(300px, 58vw); aspect-ratio: 1; margin: 0 auto calc(var(--space-lg) * -1); display: block; overflow: visible; }
-.zmark .trace { fill: none; stroke: var(--paper-3); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.zmark .draw { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 1.6s var(--ease-in-out) .2s forwards; }
-@keyframes draw { to { stroke-dashoffset: 0; } }
-.zmark .spark { fill: var(--on-accent); }
-.hero h1 { position: relative; font-size: clamp(44px, 7.4vw + 4px, 104px); line-height: .95; font-weight: 800; letter-spacing: -.04em; max-width: 13ch; margin-inline: auto; font-variation-settings: "opsz" 96; }
-.lede { margin: var(--space-lg) auto 0; font-size: 19px; line-height: 1.55; max-width: 44ch; color: var(--ink-2); }
-.install { margin: var(--space-xl) auto 0; display: flex; align-items: center; gap: var(--space-xs); max-width: 560px; background: var(--paper-2); border-radius: 999px; padding: 6px 6px 6px 22px; box-shadow: 0 0 0 1px var(--rim), 0 20px 60px -20px var(--accent); }
-.install code { font-size: 14.5px; color: var(--ink-2); white-space: nowrap; overflow-x: auto; min-width: 0; flex: 1; text-align: left; scrollbar-width: none; }
-.install code b { color: var(--ink); font-weight: 500; }
-.install .btn { flex: none; min-width: 84px; justify-content: center; }
-.fine { margin-top: var(--space-md); font-size: 14px; color: var(--ink-3); }
-.fine a { color: var(--ink-2); text-underline-offset: 3px; }
+/* ---------- hero: left-set, a headline and a paragraph ---------- */
+.hero { padding-block: var(--space-2xl) var(--space-xl); }
+.hero h1 { font-size: var(--text-display); line-height: 1.02; letter-spacing: -0.025em; max-width: 15ch; }
+.lede { margin-top: var(--space-lg); font-size: var(--text-lg); line-height: 1.55; color: var(--color-ink-2); max-width: 40ch; }
 
-/* ---------- Feature Stack: steps scroll on the left, the team map stays ---------- */
-.stack { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); column-gap: var(--space-2xl); }
-.stack-head { grid-column: 1 / -1; max-width: 22ch; margin-bottom: var(--space-lg); }
-h2 { font-size: clamp(34px, 3.6vw + 8px, 56px); line-height: 1.02; letter-spacing: -.03em; font-weight: 700; }
-.steps { display: flex; flex-direction: column; }
-.step { min-height: 62vh; display: flex; flex-direction: column; justify-content: center; gap: var(--space-sm); opacity: .32; transition: opacity var(--dur-long) var(--ease-out); }
-.step.on { opacity: 1; }
-.step .n { font: 700 15px/1 var(--font-display); color: var(--accent-glow); }
-.step h3 { font-size: clamp(26px, 2vw + 10px, 34px); letter-spacing: -.02em; }
-.step p { color: var(--ink-2); font-size: 17px; max-width: 38ch; }
-.stage-col { position: relative; }
-.stage { position: sticky; top: 14vh; height: 72vh; min-height: 460px; border-radius: var(--radius-lg); background: radial-gradient(70% 60% at 50% 40%, var(--accent-soft), transparent 75%), var(--paper-2); box-shadow: 0 0 0 1px var(--rim); overflow: hidden; }
-.stage svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.edge { fill: none; stroke: var(--paper-3); stroke-width: 2; vector-effect: non-scaling-stroke; transition: stroke var(--dur-long) var(--ease-out); }
-.edge.on { stroke: var(--accent-line); }
-.dotlight { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: var(--accent-glow); box-shadow: 0 0 10px 2px var(--accent); pointer-events: none; transition: opacity var(--dur-short) var(--ease-out); }
-.node { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 9px; padding: 8px 14px 8px 8px; border-radius: 999px; background: var(--paper-3); font: 600 14px/1 var(--font-body); white-space: nowrap; box-shadow: 0 0 0 1px var(--rim); transition: box-shadow var(--dur-long) var(--ease-out), transform var(--dur-long) var(--ease-out); }
-.node.on { box-shadow: 0 0 0 1.5px var(--accent), 0 0 32px -4px var(--accent); transform: translate(-50%, -50%) scale(1.05); }
-.av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 700 12px/1 var(--font-body); color: var(--paper); flex: none; }
-.av.you { background: var(--ink); } .av.lead { background: var(--lead); } .av.tester { background: var(--tester); } .av.docs { background: var(--docs); }
-.av.proj { background: var(--accent); color: var(--on-accent); border-radius: 8px; }
-.av.mem { background: var(--paper-2); color: var(--ink-2); box-shadow: 0 0 0 1px var(--rim); border-radius: 8px; }
-.node small { display: block; margin-top: 3px; font: 500 11.5px/1 var(--font-body); color: var(--ink-3); }
-/* Zorel, in the middle: bigger, and its ring pulses while it hands work out. */
-.node.hub { padding: 10px 18px 10px 10px; font-size: 16px; }
-.av.zorel { width: 34px; height: 34px; font: 800 16px/1 var(--font-display); background: var(--accent); color: var(--on-accent); }
-.node.hub::after { content: ""; position: absolute; inset: -6px; border-radius: inherit; box-shadow: 0 0 0 1.5px var(--accent-line); opacity: 0; }
-.node.hub.on::after { animation: pulse 2.4s var(--ease-out) infinite; }
-@keyframes pulse { from { opacity: .9; transform: scale(1); } to { opacity: 0; transform: scale(1.18); } }
-.card { position: absolute; left: 50%; bottom: 6%; width: min(88%, 390px); transform: translate(-50%, 14px); opacity: 0; pointer-events: none; background: var(--paper); border-radius: var(--radius-md); padding: var(--space-md); box-shadow: 0 0 0 1px var(--rim), 0 24px 60px -20px var(--shade); font-size: 14.5px; transition: opacity var(--dur-long) var(--ease-out), transform var(--dur-long) var(--ease-out); }
-.card.on { opacity: 1; transform: translate(-50%, 0); }
-.card .who { font-size: 13px; color: var(--ink-3); margin-bottom: 4px; }
-.card .row { display: flex; align-items: center; gap: var(--space-md); }
-.card .row > :first-child { flex: 1; min-width: 0; }
-.card code { font-size: 13px; background: var(--paper-3); padding: 2px 7px; border-radius: 6px; }
-.tag { font: 600 13px/1 var(--font-body); padding: 9px 13px; border-radius: 999px; background: var(--accent); color: var(--on-accent); white-space: nowrap; transition: background var(--dur-short) var(--ease-out), color var(--dur-short) var(--ease-out); }
-.tag.ok { background: var(--paper-3); color: var(--add); }
-.diffline { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.8; white-space: pre; overflow-x: auto; margin-top: var(--space-sm); border-radius: 8px; background: var(--paper-2); padding: 6px 0; font-variant-ligatures: none; }
-.diffline div { padding-inline: 12px; width: max-content; min-width: 100%; }
-.plus { color: var(--add); background: var(--add-bg); } .minus { color: var(--del); background: var(--del-bg); }
-.delta { font-family: var(--font-mono); font-size: 13px; } .delta .a { color: var(--add); } .delta .d { color: var(--del); }
+/* The install line: a command set in mono between two hairlines; Copy is a text button. */
+.cmd { margin-top: var(--space-xl); max-width: 60rem; border-block: var(--rule-hair) solid var(--color-rule); padding-block: var(--space-sm); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-md); }
+.cmd code { font-size: var(--text-sm); color: var(--color-ink); overflow-wrap: anywhere; line-height: 1.6; }
+.cmd code::before { content: "$ "; color: var(--color-ink-3); }
+.copy { appearance: none; background: none; border: 0; padding: 0 var(--space-2xs); min-height: 44px; min-width: 44px; cursor: pointer; font: 500 var(--text-sm)/1 var(--font-body); color: var(--color-accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.25em; white-space: nowrap; }
+.copy:hover { color: var(--color-ink); }
+.copy:active { translate: 0 1px; }
+.note { margin-top: var(--space-xs); font-size: var(--text-sm); color: var(--color-ink-3); }
+.note a { color: var(--color-ink-2); }
 
-/* ---------- what the team keeps: uneven tiles ---------- */
-.keeps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-md); margin-top: var(--space-xl); }
-.tile { grid-column: span 2; background: var(--paper-2); border-radius: var(--radius-lg); padding: var(--space-lg); display: flex; flex-direction: column; gap: var(--space-sm); min-width: 0; transition: box-shadow var(--dur-short) var(--ease-out), transform var(--dur-short) var(--ease-out); }
-.tile:hover { transform: translateY(-2px); box-shadow: 0 18px 50px -24px var(--accent); }
-.tile.wide { grid-column: span 3; }
-.tile h3 { font-size: 23px; letter-spacing: -.015em; }
-.tile p { color: var(--ink-2); font-size: 15.5px; }
-.chips { margin-top: auto; padding-top: var(--space-md); display: flex; flex-wrap: wrap; gap: var(--space-sm); }
-.chip { font: 500 13px/1 var(--font-body); padding: 9px 12px; border-radius: 999px; background: var(--paper-3); display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
-.dot { width: 8px; height: 8px; border-radius: 50%; }
+/* ---------- the memo ---------- */
+.memo { border-top: var(--rule-hair) solid var(--color-rule); }
+.part { display: grid; grid-template-columns: minmax(0, var(--measure)) minmax(0, 1fr); column-gap: var(--space-2xl); padding-block: var(--space-2xl); }
+.part + .part { border-top: var(--rule-hair) solid var(--color-rule); }
+.part h2 { grid-column: 1; font-size: var(--text-xl); line-height: 1.2; letter-spacing: -0.01em; margin-bottom: var(--space-sm); }
+.prose { grid-column: 1; }
+.prose p + p, .prose p + ol, .prose ol + p { margin-top: var(--space-sm); }
+.prose em { font-style: italic; }
 
-/* ---------- Ft5 statement footer ---------- */
-.closing { text-align: center; padding-block: var(--space-3xl) var(--space-2xl); }
-.closing h2 { max-width: 16ch; margin-inline: auto; font-size: clamp(40px, 5vw + 8px, 80px); letter-spacing: -.035em; }
-.foot { display: flex; flex-wrap: wrap; gap: var(--space-lg); align-items: center; justify-content: space-between; padding-block: var(--space-lg) var(--space-xl); color: var(--ink-3); font-size: 14px; }
-.foot nav { display: flex; gap: var(--space-lg); flex-wrap: wrap; }
-.foot a { text-decoration: none; white-space: nowrap; } .foot a:hover { color: var(--ink); }
-section.band { padding-block: var(--space-3xl) 0; }
+ol.steps { list-style: none; padding: 0; counter-reset: s; margin-top: var(--space-md); }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 2.25rem minmax(0, 1fr); padding-block: var(--space-sm); border-top: var(--rule-hair) solid var(--color-rule); }
+.steps li:last-child { border-bottom: var(--rule-hair) solid var(--color-rule); }
+.steps li::before { content: counter(s); font: 500 var(--text-sm)/1.9 var(--font-outlier); color: var(--color-accent); }
+.steps b { font-weight: 600; }
 
+/* Fig. 1 sits in the margin column, level with the steps it draws. */
+.fig { grid-column: 2; grid-row: 1 / span 3; align-self: start; position: sticky; top: var(--space-lg); }
+.fig svg { display: block; width: 100%; max-width: 22.5rem; height: auto; }
+.fig figcaption { margin-top: var(--space-xs); max-width: 22.5rem; font-size: var(--text-sm); line-height: 1.5; color: var(--color-ink-3); }
+.fig figcaption b { color: var(--color-ink-2); font-weight: 500; }
+.ln { fill: none; stroke: var(--color-rule-strong); stroke-width: 1; }
+.ln.back { stroke-dasharray: 3 4; }
+.box { fill: var(--color-paper); stroke: var(--color-rule-strong); stroke-width: 1; }
+.box.hub { stroke: var(--color-accent); }
+.nm { fill: var(--color-ink); font: 500 15px var(--font-body); }
+.nm.hub { fill: var(--color-accent); font-weight: 600; }
+.hn { fill: var(--color-ink-3); font: 400 10.5px var(--font-outlier); }
+.no { fill: var(--color-paper); stroke: var(--color-accent); stroke-width: 1; }
+.nt { fill: var(--color-accent); font: 500 10.5px var(--font-outlier); }
 
-/* ---------- motion ---------- */
-/* The bloom behind everything drifts slowly. */
-body::after { content: ""; position: fixed; inset: -20% -10% auto; height: 80vh; z-index: -1; pointer-events: none; background: radial-gradient(40% 50% at 30% 40%, var(--accent-soft), transparent 70%), radial-gradient(35% 45% at 75% 30%, oklch(70% 0.17 250 / .12), transparent 70%); animation: drift 18s var(--ease-in-out) infinite alternate; }
-@keyframes drift { to { transform: translate3d(6%, 8%, 0) scale(1.08); } }
-/* Load: after the Z is drawn, the headline rises line by line, then the rest. */
-.rise { display: inline-block; opacity: 0; transform: translateY(.45em); animation: rise .9s var(--ease-out) forwards; animation-delay: calc(1.1s + var(--i) * 120ms); }
-@keyframes rise { to { opacity: 1; transform: none; } }
-.after { opacity: 0; transform: translateY(14px); animation: rise .8s var(--ease-out) forwards; animation-delay: calc(1.6s + var(--i) * 120ms); }
-.install { position: relative; }
-.install::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; background: conic-gradient(from var(--turn, 0deg), transparent 0 70%, var(--accent-glow) 82%, transparent 94%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: orbit 5s linear infinite; pointer-events: none; }
-@property --turn { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
-@keyframes orbit { to { --turn: 360deg; } }
-/* The team map breathes: each person floats on their own beat. */
-.node { animation: float 5s var(--ease-in-out) infinite alternate; animation-delay: calc(var(--d, 0) * -1s); }
-@keyframes float { from { translate: 0 -3px; } to { translate: 0 3px; } }
-/* Progress beside the steps. */
-.steps { position: relative; padding-left: var(--space-lg); }
-.steps::before { content: ""; position: absolute; left: 0; top: 10vh; bottom: 10vh; width: 2px; border-radius: 2px; background: var(--paper-3); }
-.steps::after { content: ""; position: absolute; left: 0; top: 10vh; width: 2px; border-radius: 2px; height: calc((100% - 20vh) * var(--progress, 0.2)); background: var(--accent); box-shadow: 0 0 12px var(--accent); transition: height var(--dur-long) var(--ease-out); }
-/* Tiles come up as they enter (only once the script marks them: without it they simply show). */
-.tile.pre { opacity: 0; transform: translateY(24px) scale(.98); }
-.tile.in { opacity: 1; transform: none; transition: opacity .7s var(--ease-out), transform .7s var(--ease-out), box-shadow var(--dur-short) var(--ease-out); transition-delay: calc(var(--i, 0) * 90ms); }
+/* What stays: a definition list in hairlines, not tiles. */
+dl.keeps { margin-top: var(--space-md); }
+.keeps div { display: grid; grid-template-columns: minmax(0, 13rem) minmax(0, 1fr); gap: var(--space-md); padding-block: var(--space-sm); border-top: var(--rule-hair) solid var(--color-rule); }
+.keeps div:last-child { border-bottom: var(--rule-hair) solid var(--color-rule); }
+.keeps dt { font-weight: 600; }
+.keeps dd { color: var(--color-ink-2); }
 
-@media (max-width: 900px) {
-  .stack { grid-template-columns: minmax(0, 1fr); }
-  /* The map stays pinned under the nav while the steps scroll beneath it. */
-  .stage-col { grid-row: 2; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 74px); z-index: 5; align-self: start; }
-  .stage { position: relative; top: auto; height: 46vh; min-height: 340px; }
-  .steps { grid-row: 3; }
-  .step { min-height: 44vh; }
-  .keeps { grid-template-columns: minmax(0, 1fr); }
-  .tile, .tile.wide { grid-column: auto; }
-  .pill nav a.opt { display: none; }
-  .node { font-size: 12.5px; padding: 6px 11px 6px 6px; } .av { width: 22px; height: 22px; font-size: 11px; }
+/* ---------- close + Ft1 mast-headed ---------- */
+.close { padding-block: var(--space-2xl) var(--space-xl); border-top: var(--rule-hair) solid var(--color-rule); }
+.close h2 { font-size: clamp(2rem, 3vw + 1rem, 3.25rem); line-height: 1.08; letter-spacing: -0.02em; max-width: 18ch; }
+.mast { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-lg); padding-block: var(--space-md) var(--space-xl); border-top: var(--rule-hair) solid var(--color-rule-strong); font-size: var(--text-sm); color: var(--color-ink-3); }
+.mast .brand { font-size: var(--text-md); color: var(--color-ink); }
+.mast nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 0 var(--space-md); }
+.mast nav a { display: inline-flex; align-items: center; min-height: 44px; color: var(--color-ink-2); text-decoration-color: var(--color-rule-strong); white-space: nowrap; }
+
+@media (max-width: 60rem) {
+  .part { grid-template-columns: minmax(0, 1fr); }
+  .fig { grid-column: 1; grid-row: auto; position: static; margin-top: var(--space-lg); }
+  .fig svg, .fig figcaption { max-width: 26rem; }
 }
-@media (max-width: 420px) { .pill { gap: var(--space-md); } .pill nav { display: none; } }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: 150ms !important; }
-  body::after { animation: none !important; }
-  .step { opacity: 1; }
+@media (max-width: 40rem) {
+  .hero { padding-block: var(--space-xl) var(--space-lg); }
+  .keeps div { grid-template-columns: minmax(0, 1fr); gap: var(--space-3xs); }
+  .mast nav { margin-left: 0; }
 }
+@media (prefers-reduced-motion: reduce) { * { transition-duration: 0ms !important; } }
 </style>
-
-<div class="nav">
-  <div class="pill">
-    <a class="brand" href="#top" aria-label="Zorel home">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="var(--accent)"/><path d="M6.5 7.5a3 3 0 0 1 3-3h8L6.5 19.5h8a3 3 0 0 0 3-3" fill="none" stroke="var(--on-accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <a class="brand" href="#top" aria-label="Zorel, top of the page">
+      <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="5.5" fill="var(--color-accent)"/><path d="M6.5 7.5a3 3 0 0 1 3-3h8L6.5 19.5h8a3 3 0 0 0 3-3" fill="none" stroke="var(--color-on-accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Zorel
     </a>
-    <nav aria-label="Page"><a class="opt" href="#how">How it works</a><a href="#keeps">What it keeps</a></nav>
-    <a class="btn" href="#install">Install</a>
-  </div>
-</div>
+    <a class="top-link" href="#install">Install</a>
+  </header>
 
-<header class="hero wrap" id="top">
-  <svg class="zmark" viewBox="4 4 16 16" aria-hidden="true">
-    <path class="trace" d="M6.5 7.5a3 3 0 0 1 3-3h8L6.5 19.5h8a3 3 0 0 0 3-3"/>
-    <path class="draw" id="zpath" pathLength="1" d="M6.5 7.5a3 3 0 0 1 3-3h8L6.5 19.5h8a3 3 0 0 0 3-3"/>
-    <g id="zsparks"></g>
-  </svg>
-  <h1><span class="rise" style="--i:0">A team of agents</span> <span class="rise" style="--i:1">for the work on</span> <span class="rise" style="--i:2">your computer.</span></h1>
-  <p class="lede after" style="--i:0">Ask once. A lead agent hands each part to the specialist it fits, they work in your project, and nothing risky happens without your yes.</p>
-  <div class="install after" style="--i:1" role="group" aria-label="Install command">
-    <code id="cmd-hero"><b>curl</b> -fsSL https://github.com/gustavowlima/zorel/releases/latest/download/install.sh | sh</code>
-    <button class="btn" type="button" data-copy="cmd-hero">Copy</button>
-  </div>
-  <p class="fine after" style="--i:2">macOS and Linux. On Windows, <a href="#install">use the installer</a>. Runs on your own Claude Code, Codex or OpenCode.</p>
-</header>
-
-<main class="wrap">
-  <section class="band" id="how" aria-labelledby="how-title">
-    <div class="stack">
-      <h2 class="stack-head" id="how-title">You ask Zorel. Zorel runs the team.</h2>
-      <div class="steps">
-        <article class="step on" data-step="0"><span class="n">1</span><h3>You ask Zorel</h3><p>In plain words, once. No need to know which agent does what: that's Zorel's job.</p></article>
-        <article class="step" data-step="1"><span class="n">2</span><h3>Zorel hands it out</h3><p>It splits the request, gives each part to the agent whose role fits, and briefs each one with what it needs: the project, the decisions, what it learned before.</p></article>
-        <article class="step" data-step="2"><span class="n">3</span><h3>Agents work in parallel</h3><p>Each on the CLI it runs best on, Claude Code, Codex or OpenCode, in your project folder, on your own sign-ins.</p></article>
-        <article class="step" data-step="3"><span class="n">4</span><h3>Zorel asks you first</h3><p>Commands, deletes, pushes and payments stop at Zorel and wait for your yes. So do the agents' questions.</p></article>
-        <article class="step" data-step="4"><span class="n">5</span><h3>It lands, and Zorel remembers</h3><p>The turn's diff sits under the reply, one click from undone. What you taught the team stays for the next chat.</p></article>
+  <main id="top">
+    <section class="hero" aria-labelledby="title">
+      <h1 id="title">A team of agents for the work on your computer.</h1>
+      <p class="lede">You ask once. Zorel hands each part to the agent it fits; they work in your project, on your own Claude Code, Codex or OpenCode, and nothing risky happens without your yes.</p>
+      <div class="cmd" role="group" aria-label="Install command">
+        <code id="cmd-top">curl -fsSL https://github.com/gustavowlima/zorel/releases/latest/download/install.sh | sh</code>
+        <button class="copy" type="button" data-copy="cmd-top">Copy</button>
       </div>
-      <div class="stage-col">
-        <div class="stage" role="img" aria-label="Zorel in the middle: you above it, three agents, your project and the team's memory around it, the current step lit">
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            <path class="edge" id="e-you" d="M50 11 C 50 20, 50 26, 50 34"/>
-            <path class="edge" id="e-coder" d="M50 34 C 38 34, 26 26, 16 26"/>
-            <path class="edge" id="e-tester" d="M50 34 C 62 34, 74 26, 84 26"/>
-            <path class="edge" id="e-docs" d="M50 34 C 62 40, 74 52, 84 54"/>
-            <path class="edge" id="e-proj" d="M50 34 C 38 40, 26 52, 16 54"/>
-            <path class="edge" id="e-mem" d="M50 34 C 50 44, 50 52, 50 62"/>
-          </svg>
-          <div id="sparks"></div>
-          <div class="node" data-node="you" style="left:50%;top:11%"><span class="av you">Y</span>You</div>
-          <div class="node hub" data-node="zorel" style="--d:.8;left:50%;top:34%"><span class="av zorel">Z</span>Zorel</div>
-          <div class="node" data-node="coder" style="--d:1.7;left:16%;top:26%"><span class="av lead">C</span><span>Coder<small>Claude Code</small></span></div>
-          <div class="node" data-node="tester" style="--d:3.1;left:84%;top:26%"><span class="av tester">T</span><span>Tester<small>Codex</small></span></div>
-          <div class="node" data-node="docs" style="--d:2.4;left:84%;top:54%"><span class="av docs">D</span><span>Docsync<small>OpenCode</small></span></div>
-          <div class="node" data-node="proj" style="--d:1.2;left:16%;top:54%"><span class="av proj">~</span>demo-app</div>
-          <div class="node" data-node="mem" style="--d:2.9;left:50%;top:62%"><span class="av mem">M</span>Memory</div>
+      <p class="note">macOS and Linux. On Windows, the installer is on the <a href="https://github.com/gustavowlima/zorel/releases/latest">releases page</a>.</p>
+    </section>
 
-          <div class="card" data-card="0"><div class="who">You, to Zorel</div>Get v1 ready: fix the empty-array bug, add tests for it and a README that matches the code.</div>
-          <div class="card" data-card="1"><div class="who">Zorel</div>The fix to @Coder, tests to @Tester, the README to @Docsync. Each one gets the project brief and "tests run from apps/server".</div>
-          <div class="card" data-card="2"><div class="who">Coder, Tester and Docsync, working</div>Editing <code>sum.ts</code>, writing <code>sum.test.ts</code> and <code>README.md</code></div>
-          <div class="card" data-card="3"><div class="who">Zorel holds it for you</div><div class="row"><span>Run <code>bun test</code></span><span class="tag" id="approve">Approve</span></div></div>
-          <div class="card" data-card="4"><div class="row"><span class="who">Changes in this turn</span><span class="delta" id="delta"><span class="a">+41</span> <span class="d">−2</span></span></div>
-            <div class="diffline"><div class="minus">- export const sum = (v) =&gt; v.reduce((a, b) =&gt; a + b)</div><div class="plus">+ export const sum = (v: number[]) =&gt; v.reduce((a, b) =&gt; a + b, 0)</div></div></div>
+    <article class="memo">
+      <section class="part" id="how" aria-labelledby="how-title">
+        <h2 id="how-title">How a request moves</h2>
+        <div class="prose">
+          <p>Say you want v1 of a small app ready: an empty-array bug fixed, tests for it, and a README that matches the code. You write that once, in plain words. You don't pick who does what.</p>
+          <ol class="steps">
+            <li><span><b>You ask Zorel.</b> One message, to the lead.</span></li>
+            <li><span><b>Zorel hands it out.</b> The fix to Coder, the tests to Tester, the README to Docsync, each briefed with the project and what the team learned before.</span></li>
+            <li><span><b>They work in parallel,</b> each on the CLI it runs best on, in your project folder, on your sign-ins.</span></li>
+            <li><span><b>Anything risky waits for you.</b> Commands, deletes, pushes and payments stop at Zorel until you say yes.</span></li>
+            <li><span><b>It lands, and stays undoable.</b> The turn's diff sits under the reply, one click from undone, and what you taught the team is kept for the next chat.</span></li>
+          </ol>
         </div>
+        <figure class="fig">
+          <svg viewBox="0 0 360 400" role="img" aria-labelledby="fig-t">
+            <title id="fig-t">You at the top; Zorel below you; Coder, Tester and Docsync below Zorel; your project at the bottom; Memory beside Zorel.</title>
+            <path class="ln" d="M180 52 V100"/>
+            <path class="ln back" d="M126 122 C 60 122, 60 34, 136 34"/>
+            <path class="ln" d="M234 122 H276"/>
+            <path class="ln" d="M180 144 V170 M60 170 H300 M60 170 V214 M180 170 V214 M300 170 V214"/>
+            <path class="ln" d="M60 262 V300 M180 262 V328 M300 262 V300 M60 300 H300 M180 300 V328"/>
+            <rect class="box" x="136" y="16" width="88" height="36" rx="3"/><text class="nm" x="180" y="39" text-anchor="middle">You</text>
+            <rect class="box hub" x="126" y="100" width="108" height="44" rx="3"/><text class="nm hub" x="180" y="127" text-anchor="middle">Zorel</text>
+            <rect class="box" x="276" y="104" width="78" height="36" rx="3"/><text class="nm" x="315" y="127" text-anchor="middle">Memory</text>
+            <rect class="box" x="10" y="214" width="100" height="48" rx="3"/><text class="nm" x="60" y="236" text-anchor="middle">Coder</text><text class="hn" x="60" y="252" text-anchor="middle">Claude Code</text>
+            <rect class="box" x="130" y="214" width="100" height="48" rx="3"/><text class="nm" x="180" y="236" text-anchor="middle">Tester</text><text class="hn" x="180" y="252" text-anchor="middle">Codex</text>
+            <rect class="box" x="250" y="214" width="100" height="48" rx="3"/><text class="nm" x="300" y="236" text-anchor="middle">Docsync</text><text class="hn" x="300" y="252" text-anchor="middle">OpenCode</text>
+            <rect class="box" x="120" y="328" width="120" height="44" rx="3"/><text class="nm" x="180" y="355" text-anchor="middle">demo-app</text>
+            <g aria-hidden="true">
+              <circle class="no" cx="194" cy="76" r="9"/><text class="nt" x="194" y="80" text-anchor="middle">1</text>
+              <circle class="no" cx="194" cy="170" r="9"/><text class="nt" x="194" y="174" text-anchor="middle">2</text>
+              <circle class="no" cx="194" cy="300" r="9"/><text class="nt" x="194" y="304" text-anchor="middle">3</text>
+              <circle class="no" cx="70" cy="78" r="9"/><text class="nt" x="70" y="82" text-anchor="middle">4</text>
+              <circle class="no" cx="254" cy="350" r="9"/><text class="nt" x="254" y="354" text-anchor="middle">5</text>
+            </g>
+          </svg>
+          <figcaption><b>Fig. 1</b> The team on that request. Numbers match the steps; the dashed line is Zorel coming back to you before anything risky runs.</figcaption>
+        </figure>
+      </section>
+
+      <section class="part" id="keeps" aria-labelledby="keeps-title">
+        <h2 id="keeps-title">What the team keeps between chats</h2>
+        <div class="prose">
+          <p>A chat ends; the team doesn't start over. These stay with it, on your machine.</p>
+          <dl class="keeps">
+            <div><dt>Any harness</dt><dd>Claude Code, Codex and OpenCode in the same chat, each on your own sign-in. When one hits its limit, the next in the fallback list picks up.</dd></div>
+            <div><dt>Memory and skills</dt><dd>Project notes, decisions and skills. A skill loads only when a message needs it.</dd></div>
+            <div><dt>Connectors</dt><dd>GitHub, Notion, Linear and others, signed in once. Writing anywhere asks you first.</dd></div>
+            <div><dt>The project, beside the chat</dt><dd>Files, Git, terminals, and a browser the agents drive, in one side panel.</dd></div>
+            <div><dt>Undo for every turn</dt><dd>A snapshot of the folder before and after each turn, whichever harness did the work.</dd></div>
+          </dl>
+        </div>
+      </section>
+    </article>
+
+    <section class="close" id="install" aria-labelledby="install-title">
+      <h2 id="install-title">Ask once. The team does the rest.</h2>
+      <div class="cmd" role="group" aria-label="Install command">
+        <code id="cmd-end">curl -fsSL https://github.com/gustavowlima/zorel/releases/latest/download/install.sh | sh</code>
+        <button class="copy" type="button" data-copy="cmd-end">Copy</button>
       </div>
-    </div>
-  </section>
+      <p class="note">Run it again any time to update. Windows: the installer is on the <a href="https://github.com/gustavowlima/zorel/releases/latest">releases page</a>.</p>
+    </section>
+  </main>
 
-  <section class="band" id="keeps" aria-labelledby="keeps-title">
-    <h2 id="keeps-title">What the team keeps between chats.</h2>
-    <div class="keeps">
-      <article class="tile wide"><h3>Any harness, one team</h3><p>Claude Code, Codex and OpenCode share the same chat, each with your own sign-in. When one hits its limit, the next in the fallback list picks up.</p>
-        <div class="chips"><span class="chip"><span class="dot" style="background:var(--lead)"></span>Claude Code</span><span class="chip"><span class="dot" style="background:var(--ink)"></span>Codex</span><span class="chip"><span class="dot" style="background:var(--tester)"></span>OpenCode</span></div></article>
-      <article class="tile wide"><h3>Memory and skills</h3><p>Project notes, decisions and skills stay with the team, and a skill loads only when a message needs it.</p></article>
-      <article class="tile"><h3>Connectors</h3><p>Sign in once. Writing anywhere asks you first.</p><div class="chips"><span class="chip">GitHub</span><span class="chip">Notion</span><span class="chip">Linear</span><span class="chip">Figma</span></div></article>
-      <article class="tile"><h3>The project beside the chat</h3><p>Files, Git, terminals and a browser the agents drive, in one side panel.</p></article>
-      <article class="tile"><h3>Undo for every turn</h3><p>Zorel snapshots the folder before and after each turn, whatever the harness.</p></article>
-    </div>
-  </section>
-
-  <section class="closing" id="install" aria-labelledby="install-title">
-    <h2 id="install-title">Ask once. Your team does the rest.</h2>
-    <div class="install" role="group" aria-label="Install command">
-      <code id="cmd-end"><b>curl</b> -fsSL https://github.com/gustavowlima/zorel/releases/latest/download/install.sh | sh</code>
-      <button class="btn" type="button" data-copy="cmd-end">Copy</button>
-    </div>
-    <p class="fine">Run it again any time to update. Windows: the installer is on the releases page.</p>
-  </section>
-
-  <footer class="foot">
-    <a class="brand" href="#top"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="var(--accent)"/><path d="M6.5 7.5a3 3 0 0 1 3-3h8L6.5 19.5h8a3 3 0 0 0 3-3" fill="none" stroke="var(--on-accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Zorel</a>
+  <footer class="mast">
+    <a class="brand" href="#top"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="5.5" fill="var(--color-accent)"/><path d="M6.5 7.5a3 3 0 0 1 3-3h8L6.5 19.5h8a3 3 0 0 0 3-3" fill="none" stroke="var(--color-on-accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Zorel</a>
+    <span>Agents that work as a team, on your computer.</span>
     <nav aria-label="Footer"><a href="#how">How it works</a><a href="#keeps">What it keeps</a><a href="#install">Install</a></nav>
-    <span>zorel.dev</span>
   </footer>
-</main>
+</div>
 
 <script>
 // Copy: the command's text; where the clipboard is refused, the text is selected instead.
@@ -296,94 +213,6 @@ document.querySelectorAll("[data-copy]").forEach((btn) => {
     try { navigator.clipboard.writeText(code.textContent).then(done, select) } catch { select() }
   })
 })
-
-const still = matchMedia("(prefers-reduced-motion: reduce)").matches
-const NS = "http://www.w3.org/2000/svg"
-
-// Light that runs along paths: a few sparks per path, spread evenly. In the stage (html: true) the sparks are HTML
-// dots placed in %: its SVG stretches to the box (viewBox 0–100), which would squash SVG circles into ovals.
-function sparks(group, paths, perPath, radius, html = false) {
-  const items = []
-  paths.forEach((path) => {
-    const len = path.getTotalLength()
-    for (let i = 0; i < perPath; i++) {
-      const c = html ? document.createElement("span") : document.createElementNS(NS, "circle")
-      if (html) c.className = "dotlight"
-      else { c.setAttribute("r", radius); c.setAttribute("class", "spark") }
-      group.appendChild(c)
-      items.push({ c, path, len, t: i / perPath, html })
-    }
-  })
-  return items
-}
-function place(s) {
-  const p = s.path.getPointAtLength(s.t * s.len)
-  if (s.html) { s.c.style.left = `${p.x}%`; s.c.style.top = `${p.y}%`; return }
-  s.c.setAttribute("cx", p.x)
-  s.c.setAttribute("cy", p.y)
-}
-
-// Hero: once the Z is drawn, three sparks travel its stroke.
-const zItems = sparks(document.getElementById("zsparks"), [document.getElementById("zpath")], 3, 0.42)
-zItems.forEach((s) => { s.c.style.opacity = 0; place(s) })
-
-// Stage: which edges carry light, which nodes glow and which card shows, per step.
-const plan = [
-  { edges: ["e-you"], nodes: ["you", "zorel"] },
-  { edges: ["e-mem", "e-coder", "e-tester", "e-docs"], nodes: ["zorel", "mem", "coder", "tester", "docs"] },
-  { edges: ["e-coder", "e-tester", "e-docs", "e-proj"], nodes: ["coder", "tester", "docs", "proj"] },
-  { edges: ["e-tester", "e-you"], nodes: ["tester", "zorel", "you"] },
-  { edges: ["e-proj", "e-you", "e-mem"], nodes: ["proj", "zorel", "you", "mem"] }
-]
-const allEdges = [...document.querySelectorAll(".edge")]
-const stageSparks = sparks(document.getElementById("sparks"), allEdges, 3, 0, true)
-stageSparks.forEach(place)
-const approve = document.getElementById("approve")
-let step = -1
-function show(n) {
-  if (n === step) return
-  step = n
-  const p = plan[n]
-  allEdges.forEach((e) => e.classList.toggle("on", p.edges.includes(e.id)))
-  document.querySelectorAll(".node").forEach((el) => el.classList.toggle("on", p.nodes.includes(el.dataset.node)))
-  document.querySelectorAll(".card").forEach((el) => el.classList.toggle("on", Number(el.dataset.card) === n))
-  document.querySelectorAll(".step").forEach((el) => el.classList.toggle("on", Number(el.dataset.step) === n))
-  approve.className = "tag"; approve.textContent = "Approve"
-  if (n === 3) setTimeout(() => { if (step === 3) { approve.className = "tag ok"; approve.textContent = "Approved" } }, still ? 0 : 1400)
-  stageSparks.forEach((s) => (s.c.style.opacity = p.edges.includes(s.path.id) ? 1 : 0))
-  document.querySelector(".steps").style.setProperty("--progress", (n + 1) / plan.length)
-  if (n === 4 && !still) countDelta()
-}
-// The last step's diff counts up to its size.
-async function countDelta() {
-  const el = document.getElementById("delta")
-  for (let i = 0; i <= 24; i++) {
-    if (step !== 4) break
-    el.innerHTML = `<span class="a">+${Math.round((41 * i) / 24)}</span> <span class="d">−${Math.round((2 * i) / 24)}</span>`
-    await new Promise((r) => setTimeout(r, 28))
-  }
-}
-show(0)
-
-// The step crossing the middle of the screen drives the stage.
-const io = new IntersectionObserver((entries) => entries.forEach((e) => e.isIntersecting && show(Number(e.target.dataset.step))), { rootMargin: "-45% 0px -45% 0px" })
-document.querySelectorAll(".step").forEach((el) => io.observe(el))
-
-// One loop for all the light; the Z's sparks start once its stroke is drawn.
-const start = performance.now()
-function frame(now) {
-  const zOn = now - start > 1800
-  zItems.forEach((s) => { s.t = (s.t + 0.0028) % 1; s.c.style.opacity = zOn ? 1 : 0; place(s) })
-  stageSparks.forEach((s) => { if (s.c.style.opacity !== "0") { s.t = (s.t + 0.004) % 1; place(s) } })
-  requestAnimationFrame(frame)
-}
-// Tiles below the fold come up as they enter.
-if (!still) {
-  const tio = new IntersectionObserver((entries) => entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); tio.unobserve(e.target) } }), { threshold: 0.2 })
-  document.querySelectorAll(".tile").forEach((el, i) => { if (el.getBoundingClientRect().top > innerHeight) { el.classList.add("pre"); el.style.setProperty("--i", i % 3); tio.observe(el) } })
-}
-if (still) zItems.forEach((s) => (s.c.style.opacity = 1))
-else requestAnimationFrame(frame)
 </script>
-
+</body>
 </html>
