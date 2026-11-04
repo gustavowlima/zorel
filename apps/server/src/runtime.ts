@@ -12,7 +12,7 @@ import { type EngineFailure, Engines, isImage, type NativeStep, splitModel, tran
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
-import { BROWSER_TOOLS, type BrowserToolName, BrowserService, runBrowserTool } from "./browser.ts"
+import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
 import { createInputs, findAgent, KNOWLEDGE_TOOLS, listText, MEMORY_TOOL, proposalText, readText, ROUTINES_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
@@ -409,7 +409,8 @@ export const makeRuntime = Effect.gen(function* () {
           }
         }
         if (builtin.writes) onWrite()
-        const r = await runBrowserTool(browsers, chat.id, name as BrowserToolName, args, workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined))).then(
+        const root = workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined))
+        const r = await runBrowserTool(browsers, chat.id, name as BrowserToolName, args, root, profileOf(agent?.id)).then(
           (text) => textResult(text),
           (e: unknown) => textResult(e instanceof Error ? e.message.split("\n")[0]! : String(e), true)
         )

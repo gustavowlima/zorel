@@ -220,6 +220,14 @@ html, body, #root { height: 100%; }
 /* Desktop app: the brand row moves right of the window buttons. */
 [data-shell="desktop"] .brand-row { height: 2.25rem; }
 [data-shell="desktop"] .rail-top { padding-top: 2.5rem; } /* below the window buttons */
+/* The window buttons span the rail and the sidebar: the rail's divider starts below them, not through them. */
+[data-shell="desktop"] .rail-top {
+  border-right-color: transparent;
+  background-image: linear-gradient(var(--color-subtle), var(--color-subtle));
+  background-size: 1px calc(100% - 2.5rem);
+  background-position: right bottom;
+  background-repeat: no-repeat;
+}
 /* Desktop app: the rail, the sidebar top and screen headers move the window; their controls stay clickable. */
 [data-shell="desktop"] .app-drag { -webkit-app-region: drag; }
 [data-shell="desktop"] .app-drag :is(button, a, input, select, textarea, [role], [contenteditable]) { -webkit-app-region: no-drag; }

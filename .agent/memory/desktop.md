@@ -17,5 +17,11 @@ updated: 2026-11-04
 
 ## avoid
 
+- Playwright newPage/newContext no Electron: Target.createTarget not supported; quem cria abas é o main
+- detectar humano por before-mouse-event/input-event: input via CDP também dispara (testado); usar a camada transparente
+
 - deixar o electron-builder escolher certificado do keychain: pegou um Apple Development e gerou app que o macOS mata (SIGKILL sem mensagem)
 - server dentro do main do Electron: morre com a janela e exigiria Node no lugar de Bun
+- navegador nativo: src/browser-host.ts (POST/DELETE /tabs com Bearer; views em BaseWindow oculta; ipc "browser:show" {tab, rect, overlay} só do app window; overlay transparente + before-mouse-event → "browser:take" → painel manda {t:"take"}); server browser.ts modo nativo por ZERO_DESKTOP_CDP/CONTROL/TOKEN, aba achada por url about:blank#zero-tab-<id>; profileOf(agentId) = partição
+- __dirname é fixado pelo bun build no caminho de src: usar app.getAppPath() (preload, ícone, raiz em dev)
+- divisor do rail no desktop começa abaixo dos botões de janela (background-image em .rail-top)
