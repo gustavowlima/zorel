@@ -9,12 +9,13 @@
     "main": "bun build src/main.ts src/preload.ts --target=node --format=cjs --external electron --outdir dist --entry-naming [name].cjs",
     "server": "bun build --compile --minify --external 'chromium-bidi' --external 'chromium-bidi/*' ../server/src/main.ts --outfile build/zorel-server",
     "start": "bun run --cwd ../web build && bun run main && electron .",
-    "prebuild": "bun run --cwd ../web build && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run browser && bun run main",
+    "prebuild": "bun run --cwd ../web build && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run browser && bun run licenses && bun run main",
     "build": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --publish never",
     "icons": "sh scripts/icons.sh",
     "release": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --publish always",
-    "prerelease": "bun run --cwd ../web build && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run browser && bun run main",
-    "browser": "PLAYWRIGHT_BROWSERS_PATH=build/browsers bun ../server/node_modules/playwright-core/cli.js install chromium-headless-shell && rm -rf build/browsers/ffmpeg-*"
+    "prerelease": "bun run --cwd ../web build && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run browser && bun run licenses && bun run main",
+    "browser": "PLAYWRIGHT_BROWSERS_PATH=build/browsers bun ../server/node_modules/playwright-core/cli.js install chromium-headless-shell && rm -rf build/browsers/ffmpeg-*",
+    "licenses": "bun ../../scripts/third-party-licenses.ts build/THIRD_PARTY_LICENSES.md"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

@@ -107,6 +107,14 @@ h2 { font-size: clamp(34px, 3.6vw + 8px, 56px); line-height: 1.02; letter-spacin
 .av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 700 12px/1 var(--font-body); color: var(--paper); flex: none; }
 .av.you { background: var(--ink); } .av.lead { background: var(--lead); } .av.tester { background: var(--tester); } .av.docs { background: var(--docs); }
 .av.proj { background: var(--accent); color: var(--on-accent); border-radius: 8px; }
+.av.mem { background: var(--paper-2); color: var(--ink-2); box-shadow: 0 0 0 1px var(--rim); border-radius: 8px; }
+.node small { display: block; margin-top: 3px; font: 500 11.5px/1 var(--font-body); color: var(--ink-3); }
+/* Zorel, in the middle: bigger, and its ring pulses while it hands work out. */
+.node.hub { padding: 10px 18px 10px 10px; font-size: 16px; }
+.av.zorel { width: 34px; height: 34px; font: 800 16px/1 var(--font-display); background: var(--accent); color: var(--on-accent); }
+.node.hub::after { content: ""; position: absolute; inset: -6px; border-radius: inherit; box-shadow: 0 0 0 1.5px var(--accent-line); opacity: 0; }
+.node.hub.on::after { animation: pulse 2.4s var(--ease-out) infinite; }
+@keyframes pulse { from { opacity: .9; transform: scale(1); } to { opacity: 0; transform: scale(1.18); } }
 .card { position: absolute; left: 50%; bottom: 6%; width: min(88%, 390px); transform: translate(-50%, 14px); opacity: 0; pointer-events: none; background: var(--paper); border-radius: var(--radius-md); padding: var(--space-md); box-shadow: 0 0 0 1px var(--rim), 0 24px 60px -20px var(--shade); font-size: 14.5px; transition: opacity var(--dur-long) var(--ease-out), transform var(--dur-long) var(--ease-out); }
 .card.on { opacity: 1; transform: translate(-50%, 0); }
 .card .who { font-size: 13px; color: var(--ink-3); margin-bottom: 4px; }
@@ -212,35 +220,37 @@ body::after { content: ""; position: fixed; inset: -20% -10% auto; height: 80vh;
 <main class="wrap">
   <section class="band" id="how" aria-labelledby="how-title">
     <div class="stack">
-      <h2 class="stack-head" id="how-title">You talk to the team. The team works out who does it.</h2>
+      <h2 class="stack-head" id="how-title">You ask Zorel. Zorel runs the team.</h2>
       <div class="steps">
-        <article class="step on" data-step="0"><span class="n">1</span><h3>You ask</h3><p>In plain words. Name someone with @ if you like, or don't: the message still lands with the right agent.</p></article>
-        <article class="step" data-step="1"><span class="n">2</span><h3>The lead routes</h3><p>The Tech Lead splits the request and hands each part to the agent whose role fits, with a note saying why.</p></article>
-        <article class="step" data-step="2"><span class="n">3</span><h3>Specialists work</h3><p>Side by side, in your project folder or in a worktree of their own, using your own sign-ins.</p></article>
-        <article class="step" data-step="3"><span class="n">4</span><h3>You approve</h3><p>Commands, deletes, pushes and payments wait for your yes. So do their questions.</p></article>
-        <article class="step" data-step="4"><span class="n">5</span><h3>It lands</h3><p>The turn's diff sits under the reply. One click puts the files back the way they were.</p></article>
+        <article class="step on" data-step="0"><span class="n">1</span><h3>You ask Zorel</h3><p>In plain words, once. No need to know which agent does what: that's Zorel's job.</p></article>
+        <article class="step" data-step="1"><span class="n">2</span><h3>Zorel hands it out</h3><p>It splits the request, gives each part to the agent whose role fits, and briefs each one with what it needs: the project, the decisions, what it learned before.</p></article>
+        <article class="step" data-step="2"><span class="n">3</span><h3>Agents work in parallel</h3><p>Each on the CLI it runs best on, Claude Code, Codex or OpenCode, in your project folder, on your own sign-ins.</p></article>
+        <article class="step" data-step="3"><span class="n">4</span><h3>Zorel asks you first</h3><p>Commands, deletes, pushes and payments stop at Zorel and wait for your yes. So do the agents' questions.</p></article>
+        <article class="step" data-step="4"><span class="n">5</span><h3>It lands, and Zorel remembers</h3><p>The turn's diff sits under the reply, one click from undone. What you taught the team stays for the next chat.</p></article>
       </div>
       <div class="stage-col">
-        <div class="stage" role="img" aria-label="Team map: you, the Tech Lead, Tester, Docsync and your project, with the current step lit">
+        <div class="stage" role="img" aria-label="Zorel in the middle: you above it, three agents, your project and the team's memory around it, the current step lit">
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-            <path class="edge" id="e-you-lead" d="M18 18 C 30 18, 36 40, 50 42"/>
-            <path class="edge" id="e-lead-tester" d="M50 42 C 62 42, 70 26, 82 26"/>
-            <path class="edge" id="e-lead-docs" d="M50 42 C 62 42, 70 56, 82 56"/>
-            <path class="edge" id="e-tester-proj" d="M82 26 C 92 40, 70 66, 46 72"/>
-            <path class="edge" id="e-docs-proj" d="M82 56 C 80 66, 64 70, 46 72"/>
-            <path class="edge" id="e-proj-you" d="M46 72 C 20 70, 10 40, 18 18"/>
+            <path class="edge" id="e-you" d="M50 11 C 50 20, 50 26, 50 34"/>
+            <path class="edge" id="e-coder" d="M50 34 C 38 34, 26 26, 16 26"/>
+            <path class="edge" id="e-tester" d="M50 34 C 62 34, 74 26, 84 26"/>
+            <path class="edge" id="e-docs" d="M50 34 C 62 40, 74 52, 84 54"/>
+            <path class="edge" id="e-proj" d="M50 34 C 38 40, 26 52, 16 54"/>
+            <path class="edge" id="e-mem" d="M50 34 C 50 44, 50 52, 50 62"/>
           </svg>
           <div id="sparks"></div>
-          <div class="node" data-node="you" style="left:18%;top:18%"><span class="av you">Y</span>You</div>
-          <div class="node" data-node="lead" style="--d:.8;left:50%;top:42%"><span class="av lead">T</span>Tech Lead</div>
-          <div class="node" data-node="tester" style="--d:1.7;left:82%;top:26%"><span class="av tester">T</span>Tester</div>
-          <div class="node" data-node="docs" style="--d:3.1;left:82%;top:56%"><span class="av docs">D</span>Docsync</div>
-          <div class="node" data-node="proj" style="--d:2.4;left:46%;top:72%"><span class="av proj">~</span>demo-app</div>
+          <div class="node" data-node="you" style="left:50%;top:11%"><span class="av you">Y</span>You</div>
+          <div class="node hub" data-node="zorel" style="--d:.8;left:50%;top:34%"><span class="av zorel">Z</span>Zorel</div>
+          <div class="node" data-node="coder" style="--d:1.7;left:16%;top:26%"><span class="av lead">C</span><span>Coder<small>Claude Code</small></span></div>
+          <div class="node" data-node="tester" style="--d:3.1;left:84%;top:26%"><span class="av tester">T</span><span>Tester<small>Codex</small></span></div>
+          <div class="node" data-node="docs" style="--d:2.4;left:84%;top:54%"><span class="av docs">D</span><span>Docsync<small>OpenCode</small></span></div>
+          <div class="node" data-node="proj" style="--d:1.2;left:16%;top:54%"><span class="av proj">~</span>demo-app</div>
+          <div class="node" data-node="mem" style="--d:2.9;left:50%;top:62%"><span class="av mem">M</span>Memory</div>
 
-          <div class="card" data-card="0"><div class="who">You</div>Get v1 ready: tests for the empty-array cases and a README that matches the code.</div>
-          <div class="card" data-card="1"><div class="who">Tech Lead</div>Tests go to @Tester, the README to @Docsync. I'll wrap up when both answer.</div>
-          <div class="card" data-card="2"><div class="who">Tester and Docsync, working</div>Writing <code>sum.test.ts</code> and <code>README.md</code></div>
-          <div class="card" data-card="3"><div class="who">Tester waits for you</div><div class="row"><span>Run <code>bun test</code></span><span class="tag" id="approve">Approve</span></div></div>
+          <div class="card" data-card="0"><div class="who">You, to Zorel</div>Get v1 ready: fix the empty-array bug, add tests for it and a README that matches the code.</div>
+          <div class="card" data-card="1"><div class="who">Zorel</div>The fix to @Coder, tests to @Tester, the README to @Docsync. Each one gets the project brief and "tests run from apps/server".</div>
+          <div class="card" data-card="2"><div class="who">Coder, Tester and Docsync, working</div>Editing <code>sum.ts</code>, writing <code>sum.test.ts</code> and <code>README.md</code></div>
+          <div class="card" data-card="3"><div class="who">Zorel holds it for you</div><div class="row"><span>Run <code>bun test</code></span><span class="tag" id="approve">Approve</span></div></div>
           <div class="card" data-card="4"><div class="row"><span class="who">Changes in this turn</span><span class="delta" id="delta"><span class="a">+41</span> <span class="d">−2</span></span></div>
             <div class="diffline"><div class="minus">- export const sum = (v) =&gt; v.reduce((a, b) =&gt; a + b)</div><div class="plus">+ export const sum = (v: number[]) =&gt; v.reduce((a, b) =&gt; a + b, 0)</div></div></div>
         </div>
@@ -319,11 +329,11 @@ zItems.forEach((s) => { s.c.style.opacity = 0; place(s) })
 
 // Stage: which edges carry light, which nodes glow and which card shows, per step.
 const plan = [
-  { edges: ["e-you-lead"], nodes: ["you", "lead"] },
-  { edges: ["e-lead-tester", "e-lead-docs"], nodes: ["lead", "tester", "docs"] },
-  { edges: ["e-tester-proj", "e-docs-proj"], nodes: ["tester", "docs", "proj"] },
-  { edges: ["e-proj-you"], nodes: ["you", "tester"] },
-  { edges: ["e-proj-you", "e-you-lead"], nodes: ["proj", "you"] }
+  { edges: ["e-you"], nodes: ["you", "zorel"] },
+  { edges: ["e-mem", "e-coder", "e-tester", "e-docs"], nodes: ["zorel", "mem", "coder", "tester", "docs"] },
+  { edges: ["e-coder", "e-tester", "e-docs", "e-proj"], nodes: ["coder", "tester", "docs", "proj"] },
+  { edges: ["e-tester", "e-you"], nodes: ["tester", "zorel", "you"] },
+  { edges: ["e-proj", "e-you", "e-mem"], nodes: ["proj", "zorel", "you", "mem"] }
 ]
 const allEdges = [...document.querySelectorAll(".edge")]
 const stageSparks = sparks(document.getElementById("sparks"), allEdges, 3, 0, true)
