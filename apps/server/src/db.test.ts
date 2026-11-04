@@ -32,6 +32,25 @@ test("memories: dedupe by normalized text, FTS search by scope, excludes those a
     })
   ))
 
+test("memories: another owner's notes about themselves never reach this one; keywords find other wordings", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const mine = (yield* r.addMemory({ scope: "user", text: "Lives in Berlin", keywords: "city home address relocated", state: "active", origin: "auto", chatId: null }))!
+      yield* r.addMemory({ scope: "user", text: "Bob's canary note", state: "active", origin: "manual", chatId: null, owner: "bob" })
+      yield* r.addMemory({ scope: "user", text: "Bob is waiting", state: "pending", origin: "auto", chatId: null, owner: "bob" })
+      expect((yield* r.activeMemories(["user"])).map((m) => m.text)).toEqual(["Lives in Berlin"])
+      expect(yield* r.searchMemories(["user"], "canary", [], 5)).toEqual([])
+      expect(yield* r.pendingCount(["user"])).toBe(0)
+      expect((yield* r.activeMemories(["user"], "fact", "bob")).map((m) => m.text)).toEqual(["Bob's canary note"])
+      // A question in other words: the keywords hold "address", the text doesn't.
+      expect((yield* r.searchMemories(["user"], "what's my address?", [], 5)).map((m) => m.id)).toEqual([mine.id])
+      // Marked essential: it says so, and keeps its keywords out of the contract.
+      const marked = (yield* r.updateMemory(mine.id, { essential: true }))!
+      expect(marked.essential).toBe(true)
+      expect("keywords" in marked).toBe(false)
+    })
+  ))
+
 test("chats: members in order, and cascade when the project is deleted", () =>
   run(":memory:", (r) =>
     Effect.gen(function* () {

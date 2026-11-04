@@ -115,8 +115,8 @@ export const MAX_TASK_DEPTH = 2 // a task may start tasks, whose tasks may not
 export const MEMORY_TOOL = {
   name: "zorel_search_memories",
   description:
-    "Search what you and the team learned (the user's preferences, this project's facts, your own work notes) beyond what is already in your context. query: words to look for. Returns up to 10 memories, best match first.",
-  inputSchema: { properties: { query: { type: "string" } }, required: ["query"] },
+    "Search what you and the team learned (the user's preferences, this project's facts, your own work notes) beyond what is already in your context. Use it when a preference, decision or fact from before could help now. query: the words that would be in such a memory, with synonyms and both languages the user writes in (e.g. \"deploy release vercel friday sexta\"); no match means try other words once, then take it as never saved: don't make it up. Returns up to 10 memories, best match first.",
+  inputSchema: { properties: { query: { type: "string", description: "words that would be in the memory, synonyms included" } }, required: ["query"] },
   writes: false
 } as const
 

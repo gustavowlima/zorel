@@ -61,3 +61,4 @@
 2026-11-04 | GitStatus.files: string[] -> {path,status}[] | o painel Git mostra A/M/D/R por arquivo
 2026-11-04 | API exige segredo da sessão; sandbox do Claude Code; cartões inteiros; gitdir validado; import inerte; anexos sem HTML inline; browser só http(s); Windows sem cmd | auditoria de segurança (cloudflare security-audit-skill) confirmou os achados
 2026-11-04 | navegador: launch por pipe, contexto por agente, logins selados no keychain, Chromium embutido no desktop, sign-in window | app independente de Chrome e sem porta CDP
+2026-11-04 | memória: dono, essenciais, rodízio por escopo, keywords, correções, grounding, secretlint, Schema no parse | avaliação mostrou 1/25 com outras palavras, 2 memórias falsas, correção sem efeito, vazamento latente entre donos

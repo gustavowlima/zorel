@@ -266,6 +266,7 @@ export const en = {
   inbox: {
     reviewChange: "Review the change",
     betterSkill: "a better version of a skill",
+    updatesMemory: "updates a memory",
     title: "Needs you",
     subtitle: "Agents wait here instead of guessing",
     all: "All",
@@ -285,6 +286,10 @@ export const en = {
     why: "Why: {reason}",
     renamed: "Renamed from \"{from}\" to \"{to}\"",
     applyImprovement: "Apply the change",
+    updatesFact: "An update of a memory, from what you said. Below: what changes.",
+    essential: "Always in context",
+    notEssential: "Not always in context",
+    essentialHint: "Every agent gets it in every chat, ahead of the newest memories.",
     versions: "Earlier versions",
     title: "Knowledge",
     subtitle: { one: "1 memory · learned while working", other: "{count} memories · learned while working" },
