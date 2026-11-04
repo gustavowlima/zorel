@@ -23,7 +23,8 @@ import { BrowserPanel } from "./browser.tsx"
 import { GitPanel, useIsRepo } from "./git.tsx"
 
 
-export type Focus = { readonly turnId: string; readonly path: string | null }
+// turnId null: every turn closed in Changes (pressing the open one closes it).
+export type Focus = { readonly turnId: string | null; readonly path: string | null }
 
 const sumOf = (changes: ReadonlyArray<FileChange>) => changes.reduce((s, c) => ({ added: s.added + c.added, removed: s.removed + c.removed }), { added: 0, removed: 0 })
 
@@ -304,7 +305,7 @@ function ChangesTab({
         const open = m.turnId === current.turnId
         return (
           <section key={m.id} className="border-b border-subtle">
-            <Button variant="ghost" className="h-auto w-full justify-start gap-2 rounded-none px-4 py-2.5 font-normal" onPress={() => onFocus({ turnId: m.turnId!, path: null })}>
+            <Button variant="ghost" className="h-auto w-full justify-start gap-2 rounded-none px-4 py-2.5 font-normal" onPress={() => onFocus({ turnId: open ? null : m.turnId!, path: null })} aria-expanded={open}>
               {open ? <ChevronDown className="text-muted" /> : <ChevronRight className="text-muted" />}
               <span className="min-w-0 flex-1 truncate text-left text-secondary">{t("workspace.turnBy", { agent: agentName(m.agentId, agents), time: formatTime(m.at) })}</span>
               {m.revertedAt ? <span className="text-sm text-muted">{t("workspace.undone")}</span> : <Delta {...sumOf(m.changes)} />}

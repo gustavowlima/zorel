@@ -22,6 +22,7 @@ export { Menu, MenuItem, MenuSeparator } from "./menu"
 export { type CommandItem, CommandPalette, type CommandSection } from "./command"
 export { Fold, Marker, MotionConfig, SlideWidth, spring, Width } from "./motion"
 export { Segmented } from "./segmented"
+export { SortableList } from "./sortable"
 export { NavItem, NavLabel, NavTree, NavTreeItem, type NavKey, useNavReorder } from "./nav"
 export { I18nProvider } from "react-aria-components" // React Aria's own strings follow Zorel's language
 export { FieldButton, OptionButton, RailButton } from "./picker"
