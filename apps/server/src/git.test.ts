@@ -5,7 +5,18 @@ import { join } from "node:path"
 import { addWorktree, branchFor, commit, commitDraftPrompt, parsePorcelain, parsePrDraft, push, removeWorktree, status, switchToNewBranch } from "./git.ts"
 
 test("parsePorcelain reads the branch line and the files", () => {
-  expect(parsePorcelain("## main...origin/main [ahead 2, behind 1]\n M a.ts\n?? b.ts\n")).toEqual({ branch: "main", upstream: "origin/main", ahead: 2, behind: 1, files: ["a.ts", "b.ts"] })
+  expect(parsePorcelain("## main...origin/main [ahead 2, behind 1]\n M a.ts\n?? b.ts\n D c.ts\nR  d.ts -> e.ts\n")).toEqual({
+    branch: "main",
+    upstream: "origin/main",
+    ahead: 2,
+    behind: 1,
+    files: [
+      { path: "a.ts", status: "modified" },
+      { path: "b.ts", status: "added" },
+      { path: "c.ts", status: "deleted" },
+      { path: "e.ts", status: "renamed" }
+    ]
+  })
   expect(parsePorcelain("## feat/x\n")).toMatchObject({ branch: "feat/x", upstream: null, ahead: 0, files: [] })
   expect(parsePorcelain("## No commits yet on main\n")).toMatchObject({ branch: "main" })
   expect(parsePorcelain("## main...origin/main [behind 3]\n")).toMatchObject({ ahead: 0, behind: 3 })
@@ -30,7 +41,7 @@ test("status, draft, commit and branch in a real repository", async () => {
   writeFileSync(join(dir, "b.ts"), "export const b = 1\n")
   const s = await status(dir)
   expect(s).toMatchObject({ repo: true, branch: "main", base: "main", remote: false, pr: null })
-  expect([...s.files].sort()).toEqual(["a.ts", "b.ts"])
+  expect(s.files).toEqual([{ path: "a.ts", status: "modified" }, { path: "b.ts", status: "added" }])
   const prompt = await commitDraftPrompt(dir)
   expect(prompt).toContain("feat: first") // the style to follow
   expect(prompt).toContain("new file b.ts") // untracked files are read

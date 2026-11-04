@@ -40,3 +40,4 @@
 2026-11-04 | notas "handed back"/"agents stopped", placeholder com destino do complemento, Steer só no Codex | conversa entre agentes
 2026-11-04 | SortableList (arrastar e teclado) nos fallbacks; grupos do Changes abrem e fecham | pedidos do usuário
 2026-11-04 | Files vira explorer (FileTree, FileIcon, mutations.fs) | usuário pediu renomear/selecionar/apagar como no VS Code
+2026-11-04 | painel Git redesenhado, StatusMark em @/ui, Settings em coluna max-w-5xl | pedido: tela de PR impecável; páginas de Settings desalinhadas e estreitas

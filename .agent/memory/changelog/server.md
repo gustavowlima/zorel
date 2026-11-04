@@ -58,3 +58,4 @@
 2026-11-04 | fechamento do repasse por menção, complemento sem menção fica com o colega, formato Status/Result/Evidence, aviso no limite | teste real de equipe + ideias de OpenBot/Tucano
 2026-11-04 | roteador barato para mensagens sem menção; gateway MCP em SSE com ping | usuário pediu o roteador; pergunta expirava aos 5 min
 2026-11-04 | fs-ops.ts + POST /api/chats/:id/fs; openFile cross-platform | aba Files interativa; openFile só funcionava no macOS
+2026-11-04 | GitStatus.files: string[] -> {path,status}[] | o painel Git mostra A/M/D/R por arquivo
