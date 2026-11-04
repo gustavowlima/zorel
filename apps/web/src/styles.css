@@ -195,6 +195,12 @@
   --text-base--line-height: 20px;
   --text-lg: 15px;
   --text-lg--line-height: 22px; /* whole-pixel lines: controls and text blocks land on the grid */
+  /* The conversation: a reading column (~75 characters a line) and a size of its own, a step above the UI's 13px. */
+  --text-chat: 14px;
+  --text-chat--line-height: 22px;
+  --container-chat: 46rem;
+  /* Work in progress: a light that sweeps across the label (ShimmerText). */
+  --animate-shimmer: shimmer 2.2s linear infinite;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -246,14 +252,32 @@ body {
 @media (prefers-reduced-motion: reduce) { .pressable { transition: none; } .pressable:active { transform: none; } }
 
 /* Reply markdown. */
+@keyframes shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+/* ShimmerText: the label in muted with a lighter band passing through; still text without motion. */
+.shimmer-text {
+  background: linear-gradient(90deg, var(--z-text-muted) 35%, var(--z-text) 50%, var(--z-text-muted) 65%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: var(--animate-shimmer);
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text { animation: none; background: none; color: var(--z-text-muted); }
+}
 .prose-chat > * + * { margin-top: 0.6em; }
 .prose-chat ul { list-style: disc; padding-left: 1.4em; }
 .prose-chat ol { list-style: decimal; padding-left: 1.4em; }
 .prose-chat a { color: var(--z-accent-text); text-decoration: underline; }
 .prose-chat h1, .prose-chat h2, .prose-chat h3 { font-weight: 600; font-size: 15px; }
 .prose-chat code { font-family: var(--font-mono); font-size: 12px; background: var(--z-bg-control); border-radius: 4px; padding: 1px 4px; }
-.prose-chat pre { background: var(--z-bg-surface); border: 1px solid var(--z-border); border-radius: 12px; padding: 12px; overflow-x: auto; }
 .prose-chat pre code { background: none; padding: 0; }
-.prose-chat table { border-collapse: collapse; }
-.prose-chat th, .prose-chat td { border: 1px solid var(--z-border-strong); padding: 4px 8px; }
+/* Tables: CodeBlock-like frame (TableFrame), a raised header row, hairlines between rows. */
+.prose-chat table { border-collapse: collapse; width: 100%; font-size: var(--text-base); line-height: var(--text-base--line-height); }
+.prose-chat th { background: var(--z-bg-surface); font-weight: 500; text-align: left; }
+.prose-chat th, .prose-chat td { border-bottom: 1px solid var(--z-border); padding: 6px 12px; }
+.prose-chat tr:last-child td { border-bottom: 0; }
 .prose-chat blockquote { border-left: 2px solid var(--z-border-strong); padding-left: 10px; color: var(--z-text-muted); }

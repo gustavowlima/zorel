@@ -131,6 +131,7 @@ export const messages = sqliteTable(
     cost: real(), // estimated USD (subscriptions: the API equivalent)
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
+    durationMs: integer("duration_ms"), // how long the turn took (the chat's turn summary)
     at: integer().notNull()
   },
   (t) => [index("messages_by_chat").on(t.chatId, t.at), check("messages_role", sql`${t.role} IN ('user', 'assistant')`)]

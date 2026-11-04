@@ -8,10 +8,9 @@ import { AsyncResult } from "effect/reactivity"
 import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zorel/contracts/events"
 import { formatCompact, formatDuration, formatTime, t } from "@zorel/i18n"
 import { type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
-import Markdown from "react-markdown"
-import remarkGfm from "remark-gfm"
 import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
-import { agentName, chatTitle, formatCost, handleOf, modelLabel, switchText } from "../labels.ts"
+import { agentName, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText } from "../labels.ts"
+import { ChatMarkdown } from "./chat-markdown.tsx"
 import { go } from "../state.ts"
 import { Composer, type ComposerSources } from "./composer.tsx"
 import { ContextMeter } from "./context-meter.tsx"
@@ -20,7 +19,7 @@ import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { chatDelta, Delta, type Focus, PinItem, type Pins, type ShellPin, SIDE_ICON, SidePanel, type SideTab, sideLabel, TurnChanges, usePins } from "./workspace.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { GitControl } from "./git.tsx"
-import { ContextMenu, PageHeader } from "@/ui"
+import { ContextMenu, PageHeader, ShimmerText } from "@/ui"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import { ChatProcesses } from "./processes.tsx"
 import { QuestionAnswer } from "./question.tsx"
@@ -147,6 +146,8 @@ export function ChatView({ chat }: { chat: Chat }) {
         }}
       />
       <div className="w-full px-8 pt-2 pb-4.5">
+        <div className="mx-auto w-full max-w-chat">
+        <PendingTray approvals={state.approvals} />
         {chat.resumeAt && (
           // Every route hit its usage limit: the chat goes on by itself at the reset (or you cancel, or write).
           <div role="status" className="mb-2 flex items-center gap-3 rounded-card border border-subtle px-3.5 py-2 text-sm">
@@ -195,6 +196,7 @@ export function ChatView({ chat }: { chat: Chat }) {
             />
           )}
         </WithFiles>
+        </div>
       </div>
       </div>
       {panel && (
@@ -447,6 +449,8 @@ export function Timeline({ chat, state, agents, onView, onEdit }: { chat: Chat; 
   const pinned = useRef(true) // follow new content only while the reader is at the bottom
   const items: Item[] = [...state.messages.map((m) => ({ at: m.at, message: m })), ...state.notes.map((n) => ({ at: n.at, note: n }))].sort((a, b) => a.at - b.at)
   const multi = chat.agentIds.length > 1
+  // One agent (or none): the header already says who answers, so replies show no face and no name.
+  const solo = !multi
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the content is the trigger
   useLayoutEffect(() => {
@@ -463,7 +467,9 @@ export function Timeline({ chat, state, agents, onView, onEdit }: { chat: Chat; 
       }}
       className="min-h-0 flex-1 overflow-auto"
     >
-      <div className="flex w-full flex-col gap-7 px-8 pt-6 pb-8">
+      {/* Side breathing room outside the reading column, so the column lines up with the message box below. */}
+      <div className="px-8 pt-6 pb-8">
+      <div className="mx-auto flex w-full max-w-chat flex-col gap-7">
         {chat.summary && <Summary text={chat.summary} />}
         {state.ready && items.length === 0 && !state.live && <EmptyState icon={<MessageCircle />} title={t("chat.empty")} hint={t("chat.emptyHint")} />}
         {!state.ready && (
@@ -481,16 +487,16 @@ export function Timeline({ chat, state, agents, onView, onEdit }: { chat: Chat; 
               {item.message.role === "user" ? (
                 <UserMessage message={item.message} onEdit={state.live ? undefined : () => onEdit(item.message)} />
               ) : (
-                <AgentMessage message={item.message} agents={agents} onView={onView} continued={continues(items[i - 1], item.message)} />
+                <AgentMessage message={item.message} agents={agents} onView={onView} continued={solo || continues(items[i - 1], item.message)} bare={solo} />
               )}
             </div>
           ) : (
             <TimelineNote key={`${item.note.kind}-${item.note.at}`} note={item.note} agents={agents} />
           )
         )}
-        {state.live && <LiveMessage live={state.live} agents={agents} approvals={state.approvals} receipts={state.receipts} />}
-        {!state.live && state.approvals.map((a) => <ApprovalCard key={a.id} approval={a} />)}
+        {state.live && <LiveMessage live={state.live} agents={agents} receipts={state.receipts} bare={solo} />}
         {multi && state.ready && items.length === 0 && <p className="text-center text-sm text-dim">{t("team.mentionHint")}</p>}
+      </div>
       </div>
     </div>
   )
@@ -551,7 +557,7 @@ function UserMessage({ message: m, onEdit }: { message: Message; onEdit?: (() =>
           )}
         </div>
       )}
-      <div className="rounded-sheet bg-surface px-4 py-2.5 whitespace-pre-wrap">{m.text}</div>
+      <div className="rounded-sheet bg-surface px-4 py-2.5 text-chat whitespace-pre-wrap">{m.text}</div>
       <MessageActions text={m.text} at={m.at} align="end" onEdit={onEdit} />
     </div>
   )
@@ -660,12 +666,14 @@ function Reply({
   pill,
   children,
   footer,
-  continued = false
-}: { agentId: string | null; model: string | null; agents: ReadonlyArray<Agent>; pill?: ReactNode; children: ReactNode; footer?: ReactNode; continued?: boolean }) {
+  continued = false,
+  bare = false
+}: { agentId: string | null; model: string | null; agents: ReadonlyArray<Agent>; pill?: ReactNode; children: ReactNode; footer?: ReactNode; continued?: boolean; bare?: boolean }) {
   const agent = agents.find((a) => a.id === agentId)
   return (
+    // bare: a chat with one agent, the reply sits flush with the column (no face, no gutter).
     <article className="group/msg flex gap-3" aria-label={continued ? agentName(agentId, agents) : undefined}>
-      {continued ? <span aria-hidden="true" className="w-7 shrink-0" /> : <AuthorAvatar agent={agent} model={model} size={28} />}
+      {bare ? null : continued ? <span aria-hidden="true" className="w-7 shrink-0" /> : <AuthorAvatar agent={agent} model={model} size={28} />}
       <div className="relative flex min-w-0 flex-1 flex-col gap-2">
         {/* The steps list of the pill wraps to its own line (basis-full) under the name. */}
         {(!continued || pill) && (
@@ -685,11 +693,6 @@ function Reply({
   )
 }
 
-const prose = (text: string) => (
-  <div className="prose-chat leading-relaxed">
-    <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
-  </div>
-)
 
 function endingOf(error: string | null): { tone: "warning" | "danger"; text: string } | undefined {
   if (!error) return undefined
@@ -699,7 +702,7 @@ function endingOf(error: string | null): { tone: "warning" | "danger"; text: str
   return { tone: "danger", text: error }
 }
 
-function AgentMessage({ message: m, agents, onView, continued }: { message: Message; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; continued: boolean }) {
+function AgentMessage({ message: m, agents, onView, continued, bare }: { message: Message; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; continued: boolean; bare: boolean }) {
   const accounts = useList(accountsAtom)
   return (
     <div className="flex flex-col gap-6">
@@ -707,7 +710,7 @@ function AgentMessage({ message: m, agents, onView, continued }: { message: Mess
         // biome-ignore lint/suspicious/noArrayIndexKey: a saved message's switches never change
         <Separator key={i}>{switchText(sw, accounts)}</Separator>
       ))}
-      <AgentReply message={m} agents={agents} accounts={accounts} onView={onView} continued={continued} />
+      <AgentReply message={m} agents={agents} accounts={accounts} onView={onView} continued={continued} bare={bare} />
     </div>
   )
 }
@@ -717,8 +720,9 @@ function AgentReply({
   agents,
   accounts,
   onView,
-  continued
-}: { message: Message; agents: ReadonlyArray<Agent>; accounts: ReadonlyArray<ProviderAccount>; onView: (f: Focus) => void; continued: boolean }) {
+  continued,
+  bare
+}: { message: Message; agents: ReadonlyArray<Agent>; accounts: ReadonlyArray<ProviderAccount>; onView: (f: Focus) => void; continued: boolean; bare: boolean }) {
   const ending = endingOf(m.error)
   const tokens = m.inputTokens || m.outputTokens ? t("chat.tokens", { input: formatCompact(m.inputTokens), output: formatCompact(m.outputTokens) }) : null
   // Which account answered and what it cost; a subscription shows the API equivalent, not a charge.
@@ -730,7 +734,8 @@ function AgentReply({
       model={m.model}
       agents={agents}
       continued={continued}
-      pill={m.steps.length > 0 && <StoredActivity steps={m.steps} />}
+      bare={bare}
+      pill={m.steps.length > 0 && <StoredActivity steps={m.steps} durationMs={m.durationMs} />}
       footer={
         <>
           {ending && (
@@ -756,7 +761,7 @@ function AgentReply({
         </>
       }
     >
-      {m.text && prose(m.text)}
+      {m.text && <ChatMarkdown text={m.text} />}
       <TurnChanges message={m} onView={onView} />
       {ending?.tone === "danger" && <pre className="overflow-auto rounded-control bg-code px-3 py-2 font-mono text-sm whitespace-pre-wrap text-danger">{ending.text}</pre>}
     </Reply>
@@ -765,12 +770,18 @@ function AgentReply({
 
 // ---------- activity ----------
 
-function StoredActivity({ steps }: { steps: Message["steps"] }) {
+// A finished turn in one line: its steps, what was refused or failed and how long it took; opens the steps.
+function StoredActivity({ steps, durationMs }: { steps: Message["steps"]; durationMs: number | null }) {
   const [open, setOpen] = useState(false)
   const id = useId()
   const refused = steps.filter((s) => s.status === "refused").length
   const failed = steps.filter((s) => s.status === "error").length
-  const parts = [t("activity.steps", { count: steps.length }), refused && t("activity.refused", { count: refused }), failed && t("activity.errors", { count: failed })].filter(Boolean)
+  const parts = [
+    t("activity.steps", { count: steps.length }),
+    refused && t("activity.refused", { count: refused }),
+    failed && t("activity.errors", { count: failed }),
+    durationMs !== null && durationMs >= 1000 && formatDuration(durationMs)
+  ].filter(Boolean)
   return (
     <>
       <DisclosurePill expanded={open} onToggle={() => setOpen(!open)} controls={id} leading={<Dot tone={failed ? "danger" : refused ? "warning" : "success"} />}>
@@ -818,17 +829,30 @@ function useNow(active: boolean) {
   return now
 }
 
-function LiveMessage({ live, agents, approvals, receipts }: { live: LiveTurn; agents: ReadonlyArray<Agent>; approvals: ReadonlyArray<Approval>; receipts: ReadonlyArray<Receipt> }) {
+// The turn running now: what it does (a light sweeps across it), or plainly that it waits for the provider before
+// anything came back; the time only after 5 s. Questions and approvals wait above the message box (PendingTray).
+const SHOW_TIME_AFTER_MS = 5000
+function LiveMessage({ live, agents, receipts, bare }: { live: LiveTurn; agents: ReadonlyArray<Agent>; receipts: ReadonlyArray<Receipt>; bare: boolean }) {
   const [open, setOpen] = useState(false)
   const id = useId()
   const now = useNow(true)
   const current = [...live.steps].reverse().find((s) => s.status === "running" || s.status === "waiting")
-  const label = [current?.title ?? t("activity.working"), formatDuration(now - live.startedAt)].join(" · ")
+  const idle = !live.text && !live.steps.length
+  const elapsed = now - live.startedAt
+  const what = current?.title ?? (idle ? t("activity.waitingFor", { provider: providerLabel(splitModel(live.model).provider) }) : t("activity.working"))
+  const label = (
+    <>
+      {idle || current?.status === "waiting" ? what : <ShimmerText>{what}</ShimmerText>}
+      {elapsed >= SHOW_TIME_AFTER_MS && <span className="text-muted tabular-nums">{` · ${formatDuration(elapsed)}`}</span>}
+    </>
+  )
   return (
     <Reply
       agentId={live.agentId}
       model={live.model}
       agents={agents}
+      bare={bare}
+      continued={bare}
       pill={
         <>
           <DisclosurePill expanded={open} onToggle={() => setOpen(!open)} controls={id} leading={current?.status === "waiting" ? <Clock className="size-3.5 text-accent-text" /> : <Spinner size={12} className="text-success" />}>
@@ -851,12 +875,9 @@ function LiveMessage({ live, agents, approvals, receipts }: { live: LiveTurn; ag
         </>
       }
     >
-      {live.text ? prose(live.text) : <TypingDots />}
+      {live.text ? <ChatMarkdown text={live.text} /> : <TypingDots />}
       {receipts.map((r) => (
         <ReceiptCard key={r.approval.id} receipt={r} />
-      ))}
-      {approvals.map((a) => (
-        <ApprovalCard key={a.id} approval={a} />
       ))}
     </Reply>
   )
@@ -871,6 +892,19 @@ const TypingDots = () => (
 )
 
 // ---------- approvals ----------
+
+// What waits for you in this chat (approvals, questions), right above the message box until you decide, so it
+// never scrolls out of sight with the conversation.
+function PendingTray({ approvals }: { approvals: ReadonlyArray<Approval> }) {
+  if (!approvals.length) return null
+  return (
+    <section className="mb-2 flex flex-col gap-2" aria-label={t("approval.waiting")}>
+      {approvals.map((a) => (
+        <ApprovalCard key={a.id} approval={a} />
+      ))}
+    </section>
+  )
+}
 
 function ApprovalCard({ approval: a }: { approval: Approval }) {
   const decide = useMutation(mutations.decide)
@@ -888,14 +922,14 @@ function ApprovalCard({ approval: a }: { approval: Approval }) {
   const command = commandOf(a)
   if (a.kind === "question")
     return (
-      <section aria-label={t("question.label", { agent: agentName(a.agentId, agents) })} className="flex w-full max-w-130 flex-col gap-2.5 rounded-card border border-accent-line bg-accent-faint px-3.5 py-3">
+      <section aria-label={t("question.label", { agent: agentName(a.agentId, agents) })} className="flex w-full flex-col gap-2.5 rounded-card border border-accent-line bg-accent-faint px-3.5 py-3">
         <span className="font-medium text-accent-text">{a.summary}</span>
         <QuestionAnswer approval={a} onError={setError} />
         {error && <p className="text-sm text-danger">{error}</p>}
       </section>
     )
   return (
-    <section aria-label={t("approval.waiting")} className="flex w-full max-w-130 flex-wrap items-center gap-2.5 rounded-card border border-accent-line bg-accent-faint py-2.5 pr-2.5 pl-3.5">
+    <section aria-label={t("approval.waiting")} className="flex w-full flex-wrap items-center gap-2.5 rounded-card border border-accent-line bg-accent-faint py-2.5 pr-2.5 pl-3.5">
       <span className="flex min-w-50 flex-1 flex-col">
         <span className="font-medium text-accent-text">{a.summary || t("approval.wantsTo", { agent: agentName(a.agentId, agents), tool: a.tool })}</span>
         {/* The command itself; pressing it shows every argument. */}

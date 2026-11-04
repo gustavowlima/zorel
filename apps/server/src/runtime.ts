@@ -659,7 +659,8 @@ export const makeRuntime = Effect.gen(function* () {
           const cost = pricing.cost(route.model, acc.usage)
           const message = yield* store.addMessage({
             chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model: route.model, error, steps: acc.steps, switches,
-            turnId: row.id, changes, accountId: route.accountId, cost, inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens
+            turnId: row.id, changes, accountId: route.accountId, cost, inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens,
+            durationMs: started.startedAt ? Date.now() - started.startedAt : null
           })
           markSeen(message.at) // the session has everything up to its own reply
           const trees = treeBefore && treeAfter ? { treeBefore, treeAfter } : undefined

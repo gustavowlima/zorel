@@ -297,7 +297,8 @@ export const repository = (db: Db) => {
       withFiles(db.select().from(messages).where(and(eq(messages.chatId, chatId), gt(messages.at, at))).orderBy(asc(messages.at))),
     // attachmentIds: files uploaded to this chat beforehand; linked to the message here.
     addMessage: (
-      input: Omit<Message, "id" | "at" | "attachments" | "switches" | "turnId" | "changes" | "revertedAt" | "accountId" | "cost"> & {
+      input: Omit<Message, "id" | "at" | "attachments" | "switches" | "turnId" | "changes" | "revertedAt" | "accountId" | "cost" | "durationMs"> & {
+        durationMs?: number | null | undefined
         attachmentIds?: ReadonlyArray<string> | undefined
         switches?: ReadonlyArray<Switch> | undefined
         turnId?: string | null | undefined
@@ -307,8 +308,8 @@ export const repository = (db: Db) => {
       }
     ) =>
       Effect.gen(function* () {
-        const { attachmentIds = [], switches = [], turnId = null, changes = [], accountId = null, cost = null, ...rest } = input
-        const base = { id: crypto.randomUUID(), ...rest, switches, turnId, changes, accountId, cost, revertedAt: null, at: now() }
+        const { attachmentIds = [], switches = [], turnId = null, changes = [], accountId = null, cost = null, durationMs = null, ...rest } = input
+        const base = { id: crypto.randomUUID(), ...rest, switches, turnId, changes, accountId, cost, durationMs, revertedAt: null, at: now() }
         yield* db.insert(messages).values({ ...base, steps: JSON.stringify(base.steps) })
         let files: Attachment[] = []
         if (attachmentIds.length) {
