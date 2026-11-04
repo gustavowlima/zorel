@@ -69,7 +69,7 @@ test("context: the memory budget favors the recent ones; layers in stable → vo
 test("mentions: by handle without accents, in order, ignoring code", () => {
   const a = [agentOf("1", "Léo"), agentOf("2", "Ana Paula"), agentOf("3", "Nico")]
   expect(mentioned("@ana-paula and @leo, take a look; `@nico` not", a).map((x) => x.id)).toEqual(["2", "1"])
-  expect(mentioned("email@nico.com", a).map((x) => x.id)).toEqual(["3"]) // ponytail: simple heuristic, same as Tucano
+  expect(mentioned("email@nico.com", a).map((x) => x.id)).toEqual(["3"]) // ponytail: simple heuristic
 })
 
 test("tool policy: annotation > name; sensitive beats read", () => {

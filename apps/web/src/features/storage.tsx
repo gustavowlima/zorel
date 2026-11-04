@@ -1,4 +1,4 @@
-// Settings › Storage (inspired by OpenBot's): how much Zorel's data folder takes on this computer, split by what
+// Settings › Storage: how much Zorel's data folder takes on this computer, split by what
 // it holds (a segmented bar with its legend), by project, the largest chats, and what can be cleaned up safely.
 // Measured on open and on demand; cleanups are confirmed and go to the audit log.
 import { useAtomValue } from "@effect/atom-react"

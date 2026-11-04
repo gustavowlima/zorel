@@ -85,7 +85,7 @@ export function TurnChanges({ message, onView }: { message: Message; onView: (f:
   )
 }
 
-// ---------- side panel (T3 Code's pattern: one panel, its surfaces as tabs) ----------
+// ---------- side panel ----------
 
 export type SideTab = "changes" | "git" | "files" | "browser" | "terminal"
 

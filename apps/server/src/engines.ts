@@ -5,7 +5,7 @@
 // - api: direct call with a token via effect/ai (Anthropic, OpenAI, OpenRouter, Ollama…).
 // Since the context is ours, switching models between turns needs no handoff.
 // Tools always come through Zorel's MCP gateway (tools.ts); the CLIs get no others.
-// CLI arguments and parsers derive from Tucano (Apache-2.0), see NOTICE.
+// CLI arguments and parsers derive from third-party code, see NOTICE.
 import { AnthropicClient, AnthropicLanguageModel } from "@effect/ai-anthropic"
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
 import type { Access, AccountWindow, FailureReason, ModelInfo } from "@zorel/contracts"

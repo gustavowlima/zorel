@@ -28,7 +28,7 @@ const chatKey = (id: string) => `c:${id}`
 const moreKey = (group: string) => `m:${group}`
 const idOf = (key: NavKey) => String(key).slice(2)
 
-// The icon rail (as in OpenBot): the logo, then the app's places — chats, what waits for you, agents, routines,
+// The icon rail: the logo, then the app's places — chats, what waits for you, agents, routines,
 // knowledge — and at the foot the subscriptions' rings (usage) and Settings. Each icon has its name as a tooltip;
 // the current place is marked. The chats and projects list sits to its right.
 export function Rail({
@@ -580,7 +580,7 @@ function UsageDetail({ rows }: { rows: ReadonlyArray<{ account: ProviderAccount;
 
 const toneOf = (p: Pace): RingTone => (p.used >= 0.95 ? "critical" : p.runsOutAt || p.used >= LIMIT_ALERT ? "warning" : "ok")
 
-// The desktop app's title bar (as in OpenBot): the whole window width above the rail, the sidebar and the card. It
+// The desktop app's title bar: the whole window width above the rail, the sidebar and the card. It
 // drags the window, leaves room for the macOS window buttons, holds back/forward and the current page's header.
 // The brand stays on the rail.
 export function TitleBar({ sidebarHidden }: { sidebarHidden: boolean }) {

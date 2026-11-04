@@ -1,4 +1,4 @@
-// Skills already on this computer (as in Tucano's local skills): the person's own SKILL.md files for Claude Code,
+// Skills already on this computer: the person's own SKILL.md files for Claude Code,
 // Codex and other agents, and Claude Code plugins'. Zorel lists them (name, description, where from); the person
 // picks which ones Zorel's agents use. A picked skill is read from its file when an agent reads it, so it stays
 // current and nothing is copied. Only a path found by this scan can be picked (never an arbitrary file).

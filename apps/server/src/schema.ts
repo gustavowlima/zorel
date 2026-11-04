@@ -310,7 +310,7 @@ export const routines = sqliteTable("routines", {
   createdAt: integer("created_at").notNull()
 })
 
-// Knowledge pages (phase 3b; Tucano's wiki as reference): longer Markdown notes by scope ("user", "project:<id>",
+// Knowledge pages (phase 3b): longer Markdown notes by scope ("user", "project:<id>",
 // "agent:<id>", as memories), searched with FTS (page_index, kept by triggers), every change kept as a version.
 // pinned: its title goes into every turn's context in that scope (the body is read on demand).
 export const pages = sqliteTable("pages", {

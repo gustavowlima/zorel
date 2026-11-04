@@ -620,7 +620,7 @@ function MessageActions({ text, at, details, align = "start", onEdit }: { text: 
   )
 }
 
-// "Edit from here" (as in T3 Code): the conversation goes back to before this message of yours, which comes back
+// "Edit from here": the conversation goes back to before this message of yours, which comes back
 // to the message box to edit; optionally the files the later turns changed go back too.
 function RewindDialog({ chatId, message, changes, onClose, onDone }: { chatId: string; message: Message | undefined; changes: boolean; onClose: () => void; onDone: (text: string) => void }) {
   const rewind = useMutation(mutations.rewind)

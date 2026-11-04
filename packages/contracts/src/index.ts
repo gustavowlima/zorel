@@ -88,7 +88,7 @@ export const Project = Schema.Struct({
 })
 export type Project = typeof Project.Type
 
-// Per-agent permissions (ideas from Tucano): what an agent may reach besides its folder (`access` covers files and
+// Per-agent permissions: what an agent may reach besides its folder (`access` covers files and
 // the shell). web: search and read pages with the engine's own tools; browser: Zorel's browser tools; grants: per
 // MCP server, "none" hides it, "read" exposes only reading tools, "write" all (a server not listed follows the
 // server's own mode); always: calls the person allowed for good ("<serverId>:<tool>" or "browser"), skipping the
