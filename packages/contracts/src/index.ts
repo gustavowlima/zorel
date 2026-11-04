@@ -445,17 +445,19 @@ export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: S
 export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000) })
 export const MemoryPatch = Schema.Struct({ state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)) })
+// stdio: environment variables; http: headers. Values go to the system keychain.
+const McpEnv = Schema.Record(Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_-]*$/)), LongText(4000))
 export const NewMcpServer = Schema.Struct({
   projectId: Schema.NullOr(Id),
   name: Name,
   command: LongText(500),
   args: Schema.Array(LongText(500)).check(Schema.isMaxLength(30)),
   url: LongText(500),
-  env: Schema.Record(Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_-]*$/)), LongText(4000)), // stdio: environment variables; http: headers
+  env: McpEnv,
   mode: ToolMode,
   auth: Schema.optional(Schema.Literals(["none", "oauth"]))
 })
-export const McpServerPatch = Schema.Struct({ mode: Schema.optional(ToolMode), enabled: Schema.optional(Schema.Boolean) })
+export const McpServerPatch = Schema.Struct({ mode: Schema.optional(ToolMode), enabled: Schema.optional(Schema.Boolean), env: Schema.optional(McpEnv) }) // env: new secrets (e.g. a fresh token)
 export const KeyInput = Schema.Struct({ value: LongText(500) }) // empty deletes
 // One-time choices recorded on the server (the failover terms warning is shown once).
 // nativeSkills: Claude Code and Codex may use their own skills (the person's ~/.claude/skills, plugins, Codex's).
@@ -608,7 +610,8 @@ export const Api = HttpApi.make("zero")
       // Sign in (oauth connectors): the URL to open in the browser, or null when already signed in.
       .add(HttpApiEndpoint.post("signIn", "/api/mcp/:id/sign-in", { params: idParam, success: Schema.Struct({ authorizeUrl: Schema.NullOr(Schema.String) }), error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
       .add(HttpApiEndpoint.delete("signOut", "/api/mcp/:id/sign-in", { params: idParam, error: HttpApiError.NotFound }))
-      .add(HttpApiEndpoint.get("signedIn", "/api/mcp/signed-in", { success: Schema.Array(Schema.String) })) // ids of oauth servers with a token
+      // signedIn: oauth servers holding a token; refused: servers whose credentials were rejected (sign in again).
+      .add(HttpApiEndpoint.get("signedIn", "/api/mcp/signed-in", { success: Schema.Struct({ signedIn: Schema.Array(Schema.String), refused: Schema.Array(Schema.String) }) }))
       // Connects and lists the tools, already classified; a connection failure comes in `error`.
       .add(HttpApiEndpoint.get("inspect", "/api/mcp/:id/tools", { params: idParam, success: Schema.Struct({ tools: Schema.Array(ToolInfo), error: Schema.NullOr(Schema.String) }), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("decide", "/api/approvals/:id", { params: idParam, payload: ApprovalDecision, error: HttpApiError.NotFound }))

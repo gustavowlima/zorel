@@ -47,3 +47,4 @@
 2026-11-04 | skills: ler sob demanda, propor melhoria com diff, versões e restaurar | a reference app
 2026-11-04 | skills do computador escolhíveis e opção de usar as skills nativas do Claude Code/Codex | pedido do usuário
 2026-11-04 | conectores OAuth (oauth.ts, mcp_servers.auth, rotas sign-in/callback) | usuário pediu seção de conectores com um clique
+2026-11-04 | Hub.refused + env no patch de servidor MCP | reconectar conector com credencial recusada

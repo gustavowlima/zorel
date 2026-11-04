@@ -440,9 +440,10 @@ export const repository = (db: Db) => {
         yield* db.insert(mcpServers).values({ ...s, args: JSON.stringify(s.args), envKeys: JSON.stringify(s.envKeys) })
         return s
       }).pipe(orDie),
-    updateMcpServer: (id: string, input: { mode?: McpServer["mode"] | undefined; enabled?: boolean | undefined }) =>
+    updateMcpServer: (id: string, input: { mode?: McpServer["mode"] | undefined; enabled?: boolean | undefined; envKeys?: ReadonlyArray<string> | undefined }) =>
       Effect.gen(function* () {
-        const set = defined(input)
+        const { envKeys, ...rest } = defined(input)
+        const set = { ...rest, ...(envKeys && { envKeys: JSON.stringify(envKeys) }) }
         if (Object.keys(set).length) yield* db.update(mcpServers).set(set).where(eq(mcpServers.id, id))
         return yield* mcpServer(id)
       }).pipe(orDie),

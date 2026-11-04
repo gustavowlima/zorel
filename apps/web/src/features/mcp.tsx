@@ -3,8 +3,11 @@
 // mode exposes, add local (command) or remote (URL) servers. Secrets go to the system keychain.
 import type { McpServer, ToolInfo } from "@zero/contracts"
 import { t } from "@zero/i18n"
-import { type FormEvent, useEffect, useState } from "react"
+import { type FormEvent, type ReactNode, useEffect, useState } from "react"
+import { type SimpleIcon, siAtlassian, siFigma, siGithub, siLinear, siNotion, siSentry, siStripe, siSupabase, siVercel } from "simple-icons"
 import { splitCommand } from "../labels.ts"
+import { AsyncResult } from "effect/reactivity"
+import { useAtomValue } from "@effect/atom-react"
 import { mutations, serversAtom, signedInAtom, useInvalidate, useMutation, useReading } from "../client.ts"
 import { ReadingState } from "./reading.tsx"
 import { Badge, Button, Check, Code, ConfirmButton, Field, IconButton, Input, Menu, MenuItem, MoreHorizontal, Plus, Section, Select, Spinner, Switch, Textarea, EmptyState, Plug, Trash2 } from "@/ui"
@@ -204,25 +207,43 @@ function NewServer({ projectId, onDone }: { projectId: string | null; onDone: ()
 
 // The connectors: hosted MCP servers that sign in with OAuth (discovery + dynamic registration, oauth.ts), GitHub
 // with a token (its server doesn't register clients), and a few that need nothing. Writes wait for approval.
-type Connector = { id: string; name: string; url?: string; command?: string; auth: "oauth" | "token" | "none"; tokenUrl?: string }
+type Connector = { id: string; name: string; url?: string; command?: string; auth: "oauth" | "token" | "none"; tokenUrl?: string; icon?: SimpleIcon }
 const CONNECTORS: ReadonlyArray<Connector> = [
-  { id: "github", name: "GitHub", url: "https://api.githubcopilot.com/mcp/", auth: "token", tokenUrl: "https://github.com/settings/personal-access-tokens/new" },
-  { id: "notion", name: "Notion", url: "https://mcp.notion.com/mcp", auth: "oauth" },
-  { id: "linear", name: "Linear", url: "https://mcp.linear.app/mcp", auth: "oauth" },
-  { id: "atlassian", name: "Jira & Confluence", url: "https://mcp.atlassian.com/v1/mcp", auth: "oauth" },
-  { id: "sentry", name: "Sentry", url: "https://mcp.sentry.dev/mcp", auth: "oauth" },
-  { id: "vercel", name: "Vercel", url: "https://mcp.vercel.com", auth: "oauth" },
-  { id: "supabase", name: "Supabase", url: "https://mcp.supabase.com/mcp", auth: "oauth" },
-  { id: "stripe", name: "Stripe", url: "https://mcp.stripe.com", auth: "oauth" },
+  { id: "github", name: "GitHub", url: "https://api.githubcopilot.com/mcp/", auth: "token", tokenUrl: "https://github.com/settings/personal-access-tokens/new", icon: siGithub },
+  { id: "notion", name: "Notion", url: "https://mcp.notion.com/mcp", auth: "oauth", icon: siNotion },
+  { id: "linear", name: "Linear", url: "https://mcp.linear.app/mcp", auth: "oauth", icon: siLinear },
+  { id: "atlassian", name: "Jira & Confluence", url: "https://mcp.atlassian.com/v1/mcp", auth: "oauth", icon: siAtlassian },
+  { id: "sentry", name: "Sentry", url: "https://mcp.sentry.dev/mcp", auth: "oauth", icon: siSentry },
+  { id: "vercel", name: "Vercel", url: "https://mcp.vercel.com", auth: "oauth", icon: siVercel },
+  { id: "supabase", name: "Supabase", url: "https://mcp.supabase.com/mcp", auth: "oauth", icon: siSupabase },
+  { id: "stripe", name: "Stripe", url: "https://mcp.stripe.com", auth: "oauth", icon: siStripe },
   { id: "context7", name: "Context7", url: "https://mcp.context7.com/mcp", auth: "none" },
-  { id: "figma", name: "Figma", url: "http://127.0.0.1:3845/mcp", auth: "none" },
+  { id: "figma", name: "Figma", url: "http://127.0.0.1:3845/mcp", auth: "none", icon: siFigma },
   { id: "playwright", name: "Playwright", command: "npx -y @playwright/mcp@latest", auth: "none" }
 ]
 const matches = (c: Connector, s: McpServer) => (c.url ? s.url === c.url : [s.command, ...s.args].join(" ") === c.command)
 const WAIT_MS = 5 * 60_000
 
+// A brand's mark (simple-icons, CC0) in one color on a neutral tile, like the rest of the UI; a plug when there's none.
+function ConnectorLogo({ icon }: { icon: SimpleIcon | undefined }) {
+  return (
+    <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-md bg-control text-secondary [&_svg]:size-4">
+      {icon ? (
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+          <path d={icon.path} />
+        </svg>
+      ) : (
+        <Plug />
+      )}
+    </span>
+  )
+}
+
+const NO_STATE: { signedIn: ReadonlyArray<string>; refused: ReadonlyArray<string> } = { signedIn: [], refused: [] }
+
 function Connectors({ servers }: { servers: ReadonlyArray<McpServer> }) {
-  const signedIn = useReading(signedInAtom).items
+  const state = AsyncResult.getOrElse(useAtomValue(signedInAtom), () => NO_STATE)
+  const signedIn = state.signedIn
   const invalidate = useInvalidate()
   const [waiting, setWaiting] = useState<string>() // server id whose sign-in is open in the browser
   // While the person signs in, in the browser: look again every 2 s (the callback lands on the server).
@@ -241,27 +262,32 @@ function Connectors({ servers }: { servers: ReadonlyArray<McpServer> }) {
       <div className="grid items-start gap-2 sm:grid-cols-2">
         {CONNECTORS.map((c) => {
           const server = servers.find((s) => matches(c, s))
-          return <ConnectorCard key={c.id} connector={c} server={server} signedIn={!!server && signedIn.includes(server.id)} waiting={!!server && waiting === server.id} onWaiting={setWaiting} />
+          // attention: the service refused what Zero holds, or an OAuth sign-in never finished.
+          const status: Status = !server ? "idle" : state.refused.includes(server.id) || (c.auth === "oauth" && !signedIn.includes(server.id)) ? "attention" : "connected"
+          return <ConnectorCard key={c.id} connector={c} server={server} status={status} waiting={!!server && waiting === server.id} onWaiting={setWaiting} />
         })}
       </div>
     </Section>
   )
 }
 
-function ConnectorCard({ connector: c, server, signedIn, waiting, onWaiting }: { connector: Connector; server: McpServer | undefined; signedIn: boolean; waiting: boolean; onWaiting: (id: string) => void }) {
+type Status = "idle" | "attention" | "connected"
+
+function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { connector: Connector; server: McpServer | undefined; status: Status; waiting: boolean; onWaiting: (id: string) => void }) {
   const create = useMutation(mutations.createServer)
+  const update = useMutation(mutations.updateServer)
   const signIn = useMutation(mutations.signInServer)
   const remove = useMutation(mutations.removeServer)
   const [busy, setBusy] = useState(false)
   const [asking, setAsking] = useState(false) // the token field (GitHub)
   const [token, setToken] = useState("")
   const [failed, setFailed] = useState(false)
-  const connected = !!server && (c.auth !== "oauth" || signedIn)
-
   const connect = async () => {
     setBusy(true)
     setFailed(false)
     try {
+      const env = c.auth === "token" ? { Authorization: `Bearer ${token.trim()}` } : {}
+      if (server && c.auth === "token") await update({ params: { id: server.id }, payload: { env }, reactivityKeys: ["servers"] }) // a fresh token
       const s =
         server ??
         (await create({
@@ -271,7 +297,7 @@ function ConnectorCard({ connector: c, server, signedIn, waiting, onWaiting }: {
             command: c.command?.split(" ")[0] ?? "",
             args: c.command?.split(" ").slice(1) ?? [],
             url: c.url ?? "",
-            env: c.auth === "token" ? { Authorization: `Bearer ${token.trim()}` } : {},
+            env,
             mode: "approve",
             auth: c.auth === "oauth" ? "oauth" : "none"
           },
@@ -293,46 +319,44 @@ function ConnectorCard({ connector: c, server, signedIn, waiting, onWaiting }: {
     }
   }
   const disconnect = () => server && void remove({ params: { id: server.id }, reactivityKeys: ["servers"] }).catch(() => setFailed(true))
+  const hint: ReactNode = failed ? t("connectors.failed") : waiting ? t("connectors.waiting") : status === "attention" ? t("connectors.attention") : t(`connectors.about.${c.id}` as "connectors.about.github")
+  const menu = server && (
+    <Menu
+      label={t("connectors.actions", { name: c.name })}
+      trigger={
+        <IconButton size="sm" label={t("connectors.actions", { name: c.name })}>
+          <MoreHorizontal />
+        </IconButton>
+      }
+    >
+      <MenuItem icon={<Trash2 />} tone="danger" onAction={disconnect}>
+        {t("connectors.disconnect")}
+      </MenuItem>
+    </Menu>
+  )
 
   return (
     <div className="flex flex-col gap-3 rounded-card border border-subtle p-3">
       <div className="flex items-center gap-3">
-        <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-md bg-control text-sm font-semibold text-secondary">
-          {c.name[0]}
-        </span>
+        <ConnectorLogo icon={c.icon} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate font-medium">{c.name}</span>
-          <span className={failed ? "truncate text-sm text-danger" : "truncate text-sm text-muted"}>
-            {failed ? t("connectors.failed") : waiting ? t("connectors.waiting") : t(`connectors.about.${c.id}` as "connectors.about.github")}
-          </span>
+          <span className={failed ? "truncate text-sm text-danger" : status === "attention" && !waiting ? "truncate text-sm text-warning" : "truncate text-sm text-muted"}>{hint}</span>
         </span>
-        {connected ? (
-          <>
-            <Badge tone="success">
-              <Check className="-ml-0.5 mr-1 size-3" />
-              {t("connectors.connected")}
-            </Badge>
-            <Menu
-              label={t("connectors.actions", { name: c.name })}
-              trigger={
-                <IconButton size="sm" label={t("connectors.actions", { name: c.name })}>
-                  <MoreHorizontal />
-                </IconButton>
-              }
-            >
-              <MenuItem icon={<Trash2 />} tone="danger" onAction={disconnect}>
-                {t("connectors.disconnect")}
-              </MenuItem>
-            </Menu>
-          </>
+        {status === "connected" ? (
+          <Badge tone="success">
+            <Check className="-ml-0.5 mr-1 size-3" />
+            {t("connectors.connected")}
+          </Badge>
         ) : (
           !asking && (
             <Button size="sm" variant="secondary" isPending={busy || waiting} onPress={() => (c.auth === "token" ? setAsking(true) : void connect())}>
               {busy || waiting ? <Spinner size={12} /> : null}
-              {server && c.auth === "oauth" ? t("connectors.signIn") : t("connectors.connect")}
+              {status === "attention" ? t("connectors.reconnect") : t("connectors.connect")}
             </Button>
           )
         )}
+        {menu}
       </div>
       {asking && (
         <form
@@ -345,7 +369,7 @@ function ConnectorCard({ connector: c, server, signedIn, waiting, onWaiting }: {
           <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={t("connectors.tokenPlaceholder")} aria-label={t("connectors.token", { name: c.name })} autoFocus required spellCheck={false} className="font-mono" />
           <div className="flex items-center gap-2">
             <Button type="submit" size="sm" variant="default" isPending={busy} isDisabled={!token.trim()}>
-              {t("connectors.connect")}
+              {server ? t("connectors.reconnect") : t("connectors.connect")}
             </Button>
             <Button size="sm" variant="ghost" onPress={() => setAsking(false)}>
               {t("common.cancel")}

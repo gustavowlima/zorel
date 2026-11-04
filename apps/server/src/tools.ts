@@ -11,6 +11,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import type { McpServer, ToolInfo } from "@zero/contracts"
 import { Context, Effect, Layer } from "effect"
+import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
 import { McpOAuth } from "./oauth.ts"
 import { mcpEnv, Secrets, type SecretStore } from "./secrets.ts"
 
@@ -51,6 +52,8 @@ export interface RemoteTool extends ToolInfo {
 
 export class Hub {
   private clients = new Map<string, Promise<Client>>()
+  // Servers that refused the stored sign-in (token revoked or expired, refresh failed): Settings asks to reconnect.
+  readonly refused = new Set<string>()
   constructor(private secrets: SecretStore) {}
 
   private connect(s: McpServer): Promise<Client> {
@@ -66,9 +69,13 @@ export class Hub {
           })
         : new StdioClientTransport({ command: s.command, args: [...s.args], env: { ...getDefaultEnvironment(), ...env }, stderr: "ignore" })
       await client.connect(transport, { timeout: CONNECT_MS })
+      this.refused.delete(s.id)
       return client
     })()
-    p.catch(() => this.clients.delete(s.id))
+    p.catch((e: unknown) => {
+      this.clients.delete(s.id)
+      if (e instanceof UnauthorizedError || (e as { code?: unknown })?.code === 401) this.refused.add(s.id)
+    })
     this.clients.set(s.id, p)
     return p
   }
@@ -93,6 +100,7 @@ export class Hub {
   async close(id: string) {
     const c = this.clients.get(id)
     this.clients.delete(id)
+    this.refused.delete(id) // new credentials: try again before saying it's refused
     await c?.then((x) => x.close()).catch(() => {})
   }
 
