@@ -113,3 +113,4 @@ updated: 2026-11-03
 - pausar: runtime.paused/setPaused (preferência "paused"; ensureWorker não inicia; setPaused(true) interrompe fibers rodando; false acorda queued); tick das rotinas pula. PUT /api/pause; Preferences.paused
 - retomar no reset: chats.resume_at; runtime grava quando todas as rotas estão em limit (held reason limit) e o turno não agiu; routines.ts `resumes` no mesmo tick envia RESUME_TEXT (clientId resume:…) e limpa; send manual limpa; ChatPatch aceita resumeAt null
 - editar daqui: POST /api/chats/:id/rewind (Conflict se runtime.busy; files → restore dos turnos posteriores do mais novo ao mais velho, UndoConflict para tudo; deleteMessagesFrom; zera resumo se summaryUntil >= corte; runtime.forget fecha sessões chatId:*)
+- projects.default_agent_id (validado: global ou do projeto); home pré-seleciona. Responsabilidades = description do agente (decisão: sem campo novo)

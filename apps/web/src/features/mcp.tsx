@@ -123,6 +123,18 @@ const parseEnv = (text: string) =>
       .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
   )
 
+// Connectors people use most, filled in: pick one, then paste the token where the form says. Only servers whose
+// address or package is stable; OAuth sign-in in the app is not done yet (these take a token instead).
+const CATALOG = [
+  { name: "GitHub", kind: "http", url: "https://api.githubcopilot.com/mcp/", env: "Authorization=Bearer <your GitHub token>" },
+  { name: "Notion", kind: "stdio", command: "npx -y @notionhq/notion-mcp-server", env: "NOTION_TOKEN=<your Notion integration token>" },
+  { name: "Context7", kind: "http", url: "https://mcp.context7.com/mcp", env: "CONTEXT7_API_KEY=<optional key>" },
+  { name: "Figma", kind: "http", url: "http://127.0.0.1:3845/mcp", env: "" },
+  { name: "Playwright", kind: "stdio", command: "npx -y @playwright/mcp@latest", env: "" },
+  { name: "Filesystem", kind: "stdio", command: "npx -y @modelcontextprotocol/server-filesystem <folder>", env: "" },
+  { name: "Postgres", kind: "stdio", command: "npx -y @modelcontextprotocol/server-postgres postgresql://user:pass@localhost/db", env: "" }
+] as const
+
 function NewServer({ projectId, onDone }: { projectId: string | null; onDone: () => void }) {
   const create = useMutation(mutations.createServer)
   const [kind, setKind] = useState<"stdio" | "http">("stdio")
@@ -140,11 +152,30 @@ function NewServer({ projectId, onDone }: { projectId: string | null; onDone: ()
     create({ payload, reactivityKeys: ["servers"] }).then(onDone, (err: unknown) => setError(String(err)))
   }
 
+  const pick = (c: (typeof CATALOG)[number]) => {
+    setName(c.name)
+    setKind(c.kind)
+    if (c.kind === "http") setUrl(c.url)
+    else setCommand(c.command)
+    setEnv(c.env)
+  }
+
   return (
     <form onSubmit={submit} className="flex flex-col gap-4 rounded-card border border-subtle p-4">
+      {/* The catalog: fills the form; the token (if any) is still yours to paste. */}
+      <div className="flex flex-col gap-2">
+        <span className="text-sm text-muted">{t("mcp.catalog")}</span>
+        <div className="flex flex-wrap gap-1.5">
+          {CATALOG.map((c) => (
+            <Button key={c.name} size="sm" variant={name === c.name ? "secondary" : "ghost"} className="rounded-full" onPress={() => pick(c)}>
+              {c.name}
+            </Button>
+          ))}
+        </div>
+      </div>
       <div className="grid grid-cols-3 gap-3">
         <Field label={t("mcp.name")}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required autoFocus spellCheck={false} />
+          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required spellCheck={false} />
         </Field>
         <Field label={t("mcp.type")}>
           <Select

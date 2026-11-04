@@ -27,6 +27,7 @@ export const projects = sqliteTable("projects", {
   brief: text().notNull().default(""),
   path: text(), // workspace folder on disk (ARCHITECTURE §9.1); null: agents work in an empty Zero folder
   position: integer(), // manual order in the sidebar; null: not placed yet (newest first, above the placed ones)
+  defaultAgentId: text("default_agent_id"), // a new chat in the project starts with this agent (null: the assistant)
   createdAt: integer("created_at").notNull()
 })
 

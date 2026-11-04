@@ -3,13 +3,13 @@
 import type { Project } from "@zero/contracts"
 import { formatAge, t } from "@zero/i18n"
 import { type FormEvent, useEffect, useState } from "react"
-import { agentsAtom, chatsAtom, mutations, useList, useMutation, useStatuses } from "../client.ts"
+import { agentsAtom, chatsAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
 import { chatTitle, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
 import { AgentRow, BuildWithAi, useWorking } from "./agents.tsx"
 import {
-  Bot, Button, ChatStatusIcon, ConfirmDialog, EmptyState, Field, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Popover, Screen, Section, Tab,
+  Bot, Button, ChatStatusIcon, Select, ConfirmDialog, EmptyState, Field, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Popover, Screen, Section, Tab,
   TabList, TabPanel, Tabs, Textarea, Trash2
 } from "@/ui"
 
@@ -210,6 +210,9 @@ function Overview({ project }: { project: Project }) {
 function Agents({ projectId }: { projectId: string }) {
   const agents = useList(agentsAtom)
   const mine = agents.filter((a) => a.projectId === projectId)
+  const project = useList(projectsAtom).find((p) => p.id === projectId)
+  const update = useMutation(mutations.updateProject)
+  const choices = agents.filter((a) => a.projectId === projectId || a.projectId === null)
   const working = useWorking()
   return (
     <Section
@@ -224,6 +227,15 @@ function Agents({ projectId }: { projectId: string }) {
         </span>
       }
     >
+      {/* Who a new chat in the project starts with. */}
+      <Field label={t("project.defaultAgent")} hint={t("project.defaultAgentHint")}>
+        <Select
+          aria-label={t("project.defaultAgent")}
+          value={project?.defaultAgentId ?? ""}
+          onChange={(v) => void update({ params: { id: projectId }, payload: { defaultAgentId: v || null }, reactivityKeys: ["projects"] })}
+          options={[{ value: "", label: t("common.assistant") }, ...choices.map((a) => ({ value: a.id, label: a.title ? `${a.name} · ${a.title}` : a.name }))]}
+        />
+      </Field>
       {mine.length === 0 ? (
         <EmptyState icon={<Bot />} title={t("project.noAgents")} hint={t("project.noAgentsHint")} />
       ) : (

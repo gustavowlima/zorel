@@ -369,6 +369,10 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Build with AI** (cabeçalho da tela Agents e aba Agents do projeto, ghost com ✦): abre um chat "Build agents" com o Builder; ele propõe a equipe inteira num cartão de aprovação (cada perfil sob o nome).
 - Agentes também nascem no chat: um agente usa `zero_create_agent` / `zero_update_agent` e o pedido vira um **cartão de aprovação** com o perfil campo a campo; nada é criado sem o OK. A lista se atualiza ao fim do turno.
 
+### Agente padrão e catálogo
+- Aba Agents do projeto: "New chats start with" (Select: Assistant ou um agente global ou do projeto), salvo na hora. Um chat novo no projeto já vem com ele escolhido (dá para trocar antes de mandar).
+- Novo servidor MCP: em cima do formulário, "From the catalog" com pílulas (GitHub, Notion, Context7, Figma, Playwright, Filesystem, Postgres) que preenchem nome, tipo, comando ou URL e a linha do token a colar.
+
 ### Versões do agente
 - Na página do agente, a seção **History** (só a partir de duas versões): uma linha por versão, a mais nova primeiro — `vN` em mono, os campos que mudaram em relação à anterior ("Instructions, model"; a primeira diz "Created"), quem mudou ("You" ou o nome do agente que propôs) e quando. A atual diz "Current"; as outras têm "Restore", que confirma antes e grava o perfil antigo como uma versão nova (nada se perde).
 - Menu ⋯ do agente: **Export** baixa `<nome>.agent.json` (perfil sem conta: a conta é deste computador). Na tela Agents, **Import** lê esse arquivo e cria um agente global, que abre em seguida; um arquivo que não é de agente do Zero mostra o erro ao lado do botão.

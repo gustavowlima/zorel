@@ -357,6 +357,8 @@ export const en = {
     manage: "Manage"
   },
   project: {
+    defaultAgent: "New chats start with",
+    defaultAgentHint: "The agent that answers a new chat in this project (you can change it before sending).",
     newTitle: "New project",
     name: "Name",
     brief: "Brief",
@@ -644,6 +646,7 @@ export const en = {
     saveFailed: "Couldn't save the key. Try again."
   },
   mcp: {
+    catalog: "From the catalog (fills the form; paste your token where it says)",
     intro: "Servers you added. Secrets live in the system keychain, never in Zero's database.",
     projectIntro: "Available in this project's chats, on top of the global ones.",
     empty: "No servers yet",

@@ -83,6 +83,7 @@ export const Project = Schema.Struct({
   name: Schema.String,
   brief: Schema.String, // stable project context, included in every turn's prompt
   path: Schema.NullOr(Schema.String), // workspace folder; null: agents work in an empty Zero folder
+  defaultAgentId: Schema.NullOr(Id), // a new chat in the project starts with this agent (null: the assistant)
   createdAt: Schema.Number
 })
 export type Project = typeof Project.Type
@@ -389,7 +390,7 @@ export type TopTurn = typeof TopTurn.Type
 
 const FolderPath = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(1000))
 export const NewProject = Schema.Struct({ name: Name, brief: LongText(8000), path: Schema.optional(Schema.NullOr(FolderPath)) })
-export const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: Schema.optional(LongText(8000)), path: Schema.optional(Schema.NullOr(FolderPath)) })
+export const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: Schema.optional(LongText(8000)), path: Schema.optional(Schema.NullOr(FolderPath)), defaultAgentId: Schema.optional(Schema.NullOr(Id)) })
 const AgentTitle = Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(60))
 const AgentDescription = LongText(300)
 export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access) })
