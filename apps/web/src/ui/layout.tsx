@@ -71,6 +71,7 @@ export function Meter({ value, label, warnAt, className, role = "meter" }: { val
   const v = Math.min(1, Math.max(0, value))
   return (
     // biome-ignore lint/a11y/useSemanticElements: a native <meter> can't take the tokens' look in every engine
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: role is "meter" or "progressbar", both take aria-label (Biome can't read a dynamic role)
     <span role={role} aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(v * 100)} className={cn("block h-1 overflow-hidden rounded-full bg-control", className)}>
       <span className={cn("block h-full rounded-full transition-[width] duration-300 ease-out motion-reduce:transition-none", warnAt !== undefined && v > warnAt ? "bg-warning" : "bg-accent")} style={{ width: `${v * 100}%` }} />
     </span>
