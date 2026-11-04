@@ -29,3 +29,4 @@
 2026-11-04 | modelos prontos de agente, seletor de projeto no Build with AI, prazo do gateway maior que o da aprovação | itens 4 e bug do timeout de 60 s
 2026-11-04 | modelos prontos removidos do formulário de agente; loja de agentes vai para o backlog | decisão do usuário
 2026-11-04 | Settings › Connectors em cartões; catálogo de pílulas do formulário removido | usuário pediu conectores tipo GitHub/Notion
+2026-11-04 | conectores com logos (simple-icons) e estado Reconnect | usuário pediu logos e o padrão do OpenBot

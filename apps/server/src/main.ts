@@ -482,12 +482,16 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
           return server
         })
       )
-      .handle("update", ({ params, payload }) =>
+      .handle("update", ({ params, payload: { env, ...payload } }) =>
         Effect.gen(function* () {
           const before = yield* store.mcpServer(params.id)
-          yield* Effect.promise(() => hub.close(params.id))
-          const after = yield* found(store.updateMcpServer(params.id, payload))
-          if (before) yield* audit.record(Actions.mcpUpdated, { target: after, ...changed(before, after, Object.keys(payload)) })
+          if (!before) return yield* notFound()
+          yield* Effect.promise(async () => {
+            if (env) await secrets.set(mcpEnvName(params.id), Object.keys(env).length ? JSON.stringify(env) : "")
+            await hub.close(params.id)
+          })
+          const after = yield* found(store.updateMcpServer(params.id, { ...payload, ...(env && { envKeys: Object.keys(env) }) }))
+          yield* audit.record(Actions.mcpUpdated, { target: after, ...changed(before, after, [...Object.keys(payload), ...(env ? ["envKeys"] : [])]) })
           return after
         })
       )
@@ -535,7 +539,9 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
           })
         })
       )
-      .handle("signedIn", () => store.mcpServers().pipe(Effect.map((all) => all.filter((s) => s.auth === "oauth" && isSignedIn(secrets, s.id)).map((s) => s.id))))
+      .handle("signedIn", () =>
+        store.mcpServers().pipe(Effect.map((all) => ({ signedIn: all.filter((s) => s.auth === "oauth" && isSignedIn(secrets, s.id)).map((s) => s.id), refused: all.filter((s) => hub.refused.has(s.id)).map((s) => s.id) })))
+      )
       .handle("decide", ({ params, payload }) =>
         runtime.decide(params.id, payload.approve ? "approved" : "denied").pipe(Effect.catchTag("ApprovalNotFound", () => notFound()))
       )
