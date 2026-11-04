@@ -1,15 +1,18 @@
 // A folder's files as an editor's explorer: React Aria's Tree, so it gets arrow keys, type-ahead, multi-select
 // (Shift / Cmd / Ctrl + click, Shift + arrows) and drag and drop (pointer, keyboard and screen reader) from the
 // library. A row can turn into an input to rename it in place. Dropping on a folder moves into it; on a file,
-// into that file's folder; on the empty space below, into the top folder.
+// into that file's folder; on the empty space below, into the top folder. Virtualized (React Aria's Virtualizer):
+// only the rows in view are in the page, so a big repository scrolls like a small one. The tree is its own scroll
+// box and fills its parent's height.
 import { type ReactNode, useRef } from "react"
-import { Button, type Key, Tree, TreeItem, TreeItemContent, useDragAndDrop } from "react-aria-components"
+import { Button, type Key, ListLayout, Tree, TreeItem, TreeItemContent, useDragAndDrop, Virtualizer } from "react-aria-components"
 import { cn } from "@/lib/utils"
 import { FileIcon } from "./file-icon"
 import { ChevronRight, Folder, FolderOpen } from "./icons"
 
 export type FileNode = { readonly name: string; readonly path: string; readonly children: ReadonlyArray<FileNode> | null } // null: a file
 
+const ROW = 28 // px: h-control-sm, the Virtualizer's fixed row height
 const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")))
 
 export function FileTree({
@@ -64,7 +67,7 @@ export function FileTree({
     onRootDrop: () => onMove(dragged.current, "")
   })
   const row = (n: FileNode, depth: number): ReactNode => (
-    <TreeItem key={n.path} id={n.path} textValue={n.name} className="group/row shrink-0 outline-none data-dragging:opacity-50">
+    <TreeItem key={n.path} id={n.path} textValue={n.name} className="group/row outline-none data-dragging:opacity-50">
       <TreeItemContent>
         {({ isExpanded, isFocusVisible, isHovered, isSelected, isDropTarget }) => (
           <div
@@ -97,9 +100,8 @@ export function FileTree({
     </TreeItem>
   )
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: forwards the keys of the focused row (F2, Delete); the rows stay the interactive elements
     <div
-      className="min-h-full"
+      className="h-full"
       // Capture: runs before the tree's own keys (its Enter opens the row; on macOS Enter renames).
       onKeyDownCapture={(e) => {
         if (e.target instanceof HTMLInputElement) return
@@ -109,24 +111,26 @@ export function FileTree({
         }
       }}
     >
-      <Tree
-        aria-label={label}
-        selectionMode="multiple"
-        selectionBehavior="replace"
-        expandedKeys={expanded as Iterable<Key>}
-        onExpandedChange={(keys) => onExpandedChange(new Set([...keys].map(String)))}
-        selectedKeys={selected as Iterable<Key>}
-        onSelectionChange={(keys) => onSelectionChange(new Set(keys === "all" ? [] : [...keys].map(String)))}
-        onAction={(key) => {
-          const find = (ns: ReadonlyArray<FileNode>): FileNode | undefined => ns.reduce<FileNode | undefined>((f, n) => f ?? (n.path === key ? n : n.children ? find(n.children) : undefined), undefined)
-          const n = find(nodes)
-          if (n) onAction(n)
-        }}
-        dragAndDropHooks={dragAndDropHooks}
-        className="flex flex-col gap-px pb-8 outline-none data-drop-target:bg-accent-faint"
-      >
-        {nodes.map((n) => row(n, 0))}
-      </Tree>
+      <Virtualizer layout={ListLayout} layoutOptions={{ rowHeight: ROW, gap: 1, padding: 4, dropIndicatorThickness: 2 }}>
+        <Tree
+          aria-label={label}
+          selectionMode="multiple"
+          selectionBehavior="replace"
+          expandedKeys={expanded as Iterable<Key>}
+          onExpandedChange={(keys) => onExpandedChange(new Set([...keys].map(String)))}
+          selectedKeys={selected as Iterable<Key>}
+          onSelectionChange={(keys) => onSelectionChange(new Set(keys === "all" ? [] : [...keys].map(String)))}
+          onAction={(key) => {
+            const find = (ns: ReadonlyArray<FileNode>): FileNode | undefined => ns.reduce<FileNode | undefined>((f, n) => f ?? (n.path === key ? n : n.children ? find(n.children) : undefined), undefined)
+            const n = find(nodes)
+            if (n) onAction(n)
+          }}
+          dragAndDropHooks={dragAndDropHooks}
+          className="block h-full overflow-auto outline-none data-drop-target:bg-accent-faint"
+        >
+          {nodes.map((n) => row(n, 0))}
+        </Tree>
+      </Virtualizer>
     </div>
   )
 }
