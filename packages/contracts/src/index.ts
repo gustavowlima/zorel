@@ -410,7 +410,8 @@ export const GitStatus = Schema.Struct({
   files: Schema.Array(Schema.String),
   remote: Schema.Boolean,
   gh: Schema.Boolean,
-  pr: Schema.NullOr(Schema.Struct({ number: Schema.Number, url: Schema.String, state: Schema.String, title: Schema.String }))
+  pr: Schema.NullOr(Schema.Struct({ number: Schema.Number, url: Schema.String, state: Schema.String, title: Schema.String })),
+  commits: Schema.Array(Schema.Struct({ sha: Schema.String, subject: Schema.String, at: Schema.Number, pushed: Schema.Boolean })) // the latest on the branch
 })
 export type GitStatus = typeof GitStatus.Type
 // git or gh refused (its message, shown as is).

@@ -37,6 +37,7 @@ test("status, draft, commit and branch in a real repository", async () => {
   expect(Bun.spawnSync(["git", "diff", "--cached", "--name-only"], { cwd: dir }).stdout.toString()).toBe("") // index untouched
   expect(await commit(dir, "feat: second")).toMatch(/^[0-9a-f]{7,}$/)
   expect((await status(dir)).files).toEqual([])
+  expect((await status(dir)).commits.map((c) => c.subject)).toEqual(["feat: second", "feat: first"])
   await expect(commitDraftPrompt(dir)).rejects.toThrow("Nothing to commit")
   await switchToNewBranch(dir, "feat/x")
   expect((await status(dir)).branch).toBe("feat/x")

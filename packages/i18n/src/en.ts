@@ -702,6 +702,7 @@ export const en = {
   },
   git: {
     title: "Git",
+    commits: "Commits",
     button: { one: "Git: {branch}, 1 file changed", other: "Git: {branch}, {count} files changed" },
     detached: "No branch",
     failed: "Git couldn't do that.",

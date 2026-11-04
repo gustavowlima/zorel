@@ -12,10 +12,11 @@ import { agentName } from "../labels.ts"
 const DiffView = lazy(() => import("./diff-view.tsx"))
 import {
   Button, ChevronDown, ChevronRight, ConfirmButton, cx, EmptyState, File, Folder, FolderOpen, IconButton, Spinner, Tab, TabList,
-  Columns2, ConfirmDialog, ContextMenu, Globe, Menu, MenuItem, PanelRight, Pin, PinOff, Play, Plus, Popover, Rows2, Server, Square, SquareTerminal, TabPanel, Tabs, Tooltip, X
+  Columns2, ConfirmDialog, ContextMenu, GitBranch, Globe, Menu, MenuItem, PanelRight, Pin, PinOff, Play, Plus, Popover, Rows2, Server, Square, SquareTerminal, TabPanel, Tabs, Tooltip, X
 } from "@/ui"
 import { Shell } from "./shell.tsx"
 import { BrowserPanel } from "./browser.tsx"
+import { GitPanel, useIsRepo } from "./git.tsx"
 
 
 export type Focus = { readonly turnId: string; readonly path: string | null }
@@ -80,7 +81,7 @@ export function TurnChanges({ message, onView }: { message: Message; onView: (f:
 
 // ---------- side panel (T3 Code's pattern: one panel, its surfaces as tabs) ----------
 
-export type SideTab = "changes" | "files" | "browser" | "terminal"
+export type SideTab = "changes" | "git" | "files" | "browser" | "terminal"
 
 // ---------- pins: a side-panel tab or a shell, put up in the chat's title row as a shortcut ----------
 // Side tabs are pinned for every chat (this computer); shells, for their chat (a shell lives in one chat).
@@ -117,8 +118,8 @@ export function usePins(chatId: string) {
 }
 export type Pins = ReturnType<typeof usePins>
 
-export const SIDE_ICON: Record<SideTab, typeof PanelRight> = { changes: PanelRight, files: Folder, browser: Globe, terminal: SquareTerminal }
-export const sideLabel = (tab: SideTab) => (tab === "browser" ? t("browser.title") : t(`workspace.${tab}`))
+export const SIDE_ICON: Record<SideTab, typeof PanelRight> = { changes: PanelRight, git: GitBranch, files: Folder, browser: Globe, terminal: SquareTerminal }
+export const sideLabel = (tab: SideTab) => (tab === "browser" ? t("browser.title") : tab === "git" ? t("git.title") : t(`workspace.${tab}`))
 
 // The pin/unpin item of a right-click menu.
 export const PinItem = ({ pinned, onAction }: { pinned: boolean; onAction: () => void }) => (
@@ -168,6 +169,7 @@ export function SidePanel({
   const [shellKey, setShellKey] = useState(0) // the last shell closed: a fresh terminal next time
   useEffect(() => setOpened((s) => (s.has(tab) ? s : new Set([...s, tab]))), [tab])
   const folder = !!project?.path
+  const repo = useIsRepo(chat.id)
   const delta = chatDelta(messages)
   const max = () => Math.round(window.innerWidth * 0.7)
   const resize = (next: number) => {
@@ -189,7 +191,7 @@ export function SidePanel({
   }
 
   return (
-    <aside aria-label={t("workspace.panel")} className="relative flex min-w-0 shrink-0 flex-col border-l border-subtle" style={{ width }}>
+    <aside aria-label={t("workspace.panel")} className="@container relative flex min-w-0 shrink-0 flex-col border-l border-subtle" style={{ width }}>
       {/* biome-ignore lint/a11y/useSemanticElements: a focusable splitter (ARIA window splitter); <hr> can't take focus or a value */}
       <div
         role="separator"
@@ -220,15 +222,16 @@ export function SidePanel({
             }}
           >
             <TabList label={t("workspace.panel")} className="min-w-0 flex-nowrap overflow-x-auto">
-              {(["changes", "files", "browser", "terminal"] as const)
-                .filter((id) => folder || (id !== "files" && id !== "terminal"))
+              {(["changes", "git", "files", "browser", "terminal"] as const)
+                .filter((id) => (id === "git" ? folder && repo : folder || (id !== "files" && id !== "terminal")))
                 .map((id) => {
                   const Icon = SIDE_ICON[id]
                   return (
                     <Tab key={id} id={id}>
-                      <span data-side-tab={id} className="flex items-center gap-1.5 whitespace-nowrap">
+                      {/* Narrow panel: icons only (the name stays as the tab's accessible name). */}
+                      <span data-side-tab={id} className="flex items-center gap-1.5 whitespace-nowrap" title={sideLabel(id)}>
                         <Icon className="size-3.5" />
-                        {sideLabel(id)}
+                        <span className="sr-only @3xl:not-sr-only">{sideLabel(id)}</span>
                         {id === "changes" && delta.added + delta.removed > 0 && <Delta {...delta} />}
                         {pins.side.includes(id) && <Pin className="size-3 text-dim" aria-label={t("workspace.pinned")} />}
                       </span>
@@ -244,6 +247,11 @@ export function SidePanel({
         <TabPanel id="changes" className="min-h-0 flex-1 overflow-y-auto">
           <ChangesTab messages={messages} agents={agents} focus={focus} onFocus={onFocus} />
         </TabPanel>
+        {folder && repo && (
+          <TabPanel id="git" className="min-h-0 flex-1 overflow-y-auto">
+            <GitPanel chatId={chat.id} worktree={chat.worktree} />
+          </TabPanel>
+        )}
         {folder && project && (
           <TabPanel id="files" className="min-h-0 flex-1 overflow-y-auto">
             <FilesTab project={project} chat={chat} messages={messages} onFocus={onFocus} />
