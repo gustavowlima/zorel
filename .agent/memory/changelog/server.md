@@ -28,3 +28,4 @@
 2026-11-03 | claude-cli loads user/project/local settings with policy-only permissions and no hooks; CLI slash commands listed and dispatched | run Claude Code's own / commands like T3 Code
 2026-11-03 | painel de execução: scripts do projeto em abas do terminal, servidores locais com abrir no navegador e parar | fase 3c (lacuna vs T3 Code)
 2026-11-03 | git no chat: status, commit com mensagem rascunhada pelo modelo, push, PR via gh, nova branch; auditado | lacuna vs T3 Code
+2026-11-03 | worktree por chat (POST/DELETE /api/chats/:id/worktree) | lacuna vs T3 Code

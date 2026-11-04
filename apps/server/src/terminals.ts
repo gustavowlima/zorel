@@ -14,6 +14,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Socket } from "effect/socket"
 import { Store } from "./db.ts"
 import { Workspace } from "./workspace.ts"
+import { projectFor } from "./chat.ts"
 
 export const MAX_TERMINALS = 12 // live shells at once, across chats
 const MAX_INPUT = 64 * 1024 // one input frame (a paste)
@@ -164,7 +165,7 @@ export const TerminalSocket = HttpRouter.add(
     if (wanted && (!s || s.chatId !== chat.id)) return HttpServerResponse.jsonUnsafe({ error: "terminal_not_found" }, { status: 404 })
     if (!s) {
       if (live() >= MAX_TERMINALS) return HttpServerResponse.jsonUnsafe({ error: "too_many_terminals" }, { status: 429 })
-      const project = chat.projectId ? yield* store.project(chat.projectId) : undefined
+      const project = projectFor(chat, chat.projectId ? yield* store.project(chat.projectId) : undefined)
       const cwd = workspace.cwdOf(chat.id, project)
       const script = q.get("run")
       const line = script ? runLine(cwd, script) : undefined

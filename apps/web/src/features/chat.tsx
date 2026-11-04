@@ -253,7 +253,7 @@ function ChatHeader({
             {delta.added + delta.removed > 0 && <Delta {...delta} />}
           </Button>
         )}
-        {workspace && <GitControl chatId={chat.id} />}
+        {workspace && <GitControl chat={chat} />}
         <Button size="sm" variant={browserOpen ? "secondary" : "ghost"} aria-expanded={browserOpen} onPress={onBrowser} className="rounded-full">
           <Globe />
           {t("browser.title")}

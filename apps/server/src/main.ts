@@ -26,6 +26,7 @@ import { Tools } from "./tools.ts"
 import { billingOf, Pricing } from "./pricing.ts"
 import { clean, measure } from "./storage.ts"
 import { Workspace } from "./workspace.ts"
+import { projectFor } from "./chat.ts"
 import { closeTerminal, scriptsOf, serversIn, TerminalSocket, terminalsOf } from "./terminals.ts"
 import { BrowserService, BrowserSocket } from "./browser.ts"
 
@@ -69,7 +70,8 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
           if (!project) return yield* notFound()
           // Marks are relative to the chat's first checkpoint: what this conversation changed.
           const since = query.chatId ? yield* store.firstTree(query.chatId) : null
-          return yield* workspace.files(project, since ?? null)
+          const chat = query.chatId ? yield* store.chat(query.chatId) : undefined
+          return yield* workspace.files((chat ? projectFor(chat, project) : project)!, since ?? null)
         })
       )
       .handle("remove", ({ params }) =>
@@ -124,6 +126,7 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
     const audit = yield* Audit
     const pricing = yield* Pricing
     const services = yield* Effect.context<Store | Engines | DataDir>()
+    const runtime = yield* Runtime
     // git/gh refusals go back to the person as GitFailed with git's own message.
     const gitTry = <A>(f: () => Promise<A>) =>
       Effect.tryPromise({ try: f, catch: (e) => new GitFailed({ message: e instanceof Error ? e.message : String(e) }) })
@@ -139,7 +142,7 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
       Effect.gen(function* () {
         const chat = yield* store.chat(id)
         if (!chat) return yield* notFound()
-        return workspace.cwdOf(chat.id, chat.projectId ? yield* store.project(chat.projectId) : undefined)
+        return workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? yield* store.project(chat.projectId) : undefined))
       })
     // A turn with workspace checkpoints, its project and whether its changes were undone.
     const turnWithTrees = (id: string) =>
@@ -167,7 +170,16 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         })
       )
       .handle("remove", ({ params }) =>
-        store.removeChat(params.id).pipe(
+        Effect.gen(function* () {
+          // Its worktree goes with it when nothing in it is uncommitted (else it stays on disk, with its branch).
+          const chat = yield* store.chat(params.id)
+          const project = chat?.worktree && chat.projectId ? yield* store.project(chat.projectId) : undefined
+          if (chat?.worktree && project?.path) {
+            const removed = yield* Effect.promise(() => Git.removeWorktree(project.path!, chat.worktree!).catch(() => false))
+            if (!removed) yield* Effect.logInfo("worktree kept: it has uncommitted changes", { chatId: chat.id, worktree: chat.worktree })
+          }
+        }).pipe(
+          Effect.andThen(store.removeChat(params.id)),
           Effect.tap(() =>
             Effect.sync(() => {
               rmSync(join(dataDir, "attachments", params.id), { recursive: true, force: true })
@@ -226,6 +238,36 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           yield* gitAudit(params.id, Actions.gitBranched, { branch: payload.name })
         })
       )
+      // The chat moves to a new worktree of its project, on a new branch from where the project is now. The next turn
+      // opens its engine session there (the session key carries the folder).
+      .handle("enterWorktree", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const chat = yield* store.chat(params.id)
+          if (!chat) return yield* notFound()
+          const project = chat.projectId ? yield* store.project(chat.projectId) : undefined
+          if (!project?.path) return yield* new GitFailed({ message: "Only a chat in a project with a folder can have a worktree." })
+          if (chat.worktree) return yield* new GitFailed({ message: "This chat already works in a worktree." })
+          if (runtime.busy(chat.id)) return yield* new GitFailed({ message: "Wait for the turn to finish." })
+          const dir = join(dataDir, "worktrees", project.id, chat.id)
+          const branch = payload.branch ?? Git.branchFor(chat.title, chat.id)
+          yield* gitTry(() => Git.addWorktree(project.path!, dir, branch))
+          yield* store.setWorktree(chat.id, dir)
+          yield* gitAudit(chat.id, Actions.gitBranched, { branch, worktree: dir })
+        })
+      )
+      // Back to the project folder. The worktree goes only when nothing in it is uncommitted; its branch stays.
+      .handle("leaveWorktree", ({ params }) =>
+        Effect.gen(function* () {
+          const chat = yield* store.chat(params.id)
+          if (!chat) return yield* notFound()
+          if (!chat.worktree) return
+          if (runtime.busy(chat.id)) return yield* new GitFailed({ message: "Wait for the turn to finish." })
+          const project = chat.projectId ? yield* store.project(chat.projectId) : undefined
+          const removed = project?.path ? yield* gitTry(() => Git.removeWorktree(project.path!, chat.worktree!)) : true
+          if (!removed) return yield* new GitFailed({ message: "The worktree has uncommitted changes: commit them (or discard them) first." })
+          yield* store.setWorktree(chat.id, null)
+        })
+      )
       .handle("scripts", ({ params }) => Effect.map(chatRoot(params.id), scriptsOf))
       .handle("servers", ({ params }) => Effect.map(chatRoot(params.id), serversIn))
       // Stops a server of that list (SIGTERM); a pid outside it is not found.
@@ -255,7 +297,7 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           if (splitModel(chat.model).provider !== "claude-cli") return []
           const project = chat.projectId ? yield* store.project(chat.projectId) : undefined
           const account = yield* store.account(chat.accountId ?? "claude-default")
-          return yield* Effect.promise(() => claudeCommands(account?.home ?? undefined, workspace.cwdOf(chat.id, project)))
+          return yield* Effect.promise(() => claudeCommands(account?.home ?? undefined, workspace.cwdOf(chat.id, projectFor(chat, project))))
         })
       )
       // The next turn as the lead would get it, measured part by part.
@@ -304,7 +346,9 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           const t = yield* turnWithTrees(params.id)
           const project = t && (yield* store.project(t.projectId))
           if (!t || !project) return yield* notFound()
-          const { conflicts } = yield* workspace.restore(project, t.before, t.after)
+          // In the folder the chat works in now (its worktree, if it has one).
+          const chat = yield* store.chat(t.row.chatId)
+          const { conflicts } = yield* workspace.restore((chat ? projectFor(chat, project) : project)!, t.before, t.after)
           if (conflicts.length) return yield* new UndoConflict({ files: conflicts })
           yield* store.markReverted(t.row.id)
           const files = yield* workspace.diff(t.projectId, t.before, t.after)

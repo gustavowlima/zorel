@@ -727,7 +727,15 @@ export const en = {
     newBranch: "New branch",
     branchName: "Branch name",
     branchHint: "feat/short-name",
-    switch: "Create and switch"
+    switch: "Create and switch",
+    newWorktree: "Work in a worktree",
+    worktreeHint: "The chat gets its own folder on a new branch: its agents and shells work there, and the project folder stays as it is.",
+    branchAuto: "Branch name (or leave empty)",
+    createWorktree: "Create worktree",
+    inWorktreeNow: "The chat now works in its worktree.",
+    inWorktree: "This chat works in a worktree",
+    leaveWorktree: "Back to the project folder",
+    leftWorktree: "Back in the project folder. The branch stays."
   },
   workspace: {
     folder: "Folder",
