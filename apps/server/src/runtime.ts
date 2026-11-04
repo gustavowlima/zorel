@@ -14,7 +14,7 @@ import type { Approver, EngineSession, NativeApproval } from "#server/engines/se
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
-import { createInputs, findAgent, KNOWLEDGE_TOOLS, listText, MEMORY_TOOL, proposalText, readText, ROUTINES_TOOL, SKILL_TOOLS, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
+import { createInputs, findAgent, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
@@ -242,10 +242,38 @@ export const makeRuntime = Effect.gen(function* () {
     // access is "ask", like any tool that writes.
     if (perms.browser) for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
-    for (const t of [...TEAM_TOOLS, MEMORY_TOOL, ROUTINES_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    for (const t of [...TEAM_TOOLS, TASK_TOOL, MEMORY_TOOL, ROUTINES_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
       return { tools: undefined as TurnTools | undefined, close: () => {} }
+    }
+
+    // zorel_start_task: checks, then the teammate's own chat. A teammate with wider access than the caller only
+    // works on the person's OK (delegating is not a way around one's own access).
+    const taskCall = async (args: Record<string, unknown>) => {
+      const target = findAgent(visibleTo(await run(store.agents()), chat.projectId), args.agent)
+      if (!target || target.builtin) return textResult(`No agent "${String(args.agent ?? "")}" here. Call zorel_list_agents.`, true)
+      if (target.id === agent?.id) return textResult("That's you: do it here.", true)
+      const task = typeof args.task === "string" ? args.task.trim() : ""
+      if (!task || task.length > 8000) return textResult("task: what to do and the context it needs, up to 8000 characters.", true)
+      const open = await run(store.openTasks())
+      if (open.filter((t) => t.taskOf === chat.id).length >= MAX_OPEN_TASKS) return textResult(`This chat already waits on ${MAX_OPEN_TASKS} tasks. Continue when their results arrive.`, true)
+      let depth = 0
+      for (let up = open.find((t) => t.id === chat.id); up?.taskOf; up = open.find((t) => t.id === up!.taskOf)) depth++
+      if (depth >= MAX_TASK_DEPTH) return textResult("This is already a task inside a task: do it here, or answer with what you have.", true)
+      const s = await step(`Task for ${target.name}`, TASK_TOOL.name)
+      const mine = agent?.access ?? "workspace"
+      if (narrower(target.access, mine) !== target.access) {
+        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: TASK_TOOL.name, summary: `${nameOf(agent)} wants ${target.name} (more access than ${nameOf(agent)}) to work on a task`, args: task.slice(0, 4000), cwd: null }))
+        if (outcome === "denied" || outcome === "expired") {
+          await finish(s, "refused")
+          return textResult("The user declined. Do what you can yourself, or ask them.", true)
+        }
+      }
+      const reply = args.reply !== false
+      const id = await run(startTask(chat, agent, target, task, reply))
+      await finish(s, "ok", `#/chat/${id}`)
+      return textResult(reply ? `Started: ${target.name} works on it in its own chat. Its answer comes back here as a message, and you continue then.` : `Handed to ${target.name}, in its own chat.`)
     }
 
     const teamCall = async (name: string, args: Record<string, unknown>) => {
@@ -464,6 +492,7 @@ export const makeRuntime = Effect.gen(function* () {
         return textResult(`Granted: ${change.label}. It works from your next turn.`)
       }
       if (name === MEMORY_TOOL.name) return memoryCall(args)
+      if (name === TASK_TOOL.name) return taskCall(args)
       if (TEAM_TOOLS.some((t) => t.name === name)) return teamCall(name, args)
       const builtin = BROWSER_TOOLS.find((t) => t.name === name)
       if (builtin) {
@@ -800,10 +829,47 @@ export const makeRuntime = Effect.gen(function* () {
       }
     })
 
+  // ---------- tasks between agents (zorel_start_task) ----------
+  const startTask = (origin: Chat, by: Agent | undefined, target: Agent, task: string, reply: boolean) =>
+    Effect.gen(function* () {
+      const c = yield* store.createChat({
+        projectId: origin.projectId, agentIds: [target.id], model: target.model, accountId: target.accountId, effort: target.effort,
+        title: `${target.name}: ${task.replace(/\s+/g, " ").slice(0, 60)}`, taskOf: reply ? origin.id : null, taskBy: by?.id ?? null
+      })
+      const back = reply ? `Your final answer goes back to ${nameOf(by)}; make it the result itself.` : "Nobody waits on the answer; just do the work."
+      yield* addUserMessage(c.id, `Task from ${nameOf(by)}, in "${origin.title}":\n\n${task}\n\n${back}`)
+      yield* enqueueFor(c, task, null)
+      return c.id
+    })
+
+  // A task's queue drained: its last answer goes back to the chat that asked, as a message from the teammate, and
+  // the asking agent takes the next turn there (or the chat's lead, if it left). Once per task.
+  const reportTask = (chatId: string, done: { text: string; agent: Agent | undefined } | undefined) =>
+    Effect.gen(function* () {
+      const task = (yield* store.openTasks()).find((t) => t.id === chatId)
+      if (!task?.taskOf) return
+      yield* store.closeTask(chatId)
+      const [origin, self] = [yield* store.chat(task.taskOf), yield* store.chat(chatId)]
+      if (!origin || !self) return
+      const link = `[Open the task](#/chat/${chatId})`
+      const text = done?.text.trim() ? `${done.text.trim()}\n\n${link}` : `The task "${self.title}" ended without an answer. ${link}`
+      const message = yield* store.addMessage({ chatId: origin.id, role: "assistant", agentId: done?.agent?.id ?? self.agentIds[0] ?? null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 })
+      yield* publish(origin.id, ev("message", { message }))
+      const team = yield* members(store, origin)
+      const asker = team.find((a) => a.id === task.taskBy)
+      const isLead = !asker || asker.id === team[0]?.id
+      const t = yield* store.enqueueTurn({
+        chatId: origin.id, agentId: asker?.id ?? team[0]?.id ?? null, model: isLead ? origin.model : asker.model, accountId: isLead ? origin.accountId : asker.accountId, clientId: null, depth: 1
+      })
+      yield* publish(origin.id, ev("queued", { turn: store.toTurn(t) }))
+      yield* ensureWorker(origin.id)
+    })
+
   // ---------- per-chat worker ----------
   const worker = (chatId: string): Effect.Effect<void> =>
     Effect.gen(function* () {
       const self = workers.get(chatId)!
+      let last: { text: string; agent: Agent | undefined } | undefined
       while (true) {
         const row = yield* store.nextQueued(chatId)
         if (!row) {
@@ -817,8 +883,10 @@ export const makeRuntime = Effect.gen(function* () {
         running.set(chatId, fiber)
         const done = yield* Fiber.join(fiber).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         running.delete(chatId)
+        last = done
         if (done) yield* chain(row, done)
       }
+      yield* reportTask(chatId, last)
       workers.delete(chatId)
       yield* setStatus(chatId, "idle", null, "")
       yield* Effect.forkDetach(consolidate(chatId).pipe(Effect.provide(services), Effect.ignore))

@@ -90,6 +90,18 @@ export const TEAM_TOOLS = [
   }
 ] as const
 
+// Delegation (ARCHITECTURE §9.3): the teammate works in a chat of its own, in parallel, and its answer comes back
+// to this chat as a message, where the asking agent continues. reply false: hand it over and don't hear back.
+export const TASK_TOOL = {
+  name: "zorel_start_task",
+  description:
+    "Hand work to a teammate (from zorel_list_agents) when it's in their remit or can run in parallel. It runs in its own chat; its answer comes back here as a message and you continue then, so don't wait or check on it. agent: an id or @handle. task: what to do and the context it needs (it doesn't see this chat). reply: false to hand it over without hearing back.",
+  inputSchema: { properties: { agent: { type: "string" }, task: { type: "string" }, reply: { type: "boolean" } }, required: ["agent", "task"] },
+  writes: false
+} as const
+export const MAX_OPEN_TASKS = 4 // per chat, waiting for their results
+export const MAX_TASK_DEPTH = 2 // a task may start tasks, whose tasks may not
+
 // Memory beyond the prompt's budget: the agent searches it when it needs to (the turn already brings the most
 // recently confirmed and the few that match the message). Read only; scopes are the chat's.
 export const MEMORY_TOOL = {

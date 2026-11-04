@@ -67,7 +67,7 @@ export const repository = (db: Db) => {
         .select({ chatId: messages.chatId, text: messages.text, at: messages.at })
         .from(messages)
         .where(and(inArray(messages.chatId, ids), sql`${messages.at} = (select max(m2.at) from messages m2 where m2.chat_id = ${messages.chatId})`))
-      return rows.map(({ hidden: _hidden, ...c }): Chat => {
+      return rows.map(({ hidden: _hidden, taskOf: _taskOf, taskBy: _taskBy, ...c }): Chat => {
         const l = last.find((m) => m.chatId === c.id)
         return {
           ...c,
@@ -247,17 +247,20 @@ export const repository = (db: Db) => {
         )
       ),
     chat,
-    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; hidden?: boolean | undefined }) =>
+    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; hidden?: boolean | undefined; title?: string | undefined; taskOf?: string | null | undefined; taskBy?: string | null | undefined }) =>
       Effect.gen(function* () {
         const id = crypto.randomUUID()
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: "Novo chat", model: input.model, accountId: input.accountId ?? null, effort: input.effort ?? null, hidden: input.hidden ?? false, createdAt: now() })
+            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: input.title ?? "Novo chat", model: input.model, accountId: input.accountId ?? null, effort: input.effort ?? null, hidden: input.hidden ?? false, taskOf: input.taskOf ?? null, taskBy: input.taskBy ?? null, createdAt: now() })
             yield* setMembers(tx, id, input.agentIds)
           })
         )
         return (yield* chat(id))!
       }).pipe(orDie),
+    // Tasks still owing a result (zorel_start_task), and closing one once its result went back.
+    openTasks: () => orDie(db.select({ id: chats.id, taskOf: chats.taskOf, taskBy: chats.taskBy }).from(chats).where(sql`${chats.taskOf} is not null`)),
+    closeTask: (id: string) => orDie(db.update(chats).set({ taskOf: null }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
     updateChat: (id: string, input: { resumeAt?: null | undefined; title?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | null | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
       Effect.gen(function* () {
         yield* db.transaction((tx) =>

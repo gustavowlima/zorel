@@ -442,3 +442,39 @@ test("runaway guard: the same step and result 4 times is a loop; 6 failures in a
   for (let i = 0; i < 5; i++) expect(h({ kind: "run", title: `t${i}`, status: "error", output: "" })).toBeUndefined()
   expect(h({ kind: "run", title: "t5", status: "error", output: "" })).toContain("6 steps")
 })
+
+// zorel_start_task: the teammate works in its own chat and its answer comes back to the asking chat, where the
+// asking agent takes the next turn.
+const Delegating = Layer.succeed(Engines, {
+  run: (t) =>
+    Stream.unwrap(
+      Effect.promise(async () => {
+        const last = t.messages.at(-1)!.text
+        let text = "thanks, got it"
+        if (last.startsWith("Task from")) text = "the answer is 42"
+        else if (last === "delegate") {
+          const r = await t.tools!.call("zorel_start_task", { agent: "@helper", task: "work out the answer" })
+          text = r.isError ? `refused: ${JSON.stringify(r.content)}` : "started"
+        }
+        return Stream.make<EngineEvent[]>({ type: "text", delta: text }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+      })
+    )
+})
+
+test("start_task: the teammate's answer comes back to the asking chat and the asker continues", () =>
+  runWith(":memory:", Delegating, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const lead = yield* store.createAgent({ projectId: null, name: "Lead", instructions: "", model: "x/y" })
+    yield* store.createAgent({ projectId: null, name: "Helper", instructions: "", model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [lead.id], model: "x/y" })
+    yield* runtime.send({ chatId: chat.id, clientId: "task-1", text: "delegate" })
+    let msgs = yield* store.messages(chat.id)
+    for (let i = 0; i < 300 && msgs.length < 4; i++) {
+      yield* Effect.sleep("10 millis")
+      msgs = yield* store.messages(chat.id)
+    }
+    expect(msgs.map((m) => m.text.split("\n")[0])).toEqual(["delegate", "started", "the answer is 42", "thanks, got it"])
+    expect(msgs[2]!.text).toContain("[Open the task](#/chat/")
+    expect(yield* store.openTasks()).toEqual([]) // reported once
+  })))
