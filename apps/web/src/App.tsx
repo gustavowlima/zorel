@@ -43,8 +43,9 @@ export function App() {
     <div className="flex h-full bg-frame">
       <Rail route={route} sidebar={sidebar} />
       {!sidebar.hidden && <Sidebar route={route} activeProjectId={activeProjectId} />}
-      <main className={cx("flex min-w-0 flex-1 flex-col py-3 pr-3", sidebar.hidden && "pl-3")}>
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-sheet border border-subtle bg-canvas">
+      {/* The content card: the whole height and the right edge of the window, rounded only toward the sidebar. */}
+      <main className={cx("flex min-w-0 flex-1 flex-col", sidebar.hidden && "pl-3")}>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-l-sheet border-l border-subtle bg-canvas">
           {offline && (
             <div role="alert" className="flex items-center gap-2 border-b border-subtle bg-danger-soft px-7 py-2 text-sm text-danger">
               <CircleAlert className="size-4" /> {t("app.offline")}
