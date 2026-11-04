@@ -14,7 +14,7 @@ import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  ChevronRight, Fold, Marker, Pause, Play, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder, Width
+  ChevronRight, Fold, Marker, Pause, Play, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder, Width
 } from "@/ui"
 
 const VISIBLE = 5
@@ -91,17 +91,22 @@ export function Rail({
   )
 }
 
-// The desktop app's update (window.zorelDesktop.update): an accent download mark in the rail's corner once a new
-// version is ready, restarting into it when pressed; dim while it still downloads. Nothing in a browser.
-type Update = { version: string; ready: boolean } | null
+// The desktop app's update (window.zorelDesktop.update): a card under the chats (the version, the download's
+// progress, then Restart) and, for when the chats are hidden, an accent download mark in the rail's corner. Nothing
+// in a browser.
+type Update = { version: string; ready: boolean; percent?: number } | null
 const desktopUpdate = (window as { zorelDesktop?: { update?: { get: () => Promise<Update>; install: () => Promise<boolean>; on: (cb: (u: Update) => void) => () => void } } }).zorelDesktop?.update
-function UpdateItem() {
+function useUpdate() {
   const [update, setUpdate] = useState<Update>(null)
   useEffect(() => {
     if (!desktopUpdate) return
     void desktopUpdate.get().then(setUpdate)
     return desktopUpdate.on(setUpdate)
   }, [])
+  return desktopUpdate ? update : null
+}
+function UpdateItem() {
+  const update = useUpdate()
   if (!update || !desktopUpdate) return null
   const label = update.ready ? t("update.ready", { version: update.version }) : t("update.downloading", { version: update.version })
   return (
@@ -113,6 +118,33 @@ function UpdateItem() {
       </Tooltip>
       {update.ready && <span aria-hidden="true" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-accent ring-2 ring-canvas" />}
     </span>
+  )
+}
+
+function UpdateCard() {
+  const update = useUpdate()
+  if (!update || !desktopUpdate) return null
+  const percent = update.percent ?? 0
+  return (
+    <section aria-label={t("update.title", { version: update.version })} className="mt-2 mr-2.5 flex flex-col gap-2 rounded-card border border-subtle p-3">
+      <div className="flex items-center gap-2">
+        <Download className={cx("size-4 shrink-0", update.ready ? "text-accent-text" : "text-muted")} />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{t("update.title", { version: update.version })}</span>
+      </div>
+      {update.ready ? (
+        <div className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-sm text-muted">{t("update.readyShort")}</span>
+          <Button size="sm" variant="default" onPress={() => void desktopUpdate?.install()}>
+            {t("update.restart")}
+          </Button>
+        </div>
+      ) : (
+        <>
+          <Meter role="progressbar" value={percent / 100} label={t("update.downloading", { version: update.version })} />
+          <span className="text-sm text-muted tabular-nums">{t("update.progress", { percent })}</span>
+        </>
+      )}
+    </section>
   )
 }
 
@@ -322,6 +354,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
       </div>
 
       </ContextMenu>
+      <UpdateCard />
 
       {dialog?.kind === "rename" && (
         <RenameDialog

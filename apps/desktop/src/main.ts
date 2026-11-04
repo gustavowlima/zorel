@@ -23,7 +23,7 @@ const secret = randomBytes(SESSION_BYTES).toString("hex")
 let win: BrowserWindow | undefined
 let tray: Tray | undefined
 let quitting = false
-let update: { version: string; ready: boolean } | null = null // the newest release: downloading, then ready
+let update: { version: string; ready: boolean; percent?: number } | null = null // the newest release: downloading (percent), then ready
 const icon = () => nativeImage.createFromPath(join(appDir, "assets", "icon.png"))
 
 // Fewer idle processes: no spare renderer kept warm, no media-key or cast services the app never uses.
@@ -164,6 +164,11 @@ function updates() {
   })
   if (dev) return
   autoUpdater.on("update-available", (i) => tell({ version: i.version, ready: manual }))
+  // Progress in whole percents: one message per step, not per chunk.
+  autoUpdater.on("download-progress", (p) => {
+    const percent = Math.floor(p.percent)
+    if (update && !update.ready && update.percent !== percent) tell({ ...update, percent })
+  })
   autoUpdater.on("update-downloaded", (i) => tell({ version: i.version, ready: true }))
   autoUpdater.on("error", (e) => {
     console.error("update failed", e) // the button goes away rather than wait forever
