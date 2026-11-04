@@ -69,14 +69,14 @@ export function NavItem({
 // title is a button that collapses and expands the section; its arrow points down while open.
 export function NavLabel({ children, icon, action, expanded, onToggle }: { children: ReactNode; icon?: ReactNode; action?: ReactNode; expanded?: boolean; onToggle?: () => void }) {
   return (
-    <div className="flex h-7 shrink-0 items-center gap-2.5 pr-0.5 pl-2.5 text-sm font-medium text-muted">
+    <div className="flex h-control-sm shrink-0 items-center gap-2.5 pr-0.5 pl-2.5 text-sm font-medium text-muted">
       {icon && <span className={cn(glyphBox, "[&_svg]:size-3.5")}>{icon}</span>}
       {onToggle ? (
         <span className="flex min-w-0 flex-1">
           <Button
             onPress={onToggle}
             aria-expanded={!!expanded}
-            className="-ml-1 flex h-6 min-w-0 cursor-default items-center gap-1 rounded-control px-1 outline-none transition-colors duration-120 ease-out data-hovered:text-fg data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none"
+            className="-ml-1 flex h-control-xs min-w-0 cursor-default items-center gap-1 rounded-control px-1 outline-none transition-colors duration-120 ease-out data-hovered:text-fg data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none"
           >
             <span className="truncate">{children}</span>
             <ChevronRight aria-hidden="true" className={cn("size-3 shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none", expanded && "rotate-90")} />

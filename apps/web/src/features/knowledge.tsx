@@ -58,7 +58,7 @@ export function KnowledgeView({ selected }: { selected: string | undefined }) {
         <>
           <div className="relative w-56">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted" aria-hidden="true" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("knowledge.search")} className="rounded-full pl-8" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("knowledge.search")} className="pl-8" />
           </div>
           <Button variant="secondary" onPress={() => (showPages ? setCreatingPage(true) : setCreating("fact"))}>
             <Plus />

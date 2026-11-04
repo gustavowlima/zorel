@@ -9,7 +9,7 @@ export function Tooltip({ content, children, disabled, placement }: { content: R
       <TooltipPrimitive
         offset={6}
         {...(placement && { placement })}
-        className="z-50 max-w-xs rounded-control border border-strong bg-raised px-2.5 py-1.5 text-sm text-secondary data-entering:animate-in data-entering:fade-in-0 data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none"
+        className="z-50 max-w-xs flex min-h-control-sm items-center rounded-control border border-strong bg-raised px-2.5 py-1 text-sm text-secondary data-entering:animate-in data-entering:fade-in-0 data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none"
       >
         {content}
       </TooltipPrimitive>

@@ -209,18 +209,18 @@ function EntryPane({ entry, isSelected, pick, close }: { entry: Entry; isSelecte
     entry.kind === "subscription" ? (entry.account?.identity ?? t("model.subscription")) : entry.kind === "local" ? t("model.local") : entry.kind === "agent" ? t("model.agentCli") : t("model.apiKey")
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2 px-1.5 pt-1">
+      <div className="flex items-center gap-2 px-2.5 pt-1">
         <ProviderIcon provider={entry.provider} size={14} />
         <span className="truncate font-semibold">{entry.label}</span>
         <span className="truncate text-sm text-muted">{kind}</span>
       </div>
       {entry.account && (
-        <div className="px-1.5">
+        <div className="px-2.5">
           <LimitWindows account={entry.account} compact />
         </div>
       )}
       {!entry.available && !entry.account?.limitedUntil && (
-        <div className="flex items-center gap-2 px-1.5 text-sm text-warning">
+        <div className="flex items-center gap-2 px-2.5 text-sm text-warning">
           <span className="flex-1">{entry.kind === "subscription" ? t("model.signedOut") : providerHint(entry.provider) || t("model.unavailable")}</span>
           {entry.kind === "subscription" && (
             <Button

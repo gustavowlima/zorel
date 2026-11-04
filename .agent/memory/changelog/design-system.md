@@ -9,3 +9,4 @@
 2026-11-03 | sidebar desktop: só a árvore rola sem barra, linhas fixas, ações sobrepostas, % de uso só em alerta | crítica impeccable 24/40
 2026-11-03 | sidebar em React Aria Tree com drag and drop, linhas de 28px, seção Chats, barra de título do desktop | crítica 23/40 + pedido de arrastar
 2026-11-03 | redesign main screen absorvido (sidebar, chat, composer) | escolha do usuário no artifact
+2026-11-04 | polish dos componentes globais (raios concêntricos, offsets, line-heights inteiras) e tela inicial com seletores ghost fora da caixa | crítica impeccable + pedido do usuário

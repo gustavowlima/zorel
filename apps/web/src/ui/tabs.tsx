@@ -7,7 +7,7 @@ import { X } from "./icons"
 export const Tabs = ({ className, ...p }: Omit<TabsProps, "className"> & { className?: string }) => <TabsPrimitive {...p} className={cn("flex flex-col gap-3", className)} />
 
 export const TabList = ({ children, label, className }: { children: ReactNode; label: string; className?: string }) => (
-  <TabListPrimitive aria-label={label} className={cn("flex flex-wrap items-center gap-1", className)}>
+  <TabListPrimitive aria-label={label} className={cn("scroll-quiet flex items-center gap-1 overflow-x-auto", className)}>
     {children}
   </TabListPrimitive>
 )
