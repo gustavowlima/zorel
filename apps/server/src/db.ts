@@ -8,7 +8,7 @@ import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
 import { Context, Effect, Layer } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
-import { type AgentProfile, agents, agentVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
+import { type AgentProfile, agents, agentVersions, pages, pageVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
 
 // The part of an agent a version keeps (everything but its id, project and creation time).
 export const profileOf = (a: Agent): AgentProfile => ({
@@ -174,6 +174,41 @@ export const repository = (db: Db) => {
           })
         )
       ),
+
+    // ---------- knowledge pages (phase 3b) ----------
+    pages: () => orDie(db.select().from(pages).orderBy(desc(pages.updatedAt))),
+    page: (id: string) => orDie(db.select().from(pages).where(eq(pages.id, id)).pipe(Effect.map(first))),
+    // Every change of title or body is kept as a version (the first one too), with who made it.
+    savePage: (input: { id?: string | undefined; scope: string; title: string; body: string }, by = "you") =>
+      Effect.gen(function* () {
+        const at = now()
+        const existing = input.id ? (yield* db.select().from(pages).where(eq(pages.id, input.id)))[0] : undefined
+        const id = existing?.id ?? crypto.randomUUID()
+        if (existing) {
+          if (existing.title === input.title && existing.body === input.body) return existing
+          yield* db.update(pages).set({ title: input.title, body: input.body, updatedAt: at }).where(eq(pages.id, id))
+        } else yield* db.insert(pages).values({ id, scope: input.scope, title: input.title, body: input.body, pinned: false, updatedAt: at, createdAt: at })
+        const [{ n = 0 } = {}] = yield* db.select({ n: sql<number>`coalesce(max(${pageVersions.n}), 0)` }).from(pageVersions).where(eq(pageVersions.pageId, id))
+        yield* db.insert(pageVersions).values({ id: crypto.randomUUID(), pageId: id, n: n + 1, title: input.title, body: input.body, by, at })
+        return (yield* db.select().from(pages).where(eq(pages.id, id)))[0]!
+      }).pipe(orDie),
+    pinPage: (id: string, pinned: boolean) => orDie(db.update(pages).set({ pinned }).where(eq(pages.id, id)).pipe(Effect.asVoid)),
+    removePage: (id: string) => orDie(db.delete(pages).where(eq(pages.id, id)).pipe(Effect.asVoid)),
+    pageVersions: (pageId: string) => orDie(db.select().from(pageVersions).where(eq(pageVersions.pageId, pageId)).orderBy(desc(pageVersions.n))),
+    // BM25 over title + body in the scopes; the words around the first match.
+    searchPages: (scopes: ReadonlyArray<string>, query: string, limit: number) => {
+      const terms = normalize(query).split(" ").filter((t) => t.length > 2).map((t) => `"${t}"*`)
+      if (!terms.length || !scopes.length) return Effect.succeed([] as Array<typeof pages.$inferSelect>)
+      return orDie(
+        db.all<typeof pages.$inferSelect>(
+          sql`SELECT pages.* FROM page_index JOIN pages ON pages.id = page_index.id
+              WHERE page_index MATCH ${terms.join(" OR ")} AND ${inArray(pages.scope, [...scopes])}
+              ORDER BY bm25(page_index) LIMIT ${limit}`
+        )
+      )
+    },
+    pinnedPages: (scopes: ReadonlyArray<string>) =>
+      scopes.length ? orDie(db.select({ id: pages.id, scope: pages.scope, title: pages.title }).from(pages).where(and(eq(pages.pinned, true), inArray(pages.scope, [...scopes])))) : Effect.succeed([]),
 
     // ---------- routines (phase 7) ----------
     routines: () => orDie(db.select().from(routines).orderBy(asc(routines.createdAt))),

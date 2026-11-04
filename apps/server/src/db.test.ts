@@ -164,3 +164,19 @@ test("searchMessages: case-insensitive words, newest first, % and _ are literal"
       expect(yield* r.searchMessages("_")).toEqual([])
     })
   ))
+
+test("pages: every edit a version; search by words in scopes; pinned titles", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const a = yield* r.savePage({ scope: "project:p1", title: "Deploy", body: "We deploy on Vercel on Fridays." })
+      yield* r.savePage({ id: a.id, scope: a.scope, title: "Deploy", body: "We deploy on Fly.io now." }, "Dev")
+      yield* r.savePage({ id: a.id, scope: a.scope, title: "Deploy", body: "We deploy on Fly.io now." }) // no change: no version
+      yield* r.savePage({ scope: "project:p2", title: "Other", body: "deploy elsewhere" })
+      expect((yield* r.pageVersions(a.id)).map((v) => [v.n, v.by])).toEqual([[2, "Dev"], [1, "you"]])
+      expect((yield* r.searchPages(["user", "project:p1"], "fly", 5)).map((p) => p.id)).toEqual([a.id])
+      expect(yield* r.searchPages(["project:p1"], "vercel", 5)).toEqual([]) // the old text is only in versions
+      expect(yield* r.pinnedPages(["project:p1"])).toEqual([])
+      yield* r.pinPage(a.id, true)
+      expect((yield* r.pinnedPages(["project:p1"])).map((p) => p.title)).toEqual(["Deploy"])
+    })
+  ))

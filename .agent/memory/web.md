@@ -67,3 +67,4 @@ updated: 2026-11-03
 - Cmd+K: ui/command.tsx (CommandPalette com RAC Autocomplete+Menu, sem filtro interno) e features/palette.tsx (lugares, chats/projetos/agentes filtrados no cliente, mensagens via GET /api/search com debounce 180ms)
 - editar daqui: MessageActions onEdit (só msg do usuário, sem turno vivo) → RewindDialog → mutations.rewind → useAtomRefresh(chatAtom) + setDraft com o texto
 - mcp.tsx CATALOG (presets que preenchem o NewServer; sem OAuth). project.tsx Agents: Select de agente padrão
+- pages.tsx (PageView com Markdown prose-chat, edição, Versions; NewPage); knowledge.tsx ganhou filtro "page"

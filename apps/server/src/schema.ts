@@ -285,3 +285,25 @@ export const routines = sqliteTable("routines", {
   lastStatus: text("last_status", { enum: ["started", "skipped", "failed"] }),
   createdAt: integer("created_at").notNull()
 })
+
+// Knowledge pages (phase 3b; Tucano's wiki as reference): longer Markdown notes by scope ("user", "project:<id>",
+// "agent:<id>", as memories), searched with FTS (page_index, kept by triggers), every change kept as a version.
+// pinned: its title goes into every turn's context in that scope (the body is read on demand).
+export const pages = sqliteTable("pages", {
+  id: text().primaryKey(),
+  scope: text().notNull(),
+  title: text().notNull(),
+  body: text().notNull(),
+  pinned: integer({ mode: "boolean" }).notNull().default(false),
+  updatedAt: integer("updated_at").notNull(),
+  createdAt: integer("created_at").notNull()
+})
+export const pageVersions = sqliteTable("page_versions", {
+  id: text().primaryKey(),
+  pageId: text("page_id").notNull().references(() => pages.id, { onDelete: "cascade" }),
+  n: integer().notNull(),
+  title: text().notNull(),
+  body: text().notNull(),
+  by: text().notNull(), // "you" or the agent's name
+  at: integer().notNull()
+})

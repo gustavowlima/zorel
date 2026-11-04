@@ -3,38 +3,51 @@
 import type { Memory } from "@zero/contracts"
 import { formatAge, formatDate, t } from "@zero/i18n"
 import { useEffect, useState } from "react"
-import { agentsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation } from "../client.ts"
+import { agentsAtom, chatsAtom, memoriesAtom, mutations, pagesAtom, projectsAtom, useList, useMutation } from "../client.ts"
+import { NewPage, PageView } from "./pages.tsx"
 import { chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import {
-  BookOpen, Button, cx, EmptyState, Field, Input, Plus, Screen, Search, Select, Tab, TabList, Tabs, Textarea
+  BookOpen, Button, cx, EmptyState, Field, Input, Pin, Plus, Screen, Search, Select, Tab, TabList, Tabs, Textarea
 } from "@/ui"
 
-type Filter = "all" | "fact" | "skill" | "pending" | "forgotten"
+type Filter = "all" | "fact" | "skill" | "page" | "pending" | "forgotten"
 
 const matches = (m: Memory, f: Filter) =>
   f === "pending" ? m.state === "pending" : f === "forgotten" ? m.state === "forgotten" : m.state !== "forgotten" && (f === "all" || m.kind === f)
 
 export function KnowledgeView({ selected }: { selected: string | undefined }) {
   const memories = useList(memoriesAtom)
+  const pages = useList(pagesAtom)
   const projects = useList(projectsAtom)
   const agents = useList(agentsAtom)
   const [filter, setFilter] = useState<Filter>("all")
   const [scope, setScope] = useState("")
   const [query, setQuery] = useState("")
   const [creating, setCreating] = useState<Memory["kind"]>()
+  const [creatingPage, setCreatingPage] = useState(false)
 
   const q = query.trim().toLowerCase()
   const list = memories
     .filter((m) => matches(m, filter) && (!scope || m.scope === scope) && (!q || `${m.title} ${m.text}`.toLowerCase().includes(q)))
     .sort((a, b) => Math.max(b.createdAt, b.confirmedAt) - Math.max(a.createdAt, a.confirmedAt))
   const current = memories.find((m) => m.id === selected)
+  const page = pages.find((p) => p.id === selected)
+  const pageList = pages.filter((p) => (!scope || p.scope === scope) && (!q || `${p.title} ${p.body}`.toLowerCase().includes(q)))
+  const showPages = filter === "page"
   const scopes = [...new Set(memories.map((m) => m.scope))]
   const count = memories.filter((m) => m.state !== "forgotten").length
 
   useEffect(() => {
-    if (selected) setCreating(undefined)
+    if (selected) {
+      setCreating(undefined)
+      setCreatingPage(false)
+    }
   }, [selected])
+  // A page opened by link shows in the Pages list.
+  useEffect(() => {
+    if (page) setFilter("page")
+  }, [page])
 
   return (
     <Screen
@@ -47,7 +60,7 @@ export function KnowledgeView({ selected }: { selected: string | undefined }) {
             <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted" aria-hidden="true" />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("knowledge.search")} className="rounded-full pl-8" />
           </div>
-          <Button variant="secondary" onPress={() => setCreating("fact")}>
+          <Button variant="secondary" onPress={() => (showPages ? setCreatingPage(true) : setCreating("fact"))}>
             <Plus />
             {t("knowledge.new")}
           </Button>
@@ -60,6 +73,7 @@ export function KnowledgeView({ selected }: { selected: string | undefined }) {
             <Tab id="all">{t("knowledge.all")}</Tab>
             <Tab id="fact">{t("knowledge.facts")}</Tab>
             <Tab id="skill">{t("knowledge.skills")}</Tab>
+            <Tab id="page">{t("pages.pages")}</Tab>
             <Tab id="pending" count={memories.filter((m) => m.state === "pending").length || undefined}>
               {t("knowledge.pending")}
             </Tab>
@@ -75,7 +89,30 @@ export function KnowledgeView({ selected }: { selected: string | undefined }) {
             options={[{ value: "", label: t("knowledge.allScopes") }, ...scopes.map((s) => ({ value: s, label: scopeLabel(s, projects, agents) }))]}
           />
         )}
-        <ul className="flex flex-col gap-0.5">
+        {showPages && (
+          <ul className="flex flex-col gap-0.5">
+            {pageList.map((p) => (
+              <li key={p.id}>
+                <Button
+                  variant="ghost"
+                  onPress={() => go({ view: "knowledge", id: p.id })}
+                  className={cx(
+                    "h-auto w-full flex-col items-start gap-0.5 rounded-card border px-3 py-2.5 text-left font-normal whitespace-normal",
+                    p.id === selected ? "border-subtle bg-surface text-fg" : "border-transparent text-fg"
+                  )}
+                >
+                  <span className="flex w-full items-center gap-1.5 truncate font-medium">
+                    {p.pinned && <Pin className="size-3 shrink-0 text-muted" />}
+                    {p.title}
+                  </span>
+                  <span className="block w-full truncate text-sm text-muted">{[scopeLabel(p.scope, projects, agents), formatAge(p.updatedAt)].join(" · ")}</span>
+                </Button>
+              </li>
+            ))}
+            {pageList.length === 0 && <p className="px-2 py-6 text-center text-muted">{t("pages.empty")}</p>}
+          </ul>
+        )}
+        <ul className={cx("flex flex-col gap-0.5", showPages && "hidden")}>
           {list.map((m) => (
             <li key={m.id}>
               <Button
@@ -94,10 +131,14 @@ export function KnowledgeView({ selected }: { selected: string | undefined }) {
             </li>
           ))}
         </ul>
-        {list.length === 0 && <p className="px-2 py-6 text-center text-muted">{memories.length ? t("knowledge.noMatch") : t("knowledge.empty")}</p>}
+        {!showPages && list.length === 0 && <p className="px-2 py-6 text-center text-muted">{memories.length ? t("knowledge.noMatch") : t("knowledge.empty")}</p>}
       </nav>
       <div className="min-w-0 flex-1 overflow-y-auto">
-        {creating ? (
+        {creatingPage ? (
+          <NewPage onDone={(id) => (id ? go({ view: "knowledge", id }) : setCreatingPage(false))} />
+        ) : page ? (
+          <PageView key={page.id} page={page} />
+        ) : creating ? (
           <NewMemory kind={creating} onKind={setCreating} onDone={(id) => (id ? go({ view: "knowledge", id }) : setCreating(undefined))} />
         ) : current ? (
           <Reader key={current.id} memory={current} />

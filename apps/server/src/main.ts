@@ -10,7 +10,7 @@ import { homedir } from "node:os"
 import { join, normalize, resolve } from "node:path"
 import { ask, consolidate, DataDir, prepare } from "./chat.ts"
 import * as Git from "./git.ts"
-import { MAX_AFTER } from "./context.ts"
+import { MAX_AFTER, snippet } from "./context.ts"
 
 const CHARS_PER_TOKEN = 4 // rough, provider-neutral: the meter says it is an estimate
 import { Store, type Repository } from "./db.ts"
@@ -32,14 +32,6 @@ import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
 import { closeTerminal, scriptsOf, serversIn, TerminalSocket, terminalsOf } from "./terminals.ts"
 import { BrowserService, BrowserSocket } from "./browser.ts"
-
-// The words around the first match, on one line.
-export const snippet = (text: string, q: string, around = 60) => {
-  const flat = text.replace(/\s+/g, " ")
-  const i = flat.toLowerCase().indexOf(q.toLowerCase())
-  if (i < 0) return flat.slice(0, around * 2)
-  return `${i > around ? "…" : ""}${flat.slice(Math.max(0, i - around), i + q.length + around)}${i + q.length + around < flat.length ? "…" : ""}`
-}
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
 const found = <A, E, R>(e: Effect.Effect<A | undefined, E, R>) => Effect.flatMap(e, (a) => (a === undefined ? notFound() : Effect.succeed(a)))
@@ -688,6 +680,37 @@ const LocalOnly = HttpRouter.middleware(
   { global: true }
 )
 
+// Knowledge pages (phase 3b): CRUD, pin, versions and restore. Every edit is a version.
+const PagesGroup = HttpApiBuilder.group(Api, "pages", (h) =>
+  Effect.gen(function* () {
+    const store = yield* Store
+    return h
+      .handle("list", () => store.pages())
+      .handle("create", ({ payload }) => store.savePage(payload))
+      .handle("update", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const p = yield* store.page(params.id)
+          if (!p) return yield* notFound()
+          if (payload.pinned !== undefined) yield* store.pinPage(p.id, payload.pinned)
+          if (payload.title !== undefined || payload.body !== undefined) return yield* store.savePage({ id: p.id, scope: p.scope, title: payload.title ?? p.title, body: payload.body ?? p.body })
+          return (yield* store.page(p.id))!
+        })
+      )
+      .handle("remove", ({ params }) => store.removePage(params.id))
+      .handle("versions", ({ params }) =>
+        Effect.flatMap(store.page(params.id), (p) => (p ? Effect.map(store.pageVersions(p.id), (vs) => vs.map(({ pageId: _, ...v }) => v)) : notFound()))
+      )
+      .handle("restore", ({ params }) =>
+        Effect.gen(function* () {
+          const p = yield* store.page(params.id)
+          const v = p && (yield* store.pageVersions(p.id)).find((x) => x.n === params.n)
+          if (!p || !v) return yield* notFound()
+          return yield* store.savePage({ id: p.id, scope: p.scope, title: v.title, body: v.body })
+        })
+      )
+  })
+)
+
 // Routines (phase 7): CRUD, run now, and the local webhook. Creating one opens its chat with its agent.
 const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
   Effect.gen(function* () {
@@ -735,7 +758,7 @@ const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
 export const AppLive = (webDir?: string) =>
   Layer.mergeAll(
     LocalOnly,
-    HttpApiBuilder.layer(Api).pipe(Layer.provide([Projects, Agents, Chats, Memories, ToolsGroup, AccountsGroup, Settings, RoutinesGroup])),
+    HttpApiBuilder.layer(Api).pipe(Layer.provide([Projects, Agents, Chats, Memories, ToolsGroup, AccountsGroup, Settings, RoutinesGroup, PagesGroup])),
     RoutineScheduler,
     RpcRoute,
     AttachmentUpload,
