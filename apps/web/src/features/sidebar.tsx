@@ -9,12 +9,12 @@ import type { ChatStatus } from "@zero/contracts/events"
 import { formatAge, formatPercent, formatTime, t } from "@zero/i18n"
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
-import { agentTone, chatTitle, splitModel, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
+import { agentTone, chatTitle, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
 import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, ModelAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
+  AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
@@ -375,11 +375,21 @@ function ChatItem({ chat, status, active, agents, nested = false }: { chat: Chat
       active={active}
       strong={live?.state === "waiting"}
       title={chatTitle(chat)}
-      trailing={live?.state === "running" ? <Spinner size={11} className="text-success" label={said ?? ""} /> : formatAge(at)}
+      trailing={
+        live?.state === "running" ? (
+          <Spinner size={11} className="text-success" label={said ?? ""} />
+        ) : !members.length && (live?.state === "waiting" || live?.state === "failed") ? (
+          // One line (no agents): the state is a dot by the title.
+          <span role="img" aria-label={said} className={cx("size-2 rounded-full", live.state === "waiting" ? "bg-accent-text" : "bg-danger")} />
+        ) : (
+          formatAge(at)
+        )
+      }
+      // The second line only when agents are in it: who, or what is happening now.
       detail={
-        live ? (
+        !members.length ? undefined : live ? (
           <span className={cx("truncate", live.state === "waiting" ? "text-accent-text" : live.state === "failed" ? "text-danger" : "text-muted")}>{said}</span>
-        ) : members.length ? (
+        ) : (
           <>
             <span className="flex shrink-0 items-center">
               {members.slice(0, 3).map((a, i) => (
@@ -387,12 +397,6 @@ function ChatItem({ chat, status, active, agents, nested = false }: { chat: Chat
               ))}
             </span>
             <span className="truncate">{names}</span>
-          </>
-        ) : (
-          // No agent: the default assistant answers, shown like one (its provider's avatar).
-          <>
-            <ModelAvatar provider={splitModel(chat.model).provider} size={16} />
-            <span className="truncate">{t("common.assistant")}</span>
           </>
         )
       }
