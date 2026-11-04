@@ -8,6 +8,7 @@ import { Store } from "./db.ts"
 const SERVICE = "dev.zorel.app"
 const LEGACY_SERVICE = "dev.zero.app" // before the rename to Zorel: read once, copied to SERVICE
 export const API_KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY"] as const
+export const BROWSER_KEY = "browser-state-key" // the key the agents' saved browser logins are sealed with (browser.ts)
 
 export interface SecretStore {
   readonly get: (name: string) => string | undefined // synchronous: read from the cache loaded at startup
@@ -22,7 +23,7 @@ export class Secrets extends Context.Service<Secrets, SecretStore>()("Secrets") 
     Effect.gen(function* () {
       const store = yield* Store
       const servers = yield* store.mcpServers()
-      const names = [...API_KEYS, ...servers.map((s) => mcpEnvName(s.id)), ...servers.filter((s) => s.auth === "oauth").map((s) => oauthKey(s.id))]
+      const names = [...API_KEYS, BROWSER_KEY, ...servers.map((s) => mcpEnvName(s.id)), ...servers.filter((s) => s.auth === "oauth").map((s) => oauthKey(s.id))]
       return yield* Effect.promise(async () => {
         const cache = new Map<string, string>()
         await Promise.all(
