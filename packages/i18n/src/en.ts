@@ -188,6 +188,7 @@ export const en = {
     mentionHint: "Mention with @ to pick who answers; agents pass the turn by mentioning each other."
   },
   model: {
+    agentCli: "Agent CLI (ACP)",
     choose: "Choose model",
     cliDefault: "CLI default",
     accounts: "Accounts",
@@ -214,6 +215,8 @@ export const en = {
     providers: {
       "claude-cli": "Claude Code",
       "codex-cli": "Codex",
+      "gemini-cli": "Gemini CLI",
+      opencode: "OpenCode",
       anthropic: "Anthropic",
       openai: "OpenAI",
       openrouter: "OpenRouter",

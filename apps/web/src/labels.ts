@@ -11,7 +11,7 @@ export const splitModel = (id: string) => {
   return i < 0 ? { provider: id, model: "" } : { provider: id.slice(0, i), model: id.slice(i + 1) }
 }
 
-const PROVIDERS = { "claude-cli": 1, "codex-cli": 1, anthropic: 1, openai: 1, openrouter: 1, ollama: 1, lmstudio: 1 }
+const PROVIDERS = { "claude-cli": 1, "codex-cli": 1, "gemini-cli": 1, opencode: 1, anthropic: 1, openai: 1, openrouter: 1, ollama: 1, lmstudio: 1 }
 export const providerLabel = (provider: string) => (has(PROVIDERS, provider) ? t(`model.providers.${provider}` as MessageKey) : provider)
 
 // "claude-cli/opus" → "Opus"; "codex-cli/default" → "CLI default"; API models keep their id.

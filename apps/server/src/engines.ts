@@ -9,6 +9,7 @@
 import { AnthropicClient, AnthropicLanguageModel } from "@effect/ai-anthropic"
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
 import type { Access, AccountWindow, FailureReason, ModelInfo } from "@zero/contracts"
+import { acpRun } from "./engines/acp.ts"
 import { Context, Effect, Layer, Queue, Redacted, Stream } from "effect"
 import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
@@ -48,6 +49,7 @@ export interface Turn {
   readonly messages: ReadonlyArray<TurnMessage> // ends with a user message
   readonly cwd: string // empty directory: the CLI gets nobody's files
   readonly tools?: TurnTools | undefined
+  readonly access?: Access | undefined // what the agent may do without asking (ACP agents ask through Zero)
   // Characters of each part of the context (the composer's context meter estimates tokens from them).
   readonly parts?: { readonly instructions: number; readonly memories: number; readonly skills: number; readonly summary: number }
 }
@@ -133,6 +135,9 @@ export const PROVIDERS: Record<string, Provider> = {
   anthropic: { kind: "api", hint: "ANTHROPIC_API_KEY", suggestions: ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"], key: "ANTHROPIC_API_KEY" },
   openai: { kind: "api", hint: "OPENAI_API_KEY (OPENAI_BASE_URL opcional)", suggestions: [], key: "OPENAI_API_KEY" },
   openrouter: { kind: "api", hint: "OPENROUTER_API_KEY", suggestions: [], key: "OPENROUTER_API_KEY" },
+  // ACP agents (phase 5): any CLI that speaks the Agent Client Protocol, through one adapter (engines/acp.ts).
+  "gemini-cli": { kind: "subscription", hint: "Gemini CLI logado (gemini, then sign in)", suggestions: ["default", "gemini-2.5-pro", "gemini-2.5-flash"], bin: "gemini" },
+  opencode: { kind: "subscription", hint: "OpenCode configurado (opencode auth login); usa os providers e chaves dele", suggestions: ["default"], bin: "opencode" },
   ollama: { kind: "api", hint: "Ollama rodando (OLLAMA_URL)", suggestions: [], local: true },
   lmstudio: { kind: "api", hint: "LM Studio rodando (LMSTUDIO_URL)", suggestions: [], local: true }
 }
@@ -470,6 +475,11 @@ export interface EnginesService {
 }
 
 const NATIVE = new Set(["claude-cli", "codex-cli"])
+// ACP agents: the binary and its arguments for a model ("default": the agent's own choice).
+const ACP: Record<string, (model: string) => { bin: string; args: string[] }> = {
+  "gemini-cli": (model) => ({ bin: "gemini", args: ["--acp", ...(model && model !== "default" ? ["-m", model] : [])] }),
+  opencode: () => ({ bin: "opencode", args: ["acp"] })
+}
 
 export class Engines extends Context.Service<Engines, EnginesService>()("Engines") {
   static layer = Layer.effect(
@@ -481,6 +491,11 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
           const { provider } = splitModel(t.model)
           if (provider === "claude-cli") return cli("claude", claudeArgs(t), transcript(t.messages), t.cwd, claudeParser())
           if (provider === "codex-cli") return cli("codex", codexArgs(t), transcript(t.messages), t.cwd, codexParser())
+          const acp = ACP[provider]
+          if (acp) {
+            const { model } = splitModel(t.model)
+            return acpRun({ ...acp(model), model, cwd: t.cwd, prompt: `${t.system}\n\n${transcript(t.messages)}`, access: t.access ?? "workspace", gatewayUrl: t.tools?.url })
+          }
           return api(secrets, t)
         },
         hasSession: (model: string) => NATIVE.has(splitModel(model).provider),
