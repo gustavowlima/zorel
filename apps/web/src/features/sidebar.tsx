@@ -9,12 +9,12 @@ import type { ChatStatus } from "@zero/contracts/events"
 import { formatAge, formatPercent, formatTime, t } from "@zero/i18n"
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
-import { agentTone, chatTitle, splitModel, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
+import { agentTone, chatTitle, modelLabel, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
 import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, ModelAvatar, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
+  AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
@@ -210,10 +210,9 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
       {/* Chats (without a project) first, then Projects; each section folds, and the list scrolls under the pages.
           Right-click (or the Menu key) on a chat or a project opens its menu. */}
       <ContextMenu label={t("common.more")} menuFor={menuFor} className="flex min-h-0 flex-1 flex-col">
-      <div ref={listRef} onScroll={measure} className={cx("scroll-quiet flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain pr-2.5 pb-2", more && "fade-bottom")}>
+      <div ref={listRef} onScroll={measure} className={cx("scroll-quiet flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain pr-2.5 pb-2", more && "fade-bottom")}>
         <section className="flex flex-col gap-px">
           <NavLabel
-            icon={<MessageCircle />}
             expanded={!collapsed.has("chats")}
             onToggle={() => flip("chats")}
             action={
@@ -237,7 +236,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
         </section>
 
         <section className="flex flex-col gap-px">
-          <NavLabel icon={<Folder />} expanded={!collapsed.has("projects")} onToggle={() => flip("projects")} action={<NewProjectButton />}>
+          <NavLabel expanded={!collapsed.has("projects")} onToggle={() => flip("projects")} action={<NewProjectButton />}>
             {t("nav.projects")}
           </NavLabel>
           {!collapsed.has("projects") && (
@@ -360,26 +359,37 @@ function ProjectItem({
 // A chat on one 32px line: the lead's avatar (or the model's logo) in the icon column, the title, and on the
 // right what matters now: a spinner while it runs, a blue dot when it waits for you, a red one when the last
 // turn failed, otherwise how long ago it last moved. The status in words is in the row's accessible name.
+// A chat: two lines, no icon. The title and when it last moved (or a spinner while it works); under it who is in
+// it (small avatars and names) or, while something happens, what (working, waits for you, failed). A chat with no
+// agent shows its model instead.
 function ChatItem({ chat, status, active, agents, nested = false }: { chat: Chat; status: ChatStatus | undefined; active: boolean; agents: ReadonlyArray<Agent>; nested?: boolean }) {
   const live = status && status.state !== "idle" ? status : undefined
-  const lead = agents.find((a) => a.id === (live?.agentId ?? chat.agentIds[0]))
+  const members = chat.agentIds.flatMap((id) => agents.filter((a) => a.id === id))
   const at = Math.max(chat.lastAt ?? chat.createdAt, status?.updatedAt ?? 0)
   const said = live ? statusLabel(live, agents) : undefined
+  const names = members.length > 2 ? `${members.slice(0, 2).map((a) => a.name).join(", ")} +${members.length - 2}` : members.map((a) => a.name).join(", ")
   return (
     <NavTreeItem
       id={chatKey(chat.id)}
-      textValue={said ? `${chatTitle(chat)}, ${said}` : chatTitle(chat)}
+      textValue={[chatTitle(chat), said ?? names].filter(Boolean).join(", ")}
       active={active}
       strong={live?.state === "waiting"}
-      leading={lead ? <AgentAvatar id={lead.id} name={lead.name} tone={agentTone(lead, agents)} size={20} /> : <ModelAvatar provider={splitModel(chat.model).provider} size={20} />}
       title={chatTitle(chat)}
-      trailing={
-        live?.state === "running" ? (
-          <Spinner size={11} className="text-success" label={said ?? ""} />
-        ) : live?.state === "waiting" || live?.state === "failed" ? (
-          <span role="img" aria-label={said} className={cx("size-2 rounded-full", live.state === "waiting" ? "bg-accent-text" : "bg-danger")} />
+      trailing={live?.state === "running" ? <Spinner size={11} className="text-success" label={said ?? ""} /> : formatAge(at)}
+      detail={
+        live ? (
+          <span className={cx("truncate", live.state === "waiting" ? "text-accent-text" : live.state === "failed" ? "text-danger" : "text-muted")}>{said}</span>
+        ) : members.length ? (
+          <>
+            <span className="flex shrink-0 items-center">
+              {members.slice(0, 3).map((a, i) => (
+                <AgentAvatar key={a.id} id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} className={cx("ring-2 ring-frame", i > 0 && "-ml-1")} />
+              ))}
+            </span>
+            <span className="truncate">{names}</span>
+          </>
         ) : (
-          formatAge(at)
+          <span className="truncate">{modelLabel(chat.model)}</span>
         )
       }
       nested={nested}

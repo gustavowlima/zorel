@@ -171,7 +171,7 @@ export function NavTreeItem({
             className={cn(
               row,
               "relative",
-              hasChildItems ? "h-control gap-2.5 px-2.5" : detail ? "h-13.5 gap-3 rounded-card px-2.5" : nested ? "h-control pr-2.5 pl-10" : "h-control px-2.5",
+              hasChildItems ? "h-control gap-2.5 px-2.5" : detail ? cn("h-13 gap-3 rounded-card", nested ? "pr-2.5 pl-10" : "px-2.5") : nested ? "h-control pr-2.5 pl-10" : "h-control px-2.5",
               hasChildItems ? cn("border-transparent text-secondary", isExpanded ? "font-semibold" : "font-medium") : active ? chip : "border-transparent",
               !active && (isHovered || isFocusVisible) && "bg-hover text-fg",
               !active && isPressed && "bg-control-active",

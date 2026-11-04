@@ -59,3 +59,4 @@ updated: 2026-11-03
 - agents.tsx: rota #/agents (AgentsView, AgentRow, useWorking); chat invalida "agents" quando muda o nº de mensagens (agente pode ter criado um colega)
 - routines.tsx: AgentRoutines na página do agente, FORA do <form> do perfil (form aninhado quebrava o envio)
 - trilho de ícones (pedido do usuário, como OpenBot): Rail em sidebar.tsx (lugares + UsageFoot vertical + Settings), Sidebar só com Chats/Projects; App.tsx renderiza Rail + Sidebar; rota #/routines (RoutinesView); Tooltip ganhou placement
+- ChatItem na barra: 2 linhas sem ícone (NavTreeItem detail; nested usa pl-10): título + idade/spinner; embaixo avatares 16px + nomes dos membros, ou modelo, ou estado ao vivo. NavLabel das seções sem ícone (pedido do usuário: menos aglomerado)
