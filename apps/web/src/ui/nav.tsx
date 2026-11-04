@@ -1,6 +1,7 @@
 // Sidebar rows (the chosen redesign, "Zero — main screen"): 32px rows on the frame, a quiet hover wash, section
-// titles in sentence case. Projects open with a leading arrow and show their state as a dot (waiting for you)
-// or a spinner (working); chats sit indented on two lines (title, then who is in it and what is happening) and
+// titles in sentence case. A project is a subtitle aligned with the chats: its name, a small arrow that opens it,
+// and on the right its chat count or its state (a dot when waiting for you, a spinner while working); its chats
+// sit slightly indented on a hairline, on two lines when agents are in them (title, then who / what is happening);
 // the open chat floats as a raised chip. NavItem is a plain React Aria button; the trees are React Aria Trees,
 // so they get one Tab stop, arrow keys, type-ahead, aria-level, and drag and drop (pointer, keyboard and
 // screen reader) from the library instead of hand-written handlers.
@@ -18,7 +19,7 @@ import {
   useDragAndDrop
 } from "react-aria-components"
 import { cn } from "@/lib/utils"
-import { ChevronRight, Folder, FolderOpen, GripVertical } from "./icons"
+import { ChevronRight, GripVertical } from "./icons"
 
 const row =
   "flex w-full min-w-0 shrink-0 cursor-default items-center gap-2.5 rounded-control border text-left text-base outline-none transition-colors duration-120 ease-out motion-reduce:transition-none"
@@ -171,8 +172,8 @@ export function NavTreeItem({
             className={cn(
               row,
               "relative",
-              hasChildItems ? "h-control gap-2.5 px-2.5" : detail ? cn("h-13 gap-3 rounded-card", nested ? "pr-2.5 pl-10" : "px-2.5") : nested ? "h-control pr-2.5 pl-10" : "h-control px-2.5",
-              hasChildItems ? cn("border-transparent text-secondary", isExpanded ? "font-semibold" : "font-medium") : active ? chip : "border-transparent",
+              hasChildItems ? "h-control gap-1.5 px-2.5" : detail ? cn("h-13 gap-3 rounded-card", nested ? "pr-2.5 pl-6" : "px-2.5") : nested ? "h-control pr-2.5 pl-6" : "h-control px-2.5",
+              hasChildItems ? "border-transparent font-medium text-secondary" : active ? chip : "border-transparent",
               !active && (isHovered || isFocusVisible) && "bg-hover text-fg",
               !active && isPressed && "bg-control-active",
               isFocusVisible && "ring-2 ring-accent"
@@ -183,14 +184,8 @@ export function NavTreeItem({
                 <GripVertical className="size-3.5" />
               </Button>
             )}
-            {/* A group's rows hang from a hairline under the group's icon (the icon column's centre). */}
-            {nested && <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-[19.5px] w-px bg-subtle" />}
-            {/* A group (a project): its folder, open or closed, sits in the icon column and opens or closes it. */}
-            {hasChildItems && (
-              <Button slot="chevron" className="flex size-5 shrink-0 items-center justify-center rounded-control text-muted outline-none data-hovered:text-fg [&_svg]:size-4">
-                {isExpanded ? <FolderOpen /> : <Folder />}
-              </Button>
-            )}
+            {/* A group's rows hang, slightly indented, from a hairline under the start of the group's name. */}
+            {nested && <span aria-hidden="true" className="pointer-events-none absolute inset-y-1 left-3 w-px bg-subtle" />}
             {leading}
             {detail ? (
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -200,8 +195,17 @@ export function NavTreeItem({
                 </span>
                 <span className="flex min-w-0 items-center gap-2 text-sm font-normal text-muted">{detail}</span>
               </span>
+            ) : hasChildItems ? (
+              // A group (a project): its name, aligned with the chats, then a small arrow that opens or closes it.
+              <>
+                <span className="min-w-0 truncate">{title}</span>
+                <Button slot="chevron" className="flex size-5 shrink-0 items-center justify-center rounded-control text-muted outline-none data-hovered:text-fg">
+                  <ChevronRight className={cn("size-3 transition-transform duration-150 ease-out motion-reduce:transition-none", isExpanded && "rotate-90")} />
+                </Button>
+                <span className="flex-1" />
+              </>
             ) : (
-              <span className={cn("min-w-0 flex-1 truncate", !hasChildItems && (strong || active ? "font-medium text-fg" : "text-secondary"))}>{title}</span>
+              <span className={cn("min-w-0 flex-1 truncate", strong || active ? "font-medium text-fg" : "text-secondary")}>{title}</span>
             )}
             {trailing && !detail && (
               <span className={cn("flex shrink-0 items-center text-sm font-normal text-muted tabular-nums", actions && "group-focus-within/row:invisible group-hover/row:invisible")}>
