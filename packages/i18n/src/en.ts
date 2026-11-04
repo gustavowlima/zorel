@@ -690,14 +690,9 @@ export const en = {
   processes: {
     empty: "Nothing runs in the background",
     emptyHint: "Agents at work, servers they start, open shells and connections show up here while they run.",
-    kinds: { turn: "Agents working", server: "Servers", terminal: "Terminals", session: "Agent sessions", connection: "Connections" },
-    hints: {
-      turn: "Turns running now, or waiting for your OK.",
-      server: "Programs listening on a port in a chat's folder, like a dev server an agent started. Open one in the browser.",
-      terminal: "Shells open in chats' Terminal panels.",
-      session: "Claude Code and Codex processes kept between turns so the next one starts fast. Closing one frees memory; the chat's next turn opens a new one.",
-      connection: "MCP servers Zorel has a connection to. A local one is a process of its own; it reconnects when an agent needs it."
-    },
+    title: "Running now",
+    process: "Process",
+    kinds: { turn: "Agents working", server: "Servers", terminal: "Terminals", session: "Agent sessions", connection: "Connections", zorel: "Zorel" },
     stop: "Stop",
     stopTurn: "Stop",
     close: "Close",
@@ -714,13 +709,12 @@ export const en = {
     inChat: { one: "1 process running in this chat", other: "{count} processes running in this chat" },
     seeAll: "See all processes",
     usage: {
-      title: "Zorel now",
-      hint: "The app, its server and everything they started, read every few seconds. 100% CPU is one full core; this computer has {cores}.",
       cpu: "CPU",
       memory: "Memory",
-      ofMemory: "of {total}",
-      history: "CPU over the last two minutes",
-      parts: { app: "App window and agent browser", server: "Zorel server", agents: "Agent sessions", terminals: "Terminals", connections: "Connections", other: "Other" }
+      ofMemory: "of {total} on this computer",
+      cores: { one: "100% is its 1 core", other: "100% is one of its {count} cores" },
+      live: "Live",
+      parts: { app: "App window and agent browser", server: "Server", agents: "Agent sessions", terminals: "Terminals", connections: "Connections", other: "Other processes" }
     }
   },
   connectors: {
