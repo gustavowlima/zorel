@@ -414,40 +414,6 @@ export const en = {
       permissions: "tools and access"
     },
     tabs: { profile: "Profile", tools: "Tools and access", activity: "Knowledge and activity" },
-    templates: {
-      title: "Start from",
-      reviewer: {
-        name: "Reviewer",
-        title: "Code reviewer",
-        description: "Reviews changes and points out bugs, risks and missing tests before they ship.",
-        instructions: "You review code changes in this project.\n- Read the diff and the code around it before judging.\n- Report, by severity: bugs, security and data risks, breaking changes, missing tests.\n- For each finding: the file and line, why it matters, and a concrete fix.\n- Don't rewrite the code yourself; end with a one-line verdict."
-      },
-      tester: {
-        name: "Tester",
-        title: "Test writer",
-        description: "Writes and runs tests for untested code, following the project's test setup.",
-        instructions: "You write tests for this project.\n- Find code without tests, starting with pure logic and business rules.\n- Follow the existing test framework, style and file layout.\n- Run the test suite after each change and fix what you broke.\n- Report what you covered and what you left out, and why."
-      },
-      docs: {
-        name: "Docs",
-        title: "Docs keeper",
-        description: "Keeps the README and docs in step with the code: setup, scripts, config and examples.",
-        instructions: "You keep this project's documentation true to the code.\n- Compare the README and docs with package files, scripts, config, environment variables and exported APIs.\n- Fix what is outdated or missing, keeping the existing tone and structure.\n- Never invent behavior: if the code is unclear, say so instead.\n- End with a list of what changed."
-      },
-      researcher: {
-        name: "Researcher",
-        title: "Researcher",
-        description: "Looks things up on the web and brings back a short, sourced answer.",
-        instructions: "You research questions on the web.\n- Search, read the most relevant sources and cross-check them.\n- Answer in a few paragraphs, then list the sources with links.\n- Say plainly what is uncertain or contested.\n- Don't change files unless asked."
-      },
-      assistant: {
-        name: "Assistant",
-        title: "Assistant",
-        description: "Helps with everyday work: answers, drafts, summaries and small tasks in the project.",
-        instructions: "You help with everyday work in this project.\n- Ask one short question when the request is ambiguous; otherwise act.\n- Keep answers short and concrete.\n- Before changing files, say what you'll change."
-      },
-      scratch: { title: "From scratch", description: "An empty agent you describe yourself." }
-    },
     perm: {
       files: "Files and commands",
       filesHint: {
@@ -800,6 +766,9 @@ export const en = {
   },
   appearance: {
     notifications: "Notifications",
+    startup: "Startup",
+    openAtLogin: "Open Zero when you log in",
+    openAtLoginHint: "It starts without a window, so routines and agents keep running after a restart. Open it from the Dock or the tray.",
     title: "Appearance",
     theme: "Theme",
     themeHint: "Match the system follows your computer's light or dark setting.",
