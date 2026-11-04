@@ -122,6 +122,10 @@ Architecture, decisions and roadmap: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md
 
 CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every push and pull request. A `v*` tag builds the desktop app for each system and publishes a GitHub release, which installed apps update from. macOS signing and notarization turn on when `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` are set; without them the macOS build is signed ad hoc and installs with `install.sh`.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks and conventions, [SECURITY.md](SECURITY.md) to report a vulnerability privately, and [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+
 ## License
 
 [Apache-2.0](LICENSE). Third-party attributions are in [NOTICE](NOTICE).
