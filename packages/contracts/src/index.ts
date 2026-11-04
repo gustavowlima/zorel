@@ -274,6 +274,17 @@ export type ProcessList = typeof ProcessList.Type
 export type LocalServer = typeof LocalServer.Type
 // A file to open in the computer's default app, from a path printed in the terminal (relative to the chat's folder).
 export const OpenFile = Schema.Struct({ path: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1000)) })
+// The Files panel's operations on the chat's folder (paths relative to it; checked to stay inside on the server).
+// create: path · rename: path → to · move: paths into the folder `to` ("" is the root) · delete: paths (to Zorel's
+// trash; the answer's trashId undoes it) · restore: id · open / reveal: path (default app / file manager).
+const RelPath = Schema.String.check(Schema.isMaxLength(1000))
+export const FsOp = Schema.Struct({
+  op: Schema.Literals(["create", "rename", "move", "delete", "restore", "open", "reveal"]),
+  path: Schema.optional(RelPath),
+  to: Schema.optional(RelPath),
+  paths: Schema.optional(Schema.Array(RelPath).check(Schema.isMaxLength(500))),
+  id: Schema.optional(Schema.String.check(Schema.isMaxLength(40)))
+})
 
 // Manual order in the sidebar: the ids in their new order. Chats only reorder inside their own group.
 export const ProjectOrder = Schema.Struct({ ids: Schema.Array(Id) })
@@ -605,6 +616,9 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.get("servers", "/api/chats/:id/servers", { params: idParam, success: Schema.Array(LocalServer), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("stopServer", "/api/chats/:id/servers/:pid", { params: Schema.Struct({ id: Schema.String, pid: Schema.NumberFromString }), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("openFile", "/api/chats/:id/open", { params: idParam, payload: OpenFile, error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
+      // A file's text for the viewer: contents null when it's binary or over 1 MB.
+      .add(HttpApiEndpoint.get("readFile", "/api/chats/:id/file", { params: idParam, query: { path: RelPath }, success: Schema.Struct({ contents: Schema.NullOr(Schema.String), size: Schema.Number }), error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
+      .add(HttpApiEndpoint.post("fs", "/api/chats/:id/fs", { params: idParam, payload: FsOp, success: Schema.Struct({ trashId: Schema.NullOr(Schema.String) }), error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
       .add(HttpApiEndpoint.post("consolidate", "/api/chats/:id/consolidate", { params: idParam, success: Chat, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
       // What one turn changed in the workspace, and undoing it (restores the files to the checkpoint before it).
       .add(HttpApiEndpoint.get("diff", "/api/turns/:id/diff", { params: idParam, success: TurnDiff, error: HttpApiError.NotFound }))

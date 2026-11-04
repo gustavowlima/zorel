@@ -949,6 +949,23 @@ export const en = {
     leaveWorktree: "Back to the project folder",
     leftWorktree: "Back in the project folder. The branch stays."
   },
+  // The Files panel (an editor's explorer on the chat's folder).
+  explorer: {
+    label: "Project files",
+    newFile: "New file",
+    newFileHint: "A path like src/new/file.ts makes the folders too.",
+    create: "Create",
+    collapse: "Collapse folders",
+    open: "Open",
+    showChanges: "Show changes",
+    reveal: "Show in folder",
+    copyPath: "Copy path",
+    copyRelative: "Copy relative path",
+    newFileHere: "New file here",
+    cantShow: "Can't show this file here: it's binary, over 1 MB or gone. Open it in its app.",
+    deleted: { one: "Deleted 1 item", other: "Deleted {count} items" },
+    failed: "Couldn't do that. Something with that name may already be there."
+  },
   workspace: {
     folder: "Folder",
     folderHint: "The project folder on this computer, e.g. /Users/you/dev/app. Agents read, edit and run commands in it. Empty: they work in an empty Zorel folder.",

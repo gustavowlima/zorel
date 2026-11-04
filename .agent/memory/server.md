@@ -4,6 +4,7 @@ status: active
 updated: 2026-11-04
 
 ## current
+- fs-ops.ts (2026-11-04): ops de arquivo da aba Files; todo caminho passa por inside() (relative, cross-OS); delete vai para <dataDir>/trash/<id> (7 dias), restore desfaz; open/reveal por osCommand (mac/win/linux); openFile também usa inside+osCommand (antes era só `open` do macOS)
 
 - main.ts: HttpApi (contracts) + SSE POST /api/chats/:id/send + serve apps/web/dist; start() exportado (usado pelo desktop); escuta só 127.0.0.1
 - LocalOnly (middleware global): Host precisa ser localhost/127.0.0.1/::1 (DNS rebinding) e Origin, se houver, também local (CSRF); 403 caso contrário

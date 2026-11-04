@@ -32,6 +32,7 @@ import { billingOf, Pricing } from "./pricing.ts"
 import { clean, measure } from "./storage.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
+import { createFile, FsError, inside, moveInto, osCommand, readText, renamePath, restore, trash } from "./fs-ops.ts"
 import { applyPendingImport, cancelImport, exportWorkspace, MAX_IMPORT_BYTES, pendingImport, stageImport } from "./transfer.ts"
 import { cpus, totalmem } from "node:os"
 import { listProcs, type Proc, sample, subtree } from "./procs.ts"
@@ -356,9 +357,37 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           const chat = yield* store.chat(params.id)
           if (!chat) return yield* notFound()
           const root = yield* chatRoot(chat.id)
-          const file = resolve(root, payload.path)
-          if (!(file === root || file.startsWith(`${root}/`)) || !existsSync(file)) return yield* new HttpApiError.BadRequest()
-          yield* Effect.sync(() => Bun.spawn(["open", file], { stdout: "ignore", stderr: "ignore" }))
+          const file = yield* Effect.try(() => inside(root, payload.path)).pipe(Effect.mapError(() => new HttpApiError.BadRequest()))
+          if (!existsSync(file)) return yield* new HttpApiError.BadRequest()
+          yield* Effect.sync(() => Bun.spawn(osCommand("open", file), { stdout: "ignore", stderr: "ignore", windowsHide: true } as never))
+        })
+      )
+      .handle("readFile", ({ params, query }) =>
+        Effect.gen(function* () {
+          const root = yield* chatRoot(params.id)
+          return yield* Effect.try(() => readText(root, query.path)).pipe(Effect.mapError(() => new HttpApiError.BadRequest()))
+        })
+      )
+      // The Files panel (fs-ops.ts): each op checks its paths stay inside the chat's folder.
+      .handle("fs", ({ params, payload: p }) =>
+        Effect.gen(function* () {
+          const chat = yield* store.chat(params.id)
+          if (!chat) return yield* notFound()
+          const root = yield* chatRoot(chat.id)
+          const trashDir = join(dataDir, "trash")
+          return yield* Effect.try(() => {
+            const need = <T>(v: T | undefined): T => {
+              if (v === undefined || v === "") throw new FsError("missing")
+              return v
+            }
+            if (p.op === "create") createFile(root, need(p.path))
+            else if (p.op === "rename") renamePath(root, need(p.path), need(p.to))
+            else if (p.op === "move") moveInto(root, need(p.paths), p.to ?? "")
+            else if (p.op === "delete") return { trashId: trash(root, need(p.paths), trashDir) }
+            else if (p.op === "restore") restore(root, need(p.id), trashDir)
+            else Bun.spawn(osCommand(p.op, inside(root, need(p.path))), { stdout: "ignore", stderr: "ignore", windowsHide: true } as never)
+            return { trashId: null }
+          }).pipe(Effect.tapError((e) => Effect.logWarning("files op failed", p.op, String(e))), Effect.mapError(() => new HttpApiError.BadRequest()))
         })
       )
       .handle("reorder", ({ payload }) => store.reorderChats(payload.projectId, payload.ids))

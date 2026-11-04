@@ -10,7 +10,7 @@ import { Button, Textarea } from "@/ui"
 import { useResolvedTheme } from "../state.ts"
 import { DIFF_THEMES, DiffWorkerPool } from "./diff-pool.tsx"
 
-const SURFACE_CSS = `
+export const SURFACE_CSS = `
 [data-diffs-header], [data-diff], [data-file], [data-error-wrapper], [data-virtualizer-buffer] {
   --diffs-font-family: var(--font-mono) !important;
   --diffs-header-font-family: var(--font-sans) !important;

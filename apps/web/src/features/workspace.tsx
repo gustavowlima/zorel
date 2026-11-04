@@ -1,21 +1,22 @@
 // Workspace in the chat (prototype: right panel Changes/Files, bottom terminal): what each turn changed,
 // with its diff and undo; the project's files marked with what this chat changed; the commands the agents
 // ran, with their output. Data comes from Zorel's checkpoints, the same for every harness.
-import type { Agent, Chat, FileChange, Message, Project, WorkspaceFile } from "@zorel/contracts"
+import type { Agent, Chat, FileChange, FsOp, Message, Project, WorkspaceFile } from "@zorel/contracts"
 import { useAtomValue } from "@effect/atom-react"
 import { formatTime, t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { lazy, type PointerEvent as ReactPointerEvent, Suspense, useEffect, useMemo, useRef, useState } from "react"
-import { diffAtom, filesAtom, localServersAtom, mutations, scriptsAtom, terminalsAtom, useInvalidate, useMutation, useReading } from "../client.ts"
+import { diffAtom, fileTextAtom, filesAtom, localServersAtom, mutations, scriptsAtom, terminalsAtom, useInvalidate, useMutation, useReading } from "../client.ts"
 import { agentName } from "../labels.ts"
 import type { LineComment } from "./diff-view.tsx"
 // The diff viewer and its highlighter load with the panel, not with the app.
 const DiffView = lazy(() => import("./diff-view.tsx"))
+const FileView = lazy(() => import("./file-view.tsx"))
 // The text a line comment puts in the message box (kept out of the lazy chunk's default export).
 const commentText = (c: LineComment) =>
   t("diff.commentRef", { path: c.path, lines: c.start === c.end ? t("diff.line", { n: c.start }) : t("diff.lines", { from: c.start, to: c.end }), side: c.side === "deletions" ? t("diff.old") : t("diff.new"), text: c.text.trim() })
 import {
-  Button, ChevronDown, ChevronRight, ConfirmButton, cx, EmptyState, File, Folder, FolderOpen, IconButton, Spinner, Tab, TabList,
+  Button, ChevronDown, ChevronRight, ChevronsDownUp, ConfirmButton, Copy, cx, Dialog, EmptyState, ExternalLink, Field, File, FileIcon, FilePlus, type FileNode, FileTree, Folder, FolderOpen, IconButton, Input, MenuSeparator, Pencil, Spinner, Tab, TabList, Trash2, Undo2,
   Columns2, ConfirmDialog, ContextMenu, GitBranch, Globe, Menu, MenuItem, PanelRight, Pin, PinOff, Play, Plus, Popover, Rows2, Server, Square, SquareTerminal, TabPanel, Tabs, Tooltip, X
 } from "@/ui"
 import { Shell } from "./shell.tsx"
@@ -258,7 +259,7 @@ export function SidePanel({
         )}
         {folder && project && (
           <TabPanel id="files" className="min-h-0 flex-1 overflow-y-auto">
-            <FilesTab project={project} chat={chat} messages={messages} onFocus={onFocus} />
+            <FilesTab project={project} chat={chat} messages={messages} onFocus={onFocus} onAddToChat={onAddToChat} />
           </TabPanel>
         )}
         <TabPanel id="browser" keepMounted={opened.has("browser")} className="flex min-h-0 flex-1 flex-col">
@@ -375,78 +376,296 @@ const StatusMark = ({ status }: { status: FileChange["status"] | null }) =>
 
 // ---------- files tree ----------
 
-type Node = { name: string; path: string; status: WorkspaceFile["status"]; children: Map<string, Node> }
+// The project's files as a tree, folders first; a folder shows it holds changes.
+type Node = { name: string; path: string; status: WorkspaceFile["status"]; children: Node[] | null }
 
-function treeOf(files: ReadonlyArray<WorkspaceFile>): Node {
-  const root: Node = { name: "", path: "", status: null, children: new Map() }
+function treeOf(files: ReadonlyArray<WorkspaceFile>): Node[] {
+  const top: Node[] = []
+  const byPath = new Map<string, Node>()
   for (const f of files) {
-    let node = root
     const parts = f.path.split("/")
-    parts.forEach((part, i) => {
+    let siblings = top
+    parts.forEach((name, i) => {
       const path = parts.slice(0, i + 1).join("/")
-      let next = node.children.get(part)
-      if (!next) {
-        next = { name: part, path, status: null, children: new Map() }
-        node.children.set(part, next)
-      }
-      if (i === parts.length - 1) next.status = f.status
-      else if (f.status && !next.status) next.status = "modified" // a folder shows it holds changes
-      node = next
+      const leaf = i === parts.length - 1
+      let node = byPath.get(path)
+      if (!node) {
+        node = { name, path, status: leaf ? f.status : null, children: leaf ? null : [] }
+        byPath.set(path, node)
+        siblings.push(node)
+      } else if (!leaf && f.status && !node.status) node.status = "modified"
+      siblings = node.children ?? []
     })
   }
-  return root
+  const sort = (ns: Node[]) => {
+    ns.sort((a, b) => Number(!!b.children) - Number(!!a.children) || a.name.localeCompare(b.name))
+    for (const n of ns) if (n.children) sort(n.children)
+    return ns
+  }
+  return sort(top)
 }
 
-function FilesTab({ project, chat, messages, onFocus }: { project: Project; chat: Chat; messages: ReadonlyArray<Message>; onFocus: (f: Focus) => void }) {
+const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
+const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")))
+
+// The Files tab, as an editor's explorer: select (Shift / Cmd), F2 renames in place, Delete sends to Zorel's trash
+// with Undo, drag moves into a folder, double-click opens (a changed file opens its diff), right-click for the rest.
+function FilesTab({ project, chat, messages, onFocus, onAddToChat }: { project: Project; chat: Chat; messages: ReadonlyArray<Message>; onFocus: (f: Focus) => void; onAddToChat: (text: string) => void }) {
   const files = AsyncResult.getOrElse(useAtomValue(filesAtom(project.id, chat.id)), () => undefined)
-  const root = useMemo(() => (files ? treeOf(files) : undefined), [files])
-  // A changed file opens the diff of the last turn that touched it.
-  const lastTurnOf = (path: string) => [...messages].reverse().find((m) => m.turnId && m.changes.some((c) => c.path === path))?.turnId
-  if (!root)
+  const nodes = useMemo(() => (files ? treeOf(files) : undefined), [files])
+  const fs = useMutation(mutations.fs)
+  const invalidate = useInvalidate()
+  const [expanded, setExpanded] = useState<Set<string>>()
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [creating, setCreating] = useState<string | null>(null) // the folder a new file goes in ("" is the top)
+  const [deleted, setDeleted] = useState<{ id: string; count: number }>()
+  const [error, setError] = useState<string>()
+  if (!nodes)
     return (
       <div className="flex justify-center py-10 text-muted">
         <Spinner />
       </div>
     )
+  // One file selected: its code shows under the tree.
+  const only = selected.size === 1 ? findNode(nodes, [...selected][0]!) : undefined
+  const preview = only && !only.children ? only : undefined
+  // At first, the top folders holding changes are open.
+  const open = expanded ?? new Set(nodes.filter((n) => n.children && n.status).map((n) => n.path))
+  const root = chat.worktree ?? project.path ?? ""
+  const sep = root.includes("\\") ? "\\" : "/"
+  const lastTurnOf = (path: string) => [...messages].reverse().find((m) => m.turnId && m.changes.some((c) => c.path === path))?.turnId
+  const run = (payload: typeof FsOp.Type) =>
+    fs({ params: { id: chat.id }, payload }).then(
+      (r) => {
+        setError(undefined)
+        invalidate(["workspace"])
+        return r
+      },
+      () => {
+        setError(t("explorer.failed"))
+        return undefined
+      }
+    )
+  // A row's menu acts on the selection when the row is in it, else on that row alone.
+  const targets = (path: string) => (selected.has(path) ? [...selected] : [path])
+  const remove = (paths: ReadonlyArray<string>) =>
+    paths.length &&
+    void run({ op: "delete", paths: [...paths] }).then((r) => {
+      if (!r?.trashId) return
+      setDeleted({ id: r.trashId, count: paths.length })
+      setSelected(new Set())
+    })
+  const rename = (path: string, name: string | null) => {
+    setRenaming(null)
+    if (!name) return
+    const to = parentOf(path) ? `${parentOf(path)}/${name}` : name
+    void run({ op: "rename", path, to }).then((r) => r && setSelected(new Set([to])))
+  }
+  const openFile = (n: FileNode & { status?: Node["status"] }) => {
+    const turnId = lastTurnOf(n.path)
+    if (turnId) onFocus({ turnId, path: n.path })
+    else void run({ op: "open", path: n.path })
+  }
+  const copy = (paths: ReadonlyArray<string>, absolute: boolean) =>
+    void navigator.clipboard.writeText(paths.map((p) => (absolute ? [root, ...p.split("/")].join(sep) : p)).join("\n"))
+  const folderOf = (path: string) => (nodes && findNode(nodes, path)?.children ? path : parentOf(path))
+  const menuFor = (target: HTMLElement) => {
+    const path = target.closest("[role=row]")?.getAttribute("data-key")
+    if (!path)
+      return (
+        <MenuItem icon={<FilePlus />} onAction={() => setCreating("")}>
+          {t("explorer.newFile")}
+        </MenuItem>
+      )
+    const node = findNode(nodes, path)
+    const paths = targets(path)
+    const one = paths.length === 1
+    return (
+      <>
+        {one && !node?.children && (
+          <MenuItem icon={<ExternalLink />} onAction={() => void run({ op: "open", path })}>
+            {t("explorer.open")}
+          </MenuItem>
+        )}
+        {one && lastTurnOf(path) && (
+          <MenuItem icon={<GitBranch />} onAction={() => onFocus({ turnId: lastTurnOf(path)!, path })}>
+            {t("explorer.showChanges")}
+          </MenuItem>
+        )}
+        {one && (
+          <MenuItem icon={<FolderOpen />} onAction={() => void run({ op: "reveal", path })}>
+            {t("explorer.reveal")}
+          </MenuItem>
+        )}
+        <MenuItem icon={<Plus />} onAction={() => onAddToChat(paths.map((p) => `\`${p}\``).join(" "))}>
+          {t("workspace.addToChat")}
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem icon={<Copy />} onAction={() => copy(paths, true)}>
+          {t("explorer.copyPath")}
+        </MenuItem>
+        <MenuItem icon={<Copy />} onAction={() => copy(paths, false)}>
+          {t("explorer.copyRelative")}
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem icon={<FilePlus />} onAction={() => setCreating(folderOf(path))}>
+          {t("explorer.newFileHere")}
+        </MenuItem>
+        {one && (
+          <MenuItem icon={<Pencil />} onAction={() => setRenaming(path)}>
+            {t("common.rename")}
+          </MenuItem>
+        )}
+        <MenuItem icon={<Trash2 />} tone="danger" onAction={() => remove(paths)}>
+          {t("common.delete")}
+        </MenuItem>
+      </>
+    )
+  }
   return (
-    <ul aria-label={t("workspace.files")} className="flex flex-col px-2 py-2">
-      {[...root.children.values()].sort(byFolderThenName).map((n) => (
-        <TreeNode key={n.path} node={n} depth={0} onOpen={(path) => {
-          const turnId = lastTurnOf(path)
-          if (turnId) onFocus({ turnId, path })
-        }} />
-      ))}
-    </ul>
+    <div className="flex h-full flex-col">
+      <div className={cx("flex min-h-0 flex-col overflow-y-auto", preview ? "max-h-2/5 shrink-0 border-b border-subtle" : "flex-1")}>
+      <div className="sticky top-0 z-10 flex h-control-sm shrink-0 items-center justify-end gap-0.5 bg-canvas px-2">
+        <IconButton label={t("explorer.newFile")} size="xs" onPress={() => setCreating(selected.size === 1 ? folderOf([...selected][0]!) : "")}>
+          <FilePlus className="size-3.5" />
+        </IconButton>
+        <IconButton label={t("explorer.collapse")} size="xs" onPress={() => setExpanded(new Set())}>
+          <ChevronsDownUp className="size-3.5" />
+        </IconButton>
+      </div>
+      <ContextMenu label={t("explorer.label")} menuFor={menuFor} className="flex-1 px-2">
+        <FileTree
+          label={t("explorer.label")}
+          nodes={nodes}
+          expanded={open}
+          onExpandedChange={setExpanded}
+          selected={selected}
+          onSelectionChange={setSelected}
+          renaming={renaming}
+          onRenamed={(name) => renaming && rename(renaming, name)}
+          onAction={(n) => (n.children ? setExpanded(new Set(open.has(n.path) ? [...open].filter((p) => p !== n.path) : [...open, n.path])) : openFile(n))}
+          onMove={(paths, folder) => {
+            const moving = paths.filter((p) => parentOf(p) !== folder)
+            if (moving.length) void run({ op: "move", paths: moving, to: folder }).then(() => folder && setExpanded(new Set([...open, folder])))
+          }}
+          // F2 / Delete everywhere; on macOS also Finder's keys: Enter renames, Backspace (or Cmd+Backspace) deletes.
+          onKey={(key, e) => {
+            if ((key === "F2" || (MAC && key === "Enter" && !e.metaKey)) && selected.size === 1) setRenaming([...selected][0]!)
+            else if ((key === "Delete" || (key === "Backspace" && (MAC || e.metaKey || e.ctrlKey))) && selected.size) remove([...selected])
+            else return false
+            return true
+          }}
+          trailing={(n) => <StatusMark status={(n as Node).children ? null : (n as Node).status} />}
+          strong={(n) => !!(n as Node).status}
+        />
+      </ContextMenu>
+      </div>
+      {preview && (
+        <FilePreview
+          chatId={chat.id}
+          node={preview}
+          onChanges={lastTurnOf(preview.path) ? () => onFocus({ turnId: lastTurnOf(preview.path)!, path: preview.path }) : undefined}
+          onOpen={() => void run({ op: "open", path: preview.path })}
+          onClose={() => setSelected(new Set())}
+        />
+      )}
+      {(deleted || error) && (
+        <div role="status" className="sticky bottom-0 flex items-center gap-2 border-t border-subtle bg-canvas px-3 py-2 text-sm">
+          <span className={cx("min-w-0 flex-1", error ? "text-danger" : "text-secondary")}>{error ?? t("explorer.deleted", { count: deleted!.count })}</span>
+          {deleted && !error && (
+            <Button size="sm" variant="ghost" className="h-6 px-2" onPress={() => void run({ op: "restore", id: deleted.id }).then((r) => r && setDeleted(undefined))}>
+              <Undo2 className="size-3.5" />
+              {t("workspace.undo")}
+            </Button>
+          )}
+          <IconButton label={t("common.close")} size="xs" onPress={() => {
+              setDeleted(undefined)
+              setError(undefined)
+            }}>
+            <X className="size-3.5" />
+          </IconButton>
+        </div>
+      )}
+      <Dialog title={t("explorer.newFile")} isOpen={creating !== null} onOpenChange={(o) => !o && setCreating(null)}>
+        {(close) => (
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const path = String(new FormData(e.currentTarget).get("path") ?? "").trim().replace(/^\/+/, "")
+              if (!path || path.endsWith("/")) return
+              void run({ op: "create", path }).then((r) => {
+                if (!r) return
+                close()
+                const parents = path.split("/").slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join("/"))
+                setExpanded(new Set([...open, ...parents]))
+                setSelected(new Set([path]))
+              })
+            }}
+          >
+            <Field label={t("explorer.newFile")} hint={t("explorer.newFileHint")}>
+              <Input name="path" autoFocus defaultValue={creating ? `${creating}/` : ""} />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onPress={close}>
+                {t("common.cancel")}
+              </Button>
+              <Button type="submit">{t("explorer.create")}</Button>
+            </div>
+          </form>
+        )}
+      </Dialog>
+    </div>
   )
 }
 
-const byFolderThenName = (a: Node, b: Node) => Number(b.children.size > 0) - Number(a.children.size > 0) || a.name.localeCompare(b.name)
-
-function TreeNode({ node, depth, onOpen }: { node: Node; depth: number; onOpen: (path: string) => void }) {
-  const folder = node.children.size > 0
-  const [open, setOpen] = useState(depth === 0 && node.status !== null)
+// The selected file's code, read only, with its name and the ways out (its diff, its own app).
+function FilePreview({ chatId, node, onChanges, onOpen, onClose }: { chatId: string; node: Node; onChanges: (() => void) | undefined; onOpen: () => void; onClose: () => void }) {
+  const result = useAtomValue(fileTextAtom(chatId, node.path))
+  const text = AsyncResult.getOrElse(result, () => undefined)
   return (
-    <li>
-      <Button
-        variant="ghost"
-        {...(folder && { "aria-expanded": open })}
-        className="h-7 w-full justify-start gap-1.5 px-1.5 font-normal"
-        onPress={() => (folder ? setOpen(!open) : node.status && onOpen(node.path))}
-      >
-        <span className="shrink-0" style={{ width: depth * 14 }} />
-        {folder ? open ? <FolderOpen className="text-muted" /> : <Folder className="text-muted" /> : <File className="text-dim" />}
-        <span className={cx("min-w-0 flex-1 truncate text-left text-sm", node.status ? "text-fg" : "text-secondary")}>{node.name}</span>
-        <StatusMark status={folder ? null : node.status} />
-      </Button>
-      {folder && open && (
-        <ul>
-          {[...node.children.values()].sort(byFolderThenName).map((c) => (
-            <TreeNode key={c.path} node={c} depth={depth + 1} onOpen={onOpen} />
-          ))}
-        </ul>
-      )}
-    </li>
+    <section aria-label={node.path} className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-control-sm shrink-0 items-center gap-1.5 px-3">
+        <FileIcon name={node.name} />
+        <span className="min-w-0 flex-1 truncate font-mono text-sm text-secondary" title={node.path}>
+          {node.path}
+        </span>
+        {onChanges && (
+          <Button size="sm" variant="ghost" className="h-6 px-2" onPress={onChanges}>
+            {t("explorer.showChanges")}
+          </Button>
+        )}
+        <IconButton label={t("explorer.open")} size="xs" onPress={onOpen}>
+          <ExternalLink className="size-3.5" />
+        </IconButton>
+        <IconButton label={t("common.close")} size="xs" onPress={onClose}>
+          <X className="size-3.5" />
+        </IconButton>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto bg-code">
+        {AsyncResult.isFailure(result) || text?.contents === null ? (
+          <p className="px-3 py-6 text-center text-sm text-muted">{t("explorer.cantShow")}</p>
+        ) : text ? (
+          <Suspense fallback={<Spinner />}>
+            <FileView name={node.name} contents={text.contents} />
+          </Suspense>
+        ) : (
+          <div className="flex justify-center py-6 text-muted">
+            <Spinner />
+          </div>
+        )}
+      </div>
+    </section>
   )
+}
+
+const findNode = (ns: ReadonlyArray<Node>, path: string): Node | undefined => {
+  for (const n of ns) {
+    if (n.path === path) return n
+    if (n.children && path.startsWith(`${n.path}/`)) return findNode(n.children, path)
+  }
+  return undefined
 }
 
 // ---------- terminal (read-only: the commands the agents ran) ----------

@@ -57,3 +57,4 @@
 2026-11-04 | exportar/importar workspace (fase 7) | mudar de computador sem perder projetos, agentes, chats e conhecimento
 2026-11-04 | fechamento do repasse por menção, complemento sem menção fica com o colega, formato Status/Result/Evidence, aviso no limite | teste real de equipe + ideias de a reference app/a reference app
 2026-11-04 | roteador barato para mensagens sem menção; gateway MCP em SSE com ping | usuário pediu o roteador; pergunta expirava aos 5 min
+2026-11-04 | fs-ops.ts + POST /api/chats/:id/fs; openFile cross-platform | aba Files interativa; openFile só funcionava no macOS

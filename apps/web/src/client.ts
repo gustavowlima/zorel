@@ -62,6 +62,7 @@ export const approvalsAtom = Live.query("approvals", undefined, { reactivityKeys
 // Workspace (ARCHITECTURE §9.1): one turn's diff, the project's files marked with what this chat changed,
 // and the commands the agents ran. All refetch when a turn settles ("workspace" key).
 export const diffAtom = (turnId: string) => Zorel.query("chats", "diff", { params: { id: turnId }, reactivityKeys: ["workspace"] })
+export const fileTextAtom = (chatId: string, path: string) => Zorel.query("chats", "readFile", { params: { id: chatId }, query: { path }, reactivityKeys: ["workspace"] })
 export const filesAtom = (projectId: string, chatId: string) => Zorel.query("projects", "files", { params: { id: projectId }, query: { chatId }, reactivityKeys: ["workspace"] })
 
 // ---------- mutations ----------
@@ -93,6 +94,7 @@ export const mutations = {
   removeChat: Zorel.mutation("chats", "remove"),
   closeTerminal: Zorel.mutation("chats", "closeTerminal"),
   openFile: Zorel.mutation("chats", "openFile"),
+  fs: Zorel.mutation("chats", "fs"),
   stopServer: Zorel.mutation("chats", "stopServer"),
   gitDraft: Zorel.mutation("chats", "gitDraft"),
   gitCommit: Zorel.mutation("chats", "gitCommit"),

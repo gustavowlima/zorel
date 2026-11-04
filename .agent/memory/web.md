@@ -1,9 +1,10 @@
 # web
-keywords: web, react, ui, chat, sidebar, route, knowledge, inbox, needs you, usage, model picker, settings, i18n, atoms, átomos, client
+keywords: web, files, explorer, file tree, react, ui, chat, sidebar, route, knowledge, inbox, needs you, usage, model picker, settings, i18n, atoms, átomos, client
 status: active
 updated: 2026-11-03
 
 ## current
+- Files (2026-11-04): FileTree (React Aria Tree, sem dep nova) + FileIcon (simple-icons por extensão, lucide no resto) em @/ui; FilesTab em workspace.tsx chama mutations.fs (op create/rename/move/delete/restore/open/reveal) e invalida "workspace"; apagar não pede confirmação: vai para a lixeira do Zorel e mostra Undo
 - sidebar (2026-11-03): marca, páginas fixas (Needs you/Knowledge/Settings), seções empilhadas Chats (sem projeto) e Projects com ícone, dobra e +, sem abas (usuário pediu); chats em 1 linha de 32px; lista com fade + fio no pé só quando há mais embaixo; pé = consumo por janela (paceOf em labels.ts, cartão no hover); uma coluna de ícone 20px x20–40 e texto em x50
 
 - fase UI concluída (2026-11-03): todas as telas reescritas pelo protótipo, em inglês, com átomos
