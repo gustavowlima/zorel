@@ -50,5 +50,6 @@ win:
   icon: assets/icon.png
 linux:
   icon: assets/icon.png
+  executableName: zorel # the default comes from the package name, @zorel/desktop, which AppImage refuses
   target: [AppImage]
   artifactName: zorel-linux-${arch}.${ext}

@@ -59,7 +59,10 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
-      - run: bun run desktop:build
+      - run: |
+          [ -n "$CSC_LINK" ] || unset CSC_LINK CSC_KEY_PASSWORD # an empty secret would be read as a path
+          bun run desktop:build
+        shell: bash
         env:
           CSC_LINK: ${{ runner.os == 'macOS' && secrets.CSC_LINK || '' }} # the Developer ID; Windows signing would take WIN_CSC_LINK
           CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.CSC_KEY_PASSWORD || '' }}
@@ -92,7 +95,11 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
-      - run: bun run --cwd apps/desktop release
+      # A missing secret arrives as an empty CSC_LINK, which electron-builder reads as a path: unset it (ad hoc signing).
+      - run: |
+          [ -n "$CSC_LINK" ] || unset CSC_LINK CSC_KEY_PASSWORD
+          bun run --cwd apps/desktop release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ runner.os == 'macOS' && secrets.CSC_LINK || '' }} # the Developer ID; Windows signing would take WIN_CSC_LINK
