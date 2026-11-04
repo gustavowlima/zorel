@@ -10,6 +10,7 @@ export type Route =
   | { view: "home"; projectId?: string }
   | { view: "inbox" }
   | { view: "agents" }
+  | { view: "routines" }
   | { view: "knowledge"; id?: string }
   | { view: "usage"; agentId?: string } // agentId: Usage filtered to one agent (from its page)
   | { view: "settings"; tab: SettingsTab; provider?: string } // provider: one provider's page under Providers
@@ -24,6 +25,7 @@ export function parseRoute(hash: string): Route {
   const [, view, a, b] = hash.replace(/^#/, "").split("/")
   switch (view) {
     case "agents":
+    case "routines":
       return { view }
     case "inbox":
     case "usage":

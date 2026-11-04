@@ -220,7 +220,8 @@ html, body, #root { height: 100%; }
 .fade-bottom { mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
 
 /* Desktop app: the brand row moves right of the window buttons. */
-[data-shell="desktop"] .brand-row { padding-left: 76px; }
+[data-shell="desktop"] .brand-row { height: 2.25rem; }
+[data-shell="desktop"] .rail-top { padding-top: 2.5rem; } /* below the window buttons */
 .scroll-quiet::-webkit-scrollbar { display: none; }
 a { text-underline-offset: 3px; }
 body {

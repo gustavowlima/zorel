@@ -14,7 +14,7 @@ import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  AgentAvatar, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, ModelAvatar, NavItem, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
+  AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, ModelAvatar, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
@@ -28,14 +28,66 @@ const chatKey = (id: string) => `c:${id}`
 const moreKey = (group: string) => `m:${group}`
 const idOf = (key: NavKey) => String(key).slice(2)
 
+// The icon rail (as in a reference app): the logo, then the app's places — chats, what waits for you, agents, routines,
+// knowledge — and at the foot the subscriptions' rings (usage) and Settings. Each icon has its name as a tooltip;
+// the current place is marked. The chats and projects list sits to its right.
+export function Rail({ route }: { route: Route }) {
+  const memories = useList(memoriesAtom)
+  const approvals = useList(approvalsAtom)
+  const needsYou = approvals.length + memories.filter((m) => m.state === "pending").length
+  const places = [
+    { key: "chats", icon: <MessageCircle />, label: t("nav.chats"), active: ["home", "chat", "project"].includes(route.view), go: () => go({ view: "home" }) },
+    { key: "inbox", icon: <Inbox />, label: t("nav.needsYou"), active: route.view === "inbox", go: () => go({ view: "inbox" }), count: needsYou },
+    { key: "agents", icon: <Bot />, label: t("nav.agents"), active: ["agents", "agent", "new-agent"].includes(route.view), go: () => go({ view: "agents" }) },
+    { key: "routines", icon: <AlarmClock />, label: t("nav.routines"), active: route.view === "routines", go: () => go({ view: "routines" }) },
+    { key: "knowledge", icon: <BookOpen />, label: t("nav.knowledge"), active: route.view === "knowledge", go: () => go({ view: "knowledge" }) }
+  ]
+  return (
+    <nav aria-label={t("nav.label")} className="rail-top electrobun-webkit-app-region-drag flex w-15 shrink-0 flex-col items-center gap-1 pt-3 pb-3">
+      <span className="mb-3 flex size-10 items-center justify-center">
+        <Logo className="size-5" />
+      </span>
+      {places.map((p) => (
+        <RailItem key={p.key} label={p.label} active={p.active} onPress={p.go} count={p.count}>
+          {p.icon}
+        </RailItem>
+      ))}
+      <span className="flex-1" />
+      <UsageFoot active={route.view === "usage"} />
+      <RailItem label={t("nav.settings")} active={route.view === "settings"} onPress={() => go({ view: "settings", tab: "general" })}>
+        <Settings />
+      </RailItem>
+    </nav>
+  )
+}
+
+function RailItem({ label, active, onPress, count, children }: { label: string; active: boolean; onPress: () => void; count?: number | undefined; children: ReactNode }) {
+  return (
+    <span className="electrobun-webkit-app-region-no-drag relative">
+      <Tooltip content={label} placement="right">
+        <IconButton
+          label={count ? `${label} (${count})` : label}
+          onPress={onPress}
+          className={cx("size-10 rounded-card [&_svg]:size-5", active ? "bg-hover text-fg" : "text-muted")}
+          {...(active && { "aria-current": "page" as const })}
+        >
+          {children}
+        </IconButton>
+      </Tooltip>
+      {!!count && (
+        <span aria-hidden="true" className="pointer-events-none absolute -top-0.5 -right-0.5">
+          <Count n={count} />
+        </span>
+      )}
+    </span>
+  )
+}
+
 export function Sidebar({ route, activeProjectId }: { route: Route; activeProjectId: string | null }) {
   const projects = useList(projectsAtom)
   const chats = useList(chatsAtom)
   const agents = useList(agentsAtom)
-  const memories = useList(memoriesAtom)
-  const approvals = useList(approvalsAtom)
   const statuses = useStatuses()
-  const needsYou = approvals.length + memories.filter((m) => m.state === "pending").length
 
   const [expanded, setExpanded] = useState(() => readSet(EXPANDED_KEY))
   const [all, setAll] = useState<ReadonlySet<string>>(new Set()) // groups showing every chat
@@ -151,40 +203,9 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   }
 
   return (
-    <nav aria-label={t("nav.label")} className="flex w-66 shrink-0 flex-col overflow-hidden pt-3 pb-3 pl-2.5">
-      {/* The brand; in the desktop app it is also the title bar (it drags the window, the window buttons sit on its left). */}
-      <div className="brand-row electrobun-webkit-app-region-drag mb-3 flex h-7 shrink-0 items-center gap-2.5 pr-2.5 pl-2.5">
-        <Logo className="size-5 shrink-0" />
-        <span className="flex-1 font-semibold">{t("app.name")}</span>
-        {/* Settings sits on the brand row, out of the way of the pages. */}
-        <span className="electrobun-webkit-app-region-no-drag">
-          <Tooltip content={t("nav.settings")}>
-            <IconButton
-              label={t("nav.settings")}
-              size="sm"
-              onPress={() => go({ view: "settings", tab: "general" })}
-              className={cx(route.view === "settings" && "bg-hover text-fg")}
-              {...(route.view === "settings" && { "aria-current": "page" as const })}
-            >
-              <Settings className="size-4" />
-            </IconButton>
-          </Tooltip>
-        </span>
-      </div>
-
-      {/* The pages, fixed: what waits for you first, then Knowledge. One 20px icon column (x20-40),
-          text from x50, shared by every row of the sidebar. */}
-      <div className="mb-3 flex shrink-0 flex-col gap-px pr-2.5">
-        <NavItem icon={<Inbox />} active={route.view === "inbox"} onPress={() => go({ view: "inbox" })} trailing={needsYou > 0 && <Count n={needsYou} />}>
-          {t("nav.needsYou")}
-        </NavItem>
-        <NavItem icon={<Bot />} active={route.view === "agents" || route.view === "agent" || route.view === "new-agent"} onPress={() => go({ view: "agents" })}>
-          {t("nav.agents")}
-        </NavItem>
-        <NavItem icon={<BookOpen />} active={route.view === "knowledge"} onPress={() => go({ view: "knowledge" })}>
-          {t("nav.knowledge")}
-        </NavItem>
-      </div>
+    <nav aria-label={t("nav.chats")} className="flex w-62 shrink-0 flex-col overflow-hidden pt-0 pb-3 pl-1">
+      {/* In the desktop app the top of the list is also the title bar (it drags the window). */}
+      <div className="brand-row electrobun-webkit-app-region-drag h-3 shrink-0" />
 
       {/* Chats (without a project) first, then Projects; each section folds, and the list scrolls under the pages.
           Right-click (or the Menu key) on a chat or a project opens its menu. */}
@@ -236,10 +257,6 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
 
       </ContextMenu>
 
-      {/* The subscriptions' pace at the foot; it opens Usage. */}
-      <div className={cx("mr-2.5 shrink-0 border-t pt-2 transition-colors duration-150", more ? "border-subtle" : "border-transparent")}>
-        <UsageFoot active={route.view === "usage"} />
-      </div>
       {dialog?.kind === "rename" && (
         <RenameDialog
           isOpen
@@ -394,15 +411,15 @@ function UsageFoot({ active }: { active: boolean }) {
   }
   if (!rows.length)
     return (
-      <NavItem active={active} onPress={() => go({ view: "usage" })} icon={<ChartColumn />}>
-        {t("nav.usage")}
-      </NavItem>
+      <RailItem label={t("nav.usage")} active={active} onPress={() => go({ view: "usage" })}>
+        <ChartColumn />
+      </RailItem>
     )
-  // One ring per subscription, nothing else: each has its own card on hover or focus and opens Usage.
+  // One ring per subscription, stacked in the rail: each has its own card on hover or focus and opens Usage.
   return (
-    <div className="flex items-center gap-1 px-1.5">
+    <div className="electrobun-webkit-app-region-no-drag flex flex-col items-center gap-1">
       {rows.slice(0, MAX_FOOT_ROWS).map((r) => (
-        <Tooltip key={r.account.id} content={<UsageDetail rows={[r]} />}>
+        <Tooltip key={r.account.id} content={<UsageDetail rows={[r]} />} placement="right">
           <Button
             variant="ghost"
             aria-label={`${t("nav.usage")}: ${sentence(r)}`}

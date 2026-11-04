@@ -41,6 +41,7 @@ export const en = {
     needsYou: "Needs you",
     knowledge: "Knowledge",
     agents: "Agents",
+    routines: "Routines",
     newAgentIn: "New agent in {name}",
     usage: "Usage",
     settings: "Settings",
@@ -832,6 +833,9 @@ export const en = {
   routines: {
     title: "Routines",
     hint: "Work it does by itself: on a schedule, on demand, or when a local script calls its webhook. Each runs in its own chat.",
+    pageHint: "What your agents do by themselves, on a schedule or when called.",
+    emptyTitle: "No routines yet",
+    emptyHint: "Add one on an agent's page, or ask an agent in a chat to propose one.",
     new: "New routine",
     none: "No routines yet.",
     name: "Name",

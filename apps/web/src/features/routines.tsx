@@ -5,9 +5,9 @@
 import type { Agent, Routine } from "@zero/contracts"
 import { formatAge, formatTime, t } from "@zero/i18n"
 import { useState } from "react"
-import { mutations, routinesAtom, useInvalidate, useMutation, useReading } from "../client.ts"
+import { agentsAtom, mutations, routinesAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { go } from "../state.ts"
-import { Button, ConfirmDialog, Copy, Field, IconButton, Input, MessageCircle, Play, Plus, Rows, Section, Select, Switch, Textarea, Tooltip, Trash2 } from "@/ui"
+import { AlarmClock, Button, Column, EmptyState, Screen, ConfirmDialog, Copy, Field, IconButton, Input, MessageCircle, Play, Plus, Rows, Section, Select, Switch, Textarea, Tooltip, Trash2 } from "@/ui"
 
 const PRESETS = [
   { value: "0 * * * *", key: "hourly" },
@@ -21,7 +21,25 @@ const PRESETS = [
 const when = (r: Routine) =>
   !r.enabled ? t("routines.off") : r.nextRunAt ? t("routines.next", { when: formatTime(r.nextRunAt) }) : t("routines.onDemand")
 
-export function AgentRoutines({ agent }: { agent: Agent }) {
+// Every agent's routines on one page, one section per agent (the agent's name opens its page).
+export function RoutinesView() {
+  const agents = useList(agentsAtom)
+  const routines = useReading(routinesAtom).items
+  const withRoutines = agents.filter((a) => routines.some((r) => r.agentId === a.id))
+  return (
+    <Screen title={t("routines.title")} subtitle={t("routines.pageHint")}>
+      <Column>
+        {withRoutines.length === 0 ? (
+          <EmptyState icon={<AlarmClock />} title={t("routines.emptyTitle")} hint={t("routines.emptyHint")} action={<Button size="sm" variant="secondary" onPress={() => go({ view: "agents" })}>{t("nav.agents")}</Button>} />
+        ) : (
+          withRoutines.map((a) => <AgentRoutines key={a.id} agent={a} title={a.name} />)
+        )}
+      </Column>
+    </Screen>
+  )
+}
+
+export function AgentRoutines({ agent, title }: { agent: Agent; title?: string }) {
   const all = useReading(routinesAtom).items
   const mine = all.filter((r) => r.agentId === agent.id)
   const update = useMutation(mutations.updateRoutine)
@@ -34,8 +52,8 @@ export function AgentRoutines({ agent }: { agent: Agent }) {
   const keys = { reactivityKeys: ["routines"] as const }
   return (
     <Section
-      title={t("routines.title")}
-      description={t("routines.hint")}
+      title={title ? <Button variant="ghost" className="-ml-2 h-auto px-2 py-0.5 text-sm font-medium text-muted" onPress={() => go({ view: "agent", id: agent.id })}>{title}</Button> : t("routines.title")}
+      description={title ? undefined : t("routines.hint")}
       action={
         !adding && (
           <Button size="sm" variant="ghost" onPress={() => setAdding(true)}>

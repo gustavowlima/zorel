@@ -15,3 +15,4 @@
 2026-11-03 | Git sai do popover e vira aba do painel lateral, com arquivos e commits; abas só com ícone no painel estreito | pedido do usuário
 2026-11-03 | comentar linhas do diff → composer; último shell não fecha; Git no título só quando fixado | pedidos do usuário + lacuna vs T3 Code
 2026-11-03 | tela Agents na barra lateral | fase 4, pedido do usuário
+2026-11-03 | trilho de ícones à esquerda com os lugares do app; barra lateral só com chats e projetos; tela Routines | pedido do usuário (a reference app)

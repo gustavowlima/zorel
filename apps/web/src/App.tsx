@@ -11,11 +11,12 @@ import { AgentView } from "./features/agent.tsx"
 import { ChatView } from "./features/chat.tsx"
 import { HomeView } from "./features/home.tsx"
 import { AgentsView } from "./features/agents.tsx"
+import { RoutinesView } from "./features/routines.tsx"
 import { InboxView } from "./features/inbox.tsx"
 import { KnowledgeView } from "./features/knowledge.tsx"
 import { ProjectView } from "./features/project.tsx"
 import { SettingsView } from "./features/settings.tsx"
-import { Sidebar } from "./features/sidebar.tsx"
+import { Rail, Sidebar } from "./features/sidebar.tsx"
 import { UsageView } from "./features/usage.tsx"
 import { rememberModels } from "./labels.ts"
 import { go, type Route, useRoute } from "./state.ts"
@@ -39,6 +40,7 @@ export function App() {
 
   return (
     <div className="flex h-full bg-frame">
+      <Rail route={route} />
       <Sidebar route={route} activeProjectId={activeProjectId} />
       <main className="flex min-w-0 flex-1 flex-col py-3 pr-3">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-sheet border border-subtle bg-canvas">
@@ -71,6 +73,8 @@ function Screen({ route }: { route: Route }) {
       return <InboxView />
     case "agents":
       return <AgentsView />
+    case "routines":
+      return <RoutinesView />
     case "knowledge":
       return <KnowledgeView selected={route.id} />
     case "usage":

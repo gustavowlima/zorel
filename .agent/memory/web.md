@@ -58,3 +58,4 @@ updated: 2026-11-03
 - Terminal: closable(tab) = mais de uma aba ou shell terminado; drop() que esvazia cria um shell novo (sem remontar: a lista do servidor em cache trazia de volta o shell fechado → "The shell ended")
 - agents.tsx: rota #/agents (AgentsView, AgentRow, useWorking); chat invalida "agents" quando muda o nº de mensagens (agente pode ter criado um colega)
 - routines.tsx: AgentRoutines na página do agente, FORA do <form> do perfil (form aninhado quebrava o envio)
+- trilho de ícones (pedido do usuário, como a reference app): Rail em sidebar.tsx (lugares + UsageFoot vertical + Settings), Sidebar só com Chats/Projects; App.tsx renderiza Rail + Sidebar; rota #/routines (RoutinesView); Tooltip ganhou placement
