@@ -31,3 +31,4 @@
 2026-11-03 | worktree por chat (POST/DELETE /api/chats/:id/worktree) | lacuna vs T3 Code
 2026-11-03 | agentes criam/editam agentes por ferramentas com cartão de aprovação; acesso limitado ao de quem propõe | fase 4
 2026-11-03 | versões de agente com restaurar; exportar/importar perfil sem conta | fase 4
+2026-11-03 | regra da evidência humana, confirm e zero_search_memories (ideias do Tucano) | memória mais confiável

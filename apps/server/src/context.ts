@@ -141,13 +141,15 @@ export const CONSOLIDATION_SYSTEM = [
   "Você mantém a memória de um chat entre uma pessoa e agentes de IA.",
   "Recebe o resumo atual, um trecho de mensagens que vai sair da janela, as memórias e as skills que já existem.",
   "Responda SOMENTE com JSON, sem texto em volta, no formato:",
-  '{"summary": "...", "memories": [{"scope": "user" | "project" | "agent", "text": "..."}], "skills": [{"scope": "user" | "project" | "agent", "title": "...", "text": "..."}]}',
+  '{"summary": "...", "memories": [{"scope": "user" | "project" | "agent", "text": "...", "evidence": [3]}], "confirm": ["m2"], "skills": [{"scope": "user" | "project" | "agent", "title": "...", "text": "..."}]}',
   '- "summary": o novo resumo, juntando o anterior e o trecho. Até 400 palavras. Guarde decisões, pendências, números, nomes e o estado do trabalho.',
   '- "memories": só fatos duráveis que valem fora desta conversa. Lista vazia é o normal.',
   '  - "user": preferências e jeito de trabalhar da pessoa (vale em tudo).',
   '  - "project": fatos e decisões do projeto (só quando a conversa é de um projeto).',
   '  - "agent": como fazer melhor o trabalho do agente que respondeu (só quando há um agente).',
   "  - Uma ideia por memória, frase curta, autossuficiente, em terceira pessoa. Não repita memórias existentes.",
+  '  - "evidence": os números (#) das mensagens do trecho que provam o fato. Só valem mensagens da pessoa ([usuário]): um palpite, plano ou suposição de um agente nunca vira memória.',
+  '- "confirm": os ids (m1, m2…) das memórias existentes que o trecho confirma de novo. Lista vazia é o normal.',
   '- "skills": procedimentos que valem repetir — algo resolvido em vários passos, uma saída de beco sem saída, ou uma correção do usuário sobre como fazer. Lista vazia é o normal.',
   '  - "title": nome curto do procedimento. "text": passo a passo objetivo, até 15 linhas. Não repita skills existentes.'
 ].join("\n")
@@ -165,10 +167,10 @@ export function consolidationPrompt(o: {
   return [
     `Escopos permitidos: user${o.hasProject ? ", project" : ""}${o.hasAgent ? ", agent" : ""}.`,
     `Resumo atual:\n${o.summary || "(vazio)"}`,
-    `Memórias existentes:\n${o.existing.map((m) => `- ${m.text}`).join("\n") || "(nenhuma)"}`,
+    `Memórias existentes:\n${o.existing.map((m, i) => `- [m${i + 1}] ${m.text}`).join("\n") || "(nenhuma)"}`,
     `Skills existentes:\n${o.skills.map((s) => `- ${s.title}`).join("\n") || "(nenhuma)"}`,
     `O que a pessoa mandou esquecer (não proponha de novo, nem com outras palavras):\n${o.forgotten.map((m) => `- ${m.title || m.text}`).join("\n") || "(nada)"}`,
-    `Trecho que sai da janela:\n${o.chunk.map((m) => `[${m.role === "user" ? "usuário" : o.names(m.agentId)}] ${m.text}`).join("\n\n")}`
+    `Trecho que sai da janela:\n${o.chunk.map((m, i) => `#${i + 1} [${m.role === "user" ? "usuário" : o.names(m.agentId)}] ${m.text}`).join("\n\n")}`
   ].join("\n\n")
 }
 
@@ -176,11 +178,14 @@ type Scope = "user" | "project" | "agent"
 export interface Consolidation {
   readonly summary: string
   readonly memories: ReadonlyArray<{ scope: Scope; text: string }>
+  readonly confirm: ReadonlyArray<number> // indexes into the existing memories given to the prompt
   readonly skills: ReadonlyArray<{ scope: Scope; title: string; text: string }>
 }
 
-// Tolerates text around the JSON; drops items outside the allowed scopes or too long.
-export function parseConsolidation(text: string, allowed: ReadonlyArray<string>): Consolidation | undefined {
+// Tolerates text around the JSON; drops items outside the allowed scopes or too long, and memories without
+// evidence from the person: `fromUser(n)` says whether message #n of the chunk was theirs (Tucano's rule — an
+// agent's guess never becomes a memory).
+export function parseConsolidation(text: string, allowed: ReadonlyArray<string>, fromUser: (n: number) => boolean = () => true): Consolidation | undefined {
   const start = text.indexOf("{")
   const end = text.lastIndexOf("}")
   if (start < 0 || end <= start) return undefined
@@ -190,7 +195,13 @@ export function parseConsolidation(text: string, allowed: ReadonlyArray<string>)
     const ok = (x: any, max: number) => allowed.includes(x?.scope) && typeof x.text === "string" && x.text.trim() && x.text.length <= max
     return {
       summary: v.summary.trim(),
-      memories: (Array.isArray(v.memories) ? v.memories : []).filter((m: any) => ok(m, 500)).map((m: any) => ({ scope: m.scope, text: m.text.trim() })),
+      memories: (Array.isArray(v.memories) ? v.memories : [])
+        .filter((m: any) => ok(m, 500) && Array.isArray(m.evidence) && m.evidence.some((n: unknown) => typeof n === "number" && fromUser(n)))
+        .map((m: any) => ({ scope: m.scope, text: m.text.trim() })),
+      confirm: (Array.isArray(v.confirm) ? v.confirm : []).flatMap((id: unknown) => {
+        const n = typeof id === "string" ? Number(id.replace(/^m/, "")) : Number.NaN
+        return Number.isInteger(n) && n > 0 ? [n - 1] : []
+      }),
       skills: (Array.isArray(v.skills) ? v.skills : [])
         .filter((s: any) => ok(s, 4000) && typeof s.title === "string" && s.title.trim() && s.title.length <= 80)
         .map((s: any) => ({ scope: s.scope, title: s.title.trim(), text: s.text.trim() }))

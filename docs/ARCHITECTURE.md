@@ -267,6 +267,13 @@ base → agente → canal → sobre você (aprovado) → projeto (brief) → res
 
 ## 8. Conhecimento aprendido (D18, D7)
 
+**Hoje (implementado, 2026-11-03):** memórias (`fact`) e skills em SQLite, com escopo você/projeto/agente.
+- **Consolidação** com LLM quando o chat passa de 50 mensagens além do resumo: o trecho que sai da janela vira resumo e **propostas** de memória e skill, pendentes até você aprovar em "Precisa de você". O que você mandou esquecer vai no prompt para não voltar.
+- **Regra da evidência humana** (ideia do Tucano): o trecho chega numerado e cada memória proposta cita os números das mensagens que a provam. Só vale mensagem sua: palpite, plano ou suposição de agente nunca vira memória. Skills não exigem (procedimento pode nascer do trabalho do agente).
+- **Confirmação:** a consolidação devolve os ids das memórias existentes que o trecho confirmou de novo, e repetir uma memória ativa (por qualquer caminho) também a confirma. `confirmedAt` ordena o orçamento.
+- **Recuperação em três níveis:** até 8.000 caracteres das mais recentemente confirmadas vão fixas no contexto; a cada turno, a busca FTS5 (BM25) traz as 5 que mais casam com a mensagem; e o agente busca o resto quando precisa com a ferramenta `zero_search_memories` (até 10, sempre nos escopos do chat). Sem embeddings: o Tucano mostra que busca por palavra basta.
+- **Próximo (fase 3b):** as páginas abaixo. A wiki do Tucano (arquivos Markdown como verdade, índice FTS5 com links, versões, pacotes de mudança com hash e rebase, curador ao fim da conversa, fontes citadas, revisão periódica de contradições) é a referência de desenho; só ideias, a licença dele é Apache-2.0 mas não copiamos código.
+
 **Modelo único: a página.**
 
 ```
@@ -378,7 +385,13 @@ Referência: OpenBot (`docs/architecture/agents.md` "Agent communication policy"
 
 ### 9.3 Interação entre agentes
 
-**Ferramentas** (`zero.*`):
+**Implementado (2026-11-03):** delegação por `@menção` (handoff com teto de 3 respostas seguidas) e as ferramentas próprias do Zero, oferecidas a todo turno ao lado das MCP:
+- `zero_list_agents` e `zero_read_agent`: leem a equipe (globais + do projeto; agente por id ou `@handle`). Livres.
+- `zero_create_agent` e `zero_update_agent`: viram **cartão de aprovação** com o perfil campo a campo e só gravam no seu OK; auditadas em nome do agente e registradas como versão do agente. O novo agente nunca tem acesso acima de quem propõe (ask < workspace < full) e um agente só estreita o acesso de outro. Sem modelo, herda o de quem propõe; modelo inválido volta como erro com os providers válidos (sem uma `list_models` à parte).
+- `zero_search_memories`: busca na memória além do orçamento do contexto (seção 8).
+- Cada perfil de agente guarda **versões** (quem mudou, quando) com restaurar, e exporta/importa como `.agent.json` sem a conta.
+
+**Planejado — ferramentas** (`zero.*`):
 
 | Ferramenta | Comportamento |
 |---|---|
