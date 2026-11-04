@@ -14,6 +14,9 @@
   --color-app: oklch(21% 0 0); /* the app's canvas */
   --color-side: oklch(17.5% 0 0);
   --color-rail: oklch(15.5% 0 0);
+  --color-glow: oklch(60.5% 0.2 255 / 0.34);
+  --color-glow-soft: oklch(60.5% 0.2 255 / 0.14);
+  --color-edge: oklch(82% 0.1 250 / 0.9);
   --color-accent-soft: oklch(60.5% 0.2 255 / 0.16);
   --color-on-accent: oklch(99% 0 0);
   --color-button: oklch(97% 0.003 260);
@@ -45,5 +48,6 @@
 
   --radius-sm: 8px; --radius-md: 12px; --radius-lg: 20px; --radius-pill: 999px;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --dur-short: 160ms;
 }
