@@ -4,7 +4,7 @@ What changed in each version of Zorel. The format follows [Keep a Changelog](htt
 and versions follow [Semantic Versioning](https://semver.org) (while in 0.x, a minor version may change things). Each
 section is also the release's notes on GitHub.
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-11-04
 
 The first public version.
 

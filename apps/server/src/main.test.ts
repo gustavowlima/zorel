@@ -9,7 +9,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import { Api, type Message } from "@zorel/contracts"
 import { type Approval, type ChatEvent, ZorelRpc } from "@zorel/contracts/events"
-import { Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import { RpcClient, RpcSerialization } from "effect/rpc"
@@ -124,13 +124,20 @@ globalThis.WebSocket = class extends RawWebSocket {
 beforeAll(async () => {
   const store = Store.layer(":memory:")
   const secrets = Layer.provideMerge(Secrets.memory(), store)
-  const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(FakeEngines, Tools.layer), secrets), DataDir.layer(join(tmpdir(), "zorel-test")), DbPath.layer(":memory:"))
-  const services = Layer.mergeAll(Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.fixed(PRICES), Audit.layer, BrowserService.layer), base)), Actor.local)
+  const core = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(FakeEngines, Tools.layer), secrets), DataDir.layer(join(tmpdir(), "zorel-test")), DbPath.layer(":memory:"))
+  const services = Layer.mergeAll(Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.fixed(PRICES), Audit.layer, BrowserService.layer), core)), Actor.local)
   const server = AppLive().pipe(HttpRouter.serve, Layer.provide(services), Layer.provide(BunHttpServer.layer({ port })))
-  const fiber = Effect.runFork(Layer.launch(server))
+  let failed = "" // why the server stopped, if it did: otherwise every test only says "Transport error"
+  const fiber = Effect.runFork(Layer.launch(server).pipe(Effect.tapCause((c) =>
+      Effect.sync(() => {
+        failed = Cause.pretty(c)
+      })
+    )))
   stop = () => Effect.runPromise(Fiber.interrupt(fiber)).then(() => void mcp.stop(true))
-  for (let i = 0; i < 50 && !(await fetch(`${base}/api/models`).catch(() => null)); i++) await Bun.sleep(20)
-})
+  // waits for the server (up to 15 s: a cold CI runner is slow)
+  for (let i = 0; i < 750 && !failed && !(await fetch(`${base}/api/models`).catch(() => null)); i++) await Bun.sleep(20)
+  if (failed) throw new Error(`the test server didn't start:\n${failed}`)
+}, 20_000)
 afterAll(() => stop())
 
 const api = <A, E>(f: (c: HttpApiClient.ForApi<typeof Api>) => Effect.Effect<A, E>) =>
