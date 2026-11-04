@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs or updates Zorel (macOS and Linux; on Windows, the release's installer):
-#   curl -fsSL https://pub-8f59c7217f0547e39737b4e19c25cbe6.r2.dev/latest/install.sh | sh
+#   curl -fsSL https://github.com/gustavowlima/zorel/releases/latest/download/install.sh | sh
 #
 # macOS: the app goes to /Applications (or ~/Applications), replacing a running one (it is asked to quit first), and
 # the download's quarantine mark is cleared: without a Developer ID the app is signed ad hoc, which macOS runs once
@@ -9,12 +9,11 @@
 # A download from the release is checked against the SHA-512 the release lists for it (latest-*.yml, written by
 # electron-builder for the updaters) before anything is installed.
 # Messages in Portuguese on a system set to Portuguese, in English otherwise.
-# The downloads come from R2 (the release's files, copied by scripts/r2-sync.sh): they work while the repository is
-# private. ZOREL_DOWNLOAD: another place with the same files (a fork's, or
-# https://github.com/<owner>/<repo>/releases/latest/download). ZOREL_ZIP / ZOREL_APPIMAGE: a URL or a local file
-# instead of the latest release (to try a build; not verified).
+# ZOREL_REPO: another repository's releases (a fork). ZOREL_ZIP / ZOREL_APPIMAGE: a URL or a local file instead of
+# the latest release (to try a build; not verified).
 set -e
-LATEST="${ZOREL_DOWNLOAD:-https://pub-8f59c7217f0547e39737b4e19c25cbe6.r2.dev/latest}"
+REPO="${ZOREL_REPO:-gustavowlima/zorel}"
+LATEST="https://github.com/$REPO/releases/latest/download"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
@@ -32,7 +31,7 @@ fetch() { # fetch <url or file> <to>
 }
 # The release's metadata for this system (version and hashes), fetched once.
 meta() { # meta <latest-*.yml>
-  curl -fsSL "$LATEST/$1" -o "$TMP/meta.yml" 2>/dev/null || fail "Não achei a versão mais recente em $LATEST." "Couldn't find the latest release at $LATEST."
+  curl -fsSL "$LATEST/$1" -o "$TMP/meta.yml" 2>/dev/null || fail "Não achei a versão mais recente em github.com/$REPO." "Couldn't find the latest release at github.com/$REPO."
   VERSION=$(awk '/^version:/ { print $2; exit }' "$TMP/meta.yml")
 }
 # verify <file> <published name>: the file's SHA-512 (base64) must be the one the release lists.
@@ -128,5 +127,5 @@ EOF
 case "$(uname -s)" in
   Darwin) install_mac ;;
   Linux) install_linux ;;
-  *) fail "No Windows, baixe o instalador em https://zorel.dev" "On Windows, download the installer from https://zorel.dev" ;;
+  *) fail "No Windows, baixe o instalador em https://github.com/$REPO/releases/latest" "On Windows, download the installer from https://github.com/$REPO/releases/latest" ;;
 esac

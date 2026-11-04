@@ -75,7 +75,7 @@ Zorel never reads or stores a CLI's OAuth login. CLIs run without saved sessions
 The desktop app (macOS and Linux):
 
 ```bash
-curl -fsSL https://pub-8f59c7217f0547e39737b4e19c25cbe6.r2.dev/latest/install.sh | sh
+curl -fsSL https://github.com/gustavowlima/zorel/releases/latest/download/install.sh | sh
 ```
 
 On Windows, use the installer from the latest release. Running the script again updates the app; the app's update button does the same.
@@ -120,7 +120,7 @@ Architecture, decisions and roadmap: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md
 
 ## Releases
 
-CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every push and pull request. A `v*` tag builds the desktop app for each system, publishes a GitHub release and copies its files to R2 (`latest/`), which `install.sh` and installed apps download from (secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`). macOS signing and notarization turn on when `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` are set; without them the macOS build is signed ad hoc and installs with `install.sh`.
+CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every push and pull request. A `v*` tag builds the desktop app for each system and publishes a GitHub release, which installed apps update from. macOS signing and notarization turn on when `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` are set; without them the macOS build is signed ad hoc and installs with `install.sh`.
 
 ## Contributing
 
