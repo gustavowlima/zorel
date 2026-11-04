@@ -13,3 +13,11 @@ Parts of this project derive from:
 - Lobe Icons (https://github.com/lobehub/lobe-icons), MIT License, Copyright LobeHub.
   Used: provider logos (Claude, Codex, opencode, OpenRouter, Ollama) in
   apps/web/src/ui/provider-icon.tsx, from @lobehub/icons-static-svg 1.102.0.
+
+Inspiration (ideas only, no code copied):
+
+- T3 Code (https://github.com/pingdotgg/t3code), MIT License: architecture reference
+  (contracts with Effect Schema, provider adapters).
+
+- OpenBot, PolyForm Noncommercial 1.0.0: visual direction of the design system and product
+  ideas. No OpenBot code or CSS was copied.
