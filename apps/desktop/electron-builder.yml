@@ -14,6 +14,16 @@ files:
   - assets/icon.png
   - package.json
 asar: true
+# Electron fuses (flipped in the binary at build time): the app can't be run as plain Node, take NODE_OPTIONS or
+# --inspect, or load code from outside its checked app.asar; cookies are encrypted at rest.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  enableCookieEncryption: true
+  grantFileProtocolExtraPrivileges: false
 extraResources:
   - { from: build, to: ., filter: ["zorel-server", "zorel-server.exe"] } # bun --compile adds .exe on Windows
   - { from: build/web, to: web }

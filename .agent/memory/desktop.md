@@ -4,6 +4,8 @@ status: active
 updated: 2026-11-04
 
 ## current
+- boas práticas (2026-11-04): appMenu() sem Reload/DevTools fora de dev, context-menu só de edição, setVisualZoomLevelLimits(1,1), permissions() só p/ a janela, electronFuses no electron-builder.yml (verificado com `bunx @electron/fuses read`), dock icon em dev, update via IPC update:get/update:install + evento "update" → UpdateItem no trilho (sidebar.tsx); checkForUpdates (não ...AndNotify: o aviso é no app)
+- ícone: assets/icon.svg no grid da Apple; scripts/icons.sh usa Chrome headless com --default-background-color=00000000 (qlmanage pinta a margem de branco)
 
 - CI/release em matriz macOS, Windows, Linux (2026-11-04); binário zorel-server(.exe); CSC_LINK só no runner macOS (Windows usaria WIN_CSC_LINK); repo ainda sem remote
 
