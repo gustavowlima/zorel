@@ -38,3 +38,4 @@
 2026-11-03 | pausar tudo e notificações do sistema | item 1 da lista (Tucano)
 2026-11-03 | retomar sozinho no reset do limite | item 2 da lista (T3 Code)
 2026-11-03 | editar daqui (rewind) com desfazer de arquivos opcional | item 4 (T3 Code)
+2026-11-03 | fase 4 fechada: agente padrão por projeto e catálogo de conectores | item 5

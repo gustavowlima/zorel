@@ -45,7 +45,7 @@ test("contexto: orçamento de memórias prioriza as recentes; camadas na ordem e
   const turn = buildTurn({
     chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, effort: null, model: "anthropic/m", summary: "RESUMO", summaryUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
     model: "anthropic/m",
-    project: { id: "p", name: "P", brief: "BRIEF", path: null, createdAt: 0 },
+    project: { id: "p", name: "P", brief: "BRIEF", path: null, defaultAgentId: null, createdAt: 0 },
     agent: dev,
     members: [dev, agentOf("b", "Revisor Sênior", "Revisa PRs")],
     pinned: [mem("EU", 1), mem("PROJ", 1, "project:p"), mem("AG", 1, "agent:a")],

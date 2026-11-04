@@ -21,18 +21,22 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
   const [choice, setChoice] = useState<ModelChoice>(DEFAULT_MODEL)
   const chat = useRef<Promise<string> | null>(null)
 
-  useEffect(() => {
-    setProjectId(initialProject ?? null)
-    setAgentId(null)
-    chat.current = null
-  }, [initialProject])
-
   const available = agents.filter((a) => a.projectId === null || a.projectId === projectId)
   const pickAgent = (id: string | null) => {
     setAgentId(id)
     const a = agents.find((x) => x.id === id)
     if (a) setChoice({ model: a.model, accountId: a.accountId, effort: a.effort })
   }
+  // A project's chat starts with its default agent (Agents tab of the project), if it has one.
+  const defaultAgent = projects.find((p) => p.id === projectId)?.defaultAgentId ?? null
+  useEffect(() => {
+    setProjectId(initialProject ?? null)
+    chat.current = null
+  }, [initialProject])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new project or default resets the pick
+  useEffect(() => {
+    pickAgent(agents.some((a) => a.id === defaultAgent) ? defaultAgent : null)
+  }, [projectId, defaultAgent, agents.length])
 
   // One chat per draft, however many files are attached before sending.
   const ensureChat = () =>
