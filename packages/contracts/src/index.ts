@@ -320,6 +320,17 @@ export const Memory = Schema.Struct({
   confirmedAt: Schema.Number
 })
 export type Memory = typeof Memory.Type
+// A skill already on this computer (a SKILL.md of Claude Code, Codex, other agents or a plugin) and whether
+// Zero's agents use it.
+export const FileSkill = Schema.Struct({
+  path: Schema.String,
+  name: Schema.String,
+  description: Schema.String,
+  source: Schema.Literals(["claude", "codex", "agents", "plugin"]),
+  plugin: Schema.optionalKey(Schema.String),
+  enabled: Schema.Boolean
+})
+export type FileSkill = typeof FileSkill.Type
 export const MemoryVersion = Schema.Struct({ id: Id, title: Schema.String, text: Schema.String, by: Schema.String, at: Schema.Number })
 export type MemoryVersion = typeof MemoryVersion.Type
 
@@ -445,7 +456,8 @@ export const NewMcpServer = Schema.Struct({
 export const McpServerPatch = Schema.Struct({ mode: Schema.optional(ToolMode), enabled: Schema.optional(Schema.Boolean) })
 export const KeyInput = Schema.Struct({ value: LongText(500) }) // empty deletes
 // One-time choices recorded on the server (the failover terms warning is shown once).
-export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean })
+// nativeSkills: Claude Code and Codex may use their own skills (the person's ~/.claude/skills, plugins, Codex's).
+export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean })
 
 // Turns (send, events, interrupt, approve): see events.ts (RPC over WebSocket at /rpc).
 export const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
@@ -616,8 +628,11 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.get("usage", "/api/usage", { success: Schema.Array(UsageRow) })) // last USAGE_DAYS days
       .add(HttpApiEndpoint.get("topTurns", "/api/usage/top", { query: { since: Schema.NumberFromString }, success: Schema.Array(TopTurn) }))
       .add(HttpApiEndpoint.get("preferences", "/api/preferences", { success: Preferences }))
+      .add(HttpApiEndpoint.get("fileSkills", "/api/skills/files", { success: Schema.Array(FileSkill) }))
+      .add(HttpApiEndpoint.patch("pickFileSkill", "/api/skills/files", { payload: Schema.Struct({ path: Schema.String.check(Schema.isMaxLength(2000)), enabled: Schema.Boolean }), success: Schema.Array(FileSkill), error: HttpApiError.NotFound }))
       // Pause everything: running turns stop, new ones wait queued, routines wait; false resumes.
       .add(HttpApiEndpoint.put("pause", "/api/pause", { payload: Schema.Struct({ paused: Schema.Boolean }) }))
+      .add(HttpApiEndpoint.put("nativeSkills", "/api/preferences/native-skills", { payload: Schema.Struct({ enabled: Schema.Boolean }), success: Preferences }))
       .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))
   )

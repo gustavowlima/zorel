@@ -45,3 +45,4 @@
 2026-11-04 | agentes ACP confinados no sandbox do macOS abaixo de acesso total | antes o nível Workspace permitia tudo
 2026-11-04 | permissões por agente (web, browser, conectores, sempre permitir, pedir acesso) | pedido do usuário, modelo do a reference app
 2026-11-04 | skills: ler sob demanda, propor melhoria com diff, versões e restaurar | a reference app
+2026-11-04 | skills do computador escolhíveis e opção de usar as skills nativas do Claude Code/Codex | pedido do usuário

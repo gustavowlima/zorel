@@ -19,6 +19,7 @@ import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
 import { exposedName, type GatewayHandle, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
+import { asMemory, picked, readSkill } from "./file-skills.ts"
 import { accessChange, browserRoute, mcpRoute, permissionsOf, REQUEST_ACCESS_TOOL, withAlways } from "./permissions.ts"
 
 const MAX_MENTIONS = 3
@@ -156,14 +157,14 @@ export const makeRuntime = Effect.gen(function* () {
 
   // The approver of the turn each session is running now (a session outlives turns; approvals go to the current one).
   const approvers = new Map<string, Approver>()
-  const engineStream = (row: TurnRow, turn: EngineTurn, account: AccountRow | undefined, effort: Effort | null, access: Access, web: boolean, onSeen: (set: (at: number) => void) => void) =>
+  const engineStream = (row: TurnRow, turn: EngineTurn, account: AccountRow | undefined, effort: Effort | null, access: Access, web: boolean, nativeSkills: boolean, onSeen: (set: (at: number) => void) => void) =>
     Effect.gen(function* () {
       const key = sessionKey(row)
       const provider = splitModel(row.model).provider
       // Tool names are part of the stable context: a session lists tools once, so a new set means a new session.
       // The account too: switching accounts opens a new session with the checkpoint (§6.1, no shared native session).
       // So are the folder and the access level: the engine's sandbox is set when the session opens.
-      const stable = `${turn.stable ?? turn.system}\n#tools:${(turn.tools?.defs ?? []).map((d) => d.name).sort().join(",")}\n#account:${account?.id ?? "-"}\n#cwd:${turn.cwd}\n#access:${access}\n#web:${web}`
+      const stable = `${turn.stable ?? turn.system}\n#tools:${(turn.tools?.defs ?? []).map((d) => d.name).sort().join(",")}\n#account:${account?.id ?? "-"}\n#cwd:${turn.cwd}\n#access:${access}\n#web:${web}\n#skills:${nativeSkills}`
       let live = sessions.get(key)
       if (live && (!live.session.alive() || live.stable !== stable)) {
         yield* closeSession(key)
@@ -172,7 +173,7 @@ export const makeRuntime = Effect.gen(function* () {
       if (!live) {
         const opened = engines.open?.({
           model: row.model, system: turn.stable ?? turn.system, cwd: turn.cwd, gatewayUrl: gatewayOf(key).url, dataDir, account: account && { id: account.id, home: account.home },
-          access, web, approve: (req) => (approvers.get(key) ?? (async () => false))(req)
+          access, web, nativeSkills, approve: (req) => (approvers.get(key) ?? (async () => false))(req)
         })
         if (opened === undefined) return engines.run({ ...turn, access, web })
         if (typeof opened === "string") return Stream.make<EngineEvent[]>({ type: "error", message: opened })
@@ -332,13 +333,17 @@ export const makeRuntime = Effect.gen(function* () {
     const skillCall = async (name: string, args: Record<string, unknown>) => {
       const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "")
       const scopes = scopesOf(chat, agent?.id ?? null)
-      const skills = await run(store.activeMemories(scopes, "skill"))
+      const files = picked(await run(store.preference("fileSkills")))
+      const skills = [...(await run(store.activeMemories(scopes, "skill"))), ...files.map(asMemory)]
       const byTitle = (v: unknown) => {
         const want = String(v ?? "").trim().toLowerCase()
         return skills.find((m) => m.title.toLowerCase() === want) ?? skills.find((m) => m.title.toLowerCase().includes(want) && want.length > 2)
       }
       if (name === "zero_read_skill") {
         const m = byTitle(args.skill)
+        // A skill from a file is read now (it stays current); Zero's own are stored.
+        const file = m && files.find((f) => `file:${f.path}` === m.id)
+        if (file) return textResult(`# ${file.name}\n\n${readSkill(file.path)}`)
         return m ? textResult(`# ${m.title}\n\n${m.text}`) : textResult(`No skill "${String(args.skill ?? "")}". The ones here: ${skills.map((s) => s.title).join(", ") || "(none)"}.`, true)
       }
       const title = str(args.title, 80)
@@ -346,6 +351,7 @@ export const makeRuntime = Effect.gen(function* () {
       const reason = str(args.reason, 300)
       if (!title || !steps || !reason) return textResult("title, steps and reason are required.", true)
       const target = args.improves ? byTitle(args.improves) : undefined
+      if (target?.id.startsWith("file:")) return textResult(`"${target.title}" is a skill from the user's files; it can't be changed from here. Propose a new skill instead.`, true)
       if (args.improves && !target) return textResult(`No skill "${String(args.improves)}" to improve. Propose it as a new one, or check the title.`, true)
       const want = str(args.scope, 10)
       const scope = target?.scope ?? (want === "user" ? "user" : want === "agent" && agent ? `agent:${agent.id}` : chat.projectId ? `project:${chat.projectId}` : agent ? `agent:${agent.id}` : "user")
@@ -674,7 +680,8 @@ export const makeRuntime = Effect.gen(function* () {
             })
           )
           const turn = yield* prepare(store, (yield* store.chat(chatId))!, agent, model, dataDir, opened.tools, cwd)
-          const stream = yield* engineStream(attemptRow, turn, account, effort, access, permissionsOf(agent).web, (set) => {
+          const nativeSkills = (yield* store.preference("nativeSkills")) === "1"
+          const stream = yield* engineStream(attemptRow, turn, account, effort, access, permissionsOf(agent).web, nativeSkills, (set) => {
             markSeen = set
           })
           yield* stream.pipe(

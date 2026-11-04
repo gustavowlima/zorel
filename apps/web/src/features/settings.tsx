@@ -1,9 +1,11 @@
 // Settings (prototype "Settings"): sections on the left, one at a time on the right. Providers (subscription
 // sign-ins and API keys, providers.tsx), MCP servers, skills, storage (storage.tsx), the audit log
 // (audit.tsx), General (the theme and the preferences to come).
+import { useAtomValue } from "@effect/atom-react"
+import { AsyncResult } from "effect/reactivity"
 import { formatAge, t } from "@zero/i18n"
 import { type ReactNode, useState } from "react"
-import { agentsAtom, memoriesAtom, mutations, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
+import { agentsAtom, fileSkillsAtom, memoriesAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { scopeLabel } from "../labels.ts"
 import { go, SETTINGS_TABS, type SettingsTab, setThemePref, themePref, type ThemePref } from "../state.ts"
 import { AuditSection } from "./audit.tsx"
@@ -12,7 +14,7 @@ import { McpSection } from "./mcp.tsx"
 import { ProvidersSection } from "./providers.tsx"
 import { ReadingState } from "./reading.tsx"
 import { StorageSection } from "./storage.tsx"
-import { ArrowRight, BookOpen, Button, EmptyState, HardDrive, History, NavItem, Plug, Settings, Rows, Screen, Section, Segmented, Sparkles, Switch } from "@/ui"
+import { ArrowRight, BookOpen, Button, EmptyState, FolderOpen, HardDrive, History, Input, NavItem, Plug, Settings, Rows, Screen, Search, Section, Segmented, Sparkles, Switch } from "@/ui"
 
 const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, skills: <BookOpen />, storage: <HardDrive />, audit: <History /> }
 
@@ -33,7 +35,13 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
           {tab === "storage" && <StorageSection />}
           {tab === "audit" && <AuditSection />}
           {tab === "mcp" && <McpSection projectId={null} />}
-          {tab === "skills" && <Skills />}
+          {tab === "skills" && (
+            <>
+              <NativeSkills />
+              <Skills />
+              <FileSkills />
+            </>
+          )}
           {tab === "general" && <General />}
         </div>
       </div>
@@ -108,6 +116,100 @@ function Skills() {
           </div>
         )}
       </Section>
+  )
+}
+
+// ---------- the harnesses' own skills ----------
+
+// Claude Code and Codex come with skills of their own (the person's ~/.claude/skills, plugins, Codex's). Off by
+// default (Zero gives the context); on, they use them as in their own app. Takes effect in each chat's next session.
+function NativeSkills() {
+  const prefs = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)
+  const set = useMutation(mutations.nativeSkills)
+  return (
+    <Section title={t("skills.nativeTitle")}>
+      <Rows>
+        <div className="flex items-center gap-3 py-3.5">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="font-medium">{t("skills.native")}</span>
+            <span className="text-sm text-muted">{t("skills.nativeHint")}</span>
+          </span>
+          <Switch aria-label={t("skills.native")} isSelected={!!prefs?.nativeSkills} isDisabled={!prefs} onChange={(enabled) => void set({ payload: { enabled }, reactivityKeys: ["preferences"] })} />
+        </div>
+      </Rows>
+    </Section>
+  )
+}
+
+// ---------- skills on this computer ----------
+
+// The SKILL.md files already here (Claude Code, Codex, other agents, plugins): pick which ones Zero's agents use.
+// A picked skill shows in their list of skills and is read from its file when they need it (always current).
+const SOURCES = ["claude", "agents", "codex", "plugin"] as const
+function FileSkills() {
+  const reading = useReading(fileSkillsAtom)
+  const pick = useMutation(mutations.pickFileSkill)
+  const invalidate = useInvalidate()
+  const [query, setQuery] = useState("")
+  const [only, setOnly] = useState<"all" | "on">("all")
+  const all = reading.items
+  const q = query.trim().toLowerCase()
+  const shown = all.filter((s) => (only === "all" || s.enabled) && (!q || `${s.name} ${s.description} ${s.plugin ?? ""}`.toLowerCase().includes(q)))
+  const inUse = all.filter((s) => s.enabled).length
+  return (
+    <Section
+      title={t("skills.files")}
+      description={<span className="block max-w-prose">{t("skills.filesHint")}</span>}
+      action={all.length > 0 && <span className="text-sm text-muted tabular-nums">{t("skills.inUse", { count: inUse })}</span>}
+    >
+      <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["fileSkills"])} />
+      {!reading.loading && !reading.failed && all.length === 0 && <EmptyState icon={<FolderOpen />} title={t("skills.noFiles")} hint={t("skills.noFilesHint")} />}
+      {all.length > 0 && (
+        <div className="flex items-center gap-2">
+          <label className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted" aria-hidden="true" />
+            <Input className="h-control-sm pl-8 text-sm" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("skills.search", { count: all.length })} aria-label={t("common.search")} />
+          </label>
+          <Segmented
+            label={t("skills.show")}
+            value={only}
+            onChange={setOnly}
+            options={[
+              { id: "all", label: t("skills.showAll") },
+              { id: "on", label: t("skills.showInUse") }
+            ]}
+          />
+        </div>
+      )}
+      {SOURCES.map((src) => {
+        const list = shown.filter((s) => s.source === src)
+        if (!list.length) return null
+        return (
+          <div key={src} className="flex flex-col gap-1.5 pt-2">
+            <h3 className="text-sm font-medium text-muted">{`${t(`skills.source.${src}`)} · ${list.length}`}</h3>
+            <Rows>
+              {list.map((s) => (
+                <div key={s.path} className="flex items-center gap-3 py-2.5">
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate font-medium">{s.name}</span>
+                      {s.plugin && <span className="shrink-0 text-sm text-muted">{s.plugin}</span>}
+                    </span>
+                    {s.description && <span className="line-clamp-1 text-sm text-muted">{s.description}</span>}
+                  </span>
+                  <Switch
+                    aria-label={t("skills.use", { name: s.name })}
+                    isSelected={s.enabled}
+                    onChange={(enabled) => void pick({ payload: { path: s.path, enabled }, reactivityKeys: ["fileSkills"] })}
+                  />
+                </div>
+              ))}
+            </Rows>
+          </div>
+        )
+      })}
+      {all.length > 0 && shown.length === 0 && <p className="text-sm text-muted">{t("skills.noMatch")}</p>}
+    </Section>
   )
 }
 

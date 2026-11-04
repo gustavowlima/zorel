@@ -26,7 +26,7 @@ export class Live extends AtomRpc.Service<Live>()("Live", {
 
 // ---------- CRUD queries (one key per resource) ----------
 
-export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "context" | "terminals" | "scripts" | "localServers" | "git" | "routines" | "pages"
+export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "context" | "terminals" | "scripts" | "localServers" | "git" | "routines" | "pages" | "fileSkills"
 
 export const projectsAtom = Zero.query("projects", "list", { reactivityKeys: ["projects"] })
 export const agentsAtom = Zero.query("agents", "list", { reactivityKeys: ["agents"] })
@@ -38,6 +38,7 @@ export const keysAtom = Zero.query("settings", "keys", { reactivityKeys: ["keys"
 export const auditAtom = (query: { kind?: AuditKind; q?: string; from?: number; to?: number; page?: number }) =>
   Zero.query("settings", "audit", { query, reactivityKeys: ["audit"] })
 export const storageAtom = Zero.query("settings", "storage", { reactivityKeys: ["storage"] })
+export const fileSkillsAtom = Zero.query("settings", "fileSkills", { reactivityKeys: ["fileSkills"] })
 // How full the next turn of a chat is (the composer's context meter); read again when the meter opens.
 export const commandsAtom = (id: string) => Zero.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
 export const terminalsAtom = (id: string) => Zero.query("chats", "terminals", { params: { id }, reactivityKeys: ["terminals"] })
@@ -112,6 +113,8 @@ export const mutations = {
   undo: Zero.mutation("chats", "undo"),
   readLimits: Zero.mutation("accounts", "limits"),
   cleanStorage: Zero.mutation("settings", "cleanStorage"),
+  pickFileSkill: Zero.mutation("settings", "pickFileSkill"),
+  nativeSkills: Zero.mutation("settings", "nativeSkills"),
   acceptFailoverTerms: Zero.mutation("settings", "acceptFailoverTerms"),
   send: Live.mutation("send"),
   steer: Live.mutation("steer"),

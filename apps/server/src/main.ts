@@ -1,3 +1,4 @@
+import { discovered, pickedPaths } from "./file-skills.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
 import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS } from "@zero/contracts"
 import { ZeroRpc } from "@zero/contracts/events"
@@ -557,7 +558,11 @@ const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
 // The failover terms warning (§6.1) is accepted once and remembered here.
 const FAILOVER_TERMS = "failover_terms_accepted_at"
 const preferencesOf = (store: Repository) =>
-  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused")]), ([v, p]) => ({ failoverTermsAcceptedAt: v ? Number(v) : null, paused: p === "1" }))
+  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills")]), ([v, p, n]) => ({
+    failoverTermsAcceptedAt: v ? Number(v) : null,
+    paused: p === "1",
+    nativeSkills: n === "1"
+  }))
 
 const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
   Effect.gen(function* () {
@@ -590,7 +595,22 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
         Effect.map(store.topTurns(query.since), (rows) => rows.map((r) => ({ ...r, cost: r.cost ?? 0, billing: billingOf(r.model) })))
       )
       .handle("preferences", () => preferencesOf(store))
+      // Skills on this computer, with which ones the agents use; a pick must be one the scan found.
+      .handle("fileSkills", () => Effect.map(store.preference("fileSkills"), (pref) => fileSkillsWith(pref)))
+      .handle("pickFileSkill", ({ payload }) =>
+        Effect.gen(function* () {
+          if (!discovered().some((s) => s.path === payload.path)) return yield* notFound()
+          const now = new Set(pickedPaths(yield* store.preference("fileSkills")))
+          if (payload.enabled) now.add(payload.path)
+          else now.delete(payload.path)
+          const pref = JSON.stringify([...now])
+          yield* store.setPreference("fileSkills", pref)
+          return fileSkillsWith(pref)
+        })
+      )
       .handle("pause", ({ payload }) => runtime.setPaused(payload.paused))
+      // The harnesses' own skills on or off (the next session of each chat picks it up).
+      .handle("nativeSkills", ({ payload }) => Effect.andThen(store.setPreference("nativeSkills", payload.enabled ? "1" : "0"), preferencesOf(store)))
       .handle("acceptFailoverTerms", () =>
         Effect.andThen(
           store.setPreference(FAILOVER_TERMS, String(Date.now())).pipe(Effect.tap(() => audit.record(Actions.failoverTermsAccepted, { target: { id: FAILOVER_TERMS, name: "Failover" } }))),
@@ -837,3 +857,9 @@ function watchParent() {
 }
 
 if (import.meta.main) await start()
+
+// Every skill found on this computer, with whether the agents use it.
+const fileSkillsWith = (pref: string | undefined) => {
+  const on = new Set(pickedPaths(pref))
+  return discovered().map((s) => ({ path: s.path, name: s.name, description: s.description, source: s.source, ...(s.plugin && { plugin: s.plugin }), enabled: on.has(s.path) }))
+}
