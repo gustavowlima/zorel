@@ -182,6 +182,7 @@ export interface CodexSessionOptions {
   readonly gatewayUrl: string // this session's stable gateway URL (tools change per turn behind it)
   readonly access: Access
   readonly web: boolean
+  readonly nativeSkills?: boolean
   readonly approve: Approver
   readonly command?: ReadonlyArray<string> // tests: a fake app-server instead of `codex`
 }
@@ -193,10 +194,12 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
   if (!bin) return "codex não está instalado ou não está no PATH."
   mkdirSync(o.cwd, { recursive: true })
   mkdirSync(o.home, { recursive: true })
-  // Skills on this machine (~/.agents/skills…) are the person's, not Zero's (D8): host discovery off.
+  // Skills on this machine (~/.agents/skills…) are the person's, not Zero's (D8): host discovery off unless the person lets Codex use its own.
   const args = o.command?.slice(1) ?? [
     "app-server", "-c", "project_doc_max_bytes=0", "-c", `web_search="${o.web ? "live" : "disabled"}"`,
-    ...appServerDisabled().flatMap((f) => ["--disable", f]), "--disable", "skill_search", "--enable", "skip_host_skill_discovery"
+    ...appServerDisabled().flatMap((f) => ["--disable", f]),
+    // The person's skills only when they let Codex use its own (Settings › Skills).
+    ...(o.nativeSkills ? [] : ["--disable", "skill_search", "--enable", "skip_host_skill_discovery"])
   ]
   const rpc = Rpc.start(bin, args, o.cwd, childEnv(o.home))
 
@@ -231,10 +234,11 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
     if (!account?.account) throw new Error(codexLoginHint(o.home))
     // Codex finds skills on the machine (~/.agents/skills, the repo, its own); they're not Zero's (D8).
     // Turned off in Zero's CODEX_HOME config, never in the person's own.
+    // With the person's OK (nativeSkills) they're turned back on.
     const listed = await rpc.request("skills/list", { cwds: [o.cwd] }).catch(() => undefined)
     for (const entry of listed?.data ?? [])
       for (const skill of entry.skills ?? [])
-        if (skill.enabled) await rpc.request("skills/config/write", { path: skill.path, enabled: false }).catch(() => undefined)
+        if (skill.enabled !== !!o.nativeSkills) await rpc.request("skills/config/write", { path: skill.path, enabled: !!o.nativeSkills }).catch(() => undefined)
     const model = modelOf(o.model)
     const started = await rpc.request("thread/start", {
       ...(model && { model }),

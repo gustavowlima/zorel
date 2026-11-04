@@ -55,12 +55,13 @@ function stepTracker(cwd: string) {
 }
 
 // canUseTool: the access level decides; what needs the person goes to Zero's approval card.
-export function permissions(access: Access, cwd: string, approve: Approver, web = false): CanUseTool {
+export function permissions(access: Access, cwd: string, approve: Approver, web = false, skills = false): CanUseTool {
   return async (tool, input, { blockedPath }) => {
     const allow = { behavior: "allow" as const, updatedInput: input }
     const deny = { behavior: "deny" as const, message: DENIED }
     if (tool.startsWith("mcp__")) return allow // the gateway applies the server's mode and its approvals
     if (WEB_TOOLS.includes(tool)) return web ? allow : deny // the agent's web permission
+    if (tool === "Skill") return skills ? allow : deny // reading a skill; what it then does goes through the rules above
     const path = typeof input.file_path === "string" ? input.file_path : (blockedPath ?? undefined)
     let decision: "allow" | "ask"
     let request: NativeApproval
@@ -152,6 +153,7 @@ export interface ClaudeSessionOptions {
   readonly configDir?: string | undefined // account login folder (§6.1); undefined = the CLI's default login
   readonly access: Access
   readonly web: boolean
+  readonly nativeSkills: boolean
   readonly approve: Approver
 }
 
@@ -171,9 +173,10 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
       systemPrompt: o.system,
       cwd: o.cwd,
       pathToClaudeCodeExecutable: bin,
-      tools: o.web ? [...NATIVE_TOOLS, ...WEB_TOOLS] : NATIVE_TOOLS,
+      // The Skill tool only when the person lets Claude Code use its own skills (Settings › Skills).
+      tools: [...NATIVE_TOOLS, ...(o.web ? WEB_TOOLS : []), ...(o.nativeSkills ? ["Skill"] : [])],
       allowedTools: [`mcp__${GATEWAY}`], // the gateway applies policy and approvals
-      canUseTool: permissions(o.access, o.cwd, o.approve, o.web),
+      canUseTool: permissions(o.access, o.cwd, o.approve, o.web, o.nativeSkills),
       ...SETTINGS,
       mcpServers: { [GATEWAY]: { type: "http", url: o.gatewayUrl } },
       strictMcpConfig: true,

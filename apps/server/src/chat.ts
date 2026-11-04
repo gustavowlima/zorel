@@ -1,4 +1,5 @@
 // Turn context (layers) and consolidation (continuous learning). The turn itself runs in runtime.ts.
+import { asMemory, picked } from "./file-skills.ts"
 import { type Agent, type Chat, namedSkills, type Project } from "@zero/contracts"
 import { Context, Data, Effect, Layer, Stream } from "effect"
 import { join } from "node:path"
@@ -31,7 +32,8 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
     const fixed = pinned(yield* store.activeMemories(scopes))
     const messages = yield* store.messagesAfter(chat.id, chat.summaryUntil)
     const last = messages.at(-1)?.text ?? ""
-    const all = yield* store.activeMemories(scopes, "skill")
+    // Zero's skills, then the ones picked from this computer's files (title and purpose; read on demand).
+    const all = [...(yield* store.activeMemories(scopes, "skill")), ...picked(yield* store.preference("fileSkills")).map(asMemory)]
     // Skills named with $handle in the message come with their steps, ahead of the ones search finds.
     const named = namedSkills(last, all)
     const found = yield* store.searchMemories(scopes, last, named.map((s) => s.id), SKILL_BODIES, "skill")

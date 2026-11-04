@@ -465,6 +465,7 @@ export interface OpenSession {
   readonly account?: { readonly id: string; readonly home: string | null } | undefined // §6.1: whose login runs this session
   readonly access: Access // §9.2: what the agent may do in `cwd` without asking
   readonly web: boolean // the agent's web permission: the engine's own search/fetch tools on or off
+  readonly nativeSkills: boolean // the harness may use its own skills (the person's, its plugins'), not only Zero's
   readonly approve: Approver // asks the person (the approval card) for a native call
 }
 

@@ -599,3 +599,10 @@ test("skills: ler, propor melhoria, aprovar vendo a mudança e restaurar a vers�
   expect(restored.text).toBe("1. bun test\n2. tag")
   expect((await api((c) => c.memories.versions({ params: { id: skill.id } }))).length).toBe(2)
 })
+
+test("skills de arquivo: só um caminho encontrado na varredura pode ser ligado", async () => {
+  const bad = await api((c) => c.settings.pickFileSkill({ payload: { path: "/etc/passwd", enabled: true } })).catch((e: unknown) => e)
+  expect((bad as { _tag?: string })._tag).toBe("NotFound")
+  const list = await api((c) => c.settings.fileSkills())
+  expect(list.every((s) => !s.enabled)).toBe(true)
+})
