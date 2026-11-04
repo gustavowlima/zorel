@@ -23,6 +23,7 @@ import { GitControl } from "./git.tsx"
 import { ContextMenu, PageHeader } from "@/ui"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import { ChatProcesses } from "./processes.tsx"
+import { QuestionAnswer } from "./question.tsx"
 import {
   Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
   MenuSeparator, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
@@ -885,6 +886,14 @@ function ApprovalCard({ approval: a }: { approval: Approval }) {
     })
   }
   const command = commandOf(a)
+  if (a.kind === "question")
+    return (
+      <section aria-label={t("question.label", { agent: agentName(a.agentId, agents) })} className="flex w-full max-w-130 flex-col gap-2.5 rounded-card border border-accent-line bg-accent-faint px-3.5 py-3">
+        <span className="font-medium text-accent-text">{a.summary}</span>
+        <QuestionAnswer approval={a} onError={setError} />
+        {error && <p className="text-sm text-danger">{error}</p>}
+      </section>
+    )
   return (
     <section aria-label={t("approval.waiting")} className="flex w-full max-w-130 flex-wrap items-center gap-2.5 rounded-card border border-accent-line bg-accent-faint py-2.5 pr-2.5 pl-3.5">
       <span className="flex min-w-50 flex-1 flex-col">
@@ -932,9 +941,12 @@ function commandOf(a: Approval): string {
 // A decision already taken: one quiet line ("Allowed · …").
 function ReceiptCard({ receipt: r }: { receipt: Receipt }) {
   const ok = r.outcome === "approved" || r.outcome === "always"
+  const question = r.approval.kind === "question"
   return (
     <p className="text-sm text-muted">
-      <span className={ok ? "text-success" : "text-secondary"}>{ok ? t("approval.approved") : r.outcome === "expired" ? t("approval.expired") : t("approval.denied")}</span>
+      <span className={ok ? "text-success" : "text-secondary"}>
+        {r.outcome === "expired" ? t("approval.expired") : question ? (ok ? t("question.answered") : t("question.skipped")) : ok ? t("approval.approved") : t("approval.denied")}
+      </span>
       {` · ${r.approval.summary || r.approval.tool}`}
     </p>
   )

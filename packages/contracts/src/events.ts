@@ -73,7 +73,7 @@ export type WorkStep = typeof WorkStep.Type
 
 // ---------- approvals (ARCHITECTURE §9.2) ----------
 
-export const ApprovalKind = Schema.Literals(["command", "edit", "tool", "network"])
+export const ApprovalKind = Schema.Literals(["command", "edit", "tool", "network", "question"]) // question: zorel_ask_user (summary: the question; args: {"options": [...]})
 export const Approval = Schema.Struct({
   id: Id,
   chatId: Id,

@@ -99,6 +99,14 @@ export const TASK_TOOL = {
   inputSchema: { properties: { agent: { type: "string" }, task: { type: "string" }, reply: { type: "boolean" } }, required: ["agent", "task"] },
   writes: false
 } as const
+// The agent asks the person and waits for the answer (a card in the chat and in Needs you; 30 min, then it goes on).
+export const ASK_TOOL = {
+  name: "zorel_ask_user",
+  description:
+    "Ask the user a question and wait for the answer, when you can't go on well without it (a choice only they can make, missing information). question: one short question. options: up to 6 short answers they can pick with one click; they can also type their own. Don't use it for approval of an action (actions ask by themselves) or for things you can find out.",
+  inputSchema: { properties: { question: { type: "string" }, options: { type: "array", items: { type: "string" }, maxItems: 6 } }, required: ["question"] },
+  writes: false
+} as const
 export const MAX_OPEN_TASKS = 4 // per chat, waiting for their results
 export const MAX_TASK_DEPTH = 2 // a task may start tasks, whose tasks may not
 

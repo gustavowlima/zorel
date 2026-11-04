@@ -73,6 +73,7 @@ export const en = {
   status: {
     running: "{agent} is working",
     waiting: "{agent} waits for your OK",
+    asking: "{agent} asks you something",
     failed: "The last turn failed",
     queued: "Queued"
   },
@@ -146,6 +147,16 @@ export const en = {
     expired: "Expired",
     details: "Details",
     folder: "in {path}"
+  },
+  question: {
+    label: "{agent} asks you",
+    answer: "Your answer",
+    placeholder: "Type your answer",
+    other: "Or type your own",
+    send: "Send",
+    skip: "Skip",
+    answered: "Answered",
+    skipped: "Skipped"
   },
   composer: {
     label: "Message",

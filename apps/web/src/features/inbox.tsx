@@ -9,6 +9,7 @@ import { agentName, chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { AuthorAvatar } from "./people.tsx"
 import { Button, Check, Code, EmptyState, Screen, Tab, TabList, Tabs, User } from "@/ui"
+import { QuestionAnswer } from "./question.tsx"
 
 type Filter = "all" | "approvals" | "memories"
 
@@ -79,6 +80,13 @@ function ApprovalItem({ approval: a }: { approval: Approval }) {
     // Already decided elsewhere: the refetch removes it from the list either way.
     decide({ payload: { approvalId: a.id, outcome }, reactivityKeys: ["approvals", "agents"] }).catch(() => setPending(undefined))
   }
+  if (a.kind === "question")
+    return (
+      <Item avatar={<AuthorAvatar agent={agent} model={chat?.model ?? null} />} who={agentName(a.agentId, agents)} context={chat ? t("inbox.inChat", { chat: chatTitle(chat) }) : ""} at={a.createdAt} actions={null}>
+        <p className="font-medium">{a.summary}</p>
+        <QuestionAnswer approval={a} />
+      </Item>
+    )
   return (
     <Item
       avatar={<AuthorAvatar agent={agent} model={chat?.model ?? null} />}

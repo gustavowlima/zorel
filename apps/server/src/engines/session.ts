@@ -17,7 +17,7 @@ export interface SessionTurnInput {
 // A native tool call that needs the person's OK (ARCHITECTURE §9.2). The runtime shows the approval card
 // and resolves true (allowed) or false (denied or expired).
 export interface NativeApproval {
-  readonly kind: "command" | "edit" | "tool" | "network"
+  readonly kind: "command" | "edit" | "tool" | "network" | "question"
   readonly tool: string
   readonly summary: string
   readonly args: string

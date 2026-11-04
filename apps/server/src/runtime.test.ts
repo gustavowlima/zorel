@@ -478,3 +478,31 @@ test("start_task: the teammate's answer comes back to the asking chat and the as
     expect(msgs[2]!.text).toContain("[Open the task](#/chat/")
     expect(yield* store.openTasks()).toEqual([]) // reported once
   })))
+
+// zorel_ask_user: the agent waits on a question card; the person's answer comes back as the tool's result.
+const Asking = Layer.succeed(Engines, {
+  run: (t) =>
+    Stream.unwrap(
+      Effect.promise(async () => {
+        const r = await t.tools!.call("zorel_ask_user", { question: "Which port?", options: ["3000", "8080"] })
+        const text = r.content.map((c) => ("text" in c ? c.text : "")).join("")
+        return Stream.make<EngineEvent[]>({ type: "text", delta: text }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+      })
+    )
+})
+
+test("ask_user: the question waits as a card and the answer comes back to the agent", () =>
+  runWith(":memory:", Asking, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+    yield* runtime.send({ chatId: chat.id, clientId: "ask-1", text: "start the server" })
+    while (!c.events.some((e) => e._tag === "approval")) yield* Effect.sleep("10 millis")
+    const card = c.events.find((e) => e._tag === "approval")!
+    expect(card._tag === "approval" && [card.approval.kind, card.approval.summary, card.approval.args]).toEqual(["question", "Which port?", '{"options":["3000","8080"]}'])
+    if (card._tag === "approval") yield* runtime.decide(card.approval.id, "approved", "8080")
+    yield* c.done
+    const msgs = yield* store.messages(chat.id)
+    expect(msgs.at(-1)!.text).toBe("The user answered: 8080")
+  })))

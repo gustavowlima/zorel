@@ -423,6 +423,8 @@ Referência: a reference app (`docs/architecture/agents.md` "Agent communication
 
 - **`zorel_start_task` (2026-11-04)**, a delegação com retorno: o colega trabalha num **chat próprio** (aparece na barra lateral com status ao vivo; título "<agente>: <tarefa>"), com a tarefa como primeira mensagem; quando a fila desse chat esvazia, a última resposta volta ao chat de origem como mensagem do colega, com o link "Open the task", e quem pediu faz o próximo turno ali. `reply: false` entrega sem retorno (cobre o `send_message` sem resposta). Limites: 4 tarefas abertas por chat, 2 níveis de aninhamento; colega com acesso maior que o de quem pede só trabalha com cartão de aprovação. `chats.task_of` (o chat que espera o resultado, zerado ao entregar) e `chats.task_by` (quem pediu). Testado ao vivo com Claude Haiku: delegar, responder e continuar em ~6 s.
 
+- **`zorel_ask_user` (2026-11-04)**: o agente pergunta e espera. A pergunta é um cartão do tipo `question` no mesmo mecanismo das aprovações (chat, "Precisa de você", notificação, 30 min e depois segue): até 6 opções de um clique, resposta livre ou "Skip". A resposta viaja no `reason` do `decide` e volta como resultado da ferramenta ("The user answered: …"); sem resposta, o agente segue com o melhor palpite e diz o que assumiu. O status do chat diz "asks you something" (rótulo `question`). Testado ao vivo com Claude Haiku.
+
 **Planejado — ferramentas** (`zorel.*`):
 
 | Ferramenta | Comportamento |
@@ -431,7 +433,7 @@ Referência: a reference app (`docs/architecture/agents.md` "Agent communication
 | `send_message(to[], text, expectsReply = true, replyTo?)` | Entrega na fila de cada destinatário. Com `expectsReply`, **a resposta final do destinatário volta sozinha** para quem pediu, como mensagem sem pedido de resposta. Há proteção contra loop de repasse (a origem da cadeia é carregada) e idempotência por chave, para reenvio não duplicar |
 | `start_task(agent, text)` | **Feito como `zorel_start_task`** (acima). Planejado original: abre uma **tarefa paralela**: thread lateral com sessão própria e o resultado de volta. No máximo 2 tarefas rodando por agente (configurável até 4) e 8 abertas por iniciativa do próprio agente |
 | `interrupt_agent(agent)` | Só interrompe trabalho **que o próprio chamador pediu**. Nunca trabalho seu, de rotina ou de outro agente. Cancela primeiro os pedidos dele que estão na fila e deixa um aviso ao alvo do motivo da parada |
-| `ask_user` | Pergunta a você (aparece em "Precisa de você"). No Claude, usa o `AskUserQuestion` nativo |
+| `ask_user` | **Feito como `zorel_ask_user`** (acima). Planejado original: pergunta a você (aparece em "Precisa de você"). No Claude, usa o `AskUserQuestion` nativo |
 
 **Semântica:**
 - **Pedido para vários agentes:** as respostas esperam na fila de quem pediu até **todas** as cópias terminarem, e então entram num turno só, que diz quem não respondeu. Uma mensagem sua não espera: entra na hora e leva o que já chegou.
