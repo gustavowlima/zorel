@@ -10,29 +10,29 @@ import { LEGACY_MIGRATIONS } from "./migrate.ts"
 const run = <A>(path: string, f: (r: typeof Store.Service) => Effect.Effect<A>) =>
   Effect.runPromise(Effect.scoped(Effect.gen(function* () { return yield* f(yield* Store) }).pipe(Effect.provide(Store.layer(path)))))
 
-test("memórias: dedupe por texto normalizado, busca FTS por escopo, exclui as já no prompt", () =>
+test("memories: dedupe by normalized text, FTS search by scope, excludes those already in the prompt", () =>
   run(":memory:", (r) =>
     Effect.gen(function* () {
       const p = yield* r.createProject({ name: "Site", brief: "" })
-      const a = (yield* r.addMemory({ scope: `project:${p.id}`, text: "Deploy é feito na Vercel às sextas", state: "active", origin: "manual", chatId: null }))!
-      expect(yield* r.addMemory({ scope: `project:${p.id}`, text: "deploy é feito na vercel às sextas!", state: "pending", origin: "auto", chatId: null })).toBeUndefined()
-      const b = (yield* r.addMemory({ scope: "user", text: "Prefere respostas curtas", state: "active", origin: "manual", chatId: null }))!
-      yield* r.addMemory({ scope: "project:outro", text: "Deploy no Fly.io", state: "active", origin: "manual", chatId: null })
+      const a = (yield* r.addMemory({ scope: `project:${p.id}`, text: "Deploys go to Vercel on Fridays", state: "active", origin: "manual", chatId: null }))!
+      expect(yield* r.addMemory({ scope: `project:${p.id}`, text: "deploys go to vercel on fridays!", state: "pending", origin: "auto", chatId: null })).toBeUndefined()
+      const b = (yield* r.addMemory({ scope: "user", text: "Prefers short answers", state: "active", origin: "manual", chatId: null }))!
+      yield* r.addMemory({ scope: "project:other", text: "Deploys on Fly.io", state: "active", origin: "manual", chatId: null })
 
       const scopes = ["user", `project:${p.id}`]
-      expect((yield* r.searchMemories(scopes, "como faço o deploy?", [], 5)).map((m) => m.id)).toEqual([a.id])
-      expect(yield* r.searchMemories(scopes, "como faço o deploy?", [a.id], 5)).toEqual([])
-      expect((yield* r.searchMemories(scopes, "respostas", [], 5)).map((m) => m.id)).toEqual([b.id])
+      expect((yield* r.searchMemories(scopes, "how do I deploy?", [], 5)).map((m) => m.id)).toEqual([a.id])
+      expect(yield* r.searchMemories(scopes, "how do I deploy?", [a.id], 5)).toEqual([])
+      expect((yield* r.searchMemories(scopes, "answers", [], 5)).map((m) => m.id)).toEqual([b.id])
       expect(yield* r.pendingCount([])).toBe(0) // empty list doesn't break the IN
 
-      yield* r.updateMemory(a.id, { text: "Deploy é feito no Netlify" })
+      yield* r.updateMemory(a.id, { text: "Deploys go to Netlify" })
       expect((yield* r.searchMemories(scopes, "netlify", [], 5)).map((m) => m.id)).toEqual([a.id])
       yield* r.removeProject(p.id)
       expect(yield* r.memory(a.id)).toBeUndefined()
     })
   ))
 
-test("chats: membros em ordem e cascata ao apagar o projeto", () =>
+test("chats: members in order, and cascade when the project is deleted", () =>
   run(":memory:", (r) =>
     Effect.gen(function* () {
       const p = yield* r.createProject({ name: "P", brief: "" })
@@ -40,15 +40,15 @@ test("chats: membros em ordem e cascata ao apagar o projeto", () =>
       const b = yield* r.createAgent({ projectId: p.id, name: "Rev", instructions: "", model: "x/y" })
       const c = yield* r.createChat({ projectId: p.id, agentIds: [b.id, a.id, b.id], model: "x/y" })
       expect(c.agentIds).toEqual([b.id, a.id])
-      yield* r.addMessage({ chatId: c.id, role: "user", agentId: null, text: "oi", model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 })
-      expect((yield* r.messages(c.id)).map((m) => m.text)).toEqual(["oi"])
+      yield* r.addMessage({ chatId: c.id, role: "user", agentId: null, text: "hi", model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 })
+      expect((yield* r.messages(c.id)).map((m) => m.text)).toEqual(["hi"])
       yield* r.removeProject(p.id)
       expect(yield* r.chat(c.id)).toBeUndefined()
       expect(yield* r.agents()).toEqual([])
     })
   ))
 
-test("banco do MVP (user_version 2) é adotado: backup feito, dados mantidos, migração 3 aplicada", async () => {
+test("the MVP database (user_version 2) is adopted: backup made, data kept, migration 3 applied", async () => {
   const dir = join(tmpdir(), `zorel-mig-${crypto.randomUUID()}`)
   const path = join(dir, "zorel.db")
   require("node:fs").mkdirSync(dir)
@@ -60,7 +60,7 @@ test("banco do MVP (user_version 2) é adotado: backup feito, dados mantidos, mi
   old.run("INSERT INTO projects VALUES ('p', 'P', '', 1)")
   old.run("INSERT INTO agents VALUES ('a', 'p', 'Dev', '', 'x/y', 1)")
   old.run("INSERT INTO chats (id, project_id, agent_id, title, model, created_at) VALUES ('c', 'p', 'a', 'T', 'x/y', 1)")
-  old.run("INSERT INTO memories (id, scope, text, normalized, state, origin, created_at, confirmed_at) VALUES ('m', 'user', 'Gosta de deploy às sextas', 'x', 'active', 'manual', 1, 1)")
+  old.run("INSERT INTO memories (id, scope, text, normalized, state, origin, created_at, confirmed_at) VALUES ('m', 'user', 'Likes to deploy on Fridays', 'x', 'active', 'manual', 1, 1)")
   old.close()
 
   await run(path, (r) =>
@@ -81,7 +81,7 @@ test("banco do MVP (user_version 2) é adotado: backup feito, dados mantidos, mi
   expect(existsSync(dir)).toBe(false)
 })
 
-test("backup: um por dia mesmo sem migration pendente, e só os 7 mais novos ficam", async () => {
+test("backup: one a day even with no pending migration, and only the 7 newest stay", async () => {
   const dir = join(tmpdir(), `zorel-bk-${crypto.randomUUID()}`)
   const path = join(dir, "zorel.db")
   require("node:fs").mkdirSync(join(dir, "backups"), { recursive: true })
@@ -100,14 +100,14 @@ test("backup: um por dia mesmo sem migration pendente, e só os 7 mais novos fic
   rmSync(dir, { recursive: true })
 })
 
-test("memória sobre a pessoa só o dono ouve; a do projeto, o projeto", async () => {
+test("a memory about the person only reaches its owner; a project's, the project", async () => {
   const dir = join(tmpdir(), `zorel-aud-${crypto.randomUUID()}`)
   const path = join(dir, "zorel.db")
   require("node:fs").mkdirSync(dir)
   await run(path, (r) =>
     Effect.gen(function* () {
-      yield* r.addMemory({ scope: "user", text: "Prefere Biome", state: "active", origin: "manual", chatId: null, owner: "local" })
-      yield* r.addMemory({ scope: "project:p", text: "Deploy na Vercel", state: "active", origin: "manual", chatId: null })
+      yield* r.addMemory({ scope: "user", text: "Prefers Biome", state: "active", origin: "manual", chatId: null, owner: "local" })
+      yield* r.addMemory({ scope: "project:p", text: "Deploy on Vercel", state: "active", origin: "manual", chatId: null })
     })
   )
   // owner/audience aren't in the public contract yet (D17 seams): check directly in the database
@@ -156,10 +156,10 @@ test("searchMessages: case-insensitive words, newest first, % and _ are literal"
     Effect.gen(function* () {
       const c = yield* r.createChat({ projectId: null, agentIds: [], model: "x/y" })
       const add = (text: string) => r.addMessage({ chatId: c.id, role: "user", agentId: null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 })
-      yield* add("Deploy na Vercel")
-      yield* add("o deploy falhou com 100% de erro")
-      yield* add("nada a ver")
-      expect((yield* r.searchMessages("DEPLOY")).map((m) => m.text)).toEqual(["o deploy falhou com 100% de erro", "Deploy na Vercel"])
+      yield* add("Deploy on Vercel")
+      yield* add("the deploy failed with 100% errors")
+      yield* add("unrelated")
+      expect((yield* r.searchMessages("DEPLOY")).map((m) => m.text)).toEqual(["the deploy failed with 100% errors", "Deploy on Vercel"])
       expect((yield* r.searchMessages("100%")).length).toBe(1)
       expect(yield* r.searchMessages("_")).toEqual([])
     })
