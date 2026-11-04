@@ -40,6 +40,8 @@ export const en = {
     newChat: "New chat",
     needsYou: "Needs you",
     knowledge: "Knowledge",
+    agents: "Agents",
+    newAgentIn: "New agent in {name}",
     usage: "Usage",
     settings: "Settings",
     projects: "Projects",
@@ -802,6 +804,16 @@ export const en = {
     deleted: "deleted",
     loadingDiff: "Loading diff…",
     turnBy: "{agent} · {time}"
+  },
+  agents: {
+    title: "Agents",
+    subtitle: "Everyone on the team. Agents can also propose new teammates from a chat; you approve them first.",
+    global: "Global",
+    globalHint: "Available in every project.",
+    noGlobal: "No global agents yet.",
+    working: "working",
+    empty: "No agents yet",
+    emptyHint: "Create one here, or ask an agent in a chat to propose one."
   },
   access: {
     title: "What it can do without asking",

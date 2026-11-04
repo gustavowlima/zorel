@@ -348,6 +348,11 @@ Compactos e diretos, com aperto físico ao pressionar.
 - É o navegador dos agentes: um Chrome sem janela no servidor, num perfil persistente (logins ficam), com abas por chat. Clicar, rolar ou digitar na página, ou usar o endereço, toma o controle: a faixa fica azul ("You're using the browser…") com "Hand back"; enquanto isso as ferramentas do navegador dos agentes são recusadas.
 - Ferramentas dos agentes: browser_navigate, browser_snapshot (a página como árvore de acessibilidade com [ref=eN]), browser_click e browser_type por ref, browser_press, browser_wait, browser_tabs, browser_back. Ler nunca pede aprovação; agir pede quando o acesso do agente é "ask". Cada uso aparece nos passos da resposta.
 
+### Agents (tela da equipe)
+- Item "Agents" na barra lateral, entre Needs you e Knowledge (fica ativo também na página de um agente). Uma tela com coluna central: **Global** (com a dica "Available in every project" e o vazio "No global agents yet") e depois cada projeto que tem agentes, cada um com um + discreto para criar ali. "New agent" no cabeçalho cria um global.
+- Linha do agente (a mesma da aba Agents do projeto): avatar, nome com "● working" em accent quando um chat dele está rodando, título (ou descrição, ou a 1ª linha das instruções), modelo, acesso e ›.
+- Agentes também nascem no chat: um agente usa `zero_create_agent` / `zero_update_agent` e o pedido vira um **cartão de aprovação** com o perfil campo a campo; nada é criado sem o OK. A lista se atualiza ao fim do turno.
+
 ### Página do agente
 - Quem é: nome e título lado a lado (o papel em poucas palavras, mostrado no seletor `#`), depois a descrição (uma frase; os outros agentes do chat a leem para saber quando passar trabalho a ele).
 - Quatro grupos: **Brain** (modelo padrão com conta e raciocínio; fallbacks), **Knows** (instruções; memórias e skills do agente, com contagem e até 5 de cada abrindo no Knowledge), **Does** (Usage já filtrado por ele), **Rules** (nível de acesso; ferramentas MCP que os chats alcançam).

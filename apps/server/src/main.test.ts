@@ -32,6 +32,9 @@ import { Tools } from "./tools.ts"
 import { Pricing } from "./pricing.ts"
 import { Workspace } from "./workspace.ts"
 
+// Zero's own tools (the chat's browser, the team), always offered next to the MCP ones.
+const zeroOwn = (n: string) => n.startsWith("browser_") || n.startsWith("zero_")
+
 // Prices for tests (USD per million tokens): no network.
 const PRICES = { anthropic: { "claude-sonnet-5-5": { cost: { input: 2, output: 10, cache_read: 0.1 }, family: "claude-sonnet", release_date: "2026-09-28" } } }
 
@@ -89,7 +92,7 @@ const FakeEngines = Layer.succeed(Engines, {
     const tool = /^tool:(\S+)/.exec(last)?.[1]
     if (tool)
       return Stream.fromEffect(Effect.promise(() => useTool(t, tool, { q: "deploy" }))).pipe(
-        Stream.flatMap((r) => Stream.make<EngineEvent[]>({ type: "text", delta: `${r.listed.filter((n) => !n.startsWith("browser_")).join(",")} => ${r.text}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }))
+        Stream.flatMap((r) => Stream.make<EngineEvent[]>({ type: "text", delta: `${r.listed.filter((n) => !zeroOwn(n)).join(",")} => ${r.text}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }))
       )
     return Stream.make<EngineEvent[]>({ type: "text", delta: (me && mentionNext.get(me)) || `eco: ${last}` }, { type: "done", usage: { inputTokens: 10, outputTokens: 3 } })
   }
@@ -169,7 +172,7 @@ test("projeto → agente → chat: streaming, contexto em camadas, troca de mode
   expect(dones(first.events)[0]).toMatchObject({ role: "assistant", agentId: agent.id, text: "eco: oi", model: "claude-cli/sonnet", inputTokens: 10 })
   const t1 = turns.at(-1)!
   for (const s of ["Landing em Astro.", "Escreve código enxuto.", "Prefere respostas curtas"]) expect(t1.system).toContain(s)
-  expect(t1.tools?.defs.map((d) => d.name).every((n) => n.startsWith("browser_"))).toBe(true) // no MCP server: only the browser
+  expect(t1.tools?.defs.map((d) => d.name).every(zeroOwn)).toBe(true) // no MCP server: only Zero's own (browser, team)
 
   await send(chat.id, { text: "e agora?", model: "anthropic/claude-sonnet-5-5" })
   expect(turns.at(-1)!.model).toBe("anthropic/claude-sonnet-5-5")
@@ -264,7 +267,7 @@ test("ferramentas MCP: modo leitura esconde escrita; modo aprovação pede e res
   // chat outside the project doesn't see the server
   const other = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "claude-cli/sonnet" } }))
   await send(other.id, { text: "oi" })
-  expect(turns.at(-1)!.tools?.defs.map((d) => d.name).every((n) => n.startsWith("browser_"))).toBe(true)
+  expect(turns.at(-1)!.tools?.defs.map((d) => d.name).every(zeroOwn)).toBe(true)
 })
 
 test("chaves de API: salvas pela interface, nunca devolvidas; nome desconhecido 404", async () => {

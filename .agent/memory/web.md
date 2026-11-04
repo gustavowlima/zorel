@@ -56,3 +56,4 @@ updated: 2026-11-03
 - diff-view.tsx: enableLineSelection + onLineSelectionEnd → selectedLines controlado + lineAnnotations com CommentBox (renderAnnotation); onComment → texto simples no composer (SidePanel.onAddToChat é texto puro; o Terminal cerca com ``` ele mesmo). Testar seleção por script: pointerdown/up no pai de [data-line-number-content] dentro do shadowRoot de diffs-container
 - GitControl só aparece no título quando a aba git está fixada (pins.side inclui "git")
 - Terminal: closable(tab) = mais de uma aba ou shell terminado; drop() que esvazia cria um shell novo (sem remontar: a lista do servidor em cache trazia de volta o shell fechado → "The shell ended")
+- agents.tsx: rota #/agents (AgentsView, AgentRow, useWorking); chat invalida "agents" quando muda o nº de mensagens (agente pode ter criado um colega)

@@ -4,11 +4,12 @@ import type { Project } from "@zero/contracts"
 import { formatAge, t } from "@zero/i18n"
 import { type FormEvent, useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, mutations, useList, useMutation, useStatuses } from "../client.ts"
-import { agentTone, chatTitle, modelLabel, statusLabel } from "../labels.ts"
+import { chatTitle, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
+import { AgentRow, useWorking } from "./agents.tsx"
 import {
-  AgentAvatar, Bot, Button, ChatStatusIcon, ChevronRight, ConfirmDialog, EmptyState, Field, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Popover, Screen, Section, Tab,
+  Bot, Button, ChatStatusIcon, ConfirmDialog, EmptyState, Field, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Popover, Screen, Section, Tab,
   TabList, TabPanel, Tabs, Textarea, Trash2
 } from "@/ui"
 
@@ -209,6 +210,7 @@ function Overview({ project }: { project: Project }) {
 function Agents({ projectId }: { projectId: string }) {
   const agents = useList(agentsAtom)
   const mine = agents.filter((a) => a.projectId === projectId)
+  const working = useWorking()
   return (
     <Section
       title={t("project.agents")}
@@ -224,15 +226,7 @@ function Agents({ projectId }: { projectId: string }) {
       ) : (
         <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
           {mine.map((a) => (
-            <Button key={a.id} variant="ghost" className="h-14 justify-start gap-3 rounded-none px-1 font-normal text-fg" onPress={() => go({ view: "agent", id: a.id })}>
-              <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={28} />
-              <span className="flex min-w-0 flex-1 flex-col text-left">
-                <span className="truncate font-medium">{a.name}</span>
-                {a.instructions.trim() && <span className="truncate text-sm text-muted">{a.instructions.trim().split("\n")[0]}</span>}
-              </span>
-              <span className="shrink-0 text-sm text-muted">{modelLabel(a.model)}</span>
-              <ChevronRight className="text-muted" />
-            </Button>
+            <AgentRow key={a.id} agent={a} agents={agents} working={working.has(a.id)} />
           ))}
         </div>
       )}
