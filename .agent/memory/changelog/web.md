@@ -18,3 +18,4 @@
 2026-11-03 | trilho de ícones à esquerda com os lugares do app; barra lateral só com chats e projetos; tela Routines | pedido do usuário (a reference app)
 2026-11-03 | chats na barra em 2 linhas sem ícone, com agentes participantes; seções sem ícone e mais espaçadas | pedido do usuário
 2026-11-03 | projetos na barra como subtítulos alinhados aos chats | pedido do usuário
+2026-11-03 | divisória entre trilho e barra; barra lateral recolhível (botão, ⌘B, Chats) | pedido do usuário
