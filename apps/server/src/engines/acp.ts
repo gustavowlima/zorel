@@ -66,9 +66,10 @@ export function permission(options: ReadonlyArray<{ optionId: string; kind: stri
 }
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+// .native: on Windows it also expands short names (RUNNER~1), so a path compares equal however it was written.
 const real = (p: string) => {
   try {
-    return realpathSync(p)
+    return realpathSync.native(p)
   } catch {
     return resolve(p)
   }
