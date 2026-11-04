@@ -8,7 +8,7 @@ import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
 import { Context, Effect, Layer } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
-import { type AgentProfile, agents, agentVersions, pages, pageVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
+import { type AgentProfile, agents, agentVersions, memoryVersions, pages, pageVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
 
 // The part of an agent a version keeps (everything but its id, project and creation time).
 export const profileOf = (a: Agent): AgentProfile => ({
@@ -364,11 +364,11 @@ export const repository = (db: Db) => {
       ),
     // Already exists (same normalized text in scope): returns undefined and doesn't duplicate or revive a forgotten one.
     // owner: the Actor who created it (or the chat owner, in consolidation). About the person (user scope): only the owner hears.
-    addMemory: (input: { scope: string; kind?: Memory["kind"]; title?: string; text: string; state: Memory["state"]; origin: Memory["origin"]; chatId: string | null; owner?: string }) =>
+    addMemory: (input: { scope: string; kind?: Memory["kind"]; title?: string; text: string; state: Memory["state"]; origin: Memory["origin"]; chatId: string | null; owner?: string; replaces?: string | null; reason?: string | null }) =>
       Effect.gen(function* () {
         const at = now()
         const { owner = "local", ...rest } = input
-        const m: Memory = { id: crypto.randomUUID(), kind: "fact", title: "", ...rest, createdAt: at, confirmedAt: at }
+        const m: Memory = { id: crypto.randomUUID(), kind: "fact", title: "", replaces: null, reason: null, ...rest, createdAt: at, confirmedAt: at }
         const audience = m.scope === "user" ? "owner" : "project"
         const inserted = yield* db.insert(memories).values({ ...m, owner, audience, normalized: normalize(m.text) }).onConflictDoNothing().returning({ id: memories.id })
         // Said again: the existing active one is confirmed (it ranks first for the prompt's budget).
@@ -379,11 +379,31 @@ export const repository = (db: Db) => {
     // Still true (consolidation saw it again): ranks first for the prompt's budget.
     confirmMemories: (ids: ReadonlyArray<string>) =>
       ids.length ? orDie(db.update(memories).set({ confirmedAt: now() }).where(and(inArray(memories.id, [...ids]), eq(memories.state, "active"))).pipe(Effect.asVoid)) : Effect.void,
-    updateMemory: (id: string, input: { state?: Memory["state"] | undefined; title?: string | undefined; text?: string | undefined }) =>
+    // A changed text or title keeps the one before as a version (by: who changed it).
+    updateMemory: (id: string, input: { state?: Memory["state"] | undefined; title?: string | undefined; text?: string | undefined }, by = "you") =>
       Effect.gen(function* () {
+        const before = yield* memory(id)
+        if (before && ((input.text !== undefined && input.text !== before.text) || (input.title !== undefined && input.title !== before.title)))
+          yield* db.insert(memoryVersions).values({ id: crypto.randomUUID(), memoryId: id, title: before.title, text: before.text, by, at: now() })
         const set = defined({ ...input, normalized: input.text && normalize(input.text), confirmedAt: now() })
         yield* db.update(memories).set(set).where(eq(memories.id, id))
         return yield* memory(id)
+      }).pipe(orDie),
+    memoryVersions: (memoryId: string) =>
+      orDie(db.select({ id: memoryVersions.id, title: memoryVersions.title, text: memoryVersions.text, by: memoryVersions.by, at: memoryVersions.at }).from(memoryVersions).where(eq(memoryVersions.memoryId, memoryId)).orderBy(desc(memoryVersions.at))),
+    memoryVersion: (id: string) => orDie(db.select().from(memoryVersions).where(eq(memoryVersions.id, id)).pipe(Effect.map((r) => r[0]))),
+    // An approved improvement: its text goes onto the skill it replaces (the old one becomes a version) and the
+    // proposal itself goes away. Undefined when the skill it pointed at is gone.
+    applyImprovement: (pendingId: string, by: string) =>
+      Effect.gen(function* () {
+        const p = yield* memory(pendingId)
+        const target = p?.replaces ? yield* memory(p.replaces) : undefined
+        if (!p || !target || target.state === "forgotten") return undefined
+        yield* db.delete(memories).where(eq(memories.id, p.id))
+        const before = target
+        yield* db.insert(memoryVersions).values({ id: crypto.randomUUID(), memoryId: target.id, title: before.title, text: before.text, by, at: now() })
+        yield* db.update(memories).set({ title: p.title, text: p.text, normalized: normalize(p.text), confirmedAt: now() }).where(eq(memories.id, target.id))
+        return yield* memory(target.id)
       }).pipe(orDie),
     // BM25 (FTS5) among active ones in the scopes, excluding those already in the prompt. Skills also match by title.
     searchMemories: (scopes: ReadonlyArray<string>, query: string, exclude: ReadonlyArray<string>, limit: number, kind: Memory["kind"] = "fact") => {

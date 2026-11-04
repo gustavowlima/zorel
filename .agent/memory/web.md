@@ -69,3 +69,4 @@ updated: 2026-11-03
 - mcp.tsx CATALOG (presets que preenchem o NewServer; sem OAuth). project.tsx Agents: Select de agente padrão
 - pages.tsx (PageView com Markdown prose-chat, edição, Versions; NewPage); knowledge.tsx ganhou filtro "page"
 - 2026-11-04: Agents com um botão New agent (menu: Build with AI, Blank, Import) e ⋯ por linha (abrir, exportar, apagar); NewAgentMenu/useDeleteAgent em agents.tsx também na aba Agents do projeto. Tela Build with AI = features/builder.tsx (rota builder, #/build/<p>): Timeline exportada do chat.tsx + Composer, prévia parseando args do zero_create_agent (draftsOf). Builder (a.builtin) excluído de listas e pickers. Página do agente em abas (Profile, Tools and access = features/permissions.tsx, Knowledge and activity)
+- testes da web agora rodam no bun test raiz (apps/web incluído)

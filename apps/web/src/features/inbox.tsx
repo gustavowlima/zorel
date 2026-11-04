@@ -130,12 +130,21 @@ function MemoryItem({ memory: m }: { memory: Memory }) {
       at={m.createdAt}
       actions={
         <>
-          <Button size="sm" variant="default" onPress={() => set("active")}>
-            {t("inbox.keep")}
-          </Button>
-          <Button size="sm" variant="secondary" onPress={() => go({ view: "knowledge", id: m.id })}>
-            {t("common.edit")}
-          </Button>
+          {/* An improvement is reviewed where its change shows (Knowledge), not kept blind from here. */}
+          {m.replaces ? (
+            <Button size="sm" variant="default" onPress={() => go({ view: "knowledge", id: m.id })}>
+              {t("inbox.reviewChange")}
+            </Button>
+          ) : (
+            <>
+              <Button size="sm" variant="default" onPress={() => set("active")}>
+                {t("inbox.keep")}
+              </Button>
+              <Button size="sm" variant="secondary" onPress={() => go({ view: "knowledge", id: m.id })}>
+                {t("common.edit")}
+              </Button>
+            </>
+          )}
           <Button size="sm" variant="ghost" onPress={() => set("forgotten")}>
             {t("inbox.discard")}
           </Button>
@@ -145,7 +154,8 @@ function MemoryItem({ memory: m }: { memory: Memory }) {
       {m.kind === "skill" ? (
         <p>
           <span className="font-medium">{m.title}</span>
-          <span className="text-muted">{` · ${t("knowledge.skill")}`}</span>
+          <span className="text-muted">{` · ${m.replaces ? t("inbox.betterSkill") : t("knowledge.skill")}`}</span>
+          {m.reason && <span className="block text-sm text-muted">{m.reason}</span>}
         </p>
       ) : (
         <p>{m.text}</p>

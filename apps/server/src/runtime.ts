@@ -13,7 +13,7 @@ import type { Approver, EngineSession, NativeApproval } from "#server/engines/se
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
-import { createInputs, findAgent, KNOWLEDGE_TOOLS, listText, MEMORY_TOOL, proposalText, readText, ROUTINES_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
+import { createInputs, findAgent, KNOWLEDGE_TOOLS, listText, MEMORY_TOOL, proposalText, readText, ROUTINES_TOOL, SKILL_TOOLS, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
@@ -240,7 +240,7 @@ export const makeRuntime = Effect.gen(function* () {
     // access is "ask", like any tool that writes.
     if (perms.browser) for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
-    for (const t of [...TEAM_TOOLS, MEMORY_TOOL, ROUTINES_TOOL, ...KNOWLEDGE_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    for (const t of [...TEAM_TOOLS, MEMORY_TOOL, ROUTINES_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
       return { tools: undefined as TurnTools | undefined, close: () => {} }
@@ -314,6 +314,36 @@ export const makeRuntime = Effect.gen(function* () {
       const query = typeof args.query === "string" ? args.query.slice(0, 500) : ""
       const found = await run(store.searchMemories(scopesOf(chat, agent?.id ?? null), query, [], 10))
       return textResult(found.length ? found.map((m) => `- ${m.text}`).join("\n") : "Nothing found. Try other words.")
+    }
+
+    // Skills: read one by title; propose a new one or an improvement (pending until the person approves it in
+    // Knowledge, where an improvement shows what changes). At most 5 of one chat's proposals wait at a time.
+    const skillCall = async (name: string, args: Record<string, unknown>) => {
+      const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "")
+      const scopes = scopesOf(chat, agent?.id ?? null)
+      const skills = await run(store.activeMemories(scopes, "skill"))
+      const byTitle = (v: unknown) => {
+        const want = String(v ?? "").trim().toLowerCase()
+        return skills.find((m) => m.title.toLowerCase() === want) ?? skills.find((m) => m.title.toLowerCase().includes(want) && want.length > 2)
+      }
+      if (name === "zero_read_skill") {
+        const m = byTitle(args.skill)
+        return m ? textResult(`# ${m.title}\n\n${m.text}`) : textResult(`No skill "${String(args.skill ?? "")}". The ones here: ${skills.map((s) => s.title).join(", ") || "(none)"}.`, true)
+      }
+      const title = str(args.title, 80)
+      const steps = typeof args.steps === "string" ? args.steps.trim().slice(0, 4000) : ""
+      const reason = str(args.reason, 300)
+      if (!title || !steps || !reason) return textResult("title, steps and reason are required.", true)
+      const target = args.improves ? byTitle(args.improves) : undefined
+      if (args.improves && !target) return textResult(`No skill "${String(args.improves)}" to improve. Propose it as a new one, or check the title.`, true)
+      const want = str(args.scope, 10)
+      const scope = target?.scope ?? (want === "user" ? "user" : want === "agent" && agent ? `agent:${agent.id}` : chat.projectId ? `project:${chat.projectId}` : agent ? `agent:${agent.id}` : "user")
+      const waiting = (await run(store.memories())).filter((m) => m.state === "pending" && m.kind === "skill" && m.chatId === chat.id)
+      if (waiting.length >= 5) return textResult("Five of your skill proposals already wait for the user. Wait for them to review those.", true)
+      const s = await step(target ? `Propose a better "${target.title}"` : `Propose skill: ${title}`, name)
+      const added = await run(store.addMemory({ scope, kind: "skill", title, text: steps, state: "pending", origin: "auto", chatId: chat.id, replaces: target?.id ?? null, reason }))
+      await finish(s, "ok", title)
+      return added ? textResult(`Proposed. The user reviews it in Knowledge${target ? ", seeing what changes" : ""}; it applies once approved.`) : textResult("The same skill is already there.")
     }
 
     // zero_routines: list freely; create or cancel only on the person's OK (an approval card with the routine).
@@ -397,6 +427,7 @@ export const makeRuntime = Effect.gen(function* () {
     const call: Session["call"] = async (name, args) => {
       if (KNOWLEDGE_TOOLS.some((t) => t.name === name)) return knowledgeCall(name, args)
       if (name === ROUTINES_TOOL.name) return routinesCall(args)
+      if (SKILL_TOOLS.some((t) => t.name === name)) return skillCall(name, args)
       if (name === REQUEST_ACCESS_TOOL.name && agent) {
         const servers = await run(store.mcpServersFor(chat.projectId))
         const change = accessChange(permissionsOf(agent), String(args.what ?? ""), typeof args.level === "string" ? args.level : undefined, servers)

@@ -18,7 +18,7 @@ export function Tab({ id, children, count, onClose, closeLabel }: { id: string; 
   return (
     <TabPrimitive
       id={id}
-      className="group/tab inline-flex h-control-sm cursor-default items-center gap-1.5 rounded-full border border-transparent px-3 text-sm text-muted outline-none transition-colors duration-150 ease-out data-hovered:text-fg data-selected:border-subtle data-selected:bg-surface data-selected:text-fg data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none"
+      className="group/tab inline-flex h-control-sm shrink-0 cursor-default items-center gap-1.5 whitespace-nowrap rounded-full border border-transparent px-3 text-sm text-muted outline-none transition-colors duration-150 ease-out data-hovered:text-fg data-selected:border-subtle data-selected:bg-surface data-selected:text-fg data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none"
     >
       {children}
       {count !== undefined && <span className="text-xs tabular-nums text-dim">{count}</span>}

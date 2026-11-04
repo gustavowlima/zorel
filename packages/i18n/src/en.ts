@@ -244,6 +244,8 @@ export const en = {
     }
   },
   inbox: {
+    reviewChange: "Review the change",
+    betterSkill: "a better version of a skill",
     title: "Needs you",
     subtitle: "Agents wait here instead of guessing",
     all: "All",
@@ -259,6 +261,11 @@ export const en = {
     discard: "Discard"
   },
   knowledge: {
+    improves: "A better version of \"{title}\", proposed by an agent. Below: what changes.",
+    why: "Why: {reason}",
+    renamed: "Renamed from \"{from}\" to \"{to}\"",
+    applyImprovement: "Apply the change",
+    versions: "Earlier versions",
     title: "Knowledge",
     subtitle: { one: "1 memory · learned while working", other: "{count} memories · learned while working" },
     search: "Search knowledge",

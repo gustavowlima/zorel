@@ -436,7 +436,26 @@ const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
           return added ?? (yield* store.memories()).find((m) => m.scope === payload.scope && m.text === payload.text)!
         })
       )
-      .handle("update", ({ params, payload }) => found(store.updateMemory(params.id, payload)))
+      // Approving a proposed improvement applies it to the skill it replaces (the old text becomes a version).
+      .handle("update", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const before = yield* store.memory(params.id)
+          if (before?.state === "pending" && before.replaces && payload.state === "active") {
+            const applied = yield* store.applyImprovement(before.id, "you")
+            if (applied) return applied
+          }
+          return yield* found(store.updateMemory(params.id, payload))
+        })
+      )
+      .handle("versions", ({ params }) => Effect.flatMap(store.memory(params.id), (m) => (m ? store.memoryVersions(m.id) : notFound())))
+      // An earlier text comes back (the current one is kept as a version too).
+      .handle("restore", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const v = yield* store.memoryVersion(payload.versionId)
+          if (!v || v.memoryId !== params.id) return yield* notFound()
+          return yield* found(store.updateMemory(params.id, { title: v.title, text: v.text }))
+        })
+      )
   })
 )
 

@@ -90,6 +90,27 @@ export const MEMORY_TOOL = {
   writes: false
 } as const
 
+// Skills (as in a reference app): read a recipe when the task matches; propose a new one or a better version of one, with
+// the reason. Proposals wait for the person in Knowledge, who sees what changes before approving.
+export const SKILL_TOOLS = [
+  {
+    name: "zero_read_skill",
+    description: "Read the full steps of a skill listed in your context (by its title). Follow it when the task matches.",
+    inputSchema: { properties: { skill: { type: "string" } }, required: ["skill"] },
+    writes: false
+  },
+  {
+    name: "zero_propose_skill",
+    description:
+      "Propose a skill: a procedure worth repeating (steps that worked, a fix for a dead end, how the user wants something done). title: short name; steps: the recipe, up to 15 lines; reason: why, in a sentence. To improve an existing skill, pass its title in improves (the user sees the change before approving). scope: 'project' (default in a project), 'agent' (yours) or 'user'. Nothing changes until the user approves it.",
+    inputSchema: {
+      properties: { title: { type: "string" }, steps: { type: "string" }, reason: { type: "string" }, improves: { type: "string" }, scope: { type: "string", enum: ["project", "agent", "user"] } },
+      required: ["title", "steps", "reason"]
+    },
+    writes: false
+  }
+] as const
+
 const RANK: Record<Access, number> = { ask: 0, workspace: 1, full: 2 }
 export const narrower = (a: Access, b: Access): Access => (RANK[a] <= RANK[b] ? a : b)
 const LIMITS = { name: 80, title: 60, description: 300, instructions: 8000 } as const

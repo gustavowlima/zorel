@@ -3,12 +3,12 @@
 import type { Memory } from "@zero/contracts"
 import { formatAge, formatDate, t } from "@zero/i18n"
 import { useEffect, useState } from "react"
-import { agentsAtom, chatsAtom, memoriesAtom, mutations, pagesAtom, projectsAtom, useList, useMutation } from "../client.ts"
+import { agentsAtom, chatsAtom, memoriesAtom, memoryVersionsAtom, mutations, pagesAtom, projectsAtom, useList, useMutation, useReading } from "../client.ts"
 import { NewPage, PageView } from "./pages.tsx"
 import { chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import {
-  BookOpen, Button, cx, EmptyState, Field, Input, Pin, Plus, Screen, Search, Select, Tab, TabList, Tabs, Textarea
+  BookOpen, Button, cx, EmptyState, Field, Input, Pin, Plus, Screen, Search, Select, Tab, TabList, Tabs, Textarea, LineDiff, Rows, Undo2
 } from "@/ui"
 
 type Filter = "all" | "fact" | "skill" | "page" | "pending" | "forgotten"
@@ -160,6 +160,8 @@ function Reader({ memory: m }: { memory: Memory }) {
   const [text, setText] = useState(m.text)
   const skill = m.kind === "skill"
   const chat = chats.find((c) => c.id === m.chatId)
+  // A proposed improvement: the skill it would replace (the person sees what changes before approving).
+  const target = useList(memoriesAtom).find((x) => x.id === m.replaces)
   const patch = (payload: { state?: Memory["state"]; title?: string; text?: string }) => update({ params: { id: m.id }, payload, reactivityKeys: ["memories"] })
 
   return (
@@ -181,7 +183,12 @@ function Reader({ memory: m }: { memory: Memory }) {
           <span>{formatDate(m.createdAt)}</span>
         </p>
       </div>
-      {m.state !== "active" && <p className="rounded-card bg-surface px-4 py-3 text-sm text-secondary">{t(`knowledge.state.${m.state}`)}</p>}
+      {m.state !== "active" && (
+        <div className="flex flex-col gap-1 rounded-card bg-surface px-4 py-3 text-sm">
+          <span className="text-secondary">{target && m.state === "pending" ? t("knowledge.improves", { title: target.title }) : t(`knowledge.state.${m.state}`)}</span>
+          {m.reason && <span className="text-muted">{t("knowledge.why", { reason: m.reason })}</span>}
+        </div>
+      )}
       {editing ? (
         <form
           className="flex flex-col gap-3"
@@ -207,14 +214,19 @@ function Reader({ memory: m }: { memory: Memory }) {
             </Button>
           </div>
         </form>
+      ) : target && m.state === "pending" ? (
+        <div className="flex flex-col gap-2">
+          {target.title !== m.title && <p className="text-sm text-muted">{t("knowledge.renamed", { from: target.title, to: m.title })}</p>}
+          <LineDiff before={target.text} after={m.text} />
+        </div>
       ) : (
         <p className={cx("whitespace-pre-wrap leading-relaxed", skill ? "text-secondary" : "text-lg")}>{m.text}</p>
       )}
       {!editing && (
         <div className="flex flex-wrap gap-2">
           {m.state === "pending" && (
-            <Button size="sm" variant="default" onPress={() => void patch({ state: "active" })}>
-              {t("knowledge.approve")}
+            <Button size="sm" variant="default" onPress={() => void patch({ state: "active" }).then((applied) => applied.id !== m.id && go({ view: "knowledge", id: applied.id }))}>
+              {target ? t("knowledge.applyImprovement") : t("knowledge.approve")}
             </Button>
           )}
           {m.state === "forgotten" ? (
@@ -233,7 +245,37 @@ function Reader({ memory: m }: { memory: Memory }) {
           )}
         </div>
       )}
+      {m.state === "active" && <MemoryVersions memory={m} />}
     </article>
+  )
+}
+
+// Earlier texts of this memory or skill (each edit or approved improvement keeps the one before); any comes back.
+function MemoryVersions({ memory: m }: { memory: Memory }) {
+  const versions = useReading(memoryVersionsAtom(m.id)).items
+  const restore = useMutation(mutations.restoreMemory)
+  const [open, setOpen] = useState<string>()
+  if (!versions.length) return null
+  return (
+    <section className="flex flex-col gap-2 border-t border-subtle pt-5">
+      <h3 className="text-sm font-medium text-muted">{t("knowledge.versions")}</h3>
+      <Rows>
+        {versions.map((v) => (
+          <div key={v.id} className="flex flex-col gap-2 py-2">
+            <div className="flex items-center gap-3">
+              <Button size="sm" variant="ghost" className="-ml-2.5 min-w-0 flex-1 justify-start font-normal text-secondary" aria-expanded={open === v.id} onPress={() => setOpen(open === v.id ? undefined : v.id)}>
+                <span className="truncate">{`${v.by === "you" ? t("agent.byYou") : v.by} · ${formatDate(v.at)} ${formatAge(v.at)}`}</span>
+              </Button>
+              <Button size="sm" variant="ghost" onPress={() => void restore({ params: { id: m.id }, payload: { versionId: v.id }, reactivityKeys: ["memories"] })}>
+                <Undo2 />
+                {t("agent.restore")}
+              </Button>
+            </div>
+            {open === v.id && <LineDiff before={v.text} after={m.text} />}
+          </div>
+        ))}
+      </Rows>
+    </section>
   )
 }
 
