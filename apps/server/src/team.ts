@@ -8,7 +8,7 @@ import { type Access, type Agent, type AgentPermissions, DEFAULT_PERMISSIONS, ty
 import { handleOf } from "./context.ts"
 import { PROVIDERS } from "./engines.ts"
 
-// What a proposed agent may reach (as in a reference app): the least the work needs. connectors: MCP servers here by name,
+// What a proposed agent may reach: the least the work needs. connectors: MCP servers here by name,
 // each read or write (any not listed: no access); reason: why this agent, in a sentence. The person reviews and can change all of it before it is created.
 const POWERS = {
   web: { type: "boolean", description: "Search and read the web. Only if the work needs it." },
@@ -120,7 +120,7 @@ export const MEMORY_TOOL = {
   writes: false
 } as const
 
-// Skills (as in a reference app): read a recipe when the task matches; propose a new one or a better version of one, with
+// Skills: read a recipe when the task matches; propose a new one or a better version of one, with
 // the reason. Proposals wait for the person in Knowledge, who sees what changes before approving.
 export const SKILL_TOOLS = [
   {
@@ -208,8 +208,8 @@ export interface NewAgentInput {
   readonly notes: { readonly reason: string; readonly connectors: string } // shown on the card, not stored
 }
 
-// The powers asked for, as permissions: web as given (default on), the browser only when asked for (as in a reference app:
-// the least the work needs), connectors by name among
+// The powers asked for, as permissions: web as given (default on), the browser only when asked for (the least
+// the work needs), connectors by name among
 // the servers here (unlisted ones: no access, when any are listed); unknown names are an error to fix.
 function powersOf(args: Record<string, unknown>, servers: ReadonlyArray<{ id: string; name: string }>): { permissions: AgentPermissions; connectors: string } {
   const listed = Array.isArray(args.connectors) ? (args.connectors as Array<Record<string, unknown>>) : undefined
@@ -330,7 +330,7 @@ export const ROUTINES_TOOL = {
   writes: true
 } as const
 
-// ---------- the Builder: the agent that designs agents and teams with you (a reference app's "Tuca", for whole teams) ----------
+// ---------- the Builder: the agent that designs agents and teams with you ----------
 
 export const BUILDER = {
   name: "Builder",

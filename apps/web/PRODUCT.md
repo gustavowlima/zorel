@@ -24,7 +24,7 @@ Zorel is a workspace for AI agents organized into **projects**, with a **team of
 
 ## Positioning
 
-What T3 Code, a reference app and Claude Code cannot truthfully say:
+What other agent tools cannot truthfully say:
 
 1. **The context belongs to Zorel, not to the CLI session.** Switching model or provider at any time loses nothing. The context is assembled in layers by Zorel and serves as a resume point for any harness.
 2. **Learns by working.** The work becomes project knowledge (decisions, pitfalls, how-tos, sessions) with versions and undo. What is about the person goes through that person's approval.
@@ -54,7 +54,7 @@ What T3 Code, a reference app and Claude Code cannot truthfully say:
 - **Name: Zorel** (changed from "Zero" on 2026-11-04: "Zero" collided with other products and had no domain). Own domain: zorel.dev.
 - **Open source, Apache-2.0.**
 - **Tone:** direct, technical, no empty jargon.
-- **Visual direction:** chosen by the user as a commitment, **inspired by a reference app** (reference only; no code or CSS copied). The details live in `DESIGN.md`.
+- **Visual direction:** chosen by the user as a commitment. The details live in `DESIGN.md`.
 
 ## Evidence on Hand
 

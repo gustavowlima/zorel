@@ -1,6 +1,6 @@
 /* Design system (apps/web/DESIGN.md): dark by default, as in the screen prototype; compact
    24/28/32/36px controls, near-invisible borders, one blue accent, depth by tone (no shadows).
-   Inspired by a reference app, our own values. Colors come only from these tokens. */
+   Colors come only from these tokens. */
 @import "@fontsource-variable/inter";
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -245,7 +245,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Press feedback like a reference app: scale 0.97, < 300ms, hover only with a fine pointer. */
+/* Press feedback: scale 0.97, < 300ms, hover only with a fine pointer. */
 .pressable { transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out); }
 .pressable:active { transform: scale(0.97); }
 @media not ((hover: hover) and (pointer: fine)) { .pressable:hover { background-color: inherit; } }

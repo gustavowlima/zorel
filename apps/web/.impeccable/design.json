@@ -267,7 +267,6 @@
       "Don't usar sombras para profundidade.",
       "Don't criar um quinto tamanho de texto.",
       "Don't aplicar hover em dispositivos sem ponteiro fino.",
-      "Don't copiar código ou CSS do a reference app (licença PolyForm Noncommercial); só a direção.",
       "Don't usar Radix nem a paleta neutra e o --radius padrão do shadcn; as primitivas saem do shadcn --base aria já mapeadas para os tokens --z-*.",
       "Don't pintar botão, link ou estado com cor de agente.",
       "Don't pôr card dentro de card: dentro do cartão de conteúdo, separe por linha e espaço."

@@ -12,4 +12,4 @@
 2026-11-04 | polish of global components (concentric radii, offsets, integer line-heights) and home screen with ghost pickers outside the box | impeccable critique + user request
 2026-11-04 | contrast (accent and light-theme grays), IconButton xs/sm/md, pill shape, header actions sm, document without scrolling | sweep of all screens + critical bug
 2026-11-04 | Settings refined by impeccable critique: ListRow, status with action on providers, visible active nav, empty states, General split, storage with the browser | user request
-2026-11-04 | Build with AI in full-screen steps and powers as pickers (no access / read / read and write) | user found it corporate; a reference app's model
+2026-11-04 | Build with AI in full-screen steps and powers as pickers (no access / read / read and write) | user found it corporate; simpler, guided creation

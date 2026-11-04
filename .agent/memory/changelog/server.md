@@ -6,7 +6,7 @@
 2026-11-03 | automatic account\/model failover becomes supported, optional and with a terms notice (phase 2b) | user request; before it was manual switching only
 2026-11-03 | database: direct bun:sqlite → Drizzle 1.0 rc over @effect/sql (phase 1) | native Effect 4 integration, SQLite→Postgres portability, generated migrations
 2026-11-03 | local driver: @effect/sql-sqlite-bun → @effect/sql-libsql; RAG enters the design (D18) | native vectors without extension; user request
-2026-11-03 | memories+skills → learned knowledge pages; upload RAG and libSQL removed; driver back to sqlite-bun | request: light, simple, efficient; knowledge base = learning (ai-memory)
+2026-11-03 | memories+skills → learned knowledge pages; upload RAG and libSQL removed; driver back to sqlite-bun | request: light, simple, efficient; knowledge base = learning
 2026-11-03 | shadcn headless base: React Aria (--base aria), not Radix nor Base UI | user decision; built-in a11y and i18n
 2026-11-03 | turn event contract (events.ts) and subscribeStatus | engine first; prototype becomes the event spec
 2026-11-03 | database migrated to Drizzle (effect-sqlite-bun), repository in Effect, adoption of the MVP database with backup | D9, phase 1
@@ -25,26 +25,26 @@
 2026-11-03 | position on projects and chats + reorder endpoints | drag and drop in the sidebar
 2026-11-03 | audit log with evlog writing to SQLite | user request
 2026-11-03 | context endpoint, window in the catalog, $skill in the turn | new composer
-2026-11-03 | claude-cli loads user/project/local settings with policy-only permissions and no hooks; CLI slash commands listed and dispatched | run Claude Code's own / commands like T3 Code
-2026-11-03 | run panel: project scripts in terminal tabs, local servers with open in browser and stop | phase 3c (gap vs T3 Code)
-2026-11-03 | git in chat: status, commit with model-drafted message, push, PR via gh, new branch; audited | gap vs T3 Code
-2026-11-03 | worktree per chat (POST/DELETE /api/chats/:id/worktree) | gap vs T3 Code
+2026-11-03 | claude-cli loads user/project/local settings with policy-only permissions and no hooks; CLI slash commands listed and dispatched | run Claude Code's own / commands
+2026-11-03 | run panel: project scripts in terminal tabs, local servers with open in browser and stop | phase 3c
+2026-11-03 | git in chat: status, commit with model-drafted message, push, PR via gh, new branch; audited | git workflow without leaving the chat
+2026-11-03 | worktree per chat (POST/DELETE /api/chats/:id/worktree) | isolate parallel chats
 2026-11-03 | agents create/edit agents via tools with approval card; access limited to the proposer's | phase 4
 2026-11-03 | agent versions with restore; export/import profile without account | phase 4
-2026-11-03 | human-evidence rule, confirm and zero_search_memories (ideas from a reference app) | more reliable memory
-2026-11-03 | protection against loops and repeated failures in the turn | idea from a reference app
-2026-11-03 | routines: cron, run now, local webhook, tool zero_routines | phase 7 (gap vs reference apps)
-2026-11-03 | Builder (Build with AI) and creating a whole team in one card | user request (a reference app's Tuca, for several)
-2026-11-03 | pause everything and system notifications | item 1 of the list (a reference app)
-2026-11-03 | resume automatically on limit reset | item 2 of the list (T3 Code)
-2026-11-03 | edit from here (rewind) with optional file undo | item 4 (T3 Code)
+2026-11-03 | human-evidence rule, confirm and zero_search_memories | more reliable memory
+2026-11-03 | protection against loops and repeated failures in the turn | stop runaway turns
+2026-11-03 | routines: cron, run now, local webhook, tool zero_routines | phase 7
+2026-11-03 | Builder (Build with AI) and creating a whole team in one card | user request: one assistant to create several agents at once
+2026-11-03 | pause everything and system notifications | item 1 of the list
+2026-11-03 | resume automatically on limit reset | item 2 of the list
+2026-11-03 | edit from here (rewind) with optional file undo | item 4
 2026-11-03 | phase 4 closed: default agent per project and connector catalog | item 5
-2026-11-03 | browser: hover, select, scroll, upload, dialogs and browser_run | item 6 (a reference app)
-2026-11-03 | knowledge pages with versions and agent tools | item 7, phase 3b (a reference app)
+2026-11-03 | browser: hover, select, scroll, upload, dialogs and browser_run | item 6
+2026-11-03 | knowledge pages with versions and agent tools | item 7, phase 3b
 2026-11-03 | ACP: OpenCode and Gemini CLI through one adapter | item 8, phase 5
 2026-11-04 | ACP agents confined in the macOS sandbox below full access | before, Workspace level allowed everything
-2026-11-04 | per-agent permissions (web, browser, connectors, always allow, request access) | user request, a reference app's model
-2026-11-04 | skills: read on demand, propose improvement with diff, versions and restore | a reference app
+2026-11-04 | per-agent permissions (web, browser, connectors, always allow, request access) | user request: per-agent control of what it may reach
+2026-11-04 | skills: read on demand, propose improvement with diff, versions and restore | skills improve with review and can be rolled back
 2026-11-04 | selectable computer skills and option to use Claude Code/Codex native skills | user request
 2026-11-04 | OAuth connectors (oauth.ts, mcp_servers.auth, sign-in/callback routes) | user asked for a one-click connectors section
 2026-11-04 | Hub.refused + env in MCP server patch | reconnect a connector with a refused credential
@@ -55,7 +55,7 @@
 2026-11-04 | terminal on Windows (PowerShell) and ACP sandbox on Linux (bubblewrap) | rule: everything on all three OSes
 2026-11-04 | zorel_ask_user (question with options, answer goes back to the agent) | team: agent asks instead of guessing
 2026-11-04 | export/import workspace (phase 7) | move to another computer without losing projects, agents, chats and knowledge
-2026-11-04 | closing of the mention handoff, follow-up without mention stays with the colleague, Status/Result/Evidence format, notice at the limit | real team test + ideas from a reference app/a reference app
+2026-11-04 | closing of the mention handoff, follow-up without mention stays with the colleague, Status/Result/Evidence format, notice at the limit | real team test
 2026-11-04 | cheap router for messages without mention; MCP gateway in SSE with ping | user asked for the router; question expired at 5 min
 2026-11-04 | fs-ops.ts + POST /api/chats/:id/fs; cross-platform openFile | interactive Files tab; openFile only worked on macOS
 2026-11-04 | GitStatus.files: string[] -> {path,status}[] | Git panel shows A/M/D/R per file

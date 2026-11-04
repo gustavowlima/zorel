@@ -7,7 +7,7 @@ updated: 2026-11-03
 
 - --z-* tokens in apps/web/src/styles.css; dark default, light via [data-theme="light"]
 - @theme inline exposes tokens as utilities (bg-surface, text-muted, border-subtle, h-control*)
-- control scale 24/28/32/36px (control-xs/sm/control/lg), inspired by a reference app
+- control scale 24/28/32/36px (control-xs/sm/control/lg)
 - primitives in apps/web/src/ui/ (index.tsx re-exports; button.tsx); features import from "@/ui" and do not style controls by hand
 - shadcn initialized: components.json (style aria-nova, lucide icons, alias ui → @/ui); `bunx shadcn add X` generates into src/ui and the component is adapted to the tokens before use
 - Button = React Aria (onPress, isDisabled; states data-hovered/data-pressed/data-focus-visible); no title prop, use <Tooltip content>
@@ -42,17 +42,17 @@ updated: 2026-11-03
 
 - shadcn's bg-muted / bg-accent / bg-secondary: those names are ours (dimmed text, blue, secondary text). When adopting a component, swap for bg-control/bg-control-hover
 - Geist font and Nova preset neutral palette: removed; the font is Inter
+- copying code or CSS from projects whose license forbids it (noncommercial licenses such as PolyForm Noncommercial): other apps are a source of ideas only; anything actually copied must have a compatible license and an entry in NOTICE
 
 - literal color outside styles.css: breaks light theme
 - provider logo on white background (Codex color variant had a white tile): use the mono one
 - a11y props via conditional spread on the svg: biome does not see them (noSvgWithoutTitle)
-- copying CSS/code from a reference app: PolyForm Noncommercial license
 
 ## target (D19, ARCHITECTURE 10.3)
 
 - authority: apps/web/PRODUCT.md (/impeccable init, Operate mode) + apps/web/DESIGN.md (/impeccable document, YAML tokens)
 - primitives in apps/web/src/ui/ as the only visual API; complex ones on top of React Aria Components (via shadcn --base aria); screens never import headless/icons directly
-- a reference app foundation (ideas only): scale 24/28/32/36, dark default + light only swaps values, tokens only, hover only on fine pointer, scale 0.97, <300ms + reduced motion, required states + keyboard + label
+- foundation: scale 24/28/32/36, dark default + light only swaps values, tokens only, hover only on fine pointer, scale 0.97, <300ms + reduced motion, required states + keyboard + label
 - impeccable flow: shape before a new screen; detector on (hooks on); audit when finishing a screen; one polish pass when closing a phase; harden/clarify for errors and i18n; extract when a component repeats in 2+ screens
 - check:ui in CI (literals, scale, hand-made button/dialog, direct import of headless/icons); neither Storybook nor gallery
 - shadcn (CLI 4.x) as GENERATOR of the primitives: `shadcn init --base aria` (React Aria Components; NOT Radix nor Base UI, user decision 2026-11-03), code copied into src/ui and ours; shadcn semantic tokens mapped once to --z-*; nothing from the neutral palette/default --radius; heights on the 24/28/32/36 scale

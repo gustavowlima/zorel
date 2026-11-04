@@ -3,7 +3,7 @@
 //   base → agent → channel → user memories → project (brief + memories) → agent memories
 //   → skills → chat summary → memories retrieved by the current message → latest messages.
 // Each layer has a budget; what doesn't fit stays searchable (FTS) and comes back when relevant.
-// Rolling summary + memories + proposed skills model derived from a reference app (Apache-2.0), see NOTICE.
+// Parts of the rolling summary + memories + proposed skills model are third-party code, see NOTICE.
 import { join } from "node:path"
 import type { Agent, Chat, Memory, Message, Project } from "@zorel/contracts"
 import { Option, Schema } from "effect"
@@ -253,7 +253,7 @@ const ref = (id: unknown) => {
 }
 
 // Tolerates text around the JSON; drops items outside the allowed scopes, and memories without evidence from the
-// person: `said(n)` is message #n of the chunk when it was theirs (a reference app's rule — an agent's guess never becomes a
+// person: `said(n)` is message #n of the chunk when it was theirs (an agent's guess never becomes a
 // memory), and `agents` is what the agents said (their names and numbers can't slip into a memory). Credentials are
 // dropped by the caller (redact is async).
 export function parseConsolidation(text: string, allowed: ReadonlyArray<string>, said: (n: number) => string | undefined = () => "", agents = ""): Consolidation | undefined {
