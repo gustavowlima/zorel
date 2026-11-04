@@ -114,3 +114,4 @@ updated: 2026-11-03
 - retomar no reset: chats.resume_at; runtime grava quando todas as rotas estão em limit (held reason limit) e o turno não agiu; routines.ts `resumes` no mesmo tick envia RESUME_TEXT (clientId resume:…) e limpa; send manual limpa; ChatPatch aceita resumeAt null
 - editar daqui: POST /api/chats/:id/rewind (Conflict se runtime.busy; files → restore dos turnos posteriores do mais novo ao mais velho, UndoConflict para tudo; deleteMessagesFrom; zera resumo se summaryUntil >= corte; runtime.forget fecha sessões chatId:*)
 - projects.default_agent_id (validado: global ou do projeto); home pré-seleciona. Responsabilidades = description do agente (decisão: sem campo novo)
+- navegador: browser_hover/select/scroll/upload(root = cwd do chat)/dialog/run (stepOf mapeia passos; sem JS arbitrário); diálogos via page.on("dialog") → dismiss ou nextDialog, relatados em runBrowserTool. Perfis por agente: adiado (custo de processo)

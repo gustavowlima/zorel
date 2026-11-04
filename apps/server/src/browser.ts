@@ -7,7 +7,9 @@
 import { join } from "node:path"
 import { Context, Effect, Layer } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { type BrowserContext, type CDPSession, chromium, type Page } from "playwright-core"
+import { existsSync } from "node:fs"
+import { resolve, sep } from "node:path"
+import { type BrowserContext, type CDPSession, chromium, type Dialog, type Page } from "playwright-core"
 import { DataDir } from "./chat.ts"
 import { Store } from "./db.ts"
 
@@ -29,6 +31,8 @@ interface ChatBrowser {
   userControl: boolean // a person holds the browser: agent tools are refused
   readonly watchers: Set<Watcher>
   lastFrame?: Uint8Array | undefined // a still page sends no new frames: a panel that attaches gets this one
+  dialogs: string[] // alerts/confirms/prompts the page opened since the last tool result (told to the agent)
+  nextDialog?: { accept: boolean; text?: string | undefined } | undefined // how to answer the next one (default: dismiss)
 }
 
 // A Browser panel attached to a chat: it gets state changes and the active tab's frames.
@@ -67,7 +71,7 @@ export class Browsers {
   private chat(chatId: string): ChatBrowser {
     let c = this.chats.get(chatId)
     if (!c) {
-      c = { tabs: new Map(), active: undefined, userControl: false, watchers: new Set() }
+      c = { tabs: new Map(), active: undefined, userControl: false, watchers: new Set(), dialogs: [] }
       this.chats.set(chatId, c)
     }
     return c
@@ -106,15 +110,35 @@ export class Browsers {
     })
     // A page that opens a popup: the popup becomes a tab of the same chat.
     page.on("popup", (popup) => void this.adopt(chatId, popup))
+    page.on("dialog", (d) => void this.dialog(chatId, d))
     if (url) await page.goto(normalizeUrl(url), { timeout: NAV_MS, waitUntil: "domcontentloaded" }).catch(() => undefined)
     await this.watch(chatId)
     changed()
     return id
   }
 
+  // A page's alert/confirm/prompt never blocks the agent: it is answered (dismissed unless the agent asked to
+  // accept the next one with browser_dialog) and reported in the next tool result.
+  private async dialog(chatId: string, d: Dialog) {
+    const c = this.chat(chatId)
+    const how = c.nextDialog
+    c.nextDialog = undefined
+    if (how?.accept) await d.accept(how.text).catch(() => undefined)
+    else await d.dismiss().catch(() => undefined)
+    c.dialogs.push(`${d.type()} "${d.message().slice(0, 300)}" → ${how?.accept ? "accepted" : "dismissed"}`)
+  }
+  setNextDialog(chatId: string, accept: boolean, text?: string) {
+    this.chat(chatId).nextDialog = { accept, text }
+  }
+  takeDialogs(chatId: string): string[] {
+    const c = this.chat(chatId)
+    return c.dialogs.splice(0)
+  }
+
   private async adopt(chatId: string, page: Page) {
     const id = crypto.randomUUID()
     const c = this.chat(chatId)
+    page.on("dialog", (d) => void this.dialog(chatId, d))
     c.tabs.set(id, page)
     c.active = id
     page.on("close", () => {
@@ -257,6 +281,43 @@ export const BROWSER_TOOLS = [
     description: "Go back in the active tab's history.",
     inputSchema: { properties: {} },
     writes: true
+  },
+  {
+    name: "browser_hover",
+    description: "Move the pointer over the element with this ref (menus, tooltips).",
+    inputSchema: { properties: { ref: { type: "string" } }, required: ["ref"] },
+    writes: false
+  },
+  {
+    name: "browser_select",
+    description: "Choose option(s) of the <select> with this ref, by value or label.",
+    inputSchema: { properties: { ref: { type: "string" }, values: { type: "array", items: { type: "string" } } }, required: ["ref", "values"] },
+    writes: true
+  },
+  {
+    name: "browser_scroll",
+    description: "Scroll the active tab by dy pixels (negative goes up); read again with browser_snapshot.",
+    inputSchema: { properties: { dy: { type: "number" } }, required: ["dy"] },
+    writes: false
+  },
+  {
+    name: "browser_upload",
+    description: "Put files from the chat's folder into the file input (or the button that opens a file picker) with this ref. paths: relative to the chat's folder.",
+    inputSchema: { properties: { ref: { type: "string" }, paths: { type: "array", items: { type: "string" } } }, required: ["ref", "paths"] },
+    writes: true
+  },
+  {
+    name: "browser_dialog",
+    description: "Alerts, confirms and prompts are dismissed and reported in your next result. Call this to accept the NEXT one instead (text: a prompt's answer).",
+    inputSchema: { properties: { accept: { type: "boolean" }, text: { type: "string" } }, required: ["accept"] },
+    writes: false
+  },
+  {
+    name: "browser_run",
+    description:
+      "Do several steps in one call and get the page back once (fewer round trips than one tool per step). steps: up to 20 of {navigate:url} | {click:ref} | {type:ref, text, submit?} | {press:key} | {hover:ref} | {select:ref, values} | {scroll:dy} | {wait:text|seconds}. Stops at the first step that fails, saying which.",
+    inputSchema: { properties: { steps: { type: "array", maxItems: 20, items: { type: "object" } } }, required: ["steps"] },
+    writes: true
   }
 ] as const
 
@@ -265,9 +326,30 @@ const str = (v: unknown) => (typeof v === "string" ? v : "")
 
 const pageLine = async (page: Page) => `${(await page.title().catch(() => "")) || "(untitled)"} — ${page.url()}`
 
-// One tool call on the chat's browser; the text the model gets back.
-export async function runBrowserTool(b: Browsers, chatId: string, name: BrowserToolName, args: Record<string, unknown>): Promise<string> {
+// One tool call on the chat's browser; the text the model gets back (with any dialog the page opened meanwhile).
+// root: the chat's folder (uploads come only from inside it).
+export async function runBrowserTool(b: Browsers, chatId: string, name: BrowserToolName, args: Record<string, unknown>, root?: string): Promise<string> {
   b.guard(chatId)
+  const text = await browserStep(b, chatId, name, args, root)
+  const dialogs = b.takeDialogs(chatId)
+  return dialogs.length ? `${text}\nDialogs: ${dialogs.join("; ")}` : text
+}
+
+// A browser_run step to the tool it stands for.
+export function stepOf(step: Record<string, unknown>): { name: BrowserToolName; args: Record<string, unknown> } | undefined {
+  if (typeof step.navigate === "string") return { name: "browser_navigate", args: { url: step.navigate } }
+  if (typeof step.click === "string") return { name: "browser_click", args: { ref: step.click } }
+  if (typeof step.type === "string") return { name: "browser_type", args: { ref: step.type, text: step.text, submit: step.submit } }
+  if (typeof step.press === "string") return { name: "browser_press", args: { key: step.press } }
+  if (typeof step.hover === "string") return { name: "browser_hover", args: { ref: step.hover } }
+  if (typeof step.select === "string") return { name: "browser_select", args: { ref: step.select, values: step.values } }
+  if (typeof step.scroll === "number") return { name: "browser_scroll", args: { dy: step.scroll } }
+  if (typeof step.wait === "string") return { name: "browser_wait", args: { text: step.wait } }
+  if (typeof step.wait === "number") return { name: "browser_wait", args: { seconds: step.wait } }
+  return undefined
+}
+
+async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, args: Record<string, unknown>, root?: string): Promise<string> {
   switch (name) {
     case "browser_navigate": {
       const page = await b.page(chatId)
@@ -322,6 +404,53 @@ export async function runBrowserTool(b: Browsers, chatId: string, name: BrowserT
       const page = await b.page(chatId)
       await page.goBack({ timeout: NAV_MS, waitUntil: "domcontentloaded" })
       return `Back. Now: ${await pageLine(page)}`
+    }
+    case "browser_hover": {
+      const page = await b.page(chatId)
+      await page.locator(`aria-ref=${str(args.ref)}`).hover({ timeout: ACTION_MS })
+      return "Hovered."
+    }
+    case "browser_select": {
+      const page = await b.page(chatId)
+      const values = Array.isArray(args.values) ? args.values.map(String) : [str(args.values)]
+      const chosen = await page.locator(`aria-ref=${str(args.ref)}`).selectOption(values, { timeout: ACTION_MS })
+      return `Selected ${chosen.join(", ") || "nothing"}.`
+    }
+    case "browser_scroll": {
+      const page = await b.page(chatId)
+      await page.mouse.wheel(0, Number(args.dy) || 0)
+      return "Scrolled."
+    }
+    case "browser_upload": {
+      if (!root) throw new BrowserError("Uploads need a chat folder.")
+      const paths = (Array.isArray(args.paths) ? args.paths : []).map((p) => resolve(root, String(p)))
+      const outside = paths.find((p) => !(p === root || p.startsWith(root + sep)) || !existsSync(p))
+      if (!paths.length || outside) throw new BrowserError(`Only existing files inside the chat's folder${outside ? ` (not ${outside})` : ""}.`)
+      const page = await b.page(chatId)
+      const target = page.locator(`aria-ref=${str(args.ref)}`)
+      // A file input takes the files directly; a button that opens a picker gets them through the chooser.
+      await target.setInputFiles(paths, { timeout: ACTION_MS }).catch(async () => {
+        const [chooser] = await Promise.all([page.waitForEvent("filechooser", { timeout: ACTION_MS }), target.click({ timeout: ACTION_MS })])
+        await chooser.setFiles(paths)
+      })
+      return `Attached ${paths.length} file${paths.length > 1 ? "s" : ""}.`
+    }
+    case "browser_dialog": {
+      b.setNextDialog(chatId, args.accept === true, typeof args.text === "string" ? args.text : undefined)
+      return args.accept === true ? "The next dialog will be accepted." : "The next dialog will be dismissed."
+    }
+    case "browser_run": {
+      const steps = (Array.isArray(args.steps) ? args.steps : []).slice(0, 20)
+      for (const [i, raw] of steps.entries()) {
+        const step = stepOf((raw ?? {}) as Record<string, unknown>)
+        if (!step || step.name === "browser_run") throw new BrowserError(`Step ${i + 1} is not one of navigate, click, type, press, hover, select, scroll, wait.`)
+        try {
+          await browserStep(b, chatId, step.name, step.args, root)
+        } catch (e) {
+          throw new BrowserError(`Step ${i + 1} (${step.name.replace("browser_", "")}) failed: ${e instanceof Error ? e.message.split("\n")[0] : e}`)
+        }
+      }
+      return `Did ${steps.length} step${steps.length === 1 ? "" : "s"}.\n${await browserStep(b, chatId, "browser_snapshot", {}, root)}`
     }
   }
 }
