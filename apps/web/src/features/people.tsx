@@ -33,7 +33,7 @@ export function TeamPicker({ chat }: { chat: Chat }) {
   const agents = useList(agentsAtom)
   const update = useMutation(mutations.updateChat)
   const team = chat.agentIds.flatMap((id) => agents.find((a) => a.id === id) ?? [])
-  const candidates = agents.filter((a) => (a.projectId === null || a.projectId === chat.projectId) && !chat.agentIds.includes(a.id))
+  const candidates = agents.filter((a) => !a.builtin && (a.projectId === null || a.projectId === chat.projectId) && !chat.agentIds.includes(a.id))
   const lead = team[0]
   const setTeam = (agentIds: ReadonlyArray<string>, model?: string) =>
     update({ params: { id: chat.id }, payload: { agentIds, ...(model && { model }) }, reactivityKeys: ["chats"] })

@@ -87,7 +87,7 @@ export function ChatView({ chat }: { chat: Chat }) {
   // What "@", "$" and "/" offer in this chat: its agents, the skills it can use, Zero's commands.
   const scopes = new Set(["user", ...(chat.projectId ? [`project:${chat.projectId}`] : []), ...chat.agentIds.map((id) => `agent:${id}`)])
   // "#": every agent this chat can use; the one picked answers from now on (joins the chat if it wasn't in it).
-  const available = agents.filter((a) => a.projectId === null || a.projectId === chat.projectId)
+  const available = agents.filter((a) => !a.builtin && (a.projectId === null || a.projectId === chat.projectId))
   const makeLead = (a: Agent) =>
     void updateChat({ params: { id: chat.id }, payload: { agentIds: [a.id, ...chat.agentIds.filter((id) => id !== a.id)], model: a.model }, reactivityKeys: ["chats", "context"] })
   const sourcesWith = (files: ReadonlyArray<WorkspaceFile>): ComposerSources => ({
@@ -439,7 +439,7 @@ export function RenameDialog({ isOpen, onClose, title, onSave }: { isOpen: boole
 
 type Item = { at: number; message: Message } | { at: number; note: Note }
 
-function Timeline({ chat, state, agents, onView, onEdit }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void }) {
+export function Timeline({ chat, state, agents, onView, onEdit }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void }) {
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true) // follow new content only while the reader is at the bottom
   const items: Item[] = [...state.messages.map((m) => ({ at: m.at, message: m })), ...state.notes.map((n) => ({ at: n.at, note: n }))].sort((a, b) => a.at - b.at)

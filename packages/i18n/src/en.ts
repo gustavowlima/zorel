@@ -938,16 +938,47 @@ export const en = {
     deleteTitle: "Delete {name}?",
     deleteBody: "The routine stops. Its chat stays, with what it did."
   },
+  builder: {
+    title: "Build with AI",
+    subtitle: "Describe the work; the Builder proposes the agents.",
+    manual: "Build it myself",
+    failed: "Couldn't start the Builder. Check that a model is available in Settings.",
+    conversation: "Conversation with the Builder",
+    introTitle: "What should your agents do?",
+    introBody: "Say what you want to hand off. The Builder asks a few questions, then proposes one agent or a team for you to review.",
+    placeholder: "E.g. review every pull request in this project and point out risky changes",
+    suggest: {
+      review: "Review pull requests and flag risky changes",
+      triage: "Triage new issues every morning",
+      docs: "Keep the docs in step with the code",
+      team: "A small team to plan, build and test features"
+    },
+    proposal: "Proposal",
+    waiting: "When the Builder proposes an agent, it shows up here to review before anything is created.",
+    create: "Create",
+    notNow: "Not now",
+    more: "Show all instructions",
+    less: "Show less",
+    inProject: "In this project",
+    everywhere: "In every project",
+    created: "Created",
+    createdHint: "Open one to set its tools and access."
+  },
   agents: {
     title: "Agents",
-    subtitle: "Everyone on the team. Agents can also propose new teammates from a chat; you approve them first.",
+    subtitle: "Your team: global agents and each project's.",
+    withAi: "Build with AI",
+    blank: "Blank agent",
+    importFile: "Import from file",
+    open: "Open",
+    actions: "Actions for {name}",
     global: "Global",
     globalHint: "Available in every project.",
     noGlobal: "No global agents yet.",
     working: "working",
     build: "Build with AI",
     empty: "No agents yet",
-    emptyHint: "Create one here, or use Build with AI: describe the work and the Builder proposes the agents."
+    emptyHint: "Describe the work and the Builder proposes the agents, or start from a blank one."
   },
   access: {
     title: "What it can do without asking",

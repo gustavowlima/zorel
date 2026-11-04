@@ -117,6 +117,7 @@ export const Agent = Schema.Struct({
   failover: FailoverList,
   access: Access,
   permissions: AgentPermissions,
+  builtin: Schema.optionalKey(Schema.NullOr(Schema.Literal("builder"))), // Zero's own agent: kept out of lists and pickers
   createdAt: Schema.Number
 })
 export type Agent = typeof Agent.Type

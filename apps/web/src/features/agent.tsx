@@ -261,7 +261,7 @@ function History({ agent }: { agent: Agent }) {
 
 export const EXPORT_KIND = "zero.agent"
 
-function exportAgent(a: Agent) {
+export function exportAgent(a: Agent) {
   const data = {
     kind: EXPORT_KIND,
     version: 1,
