@@ -15,7 +15,7 @@
  * paper oklch(14.5% 0.004 260) · accent oklch(60.5% 0.2 255) brand blue · display + body: Inter 500/400 (the app's face) · outlier: JetBrains Mono (commands, diffs)
  * studied: yes · DNA kept: near-black neutral paper, tight grotesk at 500, centred hero, white pill + dark pill, the product as the proof, 2×2 cards each holding a live bit of UI, questions at the end
  * pre-emit critique: P4 H5 E4 S5 R4 V4
- * No window chrome: the panel is Zorel's layout, not a drawing of a computer. No glow, no motion beyond hover. */
+ * No window chrome: the panel is Zorel's layout, not a drawing of a computer. No glow, no motion beyond hover. The panel follows the app: rail, Chats, header, messages, the card that waits, the composer. */
 * { box-sizing: border-box; }
 html, body { overflow-x: clip; }
 body { margin: 0; background: var(--color-paper); color: var(--color-ink); font: 400 var(--text-md)/1.55 var(--font-body); -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01"; }
@@ -55,23 +55,63 @@ svg.i { width: 1em; height: 1em; flex: none; vertical-align: -0.125em; }
 .sub .i { margin-right: 3px; }
 .ctas { margin-top: var(--space-lg); display: flex; gap: var(--space-xs); justify-content: center; flex-wrap: wrap; }
 
-/* ---------- the product: Zorel's own layout, in HTML ---------- */
-.app { margin-top: var(--space-lg); display: grid; grid-template-columns: 15rem minmax(0, 1fr); border-radius: var(--radius-lg); background: var(--color-card); box-shadow: inset 0 0 0 1px var(--color-rim); overflow: hidden; text-align: left; font-size: var(--text-sm); }
-.side { padding: var(--space-sm); border-right: 1px solid var(--color-rim); display: flex; flex-direction: column; gap: 2px; }
-.side .label { padding: var(--space-xs) var(--space-2xs) var(--space-3xs); font-size: var(--text-2xs); color: var(--color-ink-3); }
-.row { display: flex; align-items: center; gap: var(--space-2xs); padding: 7px var(--space-2xs); border-radius: var(--radius-sm); color: var(--color-ink-2); white-space: nowrap; min-width: 0; }
-.row.on { background: var(--color-raised); color: var(--color-ink); }
-.row .meta { margin-left: auto; font-size: var(--text-2xs); color: var(--color-ink-3); display: inline-flex; align-items: center; gap: 4px; }
+/* ---------- the product: Zorel's own layout (rail, chats, chat, the card that waits, the composer), in HTML ---------- */
+.app { margin-top: var(--space-xl); display: grid; grid-template-columns: 3.25rem 15.5rem minmax(0, 1fr); height: 40rem; border-radius: var(--radius-lg); background: var(--color-app); box-shadow: inset 0 0 0 1px var(--color-rim), 0 40px 80px -40px oklch(0% 0 0 / 0.7); overflow: hidden; text-align: left; font-size: var(--text-sm); }
+svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.rail { background: var(--color-rail); display: flex; flex-direction: column; align-items: center; gap: 6px; padding-block: var(--space-sm); color: var(--color-ink-3); }
+.rail .z { width: 20px; height: 20px; margin-bottom: var(--space-2xs); color: var(--color-ink); }
+.rail .ic { position: relative; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; }
+.rail .ic.on { background: var(--color-raised); color: var(--color-ink); }
+.rail .badge { position: absolute; top: 2px; right: 1px; min-width: 15px; height: 15px; border-radius: 99px; background: var(--color-accent); color: var(--color-on-accent); font: 600 9.5px/15px var(--font-body); text-align: center; }
+.rail .gap { flex: 1; }
+.ring { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--color-add) var(--p), var(--color-raised) 0); }
+.ring span { width: 24px; height: 24px; border-radius: 50%; background: var(--color-rail); display: grid; place-items: center; color: var(--color-ink); }
+.ring .i { width: 14px; height: 14px; }
+.list { background: var(--color-side); padding: var(--space-sm) var(--space-2xs); display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--color-rim); min-width: 0; }
+.list .h { display: flex; align-items: center; justify-content: space-between; padding: 2px var(--space-2xs) var(--space-2xs); color: var(--color-ink-2); font-size: var(--text-xs); }
+.list .h span { display: inline-flex; align-items: center; gap: 3px; }
+.list .h svg.l { width: 14px; height: 14px; }
+.item { padding: 8px 10px; border-radius: 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; }
+.item.on { background: var(--color-raised); box-shadow: inset 0 0 0 1px var(--color-rim-strong); }
+.item b { font-weight: 400; color: var(--color-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item time { font-size: var(--text-2xs); color: var(--color-ink-3); }
+.item .by { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; color: var(--color-ink-3); font-size: var(--text-xs); white-space: nowrap; overflow: hidden; }
+.item .by.wait { color: var(--color-accent-text); }
+.stack { display: inline-flex; } .stack .av + .av { margin-left: -4px; box-shadow: 0 0 0 1.5px var(--color-side); }
+.proj { display: flex; justify-content: space-between; padding: 7px 10px; color: var(--color-ink); }
+.proj span:last-child { color: var(--color-ink-3); font-size: var(--text-xs); }
+.list .h.sp { margin-top: var(--space-sm); }
+.main { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; }
+.bar { display: flex; align-items: center; gap: var(--space-xs); padding: 0 var(--space-md); height: 52px; border-bottom: 1px solid var(--color-rim); color: var(--color-ink-3); white-space: nowrap; }
+.bar b { color: var(--color-ink); font-weight: 600; font-size: var(--text-md); }
+.bar .r { margin-left: auto; display: flex; align-items: center; gap: var(--space-sm); }
+.bar .act { display: inline-flex; align-items: center; gap: 4px; }
+.feed { padding: var(--space-md) clamp(var(--space-sm), 3vw, var(--space-xl)); display: flex; flex-direction: column; gap: var(--space-md); overflow: hidden; }
+.you { align-self: flex-end; max-width: 30rem; padding: 12px 16px; border-radius: 18px; background: var(--color-raised); color: var(--color-ink); line-height: 1.5; }
+.msg { display: grid; grid-template-columns: 26px minmax(0, 1fr); column-gap: var(--space-xs); row-gap: 4px; max-width: 42rem; }
+.msg .av { width: 26px; height: 26px; border-radius: 8px; font-size: 12px; }
+.msg .who { align-self: center; font-weight: 600; color: var(--color-ink); }
+.msg p { grid-column: 2; color: var(--color-ink); line-height: 1.55; }
+.msg code { font-size: 0.86em; padding: 1px 5px; border-radius: 5px; background: var(--color-raised); }
+.handed { display: flex; align-items: center; gap: var(--space-sm); color: var(--color-ink-3); font-size: var(--text-xs); white-space: nowrap; }
+.handed::before, .handed::after { content: ""; height: 1px; flex: 1; background: var(--color-rim-strong); }
+.dock { padding: 0 clamp(var(--space-sm), 3vw, var(--space-xl)) var(--space-sm); display: flex; flex-direction: column; gap: var(--space-2xs); }
+.tray { border-radius: 16px; background: var(--color-app); box-shadow: inset 0 0 0 1px var(--color-rim-strong); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.tray .lab { display: inline-flex; align-items: center; gap: 6px; color: var(--color-accent-text); font-size: var(--text-xs); }
+.tray .lab svg.l { width: 15px; height: 15px; }
+.tray .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tray .what { flex: 1; min-width: 12rem; display: flex; flex-direction: column; }
+.tray .what b { font-weight: 500; color: var(--color-ink); }
+.tray .what code { color: var(--color-ink-3); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-btn { display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 8px; font-weight: 500; color: var(--color-ink-2); white-space: nowrap; }
+.ui-btn.primary { background: var(--color-accent-btn); color: var(--color-on-accent); }
+.composer { border-radius: 16px; box-shadow: inset 0 0 0 1px var(--color-rim-strong); display: flex; align-items: center; gap: var(--space-xs); padding: 8px 8px 8px 14px; color: var(--color-ink-3); white-space: nowrap; }
+.composer .ph { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.composer .model { display: inline-flex; align-items: center; gap: 6px; color: var(--color-ink-2); }
+.composer .send { width: 34px; height: 34px; border-radius: 50%; background: var(--color-accent-btn); color: var(--color-on-accent); display: grid; place-items: center; }
+.av.l { background: var(--color-agent-2); } .av.c { background: var(--color-agent-1); } .av.t { background: var(--color-agent-3); } .av.d { background: var(--color-agent-4); color: var(--color-on-accent); }
+
 .av { width: 20px; height: 20px; border-radius: 6px; display: inline-grid; place-items: center; flex: none; font: 600 11px/1 var(--font-body); color: var(--color-on-accent); }
-.av.z { background: var(--color-accent); } .av.c { background: var(--color-agent-1); } .av.t { background: var(--color-agent-2); } .av.d { background: var(--color-agent-4); }
-.av.p { background: var(--color-raised); color: var(--color-ink-2); box-shadow: inset 0 0 0 1px var(--color-rim); }
-.chat { padding: var(--space-lg) clamp(var(--space-sm), 3vw, var(--space-xl)); display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
-.you { align-self: flex-end; max-width: 30rem; padding: 10px 14px; border-radius: 16px 16px 4px 16px; background: var(--color-raised); }
-.msg { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: var(--space-xs); max-width: 40rem; }
-.msg .who { font-weight: 500; color: var(--color-ink); }
-.msg p { color: var(--color-ink-2); }
-.msg p + * { margin-top: var(--space-2xs); }
-.at { color: var(--color-ink); font-weight: 500; }
 .tasks { display: flex; flex-direction: column; gap: 6px; }
 .task { display: flex; align-items: center; gap: var(--space-2xs); padding: 8px 10px; border-radius: var(--radius-sm); background: var(--color-paper); box-shadow: inset 0 0 0 1px var(--color-rim); min-width: 0; }
 .task span:not(.av):not(.st) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -134,14 +174,15 @@ svg.i { width: 1em; height: 1em; flex: none; vertical-align: -0.125em; }
 .foot nav a { text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; } .foot nav a:hover { color: var(--color-ink); }
 
 @media (max-width: 60rem) {
-  .app { grid-template-columns: minmax(0, 1fr); }
-  .side { display: none; }
+  .app { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .rail, .list { display: none; }
   .grid, .card.wide { grid-template-columns: minmax(0, 1fr); }
   .card.wide { align-items: stretch; }
 }
 @media (max-width: 40rem) {
   .top .wrap { grid-template-columns: 1fr auto; }
   .links { display: none; }
+  .bar .stack, .composer .model { display: none; }
   .hero { padding-top: var(--space-xl); }
   .card { padding: var(--space-md); }
   .cmd code { white-space: normal; overflow-wrap: anywhere; }
@@ -170,36 +211,69 @@ svg.i { width: 1em; height: 1em; flex: none; vertical-align: -0.125em; }
   <section class="hero wrap" aria-labelledby="title">
     <span class="avail">Free · <b>macOS</b> · <b>Linux</b> · <b>Windows</b></span>
     <h1 id="title">A team of agents for the work on your computer.</h1>
-    <p class="sub">You ask once. Zorel hands each part to the agent it fits, on <b><svg class="i"><use href="#claude"/></svg>Claude Code</b>, <b><svg class="i"><use href="#codex"/></svg>Codex</b> and <b><svg class="i"><use href="#opencode"/></svg>OpenCode</b>, with the sign-ins you already have.</p>
+    <p class="sub">You ask once. Your team's lead hands each part to the agent it fits, on <b><svg class="i"><use href="#claude"/></svg>Claude Code</b>, <b><svg class="i"><use href="#codex"/></svg>Codex</b> and <b><svg class="i"><use href="#opencode"/></svg>OpenCode</b>, with the sign-ins you already have.</p>
     <div class="ctas"><a class="btn" href="#install">Install Zorel</a><a class="btn dark" href="#how">See how it works</a></div>
 
-    <figure class="app" id="how" aria-label="Zorel with a request in progress: you asked once, Zorel split it between three agents, one command waits for your approval">
-      <div class="side">
-        <div class="row"><span class="av p">~</span>demo-app</div>
-        <span class="label">Team</span>
-        <div class="row on"><span class="av z">Z</span>Zorel<span class="meta">lead</span></div>
-        <div class="row"><span class="av c">C</span>Coder<span class="meta"><svg class="i"><use href="#claude"/></svg></span></div>
-        <div class="row"><span class="av t">T</span>Tester<span class="meta"><svg class="i"><use href="#codex"/></svg></span></div>
-        <div class="row"><span class="av d">D</span>Docsync<span class="meta"><svg class="i"><use href="#opencode"/></svg></span></div>
-        <span class="label">Chats</span>
-        <div class="row on">Get v1 ready</div>
-        <div class="row">Release notes</div>
+    <figure class="app" id="how" aria-label="Zorel with a request in progress: you asked once, Lead handed the work to the team, and Tester waits for your OK to run the tests">
+      <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <symbol id="l-chat" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+        <symbol id="l-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+        <symbol id="l-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></symbol>
+        <symbol id="l-alarm" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M5 3 2 6M22 6l-3-3"/></symbol>
+        <symbol id="l-book" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></symbol>
+        <symbol id="l-panel" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></symbol>
+        <symbol id="l-panel-r" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></symbol>
+        <symbol id="l-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></symbol>
+        <symbol id="l-activity" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol>
+        <symbol id="l-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+        <symbol id="l-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+        <symbol id="l-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+        <symbol id="l-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4M12 16h.01"/></symbol>
+        <symbol id="l-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+      </svg>
+      <nav class="rail" aria-hidden="true">
+        <svg class="z" viewBox="4 3 16 18"><path d="M6.5 7.5a3 3 0 0 1 3-3h8L6.5 19.5h8a3 3 0 0 0 3-3" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="ic"><svg class="l"><use href="#l-panel"/></svg></span>
+        <span class="ic on"><svg class="l"><use href="#l-chat"/></svg></span>
+        <span class="ic"><svg class="l"><use href="#l-inbox"/></svg><span class="badge">1</span></span>
+        <span class="ic"><svg class="l"><use href="#l-bot"/></svg></span>
+        <span class="ic"><svg class="l"><use href="#l-alarm"/></svg></span>
+        <span class="ic"><svg class="l"><use href="#l-book"/></svg></span>
+        <span class="gap"></span>
+        <span class="ring" style="--p:72%"><span><svg class="i"><use href="#claude"/></svg></span></span>
+        <span class="ring" style="--p:40%"><span><svg class="i"><use href="#codex"/></svg></span></span>
+        <span class="ic"><svg class="l"><use href="#l-gear"/></svg></span>
+      </nav>
+      <div class="list" aria-hidden="true">
+        <div class="h"><span>Chats <svg class="l"><use href="#l-down"/></svg></span><svg class="l"><use href="#l-plus"/></svg></div>
+        <div class="item on"><b>Get v1 ready</b><time>now</time><span class="by wait">Tester waits for your OK</span></div>
+        <div class="item"><b>Release notes for 0.2</b><time>12m</time><span class="by"><span class="av d">D</span>Docsync</span></div>
+        <div class="item"><b>Why is the build slow?</b><time>1h</time><span class="by"><span class="stack"><span class="av l">L</span><span class="av c">C</span></span>Lead, Coder</span></div>
+        <div class="item"><b>Plan the onboarding flow</b><time>3h</time><span class="by"><span class="av l">L</span>Lead</span></div>
+        <div class="h sp"><span>Projects <svg class="l"><use href="#l-down"/></svg></span><svg class="l"><use href="#l-plus"/></svg></div>
+        <div class="proj"><span>demo-app</span><span>12</span></div>
+        <div class="proj"><span>site</span><span>3</span></div>
       </div>
-      <div class="chat">
-        <p class="you">Get v1 ready: fix the empty-array bug, add tests for it and a README that matches the code.</p>
-        <div class="msg"><span class="av z">Z</span><div>
-          <p><span class="who">Zorel</span> · On it. <span class="at">@Coder</span> takes the fix, <span class="at">@Tester</span> the tests, <span class="at">@Docsync</span> the README. Each has the project brief and that tests run from <code>apps/server</code>.</p>
-          <div class="tasks">
-            <div class="task"><span class="av c">C</span><span>Editing <code>sum.ts</code></span><span class="st ok">done</span></div>
-            <div class="task"><span class="av t">T</span><span>Writing <code>sum.test.ts</code></span><span class="st wait">needs you</span></div>
-            <div class="task"><span class="av d">D</span><span>Updating <code>README.md</code></span><span class="st">working</span></div>
+      <div class="main">
+        <div class="bar"><b>Get v1 ready</b><span>demo-app</span>
+          <span class="r"><span class="act"><svg class="l"><use href="#l-activity"/></svg>3</span><svg class="l"><use href="#l-panel-r"/></svg><span class="stack"><span class="av l">L</span><span class="av c">C</span><span class="av t">T</span><span class="av d">D</span></span><svg class="l"><use href="#l-more"/></svg></span></div>
+        <div class="feed">
+          <p class="you">Get v1 ready: fix the empty-array bug, add tests for it and a README that matches the code.</p>
+          <div class="msg"><span class="av l">L</span><span class="who">Lead</span>
+            <p>The fix goes to @coder, the tests to @tester and the README to @docsync. They all know tests run from <code>apps/server</code>.</p></div>
+          <div class="msg"><span class="av c">C</span><span class="who">Coder</span>
+            <p>Fixed: <code>sum()</code> now starts from 0, so an empty array returns 0.</p></div>
+          <div class="handed">Coder handed the turn to Tester</div>
+          <div class="msg"><span class="av t">T</span><span class="who">Tester</span>
+            <p>Two tests in <code>sum.test.ts</code>: an empty array and negatives. Running them now.</p></div>
+        </div>
+        <div class="dock">
+          <div class="tray">
+            <span class="lab"><svg class="l"><use href="#l-shield"/></svg>Tester waits for your OK</span>
+            <div class="row"><span class="what"><b>Run the tests</b><code>bun test src/sum.test.ts in apps/server</code></span><span class="ui-btn">Deny</span><span class="ui-btn primary">Allow</span></div>
           </div>
-        </div></div>
-        <div class="msg"><span class="av t">T</span><div class="ask">
-          <span class="q">Tester wants to run a command</span>
-          <pre>bun test apps/server/src/sum.test.ts</pre>
-          <span class="do"><span class="btn dark sm">Deny</span><span class="btn sm">Approve</span></span>
-        </div></div>
+          <div class="composer"><svg class="l"><use href="#l-plus"/></svg><span class="ph">Message · # who answers, @ mention, $ skill, / command</span><span class="model"><svg class="i"><use href="#claude"/></svg>Sonnet 5.5</span><span class="send"><svg class="l"><use href="#l-up"/></svg></span></div>
+        </div>
       </div>
     </figure>
   </section>
@@ -217,9 +291,9 @@ svg.i { width: 1em; height: 1em; flex: none; vertical-align: -0.125em; }
           <div class="task"><span class="av d">D</span><span>Docsync</span><span class="st"><svg class="i"><use href="#opencode"/></svg> OpenCode</span></div>
         </div></article>
       <article class="card"><div><h3>Nothing risky without your yes</h3><p>Commands, deletes, pushes and payments stop at Zorel and wait. Below full access, the agents run in your system's sandbox.</p></div>
-        <div class="show"><div class="ask">
-          <span class="q"><span class="av c">C</span>Coder wants to push to <code>main</code></span>
-          <span class="do"><span class="btn dark sm">Deny</span><span class="btn sm">Approve</span></span>
+        <div class="show"><div class="tray">
+          <span class="lab"><svg class="l"><use href="#l-shield"/></svg>Coder waits for your OK</span>
+          <div class="row"><span class="what"><b>Push to main</b><code>git push origin main</code></span><span class="ui-btn">Deny</span><span class="ui-btn primary">Allow</span></div>
         </div></div></article>
       <article class="card"><div><h3>It learns how you work</h3><p>Decisions, project notes and skills stay with the team. You see each memory before it's kept.</p></div>
         <div class="show">

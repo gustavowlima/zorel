@@ -9,6 +9,11 @@
   --color-ink-2: oklch(72% 0.008 260);
   --color-ink-3: oklch(56% 0.01 260);
   --color-accent: oklch(60.5% 0.2 255); /* the brand blue, #007cf7 */
+  --color-accent-text: oklch(68% 0.16 252); /* the app's accent text on dark */
+  --color-accent-btn: oklch(45% 0.15 255); /* the app's filled button */
+  --color-app: oklch(21% 0 0); /* the app's canvas */
+  --color-side: oklch(17.5% 0 0);
+  --color-rail: oklch(15.5% 0 0);
   --color-accent-soft: oklch(60.5% 0.2 255 / 0.16);
   --color-on-accent: oklch(99% 0 0);
   --color-button: oklch(97% 0.003 260);
@@ -23,6 +28,7 @@
   /* agent identity colors, as in the app */
   --color-agent-1: #6d5df6;
   --color-agent-2: #12a594;
+  --color-agent-3: #e5484d;
   --color-agent-4: #d6851e;
 
   --font-display: "Inter", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
