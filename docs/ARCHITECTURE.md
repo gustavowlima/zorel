@@ -279,7 +279,7 @@ base → agente → canal → sobre você (aprovado) → projeto (brief) → res
 
 ## 8. Conhecimento aprendido (D18, D7)
 
-**Hoje (implementado, 2026-11-03):** memórias (`fact`) e skills em SQLite, com escopo você/projeto/agente.
+**Hoje (implementado, 2026-11-03):** memórias (`fact`) e skills em SQLite, com escopo você/projeto/agente. **Skills como no Tucano (2026-11-04):** o contexto lista os títulos e traz o passo a passo das mais relevantes; o agente lê qualquer outra com `zero_read_skill` e propõe uma nova ou uma **melhoria** com `zero_propose_skill` (título, passos, motivo, `improves`), que fica pendente (no máximo 5 por chat). A melhoria aponta para a skill que substitui (`memories.replaces`) e guarda o motivo; em Knowledge a pessoa vê o diff linha a linha e "Apply the change" grava o texto novo na skill, com o anterior em `memory_versions` (toda edição também vira versão, com restaurar). Ligar skills de arquivo (`~/.claude/skills`) fica para depois.
 - **Consolidação** com LLM quando o chat passa de 50 mensagens além do resumo: o trecho que sai da janela vira resumo e **propostas** de memória e skill, pendentes até você aprovar em "Precisa de você". O que você mandou esquecer vai no prompt para não voltar.
 - **Regra da evidência humana** (ideia do Tucano): o trecho chega numerado e cada memória proposta cita os números das mensagens que a provam. Só vale mensagem sua: palpite, plano ou suposição de agente nunca vira memória. Skills não exigem (procedimento pode nascer do trabalho do agente).
 - **Confirmação:** a consolidação devolve os ids das memórias existentes que o trecho confirmou de novo, e repetir uma memória ativa (por qualquer caminho) também a confirma. `confirmedAt` ordena o orçamento.

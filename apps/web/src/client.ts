@@ -42,6 +42,7 @@ export const storageAtom = Zero.query("settings", "storage", { reactivityKeys: [
 export const commandsAtom = (id: string) => Zero.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
 export const terminalsAtom = (id: string) => Zero.query("chats", "terminals", { params: { id }, reactivityKeys: ["terminals"] })
 export const pagesAtom = Zero.query("pages", "list", { reactivityKeys: ["pages"] })
+export const memoryVersionsAtom = (id: string) => Zero.query("memories", "versions", { params: { id }, reactivityKeys: ["memories"] })
 export const pageVersionsAtom = (id: string) => Zero.query("pages", "versions", { params: { id }, reactivityKeys: ["pages"] })
 export const routinesAtom = Zero.query("routines", "list", { reactivityKeys: ["routines"] })
 export const agentVersionsAtom = (id: string) => Zero.query("agents", "versions", { params: { id }, reactivityKeys: ["agents"] })
@@ -77,6 +78,7 @@ export const mutations = {
   updatePage: Zero.mutation("pages", "update"),
   removePage: Zero.mutation("pages", "remove"),
   restorePage: Zero.mutation("pages", "restore"),
+  restoreMemory: Zero.mutation("memories", "restore"),
   createRoutine: Zero.mutation("routines", "create"),
   updateRoutine: Zero.mutation("routines", "update"),
   removeRoutine: Zero.mutation("routines", "remove"),

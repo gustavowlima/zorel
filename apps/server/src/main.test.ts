@@ -578,3 +578,24 @@ test("permissões do agente: conector por agente, sempre permitir salvo e pedir 
   expect(r.events.some((e) => e._tag === "approval")).toBe(false)
   expect(dones(r.events)[0]!.text).toContain("resultado de delete_page")
 })
+
+test("skills: ler, propor melhoria, aprovar vendo a mudança e restaurar a versão anterior", async () => {
+  const project = await api((c) => c.projects.create({ payload: { name: "Skills", brief: "" } }))
+  const skill = await api((c) => c.memories.create({ payload: { scope: `project:${project.id}`, kind: "skill", title: "Release", text: "1. bun test\n2. tag" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [], model: "claude-cli/sonnet" } }))
+  expect(dones((await send(chat.id, { text: 'tool:zero_read_skill {"skill":"release"}' })).events)[0]!.text).toContain("1. bun test")
+  const proposed = dones((await send(chat.id, { text: 'tool:zero_propose_skill {"title":"Release","steps":"1. bun test\\n2. lint\\n3. tag","reason":"lint caught a bug","improves":"Release"}' })).events)[0]!
+  expect(proposed.text).toContain("seeing what changes")
+  const pending = (await api((c) => c.memories.list())).find((m) => m.state === "pending" && m.replaces === skill.id)!
+  expect(pending.reason).toBe("lint caught a bug")
+  // Approving applies it to the skill; the proposal goes away and the old text is a version.
+  const applied = await api((c) => c.memories.update({ params: { id: pending.id }, payload: { state: "active" } }))
+  expect(applied.id).toBe(skill.id)
+  expect(applied.text).toBe("1. bun test\n2. lint\n3. tag")
+  expect((await api((c) => c.memories.list())).some((m) => m.id === pending.id)).toBe(false)
+  const versions = await api((c) => c.memories.versions({ params: { id: skill.id } }))
+  expect(versions.map((v) => v.text)).toEqual(["1. bun test\n2. tag"])
+  const restored = await api((c) => c.memories.restore({ params: { id: skill.id }, payload: { versionId: versions[0]!.id } }))
+  expect(restored.text).toBe("1. bun test\n2. tag")
+  expect((await api((c) => c.memories.versions({ params: { id: skill.id } }))).length).toBe(2)
+})

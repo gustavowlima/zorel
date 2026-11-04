@@ -314,10 +314,14 @@ export const Memory = Schema.Struct({
   state: MemoryState,
   origin: Schema.Literals(["auto", "manual"]),
   chatId: Schema.NullOr(Id),
+  replaces: Schema.optionalKey(Schema.NullOr(Id)), // a proposed improvement of this active skill
+  reason: Schema.optionalKey(Schema.NullOr(Schema.String)), // why it was proposed
   createdAt: Schema.Number,
   confirmedAt: Schema.Number
 })
 export type Memory = typeof Memory.Type
+export const MemoryVersion = Schema.Struct({ id: Id, title: Schema.String, text: Schema.String, by: Schema.String, at: Schema.Number })
+export type MemoryVersion = typeof MemoryVersion.Type
 
 // A knowledge page (phase 3b): a longer Markdown note by scope (as memories). pinned: its title goes into every
 // turn's context in that scope.
@@ -578,6 +582,8 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.get("list", "/api/memories", { success: Schema.Array(Memory) }))
       .add(HttpApiEndpoint.post("create", "/api/memories", { payload: NewMemory, success: Memory }))
       .add(HttpApiEndpoint.patch("update", "/api/memories/:id", { params: idParam, payload: MemoryPatch, success: Memory, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.get("versions", "/api/memories/:id/versions", { params: idParam, success: Schema.Array(MemoryVersion), error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("restore", "/api/memories/:id/restore", { params: idParam, payload: Schema.Struct({ versionId: Id }), success: Memory, error: HttpApiError.NotFound }))
   )
   .add(
     HttpApiGroup.make("tools")

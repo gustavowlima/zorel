@@ -6,7 +6,7 @@
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "dev": "bun run --filter '*' dev",
-    "test": "bun test apps/server packages",
+    "test": "bun test apps/server apps/web packages",
     "build": "bun run --cwd apps/web build",
     "start": "bun run build && bun apps/server/src/main.ts",
     "desktop": "bun run --cwd apps/desktop start",

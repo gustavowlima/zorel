@@ -71,6 +71,16 @@ export type AgentProfile = {
   permissions?: AgentPermissions // absent in versions saved before permissions existed
 }
 
+// Earlier texts of a memory or skill (each edit or approved improvement keeps the one before), newest first.
+export const memoryVersions = sqliteTable("memory_versions", {
+  id: text().primaryKey(),
+  memoryId: text("memory_id").notNull().references(() => memories.id, { onDelete: "cascade" }),
+  title: text().notNull(),
+  text: text().notNull(),
+  by: text().notNull(),
+  at: integer().notNull()
+})
+
 export const chats = sqliteTable("chats", {
   id: text().primaryKey(),
   projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
@@ -134,6 +144,8 @@ export const memories = sqliteTable(
     state: text({ enum: ["pending", "active", "forgotten"] }).notNull(),
     origin: text({ enum: ["auto", "manual"] }).notNull(),
     chatId: text("chat_id"),
+    replaces: text(), // a proposed improvement: the active skill it would replace when approved
+    reason: text(), // why it was proposed (an agent's words), shown on review
     createdAt: integer("created_at").notNull(),
     confirmedAt: integer("confirmed_at").notNull(),
     // D17 seams for hosting: who owns it and who hears it. Today always the local owner.
