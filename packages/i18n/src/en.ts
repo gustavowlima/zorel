@@ -976,10 +976,14 @@ export const en = {
     deleted: { one: "Deleted 1 item", other: "Deleted {count} items" },
     failed: "Couldn't do that. Something with that name may already be there."
   },
-  // The desktop app's updates (rail's corner).
+  // The desktop app's updates (rail's corner, and a card under the chats).
   update: {
     ready: "Zorel {version} is ready. Restart to update",
-    downloading: "Downloading Zorel {version}…"
+    downloading: "Downloading Zorel {version}…",
+    title: "Zorel {version}",
+    progress: "Downloading… {percent}%",
+    readyShort: "Ready to install",
+    restart: "Restart"
   },
   workspace: {
     folder: "Folder",
