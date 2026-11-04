@@ -1,21 +1,15 @@
 Zorel
 Copyright 2026 Gustavo Lima
 
-Partes deste projeto derivam de:
+Parts of this project derive from:
 
 - Tucano (https://github.com/eduwxyz/tucano), Apache License 2.0, Copyright Eduardo da Silva.
-  Usado: argumentos de isolamento e parsers de stream do Claude Code e do Codex
-  (apps/server/src/engines.ts), fixtures em apps/server/src/fixtures/, o modelo de
-  contexto montado por turno com resumo + memórias + skills propostas e o roteamento por
-  @menção com limite de repasses (apps/server/src/context.ts, chat.ts), e a classificação
-  de ferramentas e o gateway MCP por turno (apps/server/src/tools.ts).
-
-- T3 Code (https://github.com/pingdotgg/t3code), MIT License, Copyright 2026 T3 Tools Inc.
-  Referência de arquitetura (contracts com Effect Schema, adapters de provider).
+  Used: isolation arguments and stream parsers for Claude Code and Codex
+  (apps/server/src/engines.ts), fixtures in apps/server/src/fixtures/, the per-turn context
+  model with summary + memories + proposed skills and @mention routing with a handoff limit
+  (apps/server/src/context.ts, chat.ts), and tool classification and the per-turn MCP gateway
+  (apps/server/src/tools.ts).
 
 - Lobe Icons (https://github.com/lobehub/lobe-icons), MIT License, Copyright LobeHub.
-  Usado: logos dos providers (Claude, Codex, opencode, OpenRouter, Ollama) em
-  apps/web/src/ui/provider-icon.tsx, a partir de @lobehub/icons-static-svg 1.102.0.
-
-O design system é inspirado visualmente no OpenBot (PolyForm Noncommercial 1.0.0);
-nenhum código do OpenBot foi copiado.
+  Used: provider logos (Claude, Codex, opencode, OpenRouter, Ollama) in
+  apps/web/src/ui/provider-icon.tsx, from @lobehub/icons-static-svg 1.102.0.

@@ -1,4 +1,4 @@
-// Settings › Audit log (inspired by a reference app's): every change to providers, projects, agents, MCP servers and
+// Settings › Audit log: every change to providers, projects, agents, MCP servers and
 // every approval or undo, newest first by day, with who did it and the fields before → after. Filters by kind,
 // words and a span of days run on the server, which sends one page of 50 and the total. Records come from the server's Audit service (evlog audit events in SQLite).
 import { useAtomValue } from "@effect/atom-react"

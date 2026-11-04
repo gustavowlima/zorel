@@ -1,4 +1,4 @@
-// Knowledge pages (phase 3b; a reference app's wiki as reference): longer Markdown notes by scope that agents search and
+// Knowledge pages (phase 3b): longer Markdown notes by scope that agents search and
 // read with tools and write as versions. Read as Markdown; edit in place; pin (its title then goes into every turn
 // in that scope); every save is a version you can restore.
 import type { Page } from "@zorel/contracts"

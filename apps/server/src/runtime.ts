@@ -34,7 +34,7 @@ const STALL_MS = 10 * 60_000
 const SAME_STEP_MAX = 4 // the same step with the same result this many times in a row: a loop
 const ERRORS_MAX = 6 // this many failed steps in a row: stuck
 
-// Runaway guard of one turn (ideas from a reference app): it watches finished steps and says why to stop, if it should.
+// Runaway guard of one turn: it watches finished steps and says why to stop, if it should.
 // A step is its kind, title and the start of its output; a different step or a success resets the counts.
 // A waiting status whose card is a question (zorel_ask_user): the app says "asks you" instead of "waits for your OK".
 export const QUESTION_LABEL = "question"
@@ -53,7 +53,7 @@ export function runawayGuard() {
     return undefined
   }
 }
-const TEXT_BATCH = Duration.millis(100) // batched deltas (a reference app 100 ms, Zeron 120 ms)
+const TEXT_BATCH = Duration.millis(100) // batched deltas
 
 export interface SendInput {
   readonly chatId: string
@@ -68,7 +68,7 @@ export interface RuntimeService {
   // Corrects the agent mid-turn when the engine supports it (Codex); otherwise queues it like `send`.
   readonly steer: (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) => Effect.Effect<void, ChatNotFound>
   readonly interrupt: (chatId: string) => Effect.Effect<void>
-  // Pause everything (a reference app's "pause all"): running turns stop, new ones wait queued, routines don't fire.
+  // Pause everything: running turns stop, new ones wait queued, routines don't fire.
   // "Edit from here": the chat's engine sessions close, so the next turn starts from what the chat keeps.
   readonly forget: (chatId: string) => Effect.Effect<void>
   readonly paused: () => boolean
@@ -135,7 +135,7 @@ export const makeRuntime = Effect.gen(function* () {
   // ponytail: one gateway URL per (chat, agent), closed only when the server stops; drop on chat delete if it grows.
   const gateways = new Map<string, GatewayHandle>()
   // Per provider too: switching Claude → Codex → Claude keeps the Claude session, which on return only
-  // gets what it hasn't seen (Zeron's per-session watermark). The LRU cap bounds the processes.
+  // gets what it hasn't seen. The LRU cap bounds the processes.
   const sessionKey = (row: TurnRow) => `${row.chatId}:${row.agentId ?? "-"}:${splitModel(row.model).provider}`
   const gatewayOf = (key: string) => {
     let g = gateways.get(key)
@@ -836,8 +836,8 @@ export const makeRuntime = Effect.gen(function* () {
         }
         // Several routes tried and all failed: say what happened on each.
         if (acc.error && tried.length > 1) acc.error = `${acc.error}\n\n${tried.join("\n")}`
-        // Every route is at its usage limit: the chat continues by itself when the soonest one resets (T3 Code's
-        // "resume at reset"). The routine tick sends the continuation; the chat shows it and can cancel it.
+        // Every route is at its usage limit: the chat continues by itself when the soonest one resets.
+        // The routine tick sends the continuation; the chat shows it and can cancel it.
         if (acc.error && !actedAny) {
           const holds = yield* Effect.forEach(routes, (r) => Effect.map(accounts.resolve(r.model, r.accountId), (a) => held(r.model, a)))
           const resets = holds.flatMap((h) => (h?.reason === "limit" ? [h.until] : []))

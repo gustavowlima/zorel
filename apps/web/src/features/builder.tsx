@@ -1,4 +1,4 @@
-// Build with AI (as in a reference app): a screen of its own in two steps, one at a time. 1 Describe: a conversation with the
+// Build with AI: a screen of its own in two steps, one at a time. 1 Describe: a conversation with the
 // Builder (Zorel's own agent) on the left, the proposed agent on the right as it takes shape. 2 Powers: what it may
 // reach, as plain choices (no access / read / read and write), prefilled with the least the Builder proposed;
 // Create makes it with those powers and opens its page. A team is created as proposed from step 1. Each visit

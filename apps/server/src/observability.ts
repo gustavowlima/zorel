@@ -1,6 +1,6 @@
 // Structured logs that never leak secrets (ARCHITECTURE §12): every value stored by `Secrets`
-// is registered here, and the logger replaces any occurrence with *** before writing (idea from
-// a reference app's registerSecretValue). Spans: Effect.withSpan on turn, engine and tool.
+// is registered here, and the logger replaces any occurrence with *** before writing.
+// Spans: Effect.withSpan on turn, engine and tool.
 import { Logger } from "effect"
 
 const sensitive = new Set<string>()

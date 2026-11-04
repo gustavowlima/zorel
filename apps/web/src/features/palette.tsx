@@ -1,4 +1,4 @@
-// Cmd+K (as in T3 Code): go anywhere and find anything. With nothing typed, the places and actions; typing
+// Cmd+K: go anywhere and find anything. With nothing typed, the places and actions; typing
 // narrows them and the chats by title, and from 2 characters also searches every message (the server).
 import type { SearchHit } from "@zorel/contracts"
 import { formatAge, t } from "@zorel/i18n"

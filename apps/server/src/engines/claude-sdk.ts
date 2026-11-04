@@ -114,7 +114,7 @@ function inbox() {
   }
 }
 
-// Claude Code's own settings (as in T3 Code): the user's, the project's and the local ones load, so the
+// Claude Code's own settings: the user's, the project's and the local ones load, so the
 // CLI's slash commands, skills and CLAUDE.md files are there. Two locks keep Zorel in charge: only the policy
 // tier's permission rules count (none: every tool call goes through Zorel's canUseTool and access level, a
 // file's allow list or a bypass default mode never applies) and no hook runs. MCP stays strict (the gateway).

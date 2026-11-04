@@ -2,7 +2,7 @@
 // - Hub: connections to the configured MCP servers (stdio or http), reused across turns.
 // - Gateway: a local MCP server; each turn opens a session with a secret URL and only the allowed
 //   tools. It's the only tool source for any engine (CLI or API): Zorel decides.
-// Classification and the per-turn gateway model derive from a reference app (Apache-2.0), see NOTICE.
+// Classification and the per-turn gateway model derive from third-party code, see NOTICE.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"

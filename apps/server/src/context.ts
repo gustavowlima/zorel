@@ -3,7 +3,7 @@
 //   base → agent → channel → user memories → project (brief + memories) → agent memories
 //   → skills → chat summary → memories retrieved by the current message → latest messages.
 // Each layer has a budget; what doesn't fit stays searchable (FTS) and comes back when relevant.
-// Rolling summary + memories + proposed skills model derived from a reference app (Apache-2.0), see NOTICE.
+// Parts of the rolling summary + memories + proposed skills model are third-party code, see NOTICE.
 import { join } from "node:path"
 import type { Agent, Chat, Memory, Message, Project } from "@zorel/contracts"
 import { normalize } from "./db.ts"
@@ -190,7 +190,7 @@ export interface Consolidation {
 }
 
 // Tolerates text around the JSON; drops items outside the allowed scopes or too long, and memories without
-// evidence from the person: `fromUser(n)` says whether message #n of the chunk was theirs (a reference app's rule — an
+// evidence from the person: `fromUser(n)` says whether message #n of the chunk was theirs (an
 // agent's guess never becomes a memory).
 export function parseConsolidation(text: string, allowed: ReadonlyArray<string>, fromUser: (n: number) => boolean = () => true): Consolidation | undefined {
   const start = text.indexOf("{")

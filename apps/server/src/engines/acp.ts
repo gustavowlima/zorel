@@ -10,8 +10,7 @@
 // shell, edits and every process or MCP server it starts can write only to the chat's folder ("workspace"), the
 // temporary folders, caches and the CLI's own state. Reads, network and process starts stay open, as the access
 // level says. On Linux the same rule runs in bubblewrap (bwrap: the whole system read-only, the roots bound writable),
-// when it is installed. On Windows there is no such sandbox yet: below "full" the turn is refused (idea from
-// a reference app, own code).
+// when it is installed. On Windows there is no such sandbox yet: below "full" the turn is refused.
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"

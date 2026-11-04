@@ -6,7 +6,7 @@
 2026-11-03 | failover automático de conta\/modelo passa a ser suportado, opcional e com aviso de termos (fase 2b) | pedido do usuário; antes era só troca manual
 2026-11-03 | banco: bun:sqlite direto → Drizzle 1.0 rc sobre @effect/sql (fase 1) | integração nativa Effect 4, portabilidade SQLite→Postgres, migrations geradas
 2026-11-03 | driver local: @effect/sql-sqlite-bun → @effect/sql-libsql; RAG entra no desenho (D18) | vetores nativos sem extensão; pedido do usuário
-2026-11-03 | memórias+skills → páginas de conhecimento aprendido; RAG por upload e libSQL saem; driver volta a sqlite-bun | pedido: leve, simples, eficiente; base de conhecimento = aprendizado (ai-memory)
+2026-11-03 | memórias+skills → páginas de conhecimento aprendido; RAG por upload e libSQL saem; driver volta a sqlite-bun | pedido: leve, simples, eficiente; base de conhecimento = aprendizado
 2026-11-03 | base headless do shadcn: React Aria (--base aria), não Radix nem Base UI | decisão do usuário; a11y e i18n embutidos
 2026-11-03 | contrato de eventos dos turnos (events.ts) e subscribeStatus | engine primeiro; protótipo vira especificação dos eventos
 2026-11-03 | banco migrado para Drizzle (effect-sqlite-bun), repositório em Effect, adoção do banco do MVP com backup | D9, fase 1
@@ -25,26 +25,26 @@
 2026-11-03 | position em projects e chats + endpoints de reordenação | drag and drop na sidebar
 2026-11-03 | audit log com evlog gravando em SQLite | pedido do usuário
 2026-11-03 | endpoint de contexto, janela no catálogo, $skill no turno | composer novo
-2026-11-03 | claude-cli loads user/project/local settings with policy-only permissions and no hooks; CLI slash commands listed and dispatched | run Claude Code's own / commands like T3 Code
-2026-11-03 | painel de execução: scripts do projeto em abas do terminal, servidores locais com abrir no navegador e parar | fase 3c (lacuna vs T3 Code)
-2026-11-03 | git no chat: status, commit com mensagem rascunhada pelo modelo, push, PR via gh, nova branch; auditado | lacuna vs T3 Code
-2026-11-03 | worktree por chat (POST/DELETE /api/chats/:id/worktree) | lacuna vs T3 Code
+2026-11-03 | claude-cli loads user/project/local settings with policy-only permissions and no hooks; CLI slash commands listed and dispatched | run Claude Code's own / commands
+2026-11-03 | painel de execução: scripts do projeto em abas do terminal, servidores locais com abrir no navegador e parar | fase 3c
+2026-11-03 | git no chat: status, commit com mensagem rascunhada pelo modelo, push, PR via gh, nova branch; auditado | lacuna de produto
+2026-11-03 | worktree por chat (POST/DELETE /api/chats/:id/worktree) | lacuna de produto
 2026-11-03 | agentes criam/editam agentes por ferramentas com cartão de aprovação; acesso limitado ao de quem propõe | fase 4
 2026-11-03 | versões de agente com restaurar; exportar/importar perfil sem conta | fase 4
-2026-11-03 | regra da evidência humana, confirm e zero_search_memories (ideias do a reference app) | memória mais confiável
-2026-11-03 | proteção contra loop e falhas seguidas no turno | ideia do a reference app
-2026-11-03 | rotinas: cron, run now, webhook local, ferramenta zero_routines | fase 7 (lacuna vs reference apps)
-2026-11-03 | Builder (Build with AI) e criação de equipe inteira num cartão | pedido do usuário (Tuca do a reference app, para várias)
-2026-11-03 | pausar tudo e notificações do sistema | item 1 da lista (a reference app)
-2026-11-03 | retomar sozinho no reset do limite | item 2 da lista (T3 Code)
-2026-11-03 | editar daqui (rewind) com desfazer de arquivos opcional | item 4 (T3 Code)
+2026-11-03 | regra da evidência humana, confirm e zero_search_memories | memória mais confiável
+2026-11-03 | proteção contra loop e falhas seguidas no turno | robustez
+2026-11-03 | rotinas: cron, run now, webhook local, ferramenta zero_routines | fase 7
+2026-11-03 | Builder (Build with AI) e criação de equipe inteira num cartão | pedido do usuário
+2026-11-03 | pausar tudo e notificações do sistema | item 1 da lista
+2026-11-03 | retomar sozinho no reset do limite | item 2 da lista
+2026-11-03 | editar daqui (rewind) com desfazer de arquivos opcional | item 4
 2026-11-03 | fase 4 fechada: agente padrão por projeto e catálogo de conectores | item 5
-2026-11-03 | navegador: hover, select, scroll, upload, diálogos e browser_run | item 6 (a reference app)
-2026-11-03 | páginas de conhecimento com versões e ferramentas dos agentes | item 7, fase 3b (a reference app)
+2026-11-03 | navegador: hover, select, scroll, upload, diálogos e browser_run | item 6
+2026-11-03 | páginas de conhecimento com versões e ferramentas dos agentes | item 7, fase 3b
 2026-11-03 | ACP: OpenCode e Gemini CLI por um adaptador | item 8, fase 5
 2026-11-04 | agentes ACP confinados no sandbox do macOS abaixo de acesso total | antes o nível Workspace permitia tudo
-2026-11-04 | permissões por agente (web, browser, conectores, sempre permitir, pedir acesso) | pedido do usuário, modelo do a reference app
-2026-11-04 | skills: ler sob demanda, propor melhoria com diff, versões e restaurar | a reference app
+2026-11-04 | permissões por agente (web, browser, conectores, sempre permitir, pedir acesso) | pedido do usuário
+2026-11-04 | skills: ler sob demanda, propor melhoria com diff, versões e restaurar | melhoria de skills
 2026-11-04 | skills do computador escolhíveis e opção de usar as skills nativas do Claude Code/Codex | pedido do usuário
 2026-11-04 | conectores OAuth (oauth.ts, mcp_servers.auth, rotas sign-in/callback) | usuário pediu seção de conectores com um clique
 2026-11-04 | Hub.refused + env no patch de servidor MCP | reconectar conector com credencial recusada
@@ -55,7 +55,7 @@
 2026-11-04 | terminal no Windows (PowerShell) e sandbox ACP no Linux (bubblewrap) | regra: tudo nos três sistemas
 2026-11-04 | zorel_ask_user (pergunta com opções, resposta volta ao agente) | equipe: agente pergunta em vez de chutar
 2026-11-04 | exportar/importar workspace (fase 7) | mudar de computador sem perder projetos, agentes, chats e conhecimento
-2026-11-04 | fechamento do repasse por menção, complemento sem menção fica com o colega, formato Status/Result/Evidence, aviso no limite | teste real de equipe + ideias de a reference app/a reference app
+2026-11-04 | fechamento do repasse por menção, complemento sem menção fica com o colega, formato Status/Result/Evidence, aviso no limite | teste real de equipe
 2026-11-04 | roteador barato para mensagens sem menção; gateway MCP em SSE com ping | usuário pediu o roteador; pergunta expirava aos 5 min
 2026-11-04 | fs-ops.ts + POST /api/chats/:id/fs; openFile cross-platform | aba Files interativa; openFile só funcionava no macOS
 2026-11-04 | GitStatus.files: string[] -> {path,status}[] | o painel Git mostra A/M/D/R por arquivo

@@ -131,7 +131,7 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
           const existing = found && found.instructions !== BUILDER.instructions ? yield* store.updateAgent(found.id, { instructions: BUILDER.instructions, description: BUILDER.description }, "Zorel") : found
           const builder = existing ?? (yield* store.createAgent({ projectId: null, name: BUILDER.name, title: BUILDER.title, description: BUILDER.description, instructions: BUILDER.instructions, model: payload.model, access: BUILDER.access, builtin: "builder" }))
           if (!existing) yield* audit.record(Actions.agentCreated, { target: builder, after: { name: builder.name, model: builder.model, access: builder.access } })
-          // Each visit starts fresh (as in a reference app): the screen's previous conversation here goes away.
+          // Each visit starts fresh: the screen's previous conversation here goes away.
           for (const old of yield* store.hiddenChats(payload.projectId)) yield* store.removeChat(old.id)
           const chat = yield* store.createChat({ projectId: payload.projectId, agentIds: [builder.id], model: payload.model, hidden: true })
           return (yield* store.updateChat(chat.id, { title: "Build agents" }))!
