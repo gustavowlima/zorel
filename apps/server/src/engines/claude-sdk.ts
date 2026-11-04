@@ -5,9 +5,10 @@
 // (ARCHITECTURE §9.2); `canUseTool` applies the agent's access level and asks the person through Zorel.
 // The SDK runs the user's installed `claude` (pathToClaudeCodeExecutable): its bundled binary is never
 // used and never shipped, and Zorel never reads the CLI login (CLAUDE_CONFIG_DIR only picks the account).
-import { type CanUseTool, type Query, query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
+import { type CanUseTool, type Query, query, type SDKMessage, type SDKUserMessage, type SpawnedProcess } from "@anthropic-ai/claude-agent-sdk"
 import type { Access, AccountWindow } from "@zorel/contracts"
 import { Effect, Queue, Stream } from "effect"
+import { spawn } from "node:child_process"
 import { mkdirSync } from "node:fs"
 import { relative } from "node:path"
 import { type CliModel, claudeParser, classifyMessage, type EngineEvent, type NativeStep, splitModel, type TurnFile } from "#server/engines.ts"
@@ -168,6 +169,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
   let effort: string | null = null // the session starts at the model's default
   let listener: ((m: SDKMessage | undefined) => void) | undefined // undefined message: process ended
   let ended: string | undefined
+  let pid: number | undefined
   const q = query({
     prompt: box,
     options: {
@@ -184,7 +186,13 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
       strictMcpConfig: true,
       persistSession: false, // Zorel's context is the source of truth; resuming uses the checkpoint
       includePartialMessages: true,
-      env: childEnv(o.configDir)
+      env: childEnv(o.configDir),
+      // The SDK's own spawn (no shell, hidden window on Windows), keeping the pid for Settings › Processes.
+      spawnClaudeCodeProcess: (s) => {
+        const child = spawn(s.command, s.args, { cwd: s.cwd, env: s.env, signal: s.signal, stdio: ["pipe", "pipe", "ignore"], windowsHide: true })
+        pid = child.pid
+        return child as unknown as SpawnedProcess // a Node ChildProcess is what the SDK spawns itself
+      }
     }
   })
 
@@ -256,6 +264,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
   return {
     turn,
     alive: () => !ended,
+    pid: () => pid,
     close: Effect.sync(() => {
       box.close()
       q.close()

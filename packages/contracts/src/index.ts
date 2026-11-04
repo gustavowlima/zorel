@@ -259,11 +259,16 @@ export const LocalServer = Schema.Struct({ pid: Schema.Number, command: Schema.S
 // folder (an agent's dev server), with the chat whose folder it is; terminals: shells still open; sessions: engine
 // processes kept between turns (Claude Code, Codex); connections: MCP servers with a client open. A server lists
 // every chat working in its folder (a project's folder is shared by its chats; a worktree is one chat's).
+// cpu: percent of one core now (100 = a whole core); memory: bytes. A row counts its process and what it started.
+// usage: Zorel as a whole (the app, the server and everything they started), split by part.
+const Use = { cpu: Schema.Number, memory: Schema.Number }
+export const UsagePart = Schema.Literals(["app", "server", "agents", "terminals", "connections", "other"])
 export const ProcessList = Schema.Struct({
-  servers: Schema.Array(Schema.Struct({ pid: Schema.Number, command: Schema.String, ports: Schema.Array(Schema.Number), chatIds: Schema.Array(Schema.String), projectId: Schema.NullOr(Schema.String), folder: Schema.String })),
-  terminals: Schema.Array(Schema.Struct({ id: Schema.String, chatId: Schema.String, n: Schema.Number, label: Schema.NullOr(Schema.String), busy: Schema.Boolean })),
-  sessions: Schema.Array(Schema.Struct({ key: Schema.String, chatId: Schema.String, agentId: Schema.NullOr(Schema.String), provider: Schema.String, usedAt: Schema.Number })),
-  connections: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String, local: Schema.Boolean }))
+  servers: Schema.Array(Schema.Struct({ pid: Schema.Number, command: Schema.String, ports: Schema.Array(Schema.Number), chatIds: Schema.Array(Schema.String), projectId: Schema.NullOr(Schema.String), folder: Schema.String, nested: Schema.Boolean, ...Use })), // nested: runs inside a shell or session listed here (already counted there)
+  terminals: Schema.Array(Schema.Struct({ id: Schema.String, chatId: Schema.String, n: Schema.Number, label: Schema.NullOr(Schema.String), busy: Schema.Boolean, ...Use })),
+  sessions: Schema.Array(Schema.Struct({ key: Schema.String, chatId: Schema.String, agentId: Schema.NullOr(Schema.String), provider: Schema.String, usedAt: Schema.Number, ...Use })),
+  connections: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String, local: Schema.Boolean, ...Use })),
+  usage: Schema.Struct({ ...Use, cores: Schema.Number, totalMemory: Schema.Number, parts: Schema.Array(Schema.Struct({ id: UsagePart, ...Use })) })
 })
 export type ProcessList = typeof ProcessList.Type
 export type LocalServer = typeof LocalServer.Type

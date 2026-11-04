@@ -23,7 +23,7 @@ import { Accounts } from "./accounts.ts"
 import { Actor } from "./access.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { LoggerLive } from "./observability.ts"
-import { Runtime } from "./runtime.ts"
+import { Runtime, type RuntimeService } from "./runtime.ts"
 import { RoutineScheduler, runRoutine } from "./routines.ts"
 import { createRoutineFor, newToken, nextRun } from "./schedule.ts"
 import { BUILDER } from "./team.ts"
@@ -32,7 +32,9 @@ import { billingOf, Pricing } from "./pricing.ts"
 import { clean, measure } from "./storage.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
-import { closeTerminal, liveTerminals, scriptsOf, serversIn, serversUnder, TerminalSocket, terminalsOf } from "./terminals.ts"
+import { cpus, totalmem } from "node:os"
+import { listProcs, type Proc, sample, subtree } from "./procs.ts"
+import { closeTerminal, liveTerminals, scriptsOf, serversUnder, TerminalSocket, terminalsOf } from "./terminals.ts"
 import { BrowserService, BrowserSocket } from "./browser.ts"
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
@@ -183,6 +185,9 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         if (!chat) return yield* notFound()
         return workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? yield* store.project(chat.projectId) : undefined))
       })
+    // The servers of a chat's folder (terminals.ts), placed also by the chat's own shells and agent sessions.
+    const chatServers = (chatId: string, root: string) =>
+      Effect.promise(() => serversUnder([root], ownedBy(runtime, new Map([[chatId, root]])))).pipe(Effect.map((list) => list.map(({ root: _root, ...s }) => s)))
     // A turn with workspace checkpoints, its project and whether its changes were undone.
     const turnWithTrees = (id: string) =>
       Effect.gen(function* () {
@@ -227,7 +232,7 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           )
         )
       )
-      .handle("terminals", ({ params }) => Effect.flatMap(store.chat(params.id), (chat) => (chat ? Effect.sync(() => terminalsOf(chat.id)) : notFound())))
+      .handle("terminals", ({ params }) => Effect.flatMap(store.chat(params.id), (chat) => (chat ? Effect.promise(() => listProcs().then((procs) => terminalsOf(chat.id, procs))) : notFound())))
       .handle("closeTerminal", ({ params }) =>
         Effect.sync(() => {
           if (terminalsOf(params.id).some((s) => s.id === params.terminal)) closeTerminal(params.terminal)
@@ -337,11 +342,11 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         Effect.map(store.searchMessages(query.q.trim()), (rows) => rows.map((m) => ({ chatId: m.chatId, messageId: m.id, at: m.at, snippet: snippet(m.text, query.q.trim()) })))
       )
       .handle("scripts", ({ params }) => Effect.map(chatRoot(params.id), scriptsOf))
-      .handle("servers", ({ params }) => Effect.map(chatRoot(params.id), serversIn))
+      .handle("servers", ({ params }) => Effect.flatMap(chatRoot(params.id), (root) => chatServers(params.id, root)))
       // Stops a server of that list (SIGTERM); a pid outside it is not found.
       .handle("stopServer", ({ params }) =>
         Effect.flatMap(chatRoot(params.id), (root) =>
-          serversIn(root).some((s) => s.pid === params.pid) ? Effect.sync(() => void process.kill(params.pid, "SIGTERM")) : notFound()
+          Effect.flatMap(chatServers(params.id, root), (list) => (list.some((s) => s.pid === params.pid) ? Effect.sync(() => void process.kill(params.pid, "SIGTERM")) : notFound()))
         )
       )
       // A path printed in the terminal, opened in the computer's default app; only files inside the chat's folder.
@@ -589,6 +594,22 @@ const preferencesOf = (store: Repository) =>
     nativeSkills: n === "1"
   }))
 
+// The processes a chat started (its shells, its agent sessions) → the chat's folder, to place the servers they run.
+function ownedBy(runtime: RuntimeService, folders: ReadonlyMap<string, string>): Map<number, string> {
+  const owned = new Map<number, string>()
+  for (const t of liveTerminals()) if (folders.has(t.chatId)) owned.set(t.pid, folders.get(t.chatId)!)
+  for (const s of runtime.liveSessions()) if (s.pid && folders.has(s.chatId)) owned.set(s.pid, folders.get(s.chatId)!)
+  return owned
+}
+// CPU and memory of a set of processes (each counted once).
+const useOf = (pids: Iterable<number>, procs: ReadonlyArray<Proc>, cpu: ReadonlyMap<number, number>) => {
+  const seen = new Set(pids)
+  let c = 0
+  let m = 0
+  for (const p of procs) if (seen.has(p.pid)) (c += cpu.get(p.pid) ?? 0), (m += p.rss)
+  return { cpu: Math.round(c * 10) / 10, memory: m }
+}
+
 const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
   Effect.gen(function* () {
     const secrets = yield* Secrets
@@ -598,20 +619,56 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
     const runtime = yield* Runtime
     const { hub } = yield* Tools
     const workspace = yield* Workspace
-    // The folder of every chat (a worktree, the project's, or its own), servers found under them in one pass.
+    // The folder of every chat (a worktree, the project's, or its own), servers found under them in one pass; then
+    // CPU and memory of Zorel's whole tree (procs.ts), split by part. Root: the desktop app when it started the
+    // server (ZOREL_PARENT_PID), else the server.
     const processes = Effect.gen(function* () {
       const projects = yield* store.projects()
       const folders = new Map<string, { chatIds: string[]; projectId: string | null }>() // folder → the chats working in it
+      const chatFolder = new Map<string, string>()
       for (const chat of yield* store.chats()) {
         const folder = workspace.cwdOf(chat.id, projectFor(chat, projects.find((p) => p.id === chat.projectId)))
         const f = folders.get(folder) ?? { chatIds: [], projectId: chat.projectId }
         f.chatIds.push(chat.id)
         folders.set(folder, f)
+        chatFolder.set(chat.id, folder)
       }
-      const servers = serversUnder([...folders.keys()]).map(({ root, ...s }) => ({ ...s, ...folders.get(root)!, folder: root }))
+      const { procs, cpu } = yield* Effect.promise(sample)
+      const tree = (pid: number | undefined) => (pid ? subtree(procs, pid) : [])
+      const owned = ownedBy(runtime, chatFolder)
+      const inside = new Set([...owned.keys()].flatMap((pid) => tree(pid)))
+      const found = yield* Effect.promise(() => serversUnder([...folders.keys()], owned, procs))
+      const servers = found.map(({ root, ...s }) => ({ ...s, ...folders.get(root)!, folder: root, nested: inside.has(s.pid), ...useOf(tree(s.pid), procs, cpu) }))
+      const terminals = liveTerminals(procs).map(({ pid, ...t }) => ({ ...t, ...useOf(tree(pid), procs, cpu) }))
+      const sessions = runtime.liveSessions().map(({ pid, ...s }) => ({ ...s, ...useOf(tree(pid), procs, cpu) }))
       const mcp = yield* store.mcpServers()
-      const connections = hub.connected().flatMap((id) => mcp.filter((s) => s.id === id).map((s) => ({ id: s.id, name: s.name, local: !s.url })))
-      return { servers, terminals: liveTerminals(), sessions: [...runtime.liveSessions()], connections }
+      const connections = hub.connected().flatMap((id) => mcp.filter((s) => s.id === id).map((s) => ({ id: s.id, name: s.name, local: !s.url, ...useOf(tree(hub.pidOf(id)), procs, cpu) })))
+      // The whole of Zorel, and its parts: each process counted in the first part that claims it.
+      const parent = Number(process.env.ZOREL_PARENT_PID)
+      const all = tree(parent && procs.some((p) => p.pid === parent) ? parent : process.pid)
+      const serverTree = new Set(tree(process.pid))
+      const claimed = new Set<number>()
+      const part = (pids: Iterable<number>) => {
+        const own = [...pids].filter((p) => !claimed.has(p))
+        for (const p of own) claimed.add(p)
+        return useOf(own, procs, cpu)
+      }
+      const agents = part(runtime.liveSessions().flatMap((s) => tree(s.pid)))
+      const shells = part(liveTerminals().flatMap((t) => tree(t.pid)))
+      const conns = part(hub.connected().flatMap((id) => tree(hub.pidOf(id))))
+      const server = part([process.pid])
+      const other = part([...serverTree])
+      const app = part(all) // the desktop app's own processes (window, GPU, the agents' browser views)
+      return {
+        servers, terminals, sessions, connections,
+        usage: {
+          ...useOf(all, procs, cpu), cores: cpus().length, totalMemory: totalmem(),
+          parts: [
+            { id: "app" as const, ...app }, { id: "server" as const, ...server }, { id: "agents" as const, ...agents },
+            { id: "terminals" as const, ...shells }, { id: "connections" as const, ...conns }, { id: "other" as const, ...other }
+          ]
+        }
+      }
     })
     const dataDir = yield* DataDir
     const storageReport = Effect.gen(function* () {

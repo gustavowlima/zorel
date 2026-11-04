@@ -78,6 +78,9 @@ class Rpc {
     this.write(params === undefined ? { method } : { method, params })
   }
 
+  get pid() {
+    return this.proc.pid
+  }
   kill() {
     this.proc.kill()
   }
@@ -376,6 +379,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
     turn,
     steer,
     alive: () => !rpc.exited && !startFailed,
+    pid: () => rpc.pid,
     close: Effect.sync(() => rpc.kill())
   }
 }

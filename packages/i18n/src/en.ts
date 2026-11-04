@@ -712,7 +712,16 @@ export const en = {
     remoteConnection: "Remote",
     hiddenChat: "Build with AI",
     inChat: { one: "1 process running in this chat", other: "{count} processes running in this chat" },
-    seeAll: "See all processes"
+    seeAll: "See all processes",
+    usage: {
+      title: "Zorel now",
+      hint: "The app, its server and everything they started, read every few seconds. 100% CPU is one full core; this computer has {cores}.",
+      cpu: "CPU",
+      memory: "Memory",
+      ofMemory: "of {total}",
+      history: "CPU over the last two minutes",
+      parts: { app: "App window and agent browser", server: "Zorel server", agents: "Agent sessions", terminals: "Terminals", connections: "Connections", other: "Other" }
+    }
   },
   connectors: {
     title: "Connectors",

@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { parseFrame, parseLsof, Ring, runLine, scriptsOf } from "./terminals.ts"
+import { parseLsof } from "./procs.ts"
+import { parseFrame, Ring, runLine, scriptsOf } from "./terminals.ts"
 
 test("parseFrame takes input and sane sizes, nothing else", () => {
   expect(parseFrame(`{"t":"i","d":"ls\\r"}`)).toEqual({ t: "i", d: "ls\r" })

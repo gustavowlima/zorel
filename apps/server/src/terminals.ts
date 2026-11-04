@@ -15,6 +15,7 @@ import { Socket } from "effect/socket"
 import { Store } from "./db.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
+import { cwdsOf, listeners, listProcs, type Proc, subtree } from "./procs.ts"
 
 export const MAX_TERMINALS = 12 // live shells at once, across chats
 const MAX_INPUT = 64 * 1024 // one input frame (a paste)
@@ -70,19 +71,16 @@ interface Session {
 const sessions = new Map<string, Session>()
 const live = () => [...sessions.values()].filter((s) => !s.ended).length
 
-// Whether the shell has something running in it (a child process), so closing it should ask first.
-function busy(s: Session): boolean {
-  if (s.ended) return false
-  const r = Bun.spawnSync(["pgrep", "-P", String(s.proc.pid)], { stdout: "pipe", stderr: "ignore" })
-  return r.exitCode === 0 && r.stdout.toString().trim().length > 0
-}
+// Whether the shell has something running in it (a child process), so closing it should ask first; from a read of
+// the process table (procs.ts, the three systems). Without one, not busy.
+const busy = (s: Session, procs: ReadonlyArray<Proc> | undefined) => !s.ended && !!procs?.some((p) => p.ppid === s.proc.pid)
 
-export const terminalsOf = (chatId: string) =>
-  [...sessions.values()].filter((s) => s.chatId === chatId).map((s) => ({ id: s.id, n: s.n, label: s.label, ended: s.ended, busy: busy(s) }))
+export const terminalsOf = (chatId: string, procs?: ReadonlyArray<Proc>) =>
+  [...sessions.values()].filter((s) => s.chatId === chatId).map((s) => ({ id: s.id, n: s.n, label: s.label, ended: s.ended, busy: busy(s, procs) }))
 
 // Every shell still running, across chats (Settings › Processes).
-export const liveTerminals = () =>
-  [...sessions.values()].filter((s) => !s.ended).map((s) => ({ id: s.id, chatId: s.chatId, n: s.n, label: s.label, busy: busy(s) }))
+export const liveTerminals = (procs?: ReadonlyArray<Proc>) =>
+  [...sessions.values()].filter((s) => !s.ended).map((s) => ({ id: s.id, pid: s.proc.pid, chatId: s.chatId, n: s.n, label: s.label, busy: busy(s, procs) }))
 
 function end(s: Session) {
   if (!s.ended) {
@@ -220,7 +218,7 @@ export const TerminalSocket = HttpRouter.add(
   }).pipe(Effect.scoped, Effect.orDie)
 )
 
-// ---------- local servers: processes listening on a TCP port whose working folder is inside the chat's ----------
+// ---------- local servers: processes listening on a TCP port that belong to a chat's folder ----------
 
 export interface LocalServer {
   readonly pid: number
@@ -228,42 +226,22 @@ export interface LocalServer {
   readonly ports: ReadonlyArray<number>
 }
 
-// lsof -F output (one field per line: p<pid>, c<command>, n<name>, f<fd>) to pid → fields.
-export function parseLsof(out: string): Map<number, { command: string; names: string[] }> {
-  const procs = new Map<number, { command: string; names: string[] }>()
-  let cur: { command: string; names: string[] } | undefined
-  for (const line of out.split("\n")) {
-    const v = line.slice(1)
-    if (line[0] === "p") {
-      cur = { command: "", names: [] }
-      procs.set(Number(v), cur)
-    } else if (line[0] === "c" && cur) cur.command = v
-    else if (line[0] === "n" && cur) cur.names.push(v)
-  }
-  return procs
-}
-
-const lsof = (args: string[]) => {
-  const r = Bun.spawnSync(["lsof", "-nP", ...args], { stdout: "pipe", stderr: "ignore" })
-  return parseLsof(r.stdout.toString())
-}
-
-// ponytail: lsof on every call (≈50 ms); cache it if the panel ever polls this often.
-export const serversIn = (root: string): LocalServer[] => serversUnder([root]).map(({ root: _root, ...s }) => s)
-
-// The servers under any of these folders, each with the folder it runs in (one lsof pass for all of them).
-export function serversUnder(roots: ReadonlyArray<string>): Array<LocalServer & { root: string }> {
-  if (!roots.length) return []
-  const listening = lsof(["-iTCP", "-sTCP:LISTEN", "-Fpcn"])
-  if (!listening.size) return []
-  const cwds = lsof(["-a", "-p", [...listening.keys()].join(","), "-d", "cwd", "-Fpn"])
+// The servers under any of these folders, each with the folder it belongs to. A server belongs to a folder when it
+// runs there (macOS, Linux) or was started from a process of that folder (`owned`: a shell or an agent session →
+// its folder), which is how Windows places them. One read of the ports and the process table for all folders.
+export async function serversUnder(roots: ReadonlyArray<string>, owned: ReadonlyMap<number, string> = new Map(), table?: ReadonlyArray<Proc>): Promise<Array<LocalServer & { root: string }>> {
+  if (!roots.length && !owned.size) return []
+  const ports = listeners()
+  if (!ports.size) return []
+  const procs = table ?? (await listProcs())
+  const byOwner = new Map<number, string>()
+  for (const [pid, root] of owned) for (const d of subtree(procs, pid)) byOwner.set(d, root)
+  const cwds = cwdsOf([...ports.keys()])
   const out: Array<LocalServer & { root: string }> = []
-  for (const [pid, p] of listening) {
-    const cwd = cwds.get(pid)?.names[0]
-    const root = cwd && pid !== process.pid ? roots.find((r) => cwd === r || cwd.startsWith(`${r}/`)) : undefined
-    if (!root) continue
-    const ports = [...new Set(p.names.map((n) => Number(n.slice(n.lastIndexOf(":") + 1))).filter((n) => n > 0))].sort((a, b) => a - b)
-    if (ports.length) out.push({ pid, command: p.command, ports, root })
+  for (const [pid, list] of ports) {
+    const cwd = cwds.get(pid)
+    const root = byOwner.get(pid) ?? (cwd ? roots.find((r) => cwd === r || cwd.startsWith(`${r}/`) || cwd.startsWith(`${r}\\`)) : undefined)
+    if (root) out.push({ pid, command: procs.find((p) => p.pid === pid)?.name ?? "?", ports: list, root })
   }
   return out.sort((a, b) => a.ports[0]! - b.ports[0]!)
 }
