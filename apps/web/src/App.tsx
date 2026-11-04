@@ -20,7 +20,7 @@ import { Rail, Sidebar } from "./features/sidebar.tsx"
 import { UsageView } from "./features/usage.tsx"
 import { rememberModels } from "./labels.ts"
 import { go, type Route, useRoute, useSidebar } from "./state.ts"
-import { Button, CircleAlert, cx, EmptyState, Spinner } from "@/ui"
+import { Button, CircleAlert, cx, EmptyState, SlideWidth, Spinner } from "@/ui"
 
 export function App() {
   const route = useRoute()
@@ -42,7 +42,9 @@ export function App() {
   return (
     <div className="flex h-full bg-frame">
       <Rail route={route} sidebar={sidebar} />
-      {!sidebar.hidden && <Sidebar route={route} activeProjectId={activeProjectId} />}
+      <SlideWidth open={!sidebar.hidden} width={248}>
+        <Sidebar route={route} activeProjectId={activeProjectId} />
+      </SlideWidth>
       {/* The content card: the whole height and the right edge of the window, rounded only toward the sidebar. */}
       <main className={cx("flex min-w-0 flex-1 flex-col", sidebar.hidden && "pl-3")}>
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-l-sheet border-l border-subtle bg-canvas">

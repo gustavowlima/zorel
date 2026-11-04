@@ -310,6 +310,11 @@ Compactos e diretos, com aperto físico ao pressionar.
 ### Visualizador de imagem
 - Uma imagem do chat abre dentro do Zero (`ImageViewer`), nunca numa aba nova: modal sobre o app escurecido, a imagem o maior que couber (object-contain, borda forte, cantos de 12px) e, acima, uma barra com o nome, "Open original" e o fechar. Esc, clique fora ou o botão fecham; o foco volta à miniatura.
 
+### Movimento
+- **Motion** (motion.dev, `motion/react`, em `ui/motion.tsx`) para o que o CSS não faz limpo: largura e altura de/para `auto` sem desmontar e uma forma deslizando entre lugares. Uma mola só no app (`spring`: sem quique, ~220ms visuais). `MotionConfig reducedMotion="user"` na raiz: com movimento reduzido no sistema, tudo troca de estado sem animar.
+- Barra lateral: recolhe e abre animando a largura (`SlideWidth`), com o conteúdo montado (rolagem e estado ficam). Seções Chats e Projects: abrem e fecham pela altura (`Fold`). Trilho: o fundo do lugar atual desliza do anterior até o novo (`Marker`, `layoutId`).
+- O resto continua em CSS (`transition-colors` 120–150ms nos hovers; setas giram 150ms).
+
 ### Painel lateral (padrão do T3 Code)
 - O cabeçalho do chat não tem um botão por superfície: tem os atalhos fixados e **um** botão de painel (ícone de painel + o +N −M do que o chat mudou). Ele abre o painel lateral, à direita do chat, com as superfícies como abas em pílula: **Changes** (com o delta), **Git** (só em repositório), **Files**, **Browser** e **Terminal** (Files e Terminal só com pasta de projeto), e × para fechar. Abaixo de 768px de painel as abas mostram só o ícone (o nome fica no tooltip e no nome acessível).
 - Largura ajustável pela borda esquerda (arraste, ou foco + setas), lembrada no computador: 560px por padrão, mín. 360px, máx. 70% da janela.

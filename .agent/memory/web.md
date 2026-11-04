@@ -62,3 +62,4 @@ updated: 2026-11-03
 - ChatItem na barra: 2 linhas sem ícone (NavTreeItem detail; nested usa pl-10): título + idade/spinner; embaixo avatares 16px + nomes dos membros, ou modelo, ou estado ao vivo. NavLabel das seções sem ícone (pedido do usuário: menos aglomerado)
 - projeto na barra: subtítulo alinhado (sem pasta/negrito), seta slot="chevron" depois do nome, contagem dim à direita; chats aninhados pl-6 com fio em left-3
 - barra lateral recolhível: useSidebar em state.ts (localStorage zero.sidebar.hidden, ⌘B); Rail tem botão PanelLeftClose/Open e Chats ativo alterna; trilho com border-r
+- motion 12.43.0 (pedido do usuário: animar a sidebar): ui/motion.tsx exporta spring, Fold (altura auto com AnimatePresence), SlideWidth (largura, mantém montado, inert quando fechado), Marker (layoutId) e MotionConfig (reducedMotion user em main.tsx). Não misturar classes transition-* em elementos motion

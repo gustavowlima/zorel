@@ -17,6 +17,7 @@ export { Code, Column, EmptyState, Meter, Rows, Screen, Section } from "./layout
 export { LimitRing, type RingTone } from "./limit-ring"
 export { Logo } from "./logo"
 export { Menu, MenuItem, MenuSeparator } from "./menu"
+export { Fold, Marker, MotionConfig, SlideWidth, spring } from "./motion"
 export { Segmented } from "./segmented"
 export { NavItem, NavLabel, NavTree, NavTreeItem, type NavKey, useNavReorder } from "./nav"
 export { I18nProvider } from "react-aria-components" // React Aria's own strings follow Zero's language
