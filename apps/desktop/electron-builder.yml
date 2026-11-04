@@ -1,8 +1,9 @@
 # Desktop package (D11). The app is only the Electron main process; the Zorel server (compiled Bun binary), the web
-# build and the migrations ship as resources next to it. Signing: with CSC_LINK + CSC_KEY_PASSWORD (and APPLE_ID +
-# APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID to notarize) it's a Developer ID build, the only kind current macOS
-# runs: ad hoc builds and builds signed with an "Apple Development" certificate are refused by AMFI (tested
-# 2026-11-04). Without a Developer ID, run the app with `bun run desktop` (dev).
+# build and the migrations ship as resources next to it. Version: `version` in package.json; a `v<version>` tag
+# releases it (CI). Signing: with CSC_LINK + CSC_KEY_PASSWORD (and APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD +
+# APPLE_TEAM_ID to notarize) it's a Developer ID build. Without them the app is signed ad hoc (scripts/adhoc-sign.cjs)
+# and updates through install.sh, but macOS 27 refuses to run ad hoc apps ("Evaluating blocked code", even with no
+# quarantine mark; tested 2026-11-04): on macOS only a Developer ID build runs. Until then, `bun run desktop` (dev).
 appId: dev.zorel.app
 productName: Zorel
 directories:
@@ -14,6 +15,8 @@ files:
   - assets/icon.png
   - package.json
 asar: true
+# No Developer ID: signed ad hoc after packing (scripts/adhoc-sign.cjs); with one, electron-builder signs as usual.
+afterSign: scripts/adhoc-sign.cjs
 # Electron fuses (flipped in the binary at build time): the app can't be run as plain Node, take NODE_OPTIONS or
 # --inspect, or load code from outside its checked app.asar; cookies are encrypted at rest.
 electronFuses:
@@ -36,8 +39,10 @@ publish:
   provider: github
   owner: ${env.ZOREL_RELEASE_OWNER}
   repo: ${env.ZOREL_RELEASE_REPO}
+  releaseType: release # published at once: install.sh and the updaters read the latest release, never a draft
 mac:
-  target: [dmg, zip] # zip: what the updater downloads on macOS
+  target: [dmg, zip] # zip: what install.sh (and, with a Developer ID, the updater) downloads
+  artifactName: zorel-mac-${arch}.${ext}
   icon: assets/icon.png
   category: public.app-category.developer-tools
 win:
@@ -45,3 +50,4 @@ win:
 linux:
   icon: assets/icon.png
   target: [AppImage]
+  artifactName: zorel-linux-${arch}.${ext}
