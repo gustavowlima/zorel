@@ -352,6 +352,7 @@ Compactos e diretos, com aperto físico ao pressionar.
 ### Agents (tela da equipe)
 - Item "Agents" na barra lateral, entre Needs you e Knowledge (fica ativo também na página de um agente). Uma tela com coluna central: **Global** (com a dica "Available in every project" e o vazio "No global agents yet") e depois cada projeto que tem agentes, cada um com um + discreto para criar ali. "New agent" no cabeçalho cria um global.
 - Linha do agente (a mesma da aba Agents do projeto): avatar, nome com "● working" em accent quando um chat dele está rodando, título (ou descrição, ou a 1ª linha das instruções), modelo, acesso e ›.
+- **Build with AI** (cabeçalho da tela Agents e aba Agents do projeto, ghost com ✦): abre um chat "Build agents" com o Builder; ele propõe a equipe inteira num cartão de aprovação (cada perfil sob o nome).
 - Agentes também nascem no chat: um agente usa `zero_create_agent` / `zero_update_agent` e o pedido vira um **cartão de aprovação** com o perfil campo a campo; nada é criado sem o OK. A lista se atualiza ao fim do turno.
 
 ### Versões do agente

@@ -13,7 +13,7 @@ import type { Approver, EngineSession, NativeApproval } from "#server/engines/se
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, runBrowserTool } from "./browser.ts"
-import { createInput, findAgent, listText, MEMORY_TOOL, proposalText, readText, ROUTINES_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
+import { createInputs, findAgent, listText, MEMORY_TOOL, proposalText, readText, ROUTINES_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
@@ -248,28 +248,36 @@ export const makeRuntime = Effect.gen(function* () {
       if (name !== "zero_create_agent" && !target) return textResult(`No agent "${String(args.agent ?? "")}" here. Call zero_list_agents.`, true)
       if (name === "zero_read_agent") return textResult(readText(target!))
       // Create or update: check, show the proposal card, write only on the person's OK.
-      let proposal: { title: string; fields: Record<string, unknown>; apply: () => Promise<Agent> }
+      let proposal: { title: string; text: string; fields: Record<string, unknown>; apply: () => Promise<Agent[]> }
       try {
         if (name === "zero_create_agent") {
-          const input = createInput(args, caller, chat.projectId)
+          const inputs = createInputs(args, caller, chat.projectId)
+          const fieldsOf = (input: (typeof inputs)[number]) => ({ ...input, projectId: undefined, scope: input.projectId ? "project" : "global" })
           proposal = {
-            title: `${nameOf(agent)} proposes a new agent: ${input.name}`,
-            fields: { ...input, projectId: undefined, scope: input.projectId ? "project" : "global" },
-            apply: () => run(store.createAgent(input, nameOf(agent)))
+            title: inputs.length === 1 ? `${nameOf(agent)} proposes a new agent: ${inputs[0]!.name}` : `${nameOf(agent)} proposes a team of ${inputs.length}: ${inputs.map((i) => i.name).join(", ")}`,
+            // One card for the whole team: each profile under its name.
+            text: inputs.length === 1 ? proposalText(fieldsOf(inputs[0]!)) : inputs.map((i) => `## ${i.name}\n${proposalText({ ...fieldsOf(i), name: undefined })}`).join("\n\n"),
+            fields: {},
+            apply: async () => {
+              const made: Agent[] = []
+              for (const input of inputs) made.push(await run(store.createAgent(input, nameOf(agent))))
+              return made
+            }
           }
         } else {
           const changes = updateInput(args, target!, caller.access)
           proposal = {
             title: `${nameOf(agent)} proposes changes to ${target!.name}`,
+            text: proposalText(changes),
             fields: changes,
-            apply: async () => (await run(store.updateAgent(target!.id, changes, nameOf(agent))))!
+            apply: async () => [(await run(store.updateAgent(target!.id, changes, nameOf(agent))))!]
           }
         }
       } catch (e) {
         return textResult(e instanceof Error ? e.message : String(e), true)
       }
       const s = await step(proposal.title, name)
-      const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: proposal.title, args: proposalText(proposal.fields), cwd: null }))
+      const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: proposal.title, args: proposal.text.slice(0, 12_000), cwd: null }))
       if (outcome === "denied" || outcome === "expired") {
         legacy.push({ tool: name, args: "", status: "refused", result: "" })
         await finish(s, "refused")
@@ -279,12 +287,16 @@ export const makeRuntime = Effect.gen(function* () {
       const done = await proposal.apply()
       // Recorded as the agent's change (the person approved it).
       const actor = { type: "agent" as const, id: agent?.id ?? "assistant" }
-      await run(
+      for (const d of done)
+        await run(
+          name === "zero_create_agent"
+            ? audit.record(Actions.agentCreated, { target: d, after: { name: d.name, model: d.model, access: d.access }, actor })
+            : audit.record(Actions.agentUpdated, { target: d, ...changed(target!, d, Object.keys(proposal.fields)), actor })
+        )
+      const out =
         name === "zero_create_agent"
-          ? audit.record(Actions.agentCreated, { target: done, after: { name: done.name, model: done.model, access: done.access }, actor })
-          : audit.record(Actions.agentUpdated, { target: done, ...changed(target!, done, Object.keys(proposal.fields)), actor })
-      )
-      const out = name === "zero_create_agent" ? `Created ${done.name} (@${handleOf(done)}, id ${done.id}). Mention it to give it work.` : `Updated ${done.name}.`
+          ? `Created ${done.map((d) => `${d.name} (@${handleOf(d)}, id ${d.id})`).join(", ")}. Mention them to give them work.`
+          : `Updated ${done[0]!.name}.`
       legacy.push({ tool: name, args: "", status: "ok", result: out })
       await finish(s, "ok", out)
       return textResult(out)

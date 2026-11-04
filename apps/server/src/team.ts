@@ -25,9 +25,27 @@ export const TEAM_TOOLS = [
   {
     name: "zero_create_agent",
     description:
-      "Propose a new persistent teammate when the user asks for one. The user sees the whole profile and approves it before it exists. Without model, it gets yours. Its access is at most yours. scope: 'project' (default, this chat's project) or 'global'. Use zero_update_agent for an existing agent.",
+      "Propose new persistent teammates when the user asks for them: one (the fields below) or a whole team at once (agents: a list of the same fields, up to 8). The user sees every profile in one card and approves before any exists. Without model, each gets yours. Access is at most yours. scope: 'project' (default, this chat's project) or 'global'. Use zero_update_agent for an existing agent.",
     inputSchema: {
       properties: {
+        agents: {
+          type: "array",
+          maxItems: 8,
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              title: { type: "string" },
+              description: { type: "string" },
+              instructions: { type: "string" },
+              model: { type: "string" },
+              effort: { type: "string", enum: ["low", "medium", "high", "max"] },
+              access: { type: "string", enum: ["ask", "workspace", "full"] },
+              scope: { type: "string", enum: ["project", "global"] }
+            },
+            required: ["name", "instructions"]
+          }
+        },
         name: { type: "string" },
         title: { type: "string", description: "The role in a few words" },
         description: { type: "string", description: "What it does, one sentence (other agents read it to know when to pass it work)" },
@@ -37,7 +55,6 @@ export const TEAM_TOOLS = [
         access: { type: "string", enum: ["ask", "workspace", "full"] },
         scope: { type: "string", enum: ["project", "global"] }
       },
-      required: ["name", "instructions"]
     },
     writes: true
   },
@@ -157,6 +174,25 @@ export function createInput(args: Record<string, unknown>, caller: { model: stri
   }
 }
 
+export const MAX_TEAM = 8
+
+// One profile, or a team from `agents`: each checked like a single one; names must differ from each other.
+export function createInputs(args: Record<string, unknown>, caller: { model: string; effort: Effort | null; access: Access }, projectId: string | null): NewAgentInput[] {
+  const list = Array.isArray(args.agents) ? (args.agents as unknown[]) : [args]
+  if (!list.length) throw new Error("agents is empty.")
+  if (list.length > MAX_TEAM) throw new Error(`At most ${MAX_TEAM} agents at once.`)
+  const out = list.map((a, i) => {
+    try {
+      return createInput((a ?? {}) as Record<string, unknown>, caller, projectId)
+    } catch (e) {
+      throw new Error(`Agent ${i + 1}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  })
+  const names = out.map((a) => a.name.toLowerCase())
+  if (new Set(names).size !== names.length) throw new Error("Each agent needs its own name.")
+  return out
+}
+
 export type AgentChanges = Partial<Pick<Agent, "name" | "title" | "description" | "instructions" | "model" | "effort" | "access">>
 
 // An update proposal: only the fields given, access only narrowed (never above the target's or the caller's).
@@ -213,3 +249,21 @@ export const ROUTINES_TOOL = {
   },
   writes: true
 } as const
+
+// ---------- the Builder: the agent that designs agents and teams with you (Tucano's "Tuca", for whole teams) ----------
+
+export const BUILDER = {
+  name: "Builder",
+  title: "Designs agents and teams",
+  description: "Turns what you need into agents (one or a whole team) and their routines, always as proposals you approve.",
+  instructions: [
+    "You design agents for the user. You do no other work.",
+    "1. Understand the goal: what should get done, in which project, how often, with what tools or accounts. Ask at most 3 short questions, only what you can't infer; otherwise propose right away.",
+    "2. Call zero_list_agents first so you don't duplicate an existing teammate; prefer improving one (zero_update_agent) over adding a near-copy.",
+    "3. Propose the whole team in ONE zero_create_agent call (agents: [...]): one clear responsibility each, a title of a few words, a one-sentence description other agents can route by, and focused instructions (what to do, how to report, when to hand off to whom by @handle). Small teams win: 1 to 4 agents unless the user asks for more.",
+    "4. Leave model and access unset unless the user asks; never ask for more access than the work needs.",
+    "5. If the work is recurring, propose routines with zero_routines (action create) after the agents exist.",
+    "6. End with what each agent does and how to start: which one to @mention for what."
+  ].join("\n"),
+  access: "ask" as const
+}

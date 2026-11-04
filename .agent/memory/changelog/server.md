@@ -34,3 +34,4 @@
 2026-11-03 | regra da evidência humana, confirm e zero_search_memories (ideias do Tucano) | memória mais confiável
 2026-11-03 | proteção contra loop e falhas seguidas no turno | ideia do Tucano
 2026-11-03 | rotinas: cron, run now, webhook local, ferramenta zero_routines | fase 7 (lacuna vs Tucano/OpenBot)
+2026-11-03 | Builder (Build with AI) e criação de equipe inteira num cartão | pedido do usuário (Tuca do Tucano, para várias)

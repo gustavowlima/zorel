@@ -7,7 +7,7 @@ import { agentsAtom, chatsAtom, mutations, useList, useMutation, useStatuses } f
 import { chatTitle, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
-import { AgentRow, useWorking } from "./agents.tsx"
+import { AgentRow, BuildWithAi, useWorking } from "./agents.tsx"
 import {
   Bot, Button, ChatStatusIcon, ConfirmDialog, EmptyState, Field, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Popover, Screen, Section, Tab,
   TabList, TabPanel, Tabs, Textarea, Trash2
@@ -215,10 +215,13 @@ function Agents({ projectId }: { projectId: string }) {
     <Section
       title={t("project.agents")}
       action={
-        <Button size="sm" variant="secondary" onPress={() => go({ view: "new-agent", projectId })}>
-          <Plus />
-          {t("nav.newAgent")}
-        </Button>
+        <span className="flex items-center gap-2">
+          <BuildWithAi projectId={projectId} />
+          <Button size="sm" variant="secondary" onPress={() => go({ view: "new-agent", projectId })}>
+            <Plus />
+            {t("nav.newAgent")}
+          </Button>
+        </span>
       }
     >
       {mine.length === 0 ? (

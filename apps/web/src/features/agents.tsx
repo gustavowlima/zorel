@@ -8,7 +8,7 @@ import { agentsAtom, mutations, projectsAtom, useList, useMutation, useStatuses 
 import { importedAgent } from "./agent.tsx"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { AgentAvatar, Bot, Button, ChevronRight, Column, pickFiles, Upload, Dot, EmptyState, IconButton, Plus, Screen, Section, Tooltip } from "@/ui"
+import { AgentAvatar, Bot, Button, ChevronRight, Column, pickFiles, Sparkles, Upload, Dot, EmptyState, IconButton, Plus, Screen, Section, Tooltip } from "@/ui"
 
 // The agents working now (a chat of theirs is running or waiting).
 export function useWorking() {
@@ -54,6 +54,7 @@ export function AgentsView() {
       subtitle={t("agents.subtitle")}
       actions={
         <>
+          <BuildWithAi />
           <ImportAgent />
           <Button size="sm" variant="secondary" onPress={() => go({ view: "new-agent", projectId: null })}>
             <Plus />
@@ -124,5 +125,27 @@ function ImportAgent() {
         {t("agent.import")}
       </Button>
     </>
+  )
+}
+
+// "Build with AI": a chat with the Builder (the agent that designs agents and teams; created the first time).
+export function BuildWithAi({ projectId = null }: { projectId?: string | null }) {
+  const builder = useMutation(mutations.builder)
+  const [busy, setBusy] = useState(false)
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      isPending={busy}
+      onPress={() => {
+        setBusy(true)
+        void builder({ payload: { projectId, model: "claude-cli/sonnet" }, reactivityKeys: ["agents", "chats"] })
+          .then((c) => go({ view: "chat", id: c.id }))
+          .finally(() => setBusy(false))
+      }}
+    >
+      <Sparkles />
+      {t("agents.build")}
+    </Button>
   )
 }

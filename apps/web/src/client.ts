@@ -68,6 +68,7 @@ export const mutations = {
   updateAgent: Zero.mutation("agents", "update"),
   removeAgent: Zero.mutation("agents", "remove"),
   restoreAgent: Zero.mutation("agents", "restore"),
+  builder: Zero.mutation("agents", "builder"),
   createRoutine: Zero.mutation("routines", "create"),
   updateRoutine: Zero.mutation("routines", "update"),
   removeRoutine: Zero.mutation("routines", "remove"),
