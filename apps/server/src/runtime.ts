@@ -62,6 +62,8 @@ export interface RuntimeService {
   readonly steer: (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) => Effect.Effect<void, ChatNotFound>
   readonly interrupt: (chatId: string) => Effect.Effect<void>
   // Pause everything (Tucano's "pause all"): running turns stop, new ones wait queued, routines don't fire.
+  // "Edit from here": the chat's engine sessions close, so the next turn starts from what the chat keeps.
+  readonly forget: (chatId: string) => Effect.Effect<void>
   readonly paused: () => boolean
   readonly setPaused: (paused: boolean) => Effect.Effect<void>
   readonly decide: (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">, reason?: string) => Effect.Effect<void, ApprovalNotFound>
@@ -797,6 +799,7 @@ export const makeRuntime = Effect.gen(function* () {
         if (fiber) yield* Fiber.interrupt(fiber)
       }),
 
+    forget: (chatId) => Effect.forEach([...sessions.keys()].filter((k) => k.startsWith(`${chatId}:`)), closeSession, { discard: true }),
     paused: () => paused,
     setPaused: (next) =>
       Effect.gen(function* () {

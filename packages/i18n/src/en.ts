@@ -83,6 +83,12 @@ export const en = {
     noAgent: "No agent"
   },
   chat: {
+    editFromHere: "Edit from here",
+    rewindTitle: "Edit from here?",
+    rewindBody: "This message and everything after it leave the conversation; the message comes back to the box so you can change it and send again.",
+    rewindFiles: "Also undo the file changes made after it",
+    rewindAction: "Edit from here",
+    rewindFailed: "Couldn't go back. Is a turn still running?",
     resumesAt: "Every account is at its usage limit. This chat continues by itself at {time}.",
     untitled: "New chat",
     label: "Chat",

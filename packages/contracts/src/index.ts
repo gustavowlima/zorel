@@ -520,6 +520,9 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.post("gitBranch", "/api/chats/:id/git/branch", { params: idParam, payload: Schema.Struct({ name: GitText.check(Schema.isMaxLength(200)) }), error: [HttpApiError.NotFound, GitFailed] }))
       .add(HttpApiEndpoint.post("enterWorktree", "/api/chats/:id/worktree", { params: idParam, payload: Schema.Struct({ branch: Schema.optionalKey(GitText.check(Schema.isMaxLength(200))) }), error: [HttpApiError.NotFound, GitFailed] }))
       .add(HttpApiEndpoint.delete("leaveWorktree", "/api/chats/:id/worktree", { params: idParam, error: [HttpApiError.NotFound, GitFailed] }))
+      // "Edit from here": the conversation goes back to before this message of yours (it comes back as text to
+      // edit); files: also undo what the later turns changed. Refused while a turn runs.
+      .add(HttpApiEndpoint.post("rewind", "/api/chats/:id/rewind", { params: idParam, payload: Schema.Struct({ messageId: Id, files: Schema.Boolean }), success: Schema.Struct({ text: Schema.String }), error: [HttpApiError.NotFound, HttpApiError.Conflict, UndoConflict] }))
       .add(HttpApiEndpoint.get("search", "/api/search", { query: Schema.Struct({ q: Schema.String.check(Schema.isMinLength(2), Schema.isMaxLength(200)) }), success: Schema.Array(SearchHit) }))
       .add(HttpApiEndpoint.get("scripts", "/api/chats/:id/scripts", { params: idParam, success: Schema.Array(ProjectScript), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.get("servers", "/api/chats/:id/servers", { params: idParam, success: Schema.Array(LocalServer), error: HttpApiError.NotFound }))

@@ -3,14 +3,14 @@
 // and the message box. State is the chat atom: snapshot + live events, so a turn keeps going if the tab
 // closes and the screen catches up when it reopens.
 import { type Agent, type Chat, type FailoverTarget, type Message, type ProviderAccount, skillHandle, type WorkspaceFile } from "@zero/contracts"
-import { useAtomValue } from "@effect/atom-react"
+import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zero/contracts/events"
 import { formatCompact, formatDuration, formatTime, t } from "@zero/i18n"
 import { type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { accountsAtom, agentsAtom, attachmentUrl, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
+import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
 import { agentName, chatTitle, formatCost, handleOf, modelLabel, switchText } from "../labels.ts"
 import { go } from "../state.ts"
 import { Composer, type ComposerSources } from "./composer.tsx"
@@ -51,6 +51,9 @@ export function ChatView({ chat }: { chat: Chat }) {
   }
   // A queued message brought back to the box remounts it with that text.
   const [draft, setDraft] = useState<{ key: number; text: string }>({ key: 0, text: "" })
+  // "Edit from here": the message picked, until the dialog closes.
+  const [rewind, setRewind] = useState<Message>()
+  const refreshChat = useAtomRefresh(chatAtom(chat.id))
   // Text others add to the box (a terminal selection), after what is typed.
   const insertRef = useRef<((text: string) => void) | undefined>(undefined)
   const second = team[1]
@@ -130,7 +133,17 @@ export function ChatView({ chat }: { chat: Chat }) {
       />
       <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
-      <Timeline chat={chat} state={state} agents={agents} onView={view} />
+      <Timeline chat={chat} state={state} agents={agents} onView={view} onEdit={setRewind} />
+      <RewindDialog
+        chatId={chat.id}
+        message={rewind}
+        changes={rewind ? state.messages.some((m) => m.at >= rewind.at && m.changes.length && !m.revertedAt) : false}
+        onClose={() => setRewind(undefined)}
+        onDone={(text) => {
+          refreshChat()
+          setDraft((d) => ({ key: d.key + 1, text }))
+        }}
+      />
       <div className="w-full px-8 pt-2 pb-4.5">
         {chat.resumeAt && (
           // Every route hit its usage limit: the chat goes on by itself at the reset (or you cancel, or write).
@@ -426,7 +439,7 @@ export function RenameDialog({ isOpen, onClose, title, onSave }: { isOpen: boole
 
 type Item = { at: number; message: Message } | { at: number; note: Note }
 
-function Timeline({ chat, state, agents, onView }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void }) {
+function Timeline({ chat, state, agents, onView, onEdit }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void }) {
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true) // follow new content only while the reader is at the bottom
   const items: Item[] = [...state.messages.map((m) => ({ at: m.at, message: m })), ...state.notes.map((n) => ({ at: n.at, note: n }))].sort((a, b) => a.at - b.at)
@@ -463,7 +476,7 @@ function Timeline({ chat, state, agents, onView }: { chat: Chat; state: ChatStat
               title={item.message.at <= chat.summaryUntil ? t("chat.coveredBySummary") : undefined}
             >
               {item.message.role === "user" ? (
-                <UserMessage message={item.message} />
+                <UserMessage message={item.message} onEdit={state.live ? undefined : () => onEdit(item.message)} />
               ) : (
                 <AgentMessage message={item.message} agents={agents} onView={onView} continued={continues(items[i - 1], item.message)} />
               )}
@@ -510,7 +523,7 @@ function Summary({ text }: { text: string }) {
   )
 }
 
-function UserMessage({ message: m }: { message: Message }) {
+function UserMessage({ message: m, onEdit }: { message: Message; onEdit?: (() => void) | undefined }) {
   return (
     <div className="group/msg relative ml-auto flex max-w-125 flex-col items-end gap-1.5">
       {m.attachments.length > 0 && (
@@ -536,14 +549,14 @@ function UserMessage({ message: m }: { message: Message }) {
         </div>
       )}
       <div className="rounded-sheet bg-surface px-4 py-2.5 whitespace-pre-wrap">{m.text}</div>
-      <MessageActions text={m.text} at={m.at} align="end" />
+      <MessageActions text={m.text} at={m.at} align="end" onEdit={onEdit} />
     </div>
   )
 }
 
 // Under a message, shown on hover or focus (always on touch): copy, when it was written and, for a reply, the
 // details (model, tokens, account, cost) in a tooltip. Quiet, so a conversation reads as text.
-function MessageActions({ text, at, details, align = "start" }: { text: string; at: number; details?: ReactNode; align?: "start" | "end" }) {
+function MessageActions({ text, at, details, align = "start", onEdit }: { text: string; at: number; details?: ReactNode; align?: "start" | "end"; onEdit?: (() => void) | undefined }) {
   const [copied, setCopied] = useState(false)
   const copy = () =>
     void navigator.clipboard.writeText(text).then(() => {
@@ -565,6 +578,13 @@ function MessageActions({ text, at, details, align = "start" }: { text: string; 
           </IconButton>
         </Tooltip>
       )}
+      {onEdit && (
+        <Tooltip content={t("chat.editFromHere")}>
+          <IconButton label={t("chat.editFromHere")} size="sm" onPress={onEdit}>
+            <Pencil className="size-3.5" />
+          </IconButton>
+        </Tooltip>
+      )}
       {details && (
         <Tooltip content={details}>
           <IconButton label={t("chat.details")} size="sm">
@@ -576,6 +596,55 @@ function MessageActions({ text, at, details, align = "start" }: { text: string; 
         {formatTime(at)}
       </time>
     </div>
+  )
+}
+
+// "Edit from here" (as in T3 Code): the conversation goes back to before this message of yours, which comes back
+// to the message box to edit; optionally the files the later turns changed go back too.
+function RewindDialog({ chatId, message, changes, onClose, onDone }: { chatId: string; message: Message | undefined; changes: boolean; onClose: () => void; onDone: (text: string) => void }) {
+  const rewind = useMutation(mutations.rewind)
+  const [files, setFiles] = useState(true)
+  const [error, setError] = useState<string>()
+  return (
+    <Dialog title={t("chat.rewindTitle")} isOpen={!!message} onOpenChange={(o) => {
+        if (o) return
+        setError(undefined)
+        onClose()
+      }}>
+      {(close) => (
+        <>
+          <p className="text-secondary">{t("chat.rewindBody")}</p>
+          {changes && (
+            <Switch isSelected={files} onChange={setFiles}>
+              {t("chat.rewindFiles")}
+            </Switch>
+          )}
+          {error && <p className="text-sm text-danger">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onPress={close}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              onPress={() => {
+                if (!message) return
+                setError(undefined)
+                rewind({ params: { id: chatId }, payload: { messageId: message.id, files: changes && files }, reactivityKeys: ["chats", "workspace"] })
+                  .then((r) => {
+                    onDone(r.text)
+                    close()
+                  })
+                  .catch((e: unknown) => {
+                    const conflict = (e as { files?: ReadonlyArray<string> })?.files
+                    setError(conflict ? t("workspace.undoConflict", { files: conflict.join(", ") }) : t("chat.rewindFailed"))
+                  })
+              }}
+            >
+              {t("chat.rewindAction")}
+            </Button>
+          </div>
+        </>
+      )}
+    </Dialog>
   )
 }
 

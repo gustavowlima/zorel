@@ -70,6 +70,7 @@ export const mutations = {
   restoreAgent: Zero.mutation("agents", "restore"),
   builder: Zero.mutation("agents", "builder"),
   pause: Zero.mutation("settings", "pause"),
+  rewind: Zero.mutation("chats", "rewind"),
   createRoutine: Zero.mutation("routines", "create"),
   updateRoutine: Zero.mutation("routines", "update"),
   removeRoutine: Zero.mutation("routines", "remove"),

@@ -303,6 +303,32 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           yield* store.setWorktree(chat.id, null)
         })
       )
+      .handle("rewind", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const chat = yield* store.chat(params.id)
+          if (!chat) return yield* notFound()
+          if (runtime.busy(chat.id)) return yield* new HttpApiError.Conflict()
+          const all = yield* store.messages(chat.id)
+          const cut = all.find((m) => m.id === payload.messageId && m.role === "user")
+          if (!cut) return yield* notFound()
+          const later = all.filter((m) => m.at >= cut.at)
+          // Files first (newest turn first), so a conflict leaves the conversation untouched.
+          if (payload.files) {
+            const project = chat.projectId ? yield* store.project(chat.projectId) : undefined
+            for (const m of later.filter((x) => x.turnId && x.changes.length && !x.revertedAt).reverse()) {
+              const t = yield* turnWithTrees(m.turnId!)
+              if (!t || !project) continue
+              const { conflicts } = yield* workspace.restore(projectFor(chat, project)!, t.before, t.after)
+              if (conflicts.length) return yield* new UndoConflict({ files: conflicts })
+              yield* store.markReverted(t.row.id)
+            }
+          }
+          yield* store.deleteMessagesFrom(chat.id, cut.at)
+          if (chat.summaryUntil >= cut.at) yield* store.setSummary(chat.id, "", 0) // the summary covered what went
+          yield* runtime.forget(chat.id)
+          return { text: cut.text }
+        })
+      )
       .handle("search", ({ query }) =>
         Effect.map(store.searchMessages(query.q.trim()), (rows) => rows.map((m) => ({ chatId: m.chatId, messageId: m.id, at: m.at, snippet: snippet(m.text, query.q.trim()) })))
       )
