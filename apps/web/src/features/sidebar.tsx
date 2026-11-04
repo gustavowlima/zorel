@@ -14,7 +14,7 @@ import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  Fold, Marker, Pause, Play, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
+  ChevronRight, Fold, Marker, Pause, Play, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
@@ -64,8 +64,8 @@ export function Rail({
     { key: "knowledge", icon: <BookOpen />, label: t("nav.knowledge"), active: route.view === "knowledge", go: () => go({ view: "knowledge" }) }
   ]
   return (
-    <nav aria-label={t("nav.label")} className="rail-top app-drag flex w-15 shrink-0 flex-col items-center gap-1 border-r border-subtle pt-3 pb-3">
-      <span className="mb-1 flex size-10 items-center justify-center">
+    <nav aria-label={t("nav.label")} className="flex w-15 shrink-0 flex-col items-center gap-1 border-r border-subtle pt-3 pb-3">
+      <span className="rail-logo mb-1 flex size-10 items-center justify-center">
         <Logo className="size-5" />
       </span>
       <RailItem label={sidebar.hidden ? t("nav.showSidebar") : t("nav.hideSidebar")} active={false} onPress={sidebar.toggle}>
@@ -235,8 +235,7 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
 
   return (
     <nav aria-label={t("nav.chats")} className="flex w-62 shrink-0 flex-col overflow-hidden pt-0 pb-3 pl-2">
-      {/* In the desktop app the top of the list is also the title bar (it drags the window). */}
-      <div className="brand-row app-drag h-3 shrink-0" />
+      <div className="h-3 shrink-0" />
 
       {/* Chats (without a project) first, then Projects; each section folds, and the list scrolls under the pages.
           Right-click (or the Menu key) on a chat or a project opens its menu. */}
@@ -543,3 +542,31 @@ function UsageDetail({ rows }: { rows: ReadonlyArray<{ account: ProviderAccount;
 }
 
 const toneOf = (p: Pace): RingTone => (p.used >= 0.95 ? "critical" : p.runsOutAt || p.used >= LIMIT_ALERT ? "warning" : "ok")
+
+// The desktop app's title bar (as in a reference app): the whole window width above the rail, the sidebar and the card. It
+// drags the window, leaves room for the macOS window buttons, and holds the brand, back/forward and New chat.
+export function TitleBar() {
+  return (
+    <header className="app-drag flex h-12 shrink-0 items-center gap-1 pr-3 pl-21">
+      <span className="flex items-center gap-2 pr-3 font-semibold">
+        <Logo className="size-4.5" />
+        {t("app.name")}
+      </span>
+      <Tooltip content={t("nav.back")}>
+        <IconButton label={t("nav.back")} size="sm" onPress={() => history.back()}>
+          <ChevronRight className="size-4 rotate-180" />
+        </IconButton>
+      </Tooltip>
+      <Tooltip content={t("nav.forward")}>
+        <IconButton label={t("nav.forward")} size="sm" onPress={() => history.forward()}>
+          <ChevronRight className="size-4" />
+        </IconButton>
+      </Tooltip>
+      <Tooltip content={t("nav.newChat")}>
+        <IconButton label={t("nav.newChat")} size="sm" onPress={() => go({ view: "home" })}>
+          <Plus className="size-4" />
+        </IconButton>
+      </Tooltip>
+    </header>
+  )
+}

@@ -37,6 +37,8 @@ export const en = {
   },
   nav: {
     label: "Workspace",
+    back: "Back",
+    forward: "Forward",
     newChat: "New chat",
     needsYou: "Needs you",
     knowledge: "Knowledge",
