@@ -131,7 +131,7 @@ export function ChatView({ chat }: { chat: Chat }) {
       <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
       <Timeline chat={chat} state={state} agents={agents} onView={view} />
-      <div className="mx-auto w-full max-w-180 px-6 pt-2 pb-4.5">
+      <div className="w-full px-8 pt-2 pb-4.5">
         <QueuePanel
           items={queue.items}
           canSteer={busy}
@@ -437,7 +437,7 @@ function Timeline({ chat, state, agents, onView }: { chat: Chat; state: ChatStat
       }}
       className="min-h-0 flex-1 overflow-auto"
     >
-      <div className="mx-auto flex w-full max-w-180 flex-col gap-7 px-7 pt-6 pb-8">
+      <div className="flex w-full flex-col gap-7 px-8 pt-6 pb-8">
         {chat.summary && <Summary text={chat.summary} />}
         {state.ready && items.length === 0 && !state.live && <EmptyState icon={<MessageCircle />} title={t("chat.empty")} hint={t("chat.emptyHint")} />}
         {!state.ready && (
