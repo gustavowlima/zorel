@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { Agent } from "@zero/contracts"
-import { createInput, findAgent, narrower, updateInput, visibleTo } from "./team.ts"
+import { createInput, createInputs, findAgent, narrower, updateInput, visibleTo } from "./team.ts"
 
 const agent = (over: Partial<Agent>): Agent => ({
   id: "a1", projectId: null, name: "Code Reviewer", title: "", description: "", instructions: "x", model: "claude-cli/claude-sonnet-5-5",
@@ -35,4 +35,13 @@ test("agents are found by id or @handle among the visible ones", () => {
   expect(findAgent(all, "@code-reviewer")?.id).toBe("a1")
   expect(findAgent(all, "a2")?.id).toBe("a2")
   expect(findAgent(all, "@missing")).toBeUndefined()
+})
+
+test("a team: up to 8 profiles, each checked, names distinct", () => {
+  const team = createInputs({ agents: [{ name: "Lead", instructions: "Plan" }, { name: "Dev", instructions: "Build", access: "full" }] }, caller, "p1")
+  expect(team.map((a) => [a.name, a.access])).toEqual([["Lead", "workspace"], ["Dev", "workspace"]])
+  expect(createInputs({ name: "Solo", instructions: "x" }, caller, null)).toHaveLength(1)
+  expect(() => createInputs({ agents: [{ name: "A", instructions: "x" }, { name: "a", instructions: "y" }] }, caller, null)).toThrow("own name")
+  expect(() => createInputs({ agents: [{ name: "A", instructions: "x" }, { name: "B" }] }, caller, null)).toThrow("Agent 2")
+  expect(() => createInputs({ agents: Array.from({ length: 9 }, (_, i) => ({ name: `A${i}`, instructions: "x" })) }, caller, null)).toThrow("At most 8")
 })

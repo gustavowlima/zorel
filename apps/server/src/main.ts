@@ -24,6 +24,7 @@ import { LoggerLive } from "./observability.ts"
 import { Runtime } from "./runtime.ts"
 import { RoutineScheduler, runRoutine } from "./routines.ts"
 import { createRoutineFor, newToken, nextRun } from "./schedule.ts"
+import { BUILDER } from "./team.ts"
 import { Tools } from "./tools.ts"
 import { billingOf, Pricing } from "./pricing.ts"
 import { clean, measure } from "./storage.ts"
@@ -108,6 +109,16 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
           const after = yield* found(store.updateAgent(params.id, payload))
           if (before) yield* audit.record(Actions.agentUpdated, { target: after, ...changed(before, after, AGENT_FIELDS) })
           return after
+        })
+      )
+      .handle("builder", ({ payload }) =>
+        Effect.gen(function* () {
+          if (!(yield* projectOk(store, payload.projectId))) return yield* notFound()
+          const existing = (yield* store.agents()).find((a) => a.projectId === null && a.title === BUILDER.title)
+          const builder = existing ?? (yield* store.createAgent({ projectId: null, name: BUILDER.name, title: BUILDER.title, description: BUILDER.description, instructions: BUILDER.instructions, model: payload.model, access: BUILDER.access }))
+          if (!existing) yield* audit.record(Actions.agentCreated, { target: builder, after: { name: builder.name, model: builder.model, access: builder.access } })
+          const chat = yield* store.createChat({ projectId: payload.projectId, agentIds: [builder.id], model: builder.model })
+          return (yield* store.updateChat(chat.id, { title: "Build agents" }))!
         })
       )
       .handle("versions", ({ params }) =>

@@ -394,7 +394,10 @@ Referência: a reference app (`docs/architecture/agents.md` "Agent communication
 **Implementado (2026-11-03):** delegação por `@menção` (handoff com teto de 3 respostas seguidas) e as ferramentas próprias do Zero, oferecidas a todo turno ao lado das MCP:
 - `zero_list_agents` e `zero_read_agent`: leem a equipe (globais + do projeto; agente por id ou `@handle`). Livres.
 - `zero_create_agent` e `zero_update_agent`: viram **cartão de aprovação** com o perfil campo a campo e só gravam no seu OK; auditadas em nome do agente e registradas como versão do agente. O novo agente nunca tem acesso acima de quem propõe (ask < workspace < full) e um agente só estreita o acesso de outro. Sem modelo, herda o de quem propõe; modelo inválido volta como erro com os providers válidos (sem uma `list_models` à parte).
+- `zero_create_agent` aceita **uma equipe inteira** (`agents: [...]`, até 8, nomes distintos): um cartão só com cada perfil sob o nome dele; aprovar cria todos.
+- **Builder** (ideia do "Tuca" do a reference app, para equipes): um agente global de sistema (título "Designs agents and teams", acesso `ask`), criado na primeira vez que você usa **Build with AI** (tela Agents ou aba Agents do projeto), que abre um chat com ele no projeto. Ele entende o objetivo (no máximo 3 perguntas), lê a equipe para não duplicar (melhora um agente existente com `zero_update_agent` em vez de criar um quase igual), propõe a equipe num cartão e, se o trabalho for recorrente, as rotinas. É um agente comum: dá para editar as instruções dele.
 - `zero_search_memories`: busca na memória além do orçamento do contexto (seção 8).
+- `zero_routines`: lista, propõe e cancela rotinas (seção 13, fase 7), sempre com cartão.
 - Cada perfil de agente guarda **versões** (quem mudou, quando) com restaurar, e exporta/importa como `.agent.json` sem a conta.
 
 **Planejado — ferramentas** (`zero.*`):

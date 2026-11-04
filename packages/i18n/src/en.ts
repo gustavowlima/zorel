@@ -868,8 +868,9 @@ export const en = {
     globalHint: "Available in every project.",
     noGlobal: "No global agents yet.",
     working: "working",
+    build: "Build with AI",
     empty: "No agents yet",
-    emptyHint: "Create one here, or ask an agent in a chat to propose one."
+    emptyHint: "Create one here, or use Build with AI: describe the work and the Builder proposes the agents."
   },
   access: {
     title: "What it can do without asking",
