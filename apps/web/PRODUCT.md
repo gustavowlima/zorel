@@ -8,68 +8,68 @@ web
 
 ## Users
 
-**Desenvolvedores e pequenas equipes (2–5 pessoas)** que trabalham com agentes de IA em projetos de código.
+**Developers and small teams (2–5 people)** who work with AI agents on code projects.
 
-**Situação:** cada pessoa tem as próprias assinaturas (Claude, ChatGPT) e chaves de API e coordena vários agentes em vários projetos. Hoje cada CLI fica numa sessão isolada e é preciso reexplicar o contexto ao trocar de ferramenta, de modelo ou de colega.
+**Situation:** each person has their own subscriptions (Claude, ChatGPT) and API keys and coordinates several agents across several projects. Today each CLI lives in an isolated session, and the context has to be explained again when switching tool, model or teammate.
 
-**Trabalho a ser feito:** levar uma tarefa de código do pedido ao resultado com agentes que conhecem o projeto, continuar de onde parou (qualquer pessoa, qualquer modelo) e manter controle sobre o que os agentes fazem.
+**Job to be done:** take a code task from request to result with agents that know the project, pick up where it left off (any person, any model) and keep control over what the agents do.
 
-**Decisão em aberto:** como a equipe compartilha o Zorel antes do modo hospedado (fase 8 da arquitetura). Opções: um server do Zorel acessado pela rede da equipe ou adiantar parte da fase 8 (login e papéis simples). Nada desta decisão está implementado.
+**Open decision:** how the team shares Zorel before the hosted mode (phase 8 of the architecture). Options: a Zorel server reached over the team's network, or bringing part of phase 8 forward (login and simple roles). None of this decision is implemented.
 
 ## Product Purpose
 
-O Zorel é um workspace de agentes de IA organizado em **projetos**, com uma **equipe de agentes** por projeto e **chats** avulsos. Ele roda os harnesses que a pessoa já usa (Claude Code, Codex, OpenCode e outras CLIs via ACP) e guarda o contexto e o conhecimento do trabalho.
+Zorel is a workspace for AI agents organized into **projects**, with a **team of agents** per project and standalone **chats**. It runs the harnesses the person already uses (Claude Code, Codex, OpenCode and other CLIs via ACP) and keeps the context and knowledge of the work.
 
-**Sucesso:** abrir um chat novo, ou trocar de modelo, e o agente já sabe o que foi decidido, o que falhou e como as coisas são feitas no projeto, sem ninguém reexplicar. Tudo que um agente faz que muda algo fica visível e passa pelo nível de aprovação escolhido.
+**Success:** open a new chat, or switch models, and the agent already knows what was decided, what failed and how things are done in the project, without anyone explaining it again. Everything an agent does that changes something stays visible and goes through the chosen approval level.
 
 ## Positioning
 
-O que T3 Code, a reference app e Claude Code não podem dizer com verdade:
+What T3 Code, a reference app and Claude Code cannot truthfully say:
 
-1. **O contexto é do Zorel, não da sessão da CLI.** Trocar de modelo ou de provider a qualquer momento não perde nada. O contexto é montado em camadas pelo Zorel e serve de ponto de retomada para qualquer harness.
-2. **Aprende trabalhando.** O trabalho vira conhecimento do projeto (decisões, armadilhas, como-fazer, sessões) com versões e desfazer. O que é sobre a pessoa passa pela aprovação dela.
-3. **Equipe de agentes com responsabilidades.** Os agentes delegam entre si, com aprovações claras e a troca entre eles visível no chat.
-4. **Usa o que você já paga.** Assinaturas pela CLI oficial e chaves de API (via OpenCode), com várias contas por provider, troca automática opcional quando o limite acaba e consumo visível.
+1. **The context belongs to Zorel, not to the CLI session.** Switching model or provider at any time loses nothing. The context is assembled in layers by Zorel and serves as a resume point for any harness.
+2. **Learns by working.** The work becomes project knowledge (decisions, pitfalls, how-tos, sessions) with versions and undo. What is about the person goes through that person's approval.
+3. **A team of agents with responsibilities.** The agents delegate to each other, with clear approvals and the exchange between them visible in the chat.
+4. **Uses what you already pay for.** Subscriptions through the official CLI and API keys (via OpenCode), with several accounts per provider, optional automatic switching when the limit runs out, and visible usage.
 
 ## Operating Context
 
-- **Uso:** no desktop (app Electrobun) e no navegador local. O modo hospedado vem depois.
-- **Rotina:** abrir um projeto, falar com o agente líder ou mencionar um colega com `@`, aprovar ações, revisar o que o Zorel aprendeu e alternar modelo ou conta conforme custo e limite.
-- **Ferramentas ao redor:** git, editor, terminal e servidores MCP (GitHub, Linear, Notion…), sempre escolhidos por projeto.
+- **Use:** on the desktop (Electrobun app) and in the local browser. The hosted mode comes later.
+- **Routine:** open a project, talk to the lead agent or mention a teammate with `@`, approve actions, review what Zorel learned, and switch model or account according to cost and limit.
+- **Surrounding tools:** git, editor, terminal and MCP servers (GitHub, Linear, Notion…), always chosen per project.
 
 ## Capabilities and Constraints
 
-- **Projetos:** brief, pasta no disco, agente padrão, agentes, chats e conhecimento.
-- **Chats avulsos e canais** com vários agentes.
-- **Engines:** assinatura → harness do dono (Claude Agent SDK, Codex App Server, ACP); API key → OpenCode via ACP.
-- **Aprovações em três níveis por agente** (Workspace, Perguntar antes, Acesso total) e tela "Precisa de você".
-- **Ferramentas:** MCP por projeto, com política leitura / aprovação / automático.
-- **Interface só em inglês por enquanto**, com i18n desde o início. O conteúdo do usuário nunca é traduzido.
-- **Leve:** um processo, um arquivo de banco, nenhum serviço externo obrigatório.
-- **Termos dos providers:** o Zorel nunca lê nem guarda o login das CLIs. Assinatura via app de terceiros é zona cinzenta e é avisada.
-- **Detalhes técnicos e fases:** `docs/ARCHITECTURE.md` na raiz do repositório.
+- **Projects:** brief, folder on disk, default agent, agents, chats and knowledge.
+- **Standalone chats and channels** with several agents.
+- **Engines:** subscription → the owner's harness (Claude Agent SDK, Codex App Server, ACP); API key → OpenCode via ACP.
+- **Approvals at three levels per agent** (Workspace, Ask first, Full access) and a "Needs you" screen.
+- **Tools:** MCP per project, with a read / approval / automatic policy.
+- **Interface in English only for now**, with i18n from the start. User content is never translated.
+- **Lightweight:** one process, one database file, no required external service.
+- **Provider terms:** Zorel never reads or stores the CLIs' login. Using a subscription through a third-party app is a gray area, and the user is warned about it.
+- **Technical details and phases:** `docs/ARCHITECTURE.md` at the repository root.
 
 ## Brand Commitments
 
-- **Nome: Zorel** (trocado de "Zero" em 2026-11-04: "Zero" colidia com outros produtos e não tinha domínio). Domínio próprio: zorel.dev.
+- **Name: Zorel** (changed from "Zero" on 2026-11-04: "Zero" collided with other products and had no domain). Own domain: zorel.dev.
 - **Open source, Apache-2.0.**
-- **Tom:** direto, técnico, sem jargão vazio.
-- **Direção visual:** escolhida pelo usuário como compromisso, **inspirada no a reference app** (só referência; nenhum código ou CSS copiado). Os detalhes vivem no `DESIGN.md`.
+- **Tone:** direct, technical, no empty jargon.
+- **Visual direction:** chosen by the user as a commitment, **inspired by a reference app** (reference only; no code or CSS copied). The details live in `DESIGN.md`.
 
 ## Evidence on Hand
 
-- **O que existe:** código do MVP em `apps/`, testes ponta a ponta em `apps/server/src/*.test.ts`, ícone em `apps/desktop/assets/icon.svg` e documentação em `docs/`.
-- **O que não existe, e não deve ser inventado:** usuários, depoimentos, métricas de uso, preços, comparativos de desempenho publicados.
+- **What exists:** MVP code in `apps/`, end-to-end tests in `apps/server/src/*.test.ts`, icon in `apps/desktop/assets/icon.svg` and documentation in `docs/`.
+- **What does not exist, and must not be invented:** users, testimonials, usage metrics, pricing, published performance comparisons.
 
 ## Product Principles
 
-1. **Continuidade acima de tudo.** Ninguém deve precisar reexplicar o projeto: nem para outro modelo, nem para outro agente, nem para outra pessoa.
-2. **Controle visível.** Toda ação que muda algo tem dono, aparece no chat e respeita o nível de aprovação. Todo aprendizado pode ser visto, desfeito ou esquecido.
-3. **Leve primeiro.** Começar no mínimo útil e crescer só com evidência medida.
-4. **Neutro de provider.** Funciona com as assinaturas e chaves que a pessoa já tem, sem prender a nenhum modelo.
+1. **Continuity above all.** No one should need to explain the project again: not to another model, not to another agent, not to another person.
+2. **Visible control.** Every action that changes something has an owner, shows up in the chat and respects the approval level. Everything learned can be seen, undone or forgotten.
+3. **Lightweight first.** Start at the useful minimum and grow only with measured evidence.
+4. **Provider-neutral.** Works with the subscriptions and keys the person already has, without lock-in to any model.
 
 ## Accessibility & Inclusion
 
-- Navegação completa por teclado, foco visível e rótulos acessíveis (base React Aria).
-- Respeito a "reduzir movimento".
-- Contraste adequado nos temas escuro (padrão) e claro.
+- Full keyboard navigation, visible focus and accessible labels (React Aria base).
+- Respects "reduce motion".
+- Adequate contrast in the dark (default) and light themes.

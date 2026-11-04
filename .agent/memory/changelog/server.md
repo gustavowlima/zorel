@@ -1,64 +1,64 @@
-2026-11-02 | adicionados agentes, chats, mensagens, memórias (FTS5), engines CLI/API, contexto em camadas, consolidação | MVP
-2026-11-02 | canais (chat_members, @menção, repasse até 3), skills (memories.kind), MCP (hub + gateway + aprovação), chaves no chaveiro (Bun.secrets), índice FTS próprio com título | pedido "implemente tudo"
-2026-11-03 | guarda LocalOnly (Host\/Origin), esquecidas na consolidação + teto de pendentes, restaurar memória | auditoria de boas práticas das referências
-2026-11-03 | D5 revista: API key vira credencial de harness (Claude SDK, Codex, OpenCode ACP); effect/ai só interno | loop próprio sobre effect/ai é fraco frente a harnesses como OpenCode
-2026-11-03 | API key de qualquer provider (inclusive Anthropic/OpenAI) → OpenCode; assinatura → harness do dono | um caminho só para chaves, comportamento igual entre modelos
-2026-11-03 | failover automático de conta\/modelo passa a ser suportado, opcional e com aviso de termos (fase 2b) | pedido do usuário; antes era só troca manual
-2026-11-03 | banco: bun:sqlite direto → Drizzle 1.0 rc sobre @effect/sql (fase 1) | integração nativa Effect 4, portabilidade SQLite→Postgres, migrations geradas
-2026-11-03 | driver local: @effect/sql-sqlite-bun → @effect/sql-libsql; RAG entra no desenho (D18) | vetores nativos sem extensão; pedido do usuário
-2026-11-03 | memórias+skills → páginas de conhecimento aprendido; RAG por upload e libSQL saem; driver volta a sqlite-bun | pedido: leve, simples, eficiente; base de conhecimento = aprendizado (ai-memory)
-2026-11-03 | base headless do shadcn: React Aria (--base aria), não Radix nem Base UI | decisão do usuário; a11y e i18n embutidos
-2026-11-03 | contrato de eventos dos turnos (events.ts) e subscribeStatus | engine primeiro; protótipo vira especificação dos eventos
-2026-11-03 | banco migrado para Drizzle (effect-sqlite-bun), repositório em Effect, adoção do banco do MVP com backup | D9, fase 1
-2026-11-03 | runtime de turnos (fila no banco, RPC WebSocket, recuperação no boot); SSE removido | fase 1, ARCHITECTURE §5
-2026-11-03 | fecho da fase 1: logs mascarados + spans, Actor e dono/público nas memórias, primeiro token, erros como código, backup diário com 7 | ARCHITECTURE §12, §13
-2026-11-03 | comentários passam a ser em inglês | pedido do usuário
-2026-11-03 | sessão nativa do Claude (Agent SDK) com marcação por sessão | fase 2, etapa 1
-2026-11-03 | sessão nativa do Codex (cliente mínimo, CODEX_HOME isolado); D16 revisada | fase 2, etapa 2
-2026-11-03 | multicontas: provider_accounts, conta por chat/agente, login/status pela CLI | fase 2, etapa 4
-2026-11-03 | steering real no Codex, nível de raciocínio, tokens de cache por turno | fase 2, etapa 5
-2026-11-03 | anexos e imagens; sessão por provider (volta ao Claude manda só o delta); fase 2 concluída | §12, §13
-2026-11-03 | GET /api/usage e RPC approvals | telas Usage e Needs you
-2026-11-03 | failover por agente/chat, espera por limite, leitura de uso por conta | fase 2b
-2026-11-03 | workspace com git sombra, acesso por agente, ferramentas nativas, diff/desfazer, vigia de turno | fase 3
-2026-11-03 | consumo (custo, janelas de limite) e nomes reais dos modelos das CLIs | fase 2c
-2026-11-03 | position em projects e chats + endpoints de reordenação | drag and drop na sidebar
-2026-11-03 | audit log com evlog gravando em SQLite | pedido do usuário
-2026-11-03 | endpoint de contexto, janela no catálogo, $skill no turno | composer novo
+2026-11-02 | added agents, chats, messages, memories (FTS5), CLI/API engines, layered context, consolidation | MVP
+2026-11-02 | channels (chat_members, @mention, handoff up to 3), skills (memories.kind), MCP (hub + gateway + approval), keys in the keychain (Bun.secrets), own FTS index with title | request "implement everything"
+2026-11-03 | LocalOnly guard (Host\/Origin), forgotten ones in consolidation + pending cap, restore memory | best-practices audit of the references
+2026-11-03 | D5 revised: API key becomes a harness credential (Claude SDK, Codex, OpenCode ACP); effect/ai internal only | own loop over effect/ai is weak compared to harnesses like OpenCode
+2026-11-03 | API key from any provider (including Anthropic/OpenAI) → OpenCode; subscription → owner's harness | a single path for keys, same behavior across models
+2026-11-03 | automatic account\/model failover becomes supported, optional and with a terms notice (phase 2b) | user request; before it was manual switching only
+2026-11-03 | database: direct bun:sqlite → Drizzle 1.0 rc over @effect/sql (phase 1) | native Effect 4 integration, SQLite→Postgres portability, generated migrations
+2026-11-03 | local driver: @effect/sql-sqlite-bun → @effect/sql-libsql; RAG enters the design (D18) | native vectors without extension; user request
+2026-11-03 | memories+skills → learned knowledge pages; upload RAG and libSQL removed; driver back to sqlite-bun | request: light, simple, efficient; knowledge base = learning (ai-memory)
+2026-11-03 | shadcn headless base: React Aria (--base aria), not Radix nor Base UI | user decision; built-in a11y and i18n
+2026-11-03 | turn event contract (events.ts) and subscribeStatus | engine first; prototype becomes the event spec
+2026-11-03 | database migrated to Drizzle (effect-sqlite-bun), repository in Effect, adoption of the MVP database with backup | D9, phase 1
+2026-11-03 | turn runtime (queue in the database, WebSocket RPC, recovery on boot); SSE removed | phase 1, ARCHITECTURE §5
+2026-11-03 | phase 1 close: masked logs + spans, Actor and owner/audience on memories, first token, errors as code, daily backup keeping 7 | ARCHITECTURE §12, §13
+2026-11-03 | comments now in English | user request
+2026-11-03 | native Claude session (Agent SDK) with per-session marker | phase 2, step 1
+2026-11-03 | native Codex session (minimal client, isolated CODEX_HOME); D16 revised | phase 2, step 2
+2026-11-03 | multi-account: provider_accounts, account per chat/agent, login/status via CLI | phase 2, step 4
+2026-11-03 | real steering in Codex, reasoning level, cache tokens per turn | phase 2, step 5
+2026-11-03 | attachments and images; session per provider (returning to Claude sends only the delta); phase 2 completed | §12, §13
+2026-11-03 | GET /api/usage and RPC approvals | Usage and Needs you screens
+2026-11-03 | failover per agent/chat, wait for limit, usage reading per account | phase 2b
+2026-11-03 | workspace with shadow git, per-agent access, native tools, diff/undo, turn watchdog | phase 3
+2026-11-03 | consumption (cost, limit windows) and real model names from the CLIs | phase 2c
+2026-11-03 | position on projects and chats + reorder endpoints | drag and drop in the sidebar
+2026-11-03 | audit log with evlog writing to SQLite | user request
+2026-11-03 | context endpoint, window in the catalog, $skill in the turn | new composer
 2026-11-03 | claude-cli loads user/project/local settings with policy-only permissions and no hooks; CLI slash commands listed and dispatched | run Claude Code's own / commands like T3 Code
-2026-11-03 | painel de execução: scripts do projeto em abas do terminal, servidores locais com abrir no navegador e parar | fase 3c (lacuna vs T3 Code)
-2026-11-03 | git no chat: status, commit com mensagem rascunhada pelo modelo, push, PR via gh, nova branch; auditado | lacuna vs T3 Code
-2026-11-03 | worktree por chat (POST/DELETE /api/chats/:id/worktree) | lacuna vs T3 Code
-2026-11-03 | agentes criam/editam agentes por ferramentas com cartão de aprovação; acesso limitado ao de quem propõe | fase 4
-2026-11-03 | versões de agente com restaurar; exportar/importar perfil sem conta | fase 4
-2026-11-03 | regra da evidência humana, confirm e zero_search_memories (ideias do a reference app) | memória mais confiável
-2026-11-03 | proteção contra loop e falhas seguidas no turno | ideia do a reference app
-2026-11-03 | rotinas: cron, run now, webhook local, ferramenta zero_routines | fase 7 (lacuna vs reference apps)
-2026-11-03 | Builder (Build with AI) e criação de equipe inteira num cartão | pedido do usuário (Tuca do a reference app, para várias)
-2026-11-03 | pausar tudo e notificações do sistema | item 1 da lista (a reference app)
-2026-11-03 | retomar sozinho no reset do limite | item 2 da lista (T3 Code)
-2026-11-03 | editar daqui (rewind) com desfazer de arquivos opcional | item 4 (T3 Code)
-2026-11-03 | fase 4 fechada: agente padrão por projeto e catálogo de conectores | item 5
-2026-11-03 | navegador: hover, select, scroll, upload, diálogos e browser_run | item 6 (a reference app)
-2026-11-03 | páginas de conhecimento com versões e ferramentas dos agentes | item 7, fase 3b (a reference app)
-2026-11-03 | ACP: OpenCode e Gemini CLI por um adaptador | item 8, fase 5
-2026-11-04 | agentes ACP confinados no sandbox do macOS abaixo de acesso total | antes o nível Workspace permitia tudo
-2026-11-04 | permissões por agente (web, browser, conectores, sempre permitir, pedir acesso) | pedido do usuário, modelo do a reference app
-2026-11-04 | skills: ler sob demanda, propor melhoria com diff, versões e restaurar | a reference app
-2026-11-04 | skills do computador escolhíveis e opção de usar as skills nativas do Claude Code/Codex | pedido do usuário
-2026-11-04 | conectores OAuth (oauth.ts, mcp_servers.auth, rotas sign-in/callback) | usuário pediu seção de conectores com um clique
-2026-11-04 | Hub.refused + env no patch de servidor MCP | reconectar conector com credencial recusada
-2026-11-04 | renomeado Zero → Zorel (env, keychain, ferramentas, pasta de dados com legado) | usuário escolheu o nome Zorel (dono de zorel.dev)
-2026-11-04 | zorel_start_task (delegação com retorno ao chat de origem) | fase de equipe: agentes viram equipe
-2026-11-04 | prompts, resultados de ferramentas e erros em inglês; sem instrução de idioma | pedido do usuário: tudo em inglês sem forçar idioma
-2026-11-04 | procs.ts multiplataforma + consumo em tempo real em Processes | usuário pediu consumo ao vivo; tudo deve rodar em Windows, macOS e Linux
-2026-11-04 | terminal no Windows (PowerShell) e sandbox ACP no Linux (bubblewrap) | regra: tudo nos três sistemas
-2026-11-04 | zorel_ask_user (pergunta com opções, resposta volta ao agente) | equipe: agente pergunta em vez de chutar
-2026-11-04 | exportar/importar workspace (fase 7) | mudar de computador sem perder projetos, agentes, chats e conhecimento
-2026-11-04 | fechamento do repasse por menção, complemento sem menção fica com o colega, formato Status/Result/Evidence, aviso no limite | teste real de equipe + ideias de a reference app/a reference app
-2026-11-04 | roteador barato para mensagens sem menção; gateway MCP em SSE com ping | usuário pediu o roteador; pergunta expirava aos 5 min
-2026-11-04 | fs-ops.ts + POST /api/chats/:id/fs; openFile cross-platform | aba Files interativa; openFile só funcionava no macOS
-2026-11-04 | GitStatus.files: string[] -> {path,status}[] | o painel Git mostra A/M/D/R por arquivo
-2026-11-04 | API exige segredo da sessão; sandbox do Claude Code; cartões inteiros; gitdir validado; import inerte; anexos sem HTML inline; browser só http(s); Windows sem cmd | auditoria de segurança (cloudflare security-audit-skill) confirmou os achados
-2026-11-04 | navegador: launch por pipe, contexto por agente, logins selados no keychain, Chromium embutido no desktop, sign-in window | app independente de Chrome e sem porta CDP
-2026-11-04 | memória: dono, essenciais, rodízio por escopo, keywords, correções, grounding, secretlint, Schema no parse | avaliação mostrou 1/25 com outras palavras, 2 memórias falsas, correção sem efeito, vazamento latente entre donos
+2026-11-03 | run panel: project scripts in terminal tabs, local servers with open in browser and stop | phase 3c (gap vs T3 Code)
+2026-11-03 | git in chat: status, commit with model-drafted message, push, PR via gh, new branch; audited | gap vs T3 Code
+2026-11-03 | worktree per chat (POST/DELETE /api/chats/:id/worktree) | gap vs T3 Code
+2026-11-03 | agents create/edit agents via tools with approval card; access limited to the proposer's | phase 4
+2026-11-03 | agent versions with restore; export/import profile without account | phase 4
+2026-11-03 | human-evidence rule, confirm and zero_search_memories (ideas from a reference app) | more reliable memory
+2026-11-03 | protection against loops and repeated failures in the turn | idea from a reference app
+2026-11-03 | routines: cron, run now, local webhook, tool zero_routines | phase 7 (gap vs reference apps)
+2026-11-03 | Builder (Build with AI) and creating a whole team in one card | user request (a reference app's Tuca, for several)
+2026-11-03 | pause everything and system notifications | item 1 of the list (a reference app)
+2026-11-03 | resume automatically on limit reset | item 2 of the list (T3 Code)
+2026-11-03 | edit from here (rewind) with optional file undo | item 4 (T3 Code)
+2026-11-03 | phase 4 closed: default agent per project and connector catalog | item 5
+2026-11-03 | browser: hover, select, scroll, upload, dialogs and browser_run | item 6 (a reference app)
+2026-11-03 | knowledge pages with versions and agent tools | item 7, phase 3b (a reference app)
+2026-11-03 | ACP: OpenCode and Gemini CLI through one adapter | item 8, phase 5
+2026-11-04 | ACP agents confined in the macOS sandbox below full access | before, Workspace level allowed everything
+2026-11-04 | per-agent permissions (web, browser, connectors, always allow, request access) | user request, a reference app's model
+2026-11-04 | skills: read on demand, propose improvement with diff, versions and restore | a reference app
+2026-11-04 | selectable computer skills and option to use Claude Code/Codex native skills | user request
+2026-11-04 | OAuth connectors (oauth.ts, mcp_servers.auth, sign-in/callback routes) | user asked for a one-click connectors section
+2026-11-04 | Hub.refused + env in MCP server patch | reconnect a connector with a refused credential
+2026-11-04 | renamed Zero → Zorel (env, keychain, tools, data folder with legacy) | user chose the name Zorel (owner of zorel.dev)
+2026-11-04 | zorel_start_task (delegation with return to the originating chat) | team phase: agents become a team
+2026-11-04 | prompts, tool results and errors in English; no language instruction | user request: everything in English without forcing a language
+2026-11-04 | cross-platform procs.ts + real-time consumption in Processes | user asked for live consumption; everything must run on Windows, macOS and Linux
+2026-11-04 | terminal on Windows (PowerShell) and ACP sandbox on Linux (bubblewrap) | rule: everything on all three OSes
+2026-11-04 | zorel_ask_user (question with options, answer goes back to the agent) | team: agent asks instead of guessing
+2026-11-04 | export/import workspace (phase 7) | move to another computer without losing projects, agents, chats and knowledge
+2026-11-04 | closing of the mention handoff, follow-up without mention stays with the colleague, Status/Result/Evidence format, notice at the limit | real team test + ideas from a reference app/a reference app
+2026-11-04 | cheap router for messages without mention; MCP gateway in SSE with ping | user asked for the router; question expired at 5 min
+2026-11-04 | fs-ops.ts + POST /api/chats/:id/fs; cross-platform openFile | interactive Files tab; openFile only worked on macOS
+2026-11-04 | GitStatus.files: string[] -> {path,status}[] | Git panel shows A/M/D/R per file
+2026-11-04 | API requires the session secret; Claude Code sandbox; whole cards; gitdir validated; inert import; attachments without inline HTML; browser only http(s); Windows without cmd | security audit (cloudflare security-audit-skill) confirmed the findings
+2026-11-04 | browser: launch over pipe, context per agent, logins sealed in the keychain, Chromium bundled in desktop, sign-in window | app independent of Chrome and with no CDP port
+2026-11-04 | memory: owner, essentials, rotation per scope, keywords, corrections, grounding, secretlint, Schema in parse | evaluation showed 1/25 with other words, 2 false memories, correction without effect, latent leak between owners
