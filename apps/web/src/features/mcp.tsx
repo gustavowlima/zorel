@@ -10,7 +10,7 @@ import { AsyncResult } from "effect/reactivity"
 import { useAtomValue } from "@effect/atom-react"
 import { mutations, serversAtom, signedInAtom, useInvalidate, useMutation, useReading } from "../client.ts"
 import { ReadingState } from "./reading.tsx"
-import { Badge, Button, Check, Code, ConfirmButton, Field, IconButton, Input, Menu, MenuItem, MoreHorizontal, Plus, Section, Select, Spinner, Switch, Textarea, EmptyState, Plug, Trash2 } from "@/ui"
+import { Badge, Button, Check, Code, ConfirmButton, Field, IconButton, Input, Menu, MenuItem, MenuSeparator, MoreHorizontal, RefreshCw, Plus, Section, Select, Spinner, Switch, Textarea, EmptyState, Plug, Trash2 } from "@/ui"
 
 const MODES = ["read", "approve", "auto"] as const
 const modeOptions = () => MODES.map((m) => ({ value: m, label: t(`mcp.modes.${m}`) }))
@@ -278,13 +278,24 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
   const update = useMutation(mutations.updateServer)
   const signIn = useMutation(mutations.signInServer)
   const remove = useMutation(mutations.removeServer)
+  const inspect = useMutation(mutations.inspectServer)
+  const invalidate = useInvalidate()
   const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; text: string }>() // the last connection test
   const [asking, setAsking] = useState(false) // the token field (GitHub)
   const [token, setToken] = useState("")
   const [failed, setFailed] = useState(false)
+  // Connect for real and list the tools: proves the sign-in works (a refused one turns the card to Reconnect).
+  const test = async (id: string) => {
+    setResult(undefined)
+    const r = await inspect({ params: { id } }).catch((e: unknown) => ({ tools: [], error: String(e) }))
+    setResult(r.error ? { ok: false, text: t("connectors.testFailed") } : { ok: true, text: t("connectors.testOk", { count: r.tools.length }) })
+    invalidate(["servers"])
+  }
   const connect = async () => {
     setBusy(true)
     setFailed(false)
+    setResult(undefined)
     try {
       const env = c.auth === "token" ? { Authorization: `Bearer ${token.trim()}` } : {}
       if (server && c.auth === "token") await update({ params: { id: server.id }, payload: { env }, reactivityKeys: ["servers"] }) // a fresh token
@@ -303,13 +314,11 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
           },
           reactivityKeys: ["servers"]
         }))
-      if (c.auth === "oauth") {
-        const { authorizeUrl } = await signIn({ params: { id: s.id }, reactivityKeys: ["servers"] })
-        if (authorizeUrl) {
-          window.open(authorizeUrl, "_blank", "noopener") // the desktop app opens it in the default browser
-          onWaiting(s.id)
-        }
-      }
+      const { authorizeUrl } = c.auth === "oauth" ? await signIn({ params: { id: s.id }, reactivityKeys: ["servers"] }) : { authorizeUrl: null }
+      if (authorizeUrl) {
+        window.open(authorizeUrl, "_blank", "noopener") // the desktop app opens it in the default browser
+        onWaiting(s.id)
+      } else await test(s.id) // a token or no sign-in: check it now, not on the agent's first turn
       setAsking(false)
       setToken("")
     } catch {
@@ -319,7 +328,7 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
     }
   }
   const disconnect = () => server && void remove({ params: { id: server.id }, reactivityKeys: ["servers"] }).catch(() => setFailed(true))
-  const hint: ReactNode = failed ? t("connectors.failed") : waiting ? t("connectors.waiting") : status === "attention" ? t("connectors.attention") : t(`connectors.about.${c.id}` as "connectors.about.github")
+  const hint: ReactNode = failed ? t("connectors.failed") : result && !busy ? result.text : waiting ? t("connectors.waiting") : status === "attention" ? t("connectors.attention") : t(`connectors.about.${c.id}` as "connectors.about.github")
   const menu = server && (
     <Menu
       label={t("connectors.actions", { name: c.name })}
@@ -329,6 +338,10 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
         </IconButton>
       }
     >
+      <MenuItem icon={<RefreshCw />} onAction={() => void test(server.id)}>
+        {t("connectors.test")}
+      </MenuItem>
+      <MenuSeparator />
       <MenuItem icon={<Trash2 />} tone="danger" onAction={disconnect}>
         {t("connectors.disconnect")}
       </MenuItem>
@@ -341,7 +354,7 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
         <ConnectorLogo icon={c.icon} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate font-medium">{c.name}</span>
-          <span className={failed ? "truncate text-sm text-danger" : status === "attention" && !waiting ? "truncate text-sm text-warning" : "truncate text-sm text-muted"}>{hint}</span>
+          <span className={failed || result?.ok === false ? "truncate text-sm text-danger" : result?.ok ? "truncate text-sm text-success" : status === "attention" && !waiting ? "truncate text-sm text-warning" : "truncate text-sm text-muted"}>{hint}</span>
         </span>
         {status === "connected" ? (
           <Badge tone="success">
