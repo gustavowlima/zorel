@@ -338,6 +338,9 @@ function ProjectItem({
           <span role="img" aria-label={t("nav.waitingIn", { count: 1 })} className="size-2 rounded-full bg-accent-text" />
         ) : running ? (
           <Spinner size={11} className="text-success" label={t("nav.runningIn", { count: 1 })} />
+        ) : chats.length ? (
+          // Closed or open, how many chats it holds (quiet).
+          <span className="text-dim">{chats.length}</span>
         ) : undefined
       }
       actions={
