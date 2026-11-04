@@ -6,7 +6,8 @@ import { type ChildProcess, execFile, spawn } from "node:child_process"
 import { openSync, readFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { join } from "node:path"
-import { app, BrowserWindow, dialog, Menu, nativeImage, nativeTheme, shell, Tray } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, shell, Tray } from "electron"
+import { autoUpdater } from "electron-updater"
 import { type BrowserHost, startBrowserHost } from "./browser-host.ts"
 
 const dev = !app.isPackaged
@@ -121,6 +122,30 @@ function openWindow() {
   void win.loadURL(`${url}/?shell=desktop`)
 }
 
+// Open at login (Settings › General, desktop only): started that way, Zero runs without a window (the server and
+// its routines), until you open it from the Dock or the tray. Only the app window may ask.
+const HIDDEN = "--hidden" // Windows passes it at login; macOS reports wasOpenedAtLogin
+const openedAtLogin = () => process.argv.includes(HIDDEN) || (process.platform === "darwin" && app.getLoginItemSettings().wasOpenedAtLogin)
+function loginItemIpc() {
+  const fromApp = (e: Electron.IpcMainInvokeEvent) => !!win && e.sender === win.webContents
+  ipcMain.handle("login:get", (e) => (fromApp(e) ? app.getLoginItemSettings().openAtLogin : false))
+  ipcMain.handle("login:set", (e, on: unknown) => {
+    if (!fromApp(e) || typeof on !== "boolean") return false
+    app.setLoginItemSettings({ openAtLogin: on, ...(process.platform === "win32" && { args: [HIDDEN] }) })
+    return app.getLoginItemSettings().openAtLogin
+  })
+}
+
+// Updates (packaged builds; a release needs a signed app on macOS): checked at start and every 6 hours, downloaded
+// in the background and installed when Zero quits. Without a publish target in the build it stays quiet.
+function updates() {
+  if (dev) return
+  autoUpdater.autoInstallOnAppQuit = true
+  const check = () => void autoUpdater.checkForUpdatesAndNotify().catch(() => undefined)
+  check()
+  setInterval(check, 6 * 60 * 60_000).unref()
+}
+
 // Off macOS there's no Dock to reopen a closed window: a tray icon does it (and quits).
 function addTray() {
   if (process.platform === "darwin") return
@@ -147,8 +172,10 @@ else {
     })
     .then(startServer)
     .then(() => {
-      openWindow()
+      loginItemIpc()
+      if (!openedAtLogin()) openWindow()
       addTray()
+      updates()
     })
     .catch((e: unknown) => {
       dialog.showErrorBox("Zero", e instanceof Error ? e.message : String(e))

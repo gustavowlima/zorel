@@ -20,10 +20,16 @@ extraResources:
   - { from: build/drizzle, to: drizzle }
 # Only the app's languages: drops ~40 MB of Chromium locales.
 electronLanguages: [en, pt-BR]
+# Updates: a GitHub release per version (electron-updater reads it). Owner and repo come from the build's
+# environment; without them the app is built the same and just never finds an update.
+publish:
+  provider: github
+  owner: ${env.ZERO_RELEASE_OWNER}
+  repo: ${env.ZERO_RELEASE_REPO}
 mac:
+  target: [dmg, zip] # zip: what the updater downloads on macOS
   icon: assets/icon.png
   category: public.app-category.developer-tools
-  target: [dmg]
 win:
   icon: assets/icon.png
 linux:

@@ -3,6 +3,7 @@ name: ci
 on:
   push:
     branches: [main]
+    tags: ["v*"] # a release
   pull_request:
 
 permissions:
@@ -26,7 +27,7 @@ jobs:
 
   desktop:
     # .app/.dmg do macOS. Assina e notariza só quando os segredos existem (ver apps/desktop/electron-builder.yml).
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
     needs: check
     runs-on: macos-latest
     steps:
@@ -46,3 +47,29 @@ jobs:
         with:
           name: zero-macos
           path: apps/desktop/artifacts/
+
+  release:
+    # A tag v* builds, signs (with the secrets) and publishes the macOS app to a GitHub release, which the
+    # installed apps update from. Without CSC_LINK the build is unsigned and macOS won't run or update it.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: check
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bun run --cwd apps/desktop release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ZERO_RELEASE_OWNER: ${{ github.repository_owner }}
+          ZERO_RELEASE_REPO: ${{ github.event.repository.name }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+

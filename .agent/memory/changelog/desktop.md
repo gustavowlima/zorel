@@ -2,3 +2,4 @@
 2026-11-04 | Electrobun trocado por Electron; server como processo filho compilado | D11, pedido de fase desktop
 2026-11-04 | navegador nativo dos agentes por WebContentsView + CDP, partição por agente | D11
 2026-11-04 | barra de título de largura total no desktop, no lugar do divisor ajustado | pedido do usuário (estilo a reference app)
+2026-11-04 | abrir no login, atualização automática e release no CI | item 1 (falta o Developer ID)

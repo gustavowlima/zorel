@@ -11,11 +11,16 @@
     "start": "bun run --cwd ../web build && bun run main && electron .",
     "prebuild": "bun run --cwd ../web build && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run main",
     "build": "electron-builder --publish never",
-    "icons": "sh scripts/icons.sh"
+    "icons": "sh scripts/icons.sh",
+    "release": "electron-builder --publish always",
+    "prerelease": "bun run --cwd ../web build && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run main"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
     "electron": "45.0.0",
     "electron-builder": "26.18.0"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
   }
 }
