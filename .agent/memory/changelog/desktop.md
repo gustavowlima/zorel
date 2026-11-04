@@ -9,3 +9,4 @@
 2026-11-04 | session secret via header from main; navigation by origin | audit: API without credential; prefix accepted http://127.0.0.1:PORT@other
 2026-11-04 | removed browser-host.ts and remote-debugging-port; agents use the server's Chrome over pipe | Electron CDP without authentication
 2026-11-04 | no clipboard-read in the window; keep awake on AC power; shortcut to notification settings | comparison with OpenBot's permissions
+2026-11-04 | no keychain identity discovery; ad hoc signs the bundled Chromium | a revoked Apple Development cert made macOS flag the app as malware and trash it
