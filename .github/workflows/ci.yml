@@ -71,7 +71,7 @@ jobs:
 
   release:
     # A tag v* builds, signs (with the secrets) and publishes the app for each system to one GitHub release, which
-    # the installed apps update from. Without CSC_LINK the macOS build is unsigned and macOS won't run or update it.
+    # the installed apps update from. Without CSC_LINK the macOS build is signed ad hoc: it installs and updates with install.sh.
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [check, systems]
     strategy:
@@ -97,4 +97,9 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # The installer (macOS and Linux; how a macOS build without a Developer ID updates), with this repository in it.
+      - if: runner.os == 'Linux'
+        run: sed "s|__REPO__|${{ github.repository }}|" apps/desktop/scripts/install.sh > install.sh && gh release upload "${{ github.ref_name }}" install.sh --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

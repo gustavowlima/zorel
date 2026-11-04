@@ -152,29 +152,68 @@ function loginItemIpc() {
   })
 }
 
-// Updates (packaged builds; a release needs a signed app on macOS): checked at start and every 6 hours, downloaded
-// in the background and installed when Zorel quits. Without a publish target in the build it stays quiet.
-// The app window hears of it (a button in the rail's corner) and can ask to restart into it now.
+// Updates (packaged builds): checked at start and every 6 hours. The app window hears of a new version (a button in
+// the rail's corner) and can restart into it now; otherwise it installs when Zorel quits.
+// macOS without a Developer ID (ad hoc build, scripts/adhoc-sign.cjs): the built-in updater can't install there (it
+// checks the new app is signed by the same Developer ID), so the button runs the release's install.sh, which closes
+// Zorel, swaps the app and opens it again. Windows and Linux update by themselves, signed or not.
 function updates() {
+  let manual = false
+  const tell = (next: typeof update) => {
+    update = next
+    win?.webContents.send("update", update)
+  }
   ipcMain.handle("update:get", (e) => (win && e.sender === win.webContents ? update : null))
   ipcMain.handle("update:install", (e) => {
     if (!win || e.sender !== win.webContents || !update?.ready) return false
+    if (manual) return runInstaller()
     quitting = true
     server?.kill("SIGTERM")
     autoUpdater.quitAndInstall()
     return true
   })
   if (dev) return
-  const tell = (next: typeof update) => {
-    update = next
-    win?.webContents.send("update", update)
-  }
-  autoUpdater.on("update-available", (i) => tell({ version: i.version, ready: false }))
+  autoUpdater.on("update-available", (i) => tell({ version: i.version, ready: manual }))
   autoUpdater.on("update-downloaded", (i) => tell({ version: i.version, ready: true }))
+  autoUpdater.on("error", (e) => {
+    console.error("update failed", e) // the button goes away rather than wait forever
+    tell(null)
+  })
   autoUpdater.autoInstallOnAppQuit = true
   const check = () => void autoUpdater.checkForUpdates().catch(() => undefined)
-  check()
-  setInterval(check, 6 * 60 * 60_000).unref()
+  void developerId().then((signed) => {
+    manual = process.platform === "darwin" && !signed
+    autoUpdater.autoDownload = !manual
+    check()
+    setInterval(check, 6 * 60 * 60_000).unref()
+  })
+}
+
+// Whether this macOS app carries a Developer ID signature (codesign names the authority).
+const developerId = () =>
+  new Promise<boolean>((resolve) => {
+    if (process.platform !== "darwin") return resolve(true)
+    execFile("codesign", ["-dv", "--verbose=2", join(process.execPath, "..", "..", "..")], (_e, out, err) => resolve(/Authority=Developer ID Application/.test(`${out}${err}`)))
+  })
+
+// The release's install.sh, in its own process group so it outlives Zorel (it quits the app, then reopens it). The
+// repository comes from the build's update settings (app-update.yml, written by electron-builder).
+function runInstaller() {
+  const config = (() => {
+    try {
+      return readFileSync(join(process.resourcesPath, "app-update.yml"), "utf8")
+    } catch {
+      return ""
+    }
+  })()
+  const field = (k: string) => new RegExp(`^${k}: *(\\S+)`, "m").exec(config)?.[1]
+  const owner = field("owner")
+  const repo = field("repo")
+  if (!owner || !repo) return false
+  const script = `https://github.com/${owner}/${repo}/releases/latest/download/install.sh`
+  const log = openSync(join(app.getPath("logs"), "update.log"), "a")
+  spawn("/bin/sh", ["-c", `curl -fsSL "${script}" | ZOREL_REPO="${owner}/${repo}" sh`], { detached: true, stdio: ["ignore", log, log] }).unref()
+  return true
 }
 
 // The menu bar of an app, not a browser's: no Reload, Back or Developer Tools in a release (dev keeps them). On
