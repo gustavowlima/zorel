@@ -27,3 +27,4 @@
 2026-11-04 | Build with AI em três passos como no Tucano (poderes, primeira tarefa); teto do Builder = workspace; navegador só se pedido | teste ao vivo mostrou acesso errado e cartão duplicado
 2026-11-04 | Build with AI sem o passo de primeira tarefa (Describe → Powers → página do agente) | pedido do usuário
 2026-11-04 | modelos prontos de agente, seletor de projeto no Build with AI, prazo do gateway maior que o da aprovação | itens 4 e bug do timeout de 60 s
+2026-11-04 | modelos prontos removidos do formulário de agente; loja de agentes vai para o backlog | decisão do usuário
