@@ -13,8 +13,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
@@ -23,6 +23,8 @@ jobs:
       - run: bun run check:i18n
       - run: bun run typecheck
       - run: bun run test
+      # Memory invariants on 1,000 memories, no model (apps/server/bench): recall in the needles' words, no leaks.
+      - run: bun apps/server/bench/memory-recall.bench.ts 1000 --check
       - run: bun run build
 
   # What depends on the system (the process table, ports, shells), on the systems not covered above: the full
@@ -34,8 +36,8 @@ jobs:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
@@ -52,8 +54,8 @@ jobs:
         os: [macos-latest, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
@@ -64,7 +66,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: zorel-${{ runner.os }}
           path: apps/desktop/artifacts/
@@ -79,27 +81,29 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    # The signing secrets live in this environment: in Settings › Environments › release, require a reviewer and
+    # allow only tags v* to deploy, so a pushed tag alone can't publish a signed build.
+    environment: release
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
       - run: bun run --cwd apps/desktop release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ZOREL_RELEASE_OWNER: ${{ github.repository_owner }}
-          ZOREL_RELEASE_REPO: ${{ github.event.repository.name }}
           CSC_LINK: ${{ runner.os == 'macOS' && secrets.CSC_LINK || '' }} # the Developer ID; Windows signing would take WIN_CSC_LINK
           CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.CSC_KEY_PASSWORD || '' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      # The installer (macOS and Linux; how a macOS build without a Developer ID updates), with this repository in it.
+      # The installer (macOS and Linux; how a macOS build without a Developer ID updates), next to the builds.
       - if: runner.os == 'Linux'
-        run: sed "s|__REPO__|${{ github.repository }}|" apps/desktop/scripts/install.sh > install.sh && gh release upload "${{ github.ref_name }}" install.sh --clobber
+        run: gh release upload "$TAG" apps/desktop/scripts/install.sh --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }} # through env, never pasted into the script
 

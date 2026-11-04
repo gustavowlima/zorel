@@ -1,5 +1,9 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Zorel</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -199,7 +203,7 @@ body::after { content: ""; position: fixed; inset: -20% -10% auto; height: 80vh;
   <h1><span class="rise" style="--i:0">A team of agents</span> <span class="rise" style="--i:1">for the work on</span> <span class="rise" style="--i:2">your computer.</span></h1>
   <p class="lede after" style="--i:0">Ask once. A lead agent hands each part to the specialist it fits, they work in your project, and nothing risky happens without your yes.</p>
   <div class="install after" style="--i:1" role="group" aria-label="Install command">
-    <code id="cmd-hero"><b>curl</b> -fsSL https://zorel.dev/install.sh | sh</code>
+    <code id="cmd-hero"><b>curl</b> -fsSL https://github.com/gustavowlima/zorel/releases/latest/download/install.sh | sh</code>
     <button class="btn" type="button" data-copy="cmd-hero">Copy</button>
   </div>
   <p class="fine after" style="--i:2">macOS and Linux. On Windows, <a href="#install">use the installer</a>. Runs on your own Claude Code, Codex or OpenCode.</p>
@@ -259,7 +263,7 @@ body::after { content: ""; position: fixed; inset: -20% -10% auto; height: 80vh;
   <section class="closing" id="install" aria-labelledby="install-title">
     <h2 id="install-title">Ask once. Your team does the rest.</h2>
     <div class="install" role="group" aria-label="Install command">
-      <code id="cmd-end"><b>curl</b> -fsSL https://zorel.dev/install.sh | sh</code>
+      <code id="cmd-end"><b>curl</b> -fsSL https://github.com/gustavowlima/zorel/releases/latest/download/install.sh | sh</code>
       <button class="btn" type="button" data-copy="cmd-end">Copy</button>
     </div>
     <p class="fine">Run it again any time to update. Windows: the installer is on the releases page.</p>
@@ -371,3 +375,5 @@ if (!still) {
 if (still) zItems.forEach((s) => (s.c.style.opacity = 1))
 else requestAnimationFrame(frame)
 </script>
+
+</html>

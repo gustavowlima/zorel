@@ -18,6 +18,8 @@ import { basename, dirname, join, resolve } from "node:path"
 import type { Access } from "@zorel/contracts"
 import { Stream } from "effect"
 import type { EngineEvent, NativeStep } from "../engines.ts"
+import { approvalFor } from "./policy.ts"
+import type { Approver, NativeApproval } from "./session.ts"
 
 export interface AcpTurn {
   readonly bin: string
@@ -30,6 +32,7 @@ export interface AcpTurn {
   readonly web?: boolean // the agent may fetch and search the web
   readonly state?: ReadonlyArray<string> // folders under home the CLI writes its own data to
   readonly env?: Readonly<Record<string, string>> // extra environment (OpenCode's injected config and the API key)
+  readonly approve?: Approver | undefined // at "ask", each permission request becomes the turn's approval card
 }
 
 // OpenCode as the harness of an API-key model (phase 5): its config goes in OPENCODE_CONFIG_CONTENT, the key in an
@@ -58,6 +61,10 @@ const PROTOCOL = 1
 
 // ACP tool kinds to Zorel's step kinds.
 export const kindOf = (k: unknown): NativeStep["kind"] => (k === "read" ? "read" : k === "edit" || k === "delete" || k === "move" ? "edit" : k === "execute" ? "run" : k === "search" || k === "fetch" ? "search" : "tool")
+
+const CANCELLED = { outcome: { outcome: "cancelled" } }
+// The approval card's kind for an ACP tool kind.
+const CARD_KIND: Record<string, NativeApproval["kind"]> = { edit: "edit", delete: "edit", move: "edit", execute: "command", fetch: "network" }
 
 // The permission answer for an access level: the first "allow once" option, else cancelled.
 export function permission(options: ReadonlyArray<{ optionId: string; kind: string }>, access: Access): Json {
@@ -179,10 +186,20 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
       return
     }
     if (m.method === "session/request_permission") {
-      const webAsk = m.params?.toolCall?.kind === "fetch" && !t.web
-      const answer = webAsk ? { outcome: { outcome: "cancelled" } } : permission(m.params?.options ?? [], t.access)
-      if (answer.outcome.outcome === "cancelled") refused++
-      send({ id: m.id, result: answer })
+      const options = m.params?.options ?? []
+      const call = m.params?.toolCall ?? {}
+      const reply = (answer: Json) => {
+        if (answer.outcome.outcome === "cancelled") refused++
+        send({ id: m.id, result: answer })
+      }
+      if (call.kind === "fetch" && !t.web) return reply(CANCELLED)
+      if (t.access !== "ask" || !t.approve) return reply(permission(options, t.access))
+      // "Ask first": the person decides on the turn's approval card while the agent waits.
+      const title = String(call.title ?? "A tool call")
+      void t.approve(approvalFor(CARD_KIND[String(call.kind)] ?? "tool", title, title, call.rawInput ?? call, t.cwd)).then(
+        (ok) => reply(ok ? permission(options, "workspace") : CANCELLED),
+        () => reply(CANCELLED)
+      )
       return
     }
     if (m.method !== undefined && m.id !== undefined) {
@@ -265,7 +282,7 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
       yield { type: "error", message: `${t.bin}: ${failed.message}${err ? `\n${err}` : ""}`, failure: { reason: /auth|login|credential/i.test(`${failed.message} ${err}`) ? "auth" : "unavailable" } }
       return
     }
-    if (refused) yield { type: "text", delta: `\n\n_(${refused} action${refused > 1 ? "s" : ""} refused: this agent's access is "Ask first", which this engine can't ask for yet.)_` }
+    if (refused && !t.approve) yield { type: "text", delta: `\n\n_(${refused} action${refused > 1 ? "s" : ""} refused: this agent's access is "Ask first", and nobody was there to ask.)_` }
     // The prompt's answer carries the turn's tokens (OpenCode does; an agent that doesn't counts 0).
     const u = done?.usage
     yield { type: "done", usage: { inputTokens: Number(u?.inputTokens) || 0, outputTokens: Number(u?.outputTokens) || 0, ...(u?.cachedReadTokens ? { cachedTokens: Number(u.cachedReadTokens) } : {}) } }
