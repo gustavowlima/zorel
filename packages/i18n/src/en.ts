@@ -976,6 +976,11 @@ export const en = {
     deleted: { one: "Deleted 1 item", other: "Deleted {count} items" },
     failed: "Couldn't do that. Something with that name may already be there."
   },
+  // The desktop app's updates (rail's corner).
+  update: {
+    ready: "Zorel {version} is ready. Restart to update",
+    downloading: "Downloading Zorel {version}…"
+  },
   workspace: {
     folder: "Folder",
     folderHint: "The project folder on this computer, e.g. /Users/you/dev/app. Agents read, edit and run commands in it. Empty: they work in an empty Zorel folder.",

@@ -28,6 +28,7 @@ updated: 2026-11-03
 - App revalida tudo a cada 2s enquanto offline (átomos que falharam não tentam de novo sozinhos)
 
 ## avoid
+- não remover o devDependency `shadcn`: styles.css importa `shadcn/tailwind.css` (variantes data-open/data-disabled…); o vite dev segue funcionando pelo cache e só o `bun run build` quebra (aconteceu em 87abda4, corrigido em 2026-11-04)
 
 - @pierre/diffs sem WorkerPoolContextProvider: com StrictMode + disableFileHeader o diff fica vazio, sem erro (bug da lib)
 

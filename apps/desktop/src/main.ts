@@ -6,7 +6,7 @@ import { type ChildProcess, execFile, spawn } from "node:child_process"
 import { openSync, readFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { join } from "node:path"
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, shell, Tray } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, session, shell, Tray } from "electron"
 import { autoUpdater } from "electron-updater"
 import { type BrowserHost, startBrowserHost } from "./browser-host.ts"
 
@@ -20,6 +20,8 @@ let win: BrowserWindow | undefined
 let tray: Tray | undefined
 let quitting = false
 let browser: BrowserHost | undefined
+let update: { version: string; ready: boolean } | null = null // the newest release: downloading, then ready
+const icon = () => nativeImage.createFromPath(join(appDir, "assets", "icon.png"))
 
 // Fewer idle processes: no spare renderer kept warm, no media-key or cast services the app never uses.
 app.commandLine.appendSwitch("disable-features", "SpareRendererForSitePerProcess,HardwareMediaKeyHandling,MediaRouter")
@@ -99,7 +101,21 @@ function openWindow() {
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0d0d0d" : "#ececec", // --z-bg-frame: no white flash
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 18, y: 18 }, // centered in the web app title bar (48px)
+    ...(process.platform === "linux" && { icon: icon() }), // Windows takes the .exe's icon, macOS the bundle's
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false, preload: join(appDir, "dist", "preload.cjs") }
+  })
+  // An app, not a page: no pinch or Ctrl+wheel zoom.
+  win.webContents.setVisualZoomLevelLimits(1, 1)
+  // Right-click where the page has no menu of its own: Cut/Copy/Paste on text, nothing elsewhere (no Back, Reload or
+  // Inspect). The page's own menus (rows, tabs) cancel the event, so they never reach this.
+  win.webContents.on("context-menu", (_e, p) => {
+    const items: MenuItemConstructorOptions[] = p.isEditable
+      ? [{ role: "undo" }, { role: "redo" }, { type: "separator" }, { role: "cut" }, { role: "copy" }, { role: "paste" }, { type: "separator" }, { role: "selectAll" }]
+      : p.selectionText.trim()
+        ? [{ role: "copy" }]
+        : []
+    if (dev) items.push(...(items.length ? [{ type: "separator" } as const] : []), { label: "Inspect", click: () => win?.webContents.inspectElement(p.x, p.y) })
+    if (items.length) Menu.buildFromTemplate(items).popup()
   })
   win.once("ready-to-show", () => win?.show())
   win.on("close", () => browser?.release())
@@ -138,18 +154,55 @@ function loginItemIpc() {
 
 // Updates (packaged builds; a release needs a signed app on macOS): checked at start and every 6 hours, downloaded
 // in the background and installed when Zorel quits. Without a publish target in the build it stays quiet.
+// The app window hears of it (a button in the rail's corner) and can ask to restart into it now.
 function updates() {
+  ipcMain.handle("update:get", (e) => (win && e.sender === win.webContents ? update : null))
+  ipcMain.handle("update:install", (e) => {
+    if (!win || e.sender !== win.webContents || !update?.ready) return false
+    quitting = true
+    server?.kill("SIGTERM")
+    autoUpdater.quitAndInstall()
+    return true
+  })
   if (dev) return
+  const tell = (next: typeof update) => {
+    update = next
+    win?.webContents.send("update", update)
+  }
+  autoUpdater.on("update-available", (i) => tell({ version: i.version, ready: false }))
+  autoUpdater.on("update-downloaded", (i) => tell({ version: i.version, ready: true }))
   autoUpdater.autoInstallOnAppQuit = true
-  const check = () => void autoUpdater.checkForUpdatesAndNotify().catch(() => undefined)
+  const check = () => void autoUpdater.checkForUpdates().catch(() => undefined)
   check()
   setInterval(check, 6 * 60 * 60_000).unref()
+}
+
+// The menu bar of an app, not a browser's: no Reload, Back or Developer Tools in a release (dev keeps them). On
+// macOS the app, Edit (its shortcuts: copy, paste, undo) and Window menus; Windows and Linux get no menu bar (the
+// text shortcuts work without one).
+function appMenu() {
+  if (process.platform !== "darwin") return Menu.setApplicationMenu(dev ? Menu.buildFromTemplate([{ role: "viewMenu" }]) : null)
+  const template: MenuItemConstructorOptions[] = [
+    { role: "appMenu", submenu: [{ role: "about" }, { type: "separator" }, { role: "services" }, { type: "separator" }, { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit" }] },
+    { role: "editMenu" },
+    { role: "windowMenu" }
+  ]
+  if (dev) template.push({ role: "viewMenu" })
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+  app.setAboutPanelOptions({ applicationName: "Zorel", applicationVersion: app.getVersion(), website: "https://zorel.dev" })
+}
+
+// The page may show notifications and write to the clipboard; camera, microphone, location and the rest are refused.
+function permissions() {
+  const allowed = new Set(["notifications", "clipboard-sanitized-write", "clipboard-read", "fullscreen"])
+  session.defaultSession.setPermissionRequestHandler((wc, permission, done) => done(wc === win?.webContents && allowed.has(permission)))
+  session.defaultSession.setPermissionCheckHandler((wc, permission) => wc === win?.webContents && allowed.has(permission))
 }
 
 // Off macOS there's no Dock to reopen a closed window: a tray icon does it (and quits).
 function addTray() {
   if (process.platform === "darwin") return
-  tray = new Tray(nativeImage.createFromPath(join(appDir, "assets", "icon.png")).resize({ width: 16, height: 16 }))
+  tray = new Tray(icon().resize({ width: 16, height: 16 }))
   tray.setToolTip("Zorel")
   tray.setContextMenu(Menu.buildFromTemplate([{ label: "Open Zorel", click: openWindow }, { type: "separator" }, { label: "Quit", role: "quit" }]))
   tray.on("click", openWindow)
@@ -173,6 +226,9 @@ else {
     .then(startServer)
     .then(() => {
       loginItemIpc()
+      appMenu()
+      permissions()
+      if (dev) app.dock?.setIcon(icon()) // a packaged app shows the bundle's icon; dev would show Electron's
       if (!openedAtLogin()) openWindow()
       addTray()
       updates()

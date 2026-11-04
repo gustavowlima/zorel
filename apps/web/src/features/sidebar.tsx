@@ -14,7 +14,7 @@ import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  ChevronRight, Fold, Marker, Pause, Play, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder, Width
+  ChevronRight, Fold, Marker, Pause, Play, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder, Width
 } from "@/ui"
 
 const VISIBLE = 5
@@ -78,6 +78,7 @@ export function Rail({
         </RailItem>
       ))}
       <span className="flex-1" />
+      <UpdateItem />
       <UsageFoot active={route.view === "usage"} />
       {/* Pause everything (running turns stop, new ones and routines wait) or resume. */}
       <RailItem label={paused ? t("pause.resume") : t("pause.all")} active={false} onPress={() => onPause(!paused)}>
@@ -87,6 +88,31 @@ export function Rail({
         <Settings />
       </RailItem>
     </nav>
+  )
+}
+
+// The desktop app's update (window.zorelDesktop.update): an accent download mark in the rail's corner once a new
+// version is ready, restarting into it when pressed; dim while it still downloads. Nothing in a browser.
+type Update = { version: string; ready: boolean } | null
+const desktopUpdate = (window as { zorelDesktop?: { update?: { get: () => Promise<Update>; install: () => Promise<boolean>; on: (cb: (u: Update) => void) => () => void } } }).zorelDesktop?.update
+function UpdateItem() {
+  const [update, setUpdate] = useState<Update>(null)
+  useEffect(() => {
+    if (!desktopUpdate) return
+    void desktopUpdate.get().then(setUpdate)
+    return desktopUpdate.on(setUpdate)
+  }, [])
+  if (!update || !desktopUpdate) return null
+  const label = update.ready ? t("update.ready", { version: update.version }) : t("update.downloading", { version: update.version })
+  return (
+    <span className="relative">
+      <Tooltip content={label} placement="right">
+        <IconButton label={label} isDisabled={!update.ready} onPress={() => void desktopUpdate.install()} className={cx("relative size-10 rounded-card [&_svg]:size-5", update.ready ? "text-accent-text" : "text-dim")}>
+          <Download />
+        </IconButton>
+      </Tooltip>
+      {update.ready && <span aria-hidden="true" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-accent ring-2 ring-canvas" />}
+    </span>
   )
 }
 
