@@ -13,3 +13,4 @@
 2026-11-03 | Changes/Files/Browser/Terminal viram abas de um painel lateral redimensionável; cabeçalho com um botão só | pedido do usuário, como no T3 Code
 2026-11-03 | fixar abas do painel e shells na linha do título (clique direito); ⋯ sem Summarize and learn | pedido do usuário
 2026-11-03 | Git sai do popover e vira aba do painel lateral, com arquivos e commits; abas só com ícone no painel estreito | pedido do usuário
+2026-11-03 | comentar linhas do diff → composer; último shell não fecha; Git no título só quando fixado | pedidos do usuário + lacuna vs T3 Code

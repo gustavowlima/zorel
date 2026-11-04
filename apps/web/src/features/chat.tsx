@@ -179,7 +179,7 @@ export function ChatView({ chat }: { chat: Chat }) {
           onClose={() => setPanel(undefined)}
           browserUrl={browserUrl}
           onOpenUrl={openInBrowser}
-          onAddToChat={(text) => insertRef.current?.(`\`\`\`\n${text.trimEnd()}\n\`\`\``)}
+          onAddToChat={(text) => insertRef.current?.(text)}
           pins={pins}
           shellFocus={shellFocus}
         />
@@ -237,7 +237,6 @@ function ChatHeader({
             {project?.name ?? t("common.general")}
           </Button>
         </div>
-        {workspace && <GitControl chat={chat} open={panel === "git"} onOpen={() => onSide("git")} />}
         {/* What was pinned from the side panel (a tab, a shell): one press opens it there. Right-click unpins. */}
         {(pins.side.length > 0 || pins.shells.length > 0) && (
           <ContextMenu
@@ -256,8 +255,15 @@ function ChatHeader({
             }}
           >
             {pins.side
-              .filter((tab) => workspace || (tab !== "files" && tab !== "terminal"))
+              .filter((tab) => workspace || (tab !== "files" && tab !== "terminal" && tab !== "git"))
               .map((tab) => {
+                // Pinned Git shows the branch and what is pending (it stays out of the title row unless pinned).
+                if (tab === "git")
+                  return (
+                    <span key={tab} data-pin="side:git" className="contents">
+                      <GitControl chat={chat} open={panel === "git"} onOpen={() => onSide("git")} />
+                    </span>
+                  )
                 const Icon = SIDE_ICON[tab]
                 return (
                   <Button key={tab} data-pin={`side:${tab}`} size="sm" variant={panel === tab ? "secondary" : "ghost"} aria-pressed={panel === tab} onPress={() => onSide(tab)} className="rounded-full">
