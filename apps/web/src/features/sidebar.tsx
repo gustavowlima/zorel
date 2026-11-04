@@ -14,7 +14,7 @@ import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  ChevronRight, Fold, Marker, Pause, Play, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
+  ChevronRight, Fold, Marker, Pause, Play, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder, Width
 } from "@/ui"
 
 const VISIBLE = 5
@@ -551,7 +551,7 @@ export function TitleBar({ sidebarHidden }: { sidebarHidden: boolean }) {
     <header className="app-drag flex h-12 shrink-0 items-center">
       {/* Left: the window buttons and back/forward, as wide as the rail plus the sidebar so the page header starts
           on the card's edge. With the sidebar hidden the window buttons own that corner: the header follows them. */}
-      <div className={cx("flex shrink-0 items-center gap-0.5 pl-21", !sidebarHidden && "w-77")}>
+      <Width width={sidebarHidden ? "auto" : 308} className="flex shrink-0 items-center gap-0.5 overflow-hidden pl-21">
         <Tooltip content={t("nav.back")}>
           <IconButton label={t("nav.back")} size="sm" onPress={() => history.back()}>
             <ChevronRight className="size-4 rotate-180" />
@@ -562,7 +562,7 @@ export function TitleBar({ sidebarHidden }: { sidebarHidden: boolean }) {
             <ChevronRight className="size-4" />
           </IconButton>
         </Tooltip>
-      </div>
+      </Width>
       {/* The current page's header (PageHeader portals into it). */}
       <div id="titlebar-slot" className="flex h-full min-w-0 flex-1 items-center" />
     </header>

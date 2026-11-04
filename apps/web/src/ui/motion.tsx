@@ -19,10 +19,20 @@ export function Fold({ open, children }: { open: boolean; children: ReactNode })
   )
 }
 
-// A panel that slides its width open and closed, keeping its content mounted (state and scroll survive).
-export function SlideWidth({ open, width, children }: { open: boolean; width: number; children: ReactNode }) {
+// A panel that slides its width open and closed, keeping its content mounted (state and scroll survive). `closed`:
+// the width it keeps when closed (a gutter), so whatever follows moves in the same spring.
+export function SlideWidth({ open, width, closed = 0, children }: { open: boolean; width: number; closed?: number; children: ReactNode }) {
   return (
-    <motion.div initial={false} animate={{ width: open ? width : 0, opacity: open ? 1 : 0 }} transition={spring} className="flex shrink-0 overflow-hidden" aria-hidden={!open} inert={!open}>
+    <motion.div initial={false} animate={{ width: open ? width : closed, opacity: open ? 1 : 0 }} transition={spring} className="flex shrink-0 overflow-hidden" aria-hidden={!open} inert={!open}>
+      {children}
+    </motion.div>
+  )
+}
+
+// A box whose width follows a value (or its content's, "auto") in the shared spring.
+export function Width({ width, className, children }: { width: number | "auto"; className?: string; children: ReactNode }) {
+  return (
+    <motion.div initial={false} animate={{ width }} transition={spring} className={className}>
       {children}
     </motion.div>
   )
