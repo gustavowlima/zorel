@@ -105,6 +105,8 @@ export const en = {
     coveredBySummary: "Covered by the summary",
     leadAnswered: "{name} answered as lead",
     handoff: "{from} handed the turn to {to}",
+    handedBack: "{from} handed back to {to}",
+    chainStopped: "The agents stopped here so they don't talk in circles. Send a message to go on.",
     compact: "Summarize and learn",
     compactHint: "Summarizes the chat so far and proposes memories and skills",
     compacting: "Summarizing…",

@@ -135,7 +135,7 @@ export const ChatEvent = Schema.TaggedUnion({
   "step-finished": { step: WorkStep },
   approval: { approval: Approval },
   "approval-resolved": { approvalId: Id, outcome: ApprovalOutcome, reason: Schema.NullOr(Schema.String), by: Schema.Literals(["user", "rule", "expiry"]) },
-  handoff: { turnId: Id, from: Schema.NullOr(Id), to: Schema.Array(Id), via: Schema.Literals(["mention", "send_message", "start_task"]) },
+  handoff: { turnId: Id, from: Schema.NullOr(Id), to: Schema.Array(Id), via: Schema.Literals(["mention", "send_message", "start_task", "reply", "limit"]) }, // reply: back to the agent that handed the work over; limit: the chain stopped
   failover: { turnId: Id, switch: Switch }, // the turn moves to the next alternative; its partial text is dropped
   "model-switched": { turnId: Id, from: Schema.String, to: Schema.String, resentTokens: Schema.Number, fromCheckpoint: Schema.Boolean },
   learned: { pageIds: Schema.Array(Id), summary: Schema.String },

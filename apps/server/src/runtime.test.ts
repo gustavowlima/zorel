@@ -536,3 +536,43 @@ test("start_task: naming the teammate it tasked doesn't also chain it in the cha
     const msgs = yield* store.messages(chat.id)
     expect(msgs.map((m) => m.text)).toEqual(["go", "I've handed it to @helper."]) // no second Helper turn here
   })))
+
+// Lead hands over by mention; the helper answers; the lead gets the wrap-up turn. A follow-up with no mention after
+// you spoke to the helper goes on with the helper.
+const Team = Layer.succeed(Engines, {
+  run: (t) =>
+    Stream.unwrap(
+      Effect.promise(async () => {
+        const me = /## You are ([^,\n]+)/.exec(t.system)?.[1]
+        const last = t.messages.at(-1)!.text
+        const text =
+          me === "Lead" ? (last.includes("[Helper]") ? "wrap: all good" : "@helper please do it") : me === "Helper" ? `helper on: ${last.split("\n").at(-1)}` : "?"
+        return Stream.make<EngineEvent[]>({ type: "text", delta: text }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+      })
+    )
+})
+
+test("teams: the agent that handed over by mention wraps up; a follow-up stays with the teammate you spoke to", () =>
+  runWith(":memory:", Team, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const lead = yield* store.createAgent({ projectId: null, name: "Lead", instructions: "Leads.", model: "x/y" })
+    const helper = yield* store.createAgent({ projectId: null, name: "Helper", instructions: "Helps.", model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [lead.id, helper.id], model: "x/y" })
+    const settle = Effect.gen(function* () {
+      yield* Effect.sleep("50 millis")
+      for (let i = 0; i < 200 && runtime.busy(chat.id); i++) yield* Effect.sleep("10 millis")
+      yield* Effect.sleep("100 millis")
+    })
+    yield* runtime.send({ chatId: chat.id, clientId: "w-1", text: "get it done" })
+    yield* settle
+    const who = (id: string | null) => (id === lead.id ? "Lead" : id === helper.id ? "Helper" : "you")
+    let msgs = yield* store.messages(chat.id)
+    expect(msgs.map((m) => `${who(m.agentId)}: ${m.text}`)).toEqual(["you: get it done", "Lead: @helper please do it", "Helper: helper on: @helper please do it", "Lead: wrap: all good"])
+    yield* runtime.send({ chatId: chat.id, clientId: "w-2", text: "@helper one more" })
+    yield* settle
+    yield* runtime.send({ chatId: chat.id, clientId: "w-3", text: "and another" })
+    yield* settle
+    msgs = yield* store.messages(chat.id)
+    expect(msgs.slice(-2).map((m) => `${who(m.agentId)}: ${m.text}`)).toEqual(["you: and another", "Helper: helper on: and another"])
+  })))

@@ -82,7 +82,9 @@ export function buildTurn(i: TurnInput): Turn {
     [
       "Other agents in this chat (their messages arrive with their name in brackets):",
       ...others.map((a) => `- @${handleOf(a)} (${[a.name, a.title].filter(Boolean).join(", ")}): ${a.description || a.instructions.split("\n")[0]?.slice(0, 140) || "no description"}`),
-      "To pass part of the work to one of them, mention their @handle in your reply: they answer next, here. Mention only when you need to; to just refer to someone, write the name without @. For agents outside this chat use zorel_start_task; for one piece of work use one or the other, never both."
+      "To pass part of the work to one of them, mention their @handle in your reply: they answer next, here. Mention only when you need to; to just refer to someone, write the name without @. For agents outside this chat use zorel_start_task; for one piece of work use one or the other, never both.",
+      "When a teammate hands you work here, answer them in this shape, short: Status: done | partial | blocked. Result: what you did or found. Evidence: what you ran or read. If blocked, say what would unblock it.",
+      "When teammates you handed work to have answered, you get the next turn: check what they did and wrap up for the user in a few lines, without repeating them. Hand back to a teammate only if something is missing. Never mention someone just to thank or confirm."
     ].join("\n")
 
   // Stable: opens the native session (rarely changes; if it does, the session reopens from the resume point).
