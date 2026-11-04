@@ -11,3 +11,4 @@
 2026-11-03 | terminal: Run a script, Servers; fix de shell órfão no StrictMode | fase 3c
 2026-11-03 | GitControl no cabeçalho do chat | lacuna vs T3 Code
 2026-11-03 | Changes/Files/Browser/Terminal viram abas de um painel lateral redimensionável; cabeçalho com um botão só | pedido do usuário, como no T3 Code
+2026-11-03 | fixar abas do painel e shells na linha do título (clique direito); ⋯ sem Summarize and learn | pedido do usuário
