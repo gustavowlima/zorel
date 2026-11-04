@@ -22,3 +22,4 @@
 2026-11-03 | cartão de conteúdo com 100% da altura, colado à direita, raio só à esquerda | pedido do usuário
 2026-11-03 | Motion (motion.dev) na barra lateral: recolher, seções e destaque do trilho | pedido do usuário; dependência: animar width/height auto e layoutId sem desmontar
 2026-11-03 | chat em toda a largura do painel (sem coluna de 720px) | pedido do usuário
+2026-11-03 | Cmd+K com busca nas mensagens | item 3 da lista (T3 Code)

@@ -33,6 +33,14 @@ import { projectFor } from "./chat.ts"
 import { closeTerminal, scriptsOf, serversIn, TerminalSocket, terminalsOf } from "./terminals.ts"
 import { BrowserService, BrowserSocket } from "./browser.ts"
 
+// The words around the first match, on one line.
+export const snippet = (text: string, q: string, around = 60) => {
+  const flat = text.replace(/\s+/g, " ")
+  const i = flat.toLowerCase().indexOf(q.toLowerCase())
+  if (i < 0) return flat.slice(0, around * 2)
+  return `${i > around ? "…" : ""}${flat.slice(Math.max(0, i - around), i + q.length + around)}${i + q.length + around < flat.length ? "…" : ""}`
+}
+
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
 const found = <A, E, R>(e: Effect.Effect<A | undefined, E, R>) => Effect.flatMap(e, (a) => (a === undefined ? notFound() : Effect.succeed(a)))
 const exists = <A>(e: Effect.Effect<A | undefined>) => Effect.map(e, (a) => a !== undefined)
@@ -294,6 +302,9 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           if (!removed) return yield* new GitFailed({ message: "The worktree has uncommitted changes: commit them (or discard them) first." })
           yield* store.setWorktree(chat.id, null)
         })
+      )
+      .handle("search", ({ query }) =>
+        Effect.map(store.searchMessages(query.q.trim()), (rows) => rows.map((m) => ({ chatId: m.chatId, messageId: m.id, at: m.at, snippet: snippet(m.text, query.q.trim()) })))
       )
       .handle("scripts", ({ params }) => Effect.map(chatRoot(params.id), scriptsOf))
       .handle("servers", ({ params }) => Effect.map(chatRoot(params.id), serversIn))

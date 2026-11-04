@@ -150,3 +150,17 @@ test("resume after limit: due chats only, cleared by setting null", () =>
       expect((yield* r.chat(b.id))!.resumeAt).toBe(5000)
     })
   ))
+
+test("searchMessages: case-insensitive words, newest first, % and _ are literal", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const c = yield* r.createChat({ projectId: null, agentIds: [], model: "x/y" })
+      const add = (text: string) => r.addMessage({ chatId: c.id, role: "user", agentId: null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 })
+      yield* add("Deploy na Vercel")
+      yield* add("o deploy falhou com 100% de erro")
+      yield* add("nada a ver")
+      expect((yield* r.searchMessages("DEPLOY")).map((m) => m.text)).toEqual(["o deploy falhou com 100% de erro", "Deploy na Vercel"])
+      expect((yield* r.searchMessages("100%")).length).toBe(1)
+      expect(yield* r.searchMessages("_")).toEqual([])
+    })
+  ))

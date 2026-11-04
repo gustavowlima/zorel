@@ -22,6 +22,7 @@ import { rememberModels } from "./labels.ts"
 import { go, type Route, useRoute, useSidebar } from "./state.ts"
 import { Button, CircleAlert, cx, EmptyState, Pause, SlideWidth, Spinner } from "@/ui"
 import { useNotifications } from "./features/notify.tsx"
+import { Palette } from "./features/palette.tsx"
 
 export function App() {
   const route = useRoute()
@@ -45,6 +46,7 @@ export function App() {
 
   return (
     <div className="flex h-full bg-frame">
+      <Palette onToggleSidebar={sidebar.toggle} />
       <Rail route={route} sidebar={sidebar} paused={paused} onPause={(p) => void setPause({ payload: { paused: p }, reactivityKeys: ["preferences"] })} />
       <SlideWidth open={!sidebar.hidden} width={248}>
         <Sidebar route={route} activeProjectId={activeProjectId} />

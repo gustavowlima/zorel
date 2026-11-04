@@ -236,6 +236,18 @@ export const repository = (db: Db) => {
     dueResumes: (at: number) => orDie(db.select({ id: chats.id, resumeAt: chats.resumeAt }).from(chats).where(sql`${chats.resumeAt} <= ${at}`)),
     setWorktree: (id: string, worktree: string | null) => orDie(db.update(chats).set({ worktree }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
     setSummary: (id: string, summary: string, until: number) => orDie(db.update(chats).set({ summary, summaryUntil: until }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
+    // Messages containing the words (newest first). ponytail: LIKE scan; FTS5 like memory_index when chats grow large.
+    searchMessages: (q: string, limit = 30) => {
+      const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+      return orDie(
+        db
+          .select({ id: messages.id, chatId: messages.chatId, text: messages.text, at: messages.at })
+          .from(messages)
+          .where(sql`${messages.text} like ${like} escape '\\'`)
+          .orderBy(desc(messages.at))
+          .limit(limit)
+      )
+    },
     removeChat: (id: string) => orDie(db.delete(chats).where(eq(chats.id, id)).pipe(Effect.asVoid)),
     messages: (chatId: string) => withFiles(db.select().from(messages).where(eq(messages.chatId, chatId)).orderBy(asc(messages.at))),
     messagesAfter: (chatId: string, at: number) =>

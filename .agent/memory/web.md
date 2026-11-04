@@ -64,3 +64,4 @@ updated: 2026-11-03
 - barra lateral recolhível: useSidebar em state.ts (localStorage zero.sidebar.hidden, ⌘B); Rail tem botão PanelLeftClose/Open e Chats ativo alterna; trilho com border-r
 - motion 12.43.0 (pedido do usuário: animar a sidebar): ui/motion.tsx exporta spring, Fold (altura auto com AnimatePresence), SlideWidth (largura, mantém montado, inert quando fechado), Marker (layoutId) e MotionConfig (reducedMotion user em main.tsx). Não misturar classes transition-* em elementos motion
 - notify.tsx: useNotifications(route) em App (Notification API, transições via noteworthy() em labels.ts), NotifySetting em Settings › General (localStorage zero.notify). Pausa: botão no trilho + faixa no App
+- Cmd+K: ui/command.tsx (CommandPalette com RAC Autocomplete+Menu, sem filtro interno) e features/palette.tsx (lugares, chats/projetos/agentes filtrados no cliente, mensagens via GET /api/search com debounce 180ms)

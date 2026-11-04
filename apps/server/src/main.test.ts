@@ -21,7 +21,7 @@ import { DataDir } from "./chat.ts"
 import { CONSOLIDATION_SYSTEM } from "./context.ts"
 import { Store } from "./db.ts"
 import { Engines, type EngineEvent, type Turn } from "./engines.ts"
-import { AppLive } from "./main.ts"
+import { AppLive, snippet } from "./main.ts"
 import { Accounts } from "./accounts.ts"
 import { Audit } from "./audit.ts"
 import { BrowserService } from "./browser.ts"
@@ -502,4 +502,10 @@ test("pausar tudo: mensagens novas esperam na fila; despausar responde", async (
   await api((c) => c.settings.pause({ payload: { paused: false } }))
   for (let i = 0; i < 50 && (await api((c) => c.chats.messages({ params: { id: chat.id } }))).length < 2; i++) await Bun.sleep(100)
   expect((await api((c) => c.chats.messages({ params: { id: chat.id } }))).map((m) => m.role)).toEqual(["user", "assistant"])
+})
+
+test("snippet: the words around the first match, one line", () => {
+  expect(snippet("a\nb deploy c", "deploy")).toBe("a b deploy c")
+  const long = `${"x".repeat(100)} alvo ${"y".repeat(100)}`
+  expect(snippet(long, "ALVO", 10)).toBe(`…${"x".repeat(9)} alvo ${"y".repeat(9)}…`)
 })
