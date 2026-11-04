@@ -44,6 +44,7 @@ export const agents = sqliteTable("agents", {
   failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>().notNull().default([]), // alternatives in order (§6.1)
   access: text({ enum: ["workspace", "ask", "full"] }).notNull().default("workspace"), // §9.2, chosen only by you
   permissions: text({ mode: "json" }).$type<AgentPermissions>().notNull().default({ web: true, browser: true, grants: {}, always: [] }),
+  builtin: text({ enum: ["builder"] }), // Zero's own agent (the Builder): not a teammate, kept out of pickers
   createdAt: integer("created_at").notNull()
 })
 
@@ -83,6 +84,7 @@ export const chats = sqliteTable("chats", {
   position: integer(), // manual order inside its group (project or General); null: by recent activity, above the placed ones
   worktree: text(), // a git worktree of the project the chat works in (its own branch); null: the project folder
   resumeAt: integer("resume_at"), // every route hit its usage limit: the chat continues by itself at this time (null: no)
+  hidden: integer({ mode: "boolean" }).notNull().default(false), // a screen's own conversation (the Builder's): not in the chats list
   createdAt: integer("created_at").notNull()
 })
 

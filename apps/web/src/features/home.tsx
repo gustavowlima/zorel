@@ -21,7 +21,7 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
   const [choice, setChoice] = useState<ModelChoice>(DEFAULT_MODEL)
   const chat = useRef<Promise<string> | null>(null)
 
-  const available = agents.filter((a) => a.projectId === null || a.projectId === projectId)
+  const available = agents.filter((a) => !a.builtin && (a.projectId === null || a.projectId === projectId))
   const pickAgent = (id: string | null) => {
     setAgentId(id)
     const a = agents.find((x) => x.id === id)

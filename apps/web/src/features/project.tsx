@@ -7,7 +7,7 @@ import { agentsAtom, chatsAtom, mutations, projectsAtom, useList, useMutation, u
 import { chatTitle, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
-import { AgentRow, BuildWithAi, useWorking } from "./agents.tsx"
+import { AgentRow, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
 import {
   Bot, Button, ChatStatusIcon, Select, ConfirmDialog, EmptyState, Field, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Popover, Screen, Section, Tab,
   TabList, TabPanel, Tabs, Textarea, Trash2
@@ -212,19 +212,14 @@ function Agents({ projectId }: { projectId: string }) {
   const mine = agents.filter((a) => a.projectId === projectId)
   const project = useList(projectsAtom).find((p) => p.id === projectId)
   const update = useMutation(mutations.updateProject)
-  const choices = agents.filter((a) => a.projectId === projectId || a.projectId === null)
+  const choices = agents.filter((a) => !a.builtin && (a.projectId === projectId || a.projectId === null))
   const working = useWorking()
+  const del = useDeleteAgent()
   return (
     <Section
       title={t("project.agents")}
       action={
-        <span className="flex items-center gap-2">
-          <BuildWithAi projectId={projectId} />
-          <Button size="sm" variant="secondary" onPress={() => go({ view: "new-agent", projectId })}>
-            <Plus />
-            {t("nav.newAgent")}
-          </Button>
-        </span>
+        <NewAgentMenu projectId={projectId} />
       }
     >
       {/* Who a new chat in the project starts with. */}
@@ -241,10 +236,11 @@ function Agents({ projectId }: { projectId: string }) {
       ) : (
         <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
           {mine.map((a) => (
-            <AgentRow key={a.id} agent={a} agents={agents} working={working.has(a.id)} />
+            <AgentRow key={a.id} agent={a} agents={agents} working={working.has(a.id)} onDelete={del.ask} />
           ))}
         </div>
       )}
+      {del.dialog}
     </Section>
   )
 }

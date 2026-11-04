@@ -59,7 +59,7 @@ export function Rail({
       }
     },
     { key: "inbox", icon: <Inbox />, label: t("nav.needsYou"), active: route.view === "inbox", go: () => go({ view: "inbox" }), count: needsYou },
-    { key: "agents", icon: <Bot />, label: t("nav.agents"), active: ["agents", "agent", "new-agent"].includes(route.view), go: () => go({ view: "agents" }) },
+    { key: "agents", icon: <Bot />, label: t("nav.agents"), active: ["agents", "agent", "new-agent", "builder"].includes(route.view), go: () => go({ view: "agents" }) },
     { key: "routines", icon: <AlarmClock />, label: t("nav.routines"), active: route.view === "routines", go: () => go({ view: "routines" }) },
     { key: "knowledge", icon: <BookOpen />, label: t("nav.knowledge"), active: route.view === "knowledge", go: () => go({ view: "knowledge" }) }
   ]

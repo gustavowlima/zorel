@@ -20,7 +20,7 @@ const MAX_PENDING = 20 // proposals awaiting review; above this, consolidation o
 const consolidating = new Set<string>()
 
 export const members = (store: Repository, chat: Chat) =>
-  Effect.forEach(chat.agentIds, store.agent).pipe(Effect.map((xs) => xs.filter((a): a is Agent => !!a)))
+  Effect.forEach(chat.agentIds, store.agent).pipe(Effect.map((xs) => xs.filter((a): a is NonNullable<typeof a> => !!a)))
 
 // ---------- context ----------
 

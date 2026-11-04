@@ -67,7 +67,7 @@ export const repository = (db: Db) => {
         .select({ chatId: messages.chatId, text: messages.text, at: messages.at })
         .from(messages)
         .where(and(inArray(messages.chatId, ids), sql`${messages.at} = (select max(m2.at) from messages m2 where m2.chat_id = ${messages.chatId})`))
-      return rows.map((c): Chat => {
+      return rows.map(({ hidden: _hidden, ...c }): Chat => {
         const l = last.find((m) => m.chatId === c.id)
         return {
           ...c,
@@ -143,9 +143,9 @@ export const repository = (db: Db) => {
     // ---------- agents ----------
     agents: (): Effect.Effect<Agent[]> => orDie(db.select().from(agents).orderBy(asc(agents.createdAt))),
     agent,
-    createAgent: (input: { projectId: string | null; name: string; title?: string | undefined; description?: string | undefined; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined }, by = "you") =>
+    createAgent: (input: { projectId: string | null; name: string; title?: string | undefined; description?: string | undefined; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined; builtin?: "builder" | undefined }, by = "you") =>
       Effect.gen(function* () {
-        const a: Agent = { id: crypto.randomUUID(), ...input, title: input.title ?? "", description: input.description ?? "", accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], access: input.access ?? "workspace", permissions: input.permissions ?? DEFAULT_PERMISSIONS, createdAt: now() }
+        const a: Agent = { id: crypto.randomUUID(), ...input, title: input.title ?? "", description: input.description ?? "", accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], access: input.access ?? "workspace", permissions: input.permissions ?? DEFAULT_PERMISSIONS, builtin: input.builtin ?? null, createdAt: now() }
         yield* db.insert(agents).values(a)
         yield* addVersion(a, by)
         return a
@@ -231,7 +231,10 @@ export const repository = (db: Db) => {
     dueRoutines: (at: number) => orDie(db.select().from(routines).where(and(eq(routines.enabled, true), sql`${routines.nextRunAt} <= ${at}`))),
 
     // ---------- chats and messages ----------
-    chats: () => orDie(db.select().from(chats).orderBy(desc(chats.createdAt)).pipe(Effect.flatMap(withMembers))),
+    chats: () => orDie(db.select().from(chats).where(eq(chats.hidden, false)).orderBy(desc(chats.createdAt)).pipe(Effect.flatMap(withMembers))),
+    // A screen's own conversations (the Builder's) in a project or General: replaced each time the screen opens.
+    hiddenChats: (projectId: string | null) =>
+      orDie(db.select({ id: chats.id }).from(chats).where(and(eq(chats.hidden, true), projectId ? eq(chats.projectId, projectId) : isNull(chats.projectId)))),
     // Only chats already in that group move: a chat never changes project by reordering.
     reorderChats: (projectId: string | null, ids: ReadonlyArray<string>) =>
       orDie(
@@ -244,12 +247,12 @@ export const repository = (db: Db) => {
         )
       ),
     chat,
-    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined }) =>
+    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; hidden?: boolean | undefined }) =>
       Effect.gen(function* () {
         const id = crypto.randomUUID()
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: "Novo chat", model: input.model, accountId: input.accountId ?? null, effort: input.effort ?? null, createdAt: now() })
+            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: "Novo chat", model: input.model, accountId: input.accountId ?? null, effort: input.effort ?? null, hidden: input.hidden ?? false, createdAt: now() })
             yield* setMembers(tx, id, input.agentIds)
           })
         )

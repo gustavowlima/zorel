@@ -122,7 +122,7 @@ export const findAgent = (all: ReadonlyArray<Agent>, ref: unknown): Agent | unde
 }
 
 // The agents visible from a chat: the global ones and those of its project.
-export const visibleTo = (all: ReadonlyArray<Agent>, projectId: string | null) => all.filter((a) => a.projectId === null || a.projectId === projectId)
+export const visibleTo = (all: ReadonlyArray<Agent>, projectId: string | null) => all.filter((a) => !a.builtin && (a.projectId === null || a.projectId === projectId))
 
 export const listText = (agents: ReadonlyArray<Agent>, working: (id: string) => boolean) =>
   JSON.stringify(

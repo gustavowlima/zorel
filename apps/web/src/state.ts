@@ -18,6 +18,7 @@ export type Route =
   | { view: "chat"; id: string }
   | { view: "agent"; id: string }
   | { view: "new-agent"; projectId: string | null }
+  | { view: "builder"; projectId: string | null } // Build with AI: a screen of its own, not a chat
 
 const oneOf = <T extends string>(list: ReadonlyArray<T>, v: string | undefined, fallback: T): T => (list.includes(v as T) ? (v as T) : fallback)
 
@@ -44,6 +45,8 @@ export function parseRoute(hash: string): Route {
       return a ? { view, id: a } : { view: "home" }
     case "new":
       return a ? { view: "home", projectId: a } : { view: "home" }
+    case "build":
+      return { view: "builder", projectId: a ?? null }
     default:
       return { view: "home" }
   }
@@ -64,6 +67,8 @@ export const hrefOf = (r: Route): string => {
       return `#/${r.view}/${r.id}`
     case "new-agent":
       return `#/agent/new/${r.projectId ?? "global"}`
+    case "builder":
+      return r.projectId ? `#/build/${r.projectId}` : "#/build"
     case "usage":
       return r.agentId ? `#/usage/${r.agentId}` : "#/usage"
     default:

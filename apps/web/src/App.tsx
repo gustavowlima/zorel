@@ -11,6 +11,7 @@ import { AgentView } from "./features/agent.tsx"
 import { ChatView } from "./features/chat.tsx"
 import { HomeView } from "./features/home.tsx"
 import { AgentsView } from "./features/agents.tsx"
+import { BuilderView } from "./features/builder.tsx"
 import { RoutinesView } from "./features/routines.tsx"
 import { InboxView } from "./features/inbox.tsx"
 import { KnowledgeView } from "./features/knowledge.tsx"
@@ -105,6 +106,8 @@ function Screen({ route }: { route: Route }) {
       return <UsageView key={route.agentId ?? "all"} agentId={route.agentId} />
     case "settings":
       return <SettingsView tab={route.tab} provider={route.provider} />
+    case "builder":
+      return <BuilderView key={route.projectId ?? "global"} projectId={route.projectId} />
     case "new-agent":
       return <AgentView projectId={route.projectId} />
     case "project": {
