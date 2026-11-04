@@ -14,16 +14,16 @@ for await (const line of console) {
     out({ id: m.id, result: { turn: { id, status: "inProgress" } } })
     if (text.includes("die")) process.exit(3)
     if (text.includes("hang")) {
-      out({ method: "item/agentMessage/delta", params: { threadId: "th-1", turnId: id, itemId: "i1", delta: "parcial" } })
+      out({ method: "item/agentMessage/delta", params: { threadId: "th-1", turnId: id, itemId: "i1", delta: "partial" } })
       continue
     }
-    out({ method: "item/agentMessage/delta", params: { threadId: "th-1", turnId: id, itemId: "i1", delta: `eco ${turn}${m.params.effort ? ` (${m.params.effort})` : ""}` } })
-    out({ method: "item/agentMessage/delta", params: { threadId: "th-1", turnId: id, itemId: "i2", delta: "fim" } })
+    out({ method: "item/agentMessage/delta", params: { threadId: "th-1", turnId: id, itemId: "i1", delta: `echo ${turn}${m.params.effort ? ` (${m.params.effort})` : ""}` } })
+    out({ method: "item/agentMessage/delta", params: { threadId: "th-1", turnId: id, itemId: "i2", delta: "end" } })
     out({ method: "thread/tokenUsage/updated", params: { threadId: "th-1", turnId: id, tokenUsage: { last: { inputTokens: 10, outputTokens: 2, cachedInputTokens: 4 } } } })
     out({ method: "turn/completed", params: { threadId: "th-1", turn: { id, status: "completed", error: null } } })
   } else if (m.method === "turn/steer") {
     out({ id: m.id, result: { turnId: m.params.expectedTurnId } })
-    out({ method: "item/agentMessage/delta", params: { threadId: "th-1", turnId: m.params.expectedTurnId, itemId: "i9", delta: `corrigido: ${m.params.input[0].text}` } })
+    out({ method: "item/agentMessage/delta", params: { threadId: "th-1", turnId: m.params.expectedTurnId, itemId: "i9", delta: `corrected: ${m.params.input[0].text}` } })
     out({ method: "turn/completed", params: { threadId: "th-1", turn: { id: m.params.expectedTurnId, status: "completed", error: null } } })
   } else if (m.method === "turn/interrupt") {
     out({ id: m.id, result: {} })

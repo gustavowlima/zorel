@@ -209,16 +209,16 @@ const TEXT_INLINE_BYTES = 64 * 1024
 // How a file shows up in the text: images go as images (native sessions) and are only named here;
 // small text files go inline; anything else by name until agents have file tools (workspace phase).
 function fileNote(f: TurnFile): string {
-  if (isImage(f)) return `[imagem anexada: ${f.name}]`
+  if (isImage(f)) return `[attached image: ${f.name}]`
   const textual = /^text\/|json|xml|yaml|toml|javascript|typescript/.test(f.mime) || /\.(md|txt|csv|ts|tsx|js|json|ya?ml|toml|py|go|rs|sql|sh)$/i.test(f.name)
   if (textual) {
     try {
-      if (statSync(f.path).size <= TEXT_INLINE_BYTES) return `<arquivo nome="${f.name}">\n${readFileSync(f.path, "utf8")}\n</arquivo>`
+      if (statSync(f.path).size <= TEXT_INLINE_BYTES) return `<file name="${f.name}">\n${readFileSync(f.path, "utf8")}\n</file>`
     } catch {
       // gone from disk: fall back to the name
     }
   }
-  return `[arquivo anexado: ${f.name} (${f.mime})]`
+  return `[attached file: ${f.name} (${f.mime})]`
 }
 const withFiles = (m: TurnMessage) => (m.files?.length ? `${m.text}\n\n${m.files.map(fileNote).join("\n")}` : m.text)
 

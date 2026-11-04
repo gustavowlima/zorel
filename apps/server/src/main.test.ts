@@ -372,7 +372,7 @@ test("attachments: upload, a message with files, the engine gets paths; text inl
   const { transcript } = await import("./engines.ts")
   const text = transcript(turns.at(-1)!.messages)
   expect(text).toContain("Vercel on Fridays ✓") // small text file inline
-  expect(text).toContain("[imagem anexada: screen.png]")
+  expect(text).toContain("[attached image: screen.png]")
 
   const served = await fetch(`${base}/api/attachments/${note.json.id}`)
   expect(served.headers.get("content-type")).toContain("text/markdown")
