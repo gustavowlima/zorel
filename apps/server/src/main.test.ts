@@ -21,7 +21,8 @@ import { DataDir } from "./chat.ts"
 import { CONSOLIDATION_SYSTEM } from "./context.ts"
 import { Store } from "./db.ts"
 import { Engines, type EngineEvent, type Turn } from "./engines.ts"
-import { AppLive, snippet } from "./main.ts"
+import { AppLive } from "./main.ts"
+import { snippet } from "./context.ts"
 import { Accounts } from "./accounts.ts"
 import { Audit } from "./audit.ts"
 import { BrowserService } from "./browser.ts"
@@ -89,9 +90,10 @@ const FakeEngines = Layer.succeed(Engines, {
       )
     const last = t.messages.at(-1)!.text
     const me = /## Você é (.+)\n/.exec(t.system)?.[1]
-    const tool = /^tool:(\S+)/.exec(last)?.[1]
+    const call = /^tool:(\S+)(?:\s+(\{[\s\S]*\}))?/.exec(last)
+    const tool = call?.[1]
     if (tool)
-      return Stream.fromEffect(Effect.promise(() => useTool(t, tool, { q: "deploy" }))).pipe(
+      return Stream.fromEffect(Effect.promise(() => useTool(t, tool, call?.[2] ? JSON.parse(call[2]) : { q: "deploy" }))).pipe(
         Stream.flatMap((r) => Stream.make<EngineEvent[]>({ type: "text", delta: `${r.listed.filter((n) => !zeroOwn(n)).join(",")} => ${r.text}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }))
       )
     return Stream.make<EngineEvent[]>({ type: "text", delta: (me && mentionNext.get(me)) || `eco: ${last}` }, { type: "done", usage: { inputTokens: 10, outputTokens: 3 } })
@@ -532,4 +534,18 @@ test("agente padrão do projeto: só global ou do próprio projeto", async () =>
   expect((bad as { _tag?: string })._tag).toBe("NotFound")
   expect((await api((c) => c.projects.update({ params: { id: p.id }, payload: { defaultAgentId: global.id } }))).defaultAgentId).toBe(global.id)
   expect((await api((c) => c.projects.list())).find((x) => x.id === p.id)!.defaultAgentId).toBe(global.id)
+})
+
+test("páginas pelos agentes: escrever no projeto vira versão, buscar e ler; a fixada entra no contexto", async () => {
+  const project = await api((c) => c.projects.create({ payload: { name: "Wiki", brief: "" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [], model: "claude-cli/sonnet" } }))
+  const write = dones((await send(chat.id, { text: 'tool:zero_knowledge_write {"title":"Deploy","body":"We deploy on Fly.io.","scope":"project"}' })).events)[0]!
+  expect(write.text).toContain('Saved "Deploy"')
+  const page = (await api((c) => c.pages.list())).find((p) => p.title === "Deploy")!
+  expect(page.scope).toBe(`project:${project.id}`)
+  expect(dones((await send(chat.id, { text: 'tool:zero_knowledge_search {"query":"fly"}' })).events)[0]!.text).toContain(`Deploy [${page.id}]`)
+  expect(dones((await send(chat.id, { text: `tool:zero_knowledge_read {"page":"${page.id}"}` })).events)[0]!.text).toContain("We deploy on Fly.io.")
+  await api((c) => c.pages.update({ params: { id: page.id }, payload: { pinned: true } }))
+  await send(chat.id, { text: "oi" })
+  expect(turns.at(-1)!.system).toContain(`- Deploy [${page.id}]`)
 })

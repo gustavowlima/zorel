@@ -267,3 +267,30 @@ export const BUILDER = {
   ].join("\n"),
   access: "ask" as const
 }
+
+// Knowledge pages (phase 3b): search and read freely; write to the project's or your own pages directly (each
+// write is a version the user can restore); a page about the user waits for the user's OK.
+export const KNOWLEDGE_TOOLS = [
+  {
+    name: "zero_knowledge_search",
+    description: "Search the knowledge pages (decisions, how-tos, references, notes) of the user, this project and you. Returns titles, ids and the words around the match.",
+    inputSchema: { properties: { query: { type: "string" } }, required: ["query"] },
+    writes: false
+  },
+  {
+    name: "zero_knowledge_read",
+    description: "Read a whole knowledge page. page: its id (from the search or the pinned list) or its exact title.",
+    inputSchema: { properties: { page: { type: "string" } }, required: ["page"] },
+    writes: false
+  },
+  {
+    name: "zero_knowledge_write",
+    description:
+      "Create or update a knowledge page in Markdown: a decision and why, a how-to that worked, a gotcha, a reference. page: an existing page's id to update (send the whole new body). scope: 'project' (default), 'agent' (your own notes) or 'user' (about the user: they approve it first). Keep pages short and current; update instead of duplicating.",
+    inputSchema: {
+      properties: { page: { type: "string" }, title: { type: "string" }, body: { type: "string" }, scope: { type: "string", enum: ["project", "agent", "user"] } },
+      required: ["title", "body"]
+    },
+    writes: true
+  }
+] as const

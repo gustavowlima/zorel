@@ -40,3 +40,4 @@
 2026-11-03 | editar daqui (rewind) com desfazer de arquivos opcional | item 4 (T3 Code)
 2026-11-03 | fase 4 fechada: agente padrão por projeto e catálogo de conectores | item 5
 2026-11-03 | navegador: hover, select, scroll, upload, diálogos e browser_run | item 6 (a reference app)
+2026-11-03 | páginas de conhecimento com versões e ferramentas dos agentes | item 7, fase 3b (a reference app)

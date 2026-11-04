@@ -57,6 +57,7 @@ export interface TurnInput {
   readonly pinned: ReadonlyArray<Memory>
   readonly retrieved: ReadonlyArray<Memory>
   readonly skills: { readonly all: ReadonlyArray<Memory>; readonly relevant: ReadonlyArray<Memory> }
+  readonly pages?: ReadonlyArray<{ readonly id: string; readonly title: string }> | undefined // pinned knowledge pages (titles only)
   readonly messages: ReadonlyArray<Message> // since the summary, in order; the last is from the user or another agent
   readonly cwd: string
   readonly filesDir?: string | undefined // where this chat's attachments live (<dataDir>/attachments/<chat>)
@@ -103,7 +104,9 @@ export function buildTurn(i: TurnInput): Turn {
   ]
   const workMemories = [i.project && section("Memórias do projeto", bullets(of(`project:${i.project.id}`))), i.agent && section("Suas memórias de trabalho", bullets(of(`agent:${i.agent.id}`)))]
   const skillList = section("Skills disponíveis (procedimentos aprovados; siga quando a tarefa casar)", i.skills.all.slice(0, SKILL_TITLES).map((s) => `- ${s.title}`).join("\n"))
-  const stable = [...instructions, userMemories, ...projectParts, ...workMemories, skillList].filter(Boolean).join("\n\n")
+  // Pinned pages: titles only (stable, cheap); the body comes with zero_knowledge_read when needed.
+  const pageList = section("Páginas de conhecimento fixadas (leia com zero_knowledge_read; busque outras com zero_knowledge_search)", (i.pages ?? []).map((p) => `- ${p.title} [${p.id}]`).join("\n"))
+  const stable = [...instructions, userMemories, ...projectParts, ...workMemories, skillList, pageList].filter(Boolean).join("\n\n")
   // Dynamic: depends on the current message; in a native session it goes with the turn's message.
   const skillBodies = i.skills.relevant.map((s) => section(`Skill: ${s.title}`, s.text))
   const summary = section("Resumo do que veio antes nesta conversa", i.chat.summary)
@@ -209,4 +212,12 @@ export function parseConsolidation(text: string, allowed: ReadonlyArray<string>,
   } catch {
     return undefined
   }
+}
+
+// The words around the first match, on one line.
+export const snippet = (text: string, q: string, around = 60) => {
+  const flat = text.replace(/\s+/g, " ")
+  const i = flat.toLowerCase().indexOf(q.toLowerCase())
+  if (i < 0) return flat.slice(0, around * 2)
+  return `${i > around ? "…" : ""}${flat.slice(Math.max(0, i - around), i + q.length + around)}${i + q.length + around < flat.length ? "…" : ""}`
 }

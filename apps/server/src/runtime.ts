@@ -6,14 +6,14 @@ import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, t
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
 import { consolidate, DataDir, members, prepare } from "./chat.ts"
-import { handleOf, MAX_DEPTH, mentioned, scopesOf } from "./context.ts"
+import { handleOf, MAX_DEPTH, mentioned, scopesOf, snippet } from "./context.ts"
 import { type AccountRow, Store, type Repository, type TurnRow } from "./db.ts"
 import { type EngineFailure, Engines, isImage, type NativeStep, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, runBrowserTool } from "./browser.ts"
-import { createInputs, findAgent, listText, MEMORY_TOOL, proposalText, readText, ROUTINES_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
+import { createInputs, findAgent, KNOWLEDGE_TOOLS, listText, MEMORY_TOOL, proposalText, readText, ROUTINES_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
@@ -237,7 +237,7 @@ export const makeRuntime = Effect.gen(function* () {
     const askFirst = (agent?.access ?? "workspace") === "ask"
     for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
-    for (const t of [...TEAM_TOOLS, MEMORY_TOOL, ROUTINES_TOOL]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    for (const t of [...TEAM_TOOLS, MEMORY_TOOL, ROUTINES_TOOL, ...KNOWLEDGE_TOOLS]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
       return { tools: undefined as TurnTools | undefined, close: () => {} }
@@ -353,7 +353,46 @@ export const makeRuntime = Effect.gen(function* () {
       return textResult(`Created the routine ${r.name} (id ${r.id}); it runs in its own chat${r.nextRunAt ? `, first at ${new Date(r.nextRunAt).toISOString()}` : ""}.`)
     }
 
+    // Knowledge pages: search/read in the chat's scopes; write to project/agent scope as a version, or, about the
+    // user, only on the person's OK.
+    const knowledgeCall = async (name: string, args: Record<string, unknown>) => {
+      const scopes = scopesOf(chat, agent?.id ?? null)
+      const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "")
+      if (name === "zero_knowledge_search") {
+        const found = await run(store.searchPages(scopes, str(args.query, 500), 8))
+        const q = str(args.query, 500).split(/\s+/)[0] ?? ""
+        return textResult(found.length ? found.map((p) => `- ${p.title} [${p.id}] (${p.scope}): ${snippet(p.body, q, 80)}`).join("\n") : "No page matches. Try other words.")
+      }
+      const all = (await run(store.pages())).filter((p) => scopes.includes(p.scope))
+      if (name === "zero_knowledge_read") {
+        const ref = str(args.page, 200)
+        const p = all.find((x) => x.id === ref) ?? all.find((x) => x.title.toLowerCase() === ref.toLowerCase())
+        return p ? textResult(`# ${p.title}\n\n${p.body}`) : textResult(`No page "${ref}" here. Search with zero_knowledge_search.`, true)
+      }
+      const title = str(args.title, 120)
+      const body = typeof args.body === "string" ? args.body.slice(0, 100_000) : ""
+      if (!title || !body.trim()) return textResult("title and body are required.", true)
+      const existing = args.page ? all.find((p) => p.id === args.page) : undefined
+      if (args.page && !existing) return textResult("No such page here.", true)
+      const want = str(args.scope, 10) || "project"
+      const scope = existing?.scope ?? (want === "user" ? "user" : want === "agent" ? (agent ? `agent:${agent.id}` : "") : chat.projectId ? `project:${chat.projectId}` : "")
+      if (!scope) return textResult(want === "agent" ? "Only an agent has its own pages." : "This chat has no project: use scope 'user' or 'agent'.", true)
+      const s = await step(`${existing ? "Update" : "Write"} page: ${title}`, name)
+      if (scope === "user") {
+        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to ${existing ? "update" : "write"} a page about you: ${title}`, args: `# ${title}\n\n${body}`.slice(0, 12_000), cwd: null }))
+        if (outcome !== "approved" && outcome !== "always") {
+          await finish(s, "refused")
+          return textResult("The user declined this page.", true)
+        }
+      }
+      onWrite()
+      const saved = await run(store.savePage({ id: existing?.id, scope, title, body }, nameOf(agent)))
+      await finish(s, "ok", saved.title)
+      return textResult(`Saved "${saved.title}" [${saved.id}]. The user can see its versions and restore any.`)
+    }
+
     const call: Session["call"] = async (name, args) => {
+      if (KNOWLEDGE_TOOLS.some((t) => t.name === name)) return knowledgeCall(name, args)
       if (name === ROUTINES_TOOL.name) return routinesCall(args)
       if (name === MEMORY_TOOL.name) return memoryCall(args)
       if (TEAM_TOOLS.some((t) => t.name === name)) return teamCall(name, args)

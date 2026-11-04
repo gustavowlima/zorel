@@ -301,6 +301,18 @@ export const Memory = Schema.Struct({
 })
 export type Memory = typeof Memory.Type
 
+// A knowledge page (phase 3b): a longer Markdown note by scope (as memories). pinned: its title goes into every
+// turn's context in that scope.
+export const Page = Schema.Struct({ id: Id, scope: MemoryScope, title: Schema.String, body: Schema.String, pinned: Schema.Boolean, updatedAt: Schema.Number, createdAt: Schema.Number })
+export type Page = typeof Page.Type
+export const PageVersion = Schema.Struct({ id: Schema.String, n: Schema.Number, title: Schema.String, body: Schema.String, by: Schema.String, at: Schema.Number })
+export type PageVersion = typeof PageVersion.Type
+const PageTitle = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(120))
+const PageBody = Schema.String.check(Schema.isMaxLength(100_000))
+export const NewPage = Schema.Struct({ scope: MemoryScope, title: PageTitle, body: PageBody })
+export const PagePatch = Schema.Struct({ title: Schema.optional(PageTitle), body: Schema.optional(PageBody), pinned: Schema.optional(Schema.Boolean) })
+
+
 // How a message names a skill: "$" + its title in lower case, accents dropped, words joined by "-"
 // ("Deploy na Vercel" -> $deploy-na-vercel). The turn then carries that skill's full steps.
 export const skillHandle = (title: string) =>
@@ -490,6 +502,15 @@ export const Api = HttpApi.make("zero")
       .add(HttpApiEndpoint.post("builder", "/api/agents/builder", { payload: Schema.Struct({ projectId: Schema.NullOr(Id), model: ModelId }), success: Chat, error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.get("versions", "/api/agents/:id/versions", { params: idParam, success: Schema.Array(AgentVersion), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("restore", "/api/agents/:id/versions/:n/restore", { params: Schema.Struct({ id: Schema.String, n: Schema.NumberFromString }), success: Agent, error: HttpApiError.NotFound }))
+  )
+  .add(
+    HttpApiGroup.make("pages")
+      .add(HttpApiEndpoint.get("list", "/api/pages", { success: Schema.Array(Page) }))
+      .add(HttpApiEndpoint.post("create", "/api/pages", { payload: NewPage, success: Page }))
+      .add(HttpApiEndpoint.patch("update", "/api/pages/:id", { params: idParam, payload: PagePatch, success: Page, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.delete("remove", "/api/pages/:id", { params: idParam }))
+      .add(HttpApiEndpoint.get("versions", "/api/pages/:id/versions", { params: idParam, success: Schema.Array(PageVersion), error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("restore", "/api/pages/:id/versions/:n/restore", { params: Schema.Struct({ id: Schema.String, n: Schema.NumberFromString }), success: Page, error: HttpApiError.NotFound }))
   )
   .add(
     HttpApiGroup.make("routines")

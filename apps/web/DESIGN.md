@@ -369,6 +369,9 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Build with AI** (cabeçalho da tela Agents e aba Agents do projeto, ghost com ✦): abre um chat "Build agents" com o Builder; ele propõe a equipe inteira num cartão de aprovação (cada perfil sob o nome).
 - Agentes também nascem no chat: um agente usa `zero_create_agent` / `zero_update_agent` e o pedido vira um **cartão de aprovação** com o perfil campo a campo; nada é criado sem o OK. A lista se atualiza ao fim do turno.
 
+### Páginas de conhecimento
+- Tela Knowledge, aba **Pages** (ao lado de Facts e Skills): lista com título (alfinete quando fixada), escopo e quando mudou; "New" cria uma página quando a aba está aberta. A página abre lida em Markdown (o mesmo visual do chat), com "PAGE" em accent, escopo e "updated …"; Pin/Unpin e Edit. Editar troca por título + texto Markdown em mono, com Save, Cancel e Delete (confirma). Embaixo, **Versions**: cada versão com quem fez (You ou o agente) e quando; Restore volta qualquer uma como versão nova.
+
 ### Agente padrão e catálogo
 - Aba Agents do projeto: "New chats start with" (Select: Assistant ou um agente global ou do projeto), salvo na hora. Um chat novo no projeto já vem com ele escolhido (dá para trocar antes de mandar).
 - Novo servidor MCP: em cima do formulário, "From the catalog" com pílulas (GitHub, Notion, Context7, Figma, Playwright, Filesystem, Postgres) que preenchem nome, tipo, comando ou URL e a linha do token a colar.

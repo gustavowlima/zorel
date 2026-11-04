@@ -842,6 +842,21 @@ export const en = {
     loadingDiff: "Loading diff…",
     turnBy: "{agent} · {time}"
   },
+  pages: {
+    pages: "Pages",
+    page: "Page",
+    new: "New page",
+    empty: "No pages yet. Agents write them as they work (decisions, how-tos, gotchas), or create one.",
+    titleField: "Title",
+    body: "Page (Markdown)",
+    bodyHint: "Decisions and why, how-tos that worked, references. Agents read it when it matters.",
+    updated: "updated {age}",
+    pin: "Pin",
+    unpin: "Unpin",
+    versions: "Versions",
+    deleteTitle: "Delete {title}?",
+    deleteBody: "The page and its versions go. Agents won't find it anymore."
+  },
   palette: {
     label: "Go to or search",
     placeholder: "Search chats, messages, agents… or go to a page",
