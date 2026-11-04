@@ -164,6 +164,7 @@ export const mcpServers = sqliteTable("mcp_servers", {
   url: text().notNull().default(""),
   envKeys: text("env_keys").notNull().default("[]"), // JSON of string[]; the values live in the keychain
   mode: text({ enum: ["read", "approve", "auto"] }).notNull(),
+  auth: text({ enum: ["none", "oauth"] }).notNull().default("none"), // oauth: signs in through the browser (oauth.ts)
   enabled: integer({ mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at").notNull()
 })

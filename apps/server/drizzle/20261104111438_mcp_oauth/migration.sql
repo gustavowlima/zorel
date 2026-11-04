@@ -1,0 +1,1 @@
+ALTER TABLE `mcp_servers` ADD `auth` text DEFAULT 'none' NOT NULL;
