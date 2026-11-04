@@ -43,6 +43,19 @@ const tick = Effect.gen(function* () {
   }
 })
 
+// Chats paused by usage limits: when the reset comes, they continue (once per reset time).
+const resumes = Effect.gen(function* () {
+  const store = yield* Store
+  const runtime = yield* Runtime
+  for (const c of yield* store.dueResumes(Date.now())) {
+    yield* store.setResumeAt(c.id, null)
+    yield* runtime
+      .send({ chatId: c.id, clientId: `resume:${c.id}:${c.resumeAt}`.slice(0, 64), text: RESUME_TEXT })
+      .pipe(Effect.catchCause((cause) => Effect.logWarning("resume after limit failed", { chatId: c.id, cause: String(cause) })))
+  }
+})
+export const RESUME_TEXT = "The usage limit has reset. Continue where you left off."
+
 export const RoutineScheduler = Layer.effectDiscard(
-  Effect.forkScoped(tick.pipe(Effect.catchCause((c) => Effect.logWarning("routine tick failed", String(c))), Effect.repeat(Schedule.spaced(TICK))))
+  Effect.forkScoped(Effect.andThen(tick, resumes).pipe(Effect.catchCause((c) => Effect.logWarning("routine tick failed", String(c))), Effect.repeat(Schedule.spaced(TICK))))
 )

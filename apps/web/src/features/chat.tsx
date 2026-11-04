@@ -132,6 +132,16 @@ export function ChatView({ chat }: { chat: Chat }) {
       <div className="flex min-w-0 flex-1 flex-col">
       <Timeline chat={chat} state={state} agents={agents} onView={view} />
       <div className="w-full px-8 pt-2 pb-4.5">
+        {chat.resumeAt && (
+          // Every route hit its usage limit: the chat goes on by itself at the reset (or you cancel, or write).
+          <div role="status" className="mb-2 flex items-center gap-3 rounded-card border border-subtle px-3.5 py-2 text-sm">
+            <Clock className="size-4 shrink-0 text-warning" />
+            <span className="flex-1 text-secondary">{t("chat.resumesAt", { time: formatTime(chat.resumeAt) })}</span>
+            <Button size="sm" variant="ghost" onPress={() => void updateChat({ params: { id: chat.id }, payload: { resumeAt: null }, reactivityKeys: ["chats"] })}>
+              {t("common.cancel")}
+            </Button>
+          </div>
+        )}
         <QueuePanel
           items={queue.items}
           canSteer={busy}

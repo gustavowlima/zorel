@@ -619,6 +619,7 @@ export const makeRuntime = Effect.gen(function* () {
       yield* Effect.gen(function* () {
         const routes = routesOf(row, chat, agent, lead)
         const tried: string[] = []
+        let actedAny = false
         for (let i = 0; i < routes.length; i++) {
           const r = routes[i]!
           const account = yield* accounts.resolve(r.model, r.accountId)
@@ -640,6 +641,7 @@ export const makeRuntime = Effect.gen(function* () {
           const error = acc.error as string | undefined // set by the attempt's stream
           if (!error) return
           const f = result.failure
+          actedAny ||= result.acted
           tried.push(`${r.model}: ${f?.reason ?? "error"} (${error.split("\n")[0]})`)
           if (!f || result.acted || last) break
           // Failed before acting, for a reason another route can avoid: remember it and move on.
@@ -656,6 +658,13 @@ export const makeRuntime = Effect.gen(function* () {
         }
         // Several routes tried and all failed: say what happened on each.
         if (acc.error && tried.length > 1) acc.error = `${acc.error}\n\n${tried.join("\n")}`
+        // Every route is at its usage limit: the chat continues by itself when the soonest one resets (T3 Code's
+        // "resume at reset"). The routine tick sends the continuation; the chat shows it and can cancel it.
+        if (acc.error && !actedAny) {
+          const holds = yield* Effect.forEach(routes, (r) => Effect.map(accounts.resolve(r.model, r.accountId), (a) => held(r.model, a)))
+          const resets = holds.flatMap((h) => (h?.reason === "limit" ? [h.until] : []))
+          if (resets.length === holds.length && resets.length) yield* store.setResumeAt(chatId, Math.min(...resets))
+        }
       }).pipe(Effect.onExit((exit) => (exit._tag === "Failure" ? save("interrupted", acc.error ?? ErrorCode.interrupted) : Effect.void)))
       yield* save(acc.error ? "failed" : "completed", acc.error ?? null)
       return acc.error ? undefined : { text: acc.text, agent, team }
@@ -761,6 +770,7 @@ export const makeRuntime = Effect.gen(function* () {
         if (!chat) return yield* new ChatNotFound({ chatId: input.chatId })
         if (input.model && input.model !== chat.model) chat = (yield* store.updateChat(chat.id, { model: input.model }))!
         if (chat.title === "Novo chat") chat = (yield* store.updateChat(chat.id, { title: input.text.replace(/\s+/g, " ").slice(0, 60) }))!
+        if (chat.resumeAt && !input.clientId.startsWith("resume:")) yield* store.setResumeAt(chat.id, null) // you went on yourself
         yield* addUserMessage(chat.id, input.text, input.attachmentIds)
         return { turnId: yield* enqueueFor(chat, input.text, input.clientId) }
       }),
