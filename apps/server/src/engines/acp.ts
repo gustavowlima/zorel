@@ -27,6 +27,28 @@ export interface AcpTurn {
   readonly gatewayUrl?: string | undefined
   readonly web?: boolean // the agent may fetch and search the web
   readonly state?: ReadonlyArray<string> // folders under home the CLI writes its own data to
+  readonly env?: Readonly<Record<string, string>> // extra environment (OpenCode's injected config and the API key)
+}
+
+// OpenCode as the harness of an API-key model (phase 5): its config goes in OPENCODE_CONFIG_CONTENT, the key in an
+// environment variable the config points to ({env:…}), so it never lands in a file; the person's own opencode.json
+// and their Claude Code prompt and skills stay out (Zero gives the context). Local servers (Ollama, LM Studio) are
+// OpenAI-compatible providers at their URL.
+export function opencodeEnv(provider: string, model: string, o: { key?: string | undefined; baseURL?: string | undefined }): Record<string, string> {
+  const local = provider === "ollama" || provider === "lmstudio"
+  const options: Record<string, string> = {}
+  if (o.key) options.apiKey = "{env:ZERO_PROVIDER_KEY}"
+  if (o.baseURL && (local || provider === "openai")) options.baseURL = o.baseURL
+  const block = local ? { npm: "@ai-sdk/openai-compatible", name: provider, options, models: { [model]: { name: model } } } : { options }
+  const config = { $schema: "https://opencode.ai/config.json", model: `${provider}/${model}`, provider: { [provider]: block }, autoupdate: false }
+  return {
+    OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
+    ...(o.key ? { ZERO_PROVIDER_KEY: o.key } : {}),
+    OPENCODE_DISABLE_CLAUDE_CODE: "1",
+    OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
+    OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+    OPENCODE_DISABLE_AUTOUPDATE: "1"
+  }
 }
 
 type Json = Record<string, any>
@@ -107,7 +129,7 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
     yield { type: "error", message: `${t.bin} can only be sandboxed on macOS. Give this agent Full access to run it here.`, failure: { reason: "unavailable" } }
     return
   }
-  const proc = Bun.spawn(cmd, { cwd: t.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: process.env })
+  const proc = Bun.spawn(cmd, { cwd: t.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, ...t.env } })
   const queue: EngineEvent[] = []
   let wake: (() => void) | undefined
   const push = (e: EngineEvent) => {

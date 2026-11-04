@@ -9,7 +9,7 @@
 import { AnthropicClient, AnthropicLanguageModel } from "@effect/ai-anthropic"
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
 import type { Access, AccountWindow, FailureReason, ModelInfo } from "@zero/contracts"
-import { acpRun } from "./engines/acp.ts"
+import { acpRun, opencodeEnv } from "./engines/acp.ts"
 import { Context, Effect, Layer, Queue, Redacted, Stream } from "effect"
 import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
@@ -498,6 +498,25 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
           if (acp) {
             const { model } = splitModel(t.model)
             return acpRun({ ...acp(model), model, cwd: t.cwd, prompt: `${t.system}\n\n${transcript(t.messages)}`, access: t.access ?? "workspace", web: t.web ?? false, gatewayUrl: t.tools?.url })
+          }
+          // An API-key model in a chat turn runs in OpenCode (files, shell, edits, its tools) when it's installed;
+          // internal tasks (summaries, titles) and machines without it keep the direct API engine.
+          const p = PROVIDERS[provider]
+          // ZERO_API_ENGINE=direct keeps the direct engine (tests, or if OpenCode misbehaves).
+          if (p?.kind === "api" && t.tools && process.env.ZERO_API_ENGINE !== "direct" && Bun.which("opencode")) {
+            const key = p.key ? secrets.get(p.key) : undefined
+            if (p.key && !key) return one({ type: "error", message: `Defina ${p.key} (em Configurações ou no ambiente) para usar ${provider}.`, failure: { reason: "auth" } })
+            const { model } = splitModel(t.model)
+            return acpRun({
+              ...ACP.opencode!("default"),
+              model: "default", // the injected config already names the model
+              cwd: t.cwd,
+              prompt: `${t.system}\n\n${transcript(t.messages)}`,
+              access: t.access ?? "workspace",
+              web: t.web ?? false,
+              gatewayUrl: t.tools.url,
+              env: opencodeEnv(provider, model, { key, baseURL: COMPAT[provider]?.() })
+            })
           }
           return api(secrets, t)
         },

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
-import { commandFor, kindOf, permission, writableRoots } from "./acp.ts"
+import { commandFor, kindOf, opencodeEnv, permission, writableRoots } from "./acp.ts"
 
 describe("acp", () => {
   test("maps ACP tool kinds to step kinds", () => {
@@ -41,5 +41,18 @@ describe("acp confinement", () => {
     } finally {
       rmSync(outside, { recursive: true })
     }
+  })
+})
+
+describe("opencode as the API-key harness", () => {
+  test("the key stays in the environment; the config names the model; locals get their URL", () => {
+    const env = opencodeEnv("openrouter", "anthropic/claude-sonnet", { key: "sk-1", baseURL: "https://openrouter.ai/api/v1" })
+    const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!)
+    expect(config.model).toBe("openrouter/anthropic/claude-sonnet")
+    expect(config.provider.openrouter.options).toEqual({ apiKey: "{env:ZERO_PROVIDER_KEY}" })
+    expect(env.ZERO_PROVIDER_KEY).toBe("sk-1")
+    expect(env.OPENCODE_CONFIG_CONTENT).not.toContain("sk-1")
+    const local = JSON.parse(opencodeEnv("ollama", "qwen3", { baseURL: "http://localhost:11434/v1" }).OPENCODE_CONFIG_CONTENT!)
+    expect(local.provider.ollama).toEqual({ npm: "@ai-sdk/openai-compatible", name: "ollama", options: { baseURL: "http://localhost:11434/v1" }, models: { qwen3: { name: "qwen3" } } })
   })
 })
