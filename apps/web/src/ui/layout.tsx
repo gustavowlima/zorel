@@ -22,7 +22,7 @@ export function Screen({ title, subtitle, actions, children, bodyClassName }: { 
         {!subtitle && <span className="flex-1" />}
         {actions && <div className="flex items-center gap-2">{actions}</div>}
       </PageHeader>
-      <div className={cn("min-h-0 flex-1 overflow-auto", bodyClassName)}>{children}</div>
+      <div className={cn("relative min-h-0 flex-1 overflow-auto", bodyClassName)}>{children}</div>
     </div>
   )
 }
