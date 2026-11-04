@@ -270,7 +270,6 @@ export const makeRuntime = Effect.gen(function* () {
             web: permissions.web,
             browser: permissions.browser,
             connectors: notes.connectors || undefined,
-            first_task: notes.firstTask || undefined,
             reason: notes.reason || undefined
           })
           proposal = {

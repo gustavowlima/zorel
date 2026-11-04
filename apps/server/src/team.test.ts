@@ -46,12 +46,12 @@ test("a team: up to 8 profiles, each checked, names distinct", () => {
   expect(() => createInputs({ agents: Array.from({ length: 9 }, (_, i) => ({ name: `A${i}`, instructions: "x" })) }, caller, null)).toThrow("At most 8")
 })
 
-test("a proposal carries its powers: web, browser, connectors by name (others none), first task and reason", () => {
+test("a proposal carries its powers: web, browser, connectors by name (others none), and the reason", () => {
   const servers = [{ id: "s1", name: "GitHub" }, { id: "s2", name: "Notion" }]
   const caller = { model: "claude-cli/sonnet", effort: null, access: "workspace" as const }
-  const input = createInput({ name: "Rev", instructions: "x", web: false, connectors: [{ name: "github", level: "read" }], first_task: "Review PR 12", reason: "PRs pile up" }, caller, null, servers)
+  const input = createInput({ name: "Rev", instructions: "x", web: false, connectors: [{ name: "github", level: "read" }], reason: "PRs pile up" }, caller, null, servers)
   expect(input.permissions).toEqual({ web: false, browser: false, grants: { s1: "read", s2: "none" }, always: [] })
-  expect(input.notes).toEqual({ firstTask: "Review PR 12", reason: "PRs pile up", connectors: "GitHub (read)" })
+  expect(input.notes).toEqual({ reason: "PRs pile up", connectors: "GitHub (read)" })
   expect(() => createInput({ name: "Rev", instructions: "x", connectors: [{ name: "Jira" }] }, caller, null, servers)).toThrow('No connector "Jira"')
   // Nothing about connectors: it follows each server's own mode.
   expect(createInput({ name: "Rev", instructions: "x" }, caller, null, servers).permissions.grants).toEqual({})
