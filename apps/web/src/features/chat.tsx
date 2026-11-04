@@ -14,17 +14,16 @@ import { accountsAtom, agentsAtom, attachmentUrl, commandsAtom, filesAtom, memor
 import { agentName, chatTitle, formatCost, handleOf, modelLabel, switchText } from "../labels.ts"
 import { go } from "../state.ts"
 import { Composer, type ComposerSources } from "./composer.tsx"
-import { BrowserPanel } from "./browser.tsx"
 import { ContextMeter } from "./context-meter.tsx"
 import { QueuePanel, useQueue } from "./queue.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
-import { chatDelta, Delta, type Focus, TerminalPanel, TurnChanges, WorkspacePanel } from "./workspace.tsx"
+import { chatDelta, Delta, type Focus, SidePanel, type SideTab, TurnChanges } from "./workspace.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { GitControl } from "./git.tsx"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import {
-  Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, Globe, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
-  MenuSeparator, MessageCircle, Minimize2, MoreHorizontal, PanelBottom, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
+  Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
+  MenuSeparator, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
 } from "@/ui"
 
 export function ChatView({ chat }: { chat: Chat }) {
@@ -56,15 +55,13 @@ export function ChatView({ chat }: { chat: Chat }) {
   const second = team[1]
   const projects = useList(projectsAtom)
   const project = projects.find((p) => p.id === chat.projectId)
-  const [panel, setPanel] = useState<"changes" | "files">()
-  const [browser, setBrowser] = useState(false)
+  // The side panel and its tab (Changes, Files, Browser, Terminal); undefined: closed.
+  const [panel, setPanel] = useState<SideTab>()
   const [browserUrl, setBrowserUrl] = useState<{ url: string }>() // a new object each time, so the same URL opens again
   const openInBrowser = (url: string) => {
     setBrowserUrl({ url })
-    setBrowser(true)
-    setPanel(undefined)
+    setPanel("browser")
   }
-  const [terminal, setTerminal] = useState(false)
   const [focus, setFocus] = useState<Focus>()
   const view = (f: Focus) => {
     setFocus(f)
@@ -99,7 +96,7 @@ export function ChatView({ chat }: { chat: Chat }) {
       { id: "compact", label: t("composer.command.compact"), hint: t("composer.command.compactHint"), icon: <Minimize2 className="size-4" />, run: compact },
       { id: "new", label: t("composer.command.newChat"), hint: t("composer.command.newChatHint"), icon: <SquarePen className="size-4" />, run: newChat },
       { id: "changes", label: t("composer.command.changes"), hint: t("composer.command.changesHint"), icon: <PanelRight className="size-4" />, run: () => setPanel("changes") },
-      ...(project?.path ? [{ id: "terminal", label: t("composer.command.terminal"), hint: t("composer.command.terminalHint"), icon: <PanelBottom className="size-4" />, run: () => setTerminal(true) }] : []),
+      ...(project?.path ? [{ id: "terminal", label: t("composer.command.terminal"), hint: t("composer.command.terminalHint"), icon: <SquareTerminal className="size-4" />, run: () => setPanel("terminal") }] : []),
       // Then Claude Code's own (built-in, the user's, the project's): written into the message, run by the CLI.
       ...engineCommands.map((c) => ({ id: c.name, label: `/${c.name}${c.argumentHint ? ` ${c.argumentHint}` : ""}`, hint: c.description, icon: <SquareTerminal className="size-4" /> }))
     ]
@@ -112,17 +109,7 @@ export function ChatView({ chat }: { chat: Chat }) {
         team={team}
         delta={chatDelta(state.messages)}
         panelOpen={!!panel}
-        onPanel={() => {
-          setPanel(panel ? undefined : "changes")
-          setBrowser(false)
-        }}
-        terminalOpen={terminal}
-        onTerminal={() => setTerminal(!terminal)}
-        browserOpen={browser}
-        onBrowser={() => {
-          setBrowser(!browser)
-          setPanel(undefined)
-        }}
+        onPanel={() => setPanel(panel ? undefined : "changes")}
         workspace={!!project?.path}
       />
       <div className="flex min-h-0 flex-1">
@@ -168,11 +155,22 @@ export function ChatView({ chat }: { chat: Chat }) {
           )}
         </WithFiles>
       </div>
-      {terminal && <TerminalPanel chatId={chat.id} onClose={() => setTerminal(false)} onAddToChat={(text) => insertRef.current?.(`\`\`\`\n${text.trimEnd()}\n\`\`\``)} onOpenUrl={openInBrowser} />}
       </div>
-      {browser && <BrowserPanel chatId={chat.id} openUrl={browserUrl} onClose={() => setBrowser(false)} />}
       {panel && (
-        <WorkspacePanel chat={chat} project={project} messages={state.messages} agents={agents} tab={panel} onTab={setPanel} focus={focus} onFocus={setFocus} onClose={() => setPanel(undefined)} />
+        <SidePanel
+          chat={chat}
+          project={project}
+          messages={state.messages}
+          agents={agents}
+          tab={panel}
+          onTab={setPanel}
+          focus={focus}
+          onFocus={setFocus}
+          onClose={() => setPanel(undefined)}
+          browserUrl={browserUrl}
+          onOpenUrl={openInBrowser}
+          onAddToChat={(text) => insertRef.current?.(`\`\`\`\n${text.trimEnd()}\n\`\`\``)}
+        />
       )}
       </div>
     </section>
@@ -195,10 +193,6 @@ function ChatHeader({
   delta,
   panelOpen,
   onPanel,
-  terminalOpen,
-  onTerminal,
-  browserOpen,
-  onBrowser,
   workspace
 }: {
   chat: Chat
@@ -206,10 +200,6 @@ function ChatHeader({
   delta: { added: number; removed: number }
   panelOpen: boolean
   onPanel: () => void
-  terminalOpen: boolean
-  onTerminal: () => void
-  browserOpen: boolean
-  onBrowser: () => void
   workspace: boolean
 }) {
   const projects = useList(projectsAtom)
@@ -246,24 +236,15 @@ function ChatHeader({
             <Spinner size={12} /> {t("chat.compacting")}
           </span>
         )}
-        {(workspace || delta.added + delta.removed > 0) && (
-          <Button size="sm" variant={panelOpen ? "secondary" : "ghost"} aria-expanded={panelOpen} onPress={onPanel} className="rounded-full">
+        {workspace && <GitControl chat={chat} />}
+        {/* One control for the side panel (Changes, Files, Browser, Terminal live in its tabs); what this chat
+            changed shows on it. */}
+        <Tooltip content={panelOpen ? t("workspace.closePanel") : t("workspace.openPanel")}>
+          <Button size="sm" variant={panelOpen ? "secondary" : "ghost"} aria-expanded={panelOpen} aria-label={panelOpen ? t("workspace.closePanel") : t("workspace.openPanel")} onPress={onPanel} className="rounded-full">
             <PanelRight />
-            {t("workspace.changes")}
             {delta.added + delta.removed > 0 && <Delta {...delta} />}
           </Button>
-        )}
-        {workspace && <GitControl chat={chat} />}
-        <Button size="sm" variant={browserOpen ? "secondary" : "ghost"} aria-expanded={browserOpen} onPress={onBrowser} className="rounded-full">
-          <Globe />
-          {t("browser.title")}
-        </Button>
-        {workspace && (
-          <Button size="sm" variant={terminalOpen ? "secondary" : "ghost"} aria-expanded={terminalOpen} onPress={onTerminal} className="rounded-full">
-            <PanelBottom />
-            {t("workspace.terminal")}
-          </Button>
-        )}
+        </Tooltip>
         <TeamPicker chat={chat} />
         <Menu
           label={t("common.more")}

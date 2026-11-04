@@ -1,4 +1,4 @@
-// The chat's Browser panel: the agents' browser (apps/server/src/browser.ts) live, over a WebSocket
+// The Browser tab of the chat's side panel: the agents' browser (apps/server/src/browser.ts) live, over a WebSocket
 // (GET /api/browser): the chat's tabs and whether a person holds it come as JSON, the active tab as JPEG frames.
 // Clicking, scrolling or typing on the page, or using the address bar, takes control: while it is held, the
 // agents' browser tools are refused; "Hand back" returns it. Positions go up as fractions of the frame.
@@ -24,7 +24,7 @@ function keyFrame(e: KeyboardEvent): Frame | undefined {
   return { t: "key", key: [...mods, e.key === " " ? "Space" : e.key].join("+") }
 }
 
-export function BrowserPanel({ chatId, openUrl, onClose }: { chatId: string; openUrl?: { url: string } | undefined; onClose: () => void }) {
+export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { url: string } | undefined }) {
   const [tabs, setTabs] = useState<ReadonlyArray<Tab>>([])
   const [held, setHeld] = useState(false)
   const [frame, setFrame] = useState<string>()
@@ -85,7 +85,7 @@ export function BrowserPanel({ chatId, openUrl, onClose }: { chatId: string; ope
   }
 
   return (
-    <aside aria-label={t("browser.title")} className="flex w-2xl min-w-0 shrink-0 flex-col border-l border-subtle">
+    <section aria-label={t("browser.title")} className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* Tabs, then the toolbar: back, forward, reload, the address, who holds it. */}
       <div className="flex items-center gap-1 border-b border-subtle px-2 py-1.5">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
@@ -105,9 +105,6 @@ export function BrowserPanel({ chatId, openUrl, onClose }: { chatId: string; ope
             </IconButton>
           </Tooltip>
         </div>
-        <IconButton label={t("workspace.closePanel")} size="sm" onPress={onClose}>
-          <X className="size-3.5" />
-        </IconButton>
       </div>
       <form
         className="flex items-center gap-1 border-b border-subtle px-2 py-1.5"
@@ -188,6 +185,6 @@ export function BrowserPanel({ chatId, openUrl, onClose }: { chatId: string; ope
           </div>
         )}
       </div>
-    </aside>
+    </section>
   )
 }
