@@ -59,3 +59,4 @@
 2026-11-04 | roteador barato para mensagens sem menção; gateway MCP em SSE com ping | usuário pediu o roteador; pergunta expirava aos 5 min
 2026-11-04 | fs-ops.ts + POST /api/chats/:id/fs; openFile cross-platform | aba Files interativa; openFile só funcionava no macOS
 2026-11-04 | GitStatus.files: string[] -> {path,status}[] | o painel Git mostra A/M/D/R por arquivo
+2026-11-04 | API exige segredo da sessão; sandbox do Claude Code; cartões inteiros; gitdir validado; import inerte; anexos sem HTML inline; browser só http(s); Windows sem cmd | auditoria de segurança (cloudflare security-audit-skill) confirmou os achados

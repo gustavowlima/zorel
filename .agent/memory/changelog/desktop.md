@@ -6,3 +6,4 @@
 2026-11-04 | CI e release para Windows e Linux além do macOS | regra: tudo nos três sistemas
 2026-11-04 | menu/contexto/zoom/permissões/fuses, ícone no grid da Apple, aviso de atualização no trilho | pedido: boas práticas do Electron e ícone atualizado
 2026-11-04 | versão 0.2.0; install.sh + assinatura ad hoc + update manual no macOS; macOS 27 recusa ad hoc | pedido: estratégia sem certificado (testada: não roda no macOS 27)
+2026-11-04 | segredo da sessão por header do main; navegação por origem | auditoria: API sem credencial; prefixo aceitava http://127.0.0.1:PORT@outro

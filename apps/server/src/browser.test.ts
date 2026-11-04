@@ -2,7 +2,15 @@ import { afterAll, expect, test } from "bun:test"
 import { existsSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Browsers, parsePanelFrame, runBrowserTool, stepOf } from "./browser.ts"
+import { Browsers, parsePanelFrame, runBrowserTool, stepOf, webUrl } from "./browser.ts"
+
+test("agents open web addresses only, in a new tab too (file: would read this computer)", async () => {
+  expect(webUrl("example.com")).toBe("https://example.com")
+  expect(webUrl("http://127.0.0.1:3000/")).toBe("http://127.0.0.1:3000/")
+  for (const u of ["file:///etc/hosts", "chrome://settings", "view-source:https://a.b", "javascript:alert(1)"]) expect(() => webUrl(u)).toThrow("Only http and https")
+  // Refused before the browser even starts.
+  await expect(new Browsers(join(tmpdir(), "zorel-unused")).newTab("c", "file:///etc/hosts")).rejects.toThrow("Only http and https")
+})
 
 test("parsePanelFrame: positions as fractions, bounded text, known kinds only", () => {
   expect(parsePanelFrame(`{"t":"click","x":0.5,"y":0.25}`)).toEqual({ t: "click", x: 0.5, y: 0.25, button: "left", clicks: 1 })

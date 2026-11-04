@@ -6,7 +6,7 @@
 import { Database } from "bun:sqlite"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, relative, sep } from "node:path"
+import { join, relative, resolve, sep } from "node:path"
 
 export const FORMAT = 1
 export const PENDING = "import-pending.tar.gz"
@@ -110,11 +110,18 @@ export async function applyPendingImport(dataDir: string, dbPath: string): Promi
     try {
       const from = join(manifest.dataDir, "attachments")
       const to = join(dataDir, "attachments")
+      const root = resolve(to) + sep
       for (const r of db.query("SELECT id, path FROM attachments").all() as Array<{ id: string; path: string }>) {
-        if (!r.path.startsWith(from)) continue
-        const rest = r.path.slice(from.length).split(/[\\/]/).filter(Boolean)
-        db.run("UPDATE attachments SET path = ? WHERE id = ?", [join(to, ...rest), r.id])
+        // Only files inside this computer's attachments folder: the archive chooses both the paths and dataDir.
+        const p = r.path.startsWith(from) ? resolve(to, ...r.path.slice(from.length).split(/[\\/]/).filter(Boolean)) : resolve(r.path)
+        if (p.startsWith(root)) db.run("UPDATE attachments SET path = ? WHERE id = ?", [p, r.id])
+        else db.run("DELETE FROM attachments WHERE id = ?", [r.id])
       }
+      // Whatever runs by itself or with more reach arrives off: the owner turns it back on after a look. The archive
+      // may be someone else's.
+      db.run("UPDATE routines SET enabled = 0, next_run_at = NULL")
+      db.run("UPDATE mcp_servers SET enabled = 0")
+      db.run("UPDATE agents SET access = 'ask' WHERE access = 'full'")
     } finally {
       db.close()
     }

@@ -3,10 +3,12 @@
 // but keeps the app and the server alive, so turns and routines go on (Dock on macOS, tray elsewhere); Quit stops
 // the server. One instance per user: opening the app again focuses the window.
 import { type ChildProcess, execFile, spawn } from "node:child_process"
+import { randomBytes } from "node:crypto"
 import { openSync, readFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { join } from "node:path"
 import { app, BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, session, shell, Tray } from "electron"
+import { SESSION_BYTES, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
 import { autoUpdater } from "electron-updater"
 import { type BrowserHost, startBrowserHost } from "./browser-host.ts"
 
@@ -16,6 +18,9 @@ const appDir = app.getAppPath()
 const root = dev ? join(appDir, "..", "..") : process.resourcesPath
 let server: ChildProcess | undefined
 let url = ""
+// The server's per-launch secret: only this process and the server know it. Every request the app window makes to the
+// server gets it as a header (auth()), so the page never holds it and nothing the server spawns inherits it.
+const secret = randomBytes(SESSION_BYTES).toString("hex")
 let win: BrowserWindow | undefined
 let tray: Tray | undefined
 let quitting = false
@@ -69,6 +74,7 @@ async function startServer() {
     env: {
       ...process.env,
       PORT: String(port),
+      [SESSION_ENV]: secret, // the server reads it and drops it from its env at once
       ZOREL_PARENT_PID: String(process.pid), // the server exits if this process dies without stopping it
       ...(browser ? { ZOREL_DESKTOP_CDP: await cdpUrl(), ZOREL_DESKTOP_CONTROL: browser.control, ZOREL_DESKTOP_TOKEN: browser.token } : {}),
       ZOREL_WEB_DIR: dev ? join(root, "apps/web/dist") : join(root, "web"),
@@ -83,7 +89,7 @@ async function startServer() {
   })
   url = `http://127.0.0.1:${port}`
   for (let i = 0; i < 200; i++) {
-    if (await fetch(`${url}/`).then((r) => r.ok, () => false)) return
+    if (await fetch(`${url}/`).then(() => true, () => false)) return // any answer: it's up (the page itself wants the secret)
     await new Promise((r) => setTimeout(r, 50))
   }
   throw new Error("The Zorel server didn't start in 10 s.")
@@ -122,16 +128,20 @@ function openWindow() {
   win.on("closed", () => {
     win = undefined
   })
-  // The app's own pages stay in the window; every other link opens in the default browser.
+  // The app's own pages stay in the window; every other link opens in the default browser. Compared by origin, not
+  // by prefix: "http://127.0.0.1:<port>@elsewhere/" starts like the app's address but is another site. A link to
+  // the app's own files (an attachment) downloads here, where the request carries the secret.
+  const ours = (to: string) => URL.canParse(to) && new URL(to).origin === new URL(url).origin
   const external = (to: string) => {
     if (/^https?:\/\//.test(to)) void shell.openExternal(to)
   }
   win.webContents.setWindowOpenHandler(({ url: to }) => {
-    external(to)
+    if (ours(to)) win?.webContents.downloadURL(to)
+    else external(to)
     return { action: "deny" }
   })
   win.webContents.on("will-navigate", (e, to) => {
-    if (to.startsWith(url)) return
+    if (ours(to)) return
     e.preventDefault()
     external(to)
   })
@@ -238,6 +248,14 @@ function permissions() {
   session.defaultSession.setPermissionCheckHandler((wc, permission) => wc === win?.webContents && allowed.has(permission))
 }
 
+// The server's secret on every request to it from the app's own session (the agents' tabs live in other partitions).
+function auth() {
+  const host = new URL(url).host
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ["http://127.0.0.1/*", "ws://127.0.0.1/*"] }, (d, done) =>
+    done({ requestHeaders: URL.canParse(d.url) && new URL(d.url).host === host ? { ...d.requestHeaders, [SESSION_HEADER]: secret } : d.requestHeaders })
+  )
+}
+
 // Off macOS there's no Dock to reopen a closed window: a tray icon does it (and quits).
 function addTray() {
   if (process.platform === "darwin") return
@@ -264,6 +282,7 @@ else {
     })
     .then(startServer)
     .then(() => {
+      auth()
       loginItemIpc()
       appMenu()
       permissions()

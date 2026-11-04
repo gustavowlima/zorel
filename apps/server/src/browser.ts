@@ -55,6 +55,10 @@ export interface NativeHost {
 }
 export const nativeHostFromEnv = (env = process.env): NativeHost | undefined =>
   env.ZOREL_DESKTOP_CDP && env.ZOREL_DESKTOP_CONTROL && env.ZOREL_DESKTOP_TOKEN ? { cdp: env.ZOREL_DESKTOP_CDP, control: env.ZOREL_DESKTOP_CONTROL, token: env.ZOREL_DESKTOP_TOKEN } : undefined
+// Read once and dropped from the env: engines, terminals and MCP servers inherit process.env, and these open the
+// app's browser views to whoever holds them.
+const nativeAtStart = nativeHostFromEnv()
+for (const k of ["ZOREL_DESKTOP_CDP", "ZOREL_DESKTOP_CONTROL", "ZOREL_DESKTOP_TOKEN"]) delete process.env[k]
 // A partition name from an agent id ("you" for tabs a person opens, "assistant" without an agent).
 export const profileOf = (agentId: string | undefined) => (agentId ?? "assistant").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 64) || "assistant"
 
@@ -124,6 +128,7 @@ export class Browsers {
   }
 
   async newTab(chatId: string, url?: string, profile = "assistant"): Promise<string> {
+    const to = url && webUrl(url) // before any tab opens
     const context = await this.open()
     const id = crypto.randomUUID()
     const page = this.native ? await this.nativePage(context, id, profile) : await context.newPage()
@@ -142,7 +147,7 @@ export class Browsers {
     // A page that opens a popup: the popup becomes a tab of the same chat.
     page.on("popup", (popup) => void this.adopt(chatId, popup))
     page.on("dialog", (d) => void this.dialog(chatId, d))
-    if (url) await page.goto(normalizeUrl(url), { timeout: NAV_MS, waitUntil: "domcontentloaded" }).catch(() => undefined)
+    if (to) await page.goto(to, { timeout: NAV_MS, waitUntil: "domcontentloaded" }).catch(() => undefined)
     await this.watch(chatId)
     changed()
     return id
@@ -281,6 +286,13 @@ export class Browsers {
 }
 
 export const normalizeUrl = (url: string) => (/^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`)
+// Agents browse the web only: file:, chrome:, view-source: and the like would read this computer without asking.
+const WEB = /^https?:\/\//i
+export const webUrl = (url: string) => {
+  const u = normalizeUrl(url)
+  if (!WEB.test(u)) throw new BrowserError("Only http and https addresses.")
+  return u
+}
 
 // ---------- the agents' tools ----------
 
@@ -407,8 +419,7 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
   switch (name) {
     case "browser_navigate": {
       const page = await page_()
-      const url = normalizeUrl(str(args.url))
-      if (!/^https?:\/\//i.test(url)) throw new BrowserError("Only http and https addresses.")
+      const url = webUrl(str(args.url))
       await page.goto(url, { timeout: NAV_MS, waitUntil: "domcontentloaded" })
       return `Opened ${await pageLine(page)}`
     }
@@ -515,7 +526,7 @@ export class BrowserService extends Context.Service<BrowserService, Browsers>()(
     Effect.gen(function* () {
       const dataDir = yield* DataDir
       return yield* Effect.acquireRelease(
-        Effect.sync(() => new Browsers(join(dataDir, "browser", "profile"), nativeHostFromEnv())),
+        Effect.sync(() => new Browsers(join(dataDir, "browser", "profile"), nativeAtStart)),
         (b) => Effect.promise(() => b.close())
       )
     })
@@ -593,7 +604,7 @@ async function applyPanelFrame(b: Browsers, chatId: string, f: PanelFrame) {
       return page.keyboard.insertText(f.text)
     case "nav": {
       const url = normalizeUrl(f.url.trim())
-      if (/^https?:\/\//i.test(url)) await page.goto(url, { timeout: NAV_MS, waitUntil: "domcontentloaded" })
+      if (WEB.test(url)) await page.goto(url, { timeout: NAV_MS, waitUntil: "domcontentloaded" })
       return
     }
     case "back":

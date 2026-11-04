@@ -57,7 +57,7 @@ Revisado em 2026-11-04.
    │ AtomHttpApi ──── HTTP ────┐       │
    │ AtomRpc ─── WebSocket ────┤       │ sobe o mesmo server numa porta livre
    ▼                           ▼       ▼
- apps/server ── LocalOnly (Host/Origin) ───────────────────────────────────
+ apps/server ── LocalOnly (Host/Origin/sessão)───────────────────────────────────
    ├─ HttpApi (CRUD: projetos, agentes, chats, memórias, MCP, contas, consumo, settings)
    ├─ Rpc (send, steer, interrupt, decide, subscribeChat)
    ├─ Runtime de turnos ── fila por chat · estado persistido · recuperação no boot
@@ -112,7 +112,7 @@ RpcGroup.make(
 - `ChatEvent` (em `packages/contracts/src/events.ts`): `snapshot | message | queued | turn-started | text (agrupado) | reasoning | step-started | step-finished | approval | approval-resolved | handoff | model-switched | learned | context-usage | turn-completed | turn-failed | interrupted | status`. Os passos (`WorkStep`) trazem tipo, título, arquivos, duração e mudanças por arquivo: é o que a pílula de atividade do chat mostra.
 - `subscribeStatus`: status de todos os chats (rodando, esperando você, falhou), para a barra lateral e "Precisa de você".
 - **Deltas de texto agrupados a cada 100 ms** ou 8 KiB (referência: a reference app 100 ms, Zeron 120 ms).
-- `LocalOnly` cobre HTTP e WebSocket.
+- `LocalOnly` cobre HTTP e WebSocket, com o segredo da sessão (seção 11).
 
 ---
 
@@ -574,7 +574,13 @@ A leitura acontece **uma por vez, com cache de 4 min e espaçamento crescente em
 
 ## 11. Segurança
 
-- **Server só local:** escuta em `127.0.0.1` e o `LocalOnly` exige Host e Origin locais.
+- **Server só local e só para o dono** (auditoria de segurança, 2026-11-04): escuta em `127.0.0.1`. O `LocalOnly` exige Host local, Origin (quando vier) igual à própria origem (outra porta de localhost também é recusada) e, em `/api` e `/rpc`, o **segredo da sessão**: 32 bytes aleatórios por inicialização. Endereço local sozinho não prova nada, porque os agentes e qualquer processo da máquina alcançam o loopback. O desktop gera o segredo, entrega ao server por `ZOREL_SESSION` (o server lê e apaga do env, então nenhum processo filho herda) e o injeta como header `x-zorel-token` nas requisições da janela, a partir do processo principal (a página nunca vê o segredo). No navegador, o link impresso ao iniciar (`/api/login?t=…`) grava um cookie `HttpOnly; SameSite=Strict`. Ficam abertos só os arquivos do web, o login, o retorno do OAuth (preso ao state) e `/api/hooks/:token`. Os nomes ficam em `@zorel/contracts/session`. As variáveis `ZOREL_DESKTOP_*` também saem do env assim que o server as lê.
+- **Confinamento dos agentes abaixo de "full":** ACP roda em Seatbelt/bubblewrap; a pasta comum do git só entra como gravável numa worktree de verdade (o `gitdir` precisa apontar de volta para o `.git` da pasta). O Claude Code roda o shell no sandbox do próprio Claude Code (Seatbelt; no Linux, bubblewrap + socat), com escrita só na pasta e sem rede (`strictAllowlist` no tier managed, sem saída do sandbox). Sem sandbox (Windows), só comandos de leitura sem sintaxe de shell, com caminhos dentro da pasta, rodam sem perguntar.
+- **Cartão de aprovação mostra o que roda:** a tarefa, a proposta de agente, a rotina e os argumentos de MCP e navegador vão inteiros para o cartão (até 12 000 caracteres); maior que isso, a ferramenta recusa e pede para dividir. O cartão de uma chamada nativa diz quantos caracteres ficaram de fora.
+- **Import de workspace chega inerte:** rotinas e servidores MCP desligados, agentes `full` viram `ask` e anexos fora de `<dados>/attachments` são descartados (o servir de anexo também confere a pasta).
+- **Anexos:** só tipos passivos (imagens raster, PDF, texto puro, áudio, vídeo) abrem como página; o resto é baixado. Todos com `CSP: sandbox`.
+- **Navegador dos agentes:** só endereços http(s), também em aba nova. A janela do desktop só navega na própria origem (comparada por origem, não por prefixo).
+- **Abrir arquivo no Windows:** `rundll32 url.dll,FileProtocolHandler`, nunca pelo `cmd`.
 - **Segredos:** chaves de API e variáveis MCP no chaveiro do sistema, nunca no banco nem devolvidas pela API.
 - **Login das CLIs de assinatura:** nunca é lido nem guardado.
 - **Termos:** usar a assinatura do Claude via Agent SDK num app de terceiros é zona cinzenta. O a reference app documenta que a Anthropic não confirmou que é permitido e recomenda API key. O T3 Code faz o mesmo que nós: a CLI oficial com o login do próprio usuário. O Zorel mostra esse aviso ao conectar uma conta de assinatura Claude. Com API key, o caminho é o OpenCode, sem esse risco.

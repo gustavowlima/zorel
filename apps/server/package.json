@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/main.ts",
+    "dev": "bun scripts/dev.ts",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
