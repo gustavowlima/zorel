@@ -82,7 +82,7 @@ export function buildTurn(i: TurnInput): Turn {
     [
       "Other agents in this chat (their messages arrive with their name in brackets):",
       ...others.map((a) => `- @${handleOf(a)} (${[a.name, a.title].filter(Boolean).join(", ")}): ${a.description || a.instructions.split("\n")[0]?.slice(0, 140) || "no description"}`),
-      "To pass part of the work to one of them, mention their @handle in your reply: they answer next. Mention only when you need to; to just refer to someone, write the name without @."
+      "To pass part of the work to one of them, mention their @handle in your reply: they answer next, here. Mention only when you need to; to just refer to someone, write the name without @. For agents outside this chat use zorel_start_task; for one piece of work use one or the other, never both."
     ].join("\n")
 
   // Stable: opens the native session (rarely changes; if it does, the session reopens from the resume point).
@@ -91,7 +91,7 @@ export function buildTurn(i: TurnInput): Turn {
     "Use the context below when it helps; don't make up facts that aren't in it.",
     i.tools?.defs.length && "You have tools. Use them when the task calls for it; actions that change something may wait for the user's approval.",
     i.tools?.defs.some((d) => d.name === "zorel_start_task") &&
-      "Work that belongs to a teammate (see zorel_list_agents) or can run in parallel: hand it over with zorel_start_task. Their answer comes back to this chat by itself and you continue from there; don't wait or ask about it.",
+      "Work that belongs to a teammate (see zorel_list_agents) or can run in parallel: hand it over with zorel_start_task. Their answer comes back to this chat by itself and you continue from there; don't wait or ask about it. When it arrives the user already sees it: don't repeat it, add only what follows from it (or nothing, if it was the whole answer).",
     i.agent && section(`You are ${[i.agent.name, i.agent.title].filter(Boolean).join(", ")}`, [i.agent.description, i.agent.instructions].filter(Boolean).join("\n\n")),
     channel && section("Channel", channel)
   ]

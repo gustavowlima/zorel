@@ -217,6 +217,7 @@ export const makeRuntime = Effect.gen(function* () {
   const running = new Map<string, Fiber.Fiber<unknown, unknown>>()
   const waiting = new Map<string, Deferred.Deferred<ApprovalOutcome>>()
   const answers = new Map<string, string>() // question id → the person's answer (zorel_ask_user)
+  const tasked = new Map<string, Set<string>>() // turn id → teammates it gave a task to (not chained again by mention)
   const nameOf = (agent: Agent | undefined) => agent?.name ?? "Assistant"
   const run = <A>(e: Effect.Effect<A>) => Effect.runPromise(e)
 
@@ -297,6 +298,7 @@ export const makeRuntime = Effect.gen(function* () {
       }
       const reply = args.reply !== false
       const id = await run(startTask(chat, agent, target, task, reply))
+      tasked.set(row.id, new Set([...(tasked.get(row.id) ?? []), target.id]))
       await finish(s, "ok", `#/chat/${id}`)
       return textResult(reply ? `Started: ${target.name} works on it in its own chat. Its answer comes back here as a message, and you continue then.` : `Handed to ${target.name}, in its own chat.`)
     }
@@ -849,7 +851,11 @@ export const makeRuntime = Effect.gen(function* () {
   // Mentions in the reply queue the teammates (chaining, up to MAX_DEPTH consecutive replies).
   const chain = (row: TurnRow, done: { text: string; agent: Agent | undefined; team: Agent[] }) =>
     Effect.gen(function* () {
-      const next = mentioned(done.text, done.team.filter((a) => a.id !== done.agent?.id)).slice(0, MAX_MENTIONS)
+      // A teammate already given this work as a task (zorel_start_task) in this turn isn't called again by a mention
+      // of it in the reply ("I've handed it to @tester"): one piece of work, one hand-off.
+      const handed = tasked.get(row.id) ?? new Set<string>()
+      tasked.delete(row.id)
+      const next = mentioned(done.text, done.team.filter((a) => a.id !== done.agent?.id && !handed.has(a.id))).slice(0, MAX_MENTIONS)
       if (!next.length) return
       if (row.depth + 1 >= MAX_DEPTH) return yield* Effect.logInfo("chaining stopped at the limit", { chatId: row.chatId, depth: row.depth })
       yield* publish(row.chatId, ev("handoff", { turnId: row.id, from: done.agent?.id ?? null, to: next.map((a) => a.id), via: "mention" }))
