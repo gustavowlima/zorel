@@ -344,6 +344,7 @@ export const Memory = Schema.Struct({
   chatId: Schema.NullOr(Id),
   replaces: Schema.optionalKey(Schema.NullOr(Id)), // a proposed improvement of this active skill
   reason: Schema.optionalKey(Schema.NullOr(Schema.String)), // why it was proposed
+  essential: Schema.optionalKey(Schema.Boolean), // always in the prompt (the person marks it)
   createdAt: Schema.Number,
   confirmedAt: Schema.Number
 })
@@ -472,7 +473,7 @@ export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Sc
 export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)) })
 export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000) })
-export const MemoryPatch = Schema.Struct({ state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)) })
+export const MemoryPatch = Schema.Struct({ state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)), essential: Schema.optional(Schema.Boolean) })
 // stdio: environment variables; http: headers. Values go to the system keychain.
 const McpEnv = Schema.Record(Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_-]*$/)), LongText(4000))
 export const NewMcpServer = Schema.Struct({

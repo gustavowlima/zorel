@@ -81,12 +81,12 @@ const FakeEngines = Layer.succeed(Engines, {
     turns.push(t)
     if (t.system === CONSOLIDATION_SYSTEM && manyMemories)
       return Stream.make<EngineEvent[]>(
-        { type: "text", delta: JSON.stringify({ summary: "S", memories: Array.from({ length: manyMemories }, (_, i) => ({ scope: "user", text: `Preference number ${i}`, evidence: [1] })) }) },
+        { type: "text", delta: JSON.stringify({ summary: "S", memories: Array.from({ length: manyMemories }, (_, i) => ({ scope: "user", text: `Likes subject${"abcdefghijklmnopqrstuvwxyz"[i]}x` /* grounded: no names or numbers the person didn't say */, evidence: [1] })) }) },
         { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }
       )
     if (t.system === CONSOLIDATION_SYSTEM)
       return Stream.make(
-        { type: "text" as const, delta: JSON.stringify({ summary: "They talked about deploying.", memories: [{ scope: "project", text: "Deploys go to Vercel", evidence: [1] }, { scope: "team", text: "out of scope", evidence: [1] }], skills: [{ scope: "project", title: "Publish the site", text: "1. bun run build\n2. vercel deploy" }] }) },
+        { type: "text" as const, delta: JSON.stringify({ summary: "They talked about deploying.", memories: [{ scope: "project", text: "Deploys go out on fridays", evidence: [1] }, { scope: "team", text: "out of scope", evidence: [1] }], skills: [{ scope: "project", title: "Publish the site", text: "1. bun run build\n2. vercel deploy" }] }) },
         { type: "done" as const, usage: { inputTokens: 1, outputTokens: 1 } }
       )
     const last = t.messages.at(-1)!.text
@@ -204,18 +204,18 @@ test("project → agent → chat: streaming, layered context, model switch, cons
   const pending = (await api((c) => c.memories.list())).filter((m) => m.state === "pending")
   expect(pending.map((m) => [m.kind, m.scope, m.title || m.text])).toEqual([
     ["skill", `project:${project.id}`, "Publish the site"],
-    ["fact", `project:${project.id}`, "Deploys go to Vercel"]
+    ["fact", `project:${project.id}`, "Deploys go out on fridays"]
   ])
 
   await send(chat.id, { text: "como publico?" })
   expect(turns.at(-1)!.system).toContain("They talked about deploying.")
-  expect(turns.at(-1)!.system).not.toContain("Deploys go to Vercel") // pending doesn't get in
+  expect(turns.at(-1)!.system).not.toContain("Deploys go out on fridays") // pending doesn't get in
   expect(turns.at(-1)!.messages.map((m) => m.text)).toEqual(["como publico?"])
 
   for (const m of pending) await api((c) => c.memories.update({ params: { id: m.id }, payload: { state: "active" } }))
   await send(chat.id, { text: "and to publish the site?" })
   const sys = turns.at(-1)!.system
-  expect(sys).toContain("Deploys go to Vercel")
+  expect(sys).toContain("Deploys go out on fridays")
   expect(sys).toContain("- Publish the site") // listed
   expect(sys).toContain("vercel deploy") // relevant: full step-by-step
   expect((await api((c) => c.chats.list())).find((c) => c.id === chat.id)!.title).toBe("hi")

@@ -6,6 +6,7 @@
 // Rolling summary + memories + proposed skills model derived from Tucano (Apache-2.0), see NOTICE.
 import { join } from "node:path"
 import type { Agent, Chat, Memory, Message, Project } from "@zorel/contracts"
+import { Option, Schema } from "effect"
 import { normalize } from "./db.ts"
 import type { Turn, TurnMessage, TurnTools } from "./engines.ts"
 
@@ -33,16 +34,47 @@ export function mentioned(text: string, agents: ReadonlyArray<Agent>): Agent[] {
   return [...new Set(handles)].flatMap((h) => agents.filter((a) => handleOf(a) === h))
 }
 
-// Most recently confirmed first, up to the budget; the rest is left to search.
+// What goes in the prompt, up to the budget: the essential ones (the person marked them) first, then the most
+// recently confirmed of each scope in turn, so a busy scope (the person's) doesn't crowd out the project's and the
+// agent's. The rest is left to search.
 export function pinned(active: ReadonlyArray<Memory>, budget = MEMORY_BUDGET): Memory[] {
+  const recent = [...active].sort((a, b) => b.confirmedAt - a.confirmedAt)
+  const queues = new Map<string, Memory[]>()
+  for (const m of recent) if (!m.essential) queues.set(m.scope, [...(queues.get(m.scope) ?? []), m])
+  const order = recent.filter((m) => m.essential)
+  for (let i = 0; [...queues.values()].some((q) => i < q.length); i++) for (const q of queues.values()) if (q[i]) order.push(q[i]!)
   let used = 0
   const out: Memory[] = []
-  for (const m of [...active].sort((a, b) => b.confirmedAt - a.confirmedAt)) {
+  for (const m of order) {
     used += m.text.length + 3
     if (used > budget) break
     out.push(m)
   }
   return out
+}
+
+// Two wordings of the same idea: most of their words shared (Jaccard over words of 3+ letters). Consolidation
+// treats a new proposal this close to an existing memory as that memory said again.
+export const SAME_IDEA = 0.6
+const words = (t: string) => new Set(normalize(t).split(" ").filter((w) => w.length > 2))
+export function similar(a: string, b: string): boolean {
+  const x = words(a)
+  const y = words(b)
+  if (!x.size || !y.size) return false
+  const shared = [...x].filter((w) => y.has(w)).length
+  return shared / (x.size + y.size - shared) >= SAME_IDEA
+}
+
+// An agent can't add details of its own to a fact about the person: a name or a number in the memory (Whiskers,
+// 16) that an agent said in the stretch and the person didn't makes it theirs, not the person's. What neither said
+// (Germany for Berlin) is the model's general knowledge and stays.
+const nameOrNumber = (word: string) => /^\p{Lu}/u.test(word) || /\p{N}/u.test(word)
+const wordsOf = (text: string) => new Set(normalize(text).split(" ").filter(Boolean))
+export function grounded(memory: string, person: string, agents: string): boolean {
+  const theirs = wordsOf(person)
+  const agentOnly = wordsOf(agents)
+  const marked = memory.split(/\s+/).slice(1).filter(nameOrNumber).flatMap((w) => [...wordsOf(w)]) // the first word is capitalized anyway
+  return marked.every((w) => theirs.has(w) || !agentOnly.has(w))
 }
 
 const section = (title: string, body: string | undefined) => (body?.trim() ? `## ${title}\n${body.trim()}` : undefined)
@@ -148,14 +180,17 @@ export const CONSOLIDATION_SYSTEM = [
   "You keep the memory of a chat between a person and AI agents.",
   "You get the current summary, a stretch of messages about to leave the window, and the memories and skills that already exist.",
   "Answer ONLY with JSON, no text around it, in this shape:",
-  '{"summary": "...", "memories": [{"scope": "user" | "project" | "agent", "text": "...", "evidence": [3]}], "confirm": ["m2"], "skills": [{"scope": "user" | "project" | "agent", "title": "...", "text": "..."}]}',
+  '{"summary": "...", "memories": [{"scope": "user" | "project" | "agent", "text": "...", "keywords": "...", "evidence": [3], "replaces": "m4"}], "confirm": ["m2"], "skills": [{"scope": "user" | "project" | "agent", "title": "...", "text": "..."}]}',
   '- "summary": the new summary, merging the previous one and the stretch. Up to 400 words. Keep decisions, open items, numbers, names and the state of the work.',
   '- "memories": only durable facts that hold outside this conversation. An empty list is the norm.',
   '  - "user": the person\'s preferences and way of working (holds everywhere).',
   '  - "project": facts and decisions of the project (only when the conversation belongs to a project).',
   '  - "agent": how the agent that replied can do its work better (only when there is an agent).',
   "  - One idea per memory, a short self-contained sentence in the third person. Don't repeat existing memories.",
-  '  - "evidence": the numbers (#) of the messages in the stretch that prove the fact. Only the person\'s messages ([user]) count: an agent\'s guess, plan or assumption never becomes a memory.',
+  '  - "evidence": the numbers (#) of the messages in the stretch that prove the fact. Only the person\'s messages ([user]) count: an agent\'s guess, plan or assumption never becomes a memory, and neither do details only an agent added (a name, a number).',
+  '  - "keywords": 5 to 10 other words someone might use when this would help (synonyms, related terms, the other language), separated by spaces. They are only for search.',
+  '  - "replaces": when the person corrects or updates an existing memory (they moved, changed a preference), the id (m1, m2…) of the one it replaces. Never leave two memories that contradict each other.',
+  '  - Not a memory: anything temporary or time-boxed ("this week", "for now", "today"), and never a password, key, token or other credential, not even in the summary. A message that holds a credential can still hold facts: keep those.',
   '- "confirm": the ids (m1, m2…) of existing memories the stretch confirms again. An empty list is the norm.',
   '- "skills": procedures worth repeating — something solved in several steps, a way out of a dead end, or the user correcting how to do something. An empty list is the norm.',
   '  - "title": a short name for the procedure. "text": concise steps, up to 15 lines. Don\'t repeat existing skills.'
@@ -181,40 +216,73 @@ export function consolidationPrompt(o: {
   ].join("\n\n")
 }
 
-type Scope = "user" | "project" | "agent"
+type Scope = typeof Scope.Type
 export interface Consolidation {
   readonly summary: string
-  readonly memories: ReadonlyArray<{ scope: Scope; text: string }>
+  // replaces: index into the existing memories given to the prompt
+  readonly memories: ReadonlyArray<{ scope: Scope; text: string; keywords: string; replaces?: number }>
   readonly confirm: ReadonlyArray<number> // indexes into the existing memories given to the prompt
   readonly skills: ReadonlyArray<{ scope: Scope; title: string; text: string }>
 }
 
-// Tolerates text around the JSON; drops items outside the allowed scopes or too long, and memories without
-// evidence from the person: `fromUser(n)` says whether message #n of the chunk was theirs (Tucano's rule — an
-// agent's guess never becomes a memory).
-export function parseConsolidation(text: string, allowed: ReadonlyArray<string>, fromUser: (n: number) => boolean = () => true): Consolidation | undefined {
+// The model's answer, item by item: a malformed memory or skill is dropped, not the whole answer.
+const Scope = Schema.Literals(["user", "project", "agent"])
+const Text = (max: number) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max))
+const Reply = Schema.Struct({
+  summary: Text(20_000),
+  memories: Schema.optional(Schema.Array(Schema.Unknown)),
+  confirm: Schema.optional(Schema.Array(Schema.Unknown)),
+  skills: Schema.optional(Schema.Array(Schema.Unknown))
+})
+const ProposedMemory = Schema.Struct({
+  scope: Scope,
+  text: Text(500),
+  keywords: Schema.optional(Schema.String),
+  evidence: Schema.optional(Schema.Array(Schema.Unknown)),
+  replaces: Schema.optional(Schema.NullOr(Schema.String))
+})
+const ProposedSkill = Schema.Struct({ scope: Scope, title: Text(80), text: Text(4000) })
+const decodeReply = Schema.decodeUnknownOption(Reply)
+const decodeMemory = Schema.decodeUnknownOption(ProposedMemory)
+const decodeSkill = Schema.decodeUnknownOption(ProposedSkill)
+const KEYWORDS_MAX = 200
+// "m3" → 2 (an index into the existing memories given to the prompt).
+const ref = (id: unknown) => {
+  const n = typeof id === "string" ? Number(id.replace(/^m/, "")) : Number.NaN
+  return Number.isInteger(n) && n > 0 ? n - 1 : undefined
+}
+
+// Tolerates text around the JSON; drops items outside the allowed scopes, and memories without evidence from the
+// person: `said(n)` is message #n of the chunk when it was theirs (Tucano's rule — an agent's guess never becomes a
+// memory), and `agents` is what the agents said (their names and numbers can't slip into a memory). Credentials are
+// dropped by the caller (redact is async).
+export function parseConsolidation(text: string, allowed: ReadonlyArray<string>, said: (n: number) => string | undefined = () => "", agents = ""): Consolidation | undefined {
   const start = text.indexOf("{")
   const end = text.lastIndexOf("}")
   if (start < 0 || end <= start) return undefined
+  let json: unknown
   try {
-    const v = JSON.parse(text.slice(start, end + 1))
-    if (typeof v?.summary !== "string" || !v.summary.trim()) return undefined
-    const ok = (x: any, max: number) => allowed.includes(x?.scope) && typeof x.text === "string" && x.text.trim() && x.text.length <= max
-    return {
-      summary: v.summary.trim(),
-      memories: (Array.isArray(v.memories) ? v.memories : [])
-        .filter((m: any) => ok(m, 500) && Array.isArray(m.evidence) && m.evidence.some((n: unknown) => typeof n === "number" && fromUser(n)))
-        .map((m: any) => ({ scope: m.scope, text: m.text.trim() })),
-      confirm: (Array.isArray(v.confirm) ? v.confirm : []).flatMap((id: unknown) => {
-        const n = typeof id === "string" ? Number(id.replace(/^m/, "")) : Number.NaN
-        return Number.isInteger(n) && n > 0 ? [n - 1] : []
-      }),
-      skills: (Array.isArray(v.skills) ? v.skills : [])
-        .filter((s: any) => ok(s, 4000) && typeof s.title === "string" && s.title.trim() && s.title.length <= 80)
-        .map((s: any) => ({ scope: s.scope, title: s.title.trim(), text: s.text.trim() }))
-    }
+    json = JSON.parse(text.slice(start, end + 1))
   } catch {
     return undefined
+  }
+  const reply = Option.getOrUndefined(decodeReply(json))
+  if (!reply?.summary.trim()) return undefined
+  const inScope = <T extends { scope: Scope; text: string }>(x: T) => allowed.includes(x.scope) && x.text.trim() !== ""
+  const quoted = (evidence: ReadonlyArray<unknown> = []) => evidence.flatMap((n) => (typeof n === "number" ? [said(n)].filter((t) => t !== undefined) : []))
+  return {
+    summary: reply.summary.trim(),
+    memories: (reply.memories ?? []).flatMap((raw) => Option.toArray(decodeMemory(raw))).flatMap((m) => {
+      const proof = quoted(m.evidence)
+      if (!inScope(m) || !proof.length || !grounded(m.text, proof.join("\n"), agents)) return []
+      const replaces = ref(m.replaces)
+      return [{ scope: m.scope, text: m.text.trim(), keywords: (m.keywords ?? "").trim().slice(0, KEYWORDS_MAX), ...(replaces !== undefined && { replaces }) }]
+    }),
+    confirm: (reply.confirm ?? []).flatMap((id) => [ref(id)].filter((n) => n !== undefined)),
+    skills: (reply.skills ?? [])
+      .flatMap((raw) => Option.toArray(decodeSkill(raw)))
+      .filter((k) => inScope(k) && k.title.trim() !== "")
+      .map((k) => ({ scope: k.scope, title: k.title.trim(), text: k.text.trim() }))
   }
 }
 

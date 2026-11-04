@@ -8,7 +8,7 @@ import { NewPage, PageView } from "./pages.tsx"
 import { chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import {
-  BookOpen, Button, cx, EmptyState, Field, Input, Pin, Plus, Screen, Search, Select, Tab, TabList, Tabs, Textarea, LineDiff, Rows, Undo2
+  BookOpen, Button, cx, EmptyState, Field, Input, Pin, PinOff, Plus, Screen, Search, Select, Tab, TabList, Tabs, Textarea, LineDiff, Rows, Tooltip, Undo2
 } from "@/ui"
 
 type Filter = "all" | "fact" | "skill" | "page" | "pending" | "forgotten"
@@ -162,7 +162,7 @@ function Reader({ memory: m }: { memory: Memory }) {
   const chat = chats.find((c) => c.id === m.chatId)
   // A proposed improvement: the skill it would replace (the person sees what changes before approving).
   const target = useList(memoriesAtom).find((x) => x.id === m.replaces)
-  const patch = (payload: { state?: Memory["state"]; title?: string; text?: string }) => update({ params: { id: m.id }, payload, reactivityKeys: ["memories"] })
+  const patch = (payload: { state?: Memory["state"]; title?: string; text?: string; essential?: boolean }) => update({ params: { id: m.id }, payload, reactivityKeys: ["memories"] })
 
   return (
     <article className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-10 py-8">
@@ -181,11 +181,17 @@ function Reader({ memory: m }: { memory: Memory }) {
           )}
           <span>·</span>
           <span>{formatDate(m.createdAt)}</span>
+          {m.essential && (
+            <>
+              <span>·</span>
+              <span className="text-accent-text">{t("knowledge.essential")}</span>
+            </>
+          )}
         </p>
       </div>
       {m.state !== "active" && (
         <div className="flex flex-col gap-1 rounded-card bg-surface px-4 py-3 text-sm">
-          <span className="text-secondary">{target && m.state === "pending" ? t("knowledge.improves", { title: target.title }) : t(`knowledge.state.${m.state}`)}</span>
+          <span className="text-secondary">{target && m.state === "pending" ? (skill ? t("knowledge.improves", { title: target.title }) : t("knowledge.updatesFact")) : t(`knowledge.state.${m.state}`)}</span>
           {m.reason && <span className="text-muted">{t("knowledge.why", { reason: m.reason })}</span>}
         </div>
       )}
@@ -238,6 +244,14 @@ function Reader({ memory: m }: { memory: Memory }) {
               <Button size="sm" variant="secondary" onPress={() => setEditing(true)}>
                 {t("common.edit")}
               </Button>
+              {m.state === "active" && !skill && (
+                <Tooltip content={t("knowledge.essentialHint")}>
+                  <Button size="sm" variant="secondary" onPress={() => void patch({ essential: !m.essential })}>
+                    {m.essential ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+                    {m.essential ? t("knowledge.notEssential") : t("knowledge.essential")}
+                  </Button>
+                </Tooltip>
+              )}
               <Button size="sm" variant="ghost" onPress={() => void patch({ state: "forgotten" })}>
                 {m.state === "pending" ? t("inbox.discard") : t("knowledge.forget")}
               </Button>

@@ -3,8 +3,9 @@
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { type Access, type Agent, type AgentPermissions, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type Switch } from "@zorel/contracts"
 import type { Approval, ApprovalOutcome, Turn, WorkStep } from "@zorel/contracts/events"
-import { and, asc, desc, eq, gt, inArray, isNull, notInArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gt, inArray, isNull, ne, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
+import { LOCAL_ACTOR } from "./access.ts"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
 import { Context, Effect, Layer } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
@@ -28,14 +29,17 @@ const toMessage = (r: typeof messages.$inferSelect, files: ReadonlyArray<Attachm
 export type AttachmentRow = typeof attachments.$inferSelect
 const toMcpServer = (r: typeof mcpServers.$inferSelect): McpServer => ({ ...r, args: JSON.parse(r.args), envKeys: JSON.parse(r.envKeys) })
 const toMemory = (r: typeof memories.$inferSelect): Memory => {
-  const { normalized: _, owner: _o, audience: _a, ...m } = r
+  const { normalized: _, owner: _o, audience: _a, keywords: _k, ...m } = r
   return m
 }
 // Raw row (hand-written SQL, snake_case columns) from the FTS search.
 const memoryRow = (r: Row): Memory => ({
   id: r.id, scope: r.scope, kind: r.kind, title: r.title, text: r.text, state: r.state, origin: r.origin, chatId: r.chat_id,
-  createdAt: r.created_at, confirmedAt: r.confirmed_at
+  essential: !!r.essential, createdAt: r.created_at, confirmedAt: r.confirmed_at
 })
+// Memories in these scopes that this owner may hear: about the person (user scope), only their own.
+const heard = (scopes: ReadonlyArray<string>, owner: string) =>
+  and(inArray(memories.scope, [...scopes]), or(ne(memories.scope, "user"), eq(memories.owner, owner)))
 const toTurn = (r: typeof turns.$inferSelect): Turn => ({
   id: r.id, chatId: r.chatId, agentId: r.agentId, model: r.model, accountId: r.accountId, clientId: r.clientId, state: r.state,
   startedAt: r.startedAt, endedAt: r.endedAt, firstTokenAt: r.firstTokenAt, error: r.error,
@@ -344,37 +348,41 @@ export const repository = (db: Db) => {
           .pipe(Effect.map((r) => r.map(toMemory)))
       ),
     // What the person asked to forget, so consolidation doesn't propose it again (not even paraphrased).
-    forgottenMemories: (scopes: ReadonlyArray<string>, limit = 50) =>
+    forgottenMemories: (scopes: ReadonlyArray<string>, limit = 50, owner = LOCAL_ACTOR.id) =>
       orDie(
         db
           .select()
           .from(memories)
-          .where(and(eq(memories.state, "forgotten"), inArray(memories.scope, [...scopes])))
+          .where(and(eq(memories.state, "forgotten"), heard(scopes, owner)))
           .orderBy(desc(memories.confirmedAt))
           .limit(limit)
           .pipe(Effect.map((r) => r.map(toMemory)))
       ),
-    pendingCount: (scopes: ReadonlyArray<string>) =>
-      orDie(db.$count(memories, and(eq(memories.state, "pending"), inArray(memories.scope, [...scopes])))),
+    pendingCount: (scopes: ReadonlyArray<string>, owner = LOCAL_ACTOR.id) =>
+      orDie(db.$count(memories, and(eq(memories.state, "pending"), heard(scopes, owner)))),
+    // Waiting for review in these scopes (consolidation checks new proposals against them).
+    pendingMemories: (scopes: ReadonlyArray<string>, owner = LOCAL_ACTOR.id) =>
+      orDie(db.select().from(memories).where(and(eq(memories.state, "pending"), heard(scopes, owner))).pipe(Effect.map((r) => r.map(toMemory)))),
     memory,
-    activeMemories: (scopes: ReadonlyArray<string>, kind: Memory["kind"] = "fact") =>
+    activeMemories: (scopes: ReadonlyArray<string>, kind: Memory["kind"] = "fact", owner = LOCAL_ACTOR.id) =>
       orDie(
         db
           .select()
           .from(memories)
-          .where(and(eq(memories.state, "active"), eq(memories.kind, kind), inArray(memories.scope, [...scopes])))
+          .where(and(eq(memories.state, "active"), eq(memories.kind, kind), heard(scopes, owner)))
           .orderBy(desc(memories.confirmedAt))
           .pipe(Effect.map((r) => r.map(toMemory)))
       ),
     // Already exists (same normalized text in scope): returns undefined and doesn't duplicate or revive a forgotten one.
     // owner: the Actor who created it (or the chat owner, in consolidation). About the person (user scope): only the owner hears.
-    addMemory: (input: { scope: string; kind?: Memory["kind"]; title?: string; text: string; state: Memory["state"]; origin: Memory["origin"]; chatId: string | null; owner?: string; replaces?: string | null; reason?: string | null }) =>
+    // keywords: other words for the same idea, indexed for search only.
+    addMemory: (input: { scope: string; kind?: Memory["kind"]; title?: string; text: string; state: Memory["state"]; origin: Memory["origin"]; chatId: string | null; owner?: string; replaces?: string | null; reason?: string | null; keywords?: string }) =>
       Effect.gen(function* () {
         const at = now()
-        const { owner = "local", ...rest } = input
+        const { owner = LOCAL_ACTOR.id, keywords = "", ...rest } = input
         const m: Memory = { id: crypto.randomUUID(), kind: "fact", title: "", replaces: null, reason: null, ...rest, createdAt: at, confirmedAt: at }
         const audience = m.scope === "user" ? "owner" : "project"
-        const inserted = yield* db.insert(memories).values({ ...m, owner, audience, normalized: normalize(m.text) }).onConflictDoNothing().returning({ id: memories.id })
+        const inserted = yield* db.insert(memories).values({ ...m, owner, audience, keywords, normalized: normalize(m.text) }).onConflictDoNothing().returning({ id: memories.id })
         // Said again: the existing active one is confirmed (it ranks first for the prompt's budget).
         if (!inserted.length)
           yield* db.update(memories).set({ confirmedAt: at }).where(and(eq(memories.scope, m.scope), eq(memories.normalized, normalize(m.text)), eq(memories.state, "active")))
@@ -384,7 +392,7 @@ export const repository = (db: Db) => {
     confirmMemories: (ids: ReadonlyArray<string>) =>
       ids.length ? orDie(db.update(memories).set({ confirmedAt: now() }).where(and(inArray(memories.id, [...ids]), eq(memories.state, "active"))).pipe(Effect.asVoid)) : Effect.void,
     // A changed text or title keeps the one before as a version (by: who changed it).
-    updateMemory: (id: string, input: { state?: Memory["state"] | undefined; title?: string | undefined; text?: string | undefined }, by = "you") =>
+    updateMemory: (id: string, input: { state?: Memory["state"] | undefined; title?: string | undefined; text?: string | undefined; essential?: boolean | undefined }, by = "you") =>
       Effect.gen(function* () {
         const before = yield* memory(id)
         if (before && ((input.text !== undefined && input.text !== before.text) || (input.title !== undefined && input.title !== before.title)))
@@ -403,14 +411,15 @@ export const repository = (db: Db) => {
         const p = yield* memory(pendingId)
         const target = p?.replaces ? yield* memory(p.replaces) : undefined
         if (!p || !target || target.state === "forgotten") return undefined
+        const [{ keywords = "" } = {}] = yield* db.select({ keywords: memories.keywords }).from(memories).where(eq(memories.id, p.id))
         yield* db.delete(memories).where(eq(memories.id, p.id))
         const before = target
         yield* db.insert(memoryVersions).values({ id: crypto.randomUUID(), memoryId: target.id, title: before.title, text: before.text, by, at: now() })
-        yield* db.update(memories).set({ title: p.title, text: p.text, normalized: normalize(p.text), confirmedAt: now() }).where(eq(memories.id, target.id))
+        yield* db.update(memories).set({ title: p.title, text: p.text, keywords, normalized: normalize(p.text), confirmedAt: now() }).where(eq(memories.id, target.id))
         return yield* memory(target.id)
       }).pipe(orDie),
     // BM25 (FTS5) among active ones in the scopes, excluding those already in the prompt. Skills also match by title.
-    searchMemories: (scopes: ReadonlyArray<string>, query: string, exclude: ReadonlyArray<string>, limit: number, kind: Memory["kind"] = "fact") => {
+    searchMemories: (scopes: ReadonlyArray<string>, query: string, exclude: ReadonlyArray<string>, limit: number, kind: Memory["kind"] = "fact", owner = LOCAL_ACTOR.id) => {
       const terms = normalize(query).split(" ").filter((t) => t.length > 2).map((t) => `"${t}"*`)
       if (!terms.length) return Effect.succeed([] as Memory[])
       return orDie(
@@ -418,7 +427,7 @@ export const repository = (db: Db) => {
           .all<Row>(
             sql`SELECT memories.* FROM memory_index JOIN memories ON memories.id = memory_index.id
                 WHERE memory_index MATCH ${terms.join(" OR ")} AND ${eq(memories.state, "active")} AND ${eq(memories.kind, kind)}
-                  AND ${inArray(memories.scope, [...scopes])} AND ${notInArray(memories.id, [...exclude])}
+                  AND ${heard(scopes, owner)} AND ${notInArray(memories.id, [...exclude])}
                 ORDER BY bm25(memory_index) LIMIT ${limit}`
           )
           .pipe(Effect.map((r) => r.map(memoryRow)))
