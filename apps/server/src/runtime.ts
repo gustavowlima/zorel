@@ -26,6 +26,25 @@ const SKIP_MS = 10 * 60_000 // §6.1: a route that failed (not a limit) is skipp
 // An engine that sends nothing for this long, with no approval waiting, is treated as dead (its process may
 // have died without the SDK noticing): the turn fails as "unavailable", so failover can take over.
 const STALL_MS = 10 * 60_000
+const SAME_STEP_MAX = 4 // the same step with the same result this many times in a row: a loop
+const ERRORS_MAX = 6 // this many failed steps in a row: stuck
+
+// Runaway guard of one turn (ideas from Tucano): it watches finished steps and says why to stop, if it should.
+// A step is its kind, title and the start of its output; a different step or a success resets the counts.
+export function runawayGuard() {
+  let last = ""
+  let same = 0
+  let errors = 0
+  return (step: { kind: string; title: string; status: string; output: string }): string | undefined => {
+    const sig = `${step.kind}\u0000${step.title}\u0000${step.output.slice(0, 500)}`
+    same = sig === last ? same + 1 : 1
+    last = sig
+    errors = step.status === "error" ? errors + 1 : 0
+    if (same >= SAME_STEP_MAX) return `Stopped: the agent ran "${step.title}" ${same} times in a row with the same result.`
+    if (errors >= ERRORS_MAX) return `Stopped: ${errors} steps in a row failed.`
+    return undefined
+  }
+}
 const TEXT_BATCH = Duration.millis(100) // batched deltas (OpenBot 100 ms, Zeron 120 ms)
 
 export interface SendInput {
@@ -187,12 +206,12 @@ export const makeRuntime = Effect.gen(function* () {
   // ---------- turn tools: steps and approvals persisted and published ----------
   // `fixed`: a native session's gateway (one URL for the whole session); without it, one URL per turn.
   // `onWrite`: a tool that writes (or is sensitive) is about to run; the turn has acted, so failover won't repeat it.
-  const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, legacy: Step[], onWrite: () => void, fixed?: GatewayHandle) => {
+  const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, legacy: Step[], onWrite: () => void, fixed?: GatewayHandle, onFinished: (s: WorkStep) => void = () => {}) => {
     const routes = new Map<string, { server: string; tool: string; approve: boolean; writes: boolean }>()
     const defs: ToolDef[] = []
     const step = (title: string, tool: string) => run(store.addStep({ turnId: row.id, kind: "tool", title, tool, files: [], status: "running" }).pipe(Effect.tap((s) => publish(chat.id, ev("step-started", { step: s })))))
     const finish = (s: WorkStep, status: WorkStep["status"], output = "") =>
-      run(store.finishStep(s, { status, output: output.slice(0, 300) }).pipe(Effect.tap((done) => publish(chat.id, ev("step-finished", { step: done })))))
+      run(store.finishStep(s, { status, output: output.slice(0, 300) }).pipe(Effect.tap((done) => publish(chat.id, ev("step-finished", { step: done }))), Effect.tap((done) => Effect.sync(() => onFinished(done)))))
     for (const s of await run(store.mcpServersFor(chat.projectId))) {
       const listed = await hub.tools(s).catch(async (e: unknown) => {
         const msg = `Não conectou: ${e instanceof Error ? e.message : e}`
@@ -435,6 +454,12 @@ export const makeRuntime = Effect.gen(function* () {
           let lastActivity = Date.now()
           let approvalsWaiting = 0
           const stalled = yield* Deferred.make<void>()
+          const runaway = yield* Deferred.make<string>()
+          const guard = runawayGuard()
+          const watch = (s: { kind: string; title: string; status: string; output: string }) => {
+            const why = guard(s)
+            if (why) Effect.runSync(Deferred.succeed(runaway, why))
+          }
           yield* Effect.forkScoped(
             Effect.repeat(
               Effect.suspend(() => (approvalsWaiting === 0 && Date.now() - lastActivity > STALL_MS ? Deferred.succeed(stalled, undefined) : Effect.void)),
@@ -470,12 +495,13 @@ export const makeRuntime = Effect.gen(function* () {
               if (n.status === "running") return
               const done = yield* store.finishStep(s, { status: n.status, output: n.output })
               yield* publish(chatId, ev("step-finished", { step: done }))
+              watch({ kind: n.kind, title: n.title, status: n.status, output: n.output })
               if (n.kind !== "read" && n.kind !== "search") acc.steps.push({ tool: n.kind, args: n.kind === "run" ? n.title : n.files.join(", "), status: n.status, result: n.output.slice(0, 300) })
             })
           const opened = yield* Effect.promise(() =>
             openTools(chat, attemptRow, agent, acc.steps, () => {
               acted = true
-            }, native ? gatewayOf(sessionKey(attemptRow)) : undefined)
+            }, native ? gatewayOf(sessionKey(attemptRow)) : undefined, (done) => watch({ kind: done.kind, title: done.title, status: done.status, output: done.output ?? "" }))
           )
           yield* Effect.addFinalizer(() =>
             Effect.gen(function* () {
@@ -495,6 +521,7 @@ export const makeRuntime = Effect.gen(function* () {
               })
             ),
             Stream.interruptWhen(Deferred.await(stalled)),
+            Stream.interruptWhen(Deferred.await(runaway)),
             Stream.withSpan("engine.run", { attributes: { model } }),
             Stream.groupedWithin(512, TEXT_BATCH),
             Stream.runForEach((batch) =>
@@ -519,7 +546,12 @@ export const makeRuntime = Effect.gen(function* () {
               })
             )
           )
-          if (yield* Deferred.isDone(stalled)) {
+          // A loop or a run of failures: the turn ends with why (not a provider failure, so no failover).
+          if (yield* Deferred.isDone(runaway)) {
+            acc.error = yield* Deferred.await(runaway)
+            failure = undefined
+            yield* closeSession(key)
+          } else if (yield* Deferred.isDone(stalled)) {
             acc.error = "The engine stopped responding."
             failure = { reason: "unavailable" }
             yield* closeSession(key) // its process is gone or stuck: the next turn opens a fresh one

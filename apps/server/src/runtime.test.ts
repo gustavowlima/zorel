@@ -12,7 +12,7 @@ import { BrowserService } from "./browser.ts"
 import { DataDir } from "./chat.ts"
 import { Store } from "./db.ts"
 import { Engines, type EngineEvent } from "./engines.ts"
-import { Runtime } from "./runtime.ts"
+import { Runtime, runawayGuard } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
 import { Tools } from "./tools.ts"
 import { Pricing } from "./pricing.ts"
@@ -427,4 +427,18 @@ test("workspace: the agent works in the project folder; the turn records what it
     expect(prompts[1]).toContain("[Feito neste turno: editou a.ts (+1 −1)]")
     rmSync(folder, { recursive: true, force: true })
   }))
+})
+
+test("runaway guard: the same step and result 4 times is a loop; 6 failures in a row is stuck", () => {
+  const g = runawayGuard()
+  const step = (title: string, status = "ok", output = "same") => g({ kind: "run", title, status, output })
+  expect(step("ls")).toBeUndefined()
+  expect(step("ls")).toBeUndefined()
+  expect(step("ls", "ok", "different")).toBeUndefined() // a different result resets
+  expect(step("ls", "ok", "different")).toBeUndefined()
+  expect(step("ls", "ok", "different")).toBeUndefined()
+  expect(step("ls", "ok", "different")).toContain("4 times")
+  const h = runawayGuard()
+  for (let i = 0; i < 5; i++) expect(h({ kind: "run", title: `t${i}`, status: "error", output: "" })).toBeUndefined()
+  expect(h({ kind: "run", title: "t5", status: "error", output: "" })).toContain("6 steps")
 })

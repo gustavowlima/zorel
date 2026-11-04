@@ -115,6 +115,12 @@ RpcGroup.make(
 - **Idempotência:** `send` com o mesmo `clientId` devolve o mesmo `turnId`, então reenviar não duplica.
 - **Recuperação no boot:** um turno `running` sem processo vira `interrupted`, e a mensagem parcial é preservada. Nunca repete efeito colateral incerto (regra do OpenBot).
 - **O turno não depende do cliente.** Fechar a aba não para nada.
+- **Proteções do turno** (ideias do Tucano; `runawayGuard` em runtime.ts):
+  - **travado:** 10 min sem nenhum evento do engine, fora de aprovação esperando, encerra o turno e reabre a sessão no próximo;
+  - **loop:** o mesmo passo (tipo, título e começo da saída) 4 vezes seguidas encerra o turno dizendo qual;
+  - **falhas:** 6 passos seguidos com erro encerram o turno.
+  
+  Loop e falhas valem para os passos nativos e para as ferramentas do gateway. Não são falha de provider, então não disparam failover. O failover em si só troca de rota se o turno ainda não agiu (editou, rodou ou chamou ferramenta que escreve), para nunca repetir um efeito.
 
 ---
 
