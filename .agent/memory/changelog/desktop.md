@@ -1,0 +1,1 @@
+2026-11-04 | desktop moves from Electrobun to Electron (server stays Bun as a child process; native WebContentsView tabs driven over CDP) | native in-app browser controllable by agents, as a reference app; WKWebView has no CDP
