@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 import { ChevronRight } from "./icons"
 
 // A page's header bar. In the desktop app it moves up into the window's title bar (the #titlebar-slot the shell
-// renders), as in OpenBot: the card starts with the page itself. Elsewhere it is the card's top bar.
+// renders): the card starts with the page itself. Elsewhere it is the card's top bar.
 export function PageHeader({ className, children }: { className?: string; children: ReactNode }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null)
   useLayoutEffect(() => setSlot(document.getElementById("titlebar-slot")), [])

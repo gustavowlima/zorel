@@ -1,4 +1,4 @@
-// What an agent may reach, as plain choices (as in Tucano: "give tools, not keys"): one row per power, an icon,
+// What an agent may reach, as plain choices: one row per power, an icon,
 // what it means in a sentence, and a selector — files and commands (read / read and write / everything), the web
 // (no access / read), its own browser (no access / use it), and each connector (no access / read / read and
 // write). Under them, the actions allowed for good from an approval card, each removable. Destructive actions
