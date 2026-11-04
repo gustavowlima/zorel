@@ -476,7 +476,10 @@ export const repository = (db: Db) => {
     // ---------- turns (per-chat queue) ----------
     turnRow: (id: string) => orDie(db.select().from(turns).where(eq(turns.id, id)).pipe(Effect.map(first))),
     turnByClientId: (clientId: string) => orDie(db.select().from(turns).where(eq(turns.clientId, clientId)).pipe(Effect.map(first))),
-    enqueueTurn: (input: { chatId: string; agentId: string | null; model: string; accountId?: string | null; clientId: string | null; depth: number }) =>
+    // route: the agent is picked (router.ts) when the turn starts; agentId is the fallback (the lead).
+    retargetTurn: (id: string, to: { agentId: string; model: string; accountId: string | null }) =>
+      orDie(db.update(turns).set({ ...to, route: false }).where(eq(turns.id, id)).returning().pipe(Effect.map((r) => r[0]!))),
+    enqueueTurn: (input: { chatId: string; agentId: string | null; model: string; accountId?: string | null; clientId: string | null; depth: number; route?: boolean }) =>
       orDie(db.insert(turns).values({ id: crypto.randomUUID(), ...input, state: "queued", createdAt: now() }).returning().pipe(Effect.map((r) => r[0]!))),
     nextQueued: (chatId: string) =>
       orDie(db.select().from(turns).where(and(eq(turns.chatId, chatId), eq(turns.state, "queued"))).orderBy(asc(turns.createdAt)).limit(1).pipe(Effect.map(first))),

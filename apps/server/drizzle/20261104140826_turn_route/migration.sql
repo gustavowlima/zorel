@@ -1,0 +1,1 @@
+ALTER TABLE `turns` ADD `route` integer DEFAULT false NOT NULL;

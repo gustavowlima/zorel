@@ -576,3 +576,28 @@ test("teams: the agent that handed over by mention wraps up; a follow-up stays w
     msgs = yield* store.messages(chat.id)
     expect(msgs.slice(-2).map((m) => `${who(m.agentId)}: ${m.text}`)).toEqual(["you: and another", "Helper: helper on: and another"])
   })))
+
+// A message naming no one in a team: the router's pick answers it (here the helper), with a note saying so.
+const Routed = Layer.succeed(Engines, {
+  run: (t) => {
+    const last = t.messages.at(-1)!.text
+    const me = /## You are ([^,\n]+)/.exec(t.system)?.[1]
+    const text = last.startsWith("You route a message") ? '{"handle": "helper", "reason": "its remit"}' : `${me}: on it`
+    return Stream.make<EngineEvent[]>({ type: "text", delta: text }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+  }
+})
+
+test("router: a message naming no one goes to the teammate the router picks", () =>
+  runWith(":memory:", Routed, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const lead = yield* store.createAgent({ projectId: null, name: "Lead", instructions: "Leads.", model: "x/y" })
+    const helper = yield* store.createAgent({ projectId: null, name: "Helper", title: "Writes tests", instructions: "Helps.", model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [lead.id, helper.id], model: "x/y" })
+    const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+    yield* runtime.send({ chatId: chat.id, clientId: "r-1", text: "we need tests for sum" })
+    yield* c.done
+    const note = c.events.find((e) => e._tag === "handoff")
+    expect(note?._tag === "handoff" && [note.via, note.to, note.reason]).toEqual(["route", [helper.id], "its remit"])
+    expect((yield* store.messages(chat.id)).at(-1)!.text).toBe("Helper: on it")
+  })))
