@@ -1,7 +1,7 @@
 // Knowledge (prototype "Knowledge"): what the chats learned and what you wrote, as a list and a reader.
 // Facts are durable sentences; skills are procedures. Nothing reaches the model until it is approved.
-import type { Memory } from "@zero/contracts"
-import { formatAge, formatDate, t } from "@zero/i18n"
+import type { Memory } from "@zorel/contracts"
+import { formatAge, formatDate, t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, memoriesAtom, memoryVersionsAtom, mutations, pagesAtom, projectsAtom, useList, useMutation, useReading } from "../client.ts"
 import { NewPage, PageView } from "./pages.tsx"

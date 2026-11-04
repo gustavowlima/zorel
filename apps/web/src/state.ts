@@ -93,7 +93,7 @@ export function useRoute(): Route {
 // ---------- theme: system (default), dark or light; per browser ----------
 
 export type ThemePref = "system" | "dark" | "light"
-const THEME_KEY = "zero.theme"
+const THEME_KEY = "zorel.theme"
 const prefersLight = matchMedia("(prefers-color-scheme: light)")
 
 export function themePref(): ThemePref {
@@ -154,7 +154,7 @@ export function writeSet(key: string, set: ReadonlySet<string>) {
 
 // ---------- the chats sidebar: shown or folded away (per browser); ⌘B / Ctrl+B toggles it ----------
 
-const SIDEBAR_KEY = "zero.sidebar.hidden"
+const SIDEBAR_KEY = "zorel.sidebar.hidden"
 
 export function useSidebar(): { hidden: boolean; toggle: () => void; show: () => void } {
   const [hidden, setHidden] = useState(() => {

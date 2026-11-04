@@ -1,10 +1,10 @@
 // One file's diff, rendered by @pierre/diffs (syntax highlight, line numbers, word-level changes) inside
-// the shared worker pool. The surface takes Zero's tokens: CSS variables cross the viewer's shadow DOM.
+// the shared worker pool. The surface takes Zorel's tokens: CSS variables cross the viewer's shadow DOM.
 // With onComment, selecting lines (click or drag on the line numbers) opens a comment box under them; what is
 // written goes to the chat's message box, naming the file and the lines, for the agent to act on.
 import { getSingularPatch, type SelectedLineRange } from "@pierre/diffs"
 import { type DiffLineAnnotation, FileDiff } from "@pierre/diffs/react"
-import { t } from "@zero/i18n"
+import { t } from "@zorel/i18n"
 import { useMemo, useState } from "react"
 import { Button, Textarea } from "@/ui"
 import { useResolvedTheme } from "../state.ts"

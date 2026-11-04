@@ -1,8 +1,8 @@
 import { discovered, pickedPaths } from "./file-skills.ts"
 import { finishSignIn, isSignedIn, oauthKey, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS } from "@zero/contracts"
-import { ZeroRpc } from "@zero/contracts/events"
+import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS } from "@zorel/contracts"
+import { ZorelRpc } from "@zorel/contracts/events"
 import { Effect, Layer, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
@@ -121,10 +121,10 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
       .handle("builder", ({ payload }) =>
         Effect.gen(function* () {
           if (!(yield* projectOk(store, payload.projectId))) return yield* notFound()
-          // The Builder is Zero's own agent (builtin): out of the team lists, talked to only on the Build screen.
+          // The Builder is Zorel's own agent (builtin): out of the team lists, talked to only on the Build screen.
           const found = (yield* store.agents()).find((a) => a.builtin === "builder")
-          // Zero's own prompt evolves with Zero: an existing Builder gets the current one (not a user edit to keep).
-          const existing = found && found.instructions !== BUILDER.instructions ? yield* store.updateAgent(found.id, { instructions: BUILDER.instructions, description: BUILDER.description }, "Zero") : found
+          // Zorel's own prompt evolves with Zorel: an existing Builder gets the current one (not a user edit to keep).
+          const existing = found && found.instructions !== BUILDER.instructions ? yield* store.updateAgent(found.id, { instructions: BUILDER.instructions, description: BUILDER.description }, "Zorel") : found
           const builder = existing ?? (yield* store.createAgent({ projectId: null, name: BUILDER.name, title: BUILDER.title, description: BUILDER.description, instructions: BUILDER.instructions, model: payload.model, access: BUILDER.access, builtin: "builder" }))
           if (!existing) yield* audit.record(Actions.agentCreated, { target: builder, after: { name: builder.name, model: builder.model, access: builder.access } })
           // Each visit starts fresh (as in Tucano): the screen's previous conversation here goes away.
@@ -664,7 +664,7 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
 )
 
 // Turns: effect/rpc over WebSocket at /rpc (ARCHITECTURE §4). The global LocalOnly also covers the upgrade.
-const RpcHandlers = ZeroRpc.toLayer(
+const RpcHandlers = ZorelRpc.toLayer(
   Effect.gen(function* () {
     const runtime = yield* Runtime
     const store = yield* Store
@@ -680,7 +680,7 @@ const RpcHandlers = ZeroRpc.toLayer(
     }
   })
 )
-const RpcRoute = RpcServer.layerHttp({ group: ZeroRpc, path: "/rpc", protocol: "websocket" }).pipe(Layer.provide([RpcHandlers, RpcSerialization.layerJson]))
+const RpcRoute = RpcServer.layerHttp({ group: ZorelRpc, path: "/rpc", protocol: "websocket" }).pipe(Layer.provide([RpcHandlers, RpcSerialization.layerJson]))
 
 // Web build (apps/web/dist), when present: a single process serves the API and the UI.
 // Attachments (ARCHITECTURE §12): raw body upload, outside HttpApi like the RPC route. The file goes to
@@ -720,11 +720,11 @@ const AttachmentFile = HttpRouter.add(
   }).pipe(Effect.orDie)
 )
 
-// Connectors (oauth.ts): the service sends the person back here after they allow Zero.
+// Connectors (oauth.ts): the service sends the person back here after they allow Zorel.
 const escapeHtml = (v: string) => v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`) // error text comes from the service
 const page = (title: string, text: string, status = 200) =>
   HttpServerResponse.text(
-    `<!doctype html><meta charset="utf-8"><title>Zero</title><body style="font:15px system-ui;background:#111;color:#eee;display:grid;place-items:center;height:90vh;margin:0"><div style="text-align:center"><h1 style="font-size:20px;font-weight:600">${escapeHtml(title)}</h1><p style="opacity:.7">${escapeHtml(text.slice(0, 300))}</p></div><script>setTimeout(()=>window.close(),1500)</script>`,
+    `<!doctype html><meta charset="utf-8"><title>Zorel</title><body style="font:15px system-ui;background:#111;color:#eee;display:grid;place-items:center;height:90vh;margin:0"><div style="text-align:center"><h1 style="font-size:20px;font-weight:600">${escapeHtml(title)}</h1><p style="opacity:.7">${escapeHtml(text.slice(0, 300))}</p></div><script>setTimeout(()=>window.close(),1500)</script>`,
     { status, contentType: "text/html; charset=utf-8" }
   )
 const OAuthCallback = HttpRouter.add(
@@ -741,7 +741,7 @@ const OAuthCallback = HttpRouter.add(
     const { hub } = yield* Tools
     return yield* Effect.tryPromise(() => finishSignIn(secrets, state, code, (id) => Effect.runPromise(store.mcpServer(id)).then((s) => s?.url ?? undefined))).pipe(
       Effect.tap((id) => Effect.promise(() => hub.close(id))),
-      Effect.map(() => page("Connected", "You can close this tab and go back to Zero.")),
+      Effect.map(() => page("Connected", "You can close this tab and go back to Zorel.")),
       Effect.catch((e) => Effect.logWarning("oauth callback failed", e).pipe(Effect.as(page("Not connected", e.cause instanceof Error ? e.cause.message : "Sign-in failed.", 400))))
     )
   })
@@ -889,14 +889,14 @@ export interface StartOptions {
 
 // Entry point also used by the desktop app.
 export async function start(o: StartOptions = {}) {
-  const dataDir = o.dataDir ?? process.env.ZERO_HOME ?? join(homedir(), ".zero")
+  const dataDir = o.dataDir ?? process.env.ZOREL_HOME ?? defaultDataDir()
   mkdirSync(dataDir, { recursive: true }) // don't spawn a shell just to create the folder
   const port = o.port ?? Number(process.env.PORT ?? 4317)
-  process.env.ZERO_ORIGIN ??= `http://127.0.0.1:${port}` // where OAuth services send the person back (oauth.ts)
-  const webDir = o.webDir ?? process.env.ZERO_WEB_DIR ?? resolve(import.meta.dir, "../../web/dist")
+  process.env.ZOREL_ORIGIN ??= `http://127.0.0.1:${port}` // where OAuth services send the person back (oauth.ts)
+  const webDir = o.webDir ?? process.env.ZOREL_WEB_DIR ?? resolve(import.meta.dir, "../../web/dist")
   AppLive(resolve(webDir)).pipe(
     HttpRouter.serve,
-    Layer.provide(services(process.env.ZERO_DB ?? join(dataDir, "zero.db"), dataDir)),
+    Layer.provide(services(process.env.ZOREL_DB ?? dbPathIn(dataDir), dataDir)),
     Layer.provide(BunHttpServer.layer({ port, hostname: "127.0.0.1" })),
     Layer.provide(LoggerLive),
     Layer.launch,
@@ -906,9 +906,18 @@ export async function start(o: StartOptions = {}) {
   return `http://127.0.0.1:${port}`
 }
 
+// Before the rename to Zorel the data lived in ~/.zero/zero.db. Keep using it where it exists (not moved: the
+// database holds absolute paths of attachments and accounts).
+function defaultDataDir() {
+  const legacy = join(homedir(), ".zero")
+  const current = join(homedir(), ".zorel")
+  return existsSync(legacy) && !existsSync(current) ? legacy : current
+}
+const dbPathIn = (dataDir: string) => (existsSync(join(dataDir, "zero.db")) && !existsSync(join(dataDir, "zorel.db")) ? join(dataDir, "zero.db") : join(dataDir, "zorel.db"))
+
 // Started by the desktop app: exit when it's gone (it crashed or was killed without stopping the server).
 function watchParent() {
-  const parent = Number(process.env.ZERO_PARENT_PID)
+  const parent = Number(process.env.ZOREL_PARENT_PID)
   if (!parent) return
   setInterval(() => {
     try {

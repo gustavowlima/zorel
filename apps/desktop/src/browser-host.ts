@@ -54,7 +54,7 @@ export async function startBrowserHost(appWindow: () => BrowserWindow | undefine
     host.contentView.addChildView(view)
     view.setBounds(SIZE)
     tabs.set(id, view)
-    void view.webContents.loadURL(`about:blank#zero-tab-${id}`)
+    void view.webContents.loadURL(`about:blank#zorel-tab-${id}`)
   }
 
   const close = (id: string) => {

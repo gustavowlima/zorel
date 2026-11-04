@@ -1,9 +1,9 @@
 // An agent's routines (phase 7), on its page: recurring or triggered work that runs as a message in the routine's
 // own chat. Each row: name, when it runs next (or "on demand"), on/off, Run now, its chat, and its webhook URL
 // when it has one. New ones from a short form with schedule presets (or a cron pattern); agents can also propose
-// them from a chat (zero_routines), as approval cards.
-import type { Agent, Routine } from "@zero/contracts"
-import { formatAge, formatTime, t } from "@zero/i18n"
+// them from a chat (zorel_routines), as approval cards.
+import type { Agent, Routine } from "@zorel/contracts"
+import { formatAge, formatTime, t } from "@zorel/i18n"
 import { useState } from "react"
 import { agentsAtom, mutations, routinesAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { go } from "../state.ts"

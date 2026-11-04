@@ -1,11 +1,11 @@
 // Connectors that sign in with OAuth (the MCP authorization spec, through the SDK: discovery, dynamic client
 // registration, PKCE, refresh). One provider per MCP server: its client registration, tokens and PKCE verifier live
 // in the system keychain (never in the database). Connecting gives an authorization URL the person opens; the
-// service redirects back to this server (/api/oauth/callback) with a code and the state Zero issued, which is
+// service redirects back to this server (/api/oauth/callback) with a code and the state Zorel issued, which is
 // checked before anything is exchanged.
 import { auth, type OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js"
 import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js"
-import type { SecretStore } from "./secrets.ts"
+import { oauthKey, type SecretStore } from "./secrets.ts"
 
 type Stored = { client?: OAuthClientInformationMixed | undefined; tokens?: OAuthTokens | undefined; verifier?: string | undefined }
 
@@ -13,9 +13,9 @@ type Stored = { client?: OAuthClientInformationMixed | undefined; tokens?: OAuth
 const pending = new Map<string, { serverId: string; at: number }>()
 const PENDING_MS = 10 * 60_000
 
-export const oauthKey = (serverId: string) => `mcp-oauth:${serverId}`
+export { oauthKey }
 // This server's address as the browser reaches it (set by start()).
-export const callbackUrl = () => `${process.env.ZERO_ORIGIN ?? "http://127.0.0.1:4317"}/api/oauth/callback`
+export const callbackUrl = () => `${process.env.ZOREL_ORIGIN ?? "http://127.0.0.1:4317"}/api/oauth/callback`
 
 export class McpOAuth implements OAuthClientProvider {
   authorizeUrl: string | undefined
@@ -37,7 +37,7 @@ export class McpOAuth implements OAuthClientProvider {
     return callbackUrl()
   }
   get clientMetadata(): OAuthClientMetadata {
-    return { client_name: "Zero", redirect_uris: [callbackUrl()], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }
+    return { client_name: "Zorel", redirect_uris: [callbackUrl()], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }
   }
   state() {
     const s = crypto.randomUUID()
@@ -65,7 +65,7 @@ export class McpOAuth implements OAuthClientProvider {
   codeVerifier() {
     return this.read().verifier ?? ""
   }
-  // The service rejected what Zero has: start over from what it says is stale.
+  // The service rejected what Zorel has: start over from what it says is stale.
   invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery") {
     if (scope === "all") return this.secrets.set(oauthKey(this.serverId), "")
     if (scope === "client") return this.write({ client: undefined, tokens: undefined })
@@ -83,7 +83,7 @@ export const isSignedIn = (secrets: SecretStore, serverId: string) => {
   }
 }
 
-// Start (or refresh) the sign-in: the URL to open, or null when Zero already holds a working token.
+// Start (or refresh) the sign-in: the URL to open, or null when Zorel already holds a working token.
 export async function startSignIn(secrets: SecretStore, serverId: string, serverUrl: string): Promise<string | null> {
   const provider = new McpOAuth(secrets, serverId)
   const result = await auth(provider, { serverUrl })
@@ -94,10 +94,10 @@ export async function startSignIn(secrets: SecretStore, serverId: string, server
 export async function finishSignIn(secrets: SecretStore, state: string, code: string, urlOf: (serverId: string) => Promise<string | undefined>): Promise<string> {
   const p = pending.get(state)
   pending.delete(state)
-  if (!p || Date.now() - p.at > PENDING_MS) throw new Error("This sign-in link expired or was already used. Connect again from Zero.")
+  if (!p || Date.now() - p.at > PENDING_MS) throw new Error("This sign-in link expired or was already used. Connect again from Zorel.")
   const serverUrl = await urlOf(p.serverId)
   if (!serverUrl) throw new Error("That connector no longer exists.")
   const result = await auth(new McpOAuth(secrets, p.serverId), { serverUrl, authorizationCode: code })
-  if (result !== "AUTHORIZED") throw new Error("The service didn't authorize Zero.")
+  if (result !== "AUTHORIZED") throw new Error("The service didn't authorize Zorel.")
   return p.serverId
 }

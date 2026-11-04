@@ -1,8 +1,8 @@
 // Model picker (prototype: "Choose model"): a rail with one button per subscription account and per API
 // provider, the models of the selected one on the right, a search across all of them, and the reasoning
 // level for engines that have one. Switching keeps the whole context (the runtime resends only the delta).
-import type { Effort, ModelInfo, ProviderAccount } from "@zero/contracts"
-import { t } from "@zero/i18n"
+import type { Effort, ModelInfo, ProviderAccount } from "@zorel/contracts"
+import { t } from "@zorel/i18n"
 import { type ReactNode, useMemo, useState } from "react"
 import { accountsAtom, modelsAtom, useList } from "../client.ts"
 import { ACCOUNT_OF_MODEL, modelName, modelNote, providerHint, providerLabel, splitModel } from "../labels.ts"

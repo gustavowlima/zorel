@@ -1,4 +1,4 @@
-// A span of days (shadcn `--base aria` style, on Zero's tokens): React Aria's DateRangePicker, two typed date
+// A span of days (shadcn `--base aria` style, on Zorel's tokens): React Aria's DateRangePicker, two typed date
 // fields in one body with a calendar button that opens a range calendar in a popover. Keyboard: type the
 // segments, or open the calendar and move with the arrows. Values are "yyyy-mm-dd" strings (or null), in the
 // computer's own calendar; either end may stay open.

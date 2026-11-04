@@ -49,8 +49,8 @@ test("chats: membros em ordem e cascata ao apagar o projeto", () =>
   ))
 
 test("banco do MVP (user_version 2) é adotado: backup feito, dados mantidos, migração 3 aplicada", async () => {
-  const dir = join(tmpdir(), `zero-mig-${crypto.randomUUID()}`)
-  const path = join(dir, "zero.db")
+  const dir = join(tmpdir(), `zorel-mig-${crypto.randomUUID()}`)
+  const path = join(dir, "zorel.db")
   require("node:fs").mkdirSync(dir)
   const old = new Database(path)
   old.transaction(() => {
@@ -82,27 +82,27 @@ test("banco do MVP (user_version 2) é adotado: backup feito, dados mantidos, mi
 })
 
 test("backup: um por dia mesmo sem migration pendente, e só os 7 mais novos ficam", async () => {
-  const dir = join(tmpdir(), `zero-bk-${crypto.randomUUID()}`)
-  const path = join(dir, "zero.db")
+  const dir = join(tmpdir(), `zorel-bk-${crypto.randomUUID()}`)
+  const path = join(dir, "zorel.db")
   require("node:fs").mkdirSync(join(dir, "backups"), { recursive: true })
   await run(path, (r) => r.projects()) // new database: nothing to do
   // 8 old backups (over a day old): the next boot makes today's and deletes the excess
   const old = new Date(Date.now() - 3 * 24 * 60 * 60_000)
   for (let i = 0; i < 8; i++) {
-    const f = join(dir, "backups", `zero-2020-01-0${i + 1}T00-00-00-000Z.db`)
+    const f = join(dir, "backups", `zorel-2020-01-0${i + 1}T00-00-00-000Z.db`)
     require("node:fs").writeFileSync(f, "")
     require("node:fs").utimesSync(f, old, old)
   }
   await run(path, (r) => r.projects())
   const files = readdirSync(join(dir, "backups")).sort()
   expect(files).toHaveLength(7)
-  expect(files.at(-1)!.startsWith("zero-2026") || files.at(-1)! > "zero-2020-01-08").toBe(true)
+  expect(files.at(-1)!.startsWith("zorel-2026") || files.at(-1)! > "zorel-2020-01-08").toBe(true)
   rmSync(dir, { recursive: true })
 })
 
 test("memória sobre a pessoa só o dono ouve; a do projeto, o projeto", async () => {
-  const dir = join(tmpdir(), `zero-aud-${crypto.randomUUID()}`)
-  const path = join(dir, "zero.db")
+  const dir = join(tmpdir(), `zorel-aud-${crypto.randomUUID()}`)
+  const path = join(dir, "zorel.db")
   require("node:fs").mkdirSync(dir)
   await run(path, (r) =>
     Effect.gen(function* () {

@@ -1,9 +1,9 @@
 // Workspace in the chat (prototype: right panel Changes/Files, bottom terminal): what each turn changed,
 // with its diff and undo; the project's files marked with what this chat changed; the commands the agents
-// ran, with their output. Data comes from Zero's checkpoints, the same for every harness.
-import type { Agent, Chat, FileChange, Message, Project, WorkspaceFile } from "@zero/contracts"
+// ran, with their output. Data comes from Zorel's checkpoints, the same for every harness.
+import type { Agent, Chat, FileChange, Message, Project, WorkspaceFile } from "@zorel/contracts"
 import { useAtomValue } from "@effect/atom-react"
-import { formatTime, t } from "@zero/i18n"
+import { formatTime, t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { lazy, type PointerEvent as ReactPointerEvent, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { diffAtom, filesAtom, localServersAtom, mutations, scriptsAtom, terminalsAtom, useInvalidate, useMutation, useReading } from "../client.ts"
@@ -90,8 +90,8 @@ export type SideTab = "changes" | "git" | "files" | "browser" | "terminal"
 // ---------- pins: a side-panel tab or a shell, put up in the chat's title row as a shortcut ----------
 // Side tabs are pinned for every chat (this computer); shells, for their chat (a shell lives in one chat).
 export type ShellPin = { readonly session: string; readonly label: string }
-const SIDE_PINS_KEY = "zero.pins.side"
-const SHELL_PINS_KEY = (chatId: string) => `zero.pins.shell.${chatId}`
+const SIDE_PINS_KEY = "zorel.pins.side"
+const SHELL_PINS_KEY = (chatId: string) => `zorel.pins.shell.${chatId}`
 const readJson = <A,>(key: string, fallback: A): A => {
   try {
     return (JSON.parse(store.get(key) ?? "null") as A) ?? fallback
@@ -131,7 +131,7 @@ export const PinItem = ({ pinned, onAction }: { pinned: boolean; onAction: () =>
     {pinned ? t("workspace.unpin") : t("workspace.pin")}
   </MenuItem>
 )
-const WIDTH_KEY = "zero.side.width"
+const WIDTH_KEY = "zorel.side.width"
 const MIN_WIDTH = 360
 
 // The panel to the right of the chat: Changes, Files, Browser and Terminal as tabs (Files and Terminal only with a
@@ -455,7 +455,7 @@ function TreeNode({ node, depth, onOpen }: { node: Node; depth: number; onOpen: 
 // reloading only detaches, and the tabs come back from the server's list (the layout is remembered per chat).
 // Closing a pane or a tab ends its shells, asking first when something still runs in one. It fills the side
 // panel's Terminal tab.
-const LAYOUT_KEY = (chatId: string) => `zero.terminal.layout.${chatId}`
+const LAYOUT_KEY = (chatId: string) => `zorel.terminal.layout.${chatId}`
 const MAX_PANES = 4
 type Pane = { readonly key: string; readonly session: string | undefined; readonly ended: boolean; readonly run?: string | undefined }
 // label: the project script the tab runs ("dev"); a plain shell is "Shell n".

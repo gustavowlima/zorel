@@ -1,15 +1,15 @@
 // Desktop notifications (the browser's Notification API; the Electron shell shows them as native ones): when a
 // chat starts waiting for you, fails, or finishes while you look elsewhere (another chat, or the window hidden).
 // On by default once the person allowed them; the switch is in Settings › General. Clicking one opens the chat.
-import type { ChatStatus } from "@zero/contracts/events"
-import { t } from "@zero/i18n"
+import type { ChatStatus } from "@zorel/contracts/events"
+import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
 import { agentsAtom, chatsAtom, useList, useStatuses } from "../client.ts"
 import { chatTitle, noteworthy, statusLabel } from "../labels.ts"
 import { go, type Route } from "../state.ts"
 import { Switch } from "@/ui"
 
-const KEY = "zero.notify"
+const KEY = "zorel.notify"
 const supported = typeof Notification !== "undefined"
 const enabled = () => {
   try {

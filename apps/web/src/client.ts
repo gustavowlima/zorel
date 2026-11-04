@@ -3,20 +3,20 @@
 //   no screen calls reload() by hand.
 // - Turns: AtomRpc over one WebSocket. Each chat is an atom folded from its event stream (snapshot first,
 //   then live events); reconnecting subscribes again and the next snapshot replaces the state.
-import { type AuditKind, Api, type Attachment, MAX_ATTACHMENT_BYTES, type Message, type Switch } from "@zero/contracts"
-import { type Approval, type ApprovalOutcome, type ChatEvent, type ChatStatus, type WorkStep, ZeroRpc } from "@zero/contracts/events"
+import { type AuditKind, Api, type Attachment, MAX_ATTACHMENT_BYTES, type Message, type Switch } from "@zorel/contracts"
+import { type Approval, type ApprovalOutcome, type ChatEvent, type ChatStatus, type WorkStep, ZorelRpc } from "@zorel/contracts/events"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
-import { t } from "@zero/i18n"
+import { t } from "@zorel/i18n"
 import { Effect, Layer, Schedule, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { AsyncResult, Atom, AtomHttpApi, AtomRpc, Reactivity } from "effect/reactivity"
 import { RpcClient, RpcSerialization } from "effect/rpc"
 import { Socket } from "effect/socket"
 
-export class Zero extends AtomHttpApi.Service<Zero>()("Zero", { api: Api, httpClient: FetchHttpClient.layer, baseUrl: location.origin }) {}
+export class Zorel extends AtomHttpApi.Service<Zorel>()("Zorel", { api: Api, httpClient: FetchHttpClient.layer, baseUrl: location.origin }) {}
 
 export class Live extends AtomRpc.Service<Live>()("Live", {
-  group: ZeroRpc,
+  group: ZorelRpc,
   protocol: RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
     Layer.provide(Socket.layerWebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/rpc`)),
     Layer.provide(Socket.layerWebSocketConstructorGlobal),
@@ -28,96 +28,96 @@ export class Live extends AtomRpc.Service<Live>()("Live", {
 
 export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "context" | "terminals" | "scripts" | "localServers" | "git" | "routines" | "pages" | "fileSkills"
 
-export const projectsAtom = Zero.query("projects", "list", { reactivityKeys: ["projects"] })
-export const agentsAtom = Zero.query("agents", "list", { reactivityKeys: ["agents"] })
-export const chatsAtom = Zero.query("chats", "list", { reactivityKeys: ["chats"] })
-export const memoriesAtom = Zero.query("memories", "list", { reactivityKeys: ["memories"] })
-export const serversAtom = Zero.query("tools", "list", { reactivityKeys: ["servers"] })
-export const signedInAtom = Zero.query("tools", "signedIn", { reactivityKeys: ["servers"] })
-export const accountsAtom = Zero.query("accounts", "list", { reactivityKeys: ["accounts"] })
-export const keysAtom = Zero.query("settings", "keys", { reactivityKeys: ["keys"] })
+export const projectsAtom = Zorel.query("projects", "list", { reactivityKeys: ["projects"] })
+export const agentsAtom = Zorel.query("agents", "list", { reactivityKeys: ["agents"] })
+export const chatsAtom = Zorel.query("chats", "list", { reactivityKeys: ["chats"] })
+export const memoriesAtom = Zorel.query("memories", "list", { reactivityKeys: ["memories"] })
+export const serversAtom = Zorel.query("tools", "list", { reactivityKeys: ["servers"] })
+export const signedInAtom = Zorel.query("tools", "signedIn", { reactivityKeys: ["servers"] })
+export const accountsAtom = Zorel.query("accounts", "list", { reactivityKeys: ["accounts"] })
+export const keysAtom = Zorel.query("settings", "keys", { reactivityKeys: ["keys"] })
 export const auditAtom = (query: { kind?: AuditKind; q?: string; from?: number; to?: number; page?: number }) =>
-  Zero.query("settings", "audit", { query, reactivityKeys: ["audit"] })
-export const storageAtom = Zero.query("settings", "storage", { reactivityKeys: ["storage"] })
-export const fileSkillsAtom = Zero.query("settings", "fileSkills", { reactivityKeys: ["fileSkills"] })
+  Zorel.query("settings", "audit", { query, reactivityKeys: ["audit"] })
+export const storageAtom = Zorel.query("settings", "storage", { reactivityKeys: ["storage"] })
+export const fileSkillsAtom = Zorel.query("settings", "fileSkills", { reactivityKeys: ["fileSkills"] })
 // How full the next turn of a chat is (the composer's context meter); read again when the meter opens.
-export const commandsAtom = (id: string) => Zero.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
-export const terminalsAtom = (id: string) => Zero.query("chats", "terminals", { params: { id }, reactivityKeys: ["terminals"] })
-export const pagesAtom = Zero.query("pages", "list", { reactivityKeys: ["pages"] })
-export const memoryVersionsAtom = (id: string) => Zero.query("memories", "versions", { params: { id }, reactivityKeys: ["memories"] })
-export const pageVersionsAtom = (id: string) => Zero.query("pages", "versions", { params: { id }, reactivityKeys: ["pages"] })
-export const routinesAtom = Zero.query("routines", "list", { reactivityKeys: ["routines"] })
-export const agentVersionsAtom = (id: string) => Zero.query("agents", "versions", { params: { id }, reactivityKeys: ["agents"] })
-export const gitAtom = (id: string) => Zero.query("chats", "git", { params: { id }, reactivityKeys: ["git"] })
-export const scriptsAtom = (id: string) => Zero.query("chats", "scripts", { params: { id }, reactivityKeys: ["scripts"] })
-export const localServersAtom = (id: string) => Zero.query("chats", "servers", { params: { id }, reactivityKeys: ["localServers"] })
-export const contextAtom = (id: string) => Zero.query("chats", "context", { params: { id }, reactivityKeys: ["context"] })
-export const modelsAtom = Zero.query("settings", "models", { reactivityKeys: ["models"] })
-export const usageAtom = Zero.query("settings", "usage", { reactivityKeys: ["usage"] })
-export const preferencesAtom = Zero.query("settings", "preferences", { reactivityKeys: ["preferences"] })
-export const topTurnsAtom = (since: number) => Zero.query("settings", "topTurns", { query: { since }, reactivityKeys: ["usage"] })
+export const commandsAtom = (id: string) => Zorel.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
+export const terminalsAtom = (id: string) => Zorel.query("chats", "terminals", { params: { id }, reactivityKeys: ["terminals"] })
+export const pagesAtom = Zorel.query("pages", "list", { reactivityKeys: ["pages"] })
+export const memoryVersionsAtom = (id: string) => Zorel.query("memories", "versions", { params: { id }, reactivityKeys: ["memories"] })
+export const pageVersionsAtom = (id: string) => Zorel.query("pages", "versions", { params: { id }, reactivityKeys: ["pages"] })
+export const routinesAtom = Zorel.query("routines", "list", { reactivityKeys: ["routines"] })
+export const agentVersionsAtom = (id: string) => Zorel.query("agents", "versions", { params: { id }, reactivityKeys: ["agents"] })
+export const gitAtom = (id: string) => Zorel.query("chats", "git", { params: { id }, reactivityKeys: ["git"] })
+export const scriptsAtom = (id: string) => Zorel.query("chats", "scripts", { params: { id }, reactivityKeys: ["scripts"] })
+export const localServersAtom = (id: string) => Zorel.query("chats", "servers", { params: { id }, reactivityKeys: ["localServers"] })
+export const contextAtom = (id: string) => Zorel.query("chats", "context", { params: { id }, reactivityKeys: ["context"] })
+export const modelsAtom = Zorel.query("settings", "models", { reactivityKeys: ["models"] })
+export const usageAtom = Zorel.query("settings", "usage", { reactivityKeys: ["usage"] })
+export const preferencesAtom = Zorel.query("settings", "preferences", { reactivityKeys: ["preferences"] })
+export const topTurnsAtom = (since: number) => Zorel.query("settings", "topTurns", { query: { since }, reactivityKeys: ["usage"] })
 export const approvalsAtom = Live.query("approvals", undefined, { reactivityKeys: ["approvals"] })
 
 // Workspace (ARCHITECTURE §9.1): one turn's diff, the project's files marked with what this chat changed,
 // and the commands the agents ran. All refetch when a turn settles ("workspace" key).
-export const diffAtom = (turnId: string) => Zero.query("chats", "diff", { params: { id: turnId }, reactivityKeys: ["workspace"] })
-export const filesAtom = (projectId: string, chatId: string) => Zero.query("projects", "files", { params: { id: projectId }, query: { chatId }, reactivityKeys: ["workspace"] })
+export const diffAtom = (turnId: string) => Zorel.query("chats", "diff", { params: { id: turnId }, reactivityKeys: ["workspace"] })
+export const filesAtom = (projectId: string, chatId: string) => Zorel.query("projects", "files", { params: { id: projectId }, query: { chatId }, reactivityKeys: ["workspace"] })
 
 // ---------- mutations ----------
 
 export const mutations = {
-  createProject: Zero.mutation("projects", "create"),
-  updateProject: Zero.mutation("projects", "update"),
-  removeProject: Zero.mutation("projects", "remove"),
-  createAgent: Zero.mutation("agents", "create"),
-  updateAgent: Zero.mutation("agents", "update"),
-  removeAgent: Zero.mutation("agents", "remove"),
-  restoreAgent: Zero.mutation("agents", "restore"),
-  builder: Zero.mutation("agents", "builder"),
-  pause: Zero.mutation("settings", "pause"),
-  rewind: Zero.mutation("chats", "rewind"),
-  createPage: Zero.mutation("pages", "create"),
-  updatePage: Zero.mutation("pages", "update"),
-  removePage: Zero.mutation("pages", "remove"),
-  restorePage: Zero.mutation("pages", "restore"),
-  restoreMemory: Zero.mutation("memories", "restore"),
-  createRoutine: Zero.mutation("routines", "create"),
-  updateRoutine: Zero.mutation("routines", "update"),
-  removeRoutine: Zero.mutation("routines", "remove"),
-  runRoutine: Zero.mutation("routines", "run"),
-  createChat: Zero.mutation("chats", "create"),
-  updateChat: Zero.mutation("chats", "update"),
-  reorderChats: Zero.mutation("chats", "reorder"),
-  reorderProjects: Zero.mutation("projects", "reorder"),
-  removeChat: Zero.mutation("chats", "remove"),
-  closeTerminal: Zero.mutation("chats", "closeTerminal"),
-  openFile: Zero.mutation("chats", "openFile"),
-  stopServer: Zero.mutation("chats", "stopServer"),
-  gitDraft: Zero.mutation("chats", "gitDraft"),
-  gitCommit: Zero.mutation("chats", "gitCommit"),
-  gitPush: Zero.mutation("chats", "gitPush"),
-  gitPr: Zero.mutation("chats", "gitPr"),
-  gitBranch: Zero.mutation("chats", "gitBranch"),
-  enterWorktree: Zero.mutation("chats", "enterWorktree"),
-  leaveWorktree: Zero.mutation("chats", "leaveWorktree"),
-  consolidate: Zero.mutation("chats", "consolidate"),
-  createMemory: Zero.mutation("memories", "create"),
-  updateMemory: Zero.mutation("memories", "update"),
-  createServer: Zero.mutation("tools", "create"),
-  updateServer: Zero.mutation("tools", "update"),
-  removeServer: Zero.mutation("tools", "remove"),
-  inspectServer: Zero.mutation("tools", "inspect"),
-  signInServer: Zero.mutation("tools", "signIn"),
-  createAccount: Zero.mutation("accounts", "create"),
-  removeAccount: Zero.mutation("accounts", "remove"),
-  login: Zero.mutation("accounts", "login"),
-  setKey: Zero.mutation("settings", "setKey"),
-  undo: Zero.mutation("chats", "undo"),
-  readLimits: Zero.mutation("accounts", "limits"),
-  cleanStorage: Zero.mutation("settings", "cleanStorage"),
-  pickFileSkill: Zero.mutation("settings", "pickFileSkill"),
-  nativeSkills: Zero.mutation("settings", "nativeSkills"),
-  acceptFailoverTerms: Zero.mutation("settings", "acceptFailoverTerms"),
+  createProject: Zorel.mutation("projects", "create"),
+  updateProject: Zorel.mutation("projects", "update"),
+  removeProject: Zorel.mutation("projects", "remove"),
+  createAgent: Zorel.mutation("agents", "create"),
+  updateAgent: Zorel.mutation("agents", "update"),
+  removeAgent: Zorel.mutation("agents", "remove"),
+  restoreAgent: Zorel.mutation("agents", "restore"),
+  builder: Zorel.mutation("agents", "builder"),
+  pause: Zorel.mutation("settings", "pause"),
+  rewind: Zorel.mutation("chats", "rewind"),
+  createPage: Zorel.mutation("pages", "create"),
+  updatePage: Zorel.mutation("pages", "update"),
+  removePage: Zorel.mutation("pages", "remove"),
+  restorePage: Zorel.mutation("pages", "restore"),
+  restoreMemory: Zorel.mutation("memories", "restore"),
+  createRoutine: Zorel.mutation("routines", "create"),
+  updateRoutine: Zorel.mutation("routines", "update"),
+  removeRoutine: Zorel.mutation("routines", "remove"),
+  runRoutine: Zorel.mutation("routines", "run"),
+  createChat: Zorel.mutation("chats", "create"),
+  updateChat: Zorel.mutation("chats", "update"),
+  reorderChats: Zorel.mutation("chats", "reorder"),
+  reorderProjects: Zorel.mutation("projects", "reorder"),
+  removeChat: Zorel.mutation("chats", "remove"),
+  closeTerminal: Zorel.mutation("chats", "closeTerminal"),
+  openFile: Zorel.mutation("chats", "openFile"),
+  stopServer: Zorel.mutation("chats", "stopServer"),
+  gitDraft: Zorel.mutation("chats", "gitDraft"),
+  gitCommit: Zorel.mutation("chats", "gitCommit"),
+  gitPush: Zorel.mutation("chats", "gitPush"),
+  gitPr: Zorel.mutation("chats", "gitPr"),
+  gitBranch: Zorel.mutation("chats", "gitBranch"),
+  enterWorktree: Zorel.mutation("chats", "enterWorktree"),
+  leaveWorktree: Zorel.mutation("chats", "leaveWorktree"),
+  consolidate: Zorel.mutation("chats", "consolidate"),
+  createMemory: Zorel.mutation("memories", "create"),
+  updateMemory: Zorel.mutation("memories", "update"),
+  createServer: Zorel.mutation("tools", "create"),
+  updateServer: Zorel.mutation("tools", "update"),
+  removeServer: Zorel.mutation("tools", "remove"),
+  inspectServer: Zorel.mutation("tools", "inspect"),
+  signInServer: Zorel.mutation("tools", "signIn"),
+  createAccount: Zorel.mutation("accounts", "create"),
+  removeAccount: Zorel.mutation("accounts", "remove"),
+  login: Zorel.mutation("accounts", "login"),
+  setKey: Zorel.mutation("settings", "setKey"),
+  undo: Zorel.mutation("chats", "undo"),
+  readLimits: Zorel.mutation("accounts", "limits"),
+  cleanStorage: Zorel.mutation("settings", "cleanStorage"),
+  pickFileSkill: Zorel.mutation("settings", "pickFileSkill"),
+  nativeSkills: Zorel.mutation("settings", "nativeSkills"),
+  acceptFailoverTerms: Zorel.mutation("settings", "acceptFailoverTerms"),
   send: Live.mutation("send"),
   steer: Live.mutation("steer"),
   interrupt: Live.mutation("interrupt"),
@@ -126,7 +126,7 @@ export const mutations = {
 
 // Refetch resources the server changed on its own (a chat titled after its first message, memories
 // proposed by a summary, an account that finished signing in).
-export const invalidateAtom = Zero.runtime.fn((keys: ReadonlyArray<Key>) => Reactivity.invalidate(keys))
+export const invalidateAtom = Zorel.runtime.fn((keys: ReadonlyArray<Key>) => Reactivity.invalidate(keys))
 
 // ---------- hooks ----------
 

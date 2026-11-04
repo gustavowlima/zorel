@@ -160,7 +160,7 @@ export const SendPayload = {
   attachmentIds: Schema.optional(Schema.Array(Schema.String).check(Schema.isMaxLength(MAX_ATTACHMENTS))) // uploaded first (POST /api/chats/:id/attachments)
 }
 
-export const ZeroRpc = RpcGroup.make(
+export const ZorelRpc = RpcGroup.make(
   Rpc.make("send", { payload: SendPayload, success: Schema.Struct({ turnId: Id }), error: ChatNotFound }),
   Rpc.make("steer", {
     payload: { chatId: Id, text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100_000)), attachmentIds: Schema.optional(Schema.Array(Schema.String).check(Schema.isMaxLength(MAX_ATTACHMENTS))) },

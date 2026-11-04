@@ -3,7 +3,7 @@
 // (audit.tsx), General (the theme and the preferences to come).
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
-import { formatAge, t } from "@zero/i18n"
+import { formatAge, t } from "@zorel/i18n"
 import { type ReactNode, useEffect, useState } from "react"
 import { agentsAtom, fileSkillsAtom, memoriesAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { scopeLabel } from "../labels.ts"
@@ -122,7 +122,7 @@ function Skills() {
 // ---------- the harnesses' own skills ----------
 
 // Claude Code and Codex come with skills of their own (the person's ~/.claude/skills, plugins, Codex's). Off by
-// default (Zero gives the context); on, they use them as in their own app. Takes effect in each chat's next session.
+// default (Zorel gives the context); on, they use them as in their own app. Takes effect in each chat's next session.
 function NativeSkills() {
   const prefs = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)
   const set = useMutation(mutations.nativeSkills)
@@ -143,7 +143,7 @@ function NativeSkills() {
 
 // ---------- skills on this computer ----------
 
-// The SKILL.md files already here (Claude Code, Codex, other agents, plugins): pick which ones Zero's agents use.
+// The SKILL.md files already here (Claude Code, Codex, other agents, plugins): pick which ones Zorel's agents use.
 // A picked skill shows in their list of skills and is read from its file when they need it (always current).
 const SOURCES = ["claude", "agents", "codex", "plugin"] as const
 function FileSkills() {
@@ -215,9 +215,9 @@ function FileSkills() {
 
 // ---------- general ----------
 
-// Desktop only: open Zero when you log in, without a window, so routines run after a restart.
+// Desktop only: open Zorel when you log in, without a window, so routines run after a restart.
 type LoginItem = { get: () => Promise<boolean>; set: (on: boolean) => Promise<boolean> }
-const loginItem = (window as { zeroDesktop?: { openAtLogin?: LoginItem } }).zeroDesktop?.openAtLogin
+const loginItem = (window as { zorelDesktop?: { openAtLogin?: LoginItem } }).zorelDesktop?.openAtLogin
 function StartupSetting() {
   const [on, setOn] = useState<boolean>()
   useEffect(() => {

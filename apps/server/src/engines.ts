@@ -4,11 +4,11 @@
 //   We never read or store these CLIs' OAuth login (provider terms).
 // - api: direct call with a token via effect/ai (Anthropic, OpenAI, OpenRouter, Ollama…).
 // Since the context is ours, switching models between turns needs no handoff.
-// Tools always come through Zero's MCP gateway (tools.ts); the CLIs get no others.
+// Tools always come through Zorel's MCP gateway (tools.ts); the CLIs get no others.
 // CLI arguments and parsers derive from Tucano (Apache-2.0), see NOTICE.
 import { AnthropicClient, AnthropicLanguageModel } from "@effect/ai-anthropic"
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
-import type { Access, AccountWindow, FailureReason, ModelInfo } from "@zero/contracts"
+import type { Access, AccountWindow, FailureReason, ModelInfo } from "@zorel/contracts"
 import { acpRun, opencodeEnv } from "./engines/acp.ts"
 import { Context, Effect, Layer, Queue, Redacted, Stream } from "effect"
 import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
@@ -49,7 +49,7 @@ export interface Turn {
   readonly messages: ReadonlyArray<TurnMessage> // ends with a user message
   readonly cwd: string // empty directory: the CLI gets nobody's files
   readonly tools?: TurnTools | undefined
-  readonly access?: Access | undefined // what the agent may do without asking (ACP agents ask through Zero)
+  readonly access?: Access | undefined // what the agent may do without asking (ACP agents ask through Zorel)
   readonly web?: boolean | undefined // the agent may search and read the web (its permissions)
   // Characters of each part of the context (the composer's context meter estimates tokens from them).
   readonly parts?: { readonly instructions: number; readonly memories: number; readonly skills: number; readonly summary: number }
@@ -230,7 +230,7 @@ export function transcript(messages: ReadonlyArray<TurnMessage>): string {
   return `Conversa até aqui, da mais antiga para a mais nova:\n${lines}\n\nNova mensagem do usuário:\n${withFiles(last)}`
 }
 
-const GATEWAY = "zero"
+const GATEWAY = "zorel"
 
 export const claudeArgs = (t: Turn) => [
   "-p",
@@ -461,11 +461,11 @@ export interface OpenSession {
   readonly system: string // stable part of the context
   readonly cwd: string
   readonly gatewayUrl: string // stable for the session; the runtime swaps the tools behind it each turn
-  readonly dataDir: string // where Zero-owned account folders live (e.g. CODEX_HOME)
+  readonly dataDir: string // where Zorel-owned account folders live (e.g. CODEX_HOME)
   readonly account?: { readonly id: string; readonly home: string | null } | undefined // §6.1: whose login runs this session
   readonly access: Access // §9.2: what the agent may do in `cwd` without asking
   readonly web: boolean // the agent's web permission: the engine's own search/fetch tools on or off
-  readonly nativeSkills: boolean // the harness may use its own skills (the person's, its plugins'), not only Zero's
+  readonly nativeSkills: boolean // the harness may use its own skills (the person's, its plugins'), not only Zorel's
   readonly approve: Approver // asks the person (the approval card) for a native call
 }
 
@@ -503,8 +503,8 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
           // An API-key model in a chat turn runs in OpenCode (files, shell, edits, its tools) when it's installed;
           // internal tasks (summaries, titles) and machines without it keep the direct API engine.
           const p = PROVIDERS[provider]
-          // ZERO_API_ENGINE=direct keeps the direct engine (tests, or if OpenCode misbehaves).
-          if (p?.kind === "api" && t.tools && process.env.ZERO_API_ENGINE !== "direct" && Bun.which("opencode")) {
+          // ZOREL_API_ENGINE=direct keeps the direct engine (tests, or if OpenCode misbehaves).
+          if (p?.kind === "api" && t.tools && process.env.ZOREL_API_ENGINE !== "direct" && Bun.which("opencode")) {
             const key = p.key ? secrets.get(p.key) : undefined
             if (p.key && !key) return one({ type: "error", message: `Defina ${p.key} (em Configurações ou no ambiente) para usar ${provider}.`, failure: { reason: "auth" } })
             const { model } = splitModel(t.model)

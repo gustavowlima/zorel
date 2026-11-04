@@ -1,8 +1,8 @@
 // Needs you (prototype "Inbox"): every open approval across chats and every memory a summary proposed,
 // in one list. Agents wait here instead of guessing; deciding here is the same as deciding in the chat.
-import type { Agent, Memory } from "@zero/contracts"
-import type { Approval } from "@zero/contracts/events"
-import { formatAge, t } from "@zero/i18n"
+import type { Agent, Memory } from "@zorel/contracts"
+import type { Approval } from "@zorel/contracts/events"
+import { formatAge, t } from "@zorel/i18n"
 import { type ReactNode, useState } from "react"
 import { agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation } from "../client.ts"
 import { agentName, chatTitle, scopeLabel } from "../labels.ts"

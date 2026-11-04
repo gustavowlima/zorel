@@ -1,10 +1,10 @@
-// Settings › Providers: every way Zero reaches a model, one place. The list splits Connected from Other providers
+// Settings › Providers: every way Zorel reaches a model, one place. The list splits Connected from Other providers
 // (row lists on the canvas, like every Settings tab; "Checking…" while the first reading loads, an error with a
 // retry when it fails). A provider's page gathers its subscription sign-ins (the official CLI, several accounts,
 // each with its limit windows), its API key (system keychain, with where to get one), or whether its local server
-// is running, and the models it offers. Zero never reads or stores a CLI's login: it only shows who is connected.
-import type { AccountProvider, KeyInfo as KeyInfoSchema, ModelInfo, ProviderAccount } from "@zero/contracts"
-import { formatTime, t } from "@zero/i18n"
+// is running, and the models it offers. Zorel never reads or stores a CLI's login: it only shows who is connected.
+import type { AccountProvider, KeyInfo as KeyInfoSchema, ModelInfo, ProviderAccount } from "@zorel/contracts"
+import { formatTime, t } from "@zorel/i18n"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { type ReactNode, useEffect, useState } from "react"
@@ -96,7 +96,7 @@ function ProviderList() {
   const invalidate = useInvalidate()
   const open = (p: Provider) => go({ view: "settings", tab: "providers", provider: p.id })
   // One row per provider: who is connected (with a green dot), or what is missing and the next step right there
-  // (sign in, add a key); a local server that isn't running is started outside Zero, so it only says so.
+  // (sign in, add a key); a local server that isn't running is started outside Zorel, so it only says so.
   const row = (p: Provider, hint: { text: string; warning?: boolean }, state?: State) => {
     const on = !!state && connected(state)
     const action = state && !on ? (p.account ? t("providers.signInAction") : p.key ? t("providers.addKey") : undefined) : undefined

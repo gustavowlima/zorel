@@ -11,7 +11,7 @@ test("frontmatter: quoted, plain and folded values", () => {
 })
 
 test("discover: each source, plugins' newest version, a linked folder once; read drops the frontmatter", () => {
-  const home = mkdtempSync(join(tmpdir(), "zero-skills-"))
+  const home = mkdtempSync(join(tmpdir(), "zorel-skills-"))
   const skill = (dir: string, name: string) => {
     mkdirSync(join(dir, name), { recursive: true })
     writeFileSync(join(dir, name, "SKILL.md"), `---\nname: ${name}\ndescription: ${name} help\n---\n# ${name}\nsteps`)

@@ -33,7 +33,7 @@ test("Ring keeps the last bytes in order", () => {
 
 describe("project scripts", () => {
   test("lists package.json scripts and runs them with the lockfile's manager", () => {
-    const dir = mkdtempSync(join(tmpdir(), "zero-scripts-"))
+    const dir = mkdtempSync(join(tmpdir(), "zorel-scripts-"))
     writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { dev: "vite", "test:unit": "bun test", "bad name": "x", n: 1 } }))
     writeFileSync(join(dir, "bun.lock"), "")
     expect(scriptsOf(dir)).toEqual([{ name: "dev", command: "vite" }, { name: "test:unit", command: "bun test" }])

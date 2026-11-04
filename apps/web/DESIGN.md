@@ -1,5 +1,5 @@
 ---
-name: Zero
+name: Zorel
 description: Workspace de agentes de IA para código, escuro, compacto e silencioso.
 colors:
   frame: "#0d0d0d"
@@ -158,13 +158,13 @@ components:
     padding: "16px"
 ---
 
-# Design System: Zero
+# Design System: Zorel
 
 ## Overview
 
 **Creative North Star: "A Bancada Noturna"**
 
-O Zero é uma bancada de trabalho para quem passa horas com agentes no fim do dia: escura, compacta e silenciosa. A interface some atrás do trabalho. Quem fala é o conteúdo do chat, o código e as decisões dos agentes. O cromo é feito de cinzas quase pretos que se separam por tom, não por linha, e um único azul de sinal marca o que é acionável ou exige atenção.
+O Zorel é uma bancada de trabalho para quem passa horas com agentes no fim do dia: escura, compacta e silenciosa. A interface some atrás do trabalho. Quem fala é o conteúdo do chat, o código e as decisões dos agentes. O cromo é feito de cinzas quase pretos que se separam por tom, não por linha, e um único azul de sinal marca o que é acionável ou exige atenção.
 
 A densidade é de ferramenta profissional: controles de 28 a 32px, texto base de 13px, nada de espaço decorativo. A referência é o OpenBot, só como direção (nenhum código ou CSS copiado). O tema escuro é o padrão. O claro existe e só troca valores dos mesmos tokens; nenhum componente sabe em qual tema está.
 
@@ -306,7 +306,7 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Tooltip:** raised com borda forte, 12px de texto secondary, aparece após 500ms no hover e no foco do teclado; o gatilho é um `Button`/`IconButton` (React Aria).
 - **Popover** (`Popover`): folha de 16px em raised com borda forte para conteúdo interativo (seletor de modelo, quem responde). Esc e clique fora fecham; o foco volta ao gatilho. `FieldButton` é o gatilho com cara de campo dentro de formulários.
 
-### Navigation (redesign "Zero — main screen", absorvido em 2026-11-03)
+### Navigation (redesign "Zorel — main screen", absorvido em 2026-11-03)
 - **Barra lateral:** 248px sobre a moldura, ao lado do trilho de ícones (que leva o logo, os lugares, o consumo e Settings; ver Layout). Só duas seções que rolam, empilhadas com 20px entre elas: Chats (os chats sem projeto) e Projects (a árvore, com arrastar e soltar). O título de cada seção é texto muted sem ícone, recolhe e expande (lembrado neste computador) e tem um + à direita (novo chat, novo projeto). **Cada chat com agentes são duas linhas, sem ícone** (52px; sem agente, só a linha do título, 32px, com o estado num ponto ao lado da hora): em cima o título e, à direita, há quanto tempo mexeu (girando enquanto roda); embaixo, em muted, quem está nele — mini avatares de 16px sobrepostos (até 3) e os nomes ("Dev, Rev +1") —, ou, enquanto algo acontece, o estado em palavras (azul quando espera você, vermelho quando falhou). Os chats de cada grupo vêm primeiro os que esperam você, depois os que trabalham, depois a ordem manual e a atividade; cada grupo mostra 5 e um "mostrar mais". Enquanto há lista escondida embaixo, ela some num esmaecimento de 24px. O consumo (anéis) fica no pé do trilho: um por assinatura (a mais em risco primeiro, até 3, empilhados), 34px, um arco por janela de limite (concêntricos, a mais longa por fora; o arco é o % usado: verde, amarelo se o ritmo esvazia a janela antes de renovar ou a partir de 80%, vermelho a partir de 95%), o logo no centro; cada anel abre Usage e tem o próprio cartão (anéis por janela, a frase do ritmo e cada janela com % e quando renova).
 - **`NavLabel`:** 28px, 12px peso 500 muted, caixa normal. O ícone da seção (14px) ocupa a coluna de ícone; o título é um botão que recolhe e expande (seta de 12px depois do nome; lembrado neste computador); à direita um + de 24px.
 - **`NavItem`:** 32px, cantos de 8px, ícone de 16px muted numa caixa de 20px (a coluna de ícone), texto a partir de x50; hover em `hover`, nunca azul.
@@ -314,7 +314,7 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Chat:** duas linhas sem ícone (detalhadas no item Barra lateral); dentro de um projeto, recuadas sob o nome dele, no fio vertical. Ordem dentro de cada grupo: esperando você, trabalhando, depois a ordem manual e a atividade; 5 por grupo e "mostrar mais".
 
 ### Visualizador de imagem
-- Uma imagem do chat abre dentro do Zero (`ImageViewer`), nunca numa aba nova: modal sobre o app escurecido, a imagem o maior que couber (object-contain, borda forte, cantos de 12px) e, acima, uma barra com o nome, "Open original" e o fechar. Esc, clique fora ou o botão fecham; o foco volta à miniatura.
+- Uma imagem do chat abre dentro do Zorel (`ImageViewer`), nunca numa aba nova: modal sobre o app escurecido, a imagem o maior que couber (object-contain, borda forte, cantos de 12px) e, acima, uma barra com o nome, "Open original" e o fechar. Esc, clique fora ou o botão fecham; o foco volta à miniatura.
 
 ### Movimento
 - **Motion** (motion.dev, `motion/react`, em `ui/motion.tsx`) para o que o CSS não faz limpo: largura e altura de/para `auto` sem desmontar e uma forma deslizando entre lugares. Uma mola só no app (`spring`: sem quique, ~220ms visuais). `MotionConfig reducedMotion="user"` na raiz: com movimento reduzido no sistema, tudo troca de estado sem animar.
@@ -346,7 +346,7 @@ Compactos e diretos, com aperto físico ao pressionar.
   - com mudanças: campo da mensagem (mono), "Write it for me" (o modelo do chat escreve a partir do diff, no estilo dos commits recentes do repositório) e "Commit N files" (tudo o que está na pasta entra);
   - "Push N commits" ou "Publish branch" (sem upstream); o PR aberto da branch como link (#12 título ↗), ou "Create pull request" (fora da branch principal, com `gh` instalado): o modelo rascunha título e descrição, editáveis antes de abrir;
   - "New branch" leva o trabalho atual para uma branch nova;
-  - "Work in a worktree" dá ao chat a própria pasta numa branch nova (nome vazio = `zero/<título>-<id>`): agentes, shells novos, checkpoints e desfazer passam a usar essa pasta, e a do projeto fica como está. No chat em worktree o botão mostra o ícone de pasta e o popover mostra o caminho e "Back to the project folder", que só remove a worktree sem nada por commitar (a branch fica). Apagar o chat remove a worktree limpa.
+  - "Work in a worktree" dá ao chat a própria pasta numa branch nova (nome vazio = `zorel/<título>-<id>`): agentes, shells novos, checkpoints e desfazer passam a usar essa pasta, e a do projeto fica como está. No chat em worktree o botão mostra o ícone de pasta e o popover mostra o caminho e "Back to the project folder", que só remove a worktree sem nada por commitar (a branch fica). Apagar o chat remove a worktree limpa.
 - Erros aparecem com as palavras do git, em mono e danger; cada passo concluído vira uma linha success. Commit, push, branch e PR entram no Audit log (tipo Projects).
 
 ### Editar daqui
@@ -362,7 +362,7 @@ Compactos e diretos, com aperto físico ao pressionar.
 - Em Changes, selecionar linhas do diff (clique ou arraste nos números) marca o trecho e abre uma caixa embaixo dele: "What should change here?", Cancel (ou Esc) e "Add to chat" (ou ⌘Enter). O comentário vai para o campo de mensagem como texto: "Review comment on `arquivo` lines 12–14 (new): …", para o agente agir.
 
 ### Menu de contexto
-- O menu nativo do navegador não aparece no app (só em campos de texto e no terminal, para copiar e colar). Onde há ações, o clique direito (ou a tecla Menu / Shift+F10) abre o `ContextMenu` do Zero, o mesmo visual do menu ⋯, ancorado no ponteiro (ou sob o item focado). Na barra lateral: chat → Open, Rename, Delete; projeto → Open, New chat in…, Settings of…, Delete project. Excluir sempre confirma.
+- O menu nativo do navegador não aparece no app (só em campos de texto e no terminal, para copiar e colar). Onde há ações, o clique direito (ou a tecla Menu / Shift+F10) abre o `ContextMenu` do Zorel, o mesmo visual do menu ⋯, ancorado no ponteiro (ou sob o item focado). Na barra lateral: chat → Open, Rename, Delete; projeto → Open, New chat in…, Settings of…, Delete project. Excluir sempre confirma.
 
 ### Navegador
 - Aba Browser do painel lateral: abas em pílula com ×, +, depois voltar / avançar / recarregar e o endereço (Enter abre), uma faixa de quem segura o navegador e a página ao vivo (quadros JPEG do screencast, na proporção 1280×800).
@@ -373,7 +373,7 @@ Compactos e diretos, com aperto físico ao pressionar.
 - Item "Agents" na barra lateral, entre Needs you e Knowledge (fica ativo também na página de um agente). Uma tela com coluna central: **Global** (com a dica "Available in every project" e o vazio "No global agents yet") e depois cada projeto que tem agentes, cada um com um + discreto para criar ali. "New agent" no cabeçalho cria um global.
 - Linha do agente (a mesma da aba Agents do projeto): avatar, nome com "● working" em accent quando um chat dele está rodando, título (ou descrição, ou a 1ª linha das instruções), modelo, acesso e ›.
 - **Build with AI** (cabeçalho da tela Agents e aba Agents do projeto, ghost com ✦): abre um chat "Build agents" com o Builder; ele propõe a equipe inteira num cartão de aprovação (cada perfil sob o nome).
-- Agentes também nascem no chat: um agente usa `zero_create_agent` / `zero_update_agent` e o pedido vira um **cartão de aprovação** com o perfil campo a campo; nada é criado sem o OK. A lista se atualiza ao fim do turno.
+- Agentes também nascem no chat: um agente usa `zorel_create_agent` / `zorel_update_agent` e o pedido vira um **cartão de aprovação** com o perfil campo a campo; nada é criado sem o OK. A lista se atualiza ao fim do turno.
 
 ### Páginas de conhecimento
 - Tela Knowledge, aba **Pages** (ao lado de Facts e Skills): lista com título (alfinete quando fixada), escopo e quando mudou; "New" cria uma página quando a aba está aberta. A página abre lida em Markdown (o mesmo visual do chat), com "PAGE" em accent, escopo e "updated …"; Pin/Unpin e Edit. Editar troca por título + texto Markdown em mono, com Save, Cancel e Delete (confirma). Embaixo, **Versions**: cada versão com quem fez (You ou o agente) e quando; Restore volta qualquer uma como versão nova.
@@ -383,8 +383,8 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Connectors** (Settings): grade de duas colunas de cartões (fio sutil, `rounded-card`, sem fundo), cada um com a marca do serviço (`simple-icons`, CC0, numa cor só sobre um quadrado `bg-control`; `Plug` quando não há marca), nome, uma linha do que dá acesso e uma ação: "Connect" (secundário), "Reconnect" com a linha "Sign in again" em `warning` quando o serviço recusou a credencial ou o login ficou pela metade (com ⋯ para desconectar), ou "Connected". O ⋯ de um conector tem "Test connection", que conecta e lista as ferramentas: a linha vira "N tools working" em `success` ou "Didn't connect" em `danger`. Conectar com token ou sem login já roda esse teste na hora (um token ruim aparece já, não no primeiro turno do agente) (badge verde) com ⋯ › Disconnect. Enquanto o login está aberto no navegador, a linha diz "Finish signing in, in your browser…" e o botão gira. GitHub abre o campo do token no próprio cartão, com "Create a token". Abaixo, "Custom servers" com a lista e o formulário de sempre (sem o antigo catálogo de pílulas).
 
 ### Versões do agente
-- **Settings: uma linha só** (`ListRow`): 56px entre fios retos, conteúdo alinhado ao título da seção (sem recuo), seta à direita; o hover é um realce suave por dentro dos fios (inset, nunca um cartão sobre eles). Uma ação própria na linha (`trailing`) é um botão com contorno, legível sobre o realce. Em **Providers** cada linha diz o estado: conectado com ponto verde e a conta (nunca repetindo o nome do provedor), e o próximo passo na própria linha ("Sign in", "Add key"); um servidor local parado só diz "Not running" (resolve-se fora do Zero). O item ativo da navegação de Settings tem fundo `control` (no cartão, o `canvas` da barra lateral sumiria). Listas vazias usam `EmptyState` com a ação principal em azul. General separa **Appearance** e **Notifications**. O formulário de novo servidor MCP fica entre fios, sem cartão. No histórico de auditoria, sob o dia, só a hora; "by you" / "by Builder"; a seta anda junto do valor novo.
-- **Agents** (como no OpenBot e no Tucano, mas em página): um único botão primário **New agent** com menu — Build with AI, Blank agent, Import from file — e, em cada projeto, um "+" com o mesmo menu já no projeto. Linhas de 56px: avatar, nome (e "working"), papel, modelo; o ⋯ (aparece no hover ou foco) abre, exporta ou apaga. O Builder não aparece na lista nem nos seletores (é do Zero).
+- **Settings: uma linha só** (`ListRow`): 56px entre fios retos, conteúdo alinhado ao título da seção (sem recuo), seta à direita; o hover é um realce suave por dentro dos fios (inset, nunca um cartão sobre eles). Uma ação própria na linha (`trailing`) é um botão com contorno, legível sobre o realce. Em **Providers** cada linha diz o estado: conectado com ponto verde e a conta (nunca repetindo o nome do provedor), e o próximo passo na própria linha ("Sign in", "Add key"); um servidor local parado só diz "Not running" (resolve-se fora do Zorel). O item ativo da navegação de Settings tem fundo `control` (no cartão, o `canvas` da barra lateral sumiria). Listas vazias usam `EmptyState` com a ação principal em azul. General separa **Appearance** e **Notifications**. O formulário de novo servidor MCP fica entre fios, sem cartão. No histórico de auditoria, sob o dia, só a hora; "by you" / "by Builder"; a seta anda junto do valor novo.
+- **Agents** (como no OpenBot e no Tucano, mas em página): um único botão primário **New agent** com menu — Build with AI, Blank agent, Import from file — e, em cada projeto, um "+" com o mesmo menu já no projeto. Linhas de 56px: avatar, nome (e "working"), papel, modelo; o ⋯ (aparece no hover ou foco) abre, exporta ou apaga. O Builder não aparece na lista nem nos seletores (é do Zorel).
 - **Poderes como escolhas simples** (como no Tucano, "dê ferramentas, não chaves"): uma linha por poder com ícone em tile, o que ele significa numa frase e um segmentado à direita — Files and commands (Read / Read and write / Everything, a dica em warning no Everything), The web (No access / Read), Its own browser (No access / Use it), cada conector (No access / Read / Read and write). O mesmo editor na aba Tools and access e no passo Powers do Build with AI.
 - **Build with AI em tela cheia, um passo de cada vez:** um indicador numerado no topo (1 Describe — 2 Powers; feito com check, atual em accent); Describe é a conversa com a prévia à direita; Powers ocupa uma coluna central de 672px com título em pergunta ("What can Tester do?"), uma linha de explicação e a navegação fixa no rodapé (Back à esquerda, "Create Tester" à direita), que cria o agente com esses poderes e abre a página dele. Sem passo de primeira tarefa (decisão do usuário). Antes:
 - **Build with AI segue o Tucano em três passos** (Agent → Powers → First task, indicados no topo do painel): a proposta com o motivo e "Use this agent"; os poderes pré-preenchidos com o mínimo que o Builder sugeriu (acesso, web, navegador, conectores; o editor da aba Tools and access); a primeira tarefa editável e "Create X and send", que cria o agente, aplica os poderes ajustados, abre o chat com ele e envia a tarefa (vazia: só cria e abre a página do agente). Uma proposta de equipe é criada de uma vez ("Create all N"). O cartão de aprovação da proposta não se repete na conversa. Antes:
@@ -395,7 +395,7 @@ Compactos e diretos, com aperto físico ao pressionar.
 - **Página do agente em abas** (como no Tucano): **Profile** (nome, título, descrição, modelo e alternativas, instruções), **Tools and access** (cartões de nível de acesso em "Computer and files"; "Web and browser" com dois switches; "Connectors", uma linha por servidor MCP com segmentado No access / Read / Read and write; "Always allowed", chips com × para revogar; uma linha dim lembrando que apagar, enviar, publicar e pagar sempre esperam você) e **Knowledge and activity** (memórias e skills, uso, rotinas, histórico; só com o agente criado). Um "Save" no cabeçalho salva todas as abas.
 - No cartão de aprovação, **Always allow** (secundário, entre Deny e Allow) só aparece quando a ação pode ser liberada de vez; o tooltip diz onde desfazer.
 - Na página do agente, a seção **History** (só a partir de duas versões): uma linha por versão, a mais nova primeiro — `vN` em mono, os campos que mudaram em relação à anterior ("Instructions, model"; a primeira diz "Created"), quem mudou ("You" ou o nome do agente que propôs) e quando. A atual diz "Current"; as outras têm "Restore", que confirma antes e grava o perfil antigo como uma versão nova (nada se perde).
-- Menu ⋯ do agente: **Export** baixa `<nome>.agent.json` (perfil sem conta: a conta é deste computador). Na tela Agents, **Import** lê esse arquivo e cria um agente global, que abre em seguida; um arquivo que não é de agente do Zero mostra o erro ao lado do botão.
+- Menu ⋯ do agente: **Export** baixa `<nome>.agent.json` (perfil sem conta: a conta é deste computador). Na tela Agents, **Import** lê esse arquivo e cria um agente global, que abre em seguida; um arquivo que não é de agente do Zorel mostra o erro ao lado do botão.
 
 ### Rotinas
 - Seção **Routines** na página do agente (fora do formulário do perfil): "New routine" abre um formulário em cartão (nome, "What to do each run", "When" com atalhos — toda hora, todo dia 9:00, dias úteis 9:00, segundas 9:00, só sob demanda, personalizado com padrão cron em mono — e um switch para o webhook local).
@@ -425,9 +425,9 @@ Compactos e diretos, com aperto físico ao pressionar.
   - `#` escolhe quem responde (vira o líder do chat; entra no chat se não estava) e não deixa nada no texto;
   - `@` menciona um membro (chip azul, enviado como `@handle`) ou um arquivo do projeto (chip neutro com o caminho, enviado como `@caminho`; o agente lê com as ferramentas dele). Membros primeiro, depois os arquivos; um arquivo casa também pelo nome;
   - `$` cita uma skill: chip neutro, enviado como `$handle`, e o turno leva o passo a passo dela;
-  - `/` no começo da linha roda um comando do Zero (compactar, novo chat, changes, terminal).
+  - `/` no começo da linha roda um comando do Zorel (compactar, novo chat, changes, terminal).
 - **Fila:** o que se envia durante um turno espera num cartão colado acima da barra (uma linha por mensagem: orientar agora, editar, apagar) e sai sozinho quando o chat fica livre. Fica guardada neste computador.
-- **Medidor de contexto:** o anel mostra o quanto da janela do modelo o próximo turno ocupa (aviso a partir de 80%); o popover divide em instruções, memórias, skills, resumo e mensagens (estimativa), mostra o que a última resposta leu de verdade, quando o Zero compacta sozinho, e oferece compactar agora ou novo chat.
+- **Medidor de contexto:** o anel mostra o quanto da janela do modelo o próximo turno ocupa (aviso a partir de 80%); o popover divide em instruções, memórias, skills, resumo e mensagens (estimativa), mostra o que a última resposta leu de verdade, quando o Zorel compacta sozinho, e oferece compactar agora ou novo chat.
 - Quem participa do chat (adicionar, remover, líder) fica no cabeçalho, nos avatares dos membros.
 
 ### Chat (componente assinatura)

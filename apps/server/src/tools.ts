@@ -1,7 +1,7 @@
 // Agent tools via MCP.
 // - Hub: connections to the configured MCP servers (stdio or http), reused across turns.
 // - Gateway: a local MCP server; each turn opens a session with a secret URL and only the allowed
-//   tools. It's the only tool source for any engine (CLI or API): Zero decides.
+//   tools. It's the only tool source for any engine (CLI or API): Zorel decides.
 // Classification and the per-turn gateway model derive from Tucano (Apache-2.0), see NOTICE.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
@@ -9,7 +9,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import type { McpServer, ToolInfo } from "@zero/contracts"
+import type { McpServer, ToolInfo } from "@zorel/contracts"
 import { Context, Effect, Layer } from "effect"
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
 import { McpOAuth } from "./oauth.ts"
@@ -60,7 +60,7 @@ export class Hub {
     const cached = this.clients.get(s.id)
     if (cached) return cached
     const p = (async () => {
-      const client = new Client({ name: "zero", version: "0.1.0" })
+      const client = new Client({ name: "zorel", version: "0.1.0" })
       const env = mcpEnv(this.secrets, s.id)
       const transport = s.url
         ? new StreamableHTTPClientTransport(new URL(s.url), {
@@ -157,7 +157,7 @@ export class Gateway {
     const session = token ? this.sessions.get(token) : undefined
     if (!session) return new Response(null, { status: 404 })
     // Stateless: one MCP server per request, bound to this session's tools.
-    const server = new Server({ name: "zero", version: "0.1.0" }, { capabilities: { tools: {} } })
+    const server = new Server({ name: "zorel", version: "0.1.0" }, { capabilities: { tools: {} } })
     server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: session.tools.map((t) => ({ ...t, inputSchema: { type: "object" as const, ...t.inputSchema } })) }))
     server.setRequestHandler(CallToolRequestSchema, async (r) => {
       // Defense in depth: a tool outside the turn's list never runs.

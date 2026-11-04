@@ -5,7 +5,7 @@
 // Each layer has a budget; what doesn't fit stays searchable (FTS) and comes back when relevant.
 // Rolling summary + memories + proposed skills model derived from Tucano (Apache-2.0), see NOTICE.
 import { join } from "node:path"
-import type { Agent, Chat, Memory, Message, Project } from "@zero/contracts"
+import type { Agent, Chat, Memory, Message, Project } from "@zorel/contracts"
 import { normalize } from "./db.ts"
 import type { Turn, TurnMessage, TurnTools } from "./engines.ts"
 
@@ -99,13 +99,13 @@ export function buildTurn(i: TurnInput): Turn {
     i.project?.path &&
       section(
         "Workspace",
-        `Você trabalha na pasta do projeto: ${i.project.path}. Leia, edite e rode comandos nela com as suas ferramentas; o Zero pede a aprovação do usuário quando o seu nível de acesso exige. Cada turno vira um ponto de restauração, e o usuário pode desfazer o que você mudou.`
+        `Você trabalha na pasta do projeto: ${i.project.path}. Leia, edite e rode comandos nela com as suas ferramentas; o Zorel pede a aprovação do usuário quando o seu nível de acesso exige. Cada turno vira um ponto de restauração, e o usuário pode desfazer o que você mudou.`
       )
   ]
   const workMemories = [i.project && section("Memórias do projeto", bullets(of(`project:${i.project.id}`))), i.agent && section("Suas memórias de trabalho", bullets(of(`agent:${i.agent.id}`)))]
-  const skillList = section("Skills disponíveis (procedimentos aprovados; siga quando a tarefa casar: leia os passos com zero_read_skill; se achar um jeito melhor, proponha com zero_propose_skill e improves)", i.skills.all.slice(0, SKILL_TITLES).map((s) => `- ${s.title}`).join("\n"))
-  // Pinned pages: titles only (stable, cheap); the body comes with zero_knowledge_read when needed.
-  const pageList = section("Páginas de conhecimento fixadas (leia com zero_knowledge_read; busque outras com zero_knowledge_search)", (i.pages ?? []).map((p) => `- ${p.title} [${p.id}]`).join("\n"))
+  const skillList = section("Skills disponíveis (procedimentos aprovados; siga quando a tarefa casar: leia os passos com zorel_read_skill; se achar um jeito melhor, proponha com zorel_propose_skill e improves)", i.skills.all.slice(0, SKILL_TITLES).map((s) => `- ${s.title}`).join("\n"))
+  // Pinned pages: titles only (stable, cheap); the body comes with zorel_knowledge_read when needed.
+  const pageList = section("Páginas de conhecimento fixadas (leia com zorel_knowledge_read; busque outras com zorel_knowledge_search)", (i.pages ?? []).map((p) => `- ${p.title} [${p.id}]`).join("\n"))
   const stable = [...instructions, userMemories, ...projectParts, ...workMemories, skillList, pageList].filter(Boolean).join("\n\n")
   // Dynamic: depends on the current message; in a native session it goes with the turn's message.
   const skillBodies = i.skills.relevant.map((s) => section(`Skill: ${s.title}`, s.text))

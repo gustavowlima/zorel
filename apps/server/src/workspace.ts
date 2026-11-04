@@ -1,9 +1,9 @@
 // Workspace (ARCHITECTURE §9.1, D17 port): where a project's agents work, and the checkpoints of each turn.
-// The project's own git repository is never touched. Zero keeps a shadow repository per project in its data
+// The project's own git repository is never touched. Zorel keeps a shadow repository per project in its data
 // folder (GIT_DIR there, GIT_WORK_TREE = the project folder) and records a git tree before and after every
 // turn. The diff of a turn and its undo come from those two trees, the same for every harness.
 // Ignored files (the project's .gitignore, plus node_modules) are outside the checkpoints.
-import { type FileChange, type FileDiff, type Project, WorkspaceInvalid, type WorkspaceFile, MAX_WORKSPACE_FILES } from "@zero/contracts"
+import { type FileChange, type FileDiff, type Project, WorkspaceInvalid, type WorkspaceFile, MAX_WORKSPACE_FILES } from "@zorel/contracts"
 import { Context, Effect, Layer, Semaphore } from "effect"
 import { existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -17,7 +17,7 @@ const STATUS: Record<string, Status> = { A: "added", M: "modified", D: "deleted"
 export interface WorkspaceService {
   // The folder as stored: absolute, real, an existing directory, and not one agents must never own.
   readonly validate: (path: string) => Effect.Effect<string, WorkspaceInvalid>
-  // Where a chat's agents work: the project folder, or an empty Zero folder for the chat.
+  // Where a chat's agents work: the project folder, or an empty Zorel folder for the chat.
   readonly cwdOf: (chatId: string, project: Project | undefined) => string
   // Checkpoint of the project folder (a git tree id); null when there's no folder or no git.
   readonly snapshot: (project: Project | undefined) => Effect.Effect<string | null>
@@ -50,7 +50,7 @@ export class Workspace extends Context.Service<Workspace, WorkspaceService>()("W
       const git = async (projectId: string, workTree: string, args: string[], allowFail = false) => {
         const env: Record<string, string> = {}
         for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
-        Object.assign(env, { GIT_DIR: gitDir(projectId), GIT_WORK_TREE: workTree, GIT_AUTHOR_NAME: "Zero", GIT_AUTHOR_EMAIL: "zero@localhost", GIT_COMMITTER_NAME: "Zero", GIT_COMMITTER_EMAIL: "zero@localhost" })
+        Object.assign(env, { GIT_DIR: gitDir(projectId), GIT_WORK_TREE: workTree, GIT_AUTHOR_NAME: "Zorel", GIT_AUTHOR_EMAIL: "zorel@localhost", GIT_COMMITTER_NAME: "Zorel", GIT_COMMITTER_EMAIL: "zorel@localhost" })
         const proc = Bun.spawn([gitBin!, "-c", "core.quotepath=false", "-c", "core.autocrlf=false", ...args], { cwd: workTree, env, stdout: "pipe", stderr: "pipe" })
         const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
         if (code !== 0 && !allowFail) throw new Error(`git ${args[0]}: ${err.trim() || `exit ${code}`}`)

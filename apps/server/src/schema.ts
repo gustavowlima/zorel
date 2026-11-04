@@ -1,17 +1,17 @@
 // Database schema (Drizzle). Mirrors the tables the MVP created with hand-written SQL, column by column,
 // so the existing database is adopted without copying (see migrate.ts). Changed something here? `bun run db:generate`.
-import type { AccountUsage, AgentPermissions, FailoverTarget, FileChange, Switch } from "@zero/contracts"
+import type { AccountUsage, AgentPermissions, FailoverTarget, FileChange, Switch } from "@zorel/contracts"
 import { sql } from "drizzle-orm"
 import { check, index, integer, primaryKey, real, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
 
 // Provider accounts (ARCHITECTURE §6.1). Subscription logins live in `home` (a CLI config folder);
-// Zero never reads the token inside it. `identity` is what the CLI reports (e-mail, plan), for display.
+// Zorel never reads the token inside it. `identity` is what the CLI reports (e-mail, plan), for display.
 export const providerAccounts = sqliteTable("provider_accounts", {
   id: text().primaryKey(),
   label: text().notNull(),
   kind: text({ enum: ["subscription", "api-key"] }).notNull(),
   provider: text().notNull(), // subscription: claude | codex; api-key: anthropic | openai | openrouter…
-  home: text(), // null: the CLI's own default login (Claude only; Codex always gets a Zero-owned folder)
+  home: text(), // null: the CLI's own default login (Claude only; Codex always gets a Zorel-owned folder)
   secret: text(), // api-key: keychain entry name; the value never touches the database
   baseUrl: text("base_url"),
   identity: text(),
@@ -25,7 +25,7 @@ export const projects = sqliteTable("projects", {
   id: text().primaryKey(),
   name: text().notNull(),
   brief: text().notNull().default(""),
-  path: text(), // workspace folder on disk (ARCHITECTURE §9.1); null: agents work in an empty Zero folder
+  path: text(), // workspace folder on disk (ARCHITECTURE §9.1); null: agents work in an empty Zorel folder
   position: integer(), // manual order in the sidebar; null: not placed yet (newest first, above the placed ones)
   defaultAgentId: text("default_agent_id"), // a new chat in the project starts with this agent (null: the assistant)
   createdAt: integer("created_at").notNull()
@@ -44,7 +44,7 @@ export const agents = sqliteTable("agents", {
   failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>().notNull().default([]), // alternatives in order (§6.1)
   access: text({ enum: ["workspace", "ask", "full"] }).notNull().default("workspace"), // §9.2, chosen only by you
   permissions: text({ mode: "json" }).$type<AgentPermissions>().notNull().default({ web: true, browser: true, grants: {}, always: [] }),
-  builtin: text({ enum: ["builder"] }), // Zero's own agent (the Builder): not a teammate, kept out of pickers
+  builtin: text({ enum: ["builder"] }), // Zorel's own agent (the Builder): not a teammate, kept out of pickers
   createdAt: integer("created_at").notNull()
 })
 
@@ -193,7 +193,7 @@ export const turns = sqliteTable(
     outputTokens: integer("output_tokens").notNull().default(0),
     cachedTokens: integer("cached_tokens").notNull().default(0),
     switches: text({ mode: "json" }).$type<ReadonlyArray<Switch>>().notNull().default([]), // failover moves in this turn (per-turn metrics)
-    // Workspace checkpoints (git trees in Zero's shadow repo of the project): before and after the turn.
+    // Workspace checkpoints (git trees in Zorel's shadow repo of the project): before and after the turn.
     cost: real(), // estimated USD at the time (ARCHITECTURE §10.2)
     treeBefore: text("tree_before"),
     treeAfter: text("tree_after")

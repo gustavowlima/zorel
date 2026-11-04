@@ -2,11 +2,11 @@
 // (chat, agent), reused across turns through the Agent SDK's streaming input. The second turn in the
 // same chat does not spawn a process; model switches use setModel. The gateway URL is fixed for the
 // session (the runtime swaps the tools behind it). Built-in tools: files and shell in the workspace only
-// (ARCHITECTURE §9.2); `canUseTool` applies the agent's access level and asks the person through Zero.
+// (ARCHITECTURE §9.2); `canUseTool` applies the agent's access level and asks the person through Zorel.
 // The SDK runs the user's installed `claude` (pathToClaudeCodeExecutable): its bundled binary is never
-// used and never shipped, and Zero never reads the CLI login (CLAUDE_CONFIG_DIR only picks the account).
+// used and never shipped, and Zorel never reads the CLI login (CLAUDE_CONFIG_DIR only picks the account).
 import { type CanUseTool, type Query, query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { Access, AccountWindow } from "@zero/contracts"
+import type { Access, AccountWindow } from "@zorel/contracts"
 import { Effect, Queue, Stream } from "effect"
 import { mkdirSync } from "node:fs"
 import { relative } from "node:path"
@@ -14,8 +14,8 @@ import { type CliModel, claudeParser, classifyMessage, type EngineEvent, type Na
 import { approvalFor, decideCommand, decideEdit, decideRead } from "#server/engines/policy.ts"
 import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type NativeApproval } from "#server/engines/session.ts"
 
-const GATEWAY = "zero"
-// Claude Code's own tools Zero turns on: files and shell, plus web search and fetch when the agent may use the web.
+const GATEWAY = "zorel"
+// Claude Code's own tools Zorel turns on: files and shell, plus web search and fetch when the agent may use the web.
 // No subagents, no notebooks.
 const NATIVE_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write", "Bash"]
 const WEB_TOOLS = ["WebSearch", "WebFetch"]
@@ -54,7 +54,7 @@ function stepTracker(cwd: string) {
   }
 }
 
-// canUseTool: the access level decides; what needs the person goes to Zero's approval card.
+// canUseTool: the access level decides; what needs the person goes to Zorel's approval card.
 export function permissions(access: Access, cwd: string, approve: Approver, web = false, skills = false): CanUseTool {
   return async (tool, input, { blockedPath }) => {
     const allow = { behavior: "allow" as const, updatedInput: input }
@@ -75,7 +75,7 @@ export function permissions(access: Access, cwd: string, approve: Approver, web 
     } else if (tool === "Read" || tool === "Glob" || tool === "Grep") {
       decision = decideRead(access, cwd, path)
       request = approvalFor("tool", tool, `Read ${path ?? "outside the project"}`, input, cwd)
-    } else return deny // not a tool Zero turned on
+    } else return deny // not a tool Zorel turned on
     if (decision === "allow") return allow
     return (await approve(request)) ? allow : deny
   }
@@ -114,8 +114,8 @@ function inbox() {
 }
 
 // Claude Code's own settings (as in T3 Code): the user's, the project's and the local ones load, so the
-// CLI's slash commands, skills and CLAUDE.md files are there. Two locks keep Zero in charge: only the policy
-// tier's permission rules count (none: every tool call goes through Zero's canUseTool and access level, a
+// CLI's slash commands, skills and CLAUDE.md files are there. Two locks keep Zorel in charge: only the policy
+// tier's permission rules count (none: every tool call goes through Zorel's canUseTool and access level, a
 // file's allow list or a bypass default mode never applies) and no hook runs. MCP stays strict (the gateway).
 const SETTINGS = {
   settingSources: ["user", "project", "local"] as ["user", "project", "local"],
@@ -182,7 +182,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
       ...SETTINGS,
       mcpServers: { [GATEWAY]: { type: "http", url: o.gatewayUrl } },
       strictMcpConfig: true,
-      persistSession: false, // Zero's context is the source of truth; resuming uses the checkpoint
+      persistSession: false, // Zorel's context is the source of truth; resuming uses the checkpoint
       includePartialMessages: true,
       env: childEnv(o.configDir)
     }
@@ -302,20 +302,20 @@ export const readClaudeLimits = (configDir: string | undefined): Promise<Account
     return windows
   })
 
-// The aliases this login offers ("opus" → "Opus 5.5"); "default" is left out, Zero picks a model explicitly.
+// The aliases this login offers ("opus" → "Opus 5.5"); "default" is left out, Zorel picks a model explicitly.
 export const readClaudeModels = (configDir: string | undefined): Promise<CliModel[]> =>
   withControl(configDir, async (q) =>
     (await q.supportedModels()).filter((m) => m.value !== "default").map((m) => ({ id: m.value, name: m.displayName, note: m.description }))
   )
 
 // The slash commands Claude Code offers in a folder (built-in and the user's, the project's and plugins').
-// Commands Zero does itself are left out: it compacts, switches models and measures context on its own terms.
+// Commands Zorel does itself are left out: it compacts, switches models and measures context on its own terms.
 export interface EngineCommand {
   readonly name: string
   readonly description: string
   readonly argumentHint: string | null
 }
-const ZERO_HANDLES = new Set(["compact", "clear", "context", "cost", "model", "resume", "exit", "login", "logout", "config"])
+const ZOREL_HANDLES = new Set(["compact", "clear", "context", "cost", "model", "resume", "exit", "login", "logout", "config"])
 const COMMANDS_TTL_MS = 10 * 60_000
 const commandCache = new Map<string, { at: number; list: Promise<EngineCommand[]> }>()
 
@@ -327,7 +327,7 @@ export function claudeCommands(configDir: string | undefined, cwd: string): Prom
     configDir,
     async (q) =>
       (await q.supportedCommands())
-        .filter((c) => !ZERO_HANDLES.has(c.name))
+        .filter((c) => !ZOREL_HANDLES.has(c.name))
         .map((c) => ({ name: c.name, description: c.description ?? "", argumentHint: c.argumentHint || null })),
     cwd
   ).catch(() => {

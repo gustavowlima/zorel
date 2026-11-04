@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 
-process.env.ZERO_API_ENGINE = "direct" // these tests drive the direct API engine against a mock server
-import { type Agent, DEFAULT_PERMISSIONS, type Memory, type Message, namedSkills, skillHandle } from "@zero/contracts"
+process.env.ZOREL_API_ENGINE = "direct" // these tests drive the direct API engine against a mock server
+import { type Agent, DEFAULT_PERMISSIONS, type Memory, type Message, namedSkills, skillHandle } from "@zorel/contracts"
 import { Effect, Stream } from "effect"
 import { buildTurn, mentioned, parseConsolidation, pinned } from "./context.ts"
 import { claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, Engines, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
@@ -132,7 +132,7 @@ test("engine de API (OpenAI-compatível): system + histórico vão como mensagen
   }
 })
 
-test("engine de API com ferramentas: modelo pede a ferramenta, o Zero executa e devolve o resultado, o modelo conclui", async () => {
+test("engine de API com ferramentas: modelo pede a ferramenta, o Zorel executa e devolve o resultado, o modelo conclui", async () => {
   const { sent, server } = mockOpenAi([
     [
       { choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "docs__search", arguments: '{"q":"deploy"}' } }] }, finish_reason: null }] },

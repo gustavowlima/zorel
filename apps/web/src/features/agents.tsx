@@ -1,8 +1,8 @@
 // Agents: the whole team in one place — the global agents, then each project's — with who is working now, and
-// one "New agent" menu (Build with AI, blank, import). A row opens the agent's page; its ⋯ exports or deletes it. Agents can also be created or changed from a chat (zero_create_agent,
-// zero_update_agent): they show up here once the person approves the proposal.
-import type { Agent } from "@zero/contracts"
-import { t } from "@zero/i18n"
+// one "New agent" menu (Build with AI, blank, import). A row opens the agent's page; its ⋯ exports or deletes it. Agents can also be created or changed from a chat (zorel_create_agent,
+// zorel_update_agent): they show up here once the person approves the proposal.
+import type { Agent } from "@zorel/contracts"
+import { t } from "@zorel/i18n"
 import { useState } from "react"
 import { agentsAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
 import { exportAgent, importedAgent } from "./agent.tsx"
@@ -84,7 +84,7 @@ export function useDeleteAgent() {
 }
 
 // "New agent": one button, three ways — describe it to the Builder (its own screen), start from a blank form, or
-// bring a file exported from Zero. In a project, the agent is that project's.
+// bring a file exported from Zorel. In a project, the agent is that project's.
 export function NewAgentMenu({ projectId = null, projectName, compact }: { projectId?: string | null; projectName?: string; compact?: boolean }) {
   const create = useMutation(mutations.createAgent)
   const [error, setError] = useState<string>()

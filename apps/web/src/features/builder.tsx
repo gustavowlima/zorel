@@ -1,11 +1,11 @@
 // Build with AI (as in Tucano): a screen of its own in two steps, one at a time. 1 Describe: a conversation with the
-// Builder (Zero's own agent) on the left, the proposed agent on the right as it takes shape. 2 Powers: what it may
+// Builder (Zorel's own agent) on the left, the proposed agent on the right as it takes shape. 2 Powers: what it may
 // reach, as plain choices (no access / read / read and write), prefilled with the least the Builder proposed;
 // Create makes it with those powers and opens its page. A team is created as proposed from step 1. Each visit
 // starts fresh; "Build it myself" opens the form.
-import { type Access, type Agent, type AgentPermissions, type Chat, DEFAULT_PERMISSIONS, type Grant, type McpServer } from "@zero/contracts"
-import type { Approval } from "@zero/contracts/events"
-import { t } from "@zero/i18n"
+import { type Access, type Agent, type AgentPermissions, type Chat, DEFAULT_PERMISSIONS, type Grant, type McpServer } from "@zorel/contracts"
+import type { Approval } from "@zorel/contracts/events"
+import { t } from "@zorel/i18n"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { agentsAtom, mutations, projectsAtom, serversAtom, uploadAttachment, useChat, useInvalidate, useList, useMutation } from "../client.ts"
 import { agentTone, modelLabel } from "../labels.ts"
@@ -100,7 +100,7 @@ function Conversation({ chat }: { chat: Chat }) {
         </div>
       ) : (
         // The proposal is reviewed on the right: no second card for it inside the conversation.
-        <Timeline chat={chat} state={{ ...state, approvals: state.approvals.filter((a) => a.tool !== "zero_create_agent") }} agents={agents} onView={() => {}} onEdit={() => {}} />
+        <Timeline chat={chat} state={{ ...state, approvals: state.approvals.filter((a) => a.tool !== "zorel_create_agent") }} agents={agents} onView={() => {}} onEdit={() => {}} />
       )}
       <div className="flex w-full flex-col gap-1.5 px-8 pt-2 pb-4.5">
         {/* Where the new agents live: picking a project starts the conversation over in it (as on Home). */}
@@ -181,7 +181,7 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
   const decide = useMutation(mutations.decide)
   const updateAgent = useMutation(mutations.updateAgent)
   const invalidate = useInvalidate()
-  const open: Approval | undefined = state.approvals.findLast((a) => a.tool === "zero_create_agent")
+  const open: Approval | undefined = state.approvals.findLast((a) => a.tool === "zorel_create_agent")
   const drafts = open ? draftsOf(open.args) : []
   const single = drafts.length === 1 ? drafts[0] : undefined
   const created = agents.filter((a) => !a.builtin && a.createdAt >= since)

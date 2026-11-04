@@ -1,4 +1,4 @@
-// Input and Textarea: React Aria (same API as the native element) with Zero's tokens.
+// Input and Textarea: React Aria (same API as the native element) with Zorel's tokens.
 import type { ComponentProps } from "react"
 import { Input as InputPrimitive, TextArea as TextAreaPrimitive } from "react-aria-components"
 import { cn } from "@/lib/utils"

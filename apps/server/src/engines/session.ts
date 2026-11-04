@@ -2,7 +2,7 @@
 // The runtime owns the lifecycle: opens it on the first turn, sends only what the session has not
 // seen yet (watermark), and closes it when the stable context, the provider or the account changes.
 import type { Effect, Stream } from "effect"
-import type { Access, Effort } from "@zero/contracts"
+import type { Access, Effort } from "@zorel/contracts"
 import type { EngineEvent, TurnFile, TurnTools } from "#server/engines.ts"
 
 export interface SessionTurnInput {
@@ -42,6 +42,6 @@ export interface EngineSession {
 }
 
 // How long an approval card waits for the person (ARCHITECTURE §9.2); then it counts as a denial. The engines'
-// tool-call timeouts for Zero's gateway must outlast it, or a call dies while the card is still open.
+// tool-call timeouts for Zorel's gateway must outlast it, or a call dies while the card is still open.
 export const APPROVAL_MS = 30 * 60_000
 export const GATEWAY_TOOL_TIMEOUT_MS = APPROVAL_MS + 60_000

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { DEFAULT_PERMISSIONS } from "@zero/contracts"
+import { DEFAULT_PERMISSIONS } from "@zorel/contracts"
 import { accessChange, browserRoute, mcpRoute, withAlways } from "./permissions.ts"
 
 const server = { id: "s1", mode: "approve" as const }

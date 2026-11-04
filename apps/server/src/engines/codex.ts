@@ -1,20 +1,20 @@
 // Native Codex session (ARCHITECTURE §6, adapter `codex-app-server`): one `codex app-server` process
 // per (chat, agent) speaking JSON-RPC over stdio, one thread kept across turns.
-// Minimal hand-written client (D16 revised): only the methods and fields Zero uses; unknown fields are
+// Minimal hand-written client (D16 revised): only the methods and fields Zorel uses; unknown fields are
 // ignored, so protocol changes elsewhere don't break us. Robustness ideas from OpenBot (no code):
 // per-request timeouts, a dead process fails the turn, a line-size cap.
-// Isolation: CODEX_HOME is a Zero-owned folder, so the user's config.toml (MCP servers, AGENTS.md,
-// memories) never reaches Zero's agents (D8). Zero never reads the login inside it.
+// Isolation: CODEX_HOME is a Zorel-owned folder, so the user's config.toml (MCP servers, AGENTS.md,
+// memories) never reaches Zorel's agents (D8). Zorel never reads the login inside it.
 import { Effect, Queue, Stream } from "effect"
 import { mkdirSync } from "node:fs"
-import type { Access, AccountWindow, FailureReason } from "@zero/contracts"
+import type { Access, AccountWindow, FailureReason } from "@zorel/contracts"
 import { relative } from "node:path"
 import { type CliModel, classifyMessage, CODEX_DISABLED, type EngineEvent, type EngineFailure, type NativeStep, splitModel, toMillis, type Usage } from "#server/engines.ts"
 import { approvalFor } from "#server/engines/policy.ts"
 import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type SessionTurnInput } from "#server/engines/session.ts"
 
 // Access level → Codex sandbox and approval policy (ARCHITECTURE §9.2). The shell is on in the app-server:
-// commands run in Codex's sandbox and what leaves it asks through Zero.
+// commands run in Codex's sandbox and what leaves it asks through Zorel.
 const SANDBOX: Record<Access, string> = { workspace: "workspace-write", ask: "read-only", full: "danger-full-access" }
 const APPROVAL: Record<Access, string> = { workspace: "on-request", ask: "on-request", full: "never" }
 // A function, not a constant: engines.ts imports this module, so CODEX_DISABLED isn't ready at load time.
@@ -132,7 +132,7 @@ class Rpc {
       // A request from Codex (approvals, user input): answered when the person decides.
       const id = m.id
       void this.onRequest(m.method, m.params ?? {}).then(
-        (result) => this.write(result === undefined ? { id, error: { code: -32601, message: "não suportado pelo Zero" } } : { id, result }),
+        (result) => this.write(result === undefined ? { id, error: { code: -32601, message: "não suportado pelo Zorel" } } : { id, result }),
         () => this.write({ id, result: { decision: "decline" } })
       )
     } else if (m.method) this.onNotification(m.method, m.params ?? {})
@@ -178,7 +178,7 @@ export interface CodexSessionOptions {
   readonly model: string // "<provider>/<model>"; "default" uses Codex's default
   readonly system: string // stable context → developerInstructions
   readonly cwd: string
-  readonly home: string // Zero-owned CODEX_HOME for the account
+  readonly home: string // Zorel-owned CODEX_HOME for the account
   readonly gatewayUrl: string // this session's stable gateway URL (tools change per turn behind it)
   readonly access: Access
   readonly web: boolean
@@ -187,14 +187,14 @@ export interface CodexSessionOptions {
   readonly command?: ReadonlyArray<string> // tests: a fake app-server instead of `codex`
 }
 
-export const codexLoginHint = (home: string) => `Entre no Codex do Zero (uma vez): rode no terminal \`CODEX_HOME=${home} codex login\`.`
+export const codexLoginHint = (home: string) => `Entre no Codex do Zorel (uma vez): rode no terminal \`CODEX_HOME=${home} codex login\`.`
 
 export function openCodexSession(o: CodexSessionOptions): EngineSession | string {
   const bin = o.command?.[0] ?? Bun.which("codex")
   if (!bin) return "codex não está instalado ou não está no PATH."
   mkdirSync(o.cwd, { recursive: true })
   mkdirSync(o.home, { recursive: true })
-  // Skills on this machine (~/.agents/skills…) are the person's, not Zero's (D8): host discovery off unless the person lets Codex use its own.
+  // Skills on this machine (~/.agents/skills…) are the person's, not Zorel's (D8): host discovery off unless the person lets Codex use its own.
   const args = o.command?.slice(1) ?? [
     "app-server", "-c", "project_doc_max_bytes=0", "-c", `web_search="${o.web ? "live" : "disabled"}"`,
     ...appServerDisabled().flatMap((f) => ["--disable", f]),
@@ -205,7 +205,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
 
   let listener: ((method: string, params: Json) => void) | undefined
   rpc.onNotification = (method, params) => listener?.(method, params)
-  rpc.onExit = () => listener?.("zero/exited", {})
+  rpc.onExit = () => listener?.("zorel/exited", {})
   // File changes waiting for approval: their paths come with item/started, the request only has the item id.
   const pendingFiles = new Map<string, ReadonlyArray<string>>()
   rpc.onRequest = async (method, p) => {
@@ -228,12 +228,12 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
   }
   // Handshake, account check and thread, once; every turn awaits it.
   const thread: Promise<string> = (async () => {
-    await rpc.request("initialize", { clientInfo: { name: "zero", title: "Zero", version: "0.1.0" }, capabilities: null })
+    await rpc.request("initialize", { clientInfo: { name: "zorel", title: "Zorel", version: "0.1.0" }, capabilities: null })
     rpc.notify("initialized")
     const account = await rpc.request("account/read", {})
     if (!account?.account) throw new Error(codexLoginHint(o.home))
-    // Codex finds skills on the machine (~/.agents/skills, the repo, its own); they're not Zero's (D8).
-    // Turned off in Zero's CODEX_HOME config, never in the person's own.
+    // Codex finds skills on the machine (~/.agents/skills, the repo, its own); they're not Zorel's (D8).
+    // Turned off in Zorel's CODEX_HOME config, never in the person's own.
     // With the person's OK (nativeSkills) they're turned back on.
     const listed = await rpc.request("skills/list", { cwds: [o.cwd] }).catch(() => undefined)
     for (const entry of listed?.data ?? [])
@@ -245,12 +245,12 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
       cwd: o.cwd,
       approvalPolicy: APPROVAL[o.access],
       sandbox: SANDBOX[o.access],
-      ephemeral: true, // Zero's context is the source of truth; resuming uses the checkpoint
+      ephemeral: true, // Zorel's context is the source of truth; resuming uses the checkpoint
       developerInstructions: o.system,
       config: {
-        "mcp_servers.zero.url": o.gatewayUrl,
-        "mcp_servers.zero.default_tools_approval_mode": "approve", // the gateway decides
-        "mcp_servers.zero.tool_timeout_sec": GATEWAY_TOOL_TIMEOUT_MS / 1000 // outlasts an approval card
+        "mcp_servers.zorel.url": o.gatewayUrl,
+        "mcp_servers.zorel.default_tools_approval_mode": "approve", // the gateway decides
+        "mcp_servers.zorel.tool_timeout_sec": GATEWAY_TOOL_TIMEOUT_MS / 1000 // outlasts an approval card
       }
     })
     return String(started.thread.id)
@@ -291,7 +291,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
           emit({ type: "limits", windows })
         }
         listener = (method, p) => {
-          if (method === "zero/exited") {
+          if (method === "zorel/exited") {
             emit({ type: "error", message: rpc.exited ?? "codex app-server encerrou.", failure: { reason: "unavailable" } })
             return finish()
           }
@@ -353,7 +353,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
         Effect.onInterrupt(() =>
           Effect.promise(async () => {
             listener = (method, p) => {
-              if (method === "zero/exited" || (method === "turn/completed" && p.threadId === threadId)) finish()
+              if (method === "zorel/exited" || (method === "turn/completed" && p.threadId === threadId)) finish()
             }
             if (turnId) await rpc.request("turn/interrupt", { threadId, turnId }, INTERRUPT_GRACE_MS).catch(() => undefined)
             await Promise.race([finished, Bun.sleep(INTERRUPT_GRACE_MS)])
@@ -388,7 +388,7 @@ async function withAppServer<A>(home: string, command: ReadonlyArray<string> | u
   mkdirSync(home, { recursive: true })
   const rpc = Rpc.start(bin, command?.slice(1) ?? ["app-server"], home, childEnv(home))
   try {
-    await rpc.request("initialize", { clientInfo: { name: "zero", title: "Zero", version: "0.1.0" }, capabilities: null }, 15_000)
+    await rpc.request("initialize", { clientInfo: { name: "zorel", title: "Zorel", version: "0.1.0" }, capabilities: null }, 15_000)
     rpc.notify("initialized")
     return await read(rpc)
   } finally {

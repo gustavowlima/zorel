@@ -1,7 +1,7 @@
 // The message queue (like OpenBot's): what you send while a turn runs waits here, above the message box, and
 // goes out by itself when the chat is free again, one at a time. Each item can be pushed into the running turn
 // now (steer), brought back to the box to edit, or dropped. Kept per chat on this computer, so a reload keeps it.
-import { t } from "@zero/i18n"
+import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
 import { Button, CornerDownRight, IconButton, Pencil, Trash2 } from "@/ui"
 
@@ -11,7 +11,7 @@ export interface Queued {
   readonly attachmentIds: ReadonlyArray<string>
 }
 
-const keyOf = (chatId: string) => `zero.queue.${chatId}`
+const keyOf = (chatId: string) => `zorel.queue.${chatId}`
 const load = (chatId: string): Queued[] => {
   try {
     return JSON.parse(localStorage.getItem(keyOf(chatId)) ?? "[]") as Queued[]

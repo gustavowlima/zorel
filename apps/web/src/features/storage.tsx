@@ -1,9 +1,9 @@
-// Settings › Storage (inspired by OpenBot's): how much Zero's data folder takes on this computer, split by what
+// Settings › Storage (inspired by OpenBot's): how much Zorel's data folder takes on this computer, split by what
 // it holds (a segmented bar with its legend), by project, the largest chats, and what can be cleaned up safely.
 // Measured on open and on demand; cleanups are confirmed and go to the audit log.
 import { useAtomValue } from "@effect/atom-react"
-import type { StorageReport } from "@zero/contracts"
-import { formatAge, formatBytes, formatPercent, t } from "@zero/i18n"
+import type { StorageReport } from "@zorel/contracts"
+import { formatAge, formatBytes, formatPercent, t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { mutations, projectsAtom, storageAtom, useInvalidate, useList, useMutation } from "../client.ts"
 import { chatTitle } from "../labels.ts"
@@ -89,7 +89,7 @@ function Overview({ report, measuring, onMeasure }: { report: StorageReport; mea
 
 function Projects({ report }: { report: StorageReport }) {
   if (!report.projects.length) return null
-  // The meter is the project's share of everything Zero keeps, the same number written beside it.
+  // The meter is the project's share of everything Zorel keeps, the same number written beside it.
   const share = (bytes: number) => (report.total ? bytes / report.total : 0)
   return (
     <Section title={t("storage.projects")}>

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { type Agent, DEFAULT_PERMISSIONS } from "@zero/contracts"
+import { type Agent, DEFAULT_PERMISSIONS } from "@zorel/contracts"
 import { createInput, createInputs, findAgent, narrower, updateInput, visibleTo } from "./team.ts"
 
 const agent = (over: Partial<Agent>): Agent => ({

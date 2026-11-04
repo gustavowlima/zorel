@@ -1,4 +1,4 @@
-// Zero's mark: one rounded stroke that reads as both a zero and a Z, in the text color (the app icon,
+// Zorel's mark: one rounded stroke that reads as a Z, in the text color (the app icon,
 // apps/desktop/assets/icon.svg, draws the same in white on blue).
 export function Logo({ className }: { className?: string }) {
   return (

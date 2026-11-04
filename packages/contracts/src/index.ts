@@ -11,7 +11,7 @@ export const ModelId = Schema.String.check(Schema.isPattern(/^[a-z-]+\/\S+$/), S
 
 // ---------- entities ----------
 
-// Provider account (ARCHITECTURE §6.1). The CLI login stays in its own folder; Zero only shows identity.
+// Provider account (ARCHITECTURE §6.1). The CLI login stays in its own folder; Zorel only shows identity.
 export const AccountProvider = Schema.Literals(["claude", "codex"])
 export type AccountProvider = typeof AccountProvider.Type
 // Limit windows of a subscription (ARCHITECTURE §10.2), as the harness reports them: Claude's 5-hour and
@@ -82,14 +82,14 @@ export const Project = Schema.Struct({
   id: Id,
   name: Schema.String,
   brief: Schema.String, // stable project context, included in every turn's prompt
-  path: Schema.NullOr(Schema.String), // workspace folder; null: agents work in an empty Zero folder
+  path: Schema.NullOr(Schema.String), // workspace folder; null: agents work in an empty Zorel folder
   defaultAgentId: Schema.NullOr(Id), // a new chat in the project starts with this agent (null: the assistant)
   createdAt: Schema.Number
 })
 export type Project = typeof Project.Type
 
 // Per-agent permissions (ideas from Tucano): what an agent may reach besides its folder (`access` covers files and
-// the shell). web: search and read pages with the engine's own tools; browser: Zero's browser tools; grants: per
+// the shell). web: search and read pages with the engine's own tools; browser: Zorel's browser tools; grants: per
 // MCP server, "none" hides it, "read" exposes only reading tools, "write" all (a server not listed follows the
 // server's own mode); always: calls the person allowed for good ("<serverId>:<tool>" or "browser"), skipping the
 // card. Destructive tools (delete, send, publish, pay…) always ask unless allowed for good.
@@ -117,7 +117,7 @@ export const Agent = Schema.Struct({
   failover: FailoverList,
   access: Access,
   permissions: AgentPermissions,
-  builtin: Schema.optionalKey(Schema.NullOr(Schema.Literal("builder"))), // Zero's own agent: kept out of lists and pickers
+  builtin: Schema.optionalKey(Schema.NullOr(Schema.Literal("builder"))), // Zorel's own agent: kept out of lists and pickers
   createdAt: Schema.Number
 })
 export type Agent = typeof Agent.Type
@@ -155,8 +155,8 @@ export type Routine = typeof Routine.Type
 const Cron = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(9), Schema.isMaxLength(100))
 export const NewRoutine = Schema.Struct({ agentId: Id, name: Name, prompt: Short(8000), cron: Schema.NullOr(Cron), webhook: Schema.Boolean })
 export const RoutinePatch = Schema.Struct({ name: Schema.optional(Name), prompt: Schema.optional(Short(8000)), cron: Schema.optional(Schema.NullOr(Cron)), webhook: Schema.optional(Schema.Boolean), enabled: Schema.optional(Schema.Boolean) })
-// A cron pattern Zero refuses (with croner's reason).
-export class CronInvalid extends Schema.Error<CronInvalid>("zero/CronInvalid")({ _tag: Schema.tag("CronInvalid"), message: Schema.String }, { httpApiStatus: 400 }) {}
+// A cron pattern Zorel refuses (with croner's reason).
+export class CronInvalid extends Schema.Error<CronInvalid>("zorel/CronInvalid")({ _tag: Schema.tag("CronInvalid"), message: Schema.String }, { httpApiStatus: 400 }) {}
 
 // A message that matched a search (Cmd+K): where it is and the words around the match.
 export const SearchHit = Schema.Struct({ chatId: Id, messageId: Id, snippet: Schema.String, at: Schema.Number })
@@ -210,7 +210,7 @@ export const AuditQuery = {
 export const AuditPage = Schema.Struct({ entries: Schema.Array(AuditEntry), total: Schema.Number, page: Schema.Number, pageSize: Schema.Number })
 export type AuditPage = typeof AuditPage.Type
 
-// Storage: Zero's data folder measured now, where it goes and what can be freed.
+// Storage: Zorel's data folder measured now, where it goes and what can be freed.
 export const StorageCategory = Schema.Literals(["workspaces", "attachments", "history", "backups", "runs", "accounts", "browser", "other"])
 export const StorageCleanup = Schema.Literals(["backups", "orphans"])
 export const StorageReport = Schema.Struct({
@@ -224,9 +224,9 @@ export const StorageReport = Schema.Struct({
 })
 export type StorageReport = typeof StorageReport.Type
 
-// How full the next turn's context is: what Zero puts in it, by part, estimated at ~4 characters a token
+// How full the next turn's context is: what Zorel puts in it, by part, estimated at ~4 characters a token
 // (the engine adds its own tool definitions on top). `windowTokens` null: the model's window isn't known.
-// Zero compacts on its own once more than `compactAfter` messages follow the summary.
+// Zorel compacts on its own once more than `compactAfter` messages follow the summary.
 export const ContextPart = Schema.Literals(["instructions", "memories", "skills", "summary", "messages"])
 export const ContextUsage = Schema.Struct({
   model: Schema.String,
@@ -321,7 +321,7 @@ export const Memory = Schema.Struct({
 })
 export type Memory = typeof Memory.Type
 // A skill already on this computer (a SKILL.md of Claude Code, Codex, other agents or a plugin) and whether
-// Zero's agents use it.
+// Zorel's agents use it.
 export const FileSkill = Schema.Struct({
   path: Schema.String,
   name: Schema.String,
@@ -468,9 +468,9 @@ export const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
 
 // ---------- workspace (ARCHITECTURE §9.1) ----------
 
-// A folder Zero refuses: missing, not a folder, relative, or a place agents must never own (disk root,
-// home, Zero's data folder).
-export class WorkspaceInvalid extends Schema.Error<WorkspaceInvalid>("zero/WorkspaceInvalid")(
+// A folder Zorel refuses: missing, not a folder, relative, or a place agents must never own (disk root,
+// home, Zorel's data folder).
+export class WorkspaceInvalid extends Schema.Error<WorkspaceInvalid>("zorel/WorkspaceInvalid")(
   { _tag: Schema.tag("WorkspaceInvalid"), reason: Schema.Literals(["relative", "missing", "not_directory", "forbidden"]) },
   { httpApiStatus: 400 }
 ) {}
@@ -486,7 +486,7 @@ export type FileDiff = typeof FileDiff.Type
 export const TurnDiff = Schema.Struct({ turnId: Id, files: Schema.Array(FileDiff), revertedAt: Schema.NullOr(Schema.Number) })
 export type TurnDiff = typeof TurnDiff.Type
 // Undo refused: these files changed after the turn (by you or a later turn).
-export class UndoConflict extends Schema.Error<UndoConflict>("zero/UndoConflict")(
+export class UndoConflict extends Schema.Error<UndoConflict>("zorel/UndoConflict")(
   { _tag: Schema.tag("UndoConflict"), files: Schema.Array(Schema.String) },
   { httpApiStatus: 409 }
 ) {}
@@ -507,7 +507,7 @@ export const GitStatus = Schema.Struct({
 })
 export type GitStatus = typeof GitStatus.Type
 // git or gh refused (its message, shown as is).
-export class GitFailed extends Schema.Error<GitFailed>("zero/GitFailed")({ _tag: Schema.tag("GitFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
+export class GitFailed extends Schema.Error<GitFailed>("zorel/GitFailed")({ _tag: Schema.tag("GitFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
 const GitText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(20_000))
 export const GitDraft = Schema.Struct({ title: Schema.String, body: Schema.String })
 export type GitDraft = typeof GitDraft.Type
@@ -519,7 +519,7 @@ export const MAX_WORKSPACE_FILES = 5000
 
 const idParam = { id: Id }
 
-export const Api = HttpApi.make("zero")
+export const Api = HttpApi.make("zorel")
   .add(
     HttpApiGroup.make("projects")
       .add(HttpApiEndpoint.get("list", "/api/projects", { success: Schema.Array(Project) }))

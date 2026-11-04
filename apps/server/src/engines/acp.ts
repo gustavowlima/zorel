@@ -1,11 +1,11 @@
 // ACP engine (Agent Client Protocol, phase 5): one adapter for every agent CLI that speaks it — Gemini CLI
 // (`gemini --acp`), OpenCode (`opencode acp`), and others the same way. Stateless like the CLI fallback: each turn
-// starts the agent in ACP mode in the chat's folder, opens a session (with Zero's tool gateway as an HTTP MCP server
+// starts the agent in ACP mode in the chat's folder, opens a session (with Zorel's tool gateway as an HTTP MCP server
 // when the agent takes one), sends the layered context and the conversation as one prompt, and turns the agent's
 // session/update notifications into text and work steps. JSON-RPC 2.0, one message per line on stdio.
-// Permissions: the agent asks before acting; with access "ask" Zero refuses (no approval card in a stateless turn,
-// the reply says so), with "workspace" or "full" it allows once. Files and terminals stay the agent's own (Zero
-// declares neither capability), and Zero's checkpoints still record what changed.
+// Permissions: the agent asks before acting; with access "ask" Zorel refuses (no approval card in a stateless turn,
+// the reply says so), with "workspace" or "full" it allows once. Files and terminals stay the agent's own (Zorel
+// declares neither capability), and Zorel's checkpoints still record what changed.
 // Confinement: below "full", the whole agent process runs in the macOS sandbox (sandbox-exec, Seatbelt), so its
 // shell, edits and every process or MCP server it starts can write only to the chat's folder ("workspace"), the
 // temporary folders, caches and the CLI's own state. Reads, network and process starts stay open, as the access
@@ -13,7 +13,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
-import type { Access } from "@zero/contracts"
+import type { Access } from "@zorel/contracts"
 import { Stream } from "effect"
 import type { EngineEvent, NativeStep } from "../engines.ts"
 
@@ -32,18 +32,18 @@ export interface AcpTurn {
 
 // OpenCode as the harness of an API-key model (phase 5): its config goes in OPENCODE_CONFIG_CONTENT, the key in an
 // environment variable the config points to ({env:…}), so it never lands in a file; the person's own opencode.json
-// and their Claude Code prompt and skills stay out (Zero gives the context). Local servers (Ollama, LM Studio) are
+// and their Claude Code prompt and skills stay out (Zorel gives the context). Local servers (Ollama, LM Studio) are
 // OpenAI-compatible providers at their URL.
 export function opencodeEnv(provider: string, model: string, o: { key?: string | undefined; baseURL?: string | undefined }): Record<string, string> {
   const local = provider === "ollama" || provider === "lmstudio"
   const options: Record<string, string> = {}
-  if (o.key) options.apiKey = "{env:ZERO_PROVIDER_KEY}"
+  if (o.key) options.apiKey = "{env:ZOREL_PROVIDER_KEY}"
   if (o.baseURL && (local || provider === "openai")) options.baseURL = o.baseURL
   const block = local ? { npm: "@ai-sdk/openai-compatible", name: provider, options, models: { [model]: { name: model } } } : { options }
   const config = { $schema: "https://opencode.ai/config.json", model: `${provider}/${model}`, provider: { [provider]: block }, autoupdate: false }
   return {
     OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
-    ...(o.key ? { ZERO_PROVIDER_KEY: o.key } : {}),
+    ...(o.key ? { ZOREL_PROVIDER_KEY: o.key } : {}),
     OPENCODE_DISABLE_CLAUDE_CODE: "1",
     OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
@@ -54,7 +54,7 @@ export function opencodeEnv(provider: string, model: string, o: { key?: string |
 type Json = Record<string, any>
 const PROTOCOL = 1
 
-// ACP tool kinds to Zero's step kinds.
+// ACP tool kinds to Zorel's step kinds.
 export const kindOf = (k: unknown): NativeStep["kind"] => (k === "read" ? "read" : k === "edit" || k === "delete" || k === "move" ? "edit" : k === "execute" ? "run" : k === "search" || k === "fetch" ? "search" : "tool")
 
 // The permission answer for an access level: the first "allow once" option, else cancelled.
@@ -165,7 +165,7 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
       return
     }
     if (m.method !== undefined && m.id !== undefined) {
-      send({ id: m.id, error: { code: -32601, message: `Zero does not handle ${m.method}` } })
+      send({ id: m.id, error: { code: -32601, message: `Zorel does not handle ${m.method}` } })
       return
     }
     if (m.method !== "session/update") return
@@ -206,7 +206,7 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
   const turn = (async () => {
     const init = await request("initialize", { protocolVersion: PROTOCOL, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } })
     const http = init.agentCapabilities?.mcpCapabilities?.http === true
-    const mcpServers = t.gatewayUrl && http ? [{ type: "http", name: "zero", url: t.gatewayUrl, headers: [] }] : []
+    const mcpServers = t.gatewayUrl && http ? [{ type: "http", name: "zorel", url: t.gatewayUrl, headers: [] }] : []
     const session = await request("session/new", { cwd: t.cwd, mcpServers })
     const sessionId = String(session.sessionId)
     if (t.model && t.model !== "default") await request("session/set_model", { sessionId, modelId: t.model }).catch(() => undefined) // not every agent has it

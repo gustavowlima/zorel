@@ -1,8 +1,8 @@
 // Readable labels derived from data: model and provider names, memory scopes, chat titles, live status,
 // and each agent's identity tone (its position among its teammates, so colors don't repeat).
-import type { Agent, Chat, ModelInfo, Project, ProviderAccount, Switch } from "@zero/contracts"
-import type { ChatStatus } from "@zero/contracts/events"
-import { formatTime, type MessageKey, t } from "@zero/i18n"
+import type { Agent, Chat, ModelInfo, Project, ProviderAccount, Switch } from "@zorel/contracts"
+import type { ChatStatus } from "@zorel/contracts/events"
+import { formatTime, type MessageKey, t } from "@zorel/i18n"
 
 const has = <K extends string>(map: Record<K, unknown>, k: string): k is K => k in map
 

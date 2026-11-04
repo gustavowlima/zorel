@@ -3,15 +3,15 @@
 // Clicking, scrolling or typing on the page, or using the address bar, takes control: while it is held, the
 // agents' browser tools are refused; "Hand back" returns it. Positions go up as fractions of the frame.
 // In the desktop app the page is a native view instead of frames: the panel keeps its place empty and tells the
-// app where to draw the active tab (window.zeroDesktop); a person's click on it takes over.
-import { t } from "@zero/i18n"
+// app where to draw the active tab (window.zorelDesktop); a person's click on it takes over.
+import { t } from "@zorel/i18n"
 import { type KeyboardEvent, type MouseEvent, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ArrowRight, Button, ChevronRight, cx, Globe, IconButton, Input, Plus, RefreshCw, Tooltip, X } from "@/ui"
 
 type Tab = { id: string; title: string; url: string; active: boolean }
 type Rect = { x: number; y: number; width: number; height: number }
 // The desktop app's bridge (apps/desktop/src/preload.ts); undefined in a browser.
-const desktop = (window as { zeroDesktop?: { browser: (s: { tab: string; rect: Rect; overlay: boolean } | null) => void; onTake: (cb: () => void) => () => void } }).zeroDesktop
+const desktop = (window as { zorelDesktop?: { browser: (s: { tab: string; rect: Rect; overlay: boolean } | null) => void; onTake: (cb: () => void) => () => void } }).zorelDesktop
 type Frame =
   | { t: "click"; x: number; y: number; button?: "left" | "right"; clicks?: number }
   | { t: "wheel"; x: number; y: number; dx: number; dy: number }

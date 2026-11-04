@@ -1,6 +1,6 @@
 // What a Settings list shows before it has an answer: "Checking…" while the first reading runs, and a warning
 // row with a retry when it failed (DESIGN.md › Layout › Páginas). Nothing else may read as "empty" then.
-import { t } from "@zero/i18n"
+import { t } from "@zorel/i18n"
 import { Button, Rows } from "@/ui"
 
 export function ReadingState({ loading, failed, onRetry }: { loading: boolean; failed: boolean; onRetry: () => void }) {

@@ -1,8 +1,8 @@
 // Routine helpers with no runtime: cron times, webhook tokens, a run's message, and creating a routine with its
-// chat (shared by the HTTP API and the agents' zero_routines tool).
+// chat (shared by the HTTP API and the agents' zorel_routines tool).
 import { Cron } from "croner"
 import { Effect } from "effect"
-import type { Agent } from "@zero/contracts"
+import type { Agent } from "@zorel/contracts"
 import type { Repository } from "./db.ts"
 const MAX_PAYLOAD = 20_000 // characters of a webhook's body that go into the message
 

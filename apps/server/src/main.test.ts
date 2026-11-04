@@ -7,8 +7,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
-import { Api, type Message } from "@zero/contracts"
-import { type Approval, type ChatEvent, ZeroRpc } from "@zero/contracts/events"
+import { Api, type Message } from "@zorel/contracts"
+import { type Approval, type ChatEvent, ZorelRpc } from "@zorel/contracts/events"
 import { Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
@@ -33,8 +33,8 @@ import { Tools } from "./tools.ts"
 import { Pricing } from "./pricing.ts"
 import { Workspace } from "./workspace.ts"
 
-// Zero's own tools (the chat's browser, the team), always offered next to the MCP ones.
-const zeroOwn = (n: string) => n.startsWith("browser_") || n.startsWith("zero_")
+// Zorel's own tools (the chat's browser, the team), always offered next to the MCP ones.
+const zorelOwn = (n: string) => n.startsWith("browser_") || n.startsWith("zorel_")
 
 // Prices for tests (USD per million tokens): no network.
 const PRICES = { anthropic: { "claude-sonnet-5-5": { cost: { input: 2, output: 10, cache_read: 0.1 }, family: "claude-sonnet", release_date: "2026-09-28" } } }
@@ -94,7 +94,7 @@ const FakeEngines = Layer.succeed(Engines, {
     const tool = call?.[1]
     if (tool)
       return Stream.fromEffect(Effect.promise(() => useTool(t, tool, call?.[2] ? JSON.parse(call[2]) : { q: "deploy" }))).pipe(
-        Stream.flatMap((r) => Stream.make<EngineEvent[]>({ type: "text", delta: `${r.listed.filter((n) => !zeroOwn(n)).join(",")} => ${r.text}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }))
+        Stream.flatMap((r) => Stream.make<EngineEvent[]>({ type: "text", delta: `${r.listed.filter((n) => !zorelOwn(n)).join(",")} => ${r.text}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }))
       )
     return Stream.make<EngineEvent[]>({ type: "text", delta: (me && mentionNext.get(me)) || `eco: ${last}` }, { type: "done", usage: { inputTokens: 10, outputTokens: 3 } })
   }
@@ -108,7 +108,7 @@ let stop: () => Promise<void>
 beforeAll(async () => {
   const store = Store.layer(":memory:")
   const secrets = Layer.provideMerge(Secrets.memory(), store)
-  const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(FakeEngines, Tools.layer), secrets), DataDir.layer(join(tmpdir(), "zero-test")))
+  const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(FakeEngines, Tools.layer), secrets), DataDir.layer(join(tmpdir(), "zorel-test")))
   const services = Layer.mergeAll(Layer.provideMerge(Runtime.layer, Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.fixed(PRICES), Audit.layer, BrowserService.layer), base)), Actor.local)
   const server = AppLive().pipe(HttpRouter.serve, Layer.provide(services), Layer.provide(BunHttpServer.layer({ port })))
   const fiber = Effect.runFork(Layer.launch(server))
@@ -127,9 +127,9 @@ const rpcLayer = () =>
     Layer.provide(Socket.layerWebSocketConstructorGlobal),
     Layer.provide(RpcSerialization.layerJson)
   )
-type Rpc = Effect.Success<ReturnType<typeof RpcClient.make<typeof ZeroRpc extends { requests: ReadonlyMap<string, infer R> } ? R : never>>>
+type Rpc = Effect.Success<ReturnType<typeof RpcClient.make<typeof ZorelRpc extends { requests: ReadonlyMap<string, infer R> } ? R : never>>>
 const rpc = <A, E>(f: (c: Rpc) => Effect.Effect<A, E>) =>
-  Effect.runPromise(Effect.scoped(Effect.flatMap(RpcClient.make(ZeroRpc), (c) => f(c as Rpc))).pipe(Effect.provide(rpcLayer())))
+  Effect.runPromise(Effect.scoped(Effect.flatMap(RpcClient.make(ZorelRpc), (c) => f(c as Rpc))).pipe(Effect.provide(rpcLayer())))
 
 // Subscribes to the chat, sends and waits for the chat to go idle again. `onApproval` decides requests while the turn waits.
 async function send(chatId: string, body: { text: string; model?: string; attachmentIds?: string[] }, onApproval?: (a: Approval) => boolean | "always") {
@@ -177,7 +177,7 @@ test("projeto → agente → chat: streaming, contexto em camadas, troca de mode
   expect(dones(first.events)[0]).toMatchObject({ role: "assistant", agentId: agent.id, text: "eco: oi", model: "claude-cli/sonnet", inputTokens: 10 })
   const t1 = turns.at(-1)!
   for (const s of ["Landing em Astro.", "Escreve código enxuto.", "Prefere respostas curtas"]) expect(t1.system).toContain(s)
-  expect(t1.tools?.defs.map((d) => d.name).every(zeroOwn)).toBe(true) // no MCP server: only Zero's own (browser, team)
+  expect(t1.tools?.defs.map((d) => d.name).every(zorelOwn)).toBe(true) // no MCP server: only Zorel's own (browser, team)
 
   await send(chat.id, { text: "e agora?", model: "anthropic/claude-sonnet-5-5" })
   expect(turns.at(-1)!.model).toBe("anthropic/claude-sonnet-5-5")
@@ -272,7 +272,7 @@ test("ferramentas MCP: modo leitura esconde escrita; modo aprovação pede e res
   // chat outside the project doesn't see the server
   const other = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "claude-cli/sonnet" } }))
   await send(other.id, { text: "oi" })
-  expect(turns.at(-1)!.tools?.defs.map((d) => d.name).every(zeroOwn)).toBe(true)
+  expect(turns.at(-1)!.tools?.defs.map((d) => d.name).every(zorelOwn)).toBe(true)
 })
 
 test("chaves de API: salvas pela interface, nunca devolvidas; nome desconhecido 404", async () => {
@@ -344,7 +344,7 @@ test("contas: padrão criadas sozinhas e não removíveis; extra ganha pasta pr�
   const extra = await api((c) => c.accounts.create({ payload: { provider: "codex", label: "Codex trabalho" } }))
   expect(extra).toMatchObject({ provider: "codex", isDefault: false, loggedIn: false })
   expect((await api((c) => c.accounts.update({ params: { id: extra.id }, payload: { label: "Codex 2" } }))).label).toBe("Codex 2")
-  const home = join(tmpdir(), "zero-test", "accounts", extra.id)
+  const home = join(tmpdir(), "zorel-test", "accounts", extra.id)
   expect(require("node:fs").existsSync(home)).toBe(true) // each extra account gets its own login folder
   const def = list.find((a) => a.provider === "claude" && a.isDefault)!
   expect((await fetch(`${base}/api/accounts/${def.id}`, { method: "DELETE" })).status).toBe(409)
@@ -378,7 +378,7 @@ test("anexos: upload, mensagem com arquivos, o engine recebe caminhos; texto inl
   expect(served.headers.get("content-type")).toContain("text/markdown")
   expect(await served.text()).toBe("# Deploy\nVercel às sextas")
 
-  const dir = join(tmpdir(), "zero-test", "attachments", chat.id)
+  const dir = join(tmpdir(), "zorel-test", "attachments", chat.id)
   expect(require("node:fs").existsSync(dir)).toBe(true)
   await api((c) => c.chats.remove({ params: { id: chat.id } }))
   expect(require("node:fs").existsSync(dir)).toBe(false)
@@ -436,7 +436,7 @@ test("audit log: mudanças com antes → depois; chave de API só pelo nome, nun
 })
 
 test("armazenamento: mede a pasta de dados; limpar só remove pastas de chats e projetos que não existem mais", async () => {
-  const dir = join(tmpdir(), "zero-test")
+  const dir = join(tmpdir(), "zorel-test")
   const live = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
   mkdirSync(join(dir, "runs", live.id), { recursive: true })
   writeFileSync(join(dir, "runs", live.id, "notes.md"), "x".repeat(2048))
@@ -542,12 +542,12 @@ test("agente padrão do projeto: só global ou do próprio projeto", async () =>
 test("páginas pelos agentes: escrever no projeto vira versão, buscar e ler; a fixada entra no contexto", async () => {
   const project = await api((c) => c.projects.create({ payload: { name: "Wiki", brief: "" } }))
   const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [], model: "claude-cli/sonnet" } }))
-  const write = dones((await send(chat.id, { text: 'tool:zero_knowledge_write {"title":"Deploy","body":"We deploy on Fly.io.","scope":"project"}' })).events)[0]!
+  const write = dones((await send(chat.id, { text: 'tool:zorel_knowledge_write {"title":"Deploy","body":"We deploy on Fly.io.","scope":"project"}' })).events)[0]!
   expect(write.text).toContain('Saved "Deploy"')
   const page = (await api((c) => c.pages.list())).find((p) => p.title === "Deploy")!
   expect(page.scope).toBe(`project:${project.id}`)
-  expect(dones((await send(chat.id, { text: 'tool:zero_knowledge_search {"query":"fly"}' })).events)[0]!.text).toContain(`Deploy [${page.id}]`)
-  expect(dones((await send(chat.id, { text: `tool:zero_knowledge_read {"page":"${page.id}"}` })).events)[0]!.text).toContain("We deploy on Fly.io.")
+  expect(dones((await send(chat.id, { text: 'tool:zorel_knowledge_search {"query":"fly"}' })).events)[0]!.text).toContain(`Deploy [${page.id}]`)
+  expect(dones((await send(chat.id, { text: `tool:zorel_knowledge_read {"page":"${page.id}"}` })).events)[0]!.text).toContain("We deploy on Fly.io.")
   await api((c) => c.pages.update({ params: { id: page.id }, payload: { pinned: true } }))
   await send(chat.id, { text: "oi" })
   expect(turns.at(-1)!.system).toContain(`- Deploy [${page.id}]`)
@@ -563,7 +563,7 @@ test("permissões do agente: conector por agente, sempre permitir salvo e pedir 
   expect(turns.at(-1)!.tools?.defs.map((d) => d.name).filter((n) => n.startsWith("kb__") || n.startsWith("browser_"))).toEqual([])
 
   // The agent asks for read access; approved, it's saved on the agent.
-  let r = await send(chat.id, { text: 'tool:zero_request_access {"what":"kb","level":"read","reason":"look up docs"}' }, () => true)
+  let r = await send(chat.id, { text: 'tool:zorel_request_access {"what":"kb","level":"read","reason":"look up docs"}' }, () => true)
   expect(dones(r.events)[0]!.text).toContain("Granted: read kb")
   expect((await api((c) => c.agents.list())).find((a) => a.id === agent.id)!.permissions.grants[server.id]).toBe("read")
   await send(chat.id, { text: "oi" })
@@ -583,8 +583,8 @@ test("skills: ler, propor melhoria, aprovar vendo a mudança e restaurar a vers�
   const project = await api((c) => c.projects.create({ payload: { name: "Skills", brief: "" } }))
   const skill = await api((c) => c.memories.create({ payload: { scope: `project:${project.id}`, kind: "skill", title: "Release", text: "1. bun test\n2. tag" } }))
   const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [], model: "claude-cli/sonnet" } }))
-  expect(dones((await send(chat.id, { text: 'tool:zero_read_skill {"skill":"release"}' })).events)[0]!.text).toContain("1. bun test")
-  const proposed = dones((await send(chat.id, { text: 'tool:zero_propose_skill {"title":"Release","steps":"1. bun test\\n2. lint\\n3. tag","reason":"lint caught a bug","improves":"Release"}' })).events)[0]!
+  expect(dones((await send(chat.id, { text: 'tool:zorel_read_skill {"skill":"release"}' })).events)[0]!.text).toContain("1. bun test")
+  const proposed = dones((await send(chat.id, { text: 'tool:zorel_propose_skill {"title":"Release","steps":"1. bun test\\n2. lint\\n3. tag","reason":"lint caught a bug","improves":"Release"}' })).events)[0]!
   expect(proposed.text).toContain("seeing what changes")
   const pending = (await api((c) => c.memories.list())).find((m) => m.state === "pending" && m.replaces === skill.id)!
   expect(pending.reason).toBe("lint caught a bug")

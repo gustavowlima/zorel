@@ -1,7 +1,7 @@
 // Home = a new chat: pick the project and the agent (or none) above the box, the model in it, and type. The chat
 // is created on the first send (or the first attachment, which needs a chat to belong to), then the screen
 // moves to it.
-import { t } from "@zero/i18n"
+import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
 import { agentsAtom, mutations, projectsAtom, uploadAttachment, useList, useMutation } from "../client.ts"
 import { go } from "../state.ts"

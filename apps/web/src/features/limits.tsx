@@ -1,7 +1,7 @@
 // A subscription's limit windows (ARCHITECTURE §10.2): one meter per window with how much is used and when it
 // resets; a window at 80% or more turns warning. Shared by Usage and the model picker.
-import { LIMIT_ALERT, type ProviderAccount } from "@zero/contracts"
-import { formatPercent, formatTime, t } from "@zero/i18n"
+import { LIMIT_ALERT, type ProviderAccount } from "@zorel/contracts"
+import { formatPercent, formatTime, t } from "@zorel/i18n"
 import { windowLabel } from "../labels.ts"
 import { cx, Meter } from "@/ui"
 

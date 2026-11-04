@@ -2,8 +2,8 @@
 // and access (folder access, web, browser, connectors, what was allowed for good), and Knowledge and activity
 // (its memories and skills, usage, routines, versions). One Save in the header saves every tab. Without an id it
 // creates one, in a project or global.
-import { type Access, type Agent, type AgentPermissions, type AgentVersion, DEFAULT_PERMISSIONS, type FailoverTarget } from "@zero/contracts"
-import { formatAge, t } from "@zero/i18n"
+import { type Access, type Agent, type AgentPermissions, type AgentVersion, DEFAULT_PERMISSIONS, type FailoverTarget } from "@zorel/contracts"
+import { formatAge, t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
 import { agentsAtom, agentVersionsAtom, memoriesAtom, mutations, projectsAtom, serversAtom, useList, useMutation, useReading } from "../client.ts"
 import { agentTone } from "../labels.ts"
@@ -260,7 +260,7 @@ function History({ agent }: { agent: Agent }) {
 
 // ---------- export / import: the profile as JSON, without the account (it is this computer's) ----------
 
-export const EXPORT_KIND = "zero.agent"
+export const EXPORT_KIND = "zorel.agent"
 
 export function exportAgent(a: Agent) {
   const data = {
@@ -281,7 +281,7 @@ export function exportAgent(a: Agent) {
 // A file from exportAgent back to a create payload (the server validates every field).
 export function importedAgent(text: string, projectId: string | null) {
   const v = JSON.parse(text) as Record<string, unknown>
-  if (v.kind !== EXPORT_KIND) throw new Error(t("agent.importNotAgent"))
+  if (v.kind !== EXPORT_KIND && v.kind !== "zero.agent") throw new Error(t("agent.importNotAgent"))
   const str = (x: unknown) => (typeof x === "string" ? x : "")
   return {
     projectId,

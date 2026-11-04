@@ -4,9 +4,9 @@
 // starts its text at x50. The list fades out at the bottom while more is below, and only then does the foot draw
 // its hairline. Chats sort by whose turn it is, then manual order and recency; projects reorder by drag and drop,
 // chats only inside their own group.
-import { type AccountWindow, type Agent, type Chat, LIMIT_ALERT, type Project, type ProviderAccount } from "@zero/contracts"
-import type { ChatStatus } from "@zero/contracts/events"
-import { formatAge, formatPercent, formatTime, t } from "@zero/i18n"
+import { type AccountWindow, type Agent, type Chat, LIMIT_ALERT, type Project, type ProviderAccount } from "@zorel/contracts"
+import type { ChatStatus } from "@zorel/contracts/events"
+import { formatAge, formatPercent, formatTime, t } from "@zorel/i18n"
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
 import { agentTone, chatTitle, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
@@ -18,8 +18,8 @@ import {
 } from "@/ui"
 
 const VISIBLE = 5
-const EXPANDED_KEY = "zero.sidebar.expanded"
-const COLLAPSED_KEY = "zero.sidebar.collapsed" // sections closed by hand: "chats", "projects"
+const EXPANDED_KEY = "zorel.sidebar.expanded"
+const COLLAPSED_KEY = "zorel.sidebar.collapsed" // sections closed by hand: "chats", "projects"
 type Statuses = Readonly<Record<string, ChatStatus>>
 
 // Tree keys carry their kind: a project, a chat, or a group's "show more" row.

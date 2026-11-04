@@ -8,7 +8,7 @@ p1_count: 3
 timestamp: 2026-11-03T22-46-34Z
 slug: apps-web-src-features-sidebar-tsx
 ---
-# Critique: Zero sidebar (apps/web/src/features/sidebar.tsx)
+# Critique: Zorel sidebar (apps/web/src/features/sidebar.tsx)
 Method: dual-agent. Score 21/36 (H5 n/a).
 
 | # | Heuristic | Score | Key issue |
