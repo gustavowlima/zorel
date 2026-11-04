@@ -50,6 +50,7 @@ export interface Turn {
   readonly cwd: string // empty directory: the CLI gets nobody's files
   readonly tools?: TurnTools | undefined
   readonly access?: Access | undefined // what the agent may do without asking (ACP agents ask through Zero)
+  readonly web?: boolean | undefined // the agent may search and read the web (its permissions)
   // Characters of each part of the context (the composer's context meter estimates tokens from them).
   readonly parts?: { readonly instructions: number; readonly memories: number; readonly skills: number; readonly summary: number }
 }
@@ -463,6 +464,7 @@ export interface OpenSession {
   readonly dataDir: string // where Zero-owned account folders live (e.g. CODEX_HOME)
   readonly account?: { readonly id: string; readonly home: string | null } | undefined // §6.1: whose login runs this session
   readonly access: Access // §9.2: what the agent may do in `cwd` without asking
+  readonly web: boolean // the agent's web permission: the engine's own search/fetch tools on or off
   readonly approve: Approver // asks the person (the approval card) for a native call
 }
 
@@ -495,7 +497,7 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
           const acp = ACP[provider]
           if (acp) {
             const { model } = splitModel(t.model)
-            return acpRun({ ...acp(model), model, cwd: t.cwd, prompt: `${t.system}\n\n${transcript(t.messages)}`, access: t.access ?? "workspace", gatewayUrl: t.tools?.url })
+            return acpRun({ ...acp(model), model, cwd: t.cwd, prompt: `${t.system}\n\n${transcript(t.messages)}`, access: t.access ?? "workspace", web: t.web ?? false, gatewayUrl: t.tools?.url })
           }
           return api(secrets, t)
         },

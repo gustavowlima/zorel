@@ -88,6 +88,22 @@ export const Project = Schema.Struct({
 })
 export type Project = typeof Project.Type
 
+// Per-agent permissions (ideas from a reference app): what an agent may reach besides its folder (`access` covers files and
+// the shell). web: search and read pages with the engine's own tools; browser: Zero's browser tools; grants: per
+// MCP server, "none" hides it, "read" exposes only reading tools, "write" all (a server not listed follows the
+// server's own mode); always: calls the person allowed for good ("<serverId>:<tool>" or "browser"), skipping the
+// card. Destructive tools (delete, send, publish, pay…) always ask unless allowed for good.
+export const Grant = Schema.Literals(["none", "read", "write"])
+export type Grant = typeof Grant.Type
+export const AgentPermissions = Schema.Struct({
+  web: Schema.Boolean,
+  browser: Schema.Boolean,
+  grants: Schema.Record(Schema.String, Grant),
+  always: Schema.Array(Schema.String.check(Schema.isMaxLength(200))).check(Schema.isMaxLength(200))
+})
+export type AgentPermissions = typeof AgentPermissions.Type
+export const DEFAULT_PERMISSIONS: AgentPermissions = { web: true, browser: true, grants: {}, always: [] }
+
 export const Agent = Schema.Struct({
   id: Id,
   projectId: Schema.NullOr(Id), // null: global agent
@@ -100,6 +116,7 @@ export const Agent = Schema.Struct({
   effort: Schema.NullOr(Effort),
   failover: FailoverList,
   access: Access,
+  permissions: AgentPermissions,
   createdAt: Schema.Number
 })
 export type Agent = typeof Agent.Type
@@ -112,7 +129,7 @@ export const AgentVersion = Schema.Struct({
   at: Schema.Number,
   profile: Schema.Struct({
     name: Schema.String, title: Schema.String, description: Schema.String, instructions: Schema.String, model: Schema.String,
-    accountId: Schema.NullOr(Schema.String), effort: Schema.NullOr(Effort), failover: FailoverList, access: Access
+    accountId: Schema.NullOr(Schema.String), effort: Schema.NullOr(Effort), failover: FailoverList, access: Access, permissions: Schema.optional(AgentPermissions)
   })
 })
 export type AgentVersion = typeof AgentVersion.Type
@@ -405,8 +422,8 @@ export const NewProject = Schema.Struct({ name: Name, brief: LongText(8000), pat
 export const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: Schema.optional(LongText(8000)), path: Schema.optional(Schema.NullOr(FolderPath)), defaultAgentId: Schema.optional(Schema.NullOr(Id)) })
 const AgentTitle = Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(60))
 const AgentDescription = LongText(300)
-export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access) })
-export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access) })
+export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions) })
+export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions) })
 export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)) })
 export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000) })

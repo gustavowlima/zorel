@@ -132,7 +132,7 @@ const rpc = <A, E>(f: (c: Rpc) => Effect.Effect<A, E>) =>
   Effect.runPromise(Effect.scoped(Effect.flatMap(RpcClient.make(ZeroRpc), (c) => f(c as Rpc))).pipe(Effect.provide(rpcLayer())))
 
 // Subscribes to the chat, sends and waits for the chat to go idle again. `onApproval` decides requests while the turn waits.
-async function send(chatId: string, body: { text: string; model?: string; attachmentIds?: string[] }, onApproval?: (a: Approval) => boolean) {
+async function send(chatId: string, body: { text: string; model?: string; attachmentIds?: string[] }, onApproval?: (a: Approval) => boolean | "always") {
   return rpc((c) =>
     Effect.gen(function* () {
       const events: ChatEvent[] = []
@@ -146,7 +146,10 @@ async function send(chatId: string, body: { text: string; model?: string; attach
             if (e._tag === "snapshot") return yield* Deferred.succeed(ready, undefined)
             events.push(e)
             if (e._tag === "approval") openWhileWaiting = yield* c.approvals()
-            if (e._tag === "approval" && onApproval) yield* c.decide({ approvalId: e.approval.id, outcome: onApproval(e.approval) ? "approved" : "denied" })
+            if (e._tag === "approval" && onApproval) {
+              const o = onApproval(e.approval)
+              yield* c.decide({ approvalId: e.approval.id, outcome: o === "always" ? "always" : o ? "approved" : "denied" })
+            }
             if (e._tag === "turn-completed" || e._tag === "turn-failed" || e._tag === "interrupted") ended++
             if (e._tag === "status" && e.status.state === "idle" && ended) yield* Deferred.succeed(idle, undefined)
           })
@@ -548,4 +551,30 @@ test("páginas pelos agentes: escrever no projeto vira versão, buscar e ler; a 
   await api((c) => c.pages.update({ params: { id: page.id }, payload: { pinned: true } }))
   await send(chat.id, { text: "oi" })
   expect(turns.at(-1)!.system).toContain(`- Deploy [${page.id}]`)
+})
+
+test("permissões do agente: conector por agente, sempre permitir salvo e pedir acesso", async () => {
+  const project = await api((c) => c.projects.create({ payload: { name: "Perms", brief: "" } }))
+  const server = await api((c) => c.tools.create({ payload: { projectId: project.id, name: "kb", command: "", args: [], url: `http://localhost:${mcp.port}/mcp`, env: {}, mode: "approve" } }))
+  const agent = await api((c) => c.agents.create({ payload: { projectId: project.id, name: "Ana", instructions: "", model: "claude-cli/sonnet", permissions: { web: false, browser: false, grants: { [server.id]: "none" }, always: [] } } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [agent.id], model: "claude-cli/sonnet" } }))
+  // No access: the connector isn't offered; neither is the browser.
+  await send(chat.id, { text: "oi" })
+  expect(turns.at(-1)!.tools?.defs.map((d) => d.name).filter((n) => n.startsWith("kb__") || n.startsWith("browser_"))).toEqual([])
+
+  // The agent asks for read access; approved, it's saved on the agent.
+  let r = await send(chat.id, { text: 'tool:zero_request_access {"what":"kb","level":"read","reason":"look up docs"}' }, () => true)
+  expect(dones(r.events)[0]!.text).toContain("Granted: read kb")
+  expect((await api((c) => c.agents.list())).find((a) => a.id === agent.id)!.permissions.grants[server.id]).toBe("read")
+  await send(chat.id, { text: "oi" })
+  expect(turns.at(-1)!.tools?.defs.map((d) => d.name).filter((n) => n.startsWith("kb__"))).toEqual(["kb__search_docs"])
+
+  // Read and write: a destructive tool asks; "Always allow" saves the rule and the next call doesn't ask.
+  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { permissions: { web: false, browser: false, grants: { [server.id]: "write" }, always: [] } } }))
+  r = await send(chat.id, { text: "tool:kb__delete_page" }, () => "always")
+  expect(r.events.find((e) => e._tag === "approval")?._tag === "approval" && (r.events.find((e) => e._tag === "approval") as { approval: Approval }).approval.alwaysKey).toBe(`${server.id}:delete_page`)
+  expect((await api((c) => c.agents.list())).find((a) => a.id === agent.id)!.permissions.always).toEqual([`${server.id}:delete_page`])
+  r = await send(chat.id, { text: "tool:kb__delete_page" }, () => false)
+  expect(r.events.some((e) => e._tag === "approval")).toBe(false)
+  expect(dones(r.events)[0]!.text).toContain("resultado de delete_page")
 })

@@ -1,6 +1,6 @@
 // Database schema (Drizzle). Mirrors the tables the MVP created with hand-written SQL, column by column,
 // so the existing database is adopted without copying (see migrate.ts). Changed something here? `bun run db:generate`.
-import type { AccountUsage, FailoverTarget, FileChange, Switch } from "@zero/contracts"
+import type { AccountUsage, AgentPermissions, FailoverTarget, FileChange, Switch } from "@zero/contracts"
 import { sql } from "drizzle-orm"
 import { check, index, integer, primaryKey, real, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
 
@@ -43,6 +43,7 @@ export const agents = sqliteTable("agents", {
   effort: text({ enum: ["low", "medium", "high", "max"] }), // null: the model's default
   failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>().notNull().default([]), // alternatives in order (§6.1)
   access: text({ enum: ["workspace", "ask", "full"] }).notNull().default("workspace"), // §9.2, chosen only by you
+  permissions: text({ mode: "json" }).$type<AgentPermissions>().notNull().default({ web: true, browser: true, grants: {}, always: [] }),
   createdAt: integer("created_at").notNull()
 })
 
@@ -66,6 +67,7 @@ export type AgentProfile = {
   effort: "low" | "medium" | "high" | "max" | null
   failover: ReadonlyArray<FailoverTarget>
   access: "workspace" | "ask" | "full"
+  permissions?: AgentPermissions // absent in versions saved before permissions existed
 }
 
 export const chats = sqliteTable("chats", {
@@ -215,6 +217,7 @@ export const approvals = sqliteTable(
     summary: text().notNull(),
     args: text().notNull(), // JSON with masked secrets
     cwd: text(),
+    alwaysKey: text("always_key"),
     createdAt: integer("created_at").notNull(),
     expiresAt: integer("expires_at").notNull(),
     outcome: text({ enum: ["approved", "always", "denied", "expired"] }), // null: open

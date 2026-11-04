@@ -372,12 +372,14 @@ Referência: a reference app (`docs/architecture/agents.md` "Agent communication
 | **Perguntar antes** | Só ler | Toda escrita e todo comando | `canUseTool` pergunta tudo que não é leitura | `read-only` + `on-request` | tudo em `ask` |
 | **Acesso total** | Tudo | Nada (só o que o modo do servidor MCP exigir) | tudo permitido | `danger-full-access` | tudo em `allow` |
 
+**Permissões por agente (feito em 2026-11-04, ideias do a reference app, código próprio):** além do nível de acesso (pasta e shell), cada agente tem `permissions` (coluna JSON): `web` (busca e leitura de páginas pelas ferramentas do próprio engine: `WebSearch`/`WebFetch` no Claude, `web_search` no Codex, pedidos `fetch` no ACP), `browser` (as ferramentas `browser_*` do Zero), `grants` por servidor MCP — `none` esconde, `read` expõe só ferramentas de leitura, `write` todas; sem entrada segue o modo do servidor — e `always`, as regras do "Sempre permitir" (`<servidor>:<ferramenta>` ou `browser`). Ferramentas destrutivas (classe `sensitive`: apagar, enviar, publicar, pagar…) sempre pedem, salvo servidor em `auto` ou regra `always`; cliques no navegador cujo rótulo compromete algo (comprar, publicar, enviar, apagar…) pedem sempre e não aceitam "sempre". O agente pede mais com `zero_request_access` (web, browser ou um conector com nível), aprovado num cartão. A regra pura fica em `server/permissions.ts`; a página do agente tem a aba **Tools and access**. Padrão: web e browser ligados, conectores pelo modo do servidor.
+
 **O cartão de aprovação**, igual para ferramenta nativa e MCP:
 - Mostra o agente, a ferramenta, os argumentos (com segredos mascarados) e a pasta.
 - **Vínculo à chamada exata:** um hash da ferramenta mais os argumentos canônicos. Uma aprovação não vale para outra chamada.
 - Respostas possíveis:
   - **Aprovar uma vez.**
-  - **Sempre permitir** esta ferramenta, neste agente e projeto. Isso grava uma regra visível e revogável.
+  - **Sempre permitir** esta ferramenta, neste agente. Isso grava uma regra visível e revogável (feito em 2026-11-04 para ferramentas MCP e o navegador: o cartão só mostra o botão quando a aprovação traz `alwaysKey`; ferramentas nativas do engine ainda aprovam uma vez).
   - **Recusar com motivo.** O agente lê o motivo e não tenta de novo sem pedir.
 - **Persistido no banco** (`approvals`): sobrevive a reinício e fechamento da aba.
 - **Expira** (padrão 30 min), e a expiração vale como recusa.
