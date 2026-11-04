@@ -26,7 +26,7 @@ export class Live extends AtomRpc.Service<Live>()("Live", {
 
 // ---------- CRUD queries (one key per resource) ----------
 
-export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "context" | "terminals" | "scripts" | "localServers" | "git" | "routines" | "pages" | "fileSkills"
+export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "processes" | "context" | "terminals" | "scripts" | "localServers" | "git" | "routines" | "pages" | "fileSkills"
 
 export const projectsAtom = Zorel.query("projects", "list", { reactivityKeys: ["projects"] })
 export const agentsAtom = Zorel.query("agents", "list", { reactivityKeys: ["agents"] })
@@ -39,6 +39,7 @@ export const keysAtom = Zorel.query("settings", "keys", { reactivityKeys: ["keys
 export const auditAtom = (query: { kind?: AuditKind; q?: string; from?: number; to?: number; page?: number }) =>
   Zorel.query("settings", "audit", { query, reactivityKeys: ["audit"] })
 export const storageAtom = Zorel.query("settings", "storage", { reactivityKeys: ["storage"] })
+export const processesAtom = Zorel.query("settings", "processes", { reactivityKeys: ["processes"] })
 export const fileSkillsAtom = Zorel.query("settings", "fileSkills", { reactivityKeys: ["fileSkills"] })
 // How full the next turn of a chat is (the composer's context meter); read again when the meter opens.
 export const commandsAtom = (id: string) => Zorel.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
@@ -115,6 +116,9 @@ export const mutations = {
   undo: Zorel.mutation("chats", "undo"),
   readLimits: Zorel.mutation("accounts", "limits"),
   cleanStorage: Zorel.mutation("settings", "cleanStorage"),
+  stopProcess: Zorel.mutation("settings", "stopProcess"),
+  closeSession: Zorel.mutation("settings", "closeSession"),
+  closeConnection: Zorel.mutation("settings", "closeConnection"),
   pickFileSkill: Zorel.mutation("settings", "pickFileSkill"),
   nativeSkills: Zorel.mutation("settings", "nativeSkills"),
   acceptFailoverTerms: Zorel.mutation("settings", "acceptFailoverTerms"),

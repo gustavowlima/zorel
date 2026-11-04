@@ -22,6 +22,7 @@ import { ModelPicker } from "./model-picker.tsx"
 import { GitControl } from "./git.tsx"
 import { ContextMenu, PageHeader } from "@/ui"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
+import { ChatProcesses } from "./processes.tsx"
 import {
   Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
   MenuSeparator, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
@@ -310,6 +311,7 @@ function ChatHeader({
               ))}
           </ContextMenu>
         )}
+        <ChatProcesses chatId={chat.id} />
         {/* One control for the side panel (Changes, Files, Browser, Terminal live in its tabs); what this chat
             changed shows on it. */}
         <Tooltip content={panelOpen ? t("workspace.closePanel") : t("workspace.openPanel")}>

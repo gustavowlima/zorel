@@ -255,6 +255,17 @@ export const ProjectScript = Schema.Struct({ name: Schema.String, command: Schem
 export type ProjectScript = typeof ProjectScript.Type
 // A process listening on TCP ports whose working folder is the chat's (a dev server an agent or a shell started).
 export const LocalServer = Schema.Struct({ pid: Schema.Number, command: Schema.String, ports: Schema.Array(Schema.Number) })
+// Settings › Processes: what runs in the background now. servers: programs listening on a port inside a chat's
+// folder (an agent's dev server), with the chat whose folder it is; terminals: shells still open; sessions: engine
+// processes kept between turns (Claude Code, Codex); connections: MCP servers with a client open. A server lists
+// every chat working in its folder (a project's folder is shared by its chats; a worktree is one chat's).
+export const ProcessList = Schema.Struct({
+  servers: Schema.Array(Schema.Struct({ pid: Schema.Number, command: Schema.String, ports: Schema.Array(Schema.Number), chatIds: Schema.Array(Schema.String), projectId: Schema.NullOr(Schema.String), folder: Schema.String })),
+  terminals: Schema.Array(Schema.Struct({ id: Schema.String, chatId: Schema.String, n: Schema.Number, label: Schema.NullOr(Schema.String), busy: Schema.Boolean })),
+  sessions: Schema.Array(Schema.Struct({ key: Schema.String, chatId: Schema.String, agentId: Schema.NullOr(Schema.String), provider: Schema.String, usedAt: Schema.Number })),
+  connections: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String, local: Schema.Boolean }))
+})
+export type ProcessList = typeof ProcessList.Type
 export type LocalServer = typeof LocalServer.Type
 // A file to open in the computer's default app, from a path printed in the terminal (relative to the chat's folder).
 export const OpenFile = Schema.Struct({ path: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1000)) })
@@ -632,6 +643,10 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.get("keys", "/api/keys", { success: Schema.Array(KeyInfo) }))
       .add(HttpApiEndpoint.get("audit", "/api/audit", { query: AuditQuery, success: AuditPage })) // one page, newest first
       .add(HttpApiEndpoint.get("storage", "/api/storage", { success: StorageReport }))
+      .add(HttpApiEndpoint.get("processes", "/api/processes", { success: ProcessList }))
+      .add(HttpApiEndpoint.delete("stopProcess", "/api/processes/servers/:pid", { params: Schema.Struct({ pid: Schema.NumberFromString }), error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.delete("closeSession", "/api/processes/sessions/:key", { params: Schema.Struct({ key: Schema.String.check(Schema.isMaxLength(200)) }) }))
+      .add(HttpApiEndpoint.delete("closeConnection", "/api/processes/connections/:id", { params: idParam }))
       .add(HttpApiEndpoint.post("cleanStorage", "/api/storage/clean/:id", { params: { id: StorageCleanup }, success: StorageReport }))
       .add(HttpApiEndpoint.get("usage", "/api/usage", { success: Schema.Array(UsageRow) })) // last USAGE_DAYS days
       .add(HttpApiEndpoint.get("topTurns", "/api/usage/top", { query: { since: Schema.NumberFromString }, success: Schema.Array(TopTurn) }))

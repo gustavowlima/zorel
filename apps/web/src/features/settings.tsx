@@ -1,6 +1,6 @@
 // Settings (prototype "Settings"): sections on the left, one at a time on the right. Providers (subscription
 // sign-ins and API keys, providers.tsx), MCP servers, skills, storage (storage.tsx), the audit log
-// (audit.tsx), General (the theme and the preferences to come).
+// (audit.tsx), what runs in the background (processes.tsx), General (the theme and the preferences to come).
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { formatAge, t } from "@zorel/i18n"
@@ -13,10 +13,11 @@ import { NotifySetting } from "./notify.tsx"
 import { McpSection } from "./mcp.tsx"
 import { ProvidersSection } from "./providers.tsx"
 import { ReadingState } from "./reading.tsx"
+import { ProcessesSection } from "./processes.tsx"
 import { StorageSection } from "./storage.tsx"
-import { ArrowRight, BookOpen, Button, EmptyState, FolderOpen, HardDrive, History, Input, NavItem, Plug, Settings, Rows, Screen, Search, Section, Segmented, Sparkles, Switch } from "@/ui"
+import { Activity, ArrowRight, BookOpen, Button, EmptyState, FolderOpen, HardDrive, History, Input, NavItem, Plug, Settings, Rows, Screen, Search, Section, Segmented, Sparkles, Switch } from "@/ui"
 
-const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, skills: <BookOpen />, storage: <HardDrive />, audit: <History /> }
+const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, skills: <BookOpen />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
 
 export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: string | undefined }) {
   return (
@@ -32,6 +33,7 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
       <div className="min-w-0 flex-1 overflow-y-auto">
         <div className="flex w-full max-w-2xl flex-col gap-8 px-8 py-7">
           {tab === "providers" && <ProvidersSection provider={provider} />}
+          {tab === "processes" && <ProcessesSection />}
           {tab === "storage" && <StorageSection />}
           {tab === "audit" && <AuditSection />}
           {tab === "mcp" && <McpSection projectId={null} />}

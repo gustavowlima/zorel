@@ -32,7 +32,7 @@ import { billingOf, Pricing } from "./pricing.ts"
 import { clean, measure } from "./storage.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
-import { closeTerminal, scriptsOf, serversIn, TerminalSocket, terminalsOf } from "./terminals.ts"
+import { closeTerminal, liveTerminals, scriptsOf, serversIn, serversUnder, TerminalSocket, terminalsOf } from "./terminals.ts"
 import { BrowserService, BrowserSocket } from "./browser.ts"
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
@@ -595,8 +595,25 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
     const accounts = yield* Accounts
     const store = yield* Store
     const audit = yield* Audit
-    const dataDir = yield* DataDir
     const runtime = yield* Runtime
+    const { hub } = yield* Tools
+    const workspace = yield* Workspace
+    // The folder of every chat (a worktree, the project's, or its own), servers found under them in one pass.
+    const processes = Effect.gen(function* () {
+      const projects = yield* store.projects()
+      const folders = new Map<string, { chatIds: string[]; projectId: string | null }>() // folder → the chats working in it
+      for (const chat of yield* store.chats()) {
+        const folder = workspace.cwdOf(chat.id, projectFor(chat, projects.find((p) => p.id === chat.projectId)))
+        const f = folders.get(folder) ?? { chatIds: [], projectId: chat.projectId }
+        f.chatIds.push(chat.id)
+        folders.set(folder, f)
+      }
+      const servers = serversUnder([...folders.keys()]).map(({ root, ...s }) => ({ ...s, ...folders.get(root)!, folder: root }))
+      const mcp = yield* store.mcpServers()
+      const connections = hub.connected().flatMap((id) => mcp.filter((s) => s.id === id).map((s) => ({ id: s.id, name: s.name, local: !s.url })))
+      return { servers, terminals: liveTerminals(), sessions: [...runtime.liveSessions()], connections }
+    })
+    const dataDir = yield* DataDir
     const storageReport = Effect.gen(function* () {
       const [projects, chats, messages] = yield* Effect.all([store.projects(), store.chats(), store.messageCounts()])
       return yield* Effect.promise(() => measure(dataDir, { projects, chats, messages }))
@@ -604,6 +621,13 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
     return h
       .handle("audit", ({ query }) => audit.list(query))
       .handle("storage", () => storageReport)
+      .handle("processes", () => processes)
+      // Only a pid found listening inside a chat's folder can be stopped (never an arbitrary process).
+      .handle("stopProcess", ({ params }) =>
+        Effect.flatMap(processes, (p) => (p.servers.some((s) => s.pid === params.pid) ? Effect.sync(() => void process.kill(params.pid, "SIGTERM")) : notFound()))
+      )
+      .handle("closeSession", ({ params }) => runtime.closeSession(params.key))
+      .handle("closeConnection", ({ params }) => Effect.promise(() => hub.close(params.id)))
       .handle("cleanStorage", ({ params }) =>
         Effect.gen(function* () {
           const before = yield* storageReport
