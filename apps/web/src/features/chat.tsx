@@ -78,7 +78,7 @@ export function ChatView({ chat }: { chat: Chat }) {
     leads: available.map((a) => ({
       id: handleOf(a),
       label: a.name,
-      hint: a.id === chat.agentIds[0] ? t("composer.answering") : modelLabel(a.model),
+      hint: a.id === chat.agentIds[0] ? t("composer.answering") : a.title || modelLabel(a.model),
       icon: <AuthorAvatar agent={a} model={null} size={16} />,
       run: () => makeLead(a)
     })),

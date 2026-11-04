@@ -84,7 +84,7 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
   })
 )
 
-const AGENT_FIELDS = ["name", "instructions", "model", "accountId", "effort", "failover", "access"] as const
+const AGENT_FIELDS = ["name", "title", "description", "instructions", "model", "accountId", "effort", "failover", "access"] as const
 
 const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
   Effect.gen(function* () {

@@ -34,6 +34,8 @@ export const agents = sqliteTable("agents", {
   id: text().primaryKey(),
   projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
   name: text().notNull(),
+  title: text().notNull().default(""), // the role in a few words ("Team lead"), shown by the name
+  description: text().notNull().default(""), // what it does, one sentence: other agents read it to hand work over
   instructions: text().notNull().default(""),
   model: text().notNull(),
   accountId: text("account_id"), // null: the default account of the model's provider

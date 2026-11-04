@@ -404,7 +404,7 @@ function UsageFoot({ active }: { active: boolean }) {
             variant="ghost"
             aria-label={`${t("nav.usage")}: ${sentence(r)}`}
             onPress={() => go({ view: "usage" })}
-            className={cx("h-auto w-auto rounded-full p-1", active && "bg-hover")}
+            className={cx("h-auto w-auto rounded-full p-1 text-fg data-hovered:text-fg", active && "ring-1 ring-strong")}
           >
             <LimitRing
               size={34}

@@ -36,7 +36,7 @@ test("args das CLIs: sem sessão, sem ferramentas, modelo do id", () => {
 })
 
 const mem = (text: string, confirmedAt: number, scope = "user", kind: Memory["kind"] = "fact", title = ""): Memory => ({ id: text, scope, kind, title, text, state: "active", origin: "manual", chatId: null, createdAt: 0, confirmedAt })
-const agentOf = (id: string, name: string, instructions = ""): Agent => ({ id, projectId: "p", name, instructions, model: "x/y", accountId: null, effort: null, failover: [], access: "workspace", createdAt: 0 })
+const agentOf = (id: string, name: string, instructions = ""): Agent => ({ id, projectId: "p", name, title: "", description: "", instructions, model: "x/y", accountId: null, effort: null, failover: [], access: "workspace", createdAt: 0 })
 const msg = (role: "user" | "assistant", text: string, agentId: string | null = null): Message => ({ id: text, chatId: "c", role, agentId, text, model: null, error: null, steps: [], attachments: [], switches: [], turnId: null, changes: [], revertedAt: null, accountId: null, cost: null, inputTokens: 0, outputTokens: 0, at: 1 })
 
 test("contexto: orçamento de memórias prioriza as recentes; camadas na ordem estável → volátil", () => {

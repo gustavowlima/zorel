@@ -71,7 +71,7 @@ function Screen({ route }: { route: Route }) {
     case "knowledge":
       return <KnowledgeView selected={route.id} />
     case "usage":
-      return <UsageView />
+      return <UsageView key={route.agentId ?? "all"} agentId={route.agentId} />
     case "settings":
       return <SettingsView tab={route.tab} provider={route.provider} />
     case "new-agent":
