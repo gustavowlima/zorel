@@ -2,7 +2,9 @@
 // body; sections with small muted headings; the empty state; a thin meter for shares and limits.
 import { type ReactNode, useLayoutEffect, useState } from "react"
 import { createPortal } from "react-dom"
+import { Button as AriaButton } from "react-aria-components"
 import { cn } from "@/lib/utils"
+import { ChevronRight } from "./icons"
 
 // A page's header bar. In the desktop app it moves up into the window's title bar (the #titlebar-slot the shell
 // renders), as in OpenBot: the card starts with the page itself. Elsewhere it is the card's top bar.
@@ -78,3 +80,44 @@ export function Meter({ value, label, warnAt, className }: { value: number; labe
 export const Code = ({ children, className }: { children: ReactNode; className?: string }) => (
   <code className={cn("rounded-md bg-surface px-1.5 py-0.5 font-mono text-sm", className)}>{children}</code>
 )
+
+// A row of a list between hairlines (Rows) that opens something: content flush with the section heading, a chevron,
+// and on hover a faint wash inset inside the hairlines (never a card over them). The whole row is one button (an
+// overlay under the content); `trailing` holds a control of its own (a "Sign in"), pressable on top of it.
+export function ListRow({
+  icon,
+  title,
+  hint,
+  hintTone,
+  aside,
+  trailing,
+  onPress,
+  label
+}: {
+  icon?: ReactNode
+  title: ReactNode
+  hint?: ReactNode
+  hintTone?: "warning" | "success"
+  aside?: ReactNode // quiet text on the right (a size, a count)
+  trailing?: ReactNode
+  onPress: () => void
+  label: string
+}) {
+  return (
+    <div className="relative flex min-h-14 items-center gap-3.5 py-2.5">
+      <AriaButton
+        aria-label={label}
+        onPress={onPress}
+        className="absolute -inset-x-2.5 inset-y-1 cursor-default rounded-control outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:bg-hover data-pressed:bg-control-active motion-reduce:transition-none"
+      />
+      {icon && <span className="pointer-events-none relative flex size-5 shrink-0 items-center justify-center">{icon}</span>}
+      <span className="pointer-events-none relative flex min-w-0 flex-1 flex-col">
+        <span className="truncate font-medium">{title}</span>
+        {hint && <span className={cn("truncate text-sm", hintTone === "warning" ? "text-warning" : hintTone === "success" ? "text-success" : "text-muted")}>{hint}</span>}
+      </span>
+      {aside && <span className="pointer-events-none relative shrink-0 text-sm text-muted tabular-nums">{aside}</span>}
+      {trailing && <span className="relative flex shrink-0 items-center gap-2">{trailing}</span>}
+      <ChevronRight className="pointer-events-none relative size-4 shrink-0 text-muted" />
+    </div>
+  )
+}

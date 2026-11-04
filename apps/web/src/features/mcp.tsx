@@ -6,7 +6,7 @@ import { type FormEvent, useState } from "react"
 import { splitCommand } from "../labels.ts"
 import { mutations, serversAtom, useInvalidate, useMutation, useReading } from "../client.ts"
 import { ReadingState } from "./reading.tsx"
-import { Badge, Button, Code, ConfirmButton, Field, Input, Plus, Section, Select, Spinner, Switch, Textarea } from "@/ui"
+import { Badge, Button, Code, ConfirmButton, Field, Input, Plus, Section, Select, Spinner, Switch, Textarea, EmptyState, Plug} from "@/ui"
 
 const MODES = ["read", "approve", "auto"] as const
 const modeOptions = () => MODES.map((m) => ({ value: m, label: t(`mcp.modes.${m}`) }))
@@ -20,10 +20,10 @@ export function McpSection({ projectId }: { projectId: string | null }) {
   return (
     <div className="flex flex-col gap-8">
       <Section
-        title={t("settings.mcp")}
+        title={projectId ? t("settings.mcp") : t("mcp.servers")}
         description={projectId ? t("mcp.projectIntro") : t("mcp.intro")}
         action={
-          !adding && (
+          !adding && servers.length > 0 && (
             <Button size="sm" variant="secondary" onPress={() => setAdding(true)}>
               <Plus />
               {t("mcp.add")}
@@ -33,7 +33,19 @@ export function McpSection({ projectId }: { projectId: string | null }) {
       >
         {adding && <NewServer projectId={projectId} onDone={() => setAdding(false)} />}
         <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["servers"])} />
-        {!reading.loading && !reading.failed && servers.length === 0 && !adding && <p className="text-muted">{t("mcp.empty")}</p>}
+        {!reading.loading && !reading.failed && servers.length === 0 && !adding && (
+          <EmptyState
+            icon={<Plug />}
+            title={t("mcp.empty")}
+            hint={t("mcp.emptyHint")}
+            action={
+              <Button size="sm" variant="default" onPress={() => setAdding(true)}>
+                <Plus />
+                {t("mcp.add")}
+              </Button>
+            }
+          />
+        )}
         {servers.length > 0 && (
           <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
             {servers.map((s) => (
@@ -42,11 +54,12 @@ export function McpSection({ projectId }: { projectId: string | null }) {
           </div>
         )}
       </Section>
+      {/* Reference, quieter than the list. */}
       <Section title={t("mcp.modesTitle")}>
-        <dl className="grid grid-cols-3 gap-x-6 gap-y-1.5">
+        <dl className="grid grid-cols-3 gap-x-6 gap-y-1.5 text-sm">
           {MODES.map((m) => (
             <div key={m} className="contents">
-              <dt className="font-medium">{t(`mcp.modes.${m}`)}</dt>
+              <dt className="text-secondary">{t(`mcp.modes.${m}`)}</dt>
               <dd className="col-span-2 text-muted">{t(`mcp.modeHints.${m}`)}</dd>
             </div>
           ))}
@@ -161,13 +174,13 @@ function NewServer({ projectId, onDone }: { projectId: string | null; onDone: ()
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4 rounded-card border border-subtle p-4">
+    <form onSubmit={submit} className="flex flex-col gap-4 border-y border-subtle py-5">
       {/* The catalog: fills the form; the token (if any) is still yours to paste. */}
       <div className="flex flex-col gap-2">
         <span className="text-sm text-muted">{t("mcp.catalog")}</span>
         <div className="flex flex-wrap gap-1.5">
           {CATALOG.map((c) => (
-            <Button key={c.name} size="sm" variant={name === c.name ? "secondary" : "ghost"} shape="pill" onPress={() => pick(c)}>
+            <Button key={c.name} size="sm" variant="secondary" shape="pill" aria-pressed={name === c.name} className={name === c.name ? "bg-accent-soft text-accent-text" : "font-normal"} onPress={() => pick(c)}>
               {c.name}
             </Button>
           ))}
@@ -175,7 +188,7 @@ function NewServer({ projectId, onDone }: { projectId: string | null; onDone: ()
       </div>
       <div className="grid grid-cols-3 gap-3">
         <Field label={t("mcp.name")}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required spellCheck={false} />
+          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required spellCheck={false} placeholder={t("mcp.namePlaceholder")} />
         </Field>
         <Field label={t("mcp.type")}>
           <Select

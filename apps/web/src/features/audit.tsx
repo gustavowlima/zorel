@@ -112,8 +112,8 @@ export function AuditSection() {
       }
     >
       {/* Filters: kind, words, and a span of days (either end may stay open). */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-1 basis-80 items-center gap-2">
           <Select
             className="w-auto"
             aria-label={t("audit.kind")}
@@ -136,14 +136,14 @@ export function AuditSection() {
             setTo(r.end ?? "")
             setPage(0)
           }}
-          className="self-start"
+          className="shrink-0"
         />
       </div>
       <ReadingState loading={AsyncResult.isInitial(result)} failed={AsyncResult.isFailure(result)} onRetry={() => invalidate(["audit"])} />
       {data && shown.length === 0 && <p className="text-muted">{filtered ? t("audit.noMatch") : t("audit.empty")}</p>}
       {days.map(({ day, entries: list }) => (
         <div key={day} className="flex flex-col gap-2">
-          <h3 className="pt-2 text-xs font-medium text-dim">{day}</h3>
+          <h3 className="pt-2 text-sm font-medium text-muted">{day}</h3>
           <Rows>
             {list.map((e) => (
               <div key={e.id} className="flex items-start gap-3 py-3">
@@ -156,17 +156,20 @@ export function AuditSection() {
                         <span key={c.field} className="flex min-w-0 flex-wrap items-center gap-x-1.5">
                           <span className="text-muted">{FIELDS.has(c.field) ? t(`audit.fields.${c.field}` as MessageKey) : c.field}:</span>
                           <Value field={c.field} value={c.before} tone="before" />
-                          <ArrowRight className="size-3.5 shrink-0 text-muted" />
-                          <Value field={c.field} value={c.after} tone="after" />
+                          {/* The arrow travels with the new value: a wrap never leaves it dangling. */}
+                          <span className="inline-flex min-w-0 items-center gap-1.5">
+                            <ArrowRight className="size-3.5 shrink-0 text-muted" />
+                            <Value field={c.field} value={c.after} tone="after" />
+                          </span>
                         </span>
                       ))}
                     </span>
                   ) : null}
                   {e.reason && <span className="text-sm text-muted">{e.reason}</span>}
-                  <span className="text-sm text-muted">{actorName(e)}</span>
+                  <span className="text-sm text-muted">{e.actor.type === "user" ? t("audit.byYou") : t("audit.by", { name: actorName(e) })}</span>
                 </span>
                 <time className="shrink-0 text-sm text-muted tabular-nums" dateTime={new Date(e.at).toISOString()} title={new Date(e.at).toLocaleString()}>
-                  {formatTime(e.at)}
+                  {formatTime(e.at, e.at) /* the day is the heading above: the time alone */}
                 </time>
               </div>
             ))}

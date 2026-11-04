@@ -211,7 +211,7 @@ export const AuditPage = Schema.Struct({ entries: Schema.Array(AuditEntry), tota
 export type AuditPage = typeof AuditPage.Type
 
 // Storage: Zero's data folder measured now, where it goes and what can be freed.
-export const StorageCategory = Schema.Literals(["workspaces", "attachments", "history", "backups", "runs", "accounts", "other"])
+export const StorageCategory = Schema.Literals(["workspaces", "attachments", "history", "backups", "runs", "accounts", "browser", "other"])
 export const StorageCleanup = Schema.Literals(["backups", "orphans"])
 export const StorageReport = Schema.Struct({
   measuredAt: Schema.Number,

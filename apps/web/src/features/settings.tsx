@@ -12,7 +12,7 @@ import { McpSection } from "./mcp.tsx"
 import { ProvidersSection } from "./providers.tsx"
 import { ReadingState } from "./reading.tsx"
 import { StorageSection } from "./storage.tsx"
-import { ArrowRight, BookOpen, Button, HardDrive, History, NavItem, Plug, Settings, Rows, Screen, Section, Segmented, Sparkles, Switch } from "@/ui"
+import { ArrowRight, BookOpen, Button, EmptyState, HardDrive, History, NavItem, Plug, Settings, Rows, Screen, Section, Segmented, Sparkles, Switch } from "@/ui"
 
 const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, skills: <BookOpen />, storage: <HardDrive />, audit: <History /> }
 
@@ -21,7 +21,8 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
     <Screen title={t("settings.title")} subtitle={t(`settings.hint.${tab}`)} bodyClassName="flex">
       <nav aria-label={t("settings.sections")} className="flex w-56 shrink-0 flex-col gap-0.5 border-r border-subtle p-3">
         {SETTINGS_TABS.map((s) => (
-          <NavItem key={s} icon={ICONS[s]} active={s === tab} onPress={() => go({ view: "settings", tab: s })}>
+          // On the canvas the active item needs a fill of its own (bg-canvas, the sidebar's, would vanish here).
+          <NavItem key={s} icon={ICONS[s]} active={s === tab} className={s === tab ? "border-transparent bg-control" : ""} onPress={() => go({ view: "settings", tab: s })}>
             {t(`settings.${s}`)}
           </NavItem>
         ))}
@@ -52,18 +53,31 @@ function Skills() {
   const update = useMutation(mutations.updateMemory)
   return (
     <Section
-        title={t("settings.skills")}
+        title={t("skills.listTitle")}
         description={<span className="block max-w-prose">{t("skills.intro")}</span>}
         action={
-          <Button size="sm" variant="secondary" onPress={() => go({ view: "knowledge" })}>
-            {t("skills.newInKnowledge")}
-            <ArrowRight />
-          </Button>
+          skills.length > 0 && (
+            <Button size="sm" variant="secondary" onPress={() => go({ view: "knowledge" })}>
+              {t("skills.newInKnowledge")}
+              <ArrowRight />
+            </Button>
+          )
         }
       >
         <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["memories"])} />
         {failed && <p className="text-sm text-danger">{failed}</p>}
-        {!reading.loading && !reading.failed && skills.length === 0 && <p className="text-muted">{t("skills.empty")}</p>}
+        {!reading.loading && !reading.failed && skills.length === 0 && (
+          <EmptyState
+            icon={<BookOpen />}
+            title={t("skills.empty")}
+            hint={t("skills.emptyHint")}
+            action={
+              <Button size="sm" variant="default" onPress={() => go({ view: "knowledge" })}>
+                {t("skills.newInKnowledge")}
+              </Button>
+            }
+          />
+        )}
         {skills.length > 0 && (
           <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
             {skills.map((s) => (
@@ -99,11 +113,12 @@ function Skills() {
 
 // ---------- general ----------
 
-// Preferences of this computer, one section per topic; Appearance (the theme) first.
+// Preferences of this computer, one section per topic: Appearance (the theme), then Notifications.
 
 function General() {
   const [pref, setPref] = useState<ThemePref>(themePref)
   return (
+    <>
     <Section title={t("appearance.title")}>
       <Rows>
         <div className="flex flex-wrap items-center gap-3 py-3.5">
@@ -121,8 +136,13 @@ function General() {
             options={(["system", "dark", "light"] as const).map((p) => ({ id: p, label: t(`appearance.${p}`) }))}
           />
         </div>
+      </Rows>
+    </Section>
+    <Section title={t("appearance.notifications")}>
+      <Rows>
         <NotifySetting />
       </Rows>
     </Section>
+    </>
   )
 }
