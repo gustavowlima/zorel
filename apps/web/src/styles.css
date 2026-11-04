@@ -217,8 +217,7 @@ html, body, #root { height: 100%; }
 /* A scrolling list with more below fades out over its last 24px instead of ending on a cut row. */
 .fade-bottom { mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
 
-/* Desktop app: the title bar holds the brand, so the rail doesn't repeat it. */
-[data-shell="desktop"] .rail-logo { display: none; }
+
 /* Desktop app: the rail, the sidebar top and screen headers move the window; their controls stay clickable. */
 [data-shell="desktop"] .app-drag { -webkit-app-region: drag; }
 [data-shell="desktop"] .app-drag :is(button, a, input, select, textarea, [role], [contenteditable]) { -webkit-app-region: no-drag; }
