@@ -14,7 +14,7 @@ import type { Approver, EngineSession, NativeApproval } from "#server/engines/se
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
-import { createInputs, findAgent, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
+import { ASK_TOOL, createInputs, findAgent, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
@@ -35,6 +35,9 @@ const ERRORS_MAX = 6 // this many failed steps in a row: stuck
 
 // Runaway guard of one turn (ideas from Tucano): it watches finished steps and says why to stop, if it should.
 // A step is its kind, title and the start of its output; a different step or a success resets the counts.
+// A waiting status whose card is a question (zorel_ask_user): the app says "asks you" instead of "waits for your OK".
+export const QUESTION_LABEL = "question"
+
 export function runawayGuard() {
   let last = ""
   let same = 0
@@ -213,6 +216,7 @@ export const makeRuntime = Effect.gen(function* () {
     })
   const running = new Map<string, Fiber.Fiber<unknown, unknown>>()
   const waiting = new Map<string, Deferred.Deferred<ApprovalOutcome>>()
+  const answers = new Map<string, string>() // question id → the person's answer (zorel_ask_user)
   const nameOf = (agent: Agent | undefined) => agent?.name ?? "Assistant"
   const run = <A>(e: Effect.Effect<A>) => Effect.runPromise(e)
 
@@ -246,10 +250,27 @@ export const makeRuntime = Effect.gen(function* () {
     // access is "ask", like any tool that writes.
     if (perms.browser) for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
-    for (const t of [...TEAM_TOOLS, TASK_TOOL, MEMORY_TOOL, ROUTINES_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    for (const t of [...TEAM_TOOLS, TASK_TOOL, ASK_TOOL, MEMORY_TOOL, ROUTINES_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
       return { tools: undefined as TurnTools | undefined, close: () => {} }
+    }
+
+    // zorel_ask_user: a question card; the answer (typed or one of the options) comes back as the tool's result.
+    const askCall = async (args: Record<string, unknown>) => {
+      const question = typeof args.question === "string" ? args.question.trim().slice(0, 1000) : ""
+      if (!question) return textResult("question: what you need to know, in one short question.", true)
+      const options = (Array.isArray(args.options) ? args.options : []).flatMap((o) => (typeof o === "string" && o.trim() ? [o.trim().slice(0, 100)] : [])).slice(0, 6)
+      const s = await step(question, ASK_TOOL.name)
+      const { id, outcome } = await run(waitFor(chat, row, agent, s, { kind: "question", tool: ASK_TOOL.name, summary: question, args: JSON.stringify({ options }), cwd: null }, null, "answer"))
+      const answer = answers.get(id)
+      answers.delete(id)
+      if (outcome !== "approved" || !answer) {
+        await finish(s, "refused")
+        return textResult(outcome === "expired" ? "No answer in 30 minutes. Go on with your best judgment and say what you assumed." : "The user chose not to answer. Go on with your best judgment and say what you assumed.")
+      }
+      await finish(s, "ok", answer)
+      return textResult(`The user answered: ${answer}`)
     }
 
     // zorel_start_task: checks, then the teammate's own chat. A teammate with wider access than the caller only
@@ -497,6 +518,7 @@ export const makeRuntime = Effect.gen(function* () {
       }
       if (name === MEMORY_TOOL.name) return memoryCall(args)
       if (name === TASK_TOOL.name) return taskCall(args)
+      if (name === ASK_TOOL.name) return askCall(args)
       if (TEAM_TOOLS.some((t) => t.name === name)) return teamCall(name, args)
       const builtin = BROWSER_TOOLS.find((t) => t.name === name)
       if (builtin) {
@@ -557,6 +579,9 @@ export const makeRuntime = Effect.gen(function* () {
   // One approval card (MCP tool or native call): persisted, published, waited on; expiry counts as denial.
   // alwaysKey: the rule "Always allow" would save on the agent (null: this call can only be allowed once).
   const askApproval = (chat: Chat, row: TurnRow, agent: Agent | undefined, s: WorkStep | undefined, req: NativeApproval, alwaysKey: string | null = null) =>
+    Effect.map(waitFor(chat, row, agent, s, req, alwaysKey), (r) => r.outcome)
+  // The card itself (an approval, or a question when `waits` is "answer"): its id and how it ended.
+  const waitFor = (chat: Chat, row: TurnRow, agent: Agent | undefined, s: WorkStep | undefined, req: NativeApproval, alwaysKey: string | null, waits: "ok" | "answer" = "ok") =>
     Effect.gen(function* () {
       const now = Date.now()
       const approval = yield* store.addApproval({
@@ -567,14 +592,14 @@ export const makeRuntime = Effect.gen(function* () {
       waiting.set(approval.id, d)
       if (s) yield* publish(chat.id, ev("step-finished", { step: { ...s, status: "waiting" } }))
       yield* publish(chat.id, ev("approval", { approval }))
-      yield* setStatus(chat.id, "waiting", agent?.id ?? null, `${nameOf(agent)} waits for your OK`)
+      yield* setStatus(chat.id, "waiting", agent?.id ?? null, waits === "answer" ? QUESTION_LABEL : `${nameOf(agent)} waits for your OK`)
       const outcome = yield* Deferred.await(d).pipe(
         Effect.timeoutOption(Duration.millis(APPROVAL_MS)),
         Effect.flatMap((o) => (o._tag === "Some" ? Effect.succeed(o.value) : expire(chat.id, approval.id)))
       )
       waiting.delete(approval.id)
       yield* setStatus(chat.id, "running", agent?.id ?? null, `${nameOf(agent)} is working`)
-      return outcome
+      return { id: approval.id, outcome }
     })
 
   const expire = (chatId: string, id: string) =>
@@ -1018,6 +1043,7 @@ export const makeRuntime = Effect.gen(function* () {
           if (target) yield* store.updateAgent(target.id, { permissions: withAlways(permissionsOf(target), a.alwaysKey) })
         }
         const d = waiting.get(approvalId)
+        if (a.kind === "question" && reason) answers.set(approvalId, reason.trim()) // the answer, read by zorel_ask_user
         if (d) yield* Deferred.succeed(d, outcome)
         yield* publish(a.chatId, ev("approval-resolved", { approvalId, outcome, reason: reason ?? null, by: "user" }))
       }),

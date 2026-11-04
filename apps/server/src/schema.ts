@@ -231,7 +231,7 @@ export const approvals = sqliteTable(
     turnId: text("turn_id").notNull().references(() => turns.id, { onDelete: "cascade" }),
     stepId: text("step_id"),
     agentId: text("agent_id"),
-    kind: text({ enum: ["command", "edit", "tool", "network"] }).notNull(),
+    kind: text({ enum: ["command", "edit", "tool", "network", "question"] }).notNull(), // question: zorel_ask_user
     tool: text().notNull(),
     summary: text().notNull(),
     args: text().notNull(), // JSON with masked secrets

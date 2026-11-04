@@ -73,7 +73,7 @@ export const agentName = (id: string | null, agents: ReadonlyArray<Agent>) => ag
 export function statusLabel(status: ChatStatus, agents: ReadonlyArray<Agent>): string {
   const agent = agentName(status.agentId, agents)
   if (status.state === "running") return t("status.running", { agent })
-  if (status.state === "waiting") return t("status.waiting", { agent })
+  if (status.state === "waiting") return status.label === "question" ? t("status.asking", { agent }) : t("status.waiting", { agent }) // "question": the server's mark for zorel_ask_user
   if (status.state === "failed") return t("status.failed")
   return ""
 }
