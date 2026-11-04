@@ -45,7 +45,7 @@ export function QuestionAnswer({ approval: a, onError }: { approval: Approval; o
       )}
       <form onSubmit={submit} className="flex items-center gap-2">
         <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={options.length ? t("question.other") : t("question.placeholder")} aria-label={t("question.answer")} maxLength={2000} disabled={pending !== undefined} className="flex-1" />
-        <Button type="submit" size="sm" variant="default" isPending={pending === text.trim() && !!text.trim()} isDisabled={!text.trim() || pending !== undefined}>
+        <Button type="submit" size="sm" variant="secondary" isPending={pending === text.trim() && !!text.trim()} isDisabled={!text.trim() || pending !== undefined}>
           {t("question.send")}
         </Button>
         <Button size="sm" variant="ghost" isDisabled={pending !== undefined} onPress={() => send(null)}>

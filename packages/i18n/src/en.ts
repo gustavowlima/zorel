@@ -138,6 +138,7 @@ export const en = {
   },
   approval: {
     waiting: "Waiting for you",
+    waitsFor: "{agent} waits for your OK",
     wantsTo: "{agent} wants to use {tool}",
     allow: "Allow",
     allowAlways: "Always allow",

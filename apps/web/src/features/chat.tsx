@@ -25,7 +25,7 @@ import { ChatProcesses } from "./processes.tsx"
 import { QuestionAnswer } from "./question.tsx"
 import {
   Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
-  MenuSeparator, MessageCircle, Minimize2, MoreHorizontal, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
+  MenuSeparator, MessageCircle, MessageCircleQuestion, ShieldAlert, Minimize2, MoreHorizontal, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
 } from "@/ui"
 
 export function ChatView({ chat }: { chat: Chat }) {
@@ -920,18 +920,20 @@ function ApprovalCard({ approval: a }: { approval: Approval }) {
     })
   }
   const command = commandOf(a)
+  const who = agentName(a.agentId, agents)
   if (a.kind === "question")
     return (
-      <section aria-label={t("question.label", { agent: agentName(a.agentId, agents) })} className="flex w-full flex-col gap-2.5 rounded-card border border-accent-line bg-accent-faint px-3.5 py-3">
-        <span className="font-medium text-accent-text">{a.summary}</span>
+      <TrayCard icon={<MessageCircleQuestion />} label={t("question.label", { agent: who })}>
+        <span className="text-chat font-medium">{a.summary}</span>
         <QuestionAnswer approval={a} onError={setError} />
         {error && <p className="text-sm text-danger">{error}</p>}
-      </section>
+      </TrayCard>
     )
   return (
-    <section aria-label={t("approval.waiting")} className="flex w-full flex-wrap items-center gap-2.5 rounded-card border border-accent-line bg-accent-faint py-2.5 pr-2.5 pl-3.5">
+    <TrayCard icon={<ShieldAlert />} label={t("approval.waitsFor", { agent: who })}>
+      <div className="flex flex-wrap items-center gap-2.5">
       <span className="flex min-w-50 flex-1 flex-col">
-        <span className="font-medium text-accent-text">{a.summary || t("approval.wantsTo", { agent: agentName(a.agentId, agents), tool: a.tool })}</span>
+        <span className="font-medium">{a.summary || t("approval.wantsTo", { agent: who, tool: a.tool })}</span>
         {/* The command itself; pressing it shows every argument. */}
         <Button variant="ghost" size="sm" aria-expanded={details} onPress={() => setDetails(!details)} className="h-auto max-w-full justify-start rounded-none bg-transparent px-0 font-mono font-normal text-muted data-hovered:bg-transparent">
           <span className="truncate" title={command}>
@@ -956,6 +958,21 @@ function ApprovalCard({ approval: a }: { approval: Approval }) {
       </Button>
       {details && <pre className="max-h-48 basis-full overflow-auto rounded-control bg-code px-3 py-2 font-mono text-sm text-secondary">{a.args}</pre>}
       {error && <p className="basis-full text-sm text-danger">{error}</p>}
+      </div>
+    </TrayCard>
+  )
+}
+
+// A card that waits for you above the message box: the box's own frame (canvas, strong border) so the two read as
+// one piece; the accent only in the small line that says who waits, with its icon.
+function TrayCard({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
+  return (
+    <section aria-label={label} className="flex w-full flex-col gap-2.5 rounded-card border border-strong bg-canvas px-3.5 py-3">
+      <span className="flex items-center gap-1.5 text-sm text-accent-text [&_svg]:size-3.5">
+        {icon}
+        {label}
+      </span>
+      {children}
     </section>
   )
 }
