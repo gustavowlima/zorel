@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 export function Screen({ title, subtitle, actions, children, bodyClassName }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children: ReactNode; bodyClassName?: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-subtle px-7 py-3">
+      <header className="app-drag flex min-h-14 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-subtle px-7 py-3">
         <h1 className="truncate text-lg font-semibold">{title}</h1>
         {subtitle && <span className="min-w-0 flex-1 truncate text-muted">{subtitle}</span>}
         {!subtitle && <span className="flex-1" />}

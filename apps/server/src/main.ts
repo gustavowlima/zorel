@@ -797,7 +797,21 @@ export async function start(o: StartOptions = {}) {
     Layer.launch,
     BunRuntime.runMain
   )
+  watchParent()
   return `http://127.0.0.1:${port}`
+}
+
+// Started by the desktop app: exit when it's gone (it crashed or was killed without stopping the server).
+function watchParent() {
+  const parent = Number(process.env.ZERO_PARENT_PID)
+  if (!parent) return
+  setInterval(() => {
+    try {
+      process.kill(parent, 0)
+    } catch {
+      process.exit(0)
+    }
+  }, 5000).unref()
 }
 
 if (import.meta.main) await start()

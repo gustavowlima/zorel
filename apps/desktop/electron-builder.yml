@@ -1,0 +1,30 @@
+# Desktop package (D11). The app is only the Electron main process; the Zero server (compiled Bun binary), the web
+# build and the migrations ship as resources next to it. Signing: with CSC_LINK + CSC_KEY_PASSWORD (and APPLE_ID +
+# APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID to notarize) it's a Developer ID build, the only kind current macOS
+# runs: ad hoc builds and builds signed with an "Apple Development" certificate are refused by AMFI (tested
+# 2026-11-04). Without a Developer ID, run the app with `bun run desktop` (dev).
+appId: dev.zero.app
+productName: Zero
+directories:
+  output: artifacts
+  buildResources: assets
+files:
+  - dist/main.cjs
+  - assets/icon.png
+  - package.json
+asar: true
+extraResources:
+  - { from: build/zero-server, to: zero-server }
+  - { from: build/web, to: web }
+  - { from: build/drizzle, to: drizzle }
+# Only the app's languages: drops ~40 MB of Chromium locales.
+electronLanguages: [en, pt-BR]
+mac:
+  icon: assets/icon.png
+  category: public.app-category.developer-tools
+  target: [dmg]
+win:
+  icon: assets/icon.png
+linux:
+  icon: assets/icon.png
+  target: [AppImage]

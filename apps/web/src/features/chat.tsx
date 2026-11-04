@@ -259,7 +259,7 @@ function ChatHeader({
 
   return (
     <>
-      <header className="flex min-h-13 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-subtle py-2 pr-4 pl-7">
+      <header className="app-drag flex min-h-13 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-subtle py-2 pr-4 pl-7">
         <div className="flex min-w-0 flex-1 items-baseline gap-3">
           <h1 className="truncate text-lg font-semibold">{chatTitle(chat)}</h1>
           <Button size="sm" variant="ghost" className="-ml-2 shrink-0 text-muted" onPress={() => go(project ? { view: "project", id: project.id, tab: "overview" } : { view: "home" })}>

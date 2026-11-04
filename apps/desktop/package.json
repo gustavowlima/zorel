@@ -1,14 +1,21 @@
 {
   "name": "@zero/desktop",
+  "productName": "Zero",
+  "version": "0.1.0",
+  "description": "Zero desktop app",
   "private": true,
-  "type": "module",
+  "main": "dist/main.cjs",
   "scripts": {
-    "prebuild": "bun run --cwd ../web build && rm -rf web drizzle && cp -R ../web/dist web && cp -R ../server/drizzle drizzle",
-    "icons": "sh scripts/icons.sh",
-    "build": "electrobun build --env=stable",
-    "start": "bun run prebuild && electrobun dev"
+    "main": "bun build src/main.ts --target=node --format=cjs --external electron --outfile dist/main.cjs",
+    "server": "bun build --compile --minify --external 'chromium-bidi' --external 'chromium-bidi/*' ../server/src/main.ts --outfile build/zero-server",
+    "start": "bun run --cwd ../web build && bun run main && electron .",
+    "prebuild": "bun run --cwd ../web build && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run main",
+    "build": "electron-builder --publish never",
+    "icons": "sh scripts/icons.sh"
   },
-  "dependencies": {
-    "electrobun": "2.0.5"
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0"
   }
 }

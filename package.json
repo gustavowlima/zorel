@@ -10,7 +10,7 @@
     "build": "bun run --cwd apps/web build",
     "start": "bun run build && bun apps/server/src/main.ts",
     "desktop": "bun run --cwd apps/desktop start",
-    "desktop:build": "bun run --cwd apps/desktop prebuild && bun run --cwd apps/desktop build",
+    "desktop:build": "bun run --cwd apps/desktop build",
     "typecheck": "tsc -p apps/server && tsc -p apps/web",
     "lint": "biome lint",
     "check:ui": "bun scripts/check-ui.ts",
