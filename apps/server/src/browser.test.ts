@@ -30,7 +30,6 @@ test("parsePanelFrame: positions as fractions, bounded text, known kinds only", 
   expect(parsePanelFrame(`{"t":"key","key":"Enter"}`)).toEqual({ t: "key", key: "Enter" })
   expect(parsePanelFrame(`{"t":"nav","url":"example.com"}`)).toEqual({ t: "nav", url: "example.com" })
   expect(parsePanelFrame(`{"t":"release"}`)).toEqual({ t: "release" })
-  expect(parsePanelFrame(`{"t":"window"}`)).toEqual({ t: "window" })
   expect(parsePanelFrame(`{"t":"eval","js":"1"}`)).toBeUndefined()
   expect(parsePanelFrame("nope")).toBeUndefined()
 })

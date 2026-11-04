@@ -5,9 +5,7 @@
 // person's tabs in one more), saved encrypted under the data folder so a site signed into once stays signed in.
 // Each chat has its own tabs; the agents drive them through the tools below (read the page as an accessibility
 // snapshot with [ref=eN] handles, act on a ref), and the Browser panel watches the chat's active tab live (CDP
-// screencast) and can take over: while a person holds the browser, every agent tool on that chat is refused. Sites
-// that refuse automated browsers for sign-in (Google) get a real window: "Sign in in a window" opens the tab's
-// profile in a visible browser and brings the logins back when it closes.
+// screencast) and can take over: while a person holds the browser, every agent tool on that chat is refused.
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
@@ -22,7 +20,6 @@ export const MAX_SNAPSHOT_CHARS = 30_000
 // Where to find a browser, in order: Google Chrome, Microsoft Edge (on every Windows), then Playwright's Chromium
 // (bundled with the desktop app: PLAYWRIGHT_BROWSERS_PATH).
 const CHANNELS = ["chrome", "msedge", undefined] as const
-const WINDOWED = ["chrome", "msedge"] as const
 const ACTION_MS = 15_000
 const NAV_MS = 30_000
 const VIEWPORT = { width: 1280, height: 800 }
@@ -75,19 +72,17 @@ export const unseal = (key: Buffer, bytes: Buffer): State => {
   return JSON.parse(Buffer.concat([d.update(bytes.subarray(IV_BYTES + TAG_BYTES)), d.final()]).toString("utf8")) as State
 }
 
-// The first browser that starts, in CHANNELS order. A window needs Chrome or Edge: the bundled Chromium is the
-// headless shell.
-async function launch(headless: boolean): Promise<Browser> {
+// The first browser that starts, in CHANNELS order.
+async function launch(): Promise<Browser> {
   let last: unknown
-  for (const channel of headless ? CHANNELS : WINDOWED) {
+  for (const channel of CHANNELS) {
     try {
-      return await chromium.launch({ headless, ...(channel && { channel }) })
+      return await chromium.launch({ headless: true, ...(channel && { channel }) })
     } catch (e) {
       last = e
     }
   }
-  const why = last instanceof Error ? last.message.split("\n")[0] : last
-  throw new BrowserError(headless ? `No browser to run: install Google Chrome, or run \`bunx playwright install chromium-headless-shell\`. (${why})` : `A sign-in window needs Google Chrome or Microsoft Edge installed. (${why})`)
+  throw new BrowserError(`No browser to run: install Google Chrome, or run \`bunx playwright install chromium-headless-shell\`. (${last instanceof Error ? last.message.split("\n")[0] : last})`)
 }
 
 export class Browsers {
@@ -103,7 +98,7 @@ export class Browsers {
 
   // Opened on first use and shared by every context.
   private open(): Promise<Browser> {
-    this.browser ??= launch(true).catch((e) => {
+    this.browser ??= launch().catch((e) => {
       this.browser = undefined
       throw e
     })
@@ -256,37 +251,6 @@ export class Browsers {
     if (c.userControl && !user) void this.save(this.activeProfile(chatId) ?? YOU) // what they signed into stays
     c.userControl = user
     void this.notify(chatId)
-  }
-
-  // The active tab's profile in a visible browser (the installed Chrome when there is one), for sign-ins that refuse
-  // an automated one. The person holds the chat meanwhile; closing the window brings its logins back to the profile
-  // and reloads the tab.
-  async signInWindow(chatId: string) {
-    const profile = this.activeProfile(chatId)
-    const page = profile && this.chat(chatId).tabs.get(this.chat(chatId).active!)
-    if (!profile || !page) throw new BrowserError("Open a page first.")
-    const ctx = await this.context(profile)
-    const visible = await launch(false) // fails before the person holds anything
-    this.setControl(chatId, true)
-    try {
-      const own = await visible.newContext({ viewport: null, storageState: await ctx.storageState({ indexedDB: true }) })
-      const tab = await own.newPage()
-      await tab.goto(page.url(), { timeout: NAV_MS }).catch(() => undefined)
-      // The window closes: its last page is gone.
-      await new Promise<void>((done) => {
-        const check = () => !own.pages().length && done()
-        own.on("page", (p) => p.on("close", check))
-        tab.on("close", check)
-        visible.on("disconnected", () => done())
-      })
-      const state = await own.storageState({ indexedDB: true }).catch(() => undefined)
-      if (state) await ctx.setStorageState(state)
-      await this.save(profile)
-      await page.reload({ timeout: NAV_MS }).catch(() => undefined)
-    } finally {
-      await visible.close().catch(() => undefined)
-      this.setControl(chatId, false)
-    }
   }
 
   // ---------- live view ----------
@@ -594,7 +558,7 @@ export type PanelFrame =
   | { t: "key"; key: string }
   | { t: "text"; text: string }
   | { t: "nav"; url: string }
-  | { t: "back" | "forward" | "reload" | "newtab" | "release" | "window" }
+  | { t: "back" | "forward" | "reload" | "newtab" | "release" }
   | { t: "tab" | "close"; id: string }
 
 const frac = (n: unknown) => (typeof n === "number" && n >= 0 && n <= 1 ? n : undefined)
@@ -620,7 +584,6 @@ export function parsePanelFrame(raw: string): PanelFrame | undefined {
       case "reload":
       case "newtab":
       case "release":
-      case "window":
         return { t: f.t }
       case "tab":
       case "close":
@@ -631,14 +594,8 @@ export function parsePanelFrame(raw: string): PanelFrame | undefined {
 }
 
 // What a panel frame does. Any input means a person is driving: the browser is theirs until "release".
-async function applyPanelFrame(b: Browsers, chatId: string, f: PanelFrame, report: (e: unknown) => void) {
+async function applyPanelFrame(b: Browsers, chatId: string, f: PanelFrame) {
   if (f.t === "release") return b.setControl(chatId, false)
-  if (f.t === "window") {
-    if (!b.activeProfile(chatId)) throw new BrowserError("Open a page first.")
-    // Runs until the person closes the window; the socket keeps taking frames meanwhile. A failure (no Chrome or
-    // Edge) still reaches the panel.
-    return void b.signInWindow(chatId).catch(report)
-  }
   b.setControl(chatId, true)
   if (f.t === "newtab") return void (await b.newTab(chatId, undefined, YOU))
   if (f.t === "tab") return b.select(chatId, f.id)
@@ -700,8 +657,7 @@ export const BrowserSocket = HttpRouter.add(
         Effect.promise(async () => {
           for (const chunk of chunks) {
             const f = parsePanelFrame(typeof chunk === "string" ? chunk : decoder.decode(chunk))
-            const report = (e: unknown) => run(write(JSON.stringify({ t: "error", message: e instanceof Error ? e.message.split("\n")[0] : String(e) })))
-            if (f) await applyPanelFrame(b, chatId, f, report).catch(report)
+            if (f) await applyPanelFrame(b, chatId, f).catch((e: unknown) => run(write(JSON.stringify({ t: "error", message: e instanceof Error ? e.message.split("\n")[0] : String(e) }))))
           }
         })
       )
