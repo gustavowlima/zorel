@@ -12,7 +12,7 @@ import { mkdirSync } from "node:fs"
 import { relative } from "node:path"
 import { type CliModel, claudeParser, classifyMessage, type EngineEvent, type NativeStep, splitModel, type TurnFile } from "#server/engines.ts"
 import { approvalFor, decideCommand, decideEdit, decideRead } from "#server/engines/policy.ts"
-import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
+import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type NativeApproval } from "#server/engines/session.ts"
 
 const GATEWAY = "zero"
 // Claude Code's own tools Zero turns on: files and shell, plus web search and fetch when the agent may use the web.
@@ -142,6 +142,8 @@ const childEnv = (configDir: string | undefined) => {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
   if (configDir) env.CLAUDE_CONFIG_DIR = configDir
+  // A gateway call may wait on an approval card (up to 30 min): Claude Code's MCP timeout must outlast it.
+  env.MCP_TOOL_TIMEOUT = String(GATEWAY_TOOL_TIMEOUT_MS)
   return env
 }
 

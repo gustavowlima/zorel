@@ -40,3 +40,8 @@ export interface EngineSession {
   readonly alive: () => boolean
   readonly close: Effect.Effect<void>
 }
+
+// How long an approval card waits for the person (ARCHITECTURE §9.2); then it counts as a denial. The engines'
+// tool-call timeouts for Zero's gateway must outlast it, or a call dies while the card is still open.
+export const APPROVAL_MS = 30 * 60_000
+export const GATEWAY_TOOL_TIMEOUT_MS = APPROVAL_MS + 60_000

@@ -1,6 +1,7 @@
 // Turn runtime (ARCHITECTURE §5): per-chat queue in the database, one turn at a time, live events per chat.
 // The turn doesn't depend on the client: closing the tab stops nothing; reconnect = subscribe again (snapshot + events).
 // Chaining: a reply that mentions another member queues that member's turn (up to MAX_DEPTH without a message from you).
+import { APPROVAL_MS } from "./engines/session.ts"
 import type { Access, Agent, Chat, Effort, FailoverTarget, FailureReason, FileChange, Step, Switch } from "@zero/contracts"
 import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zero/contracts/events"
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
@@ -24,7 +25,7 @@ import { accessChange, browserRoute, mcpRoute, permissionsOf, REQUEST_ACCESS_TOO
 
 const MAX_MENTIONS = 3
 const MAX_SESSIONS = 8 // live engine processes; the least recently used one closes first
-const APPROVAL_MS = 30 * 60_000 // ARCHITECTURE §9.2: expires in 30 min and counts as denial
+// APPROVAL_MS (engines/session.ts): a card expires in 30 min and counts as denial
 const SKIP_MS = 10 * 60_000 // §6.1: a route that failed (not a limit) is skipped this long
 // An engine that sends nothing for this long, with no approval waiting, is treated as dead (its process may
 // have died without the SDK noticing): the turn fails as "unavailable", so failover can take over.

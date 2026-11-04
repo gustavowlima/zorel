@@ -7,14 +7,14 @@ import { type Access, type Agent, type AgentPermissions, type Chat, DEFAULT_PERM
 import type { Approval } from "@zero/contracts/events"
 import { t } from "@zero/i18n"
 import { type ReactNode, useEffect, useRef, useState } from "react"
-import { agentsAtom, mutations, serversAtom, uploadAttachment, useChat, useInvalidate, useList, useMutation } from "../client.ts"
+import { agentsAtom, mutations, projectsAtom, serversAtom, uploadAttachment, useChat, useInvalidate, useList, useMutation } from "../client.ts"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
-import { AgentAvatar, Button, Check, ChevronRight, cx, PageHeader, Pencil, Section, Sparkles, Spinner } from "@/ui"
+import { AgentAvatar, Button, Check, ChevronRight, cx, Folder, PageHeader, Pencil, Section, Select, Sparkles, Spinner } from "@/ui"
 
 const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builder.suggest.docs", "builder.suggest.team"] as const
 type Step = "describe" | "powers"
@@ -69,6 +69,7 @@ function ScreenHeader({ title, subtitle, action }: { title: string; subtitle: st
 function Conversation({ chat }: { chat: Chat }) {
   const state = useChat(chat.id)
   const agents = useList(agentsAtom)
+  const projects = useList(projectsAtom)
   const send = useMutation(mutations.send)
   const interrupt = useMutation(mutations.interrupt)
   const updateChat = useMutation(mutations.updateChat)
@@ -101,7 +102,17 @@ function Conversation({ chat }: { chat: Chat }) {
         // The proposal is reviewed on the right: no second card for it inside the conversation.
         <Timeline chat={chat} state={{ ...state, approvals: state.approvals.filter((a) => a.tool !== "zero_create_agent") }} agents={agents} onView={() => {}} onEdit={() => {}} />
       )}
-      <div className="w-full px-8 pt-2 pb-4.5">
+      <div className="flex w-full flex-col gap-1.5 px-8 pt-2 pb-4.5">
+        {/* Where the new agents live: picking a project starts the conversation over in it (as on Home). */}
+        <Select
+          variant="ghost"
+          icon={<Folder />}
+          className="w-auto max-w-64 self-start"
+          aria-label={t("home.project")}
+          value={chat.projectId ?? ""}
+          onChange={(v) => go({ view: "builder", projectId: v || null })}
+          options={[{ value: "", label: t("builder.everyProject") }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+        />
         <Composer
           autoFocus
           busy={busy}

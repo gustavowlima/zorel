@@ -15,10 +15,20 @@ import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import type { ReactNode } from "react"
 import {
   AgentAvatar, BookOpen, Button, ChartColumn, Download, Undo2, ChevronRight, ConfirmDialog, Field, IconButton, Input, Menu, MenuItem, MoreHorizontal, Rows, Screen, Section, Sparkles, Tab, TabList,
-  TabPanel, Tabs, Textarea, Trash2
+  TabPanel, Tabs, Textarea, Trash2, cx, Globe, Pencil, Search, SquareTerminal
 } from "@/ui"
 
 const DEFAULT: ModelChoice = { model: "claude-cli/sonnet", accountId: null, effort: null }
+
+// Starting points for a new agent (as in Tucano): each fills the profile and its powers; everything stays editable.
+type Template = { id: "reviewer" | "tester" | "docs" | "researcher" | "assistant"; icon: ReactNode; access: Access; web: boolean }
+const TEMPLATES: ReadonlyArray<Template> = [
+  { id: "reviewer", icon: <Search />, access: "ask", web: false },
+  { id: "tester", icon: <SquareTerminal />, access: "workspace", web: false },
+  { id: "docs", icon: <BookOpen />, access: "workspace", web: false },
+  { id: "researcher", icon: <Globe />, access: "ask", web: true },
+  { id: "assistant", icon: <Sparkles />, access: "workspace", web: true }
+]
 
 export function AgentView({ agent, projectId }: { agent?: Agent; projectId: string | null }) {
   const agents = useList(agentsAtom)
@@ -36,6 +46,7 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
   const [access, setAccess] = useState<Access>(agent?.access ?? "workspace")
   const [permissions, setPermissions] = useState<AgentPermissions>(agent?.permissions ?? DEFAULT_PERMISSIONS)
   const [tab, setTab] = useState<"profile" | "tools" | "activity">("profile")
+  const [picked, setPicked] = useState<Template["id"] | "scratch">()
   const termsPending = useTermsPending({ model: choice.model, accountId: choice.accountId }, failover)
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -128,6 +139,61 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
           </TabList>
 
           <TabPanel id="profile" className="flex flex-col gap-7">
+            {/* A new agent can start from a template; picking one fills the profile and its powers. */}
+            {!agent && (
+              <section aria-label={t("agent.templates.title")} className="flex flex-col gap-2.5">
+                <h2 className="text-sm font-medium text-muted">{t("agent.templates.title")}</h2>
+                <div className="grid grid-cols-3 gap-2">
+                  {TEMPLATES.map((tp) => (
+                    <Button
+                      key={tp.id}
+                      variant="ghost"
+                      aria-pressed={picked === tp.id}
+                      className={cx(
+                        "h-auto flex-col items-start gap-1.5 rounded-card border px-3 py-3 text-left font-normal whitespace-normal text-fg",
+                        picked === tp.id ? "border-accent-line bg-accent-faint" : "border-subtle"
+                      )}
+                      onPress={() => {
+                        setPicked(tp.id)
+                        setName(t(`agent.templates.${tp.id}.name`))
+                        setTitle(t(`agent.templates.${tp.id}.title`))
+                        setDescription(t(`agent.templates.${tp.id}.description`))
+                        setInstructions(t(`agent.templates.${tp.id}.instructions`))
+                        setAccess(tp.access)
+                        setPermissions({ ...DEFAULT_PERMISSIONS, web: tp.web, browser: false })
+                      }}
+                    >
+                      <span className="flex size-7 items-center justify-center rounded-control bg-surface text-secondary [&_svg]:size-4">{tp.icon}</span>
+                      <span className="font-medium">{t(`agent.templates.${tp.id}.title`)}</span>
+                      <span className="line-clamp-2 text-sm text-muted">{t(`agent.templates.${tp.id}.description`)}</span>
+                    </Button>
+                  ))}
+                  <Button
+                    variant="ghost"
+                    aria-pressed={picked === "scratch"}
+                    className={cx(
+                      "h-auto flex-col items-start gap-1.5 rounded-card border border-dashed px-3 py-3 text-left font-normal whitespace-normal text-fg",
+                      picked === "scratch" ? "border-accent-line bg-accent-faint" : "border-strong"
+                    )}
+                    onPress={() => {
+                      setPicked("scratch")
+                      setName("")
+                      setTitle("")
+                      setDescription("")
+                      setInstructions("")
+                      setAccess("workspace")
+                      setPermissions(DEFAULT_PERMISSIONS)
+                    }}
+                  >
+                    <span className="flex size-7 items-center justify-center rounded-control bg-surface text-secondary [&_svg]:size-4">
+                      <Pencil />
+                    </span>
+                    <span className="font-medium">{t("agent.templates.scratch.title")}</span>
+                    <span className="line-clamp-2 text-sm text-muted">{t("agent.templates.scratch.description")}</span>
+                  </Button>
+                </div>
+              </section>
+            )}
             {/* Who it is: other agents read the title and description to know whom to hand work to. */}
             <div className="grid grid-cols-2 gap-4">
               <Field label={t("agent.name")}>
