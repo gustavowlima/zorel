@@ -34,3 +34,4 @@
 2026-11-04 | renomeado Zero → Zorel (textos, pacotes, localStorage migrado) | usuário escolheu o nome Zorel
 2026-11-04 | ponytail review+audit: removidos signOut, AvatarStack, Card, windowShort, SessionAccess, TeamToolName, MODEL_OF_ACCOUNT/accountProviderOf, dep shadcn | código sem uso
 2026-11-04 | logo Z do Zorel; barra lateral relê chats criados pelo servidor | renomeação e tarefas entre agentes
+2026-11-04 | Settings › Processes e contagem de processos no cabeçalho do chat | usuário pediu página de processos em segundo plano, também por conversa

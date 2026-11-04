@@ -478,6 +478,7 @@ export const en = {
     storage: "Storage",
     audit: "Audit log",
     skills: "Skills",
+    processes: "Processes",
     general: "General",
     hint: {
       general: "Theme and other preferences",
@@ -485,7 +486,8 @@ export const en = {
       storage: "What Zorel keeps on this computer",
       audit: "Who changed what, and when",
       mcp: "GitHub, Notion and other tools agents use",
-      skills: "Procedures agents follow"
+      skills: "Procedures agents follow",
+      processes: "What runs in the background now"
     }
   },
   accounts: {
@@ -684,6 +686,33 @@ export const en = {
     clearTitle: "Delete the {name} API key?",
     clearBody: "Agents that use it stop working until you add a key again.",
     saveFailed: "Couldn't save the key. Try again."
+  },
+  processes: {
+    empty: "Nothing runs in the background",
+    emptyHint: "Agents at work, servers they start, open shells and connections show up here while they run.",
+    kinds: { turn: "Agents working", server: "Servers", terminal: "Terminals", session: "Agent sessions", connection: "Connections" },
+    hints: {
+      turn: "Turns running now, or waiting for your OK.",
+      server: "Programs listening on a port in a chat's folder, like a dev server an agent started. Open one in the browser.",
+      terminal: "Shells open in chats' Terminal panels.",
+      session: "Claude Code and Codex processes kept between turns so the next one starts fast. Closing one frees memory; the chat's next turn opens a new one.",
+      connection: "MCP servers Zorel has a connection to. A local one is a process of its own; it reconnects when an agent needs it."
+    },
+    stop: "Stop",
+    stopTurn: "Stop",
+    close: "Close",
+    disconnect: "Disconnect",
+    shell: "Shell {n}",
+    openAt: "{url}",
+    busy: "running a command",
+    idle: "idle",
+    session: "{agent} · {harness}",
+    usedAgo: "last used {age}",
+    localConnection: "Local process",
+    remoteConnection: "Remote",
+    hiddenChat: "Build with AI",
+    inChat: { one: "1 process running in this chat", other: "{count} processes running in this chat" },
+    seeAll: "See all processes"
   },
   connectors: {
     title: "Connectors",

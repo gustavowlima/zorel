@@ -80,6 +80,10 @@ function busy(s: Session): boolean {
 export const terminalsOf = (chatId: string) =>
   [...sessions.values()].filter((s) => s.chatId === chatId).map((s) => ({ id: s.id, n: s.n, label: s.label, ended: s.ended, busy: busy(s) }))
 
+// Every shell still running, across chats (Settings › Processes).
+export const liveTerminals = () =>
+  [...sessions.values()].filter((s) => !s.ended).map((s) => ({ id: s.id, chatId: s.chatId, n: s.n, label: s.label, busy: busy(s) }))
+
 function end(s: Session) {
   if (!s.ended) {
     s.ended = true
@@ -245,16 +249,21 @@ const lsof = (args: string[]) => {
 }
 
 // ponytail: lsof on every call (≈50 ms); cache it if the panel ever polls this often.
-export function serversIn(root: string): LocalServer[] {
+export const serversIn = (root: string): LocalServer[] => serversUnder([root]).map(({ root: _root, ...s }) => s)
+
+// The servers under any of these folders, each with the folder it runs in (one lsof pass for all of them).
+export function serversUnder(roots: ReadonlyArray<string>): Array<LocalServer & { root: string }> {
+  if (!roots.length) return []
   const listening = lsof(["-iTCP", "-sTCP:LISTEN", "-Fpcn"])
   if (!listening.size) return []
   const cwds = lsof(["-a", "-p", [...listening.keys()].join(","), "-d", "cwd", "-Fpn"])
-  const out: LocalServer[] = []
+  const out: Array<LocalServer & { root: string }> = []
   for (const [pid, p] of listening) {
     const cwd = cwds.get(pid)?.names[0]
-    if (!cwd || pid === process.pid || !(cwd === root || cwd.startsWith(`${root}/`))) continue
+    const root = cwd && pid !== process.pid ? roots.find((r) => cwd === r || cwd.startsWith(`${r}/`)) : undefined
+    if (!root) continue
     const ports = [...new Set(p.names.map((n) => Number(n.slice(n.lastIndexOf(":") + 1))).filter((n) => n > 0))].sort((a, b) => a - b)
-    if (ports.length) out.push({ pid, command: p.command, ports })
+    if (ports.length) out.push({ pid, command: p.command, ports, root })
   }
   return out.sort((a, b) => a.ports[0]! - b.ports[0]!)
 }

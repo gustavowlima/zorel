@@ -6,6 +6,8 @@ Ele vem antes do código: ao mudar uma decisão, atualize aqui e em `.agent/memo
 
 Revisado em 2026-11-04.
 
+**Processos em segundo plano (2026-11-04):** Settings › Processes e o botão do cabeçalho do chat leem `GET /api/processes`: servidores escutando portas dentro da pasta de algum chat (um `lsof` para todas as pastas; a pasta do projeto é de todos os chats dele, uma worktree é de um), terminais vivos, sessões de engine guardadas entre turnos e conexões MCP abertas. Parar um servidor só aceita um pid dessa lista (nunca um processo qualquer); fechar uma sessão nunca acontece sob um turno rodando. Os turnos rodando vêm dos status ao vivo que o web já recebe.
+
 **Idioma dos prompts (2026-11-04):** tudo o que vai ao modelo (prompt base, consolidação, resultados de ferramentas, erros dos engines) é em inglês, e nada manda responder num idioma: o modelo segue o idioma de quem escreve.
 
 **Nome (2026-11-04):** o projeto se chamava **Zero** e passou a **Zorel** ("Zero" colidia com outros produtos e não tinha domínio; zorel.dev é do autor). O que já existia continua funcionando: a pasta `~/.zero` (com `zero.db`) segue em uso quando existe e `~/.zorel` não, sem ser movida, porque o banco guarda caminhos absolutos de anexos e contas; segredos do keychain são lidos do serviço antigo `dev.zero.app` e copiados para `dev.zorel.app`; preferências `zero.*` do navegador são copiadas para `zorel.*`; backups `zero-*.db` continuam sendo podados; agentes exportados como `zero.agent` ainda são importados. O app desktop muda de appId (`dev.zorel.app`), então a pasta de dados do Electron é nova (logins das abas dos agentes recomeçam).

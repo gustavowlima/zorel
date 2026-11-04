@@ -54,6 +54,8 @@ export class Hub {
   private clients = new Map<string, Promise<Client>>()
   // Servers that refused the stored sign-in (token revoked or expired, refresh failed): Settings asks to reconnect.
   readonly refused = new Set<string>()
+  // Servers with a client open now (a local one is a process of its own).
+  connected = () => [...this.clients.keys()]
   constructor(private secrets: SecretStore) {}
 
   private connect(s: McpServer): Promise<Client> {

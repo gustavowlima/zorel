@@ -73,6 +73,10 @@ export interface RuntimeService {
   readonly subscribeChat: (chatId: string) => Stream.Stream<ChatEvent, ChatNotFound>
   readonly subscribeStatus: Stream.Stream<ChatStatus>
   readonly busy: (chatId: string) => boolean // a turn is running in the chat now
+  // Engine sessions kept open between turns (Claude Code, Codex: a process each), and closing one to free it; the
+  // chat's next turn opens a new one from the resume point.
+  readonly liveSessions: () => ReadonlyArray<{ key: string; chatId: string; agentId: string | null; provider: string; usedAt: number }>
+  readonly closeSession: (key: string) => Effect.Effect<void>
 }
 
 const ev = <T extends ChatEvent["_tag"]>(_tag: T, body: Omit<Extract<ChatEvent, { _tag: T }>, "_tag">) => ({ _tag, ...body }) as unknown as ChatEvent
@@ -944,6 +948,12 @@ export const makeRuntime = Effect.gen(function* () {
 
   // ---------- API ----------
   const service: RuntimeService = {
+    liveSessions: () =>
+      [...sessions.entries()].map(([key, live]) => {
+        const [chatId = "", agentId = "-"] = key.split(":")
+        return { key, chatId, agentId: agentId === "-" ? null : agentId, provider: live.provider, usedAt: live.used }
+      }),
+    closeSession: (key) => (running.has(key.split(":")[0] ?? "") ? Effect.void : closeSession(key)), // never under a running turn
     send: (input) =>
       Effect.gen(function* () {
         const existing = yield* store.turnByClientId(input.clientId)

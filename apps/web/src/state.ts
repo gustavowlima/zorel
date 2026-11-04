@@ -1,7 +1,7 @@
 // Route in the URL hash, and the theme preference. Data lives in atoms (client.ts), not here.
 import { useEffect, useState } from "react"
 
-export const SETTINGS_TABS = ["general", "providers", "mcp", "skills", "storage", "audit"] as const
+export const SETTINGS_TABS = ["general", "providers", "mcp", "skills", "processes", "storage", "audit"] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]
 export const PROJECT_TABS = ["overview", "agents", "tools"] as const
 export type ProjectTab = (typeof PROJECT_TABS)[number]
