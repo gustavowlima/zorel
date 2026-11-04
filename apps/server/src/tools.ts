@@ -11,6 +11,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import type { McpServer, ToolInfo } from "@zero/contracts"
 import { Context, Effect, Layer } from "effect"
+import { McpOAuth } from "./oauth.ts"
 import { mcpEnv, Secrets, type SecretStore } from "./secrets.ts"
 
 const CONNECT_MS = 20_000
@@ -59,7 +60,10 @@ export class Hub {
       const client = new Client({ name: "zero", version: "0.1.0" })
       const env = mcpEnv(this.secrets, s.id)
       const transport = s.url
-        ? new StreamableHTTPClientTransport(new URL(s.url), { requestInit: { headers: env } }) // http: variables become headers (e.g. Authorization)
+        ? new StreamableHTTPClientTransport(new URL(s.url), {
+            requestInit: { headers: env }, // http: variables become headers (e.g. Authorization)
+            ...(s.auth === "oauth" && { authProvider: new McpOAuth(this.secrets, s.id) }) // signed in through the browser; refreshed here
+          })
         : new StdioClientTransport({ command: s.command, args: [...s.args], env: { ...getDefaultEnvironment(), ...env }, stderr: "ignore" })
       await client.connect(transport, { timeout: CONNECT_MS })
       return client

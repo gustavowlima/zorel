@@ -33,6 +33,7 @@ export const agentsAtom = Zero.query("agents", "list", { reactivityKeys: ["agent
 export const chatsAtom = Zero.query("chats", "list", { reactivityKeys: ["chats"] })
 export const memoriesAtom = Zero.query("memories", "list", { reactivityKeys: ["memories"] })
 export const serversAtom = Zero.query("tools", "list", { reactivityKeys: ["servers"] })
+export const signedInAtom = Zero.query("tools", "signedIn", { reactivityKeys: ["servers"] })
 export const accountsAtom = Zero.query("accounts", "list", { reactivityKeys: ["accounts"] })
 export const keysAtom = Zero.query("settings", "keys", { reactivityKeys: ["keys"] })
 export const auditAtom = (query: { kind?: AuditKind; q?: string; from?: number; to?: number; page?: number }) =>
@@ -106,6 +107,7 @@ export const mutations = {
   updateServer: Zero.mutation("tools", "update"),
   removeServer: Zero.mutation("tools", "remove"),
   inspectServer: Zero.mutation("tools", "inspect"),
+  signInServer: Zero.mutation("tools", "signIn"),
   createAccount: Zero.mutation("accounts", "create"),
   removeAccount: Zero.mutation("accounts", "remove"),
   login: Zero.mutation("accounts", "login"),

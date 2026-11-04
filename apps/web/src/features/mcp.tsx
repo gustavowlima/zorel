@@ -1,12 +1,13 @@
-// MCP servers (global in Settings, or per project): mode, on/off, test the connection and see the tools
-// each mode exposes, add local (command) or remote (URL) servers. Secrets go to the system keychain.
+// Connectors and MCP servers (global in Settings, or per project). Connectors: services people use most, one click
+// (OAuth in the browser, or a token, or nothing). Servers: mode, on/off, test the connection and see the tools each
+// mode exposes, add local (command) or remote (URL) servers. Secrets go to the system keychain.
 import type { McpServer, ToolInfo } from "@zero/contracts"
 import { t } from "@zero/i18n"
-import { type FormEvent, useState } from "react"
+import { type FormEvent, useEffect, useState } from "react"
 import { splitCommand } from "../labels.ts"
-import { mutations, serversAtom, useInvalidate, useMutation, useReading } from "../client.ts"
+import { mutations, serversAtom, signedInAtom, useInvalidate, useMutation, useReading } from "../client.ts"
 import { ReadingState } from "./reading.tsx"
-import { Badge, Button, Code, ConfirmButton, Field, Input, Plus, Section, Select, Spinner, Switch, Textarea, EmptyState, Plug} from "@/ui"
+import { Badge, Button, Check, Code, ConfirmButton, Field, IconButton, Input, Menu, MenuItem, MoreHorizontal, Plus, Section, Select, Spinner, Switch, Textarea, EmptyState, Plug, Trash2 } from "@/ui"
 
 const MODES = ["read", "approve", "auto"] as const
 const modeOptions = () => MODES.map((m) => ({ value: m, label: t(`mcp.modes.${m}`) }))
@@ -14,11 +15,13 @@ const CLS_TONE = { read: "neutral", write: "warning", sensitive: "danger" } as c
 
 export function McpSection({ projectId }: { projectId: string | null }) {
   const reading = useReading(serversAtom)
-  const servers = reading.items.filter((s) => s.projectId === projectId)
+  const all = reading.items.filter((s) => s.projectId === projectId)
+  const servers = all.filter((s) => !CONNECTORS.some((c) => matches(c, s))) // connectors have their own cards
   const invalidate = useInvalidate()
   const [adding, setAdding] = useState(false)
   return (
     <div className="flex flex-col gap-8">
+      {projectId === null && <Connectors servers={all} />}
       <Section
         title={projectId ? t("settings.mcp") : t("mcp.servers")}
         description={projectId ? t("mcp.projectIntro") : t("mcp.intro")}
@@ -136,18 +139,6 @@ const parseEnv = (text: string) =>
       .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
   )
 
-// Connectors people use most, filled in: pick one, then paste the token where the form says. Only servers whose
-// address or package is stable; OAuth sign-in in the app is not done yet (these take a token instead).
-const CATALOG = [
-  { name: "GitHub", kind: "http", url: "https://api.githubcopilot.com/mcp/", env: "Authorization=Bearer <your GitHub token>" },
-  { name: "Notion", kind: "stdio", command: "npx -y @notionhq/notion-mcp-server", env: "NOTION_TOKEN=<your Notion integration token>" },
-  { name: "Context7", kind: "http", url: "https://mcp.context7.com/mcp", env: "CONTEXT7_API_KEY=<optional key>" },
-  { name: "Figma", kind: "http", url: "http://127.0.0.1:3845/mcp", env: "" },
-  { name: "Playwright", kind: "stdio", command: "npx -y @playwright/mcp@latest", env: "" },
-  { name: "Filesystem", kind: "stdio", command: "npx -y @modelcontextprotocol/server-filesystem <folder>", env: "" },
-  { name: "Postgres", kind: "stdio", command: "npx -y @modelcontextprotocol/server-postgres postgresql://user:pass@localhost/db", env: "" }
-] as const
-
 function NewServer({ projectId, onDone }: { projectId: string | null; onDone: () => void }) {
   const create = useMutation(mutations.createServer)
   const [kind, setKind] = useState<"stdio" | "http">("stdio")
@@ -165,27 +156,8 @@ function NewServer({ projectId, onDone }: { projectId: string | null; onDone: ()
     create({ payload, reactivityKeys: ["servers"] }).then(onDone, (err: unknown) => setError(String(err)))
   }
 
-  const pick = (c: (typeof CATALOG)[number]) => {
-    setName(c.name)
-    setKind(c.kind)
-    if (c.kind === "http") setUrl(c.url)
-    else setCommand(c.command)
-    setEnv(c.env)
-  }
-
   return (
     <form onSubmit={submit} className="flex flex-col gap-4 border-y border-subtle py-5">
-      {/* The catalog: fills the form; the token (if any) is still yours to paste. */}
-      <div className="flex flex-col gap-2">
-        <span className="text-sm text-muted">{t("mcp.catalog")}</span>
-        <div className="flex flex-wrap gap-1.5">
-          {CATALOG.map((c) => (
-            <Button key={c.name} size="sm" variant="secondary" shape="pill" aria-pressed={name === c.name} className={name === c.name ? "bg-accent-soft text-accent-text" : "font-normal"} onPress={() => pick(c)}>
-              {c.name}
-            </Button>
-          ))}
-        </div>
-      </div>
       <div className="grid grid-cols-3 gap-3">
         <Field label={t("mcp.name")}>
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required spellCheck={false} placeholder={t("mcp.namePlaceholder")} />
@@ -227,5 +199,165 @@ function NewServer({ projectId, onDone }: { projectId: string | null; onDone: ()
         </Button>
       </div>
     </form>
+  )
+}
+
+// The connectors: hosted MCP servers that sign in with OAuth (discovery + dynamic registration, oauth.ts), GitHub
+// with a token (its server doesn't register clients), and a few that need nothing. Writes wait for approval.
+type Connector = { id: string; name: string; url?: string; command?: string; auth: "oauth" | "token" | "none"; tokenUrl?: string }
+const CONNECTORS: ReadonlyArray<Connector> = [
+  { id: "github", name: "GitHub", url: "https://api.githubcopilot.com/mcp/", auth: "token", tokenUrl: "https://github.com/settings/personal-access-tokens/new" },
+  { id: "notion", name: "Notion", url: "https://mcp.notion.com/mcp", auth: "oauth" },
+  { id: "linear", name: "Linear", url: "https://mcp.linear.app/mcp", auth: "oauth" },
+  { id: "atlassian", name: "Jira & Confluence", url: "https://mcp.atlassian.com/v1/mcp", auth: "oauth" },
+  { id: "sentry", name: "Sentry", url: "https://mcp.sentry.dev/mcp", auth: "oauth" },
+  { id: "vercel", name: "Vercel", url: "https://mcp.vercel.com", auth: "oauth" },
+  { id: "supabase", name: "Supabase", url: "https://mcp.supabase.com/mcp", auth: "oauth" },
+  { id: "stripe", name: "Stripe", url: "https://mcp.stripe.com", auth: "oauth" },
+  { id: "context7", name: "Context7", url: "https://mcp.context7.com/mcp", auth: "none" },
+  { id: "figma", name: "Figma", url: "http://127.0.0.1:3845/mcp", auth: "none" },
+  { id: "playwright", name: "Playwright", command: "npx -y @playwright/mcp@latest", auth: "none" }
+]
+const matches = (c: Connector, s: McpServer) => (c.url ? s.url === c.url : [s.command, ...s.args].join(" ") === c.command)
+const WAIT_MS = 5 * 60_000
+
+function Connectors({ servers }: { servers: ReadonlyArray<McpServer> }) {
+  const signedIn = useReading(signedInAtom).items
+  const invalidate = useInvalidate()
+  const [waiting, setWaiting] = useState<string>() // server id whose sign-in is open in the browser
+  // While the person signs in, in the browser: look again every 2 s (the callback lands on the server).
+  useEffect(() => {
+    if (!waiting) return
+    if (signedIn.includes(waiting)) return setWaiting(undefined)
+    const tick = setInterval(() => invalidate(["servers"]), 2000)
+    const stop = setTimeout(() => setWaiting(undefined), WAIT_MS)
+    return () => {
+      clearInterval(tick)
+      clearTimeout(stop)
+    }
+  }, [waiting, signedIn, invalidate])
+  return (
+    <Section title={t("connectors.title")} description={t("connectors.intro")}>
+      <div className="grid items-start gap-2 sm:grid-cols-2">
+        {CONNECTORS.map((c) => {
+          const server = servers.find((s) => matches(c, s))
+          return <ConnectorCard key={c.id} connector={c} server={server} signedIn={!!server && signedIn.includes(server.id)} waiting={!!server && waiting === server.id} onWaiting={setWaiting} />
+        })}
+      </div>
+    </Section>
+  )
+}
+
+function ConnectorCard({ connector: c, server, signedIn, waiting, onWaiting }: { connector: Connector; server: McpServer | undefined; signedIn: boolean; waiting: boolean; onWaiting: (id: string) => void }) {
+  const create = useMutation(mutations.createServer)
+  const signIn = useMutation(mutations.signInServer)
+  const remove = useMutation(mutations.removeServer)
+  const [busy, setBusy] = useState(false)
+  const [asking, setAsking] = useState(false) // the token field (GitHub)
+  const [token, setToken] = useState("")
+  const [failed, setFailed] = useState(false)
+  const connected = !!server && (c.auth !== "oauth" || signedIn)
+
+  const connect = async () => {
+    setBusy(true)
+    setFailed(false)
+    try {
+      const s =
+        server ??
+        (await create({
+          payload: {
+            projectId: null,
+            name: c.name,
+            command: c.command?.split(" ")[0] ?? "",
+            args: c.command?.split(" ").slice(1) ?? [],
+            url: c.url ?? "",
+            env: c.auth === "token" ? { Authorization: `Bearer ${token.trim()}` } : {},
+            mode: "approve",
+            auth: c.auth === "oauth" ? "oauth" : "none"
+          },
+          reactivityKeys: ["servers"]
+        }))
+      if (c.auth === "oauth") {
+        const { authorizeUrl } = await signIn({ params: { id: s.id }, reactivityKeys: ["servers"] })
+        if (authorizeUrl) {
+          window.open(authorizeUrl, "_blank", "noopener") // the desktop app opens it in the default browser
+          onWaiting(s.id)
+        }
+      }
+      setAsking(false)
+      setToken("")
+    } catch {
+      setFailed(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const disconnect = () => server && void remove({ params: { id: server.id }, reactivityKeys: ["servers"] }).catch(() => setFailed(true))
+
+  return (
+    <div className="flex flex-col gap-3 rounded-card border border-subtle p-3">
+      <div className="flex items-center gap-3">
+        <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-md bg-control text-sm font-semibold text-secondary">
+          {c.name[0]}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate font-medium">{c.name}</span>
+          <span className={failed ? "truncate text-sm text-danger" : "truncate text-sm text-muted"}>
+            {failed ? t("connectors.failed") : waiting ? t("connectors.waiting") : t(`connectors.about.${c.id}` as "connectors.about.github")}
+          </span>
+        </span>
+        {connected ? (
+          <>
+            <Badge tone="success">
+              <Check className="-ml-0.5 mr-1 size-3" />
+              {t("connectors.connected")}
+            </Badge>
+            <Menu
+              label={t("connectors.actions", { name: c.name })}
+              trigger={
+                <IconButton size="sm" label={t("connectors.actions", { name: c.name })}>
+                  <MoreHorizontal />
+                </IconButton>
+              }
+            >
+              <MenuItem icon={<Trash2 />} tone="danger" onAction={disconnect}>
+                {t("connectors.disconnect")}
+              </MenuItem>
+            </Menu>
+          </>
+        ) : (
+          !asking && (
+            <Button size="sm" variant="secondary" isPending={busy || waiting} onPress={() => (c.auth === "token" ? setAsking(true) : void connect())}>
+              {busy || waiting ? <Spinner size={12} /> : null}
+              {server && c.auth === "oauth" ? t("connectors.signIn") : t("connectors.connect")}
+            </Button>
+          )
+        )}
+      </div>
+      {asking && (
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void connect()
+          }}
+        >
+          <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={t("connectors.tokenPlaceholder")} aria-label={t("connectors.token", { name: c.name })} autoFocus required spellCheck={false} className="font-mono" />
+          <div className="flex items-center gap-2">
+            <Button type="submit" size="sm" variant="default" isPending={busy} isDisabled={!token.trim()}>
+              {t("connectors.connect")}
+            </Button>
+            <Button size="sm" variant="ghost" onPress={() => setAsking(false)}>
+              {t("common.cancel")}
+            </Button>
+            {c.tokenUrl && (
+              <a href={c.tokenUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-sm text-accent-text hover:underline">
+                {t("connectors.createToken")}
+              </a>
+            )}
+          </div>
+        </form>
+      )}
+    </div>
   )
 }

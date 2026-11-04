@@ -386,6 +386,7 @@ export const McpServer = Schema.Struct({
   url: Schema.String, // http: address; empty when stdio
   envKeys: Schema.Array(Schema.String), // variable names; the values live in the system keychain
   mode: ToolMode,
+  auth: Schema.Literals(["none", "oauth"]), // oauth: the person signs in through the browser; tokens in the keychain
   enabled: Schema.Boolean,
   createdAt: Schema.Number
 })
@@ -451,7 +452,8 @@ export const NewMcpServer = Schema.Struct({
   args: Schema.Array(LongText(500)).check(Schema.isMaxLength(30)),
   url: LongText(500),
   env: Schema.Record(Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_-]*$/)), LongText(4000)), // stdio: environment variables; http: headers
-  mode: ToolMode
+  mode: ToolMode,
+  auth: Schema.optional(Schema.Literals(["none", "oauth"]))
 })
 export const McpServerPatch = Schema.Struct({ mode: Schema.optional(ToolMode), enabled: Schema.optional(Schema.Boolean) })
 export const KeyInput = Schema.Struct({ value: LongText(500) }) // empty deletes
@@ -600,9 +602,13 @@ export const Api = HttpApi.make("zero")
   .add(
     HttpApiGroup.make("tools")
       .add(HttpApiEndpoint.get("list", "/api/mcp", { success: Schema.Array(McpServer) }))
-      .add(HttpApiEndpoint.post("create", "/api/mcp", { payload: NewMcpServer, success: McpServer, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("create", "/api/mcp", { payload: NewMcpServer, success: McpServer, error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
       .add(HttpApiEndpoint.patch("update", "/api/mcp/:id", { params: idParam, payload: McpServerPatch, success: McpServer, error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("remove", "/api/mcp/:id", { params: idParam }))
+      // Sign in (oauth connectors): the URL to open in the browser, or null when already signed in.
+      .add(HttpApiEndpoint.post("signIn", "/api/mcp/:id/sign-in", { params: idParam, success: Schema.Struct({ authorizeUrl: Schema.NullOr(Schema.String) }), error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
+      .add(HttpApiEndpoint.delete("signOut", "/api/mcp/:id/sign-in", { params: idParam, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.get("signedIn", "/api/mcp/signed-in", { success: Schema.Array(Schema.String) })) // ids of oauth servers with a token
       // Connects and lists the tools, already classified; a connection failure comes in `error`.
       .add(HttpApiEndpoint.get("inspect", "/api/mcp/:id/tools", { params: idParam, success: Schema.Struct({ tools: Schema.Array(ToolInfo), error: Schema.NullOr(Schema.String) }), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("decide", "/api/approvals/:id", { params: idParam, payload: ApprovalDecision, error: HttpApiError.NotFound }))

@@ -1,4 +1,5 @@
 import { discovered, pickedPaths } from "./file-skills.ts"
+import { finishSignIn, isSignedIn, oauthKey, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
 import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS } from "@zero/contracts"
 import { ZeroRpc } from "@zero/contracts/events"
@@ -474,7 +475,8 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
       .handle("create", ({ payload: { env, ...input } }) =>
         Effect.gen(function* () {
           if (!(yield* projectOk(store, input.projectId))) return yield* notFound()
-          const server = yield* store.createMcpServer({ ...input, envKeys: Object.keys(env) })
+          if (input.auth === "oauth" && !input.url) return yield* new HttpApiError.BadRequest()
+          const server = yield* store.createMcpServer({ ...input, auth: input.auth ?? "none", envKeys: Object.keys(env) })
           if (Object.keys(env).length) yield* Effect.promise(() => secrets.set(mcpEnvName(server.id), JSON.stringify(env))) // values only in the keychain
           yield* audit.record(Actions.mcpAdded, { target: server, after: { mode: server.mode, envKeys: Object.keys(env) } })
           return server
@@ -495,6 +497,7 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
           yield* Effect.promise(async () => {
             await hub.close(params.id)
             await secrets.set(mcpEnvName(params.id), "")
+            await secrets.set(oauthKey(params.id), "")
           })
           yield* store.removeMcpServer(params.id)
           if (server) yield* audit.record(Actions.mcpRemoved, { target: server })
@@ -510,6 +513,29 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
           )
         )
       )
+      .handle("signIn", ({ params }) =>
+        Effect.gen(function* () {
+          const server = yield* found(store.mcpServer(params.id))
+          if (server.auth !== "oauth" || !server.url) return yield* new HttpApiError.BadRequest()
+          const url = server.url
+          const authorizeUrl = yield* Effect.tryPromise(() => startSignIn(secrets, server.id, url)).pipe(
+            Effect.tapError((e) => Effect.logWarning("oauth sign-in failed", server.name, e)),
+            Effect.mapError(() => new HttpApiError.BadRequest())
+          )
+          yield* Effect.promise(() => hub.close(server.id))
+          return { authorizeUrl }
+        })
+      )
+      .handle("signOut", ({ params }) =>
+        Effect.gen(function* () {
+          const server = yield* found(store.mcpServer(params.id))
+          yield* Effect.promise(async () => {
+            await hub.close(server.id)
+            await secrets.set(oauthKey(server.id), "")
+          })
+        })
+      )
+      .handle("signedIn", () => store.mcpServers().pipe(Effect.map((all) => all.filter((s) => s.auth === "oauth" && isSignedIn(secrets, s.id)).map((s) => s.id))))
       .handle("decide", ({ params, payload }) =>
         runtime.decide(params.id, payload.approve ? "approved" : "denied").pipe(Effect.catchTag("ApprovalNotFound", () => notFound()))
       )
@@ -688,6 +714,33 @@ const AttachmentFile = HttpRouter.add(
   }).pipe(Effect.orDie)
 )
 
+// Connectors (oauth.ts): the service sends the person back here after they allow Zero.
+const escapeHtml = (v: string) => v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`) // error text comes from the service
+const page = (title: string, text: string, status = 200) =>
+  HttpServerResponse.text(
+    `<!doctype html><meta charset="utf-8"><title>Zero</title><body style="font:15px system-ui;background:#111;color:#eee;display:grid;place-items:center;height:90vh;margin:0"><div style="text-align:center"><h1 style="font-size:20px;font-weight:600">${escapeHtml(title)}</h1><p style="opacity:.7">${escapeHtml(text.slice(0, 300))}</p></div><script>setTimeout(()=>window.close(),1500)</script>`,
+    { status, contentType: "text/html; charset=utf-8" }
+  )
+const OAuthCallback = HttpRouter.add(
+  "GET",
+  "/api/oauth/callback",
+  Effect.gen(function* () {
+    const req = yield* HttpServerRequest.HttpServerRequest
+    const q = new URL(req.url, "http://x").searchParams
+    const code = q.get("code")
+    const state = q.get("state")
+    if (!code || !state) return page("Not connected", q.get("error_description") ?? q.get("error") ?? "The service didn't send a sign-in code.", 400)
+    const store = yield* Store
+    const secrets = yield* Secrets
+    const { hub } = yield* Tools
+    return yield* Effect.tryPromise(() => finishSignIn(secrets, state, code, (id) => Effect.runPromise(store.mcpServer(id)).then((s) => s?.url ?? undefined))).pipe(
+      Effect.tap((id) => Effect.promise(() => hub.close(id))),
+      Effect.map(() => page("Connected", "You can close this tab and go back to Zero.")),
+      Effect.catch((e) => Effect.logWarning("oauth callback failed", e).pipe(Effect.as(page("Not connected", e.cause instanceof Error ? e.cause.message : "Sign-in failed.", 400))))
+    )
+  })
+)
+
 const WebRoute = (dir: string) =>
   HttpRouter.add("GET", "/*", (req) => {
     const path = normalize(join(dir, decodeURIComponent(new URL(req.url, "http://x").pathname)))
@@ -807,6 +860,7 @@ export const AppLive = (webDir?: string) =>
     RpcRoute,
     AttachmentUpload,
     AttachmentFile,
+    OAuthCallback,
     TerminalSocket,
     BrowserSocket,
     ...(webDir && existsSync(join(webDir, "index.html")) ? [WebRoute(webDir)] : [])
@@ -832,6 +886,7 @@ export async function start(o: StartOptions = {}) {
   const dataDir = o.dataDir ?? process.env.ZERO_HOME ?? join(homedir(), ".zero")
   mkdirSync(dataDir, { recursive: true }) // don't spawn a shell just to create the folder
   const port = o.port ?? Number(process.env.PORT ?? 4317)
+  process.env.ZERO_ORIGIN ??= `http://127.0.0.1:${port}` // where OAuth services send the person back (oauth.ts)
   const webDir = o.webDir ?? process.env.ZERO_WEB_DIR ?? resolve(import.meta.dir, "../../web/dist")
   AppLive(resolve(webDir)).pipe(
     HttpRouter.serve,
