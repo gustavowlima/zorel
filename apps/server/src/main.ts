@@ -501,7 +501,7 @@ const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
 // The failover terms warning (§6.1) is accepted once and remembered here.
 const FAILOVER_TERMS = "failover_terms_accepted_at"
 const preferencesOf = (store: Repository) =>
-  Effect.map(store.preference(FAILOVER_TERMS), (v) => ({ failoverTermsAcceptedAt: v ? Number(v) : null }))
+  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused")]), ([v, p]) => ({ failoverTermsAcceptedAt: v ? Number(v) : null, paused: p === "1" }))
 
 const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
   Effect.gen(function* () {
@@ -510,6 +510,7 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
     const store = yield* Store
     const audit = yield* Audit
     const dataDir = yield* DataDir
+    const runtime = yield* Runtime
     const storageReport = Effect.gen(function* () {
       const [projects, chats, messages] = yield* Effect.all([store.projects(), store.chats(), store.messageCounts()])
       return yield* Effect.promise(() => measure(dataDir, { projects, chats, messages }))
@@ -533,6 +534,7 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
         Effect.map(store.topTurns(query.since), (rows) => rows.map((r) => ({ ...r, cost: r.cost ?? 0, billing: billingOf(r.model) })))
       )
       .handle("preferences", () => preferencesOf(store))
+      .handle("pause", ({ payload }) => runtime.setPaused(payload.paused))
       .handle("acceptFailoverTerms", () =>
         Effect.andThen(
           store.setPreference(FAILOVER_TERMS, String(Date.now())).pipe(Effect.tap(() => audit.record(Actions.failoverTermsAccepted, { target: { id: FAILOVER_TERMS, name: "Failover" } }))),

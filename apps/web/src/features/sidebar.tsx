@@ -14,7 +14,7 @@ import { RenameDialog } from "./chat.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  Fold, Marker, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
+  Fold, Marker, Pause, Play, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder
 } from "@/ui"
 
 const VISIBLE = 5
@@ -31,7 +31,17 @@ const idOf = (key: NavKey) => String(key).slice(2)
 // The icon rail (as in a reference app): the logo, then the app's places — chats, what waits for you, agents, routines,
 // knowledge — and at the foot the subscriptions' rings (usage) and Settings. Each icon has its name as a tooltip;
 // the current place is marked. The chats and projects list sits to its right.
-export function Rail({ route, sidebar }: { route: Route; sidebar: { hidden: boolean; toggle: () => void; show: () => void } }) {
+export function Rail({
+  route,
+  sidebar,
+  paused,
+  onPause
+}: {
+  route: Route
+  sidebar: { hidden: boolean; toggle: () => void; show: () => void }
+  paused: boolean
+  onPause: (paused: boolean) => void
+}) {
   const memories = useList(memoriesAtom)
   const approvals = useList(approvalsAtom)
   const needsYou = approvals.length + memories.filter((m) => m.state === "pending").length
@@ -69,6 +79,10 @@ export function Rail({ route, sidebar }: { route: Route; sidebar: { hidden: bool
       ))}
       <span className="flex-1" />
       <UsageFoot active={route.view === "usage"} />
+      {/* Pause everything (running turns stop, new ones and routines wait) or resume. */}
+      <RailItem label={paused ? t("pause.resume") : t("pause.all")} active={false} onPress={() => onPause(!paused)}>
+        {paused ? <Play className="text-warning" /> : <Pause />}
+      </RailItem>
       <RailItem label={t("nav.settings")} active={route.view === "settings"} onPress={() => go({ view: "settings", tab: "general" })}>
         <Settings />
       </RailItem>

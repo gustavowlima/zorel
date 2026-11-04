@@ -158,3 +158,11 @@ export function formatCost(usd: number): string {
 
 // A command line as a shell would split it, for the usual cases: words, "double" or 'single' quoted arguments.
 export const splitCommand = (line: string) => [...line.trim().matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? "")
+
+// What deserves a notification when a chat's state changes from `before` to `now`.
+export function noteworthy(before: ChatStatus["state"] | undefined, now: ChatStatus["state"]): "waiting" | "failed" | "done" | undefined {
+  if (now === before) return undefined
+  if (now === "waiting" || now === "failed") return now
+  if (now === "idle" && before === "running") return "done"
+  return undefined
+}

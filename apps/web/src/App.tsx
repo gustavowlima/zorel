@@ -6,7 +6,7 @@ import { useAtomValue } from "@effect/atom-react"
 import { t } from "@zero/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { useEffect, useRef } from "react"
-import { agentsAtom, chatsAtom, modelsAtom, projectsAtom, useInvalidate, useList, useStatuses } from "./client.ts"
+import { agentsAtom, chatsAtom, modelsAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useStatuses } from "./client.ts"
 import { AgentView } from "./features/agent.tsx"
 import { ChatView } from "./features/chat.tsx"
 import { HomeView } from "./features/home.tsx"
@@ -20,7 +20,8 @@ import { Rail, Sidebar } from "./features/sidebar.tsx"
 import { UsageView } from "./features/usage.tsx"
 import { rememberModels } from "./labels.ts"
 import { go, type Route, useRoute, useSidebar } from "./state.ts"
-import { Button, CircleAlert, cx, EmptyState, SlideWidth, Spinner } from "@/ui"
+import { Button, CircleAlert, cx, EmptyState, Pause, SlideWidth, Spinner } from "@/ui"
+import { useNotifications } from "./features/notify.tsx"
 
 export function App() {
   const route = useRoute()
@@ -36,18 +37,30 @@ export function App() {
   const loading = AsyncResult.isInitial(projectsResult)
 
   const sidebar = useSidebar()
+  useNotifications(route)
+  const paused = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)?.paused ?? false
+  const setPause = useMutation(mutations.pause)
   useRefetchOnSettle()
   useRetryWhileOffline(offline)
 
   return (
     <div className="flex h-full bg-frame">
-      <Rail route={route} sidebar={sidebar} />
+      <Rail route={route} sidebar={sidebar} paused={paused} onPause={(p) => void setPause({ payload: { paused: p }, reactivityKeys: ["preferences"] })} />
       <SlideWidth open={!sidebar.hidden} width={248}>
         <Sidebar route={route} activeProjectId={activeProjectId} />
       </SlideWidth>
       {/* The content card: the whole height and the right edge of the window, rounded only toward the sidebar. */}
       <main className={cx("flex min-w-0 flex-1 flex-col", sidebar.hidden && "pl-3")}>
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-l-sheet border-l border-subtle bg-canvas">
+          {paused && (
+            <div role="status" className="flex items-center gap-3 border-b border-subtle bg-surface px-7 py-2 text-sm text-warning">
+              <Pause className="size-4" />
+              <span className="flex-1">{t("pause.banner")}</span>
+              <Button size="sm" variant="secondary" onPress={() => void setPause({ payload: { paused: false }, reactivityKeys: ["preferences"] })}>
+                {t("pause.resume")}
+              </Button>
+            </div>
+          )}
           {offline && (
             <div role="alert" className="flex items-center gap-2 border-b border-subtle bg-danger-soft px-7 py-2 text-sm text-danger">
               <CircleAlert className="size-4" /> {t("app.offline")}

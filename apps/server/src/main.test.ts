@@ -491,3 +491,15 @@ test("rotinas: cria com chat próprio, cron inválido 400, webhook manda a mensa
   expect((off as { _tag?: string })._tag).toBe("NotFound")
   expect((await api((c) => c.routines.list())).find((x) => x.id === r.id)!.nextRunAt).toBeNull()
 })
+
+test("pausar tudo: mensagens novas esperam na fila; despausar responde", async () => {
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "claude-cli/sonnet" } }))
+  await api((c) => c.settings.pause({ payload: { paused: true } }))
+  expect((await api((c) => c.settings.preferences())).paused).toBe(true)
+  await rpc((c) => c.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "oi" }))
+  await Bun.sleep(400)
+  expect((await api((c) => c.chats.messages({ params: { id: chat.id } }))).map((m) => m.role)).toEqual(["user"])
+  await api((c) => c.settings.pause({ payload: { paused: false } }))
+  for (let i = 0; i < 50 && (await api((c) => c.chats.messages({ params: { id: chat.id } }))).length < 2; i++) await Bun.sleep(100)
+  expect((await api((c) => c.chats.messages({ params: { id: chat.id } }))).map((m) => m.role)).toEqual(["user", "assistant"])
+})

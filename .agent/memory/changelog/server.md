@@ -35,3 +35,4 @@
 2026-11-03 | proteção contra loop e falhas seguidas no turno | ideia do a reference app
 2026-11-03 | rotinas: cron, run now, webhook local, ferramenta zero_routines | fase 7 (lacuna vs reference apps)
 2026-11-03 | Builder (Build with AI) e criação de equipe inteira num cartão | pedido do usuário (Tuca do a reference app, para várias)
+2026-11-03 | pausar tudo e notificações do sistema | item 1 da lista (a reference app)

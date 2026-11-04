@@ -832,6 +832,17 @@ export const en = {
     loadingDiff: "Loading diff…",
     turnBy: "{agent} · {time}"
   },
+  notify: {
+    title: "Desktop notifications",
+    hint: "When a chat waits for you, fails or finishes while you're elsewhere.",
+    denied: "Blocked by the system or the browser. Allow them there to turn this on.",
+    done: "Finished."
+  },
+  pause: {
+    all: "Pause all agents",
+    resume: "Resume",
+    banner: "All agents are paused: running work stopped, new messages and routines wait."
+  },
   routines: {
     title: "Routines",
     hint: "Work it does by itself: on a schedule, on demand, or when a local script calls its webhook. Each runs in its own chat.",
