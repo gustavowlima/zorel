@@ -606,7 +606,11 @@ const useOf = (pids: Iterable<number>, procs: ReadonlyArray<Proc>, cpu: Readonly
   const seen = new Set(pids)
   let c = 0
   let m = 0
-  for (const p of procs) if (seen.has(p.pid)) (c += cpu.get(p.pid) ?? 0), (m += p.rss)
+  for (const p of procs) {
+    if (!seen.has(p.pid)) continue
+    c += cpu.get(p.pid) ?? 0
+    m += p.rss
+  }
   return { cpu: Math.round(c * 10) / 10, memory: m }
 }
 
