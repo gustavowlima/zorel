@@ -4,10 +4,11 @@
 import type { Agent, Chat } from "@zorel/contracts"
 import type { ChatStatus } from "@zorel/contracts/events"
 import { formatAge, t } from "@zorel/i18n"
-import { chatsAtom, projectsAtom, useList, useStatuses } from "../client.ts"
+import { useState } from "react"
+import { chatsAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
-import { Dot, EmptyState, ListRow, MessageCircle, Rows, Section, Tag } from "@/ui"
+import { Button, Dot, EmptyState, ListRow, MessageCircle, Rows, Section, Tag } from "@/ui"
 
 const ACTIVE = new Set<ChatStatus["state"]>(["running", "waiting"])
 const toneOf = (s: ChatStatus["state"]) => (s === "waiting" ? "warning" : s === "failed" ? "danger" : "accent")
@@ -52,9 +53,29 @@ export function AgentWork({ agent }: { agent: Agent }) {
       />
     )
   }
+  // Its own chat with you: the latest one where it's the only member (not a task or a routine's), else a new one.
+  const create = useMutation(mutations.createChat)
+  const [opening, setOpening] = useState(false)
+  const direct = mine.find((c) => c.agentIds.length === 1 && !c.title.startsWith(`${agent.name}: `) && !c.title.endsWith("(routine)"))
+  const talk = () => {
+    if (direct) return go({ view: "chat", id: direct.id })
+    setOpening(true)
+    create({ payload: { projectId: agent.projectId, agentIds: [agent.id], model: agent.model, accountId: agent.accountId, effort: agent.effort }, reactivityKeys: ["chats"] })
+      .then((c) => go({ view: "chat", id: c.id }))
+      .finally(() => setOpening(false))
+  }
   return (
     <>
-      <Section title={t("agent.work.now")} description={t("agent.work.nowHint")}>
+      <Section
+        title={t("agent.work.now")}
+        description={t("agent.work.nowHint")}
+        action={
+          <Button size="sm" variant="secondary" isPending={opening} onPress={talk}>
+            <MessageCircle />
+            {t("agent.work.talk", { name: agent.name })}
+          </Button>
+        }
+      >
         <Rows>{now.length ? now.map((x) => row(x.chat, x.status)) : <p className="py-3.5 text-muted">{t("agent.work.idle")}</p>}</Rows>
       </Section>
       {mine.length === 0 ? (

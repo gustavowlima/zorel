@@ -497,7 +497,9 @@ export const en = {
       waiting: "Waits for you",
       failed: "Stopped with an error",
       task: "Task",
-      settings: "Settings of {name}"
+      settings: "Settings of {name}",
+      watch: "Watch",
+      talk: "Chat with {name}"
     },
     perm: {
       files: "Files and commands",
