@@ -213,7 +213,7 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 
 /* ---------- install + Ft2 ---------- */
 .install { text-align: center; padding-block: var(--space-3xl) var(--space-2xl); }
-.cmd { margin: var(--space-lg) auto 0; width: fit-content; max-width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-sm); padding: 8px 8px 8px 18px; border-radius: var(--radius-md); background: var(--color-card); box-shadow: inset 0 0 0 1px var(--color-rim); text-align: left; }
+.cmd { margin: var(--space-lg) auto 0; width: fit-content; max-width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-sm); padding: 8px 8px 8px 18px; border-radius: var(--radius-md); background: var(--color-glass); box-shadow: inset 0 0 0 1px var(--color-glass-rim), 0 20px 50px -24px var(--color-glow); backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2); text-align: left; }
 .cmd code { font-size: var(--text-sm); overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
 .cmd code::before { content: "$ "; color: var(--color-ink-3); }
 /* Shown short, like a path you recognise; Copy takes the whole command (data-full). */
