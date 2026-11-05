@@ -3,6 +3,7 @@
 // ⋯ its chat, its webhook URL and delete. New ones in a dialog with schedule presets (or a cron pattern); agents can
 // also propose them from a chat (zorel_routines), as approval cards.
 import type { Agent, Routine } from "@zorel/contracts"
+import { isTeammate } from "@zorel/contracts"
 import { formatAge, formatTime, t } from "@zorel/i18n"
 import { useState } from "react"
 import { agentsAtom, mutations, routinesAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
@@ -27,7 +28,7 @@ const when = (r: Routine) =>
 export function RoutinesView() {
   const agents = useList(agentsAtom)
   const routines = useReading(routinesAtom).items
-  const team = agents.filter((a) => !a.builtin)
+  const team = agents.filter((a) => isTeammate(a))
   const withRoutines = team.filter((a) => routines.some((r) => r.agentId === a.id))
   const [adding, setAdding] = useState(false)
   const newButton = (variant: "default" | "secondary") =>
@@ -153,7 +154,7 @@ const hookOf = (token: string) => `${location.origin}/api/hooks/${token}`
 function NewRoutine({ agent, onDone }: { agent?: Agent; onDone: () => void }) {
   const create = useMutation(mutations.createRoutine)
   const agents = useList(agentsAtom)
-  const team = agents.filter((a) => !a.builtin)
+  const team = agents.filter((a) => isTeammate(a))
   const [agentId, setAgentId] = useState(agent?.id ?? team[0]?.id ?? "")
   const invalidate = useInvalidate()
   const [name, setName] = useState("")

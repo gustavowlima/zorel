@@ -1,6 +1,7 @@
 // Who is talking: the author avatar (agent color, or the model's logo for the plain assistant) and the
 // team picker (who answers in a chat: the lead first, members, add or remove).
 import type { Agent, Chat } from "@zorel/contracts"
+import { isTeammate } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { agentsAtom, mutations, useList, useMutation } from "../client.ts"
 import { agentTone, handleOf, modelLabel, splitModel } from "../labels.ts"
@@ -21,7 +22,7 @@ export function TeamPicker({ chat }: { chat: Chat }) {
   const agents = useList(agentsAtom)
   const update = useMutation(mutations.updateChat)
   const team = chat.agentIds.flatMap((id) => agents.find((a) => a.id === id) ?? [])
-  const candidates = agents.filter((a) => !a.builtin && (a.projectId === null || a.projectId === chat.projectId) && !chat.agentIds.includes(a.id))
+  const candidates = agents.filter((a) => isTeammate(a) && (a.projectId === null || a.projectId === chat.projectId) && !chat.agentIds.includes(a.id))
   const lead = team[0]
   // A long list gets a search field (the same threshold as Select's).
   const [query, setQuery] = useState("")

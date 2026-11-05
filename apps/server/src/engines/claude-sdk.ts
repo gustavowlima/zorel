@@ -404,7 +404,19 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
         }
         const parser = claudeParser()
         const steps = stepTracker(o.cwd)
-        const line = (m: SDKMessage) => emit([...steps(m), ...parser.line(JSON.stringify(m))]) // SDK messages are the CLI's stream-json lines
+        // Tokens so far in this turn: each assistant message carries its model call's usage, summed as they come (a
+        // reply's token limit reads it; the turn's `done` still reports the CLI's own total).
+        const sofar = { inputTokens: 0, outputTokens: 0, cachedTokens: 0 }
+        const usageOf = (m: SDKMessage): EngineEvent[] => {
+          const u = m.type === "assistant" ? (m.message.usage as unknown as Record<string, unknown> | undefined) : undefined
+          if (!u) return []
+          const n = (k: string) => (typeof u[k] === "number" ? (u[k] as number) : 0)
+          sofar.inputTokens += n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens")
+          sofar.outputTokens += n("output_tokens")
+          sofar.cachedTokens += n("cache_read_input_tokens")
+          return [{ type: "usage", usage: { ...sofar } }]
+        }
+        const line = (m: SDKMessage) => emit([...steps(m), ...parser.line(JSON.stringify(m)), ...usageOf(m)]) // SDK messages are the CLI's stream-json lines
         const segments: SDKMessage[] = [] // results of the steered turn's earlier segments (see steerGate)
         // After a segment fails its error is already the turn's: the rest is drained, not shown. Text from the steered
         // message arriving after the error would land on a turn the person already sees as failed, and the CLI's

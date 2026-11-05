@@ -78,6 +78,7 @@ export interface RuntimeService {
   // Corrects the agent mid-turn when the engine supports it (Codex); otherwise queues it like `send`.
   readonly steer: (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) => Effect.Effect<void, ChatNotFound>
   readonly interrupt: (chatId: string) => Effect.Effect<void>
+  readonly retry: (chatId: string, messageId: string) => Effect.Effect<void, ChatNotFound>
   // Pause everything: running turns stop, new ones wait queued, routines don't fire.
   // "Edit from here": the chat's engine sessions close, so the next turn starts from what the chat keeps.
   readonly forget: (chatId: string) => Effect.Effect<void>
@@ -741,6 +742,15 @@ export const makeRuntime = Effect.gen(function* () {
         })
       const started = yield* store.startTurn(row.id)
       yield* publish(chatId, ev("turn-started", { turn: store.toTurn(started) }))
+      // Over its month's tokens (UTC month): the agent doesn't start; the reply says so (raise it on its page).
+      if (agent?.monthlyTokens) {
+        const month = new Date()
+        const since = Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1)
+        if ((yield* store.agentTokensSince(agent.id, since)) >= agent.monthlyTokens) {
+          yield* save("failed", ErrorCode.monthlyLimit)
+          return undefined
+        }
+      }
       yield* setStatus(chatId, "running", agent?.id ?? null, `${nameOf(agent)} is working`)
 
       // One attempt on one route: tools, context, engine stream. Returns the failure, if any.
@@ -831,6 +841,10 @@ export const makeRuntime = Effect.gen(function* () {
                 for (const e of batch) {
                   if (e.type === "text") delta += e.delta
                   else if (e.type === "done") acc.usage = { cachedTokens: 0, ...e.usage }
+                  else if (e.type === "usage") {
+                    // Past the agent's limit for one reply: it stops here, with what it has (Continue goes on).
+                    if (agent?.replyTokens && e.usage.inputTokens + e.usage.outputTokens > agent.replyTokens) yield* Deferred.succeed(runaway, ErrorCode.replyLimit)
+                  }
                   else if (e.type === "limits") {
                     if (account) yield* accounts.observe(account.id, e.windows)
                   } else if (e.type === "step") yield* onStep(e.step)
@@ -1191,6 +1205,22 @@ export const makeRuntime = Effect.gen(function* () {
       }),
 
     forget: (chatId) => Effect.forEach([...sessions.keys()].filter((k) => k.startsWith(`${chatId}:`)), closeSession, { discard: true }),
+    // A reply that failed, was stopped or passed its limit: the same agent answers again (the chat's lead if it left
+    // the chat or was archived), as a turn of its own after what's queued. The conversation is its context.
+    retry: (chatId, messageId) =>
+      Effect.gen(function* () {
+        const chat = yield* store.chat(chatId)
+        if (!chat) return yield* new ChatNotFound({ chatId })
+        const m = (yield* store.messages(chatId)).find((x) => x.id === messageId)
+        if (!m || m.role !== "assistant" || !m.error) return
+        const team = yield* members(store, chat)
+        const lead = team[0]
+        const who = team.find((a) => a.id === m.agentId) ?? lead
+        const isLead = !who || who.id === lead?.id
+        const t = yield* store.enqueueTurn({ chatId, agentId: who?.id ?? null, model: isLead ? chat.model : who.model, accountId: isLead ? chat.accountId : who.accountId, clientId: null, depth: 0 })
+        yield* publish(chatId, ev("queued", { turn: store.toTurn(t) }))
+        yield* ensureWorker(chatId)
+      }),
     paused: () => paused,
     setMaxRunning: (max) =>
       Effect.gen(function* () {

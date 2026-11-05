@@ -72,6 +72,8 @@ export interface EngineFailure {
 export type EngineEvent =
   | { readonly type: "text"; readonly delta: string }
   | { readonly type: "done"; readonly usage: Usage }
+  // The turn's tokens so far (engines that report them while it runs: Claude, Codex), for a reply's token limit.
+  | { readonly type: "usage"; readonly usage: Usage }
   | { readonly type: "error"; readonly message: string; readonly failure?: EngineFailure | undefined }
   // A limit reading of the account the session runs on (Claude rate_limit_event, Codex account/rateLimits).
   | { readonly type: "limits"; readonly windows: ReadonlyArray<AccountWindow> }

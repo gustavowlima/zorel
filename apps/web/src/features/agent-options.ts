@@ -2,12 +2,12 @@
 // (not the Builder; the project's own and the global ones), the list itself (the chat's members first, in the chat's
 // order, then the rest, each with the line that says what it is or that it joins the chat), and who a message
 // calls that is not in the chat yet (they join when it is sent).
-import { type Agent, MENTION_RE } from "@zorel/contracts"
+import { type Agent, MENTION_RE, isTeammate } from "@zorel/contracts"
 import { handleOf } from "../labels.ts"
 import { handleKey } from "./mentions.ts"
 
-export const callable = <A extends Pick<Agent, "projectId" | "builtin">>(agents: ReadonlyArray<A>, projectId: string | null): A[] =>
-  agents.filter((a) => !a.builtin && (a.projectId === null || a.projectId === projectId))
+export const callable = <A extends Pick<Agent, "projectId" | "builtin" | "archivedAt">>(agents: ReadonlyArray<A>, projectId: string | null): A[] =>
+  agents.filter((a) => isTeammate(a) && (a.projectId === null || a.projectId === projectId))
 
 export interface AgentOption<A> {
   readonly agent: A

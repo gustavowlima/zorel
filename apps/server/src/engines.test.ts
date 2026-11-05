@@ -39,7 +39,7 @@ test("CLI args: no session, no tools, model from the id", () => {
 })
 
 const mem = (text: string, confirmedAt: number, scope = "user", kind: Memory["kind"] = "fact", title = ""): Memory => ({ id: text, scope, kind, title, text, state: "active", origin: "manual", chatId: null, createdAt: 0, confirmedAt })
-const agentOf = (id: string, name: string, instructions = ""): Agent => ({ id, projectId: "p", name, title: "", description: "", instructions, model: "x/y", accountId: null, effort: null, failover: [], permissions: DEFAULT_PERMISSIONS, access: "workspace", createdAt: 0 })
+const agentOf = (id: string, name: string, instructions = ""): Agent => ({ id, projectId: "p", archivedAt: null, monthlyTokens: null, replyTokens: null, name, title: "", description: "", instructions, model: "x/y", accountId: null, effort: null, failover: [], permissions: DEFAULT_PERMISSIONS, access: "workspace", createdAt: 0 })
 const msg = (role: "user" | "assistant", text: string, agentId: string | null = null): Message => ({ id: text, chatId: "c", role, agentId, text, model: null, error: null, steps: [], attachments: [], switches: [], turnId: null, changes: [], revertedAt: null, accountId: null, cost: null, inputTokens: 0, outputTokens: 0, durationMs: null, at: 1 })
 
 test("context: the memory budget favors the recent ones; layers in stable → volatile order", () => {

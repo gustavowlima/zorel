@@ -18,6 +18,11 @@ export const runRoutine = (id: string, key: string, payload?: unknown) =>
     const r = yield* store.routine(id)
     if (!r) return "missing" as const
     const at = Date.now()
+    // An archived agent runs no routine (restoring it brings them back).
+    if ((yield* store.agent(r.agentId))?.archivedAt) {
+      yield* store.updateRoutine(r.id, { lastRunAt: at, lastStatus: "skipped" })
+      return "skipped" as const
+    }
     if (runtime.busy(r.chatId)) {
       yield* store.updateRoutine(r.id, { lastRunAt: at, lastStatus: "skipped" })
       return "skipped" as const

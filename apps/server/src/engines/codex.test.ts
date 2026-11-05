@@ -22,7 +22,9 @@ const turn = (s: EngineSession, prompt: string) => Effect.runPromise(Stream.runC
 test("codex: one process, text across messages, usage and completion per turn", async () => {
   const s = open()
   const a = await turn(s, "hi")
-  expect(a).toEqual([{ type: "text", delta: "echo 1" }, { type: "text", delta: "\n\nend" }, { type: "done", usage: { inputTokens: 10, outputTokens: 2, cachedTokens: 4 } }])
+  const used = { inputTokens: 10, outputTokens: 2, cachedTokens: 4 }
+  // The tokens so far come as the turn runs (a reply's limit reads them), then the turn's total with done.
+  expect(a).toEqual([{ type: "text", delta: "echo 1" }, { type: "text", delta: "\n\nend" }, { type: "usage", usage: used }, { type: "done", usage: used }])
   const b = await turn(s, "again")
   expect(b[0]).toEqual({ type: "text", delta: "echo 2" }) // same thread, same process
   await Effect.runPromise(s.close)

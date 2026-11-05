@@ -96,6 +96,11 @@ export const en = {
   },
   chat: {
     editFromHere: "Edit from here",
+    replyLimit: "Stopped at its reply limit",
+    monthlyLimit: "Over its monthly token limit: it didn't start",
+    continue: "Continue",
+    retry: "Try again",
+    raiseLimit: "Raise the limit",
     rewindTitle: "Edit from here?",
     rewindBody: "This message and everything after it leave the conversation; the message comes back to the box so you can change it and send again.",
     rewindFiles: "Also undo the file changes made after it",
@@ -448,6 +453,16 @@ export const en = {
     unsaved: "Unsaved changes"
   },
   agent: {
+    archive: "Archive",
+    restoreArchived: "Restore",
+    archivedTitle: "This agent is archived",
+    archivedBody: "It answers no one and runs no routine; its chats and history stay. Restore it to bring it back to the team.",
+    monthlyLimit: "Monthly token limit",
+    monthlyLimitHint: "Input and output tokens this month (UTC). Over it, the agent doesn't start until next month or a higher limit.",
+    replyLimit: "Per-reply token limit",
+    replyLimitHint: "One reply stops when it passes this, with what it has; Continue goes on. Read while it runs on Claude Code and Codex, at the end elsewhere.",
+    noLimit: "No limit",
+    tokens: "{n} tokens",
     history: "History",
     historyHint: "Every saved version of this agent. Restoring one keeps the current as a version too.",
     current: "Current",
@@ -1249,6 +1264,10 @@ export const en = {
     createdHint: "Open one to set its tools and access."
   },
   agents: {
+    archived: "Archived",
+    archivedHint: "Out of the team: they answer no one and run no routine. Their history stays.",
+    showArchived: "Show",
+    hideArchived: "Hide",
     search: "Search agents",
     noMatch: "No agent matches",
     title: "Agents",

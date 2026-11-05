@@ -2,14 +2,14 @@
 // search once the team is long) — with who is working now, and one "New agent" menu (Build with AI, blank, import).
 // A row opens the agent's page; its ⋯ exports or deletes it. Agents can also be created or changed from a chat
 // (zorel_create_agent, zorel_update_agent): they show up here once the person approves the proposal.
-import type { Agent } from "@zorel/contracts"
+import { type Agent, isTeammate } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { useState } from "react"
 import { agentsAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
 import { exportAgent, importedAgent } from "./agent.tsx"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { AgentAvatar, Bot, Button, ChevronDown, ChevronRight, Column, ConfirmDialog, Dot, Download, EmptyState, IconButton, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, SearchInput, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
+import { AgentAvatar, Archive, ArchiveRestore, Bot, Button, ChevronDown, ChevronRight, Column, ConfirmDialog, Dot, Download, EmptyState, IconButton, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, SearchInput, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
 
 // The agents working now (a chat of theirs is running or waiting).
 export function useWorking() {
@@ -22,6 +22,7 @@ export function useWorking() {
 // access other than Workspace), so a long team stays scannable. The row opens the agent; ⋯ opens, exports or deletes.
 export function AgentItem({ agent, agents, working, onDelete }: { agent: Agent; agents: ReadonlyArray<Agent>; working: boolean; onDelete: (a: Agent) => void }) {
   const line = agent.title || agent.description || agent.instructions.trim().split("\n")[0]
+  const archive = useArchive()
   return (
     <ListRow
       label={`${t("agents.open")}: ${agent.name}`}
@@ -61,6 +62,9 @@ export function AgentItem({ agent, agents, working, onDelete }: { agent: Agent; 
           <MenuItem icon={<Download />} onAction={() => exportAgent(agent)}>
             {t("agent.export")}
           </MenuItem>
+          <MenuItem icon={agent.archivedAt ? <ArchiveRestore /> : <Archive />} onAction={() => archive(agent, !agent.archivedAt)}>
+            {agent.archivedAt ? t("agent.restoreArchived") : t("agent.archive")}
+          </MenuItem>
           <MenuSeparator />
           <MenuItem icon={<Trash2 />} tone="danger" onAction={() => onDelete(agent)}>
             {t("agent.deleteAction")}
@@ -69,6 +73,12 @@ export function AgentItem({ agent, agents, working, onDelete }: { agent: Agent; 
       }
     />
   )
+}
+
+// Archiving keeps an agent and its history but takes it off the team: it answers no one and runs no routine.
+export function useArchive() {
+  const update = useMutation(mutations.updateAgent)
+  return (agent: Agent, archived: boolean) => void update({ params: { id: agent.id }, payload: { archived }, reactivityKeys: ["agents"] })
 }
 
 // A team past this many gets a search field (the same threshold as every long list).
@@ -149,7 +159,9 @@ export function AgentsView() {
   const del = useDeleteAgent()
   const [query, setQuery] = useState("")
   const q = query.trim().toLowerCase()
-  const team = agents.filter((a) => !a.builtin)
+  const team = agents.filter(isTeammate)
+  const archived = agents.filter((a) => !a.builtin && a.archivedAt && agentMatches(a, q))
+  const [showArchived, setShowArchived] = useState(false)
   const groups = [
     { id: null as string | null, name: t("agents.global"), hint: t("agents.globalHint") },
     ...projects.map((p) => ({ id: p.id as string | null, name: p.name, hint: undefined as string | undefined }))
@@ -193,6 +205,26 @@ export function AgentsView() {
               </Rows>
             </Section>
           ))
+        )}
+        {/* Archived agents: out of the team, folded away; each can come back (its ⋯ › Restore). */}
+        {archived.length > 0 && (
+          <Section
+            title={`${t("agents.archived")} · ${archived.length}`}
+            description={t("agents.archivedHint")}
+            action={
+              <Button size="sm" variant="ghost" onPress={() => setShowArchived((v) => !v)}>
+                {showArchived ? t("agents.hideArchived") : t("agents.showArchived")}
+              </Button>
+            }
+          >
+            {showArchived && (
+              <Rows>
+                {archived.map((a) => (
+                  <AgentItem key={a.id} agent={a} agents={agents} working={false} onDelete={del.ask} />
+                ))}
+              </Rows>
+            )}
+          </Section>
         )}
       </Column>
       {del.dialog}

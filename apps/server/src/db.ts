@@ -3,7 +3,7 @@
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { type Access, type Agent, type AgentPermissions, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type Switch } from "@zorel/contracts"
 import type { Approval, ApprovalOutcome, Turn, WorkStep } from "@zorel/contracts/events"
-import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { LOCAL_ACTOR } from "./access.ts"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
@@ -149,12 +149,12 @@ export const repository = (db: Db) => {
     agent,
     createAgent: (input: { projectId: string | null; name: string; title?: string | undefined; description?: string | undefined; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined; builtin?: "builder" | undefined }, by = "you") =>
       Effect.gen(function* () {
-        const a: Agent = { id: crypto.randomUUID(), ...input, title: input.title ?? "", description: input.description ?? "", accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], access: input.access ?? "workspace", permissions: input.permissions ?? DEFAULT_PERMISSIONS, builtin: input.builtin ?? null, createdAt: now() }
+        const a: Agent = { id: crypto.randomUUID(), archivedAt: null, monthlyTokens: null, replyTokens: null, ...input, title: input.title ?? "", description: input.description ?? "", accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], access: input.access ?? "workspace", permissions: input.permissions ?? DEFAULT_PERMISSIONS, builtin: input.builtin ?? null, createdAt: now() }
         yield* db.insert(agents).values(a)
         yield* addVersion(a, by)
         return a
       }).pipe(orDie),
-    updateAgent: (id: string, input: { name?: string | undefined; title?: string | undefined; description?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined }, by = "you") =>
+    updateAgent: (id: string, input: { name?: string | undefined; title?: string | undefined; description?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined; archivedAt?: number | null | undefined; monthlyTokens?: number | null | undefined; replyTokens?: number | null | undefined }, by = "you") =>
       Effect.gen(function* () {
         const before = yield* agent(id)
         const set = defined(input)
@@ -167,6 +167,15 @@ export const repository = (db: Db) => {
         if (JSON.stringify(profileOf(after)) !== JSON.stringify(profileOf(before))) yield* addVersion(after, by)
         return after
       }).pipe(orDie),
+    // The tokens (input + output) an agent's turns used since a time (its month, for its monthly limit).
+    agentTokensSince: (agentId: string, since: number) =>
+      orDie(
+        db
+          .select({ n: sql<number>`coalesce(sum(${turns.inputTokens} + ${turns.outputTokens}), 0)` })
+          .from(turns)
+          .where(and(eq(turns.agentId, agentId), gte(turns.createdAt, since)))
+          .pipe(Effect.map((r) => Number(r[0]?.n ?? 0)))
+      ),
     // Newest first.
     agentVersions: (agentId: string) => orDie(db.select().from(agentVersions).where(eq(agentVersions.agentId, agentId)).orderBy(desc(agentVersions.n))),
     removeAgent: (id: string) =>
