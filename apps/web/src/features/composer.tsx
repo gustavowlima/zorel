@@ -318,7 +318,7 @@ function OptionList({ menu, onHover }: { menu: Menu; onHover: (i: number) => voi
     <div
       role="listbox"
       aria-label={t(LIST_LABELS[menu.trigger])}
-      className="absolute right-0 bottom-full left-0 z-20 mb-2 flex max-h-72 flex-col gap-px overflow-y-auto rounded-card border border-subtle bg-raised p-1 shadow-chip"
+      className="absolute right-0 bottom-full left-0 z-20 mb-2 flex max-h-72 flex-col gap-px overflow-y-auto rounded-card border border-strong bg-float shadow-float backdrop-blur-xl backdrop-saturate-150 p-1"
     >
       {menu.items.map((o, i) => (
         <div
@@ -331,9 +331,9 @@ function OptionList({ menu, onHover }: { menu: Menu; onHover: (i: number) => voi
             e.preventDefault() // keep the editor's focus
             menu.pick(o)
           }}
-          className={cx("flex h-control cursor-default items-center gap-2.5 rounded-control px-2.5", i === menu.selected ? "bg-hover text-fg" : "text-secondary")}
+          className={cx("flex h-control cursor-default items-center gap-2.5 rounded-control px-2.5", i === menu.selected ? "bg-accent-soft text-fg" : "text-secondary")}
         >
-          {o.icon && <span className="flex size-5 shrink-0 items-center justify-center text-muted">{o.icon}</span>}
+          {o.icon && <span className={cx("flex size-5 shrink-0 items-center justify-center", i === menu.selected ? "text-accent-text" : "text-muted")}>{o.icon}</span>}
           <span className="max-w-1/2 shrink-0 truncate">{o.label}</span>
           <span className="min-w-0 truncate text-sm text-muted">{o.hint ?? `${menu.trigger}${o.id}`}</span>
         </div>

@@ -2,21 +2,22 @@
 name: Zorel
 description: An AI agent workspace for code, dark, compact and quiet.
 colors:
-  frame: "#0d0d0d"
-  canvas: "#171717"
-  sidebar: "#0d0d0d"
-  surface: "#232323"
-  raised: "#262626"
+  frame: "#0a0d12"
+  canvas: "#13171d"
+  sidebar: "#0a0d12"
+  surface: "#1f242a"
+  raised: "#22272d"
+  float: "rgba(34, 39, 45, 0.86)"
   control: "rgba(255, 255, 255, 0.07)"
   control-hover: "rgba(255, 255, 255, 0.09)"
   control-active: "rgba(255, 255, 255, 0.12)"
-  code: "#141414"
+  code: "#101419"
   border-subtle: "rgba(255, 255, 255, 0.06)"
   border-strong: "rgba(255, 255, 255, 0.1)"
   text: "#ffffff"
-  text-secondary: "#dcdcdc"
-  text-muted: "#979797"
-  text-dim: "#8a8a8a"
+  text-secondary: "#d9dce1"
+  text-muted: "#92989f"
+  text-dim: "#858b92"
   signal-blue: "#007cf7"
   signal-blue-hover: "#1f8fff"
   signal-blue-text: "#42a0ff"
@@ -39,7 +40,7 @@ colors:
   agent-ochre: "#aa9935"
   agent-orchid: "#bd7dc1"
   agent-clay: "#d67d5e"
-  on-agent: "#141414"
+  on-agent: "#101419"
 typography:
   title:
     fontFamily: "Inter Variable, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
@@ -259,7 +260,9 @@ Control height follows the fixed scale: 24px (icons and inline actions), 28px (l
 
 No shadows. Depth comes from layers of tone: frame (and sidebar) → workbench → surface → raised, each step a little lighter in the dark theme. 6% borders separate when tone alone is not enough; popovers and dialogs use the strong border.
 
-**The Flat Rule.** Surfaces are flat. If something needs to stand out, it goes up one step in tone; it does not get a shadow. The only exception: the open chat in the sidebar, a raised chip with `shadow-chip`.
+**The Flat Rule.** Surfaces are flat. If something needs to stand out, it goes up one step in tone; it does not get a shadow. Two exceptions: the open chat in the sidebar, a raised chip with `shadow-chip`; and floating layers (menus, popovers, selects, the composer's / @ $ # list, the command palette), which are `float`: the raised tone at 86% with blur and `shadow-float`, so they hover over the chat instead of covering it. Dialogs and tooltips stay solid.
+
+**The Graphite Rule.** Neutrals are not dead grey: each carries a trace of the brand blue (OKLCH hue 255, chroma ~0.013) at the lightness of the grey it replaced, so contrast is unchanged. Selection speaks blue: the focused item in a menu or list gets `accent-soft` with its icon in `accent-text`, and the current place in the rail its icon in `accent-text` on `accent-faint`.
 
 ## Shapes
 
@@ -295,7 +298,7 @@ Compact and direct, with a physical squeeze on press.
 
 ### Select
 - **Trigger:** same body as the field (32px, or 28px at size sm) with a muted chevron. `ghost` variant (28px, no border, muted text, optional icon on the left, 14px chevron) for choices next to a message box, the same as the model picker trigger — it is the one on the home screen (project and agent above the box).
-- **List:** the same list surface as the Menu: raised with a strong border, 12px corners, 4px padding, no shadow; 28px items with 6px corners (concentric: 12 − 4 − 1 ≈ 6), focus with control-hover, selected with a blue check.
+- **List:** the same list surface as the Menu: `float` (with blur and `shadow-float`) and a strong border, 12px corners, 4px padding; 28px items with 6px corners (concentric: 12 − 4 − 1 ≈ 6), focus with accent-soft (icon in accent-text), selected with a blue check.
 - **Floating surfaces:** Select, Menu, Popover and Tooltip open 6px from the trigger (the context menu, at the pointer, 2px); Select, Menu and Popover enter with a fade + 0.98 zoom, the Tooltip with a fade only.
 - **Segmented and tabs:** the segmented control is 28px in total (1px border, 2px inset, 22px pills with 6px corners inside the rail's 8px); tabs are 28px on a single line and scroll sideways when they do not fit, never wrap.
 - **Header actions:** every button and field in a screen header is 28px (`size="sm"`); on desktop the header sits 16px from the right edge of the window.

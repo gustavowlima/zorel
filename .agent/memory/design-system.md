@@ -70,3 +70,6 @@ updated: 2026-11-05
 
 - agent palette (2026-11-05): six hues at one OKLCH lightness/chroma (68% 0.12), clear of danger/warning/success/blue: violet #918ddf, teal #00afa9, rose #d47795, ochre #aa9935, orchid #bd7dc1, clay #d67d5e; initial dark (--z-on-agent #141414, ≥6:1; white failed 4.5:1 on five of the old six). The landing (apps/site/tokens.css) uses the same values
 - control tokens are translucent (dark: white 7/9/12%; light: black 7/10/14%): a secondary button reads on frame, canvas and surface alike (the opaque #232323 vanished on surface)
+- neutrals tinted toward the brand blue (2026-11-05): OKLCH hue 255, chroma ~0.013, same lightness as the old greys (frame #0a0d12, canvas #13171d, surface #1f242a, raised #22272d; light theme frame #e9ecf1); contrast unchanged (dim 5.2:1 on canvas)
+- floating layers use bg-float (raised at 86%) + shadow-float + backdrop-blur-xl: menu, select, popover, command palette, composer option list; dialogs/tooltips solid
+- selection is blue: menus/lists focus = bg-accent-soft + icon text-accent-text (4.9:1); rail current = icon accent-text on accent-faint
