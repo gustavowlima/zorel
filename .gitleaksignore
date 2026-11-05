@@ -1,0 +1,5 @@
+# Fake keys in tests, already in history (the lines now carry gitleaks:allow): the log masking test and the
+# memory benchmark's "secret in the text" case. `gitleaks git .` and `gitleaks dir .` should report nothing.
+652ee7ae82d66e2dd8aed0c8061ff2efdb5b4459:apps/server/bench/memory-consolidation.bench.ts:generic-api-key:38
+be0d0e372b924219c3001d91629faa247525e868:apps/server/src/observability.test.ts:generic-api-key:15
+852ab8927317133944bd3f053c8f9c028efec593:apps/server/src/observability.test.ts:generic-api-key:15
