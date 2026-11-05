@@ -1303,6 +1303,15 @@ export const en = {
     empty: "No agents yet",
     emptyHint: "Describe the work and the Builder proposes the agents, or start from a blank one."
   },
+  chatAccess: {
+    title: "Access in this chat",
+    hint: "What every agent here may do without asking. The chat's choice is everyone's here, above or below their own.",
+    own: "Agents' own access",
+    ownHint: "Each agent works at the level set on its page.",
+    fullTitle: "Give every agent here full access?",
+    fullBody: "They won't ask before anything: editing or deleting files anywhere, running any command, going online. Use it for sandboxes and work you trust. It stays for this chat until you change it.",
+    fullConfirm: "Give full access"
+  },
   access: {
     title: "What it can do without asking",
     workspace: "Workspace",

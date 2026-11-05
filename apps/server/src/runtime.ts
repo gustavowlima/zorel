@@ -369,7 +369,9 @@ export const makeRuntime = Effect.gen(function* () {
       if (depth >= MAX_TASK_DEPTH) return textResult("This is already a task inside a task: do it here, or answer with what you have.", true)
       const s = await step(`Task for ${target.name}`, TASK_TOOL.name)
       const mine = effectiveAccess(chat, agent) // the level this chat gives the caller
-      if (narrower(target.access, mine) !== target.access) {
+      // The level the teammate works at in its task chat (it inherits this chat's): more than the caller's asks first.
+      const theirs = effectiveAccess({ access: chat.access }, target)
+      if (narrower(theirs, mine) !== theirs) {
         const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: TASK_TOOL.name, summary: `${nameOf(agent)} wants ${target.name} (more access than ${nameOf(agent)}) to work on a task`, args: task, cwd: null }))
         if (outcome === "denied" || outcome === "expired") {
           await finish(s, "refused")
@@ -387,7 +389,7 @@ export const makeRuntime = Effect.gen(function* () {
       const all = await run(store.agents())
       const visible = visibleTo(all, chat.projectId)
       // The Builder (Zorel's own) does no work itself: what it proposes is capped at workspace, not at its own "ask";
-      // full access is only ever the person's choice on the agent's page (a chat's level only narrows it).
+      // and never above its own: a chat set wider lets it work there, not hand that level to the agents it creates.
       const caller = { model: agent?.model ?? chat.model, effort: agent?.effort ?? chat.effort, access: agent?.builtin === "builder" ? ("workspace" as const) : narrower(effectiveAccess(chat, agent), agent?.access ?? "workspace") }
       const working = (id: string) => [...statuses.values()].some((st) => st.agentId === id && st.state !== "idle")
       if (name === "zorel_list_agents") return textResult(listText(visible, working))
