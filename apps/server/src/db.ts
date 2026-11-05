@@ -712,6 +712,23 @@ export const repository = (db: Db, pagesDir?: string) => {
             )
           )
         : Effect.succeed([]),
+    // Every entity of these scopes, for finding the ones a message names (recall's seeds).
+    entityNames: (scopes: ReadonlyArray<string>) =>
+      scopes.length
+        ? orDie(db.select({ id: entities.id, normalized: entities.normalized, aliases: entities.aliases }).from(entities).where(inArray(entities.scope, [...scopes])))
+        : Effect.succeed([] as Array<{ id: string; normalized: string; aliases: ReadonlyArray<string> }>),
+    // The active facts of these scopes that mention these entities, with which.
+    factsAbout: (entityIds: ReadonlyArray<string>, scopes: ReadonlyArray<string>, owner = LOCAL_ACTOR.id) =>
+      entityIds.length && scopes.length
+        ? orDie(
+            db
+              .select({ m: memories, entityId: memoryEntities.entityId })
+              .from(memoryEntities)
+              .innerJoin(memories, eq(memories.id, memoryEntities.memoryId))
+              .where(and(inArray(memoryEntities.entityId, [...entityIds]), eq(memories.state, "active"), eq(memories.kind, "fact"), heard(scopes, owner)))
+              .pipe(Effect.map((rows) => rows.map((r) => ({ memory: toMemory(r.m), entityId: r.entityId }))))
+          )
+        : Effect.succeed([] as Array<{ memory: Memory; entityId: string }>),
     // The links among these entities: valid relations, then pairs that one living fact names together (unlabeled).
     linksAmong: (ids: ReadonlyArray<string>) =>
       ids.length

@@ -4,7 +4,7 @@ import { type Agent, type Chat, type Memory, namedSkills, type Project } from "@
 import { Context, Data, Effect, Layer, Stream } from "effect"
 import { join } from "node:path"
 import {
-  buildTurn, CONSOLIDATION_SYSTEM, consolidationPrompt, type Mapped, mappedOf, HISTORY_CHARS, KEEP_CHARS, MAX_AFTER, parseConsolidation, pinned, RETRIEVED, reviewed, scopesOf, similar, WINDOW, withinBudget
+  buildTurn, CONSOLIDATION_SYSTEM, consolidationPrompt, type Mapped, mappedOf, namedPoints, spread, HISTORY_CHARS, KEEP_CHARS, MAX_AFTER, parseConsolidation, pinned, RETRIEVED, reviewed, scopesOf, similar, WINDOW, withinBudget
 } from "./context.ts"
 import { hasCredential, redact } from "./observability.ts"
 import { Store, type Repository } from "./db.ts"
@@ -31,6 +31,41 @@ const consolidating = new Set<string>()
 // The chat's agents who answer: an archived one stays a member (its history) but answers no one.
 export const members = (store: Repository, chat: Chat) =>
   Effect.forEach(chat.agentIds, store.agent).pipe(Effect.map((xs) => xs.filter((a): a is NonNullable<typeof a> => !!a && !a.archivedAt)))
+
+const ASSOCIATED = 5 // facts recalled by association each turn, besides the RETRIEVED found by their words
+const RECALL_CHARS = 2_000 // the most the recalled facts take in a turn
+
+// What a turn recalls beyond the pinned memories: facts by association first (the points the person's messages name,
+// spread along the map: "deploy" brings Vercel and the Friday rule though neither word was said), then facts by their
+// words (FTS), without repeats, within RECALL_CHARS. No model call; a project's map in milliseconds.
+export const recall = (store: Repository, scopes: ReadonlyArray<string>, query: string, exclude: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const byWords = yield* store.searchMemories(scopes, query, exclude, RETRIEVED)
+    const points = yield* store.entityNames(scopes)
+    const seeds = namedPoints(query, points)
+    let byAssociation: Memory[] = []
+    if (seeds.length) {
+      const ids = points.map((p) => p.id)
+      const activation = spread(ids, yield* store.linksAmong(ids), seeds)
+      const near = [...activation].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([id]) => id)
+      const score = new Map<string, { memory: Memory; score: number }>()
+      for (const { memory, entityId } of yield* store.factsAbout(near, scopes)) {
+        if (exclude.includes(memory.id)) continue
+        const s = score.get(memory.id) ?? { memory, score: 0 }
+        s.score += activation.get(entityId) ?? 0
+        score.set(memory.id, s)
+      }
+      byAssociation = [...score.values()].sort((a, b) => b.score - a.score || b.memory.confirmedAt - a.memory.confirmedAt).slice(0, ASSOCIATED).map((s) => s.memory)
+    }
+    let used = 0
+    const seen = new Set<string>()
+    return [...byAssociation, ...byWords].filter((m) => {
+      if (seen.has(m.id)) return false
+      seen.add(m.id)
+      used += m.text.length + 3
+      return used <= RECALL_CHARS
+    })
+  })
 
 // The names on a chat's map that stand for its project and its agents (so "Zorel" is the project's point, not a concept).
 export const knownNames = (store: Repository, chat: Pick<Chat, "projectId" | "agentIds">) =>
@@ -65,7 +100,7 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
       members: yield* members(store, chat),
       pinned: fixed,
       activeIds: active.map((m) => m.id),
-      retrieved: yield* store.searchMemories(scopes, query, fixed.map((m) => m.id), RETRIEVED),
+      retrieved: yield* recall(store, scopes, query, fixed.map((m) => m.id)),
       skills: { all, relevant: named },
       pages: knowledgeOf(agent) === "none" ? [] : yield* store.pinnedPages(scopes), // no access: no page in its context
       canPropose: memoryModeOf(agent) !== "read",

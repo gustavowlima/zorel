@@ -3,7 +3,7 @@ import { expect, test } from "bun:test"
 process.env.ZOREL_API_ENGINE = "direct" // these tests drive the direct API engine against a mock server
 import { type Agent, DEFAULT_PERMISSIONS, type Memory, type Message, namedSkills, skillHandle } from "@zorel/contracts"
 import { Effect, Stream } from "effect"
-import { buildTurn, grounded, mappedOf, memoryNote, mentioned, parseConsolidation, pinned, readPage, reviewed, sectionOf, similar, withinBudget } from "./context.ts"
+import { buildTurn, grounded, mappedOf, memoryNote, mentioned, namedPoints, parseConsolidation, pinned, readPage, reviewed, sectionOf, similar, spread, withinBudget } from "./context.ts"
 import { cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
 import { codexFailure, codexStep, windowsOf } from "./engines/codex.ts"
 import { hasCredential, redact } from "./observability.ts"
@@ -371,4 +371,18 @@ test("what a fact is about: entities and relations read leniently, a relation's 
   const m = mappedOf([{ name: " Vercel ", type: "concept" }, { name: "Deploy" }, "Fridays", { type: "concept" }, 42], [["Deploy", "Goes To", "Vercel"], ["Deploy", "x"], ["Deploy", "happens on", "deploy"], ["Deploy", "owned by", "Leo"]])
   expect(m.entities).toEqual([{ name: "Vercel", type: "concept" }, { name: "Deploy", type: "subject" }, { name: "Fridays", type: "subject" }, { name: "Leo", type: "subject" }])
   expect(m.relations).toEqual([["Deploy", "goes to", "Vercel"], ["Deploy", "owned by", "Leo"]])
+})
+
+test("spread: activation starts at the seeds and fades with distance; an unlinked point gets none", () => {
+  const a = spread(["A", "B", "C", "D"], [{ a: "A", b: "B" }, { a: "B", b: "C" }], ["A"])
+  expect(a.get("A")! > a.get("B")!).toBe(true)
+  expect(a.get("B")! > a.get("C")!).toBe(true)
+  expect(a.get("D") ?? 0).toBe(0)
+  expect(spread(["A"], [], ["missing"]).size).toBe(0)
+})
+
+test("named points: a name or an alias as whole words in the text", () => {
+  const points = [{ id: "1", normalized: "deploy", aliases: [] }, { id: "2", normalized: "vercel", aliases: ["vercel com"] }, { id: "3", normalized: "ui", aliases: [] }]
+  expect(namedPoints("How do we Deploy to vercel.com?", points)).toEqual(["1", "2"])
+  expect(namedPoints("deployment", points)).toEqual([]) // not a whole word; short names never match by themselves
 })
