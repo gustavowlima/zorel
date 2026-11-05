@@ -1,31 +1,34 @@
-// Sidebar: the brand (the title bar in the desktop app) with Settings at its end; the pages, fixed (Needs you, Knowledge); then,
-// scrolling, the Chats section (chats without a project) and the Projects section (the tree), each with an icon,
-// a fold and a +; and at the foot the subscriptions' limits. Every row shares one 20px icon column (x20-40) and
-// starts its text at x50. The list fades out at the bottom while more is below, and only then does the foot draw
-// its hairline. Chats sort by whose turn it is, then manual order and recency; projects reorder by drag and drop,
-// chats only inside their own group.
+// Sidebar: the icon rail (places, usage, Settings) and, beside it, a Search button (opens the ⌘K palette) over the
+// scrolling Chats section (chats without a project) and Projects section (the tree), each with an icon, a fold, a
+// tooltip saying what it holds and a +. Every row shares one 20px icon column (x20-40) and starts its text at x50.
+// The list fades out at the bottom while more is below. Chats sort by whose turn it is, then manual order and
+// recency; projects reorder by drag and drop, chats only inside their own group. Each row has a ⋯ with the same
+// menu as right-click.
 import { type AccountWindow, type Agent, type Chat, LIMIT_ALERT, type Project, type ProviderAccount } from "@zorel/contracts"
 import type { ChatStatus } from "@zorel/contracts/events"
 import { formatAge, formatPercent, formatTime, t } from "@zorel/i18n"
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useInvalidate, useList, useMutation, useStatuses } from "../client.ts"
-import { agentTone, chatTitle, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
+import { agentTone, chatTitle, modelName, statusLabel, type Pace, paceOf, splitModel, windowLabel, windowMinutes } from "../labels.ts"
 import { RenameDialog } from "./chat.tsx"
+import { openPalette } from "./palette.tsx"
 import { NewProjectButton } from "./project.tsx"
+import { byTurn, ordered, type Statuses, visibleChats } from "./sidebar-order.ts"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  ChevronRight, Fold, Marker, Pause, Play, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder, Width
+  ChevronRight, Fold, FolderOpen, Marker, Menu, ModelAvatar, MoreHorizontal, Search, Users, Pause, Play, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder, Width
 } from "@/ui"
 
 const VISIBLE = 5
 const EXPANDED_KEY = "zorel.sidebar.expanded"
 const COLLAPSED_KEY = "zorel.sidebar.collapsed" // sections closed by hand: "chats", "projects"
-type Statuses = Readonly<Record<string, ChatStatus>>
 
 // Tree keys carry their kind: a project, a chat, or a group's "show more" row.
 const projectKey = (id: string) => `p:${id}`
 const chatKey = (id: string) => `c:${id}`
 const moreKey = (group: string) => `m:${group}`
+const emptyKey = (projectId: string) => `e:${projectId}`
+const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
 const idOf = (key: NavKey) => String(key).slice(2)
 
 // The icon rail: the logo, then the app's places — chats, what waits for you, agents, routines,
@@ -224,49 +227,48 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   const groupOf = (projectId: string | null) => byTurn(ordered(chats.filter((c) => c.projectId === projectId), statuses), statuses)
   const loose = groupOf(null) // the chats without a project
 
-  // Right-click menus: a chat (open, rename, delete) or a project (open, new chat in it, delete).
+  // The row menus, shared by right-click (or the Menu key) and the row's ⋯: a chat (open, rename, delete) or a
+  // project (open, new chat in it, settings, delete).
   const removeChat = useMutation(mutations.removeChat)
   const updateChat = useMutation(mutations.updateChat)
   const removeProject = useMutation(mutations.removeProject)
   const [dialog, setDialog] = useState<{ kind: "rename" | "deleteChat"; chat: Chat } | { kind: "deleteProject"; project: Project }>()
+  const chatMenu = (chat: Chat) => (
+    <>
+      <MenuItem icon={<MessageCircle />} onAction={() => go({ view: "chat", id: chat.id })}>
+        {t("common.open")}
+      </MenuItem>
+      <MenuItem icon={<Pencil />} onAction={() => setDialog({ kind: "rename", chat })}>
+        {t("common.rename")}
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={<Trash2 />} tone="danger" onAction={() => setDialog({ kind: "deleteChat", chat })}>
+        {t("common.delete")}
+      </MenuItem>
+    </>
+  )
+  const projectMenu = (project: Project) => (
+    <>
+      <MenuItem icon={<Folder />} onAction={() => go({ view: "project", id: project.id, tab: "overview" })}>
+        {t("common.open")}
+      </MenuItem>
+      <MenuItem icon={<Plus />} onAction={() => go({ view: "home", projectId: project.id })}>
+        {t("nav.newChatIn", { name: project.name })}
+      </MenuItem>
+      <MenuItem icon={<Settings />} onAction={() => go({ view: "project", id: project.id, tab: "overview" })}>
+        {t("nav.projectSettings", { name: project.name })}
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={<Trash2 />} tone="danger" onAction={() => setDialog({ kind: "deleteProject", project })}>
+        {t("project.deleteAction")}
+      </MenuItem>
+    </>
+  )
   const menuFor = (target: HTMLElement) => {
     const key = target.closest("[role=row]")?.getAttribute("data-key") ?? ""
     const chat = key.startsWith("c:") ? chats.find((c) => c.id === idOf(key)) : undefined
     const project = key.startsWith("p:") ? projects.find((p) => p.id === idOf(key)) : undefined
-    if (chat)
-      return (
-        <>
-          <MenuItem icon={<MessageCircle />} onAction={() => go({ view: "chat", id: chat.id })}>
-            {t("common.open")}
-          </MenuItem>
-          <MenuItem icon={<Pencil />} onAction={() => setDialog({ kind: "rename", chat })}>
-            {t("common.rename")}
-          </MenuItem>
-          <MenuSeparator />
-          <MenuItem icon={<Trash2 />} tone="danger" onAction={() => setDialog({ kind: "deleteChat", chat })}>
-            {t("common.delete")}
-          </MenuItem>
-        </>
-      )
-    if (project)
-      return (
-        <>
-          <MenuItem icon={<Folder />} onAction={() => go({ view: "project", id: project.id, tab: "overview" })}>
-            {t("common.open")}
-          </MenuItem>
-          <MenuItem icon={<Plus />} onAction={() => go({ view: "home", projectId: project.id })}>
-            {t("nav.newChatIn", { name: project.name })}
-          </MenuItem>
-          <MenuItem icon={<Settings />} onAction={() => go({ view: "project", id: project.id, tab: "overview" })}>
-            {t("nav.projectSettings", { name: project.name })}
-          </MenuItem>
-          <MenuSeparator />
-          <MenuItem icon={<Trash2 />} tone="danger" onAction={() => setDialog({ kind: "deleteProject", project })}>
-            {t("project.deleteAction")}
-          </MenuItem>
-        </>
-      )
-    return undefined
+    return chat ? chatMenu(chat) : project ? projectMenu(project) : undefined
   }
 
   const reorderProjects = useMutation(mutations.reorderProjects)
@@ -289,30 +291,40 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
 
   const chatItems = (group: string, list: ReadonlyArray<Chat>) => {
     const showAll = all.has(group)
-    // The open chat always stays visible, even past the fold.
-    const visible = showAll ? list : list.filter((c, i) => i < VISIBLE || c.id === activeChat)
-    const hidden = list.length - visible.length
+    const { visible, hidden } = visibleChats(list, activeChat, VISIBLE, showAll)
     const label = showAll ? t("nav.showLess") : t("nav.showMore", { count: hidden })
     return [
-      ...visible.map((c) => <ChatItem key={c.id} chat={c} status={statuses[c.id]} active={c.id === activeChat} agents={agents} nested={group !== "loose"} />),
+      ...visible.map((c) => <ChatItem key={c.id} chat={c} status={statuses[c.id]} active={c.id === activeChat} agents={agents} menu={chatMenu(c)} nested={group !== "loose"} />),
       ...((hidden > 0 || showAll) && list.length > VISIBLE
-        ? [<NavTreeItem key="more" id={moreKey(group)} textValue={label} title={<span className="text-muted">{label}</span>} onAction={() => toggleAll(group)} nested={group !== "loose"} />]
+        ? [<NavTreeItem key="more" id={moreKey(group)} textValue={label} title={label} quiet onAction={() => toggleAll(group)} nested={group !== "loose"} />]
         : [])
     ]
   }
 
   return (
     <nav aria-label={t("nav.chats")} className="flex w-62 shrink-0 flex-col overflow-hidden pt-0 pb-3 pl-2">
-      <div className="h-3 shrink-0" />
+      {/* Search: opens the ⌘K palette (chats, projects, agents and messages); the sidebar has no filter of its own. */}
+      <div className="shrink-0 py-3 pr-2.5">
+        <Button variant="ghost" onPress={openPalette} className="h-control-sm w-full justify-start gap-2.5 px-2.5 font-normal text-muted data-hovered:text-fg">
+          <span className="flex size-5 shrink-0 items-center justify-center [&_svg]:size-4">
+            <Search />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-left">{t("common.search")}</span>
+          <kbd className="font-sans text-sm text-dim">{MAC ? "⌘K" : "Ctrl K"}</kbd>
+        </Button>
+      </div>
 
-      {/* Chats (without a project) first, then Projects; each section folds, and the list scrolls under the pages.
+      {/* Chats (without a project) first, then Projects; each section folds, and the list scrolls under the search.
           Right-click (or the Menu key) on a chat or a project opens its menu. */}
       <ContextMenu label={t("common.more")} menuFor={menuFor} className="flex min-h-0 flex-1 flex-col">
       <div ref={listRef} onScroll={measure} className={cx("scroll-quiet flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain pr-2.5 pb-2", more && "fade-bottom")}>
         <section className="flex flex-col gap-px">
           <NavLabel
+            icon={<MessageCircle />}
+            hint={t("nav.chatsHint")}
             expanded={!collapsed.has("chats")}
             onToggle={() => flip("chats")}
+            summary={<Pending count={loose.filter((c) => statuses[c.id]?.state === "waiting").length} />}
             action={
               <Tooltip content={t("nav.newChat")}>
                 <IconButton label={t("nav.newChat")} size="xs" onPress={() => go({ view: "home" })}>
@@ -329,26 +341,49 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
                 {chatItems("loose", loose)}
               </NavTree>
             ) : (
-              <p className="py-1 pl-2.5 text-sm text-muted">{t("nav.noChats")}</p>
+              <div className="flex flex-col items-start gap-2 py-1 pl-10.5">
+                <p className="text-sm text-muted">{t("nav.noChats")}</p>
+                <Button size="sm" onPress={() => go({ view: "home" })}>
+                  {t("nav.newChat")}
+                </Button>
+              </div>
             )}
           </Fold>
         </section>
 
         <section className="flex flex-col gap-px">
-          <NavLabel expanded={!collapsed.has("projects")} onToggle={() => flip("projects")} action={<NewProjectButton />}>
+          <NavLabel
+            icon={<Folder />}
+            expanded={!collapsed.has("projects")}
+            onToggle={() => flip("projects")}
+            summary={<Pending count={projects.reduce((n, p) => n + chats.filter((c) => c.projectId === p.id && statuses[c.id]?.state === "waiting").length, 0)} />}
+            action={<NewProjectButton />}
+          >
             {t("nav.projects")}
           </NavLabel>
           <Fold open={!collapsed.has("projects")}>
-            <NavTree label={t("nav.projects")} expandedKeys={expandedKeys} onExpandedChange={onExpandedChange} dragAndDropHooks={projectDnd}>
-              {projects.map((p) => {
-                const list = groupOf(p.id)
-                return (
-                  <ProjectItem key={p.id} project={p} active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)} chats={list} statuses={statuses} onToggle={() => toggle(p.id)}>
-                    {chatItems(p.id, list)}
-                  </ProjectItem>
-                )
-              })}
-            </NavTree>
+            {projects.length ? (
+              <NavTree label={t("nav.projects")} expandedKeys={expandedKeys} onExpandedChange={onExpandedChange} dragAndDropHooks={projectDnd}>
+                {projects.map((p) => {
+                  const list = groupOf(p.id)
+                  return (
+                    <ProjectItem key={p.id} project={p} active={(route.view === "project" && route.id === p.id) || (route.view === "home" && route.projectId === p.id)} chats={list} statuses={statuses} menu={projectMenu(p)} onToggle={() => toggle(p.id)}>
+                      {list.length ? (
+                        chatItems(p.id, list)
+                      ) : (
+                        // An empty project still opens: one quiet row that starts its first chat.
+                        <NavTreeItem id={emptyKey(p.id)} textValue={t("nav.emptyProjectStart")} quiet nested title={t("nav.emptyProjectStart")} onAction={() => go({ view: "home", projectId: p.id })} />
+                      )}
+                    </ProjectItem>
+                  )
+                })}
+              </NavTree>
+            ) : (
+              <div className="flex flex-col items-start gap-2 py-1 pr-2 pl-10.5">
+                <p className="text-sm text-muted">{t("nav.emptyProjects")}</p>
+                <NewProjectButton label={t("nav.addProject")} />
+              </div>
+            )}
           </Fold>
         </section>
       </div>
@@ -391,28 +426,46 @@ export function Sidebar({ route, activeProjectId }: { route: Route; activeProjec
   )
 }
 
-const lastActivity = (c: Chat, statuses: Statuses) => Math.max(c.createdAt, c.lastAt ?? 0, statuses[c.id]?.updatedAt ?? 0)
-
-// A group's chats: the ones never placed by hand first (newest activity on top), then the placed ones in
-// their manual order.
-const ordered = (chats: ReadonlyArray<Chat>, statuses: Statuses) => [
-  ...chats.filter((c) => c.position === null).sort((a, b) => lastActivity(b, statuses) - lastActivity(a, statuses)),
-  ...chats.filter((c) => c.position !== null).sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-]
-// Whose turn it is comes first: waiting for you, then working, then the rest (each keeps the order above).
-const rank = (s: ChatStatus | undefined) => (s?.state === "waiting" ? 0 : s?.state === "running" ? 1 : 2)
-const byTurn = (chats: ReadonlyArray<Chat>, statuses: Statuses) => [...chats].sort((a, b) => rank(statuses[a.id]) - rank(statuses[b.id]))
-
 const Count = ({ n }: { n: number }) => (
   <span className="flex h-4.5 min-w-4.5 shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-semibold text-on-accent tabular-nums">{n}</span>
 )
 
-// A project: one line. Waiting for you → a dot; working → a spinner; nothing otherwise.
+// How many chats wait for you, shown on a collapsed section's title (a number with the accent text, never colour alone).
+function Pending({ count }: { count: number }) {
+  if (!count) return null
+  return (
+    <span role="img" aria-label={t("nav.waitingIn", { count })} className="shrink-0 px-1 text-sm font-medium text-accent-text tabular-nums">
+      {count}
+    </span>
+  )
+}
+
+// The row's ⋯: the same menu as right-click. It replaces the time (or the count) on hover and focus, and is always
+// there on touch.
+function RowMenu({ name, children }: { name: string; children: ReactNode }) {
+  const label = t("nav.moreFor", { name })
+  return (
+    <Menu
+      label={label}
+      trigger={
+        <IconButton label={label} size="xs">
+          <MoreHorizontal className="size-3.5" />
+        </IconButton>
+      }
+    >
+      {children}
+    </Menu>
+  )
+}
+
+// A project: one line. A folder in the icon column (an arrow on hover), its name, and on the right how many chats it
+// holds, or its state: waiting for you → a dot; working → a spinner. On hover: + (new chat in it) and ⋯.
 function ProjectItem({
   project,
   active,
   chats,
   statuses,
+  menu,
   onToggle,
   children
 }: {
@@ -420,6 +473,7 @@ function ProjectItem({
   active: boolean
   chats: ReadonlyArray<Chat>
   statuses: Statuses
+  menu: ReactNode
   onToggle: () => void
   children: ReactNode
 }) {
@@ -430,12 +484,13 @@ function ProjectItem({
       id={projectKey(project.id)}
       textValue={project.name}
       active={active}
+      groupIcon={(open) => (open ? <FolderOpen /> : <Folder />)}
       title={project.name}
       dragLabel={t("nav.reorder", { name: project.name })}
       onAction={onToggle}
       trailing={
         waiting ? (
-          <span role="img" aria-label={t("nav.waitingIn", { count: 1 })} className="size-2 rounded-full bg-accent-text" />
+          <span role="img" aria-label={t("nav.waitingIn", { count: 1 })} className="size-1.5 rounded-full bg-accent-text" />
         ) : running ? (
           <Spinner size={11} className="text-success" label={t("nav.runningIn", { count: 1 })} />
         ) : chats.length ? (
@@ -445,12 +500,12 @@ function ProjectItem({
       }
       actions={
         <>
-          <IconButton label={t("nav.projectSettings", { name: project.name })} size="xs" onPress={() => go({ view: "project", id: project.id, tab: "overview" })}>
-            <Settings className="size-3.5" />
-          </IconButton>
-          <IconButton label={t("nav.newChatIn", { name: project.name })} size="xs" onPress={() => go({ view: "home", projectId: project.id })}>
-            <Plus className="size-3.5" />
-          </IconButton>
+          <Tooltip content={t("nav.newChatIn", { name: project.name })}>
+            <IconButton label={t("nav.newChatIn", { name: project.name })} size="xs" onPress={() => go({ view: "home", projectId: project.id })}>
+              <Plus className="size-3.5" />
+            </IconButton>
+          </Tooltip>
+          <RowMenu name={project.name}>{menu}</RowMenu>
         </>
       }
     >
@@ -459,50 +514,43 @@ function ProjectItem({
   )
 }
 
-// A chat on one 32px line: the lead's avatar (or the model's logo) in the icon column, the title, and on the
-// right what matters now: a spinner while it runs, a blue dot when it waits for you, a red one when the last
-// turn failed, otherwise how long ago it last moved. The status in words is in the row's accessible name.
-// A chat: two lines, no icon. The title and when it last moved (or a spinner while it works); under it who is in
-// it (small avatars and names) or, while something happens, what (working, waits for you, failed). A chat with no
-// agent shows its model instead.
-function ChatItem({ chat, status, active, agents, nested = false }: { chat: Chat; status: ChatStatus | undefined; active: boolean; agents: ReadonlyArray<Agent>; nested?: boolean }) {
+// A chat: two lines. The agent's avatar (or the model's logo with no agent, the channel icon with several) in the
+// icon column, with a dot on its corner when it waits for you (accent) or failed (red). Line 1 is the title and when
+// it last moved (a spinner while it works); ⋯ takes the time's place on hover or focus. Line 2 is who answers and
+// the model ("Dev · Opus 4.7") or, while something happens, what: working, waits for you, failed (the state is
+// always a dot or spinner plus words, never colour alone).
+function ChatItem({ chat, status, active, agents, menu, nested = false }: { chat: Chat; status: ChatStatus | undefined; active: boolean; agents: ReadonlyArray<Agent>; menu: ReactNode; nested?: boolean }) {
   const live = status && status.state !== "idle" ? status : undefined
   const members = chat.agentIds.flatMap((id) => agents.filter((a) => a.id === id))
   const at = Math.max(chat.lastAt ?? chat.createdAt, status?.updatedAt ?? 0)
   const said = live ? statusLabel(live, agents) : undefined
-  const names = members.length > 2 ? `${members.slice(0, 2).map((a) => a.name).join(", ")} +${members.length - 2}` : members.map((a) => a.name).join(", ")
+  const model = modelName(chat.model)
+  const who = members.length > 1 ? `${members[0]!.name} +${members.length - 1}` : members[0]?.name
+  const detail = who ? t("nav.withModel", { agent: who, model }) : model
+  const lead = members[0]
+  const mark = live?.state === "waiting" ? "bg-accent-text" : live?.state === "failed" ? "bg-danger" : undefined
   return (
     <NavTreeItem
       id={chatKey(chat.id)}
-      textValue={[chatTitle(chat), said ?? names].filter(Boolean).join(", ")}
+      textValue={[chatTitle(chat), said ?? detail].filter(Boolean).join(", ")}
       active={active}
       strong={live?.state === "waiting"}
       title={chatTitle(chat)}
-      trailing={
-        live?.state === "running" ? (
-          <Spinner size={11} className="text-success" label={said ?? ""} />
-        ) : !members.length && (live?.state === "waiting" || live?.state === "failed") ? (
-          // One line (no agents): the state is a dot by the title.
-          <span role="img" aria-label={said} className={cx("size-2 rounded-full", live.state === "waiting" ? "bg-accent-text" : "bg-danger")} />
-        ) : (
-          formatAge(at)
-        )
+      leading={
+        <span className="relative flex size-5 shrink-0 items-center justify-center">
+          {members.length > 1 ? (
+            <Users aria-hidden="true" className="size-4 text-muted" />
+          ) : lead ? (
+            <AgentAvatar id={lead.id} name={lead.name} tone={agentTone(lead, agents)} size={20} />
+          ) : (
+            <ModelAvatar provider={splitModel(chat.model).provider} size={20} />
+          )}
+          {mark && <span aria-hidden="true" className={cx("absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2 ring-frame", mark)} />}
+        </span>
       }
-      // The second line only when agents are in it: who, or what is happening now.
-      detail={
-        !members.length ? undefined : live ? (
-          <span className={cx("truncate", live.state === "waiting" ? "text-accent-text" : live.state === "failed" ? "text-danger" : "text-muted")}>{said}</span>
-        ) : (
-          <>
-            <span className="flex shrink-0 items-center">
-              {members.slice(0, 3).map((a, i) => (
-                <AgentAvatar key={a.id} id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} className={cx("ring-2 ring-frame", i > 0 && "-ml-1")} />
-              ))}
-            </span>
-            <span className="truncate">{names}</span>
-          </>
-        )
-      }
+      trailing={live?.state === "running" ? <Spinner size={11} className="text-success" label={said ?? ""} /> : formatAge(at)}
+      actions={<RowMenu name={chatTitle(chat)}>{menu}</RowMenu>}
+      detail={<span className={cx("truncate", live?.state === "waiting" ? "text-accent-text" : live?.state === "failed" ? "text-danger" : undefined)}>{said ?? detail}</span>}
       nested={nested}
       dragLabel={t("nav.reorder", { name: chatTitle(chat) })}
       onAction={() => go({ view: "chat", id: chat.id })}

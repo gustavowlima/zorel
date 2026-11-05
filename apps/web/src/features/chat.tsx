@@ -11,8 +11,11 @@ import { memo, type ReactNode, useCallback, useEffect, useId, useLayoutEffect, u
 import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
 import { agentName, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText } from "../labels.ts"
 import { ChatMarkdown } from "./chat-markdown.tsx"
+import { MentionText } from "./mention.tsx"
+import { commandOf, extraArgs } from "./receipt-args.ts"
 import { go } from "../state.ts"
-import { Composer, type ComposerSources } from "./composer.tsx"
+import { agentOptions, callable, toJoin } from "./agent-options.ts"
+import { Composer, type ComposerOption, type ComposerSources, SendError } from "./composer.tsx"
 import { ContextMeter } from "./context-meter.tsx"
 import { QueuePanel, useQueue } from "./queue.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
@@ -24,7 +27,7 @@ import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import { ChatProcesses } from "./processes.tsx"
 import { QuestionAnswer } from "./question.tsx"
 import {
-  Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
+  Button, Check, ChevronDown, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
   MenuSeparator, MessageCircle, MessageCircleQuestion, ShieldAlert, Minimize2, MoreHorizontal, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
 } from "@/ui"
 
@@ -45,10 +48,21 @@ export function ChatView({ chat }: { chat: Chat }) {
   )
   // While a turn runs, a new message waits in the queue (above the box) and goes out when the chat is free.
   const queue = useQueue(chat.id, busy, state.ready, sendNow)
-  const submit = (text: string, attachmentIds: ReadonlyArray<string>) => {
+  // The agents "#" and "@" offer: everyone this chat can use. One that is not in the chat yet joins it when a
+  // message naming it is sent (not when picked, so a chip taken back leaves no stray member): the server only calls
+  // members, so the send waits for that. The lead and the model stay.
+  const available = callable(agents, chat.projectId)
+  const submit = async (text: string, attachmentIds: ReadonlyArray<string>) => {
+    const joining = toJoin(text, chat.agentIds, available)
+    if (joining.length) {
+      try {
+        await updateChat({ params: { id: chat.id }, payload: { agentIds: [...chat.agentIds, ...joining.map((a) => a.id)] }, reactivityKeys: ["chats", "context"] })
+      } catch {
+        throw new SendError(t("chat.addFailed"))
+      }
+    }
     if (!busy && !queue.items.length) return sendNow(text, attachmentIds)
     queue.add(text, attachmentIds)
-    return Promise.resolve()
   }
   // A queued message brought back to the box remounts it with that text.
   const [draft, setDraft] = useState<{ key: number; text: string }>({ key: 0, text: "" })
@@ -87,23 +101,17 @@ export function ChatView({ chat }: { chat: Chat }) {
   const engineCommands = AsyncResult.getOrElse(useAtomValue(commandsAtom(chat.id)), () => [])
   // What "@", "$" and "/" offer in this chat: its agents, the skills it can use, Zorel's commands.
   const scopes = new Set(["user", ...(chat.projectId ? [`project:${chat.projectId}`] : []), ...chat.agentIds.map((id) => `agent:${id}`)])
-  // "#": every agent this chat can use; the one picked answers from now on (joins the chat if it wasn't in it).
-  const available = agents.filter((a) => !a.builtin && (a.projectId === null || a.projectId === chat.projectId))
-  const makeLead = (a: Agent) =>
-    void updateChat({ params: { id: chat.id }, payload: { agentIds: [a.id, ...chat.agentIds.filter((id) => id !== a.id)], model: a.model }, reactivityKeys: ["chats", "context"] })
+  // "#" and "@" call an agent: every one this chat can use (its members first; the rest join it when the message is sent).
+  const people: ComposerOption[] = agentOptions(available, chat.agentIds, { member: (a) => a.title || modelLabel(a.model), outside: t("composer.addToChat") }).map((o) => ({
+    id: o.id,
+    label: o.label,
+    hint: o.hint,
+    icon: <AuthorAvatar agent={o.agent} model={null} size={16} />
+  }))
   const sourcesWith = (files: ReadonlyArray<WorkspaceFile>): ComposerSources => ({
-    leads: available.map((a) => ({
-      id: handleOf(a),
-      label: a.name,
-      hint: a.id === chat.agentIds[0] ? t("composer.answering") : a.title || modelLabel(a.model),
-      icon: <AuthorAvatar agent={a} model={null} size={16} />,
-      run: () => makeLead(a)
-    })),
-    // "@": the members first, then the project's files (the agent reads them with its tools).
-    agents: [
-      ...team.map((a) => ({ id: handleOf(a), label: a.name, icon: <AuthorAvatar agent={a} model={null} size={16} /> })),
-      ...files.filter((f) => f.status !== "deleted").map((f) => ({ id: f.path, label: f.path, hint: t("composer.file"), icon: <File className="size-4" /> }))
-    ],
+    leads: people,
+    // "@": the agents, then the project's files (the agent reads them with its tools).
+    agents: [...people, ...files.filter((f) => f.status !== "deleted").map((f) => ({ id: f.path, label: f.path, hint: t("composer.file"), icon: <File className="size-4" /> }))],
     skills: memories.filter((m) => m.kind === "skill" && m.state === "active" && scopes.has(m.scope)).map((m) => ({ id: skillHandle(m.title), label: m.title, icon: <Sparkles className="size-4" /> })),
     commands: [
       { id: "compact", label: t("composer.command.compact"), hint: t("composer.command.compactHint"), icon: <Minimize2 className="size-4" />, run: compact },
@@ -160,10 +168,13 @@ export function ChatView({ chat }: { chat: Chat }) {
         )}
         <QueuePanel
           items={queue.items}
-          canSteer={busy && splitModel(state.live?.model ?? chat.model).provider === "codex-cli"} // only Codex takes a correction mid-turn
-          onSteer={(item) => {
+          busy={busy}
+          // Claude and Codex take a message into the reply in progress (not with attachments); any other engine stops it.
+          joinsTurn={(item) => !item.attachmentIds.length && ["claude-cli", "codex-cli"].includes(splitModel(state.live?.model ?? chat.model).provider)}
+          onSendNow={(item) => {
             queue.remove(item.id)
-            void steer({ payload: { chatId: chat.id, text: item.text, ...(item.attachmentIds.length && { attachmentIds: item.attachmentIds }) } })
+            // If the server refuses it, it goes back to the queue instead of vanishing.
+            steer({ payload: { chatId: chat.id, text: item.text, ...(item.attachmentIds.length && { attachmentIds: item.attachmentIds }) } }).catch(() => queue.add(item.text, item.attachmentIds))
           }}
           onEdit={(item) => {
             queue.remove(item.id)
@@ -569,7 +580,9 @@ function UserMessage({ message: m, onEdit }: { message: Message; onEdit?: (() =>
           )}
         </div>
       )}
-      <div className="rounded-sheet bg-surface px-4 py-2.5 text-chat whitespace-pre-wrap">{m.text}</div>
+      <div className="rounded-sheet bg-surface px-4 py-2.5 text-chat whitespace-pre-wrap">
+        <MentionText text={m.text} />
+      </div>
       <MessageActions text={m.text} at={m.at} align="end" onEdit={onEdit} />
     </div>
   )
@@ -1043,29 +1056,57 @@ function TrayCard({ icon, label, children }: { icon: ReactNode; label: string; c
   )
 }
 
-// What an approval would run, in one line: the shell command or file it names, else the tool.
-function commandOf(a: Approval): string {
-  try {
-    const args = JSON.parse(a.args) as Record<string, unknown>
-    const first = [args.command, args.cmd, args.file_path, args.path].find((v) => typeof v === "string")
-    if (typeof first === "string") return first
-  } catch {
-    // not JSON: fall back to the tool's name
-  }
-  return a.tool
-}
-
-// A decision already taken: one quiet line ("Allowed · …").
+// A decision already taken: one quiet 28px row (the outcome's icon, "Allowed" or "Denied", what it was, cut to one
+// line) that opens to the whole command, the folder it ran in and every argument, with Copy.
 function ReceiptCard({ receipt: r }: { receipt: Receipt }) {
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const id = useId()
+  const a = r.approval
   const ok = r.outcome === "approved" || r.outcome === "always"
-  const question = r.approval.kind === "question"
+  const question = a.kind === "question"
+  const word = r.outcome === "expired" ? t("approval.expired") : question ? (ok ? t("question.answered") : t("question.skipped")) : ok ? t("approval.approved") : t("approval.denied")
+  const summary = a.summary || a.tool
+  const command = question ? "" : commandOf(a)
+  const extra = question ? undefined : extraArgs(a, command)
+  const copy = () =>
+    void navigator.clipboard.writeText(command === a.tool && extra ? extra : command).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    })
   return (
-    <p className="text-sm text-muted">
-      <span className={ok ? "text-success" : "text-secondary"}>
-        {r.outcome === "expired" ? t("approval.expired") : question ? (ok ? t("question.answered") : t("question.skipped")) : ok ? t("approval.approved") : t("approval.denied")}
-      </span>
-      {` · ${r.approval.summary || r.approval.tool}`}
-    </p>
+    <div className="flex w-full max-w-130 flex-col gap-1">
+      <Button variant="ghost" size="sm" aria-expanded={open} aria-controls={id} onPress={() => setOpen(!open)} className="w-full justify-start gap-2 px-2 font-normal text-muted">
+        {r.outcome === "expired" ? <Clock className="size-3.5 shrink-0" /> : ok ? <CircleCheck className="size-3.5 shrink-0 text-success" /> : <CircleX className="size-3.5 shrink-0" />}
+        <span className="shrink-0 text-secondary">{word}</span>
+        <span className="min-w-0 flex-1 truncate text-left" title={summary}>
+          {summary}
+        </span>
+        <ChevronDown aria-hidden="true" className={cx("size-3.5 shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none", open && "rotate-180")} />
+      </Button>
+      {open && (
+        <div id={id} className="flex flex-col gap-2 rounded-card border border-subtle bg-code px-3 py-2.5 text-sm">
+          {question || !summary.includes(command) ? <p className="text-secondary">{summary}</p> : null}
+          {command && (
+            <div className="flex items-start gap-2">
+              <pre className="min-w-0 flex-1 overflow-auto font-mono whitespace-pre-wrap break-all text-secondary">{command}</pre>
+              <Tooltip content={copied ? t("common.copied") : t("common.copy")}>
+                <IconButton label={t("common.copy")} size="xs" onPress={copy}>
+                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                </IconButton>
+              </Tooltip>
+            </div>
+          )}
+          {a.cwd && <p className="text-muted">{t("approval.folder", { path: a.cwd })}</p>}
+          {extra && (
+            <div className="flex flex-col gap-1">
+              <span className="text-muted">{t("approval.details")}</span>
+              <pre className="max-h-48 overflow-auto font-mono text-muted">{extra}</pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

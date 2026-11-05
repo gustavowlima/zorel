@@ -8,7 +8,7 @@ import { agentTone, chatTitle, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
 import { AgentItem, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
-import { AgentAvatar, ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, ChoiceCards, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, IconTile, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, RowHit, Rows, Screen, Section, Select, Tab, TabList, TabPanel, Tabs, Textarea, Trash2 } from "@/ui"
+import { AgentAvatar, ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, ChoiceCards, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, IconTile, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, RowHit, Rows, Screen, Section, Select, Tab, TabList, TabPanel, Tabs, Textarea, Tooltip, Trash2 } from "@/ui"
 
 // The reason a folder was refused (WorkspaceInvalid), in words.
 const REASONS = ["relative", "missing", "not_directory", "forbidden"] as const
@@ -25,13 +25,22 @@ const desktop = (window as { zorelDesktop?: { pickFolder?: (start?: string) => P
 const baseName = (p: string) => p.replace(/\/+$/, "").split("/").pop() ?? p
 const tilde = (p: string, home: string) => (p === home ? "~" : p.startsWith(`${home}/`) ? `~${p.slice(home.length)}` : p)
 
-export function NewProjectButton() {
+// The "+" of the Projects section (an icon with a tooltip) or, given a `label`, a secondary button (the empty state).
+export function NewProjectButton({ label }: { label?: string }) {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <IconButton label={t("nav.newProject")} size="xs" onPress={() => setOpen(true)}>
-        <Plus className="size-3.5" />
-      </IconButton>
+      {label ? (
+        <Button size="sm" onPress={() => setOpen(true)}>
+          {label}
+        </Button>
+      ) : (
+        <Tooltip content={t("nav.newProject")}>
+          <IconButton label={t("nav.newProject")} size="xs" onPress={() => setOpen(true)}>
+            <Plus className="size-3.5" />
+          </IconButton>
+        </Tooltip>
+      )}
       <Dialog title={t("project.addTitle")} size="lg" isOpen={open} onOpenChange={setOpen}>
         {(close) => <AddProject onDone={close} />}
       </Dialog>
