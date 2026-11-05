@@ -1,6 +1,9 @@
 // The app window's bridge (sandboxed preload): open at login and app updates. Only for Zorel's own page.
 import { contextBridge, ipcRenderer } from "electron"
 
+// A new version: downloading (percent), ready, installing (Restart pressed), or why installing failed.
+type Update = { version: string; ready: boolean; percent?: number; installing?: boolean; error?: string } | null
+
 contextBridge.exposeInMainWorld("zorelDesktop", {
   // Open Zorel at login (it then starts without a window).
   openAtLogin: { get: (): Promise<boolean> => ipcRenderer.invoke("login:get"), set: (on: boolean): Promise<boolean> => ipcRenderer.invoke("login:set", on) },
@@ -12,11 +15,11 @@ contextBridge.exposeInMainWorld("zorelDesktop", {
   keepAwake: { get: (): Promise<boolean> => ipcRenderer.invoke("awake:get"), set: (on: boolean): Promise<boolean> => ipcRenderer.invoke("awake:set", on) },
   // A new version: downloading (ready false) or ready to install with a restart.
   update: {
-    get: (): Promise<{ version: string; ready: boolean; percent?: number } | null> => ipcRenderer.invoke("update:get"),
+    get: (): Promise<Update> => ipcRenderer.invoke("update:get"),
     install: (): Promise<boolean> => ipcRenderer.invoke("update:install"),
     check: (): Promise<"latest" | "available" | "failed" | "unsupported"> => ipcRenderer.invoke("update:check"),
-    on: (callback: (u: { version: string; ready: boolean; percent?: number } | null) => void) => {
-      const listener = (_e: unknown, u: { version: string; ready: boolean; percent?: number } | null) => callback(u)
+    on: (callback: (u: Update) => void) => {
+      const listener = (_e: unknown, u: Update) => callback(u)
       ipcRenderer.on("update", listener)
       return () => void ipcRenderer.off("update", listener)
     }
