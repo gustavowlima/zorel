@@ -116,7 +116,7 @@ function Screen({ route }: { route: Route }) {
     }
     case "agent": {
       const agent = agents.find((a) => a.id === route.id)
-      return agent ? <AgentView agent={agent} projectId={agent.projectId} /> : <NotFound />
+      return agent ? <AgentView agent={agent} projectId={agent.projectId} tab={route.tab} /> : <NotFound />
     }
     case "chat": {
       const chat = chats.find((c) => c.id === route.id)

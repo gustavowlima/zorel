@@ -452,7 +452,7 @@ function Agents({ projectId }: { projectId: string }) {
         ) : (
           <Rows>
             {mine.map((a) => (
-              <AgentItem key={a.id} agent={a} agents={agents} working={working.has(a.id)} onDelete={del.ask} />
+              <AgentItem key={a.id} agent={a} agents={agents} status={working.get(a.id)} onDelete={del.ask} />
             ))}
           </Rows>
         )}
