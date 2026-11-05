@@ -1026,6 +1026,11 @@ test("quiet learning: a short chat learns on the small model; the summary stays;
         yield* consolidate(chat.id, "quiet") // reads the tabs message again, as context only
         expect(learnerModels.length).toBe(2)
         expect((yield* store.memories()).map((m) => m.text)).toEqual(["Prefers tabs over spaces"])
+        // A model chosen in Settings learns instead of the automatic one.
+        yield* store.setPreference("memoryModel", "anthropic/claude-haiku-5-5")
+        for (const t of ["more", "words", "here"]) yield* say(t === "words" ? "assistant" : "user", t)
+        yield* consolidate(chat.id, "quiet")
+        expect(learnerModels.at(-1)).toBe("anthropic/claude-haiku-5-5")
       })
     ).pipe(Effect.provide(layer(":memory:", Learner)))
   ))

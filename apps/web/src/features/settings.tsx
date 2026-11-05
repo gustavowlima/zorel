@@ -4,13 +4,14 @@
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { t } from "@zorel/i18n"
-import { MAX_RUNNING_CHOICES, MAX_RUNNING_DEFAULT } from "@zorel/contracts"
+import { MAX_RUNNING_CHOICES, MAX_RUNNING_DEFAULT, type MemoryApproval } from "@zorel/contracts"
 import { type ReactNode, useEffect, useState } from "react"
 import { mutations, preferencesAtom, useMutation } from "../client.ts"
 import { go, liveStepsOpen, SETTINGS_TABS, type SettingsTab, setLiveStepsOpen, setThemePref, themePref, type ThemePref } from "../state.ts"
 import { AuditSection } from "./audit.tsx"
 import { NotifySetting, SoundSetting } from "./notify.tsx"
 import { McpSection } from "./mcp.tsx"
+import { ModelPicker } from "./model-picker.tsx"
 import { ProvidersSection } from "./providers.tsx"
 import { ProcessesSection } from "./processes.tsx"
 import { StorageSection } from "./storage.tsx"
@@ -41,6 +42,51 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
         </div>
       </div>
     </Screen>
+  )
+}
+
+// ---------- memory ----------
+
+// The model that learns from chats (automatic: each chat's provider's small model) and what a new fact becomes.
+function MemorySettings() {
+  const prefs = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)
+  const setModel = useMutation(mutations.memoryModel)
+  const setApproval = useMutation(mutations.memoryApproval)
+  const model = prefs?.memoryModel ?? ""
+  const save = (m: string) => void setModel({ payload: { model: m }, reactivityKeys: ["preferences"] })
+  return (
+    <Section title={t("memory.title")} description={<span className="block max-w-prose">{t("settings.memoryHint")}</span>}>
+      <Rows>
+        <SettingRow title={t("settings.memoryModel")} hint={model ? t("settings.memoryModelChosen") : t("settings.memoryModelAuto")}>
+          <div className="flex items-center gap-2">
+            {model ? (
+              <>
+                <ModelPicker variant="field" value={{ model, accountId: null, effort: null }} onChange={(v) => save(v.model)} />
+                <Button size="sm" variant="ghost" onPress={() => save("")}>
+                  {t("settings.memoryModelUseAuto")}
+                </Button>
+              </>
+            ) : (
+              <Button size="sm" variant="secondary" onPress={() => save("claude-cli/haiku")}>
+                {t("settings.memoryModelChoose")}
+              </Button>
+            )}
+          </div>
+        </SettingRow>
+        <SettingRow title={t("memory.approval")} hint={t("memory.approvalHint")}>
+          <Select
+            size="sm"
+            aria-label={t("memory.approval")}
+            value={prefs?.memoryApproval ?? "review"}
+            onChange={(v) => void setApproval({ payload: { approval: v as MemoryApproval }, reactivityKeys: ["preferences"] })}
+            options={[
+              { value: "review", label: t("memory.approvalReview") },
+              { value: "undo", label: t("memory.approvalUndo") }
+            ]}
+          />
+        </SettingRow>
+      </Rows>
+    </Section>
   )
 }
 
@@ -158,6 +204,7 @@ function General() {
         </SettingRow>
       </Rows>
     </Section>
+    <MemorySettings />
     <Section title={t("appearance.notifications")}>
       <Rows>
         <NotifySetting />
