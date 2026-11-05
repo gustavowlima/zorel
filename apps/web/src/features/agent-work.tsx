@@ -32,6 +32,7 @@ export function AgentWork({ agent }: { agent: Agent }) {
   })
   // A run started or ended: the sessions list reads again.
   const live = now.map((x) => `${x.chat.id}:${x.status.state}`).join(",")
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the live statuses are the trigger
   useEffect(() => {
     invalidate(["runs"])
   }, [live, invalidate])

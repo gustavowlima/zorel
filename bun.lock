@@ -13,7 +13,7 @@
     },
     "apps/desktop": {
       "name": "@zorel/desktop",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "electron-updater": "6.8.11",
       },
