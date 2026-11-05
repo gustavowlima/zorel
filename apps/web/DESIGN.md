@@ -2,22 +2,22 @@
 name: Zorel
 description: An AI agent workspace for code, dark, compact and quiet.
 colors:
-  frame: "#0a0d12"
-  canvas: "#13171d"
-  sidebar: "#0a0d12"
-  surface: "#1f242a"
-  raised: "#22272d"
-  float: "rgba(34, 39, 45, 0.86)"
+  frame: "#0b0c0e"
+  canvas: "#17181b"
+  sidebar: "#0f1113"
+  surface: "#1c1e21"
+  raised: "#202225"
+  float: "rgba(32, 34, 37, 0.86)"
   control: "rgba(255, 255, 255, 0.07)"
   control-hover: "rgba(255, 255, 255, 0.09)"
   control-active: "rgba(255, 255, 255, 0.12)"
-  code: "#101419"
+  code: "#111315"
   border-subtle: "rgba(255, 255, 255, 0.06)"
   border-strong: "rgba(255, 255, 255, 0.1)"
   text: "#ffffff"
-  text-secondary: "#d9dce1"
-  text-muted: "#92989f"
-  text-dim: "#858b92"
+  text-secondary: "#dbdcdf"
+  text-muted: "#96989c"
+  text-dim: "#8a8c90"
   signal-blue: "#007cf7"
   signal-blue-hover: "#1f8fff"
   signal-blue-text: "#42a0ff"
@@ -262,7 +262,7 @@ No shadows. Depth comes from layers of tone: frame (and sidebar) â†’ workbench â
 
 **The Flat Rule.** Surfaces are flat. If something needs to stand out, it goes up one step in tone; it does not get a shadow. Two exceptions: the open chat in the sidebar, a raised chip with `shadow-chip`; and floating layers (menus, popovers, selects, the composer's / @ $ # list, the command palette), which are `float`: the raised tone at 86% with blur and `shadow-float`, so they hover over the chat instead of covering it. Dialogs and tooltips stay solid.
 
-**The Graphite Rule.** Neutrals are not dead grey: each carries a trace of the brand blue (OKLCH hue 255, chroma ~0.013) at the lightness of the grey it replaced, so contrast is unchanged. Selection speaks blue: the focused item in a menu or list gets `accent-soft` with its icon in `accent-text`, and the current place in the rail its icon in `accent-text` on `accent-faint`.
+**The Graphite Rule.** Neutrals are not dead grey: each carries a trace of the brand blue (OKLCH hue 260, chroma 0.005): rail/frame 15.5%, sidebar 17.5%, canvas 21%, surface 23.5%, raised 25% lightness, the graphite the landing shows. Selection speaks blue: the focused item in a menu or list gets `accent-soft` with its icon in `accent-text`, and the current place in the rail its icon in `accent-text` on `accent-faint`.
 
 ## Shapes
 

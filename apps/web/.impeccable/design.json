@@ -22,7 +22,7 @@
       "frame": {
         "role": "neutral",
         "displayName": "Moldura",
-        "canonical": "#0a0d12",
+        "canonical": "#0b0c0e",
         "tonalRamp": [
           "#0d0d0d",
           "#141414",
@@ -42,22 +42,22 @@
       "sidebar": {
         "role": "neutral",
         "displayName": "Barra Lateral",
-        "canonical": "#0a0d12"
+        "canonical": "#0b0c0e"
       },
       "surface": {
         "role": "neutral",
         "displayName": "Superfície",
-        "canonical": "#1f242a"
+        "canonical": "#1c1e21"
       },
       "raised": {
         "role": "neutral",
         "displayName": "Elevado",
-        "canonical": "#22272d"
+        "canonical": "#202225"
       },
       "text-muted": {
         "role": "neutral",
         "displayName": "Texto Apagado",
-        "canonical": "#92989f"
+        "canonical": "#96989c"
       },
       "success": {
         "role": "status",
@@ -77,7 +77,7 @@
       "text-dim": {
         "role": "neutral",
         "displayName": "Texto Mais Apagado",
-        "canonical": "#858b92"
+        "canonical": "#8a8c90"
       },
       "agent-violet": {
         "role": "identity",
