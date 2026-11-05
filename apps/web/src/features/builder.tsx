@@ -14,7 +14,7 @@ import { PendingTray, Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
-import { AgentAvatar, Button, Check, ChevronRight, cx, Folder, PageHeader, Pencil, Section, Select, Sparkles, Spinner, Tag } from "@/ui"
+import { AgentAvatar, Button, Check, ChevronRight, cx, Dialog, Folder, PageHeader, Pencil, Section, Select, Sparkles, Spinner, Tag } from "@/ui"
 
 const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builder.suggest.docs", "builder.suggest.team"] as const
 type Step = "describe" | "powers"
@@ -403,32 +403,57 @@ function ProposalReview({ drafts, single, busy, reason, onCreate, onDecline }: {
 
 function AgentReview({ draft, tone }: { draft: Draft; tone: number }) {
   const f = draft.fields
-  const [more, setMore] = useState(false)
+  const [details, setDetails] = useState(false)
   const access = f.access === "ask" || f.access === "full" ? f.access : f.access ? "workspace" : undefined
   const powers = [f.web === "true" && t("builder.web"), f.browser === "true" && t("builder.browser"), f.connectors && f.connectors !== "none" && f.connectors].filter(Boolean)
+  const head = (
+    <div className="flex items-center gap-3">
+      <AgentAvatar id={draft.name} name={draft.name} tone={tone} size={40} live />
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate font-medium">{draft.name}</span>
+        {f.title && <span className="truncate text-sm text-muted">{f.title}</span>}
+      </span>
+    </div>
+  )
+  const tags = (
+    <div className="flex flex-wrap gap-1.5">
+      {f.model && <Tag hint={t("builder.runsOnHint")}>{t("builder.runsOn", { model: modelLabel(f.model) })}</Tag>}
+      {access && <Tag hint={t(`access.${access}Hint`)}>{t("builder.accessIs", { access: t(`access.${access}`) })}</Tag>}
+      <Tag hint={t("builder.reachesHint")}>{powers.length ? t("builder.reaches", { what: powers.join(", ") }) : t("builder.reachesNothing")}</Tag>
+    </div>
+  )
   return (
+    // The card keeps one size (a preview of the instructions): reading them all opens a dialog, so a long profile
+    // never stretches the row and its neighbour.
     <article className="flex flex-col gap-3 rounded-card border border-subtle p-4">
-      <div className="flex items-center gap-3">
-        <AgentAvatar id={draft.name} name={draft.name} tone={tone} size={40} live />
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate font-medium">{draft.name}</span>
-          {f.title && <span className="truncate text-sm text-muted">{f.title}</span>}
-        </span>
-      </div>
-      {f.description && <p className="text-secondary">{f.description}</p>}
-      <div className="flex flex-wrap gap-1.5">
-        {f.model && <Tag hint={t("builder.runsOnHint")}>{t("builder.runsOn", { model: modelLabel(f.model) })}</Tag>}
-        {access && <Tag hint={t(`access.${access}Hint`)}>{t("builder.accessIs", { access: t(`access.${access}`) })}</Tag>}
-        <Tag hint={t("builder.reachesHint")}>{powers.length ? t("builder.reaches", { what: powers.join(", ") }) : t("builder.reachesNothing")}</Tag>
-      </div>
-      {f.instructions && (
-        <div className="mt-auto flex flex-col gap-1 border-t border-subtle pt-3">
-          <p className={cx("whitespace-pre-wrap text-sm text-secondary", !more && "line-clamp-3")}>{f.instructions}</p>
-          <Button size="sm" variant="ghost" className="-ml-2.5 self-start" onPress={() => setMore(!more)}>
-            {more ? t("builder.less") : t("builder.more")}
-          </Button>
-        </div>
-      )}
+      {head}
+      {f.description && <p className="line-clamp-3 text-secondary">{f.description}</p>}
+      {tags}
+      {f.instructions && <p className="mt-auto line-clamp-3 border-t border-subtle pt-3 text-sm whitespace-pre-wrap text-muted">{f.instructions}</p>}
+      <Button size="sm" variant="ghost" className="-ml-2.5 self-start" onPress={() => setDetails(true)}>
+        {t("builder.seeDetails")}
+      </Button>
+      <Dialog title={t("builder.details", { name: draft.name })} size="lg" isOpen={details} onOpenChange={setDetails}>
+        {(close) => (
+          <div className="flex flex-col gap-4">
+            {head}
+            {f.description && <p className="text-secondary">{f.description}</p>}
+            {tags}
+            {f.reason && <p className="text-sm text-muted">{t("knowledge.why", { reason: f.reason })}</p>}
+            {f.instructions && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm text-muted">{t("builder.instructions")}</span>
+                <p className="max-h-80 overflow-y-auto rounded-control bg-code px-3 py-2.5 text-sm whitespace-pre-wrap text-secondary">{f.instructions}</p>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <Button variant="ghost" onPress={close}>
+                {t("common.close")}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </article>
   )
 }

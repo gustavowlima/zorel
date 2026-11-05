@@ -1186,6 +1186,7 @@ export const en = {
     },
     details: "Details of {name}",
     instructions: "Instructions",
+    seeDetails: "See details",
     creating: "Creating…",
     web: "web",
     browser: "its own browser",
