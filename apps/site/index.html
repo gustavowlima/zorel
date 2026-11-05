@@ -144,7 +144,7 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 .card { position: relative; border-radius: var(--radius-lg); background: var(--color-card); box-shadow: inset 0 0 0 1px var(--color-rim); display: flex; flex-direction: column; min-width: 0; overflow: hidden; transition: box-shadow var(--dur-short) var(--ease-out); }
 .card:hover { box-shadow: inset 0 0 0 1px var(--color-rim-strong); }
 /* A soft light that follows the pointer across the card. */
-.card::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 300ms var(--ease-out); background: radial-gradient(28rem circle at var(--mx, 50%) var(--my, 0%), var(--color-glow-soft), transparent 45%); }
+.card::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 300ms var(--ease-out); background: radial-gradient(28rem circle at var(--mx, 50%) var(--my, 0%), var(--color-sheen), transparent 45%); }
 .card:hover::before { opacity: 1; }
 .card .txt { padding: var(--space-lg) var(--space-lg) var(--space-md); }
 .card h3 { font-size: var(--text-xl); letter-spacing: -0.02em; line-height: 1.25; }
@@ -183,8 +183,8 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 .bubble { align-self: flex-end; padding: 10px 14px; border-radius: 16px; background: var(--color-raised); color: var(--color-ink); max-width: 22rem; }
 .reply { display: flex; gap: 8px; align-items: center; color: var(--color-ink); }
 .noted { align-self: center; display: inline-flex; align-items: center; gap: 6px; margin-top: var(--space-2xs); font-size: var(--text-xs); color: var(--color-ink-3); }
-.noted .tag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 4px; border-radius: var(--radius-pill); background: var(--color-accent-soft); color: var(--color-ink); box-shadow: 0 0 0 0 var(--color-glow-soft); transition: box-shadow 600ms var(--ease-out); }
-.s2 .noted .tag { box-shadow: 0 0 0 6px transparent, 0 0 24px 2px var(--color-glow-soft); }
+.noted .tag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 4px; border-radius: var(--radius-pill); background: var(--color-raised); color: var(--color-ink); box-shadow: 0 0 0 0 var(--color-glow-soft); transition: box-shadow 600ms var(--ease-out); }
+.s2 .noted .tag { box-shadow: inset 0 0 0 1px var(--color-rim-strong), 0 0 20px 0 var(--color-sheen); } /* kept: a quiet neutral light, no blue on grey */
 .noted .av { width: 16px; height: 16px; border-radius: 5px; font-size: 9px; }
 
 /* scene 4: one click, the folder is back */
