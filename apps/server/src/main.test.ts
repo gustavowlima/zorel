@@ -596,6 +596,12 @@ test("pages by agents: writing in the project becomes a version, search and read
   expect(page.scope).toBe(`project:${project.id}`)
   expect(dones((await send(chat.id, { text: 'tool:zorel_knowledge_search {"query":"fly"}' })).events)[0]!.text).toContain(`Deploy [${page.id}]`)
   expect(dones((await send(chat.id, { text: `tool:zorel_knowledge_read {"page":"${page.id}"}` })).events)[0]!.text).toContain("We deploy on Fly.io.")
+  // Changing a page that exists waits for the person: refused, it stays; approved, it changes.
+  const change = `tool:zorel_knowledge_write {"page":"${page.id}","title":"Deploy","body":"We deploy on Vercel."}`
+  expect(dones((await send(chat.id, { text: change }, () => false)).events)[0]!.text).toContain("declined")
+  expect((await api((c) => c.pages.list())).find((p) => p.id === page.id)!.body).toBe("We deploy on Fly.io.")
+  await send(chat.id, { text: change }, () => true)
+  expect((await api((c) => c.pages.list())).find((p) => p.id === page.id)!.body).toBe("We deploy on Vercel.")
   await api((c) => c.pages.update({ params: { id: page.id }, payload: { pinned: true } }))
   await send(chat.id, { text: "hi" })
   expect(turns.at(-1)!.system).toContain(`- Deploy [${page.id}]`)
@@ -674,7 +680,7 @@ test("memory mode: ask proposes, auto saves facts (skills still wait, with a not
     const project = await api((c) => c.projects.create({ payload: { name: `Modes ${memory}${extra.join("")}`, brief: "" } }))
     const mk = async (m: "auto" | "ask" | "read") => {
       const a = await api((c) => c.agents.create({ payload: { projectId: project.id, name: `A ${m}`, instructions: "x", model: "claude-cli/sonnet" } }))
-      expect(a).toMatchObject({ memory: "ask", knowledge: "read" }) // the defaults keep today's behavior
+      expect(a).toMatchObject({ memory: "ask", knowledge: "write" }) // the defaults keep what agents could do before
       return api((c) => c.agents.update({ params: { id: a.id }, payload: { memory: m } }))
     }
     const agents = [await mk(memory), ...(await Promise.all(extra.map(mk)))]
@@ -739,7 +745,7 @@ test("memory mode and knowledge access gate the tools and the context, not only 
   expect(turns.at(-1)!.system).toContain(`- Runbook [${page.id}]`)
   expect(turns.at(-1)!.system).toContain("propose it with zorel_propose_skill")
 
-  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { memory: "read" } }))
+  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { memory: "read", knowledge: "read" } }))
   const refused = dones((await send(chat.id, { text: 'tool:zorel_knowledge_write {"title":"Nope","body":"x","scope":"project"}' })).events)[0]!
   expect(names()).not.toContain("zorel_knowledge_write")
   expect(names()).not.toContain("zorel_propose_skill")

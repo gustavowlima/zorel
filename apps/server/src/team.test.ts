@@ -75,9 +75,11 @@ test("learning: the strictest agent decides for the chat; no agent keeps the def
   expect(learningOf([m("auto"), m("read")])).toBe("read")
 })
 
-test("withheld tools: read keeps writing knowledge and proposing skills away, none keeps every knowledge tool away", () => {
+test("withheld tools: memory read keeps skill proposals away; pages read keeps writing away; none keeps every page tool away", () => {
   expect([...withheldTools(undefined)]).toEqual([])
-  expect([...withheldTools({ memory: "ask", knowledge: "read" })]).toEqual([])
+  expect([...withheldTools({ memory: "ask", knowledge: "write" })]).toEqual([])
+  expect([...withheldTools({ memory: "ask", knowledge: "read" })]).toEqual(["zorel_knowledge_write"])
+  expect([...withheldTools({ memory: "read", knowledge: "write" })]).toEqual(["zorel_propose_skill"])
   expect([...withheldTools({ memory: "read", knowledge: "read" })].sort()).toEqual(["zorel_knowledge_write", "zorel_propose_skill"])
   expect([...withheldTools({ memory: "ask", knowledge: "none" })].sort()).toEqual(["zorel_knowledge_read", "zorel_knowledge_search", "zorel_knowledge_write"])
 })
