@@ -16,3 +16,4 @@
 2026-11-05 | agent colors: one lightness/chroma, hues clear of states and the blue, dark initial | old ones read as states (rose=danger, green=success, sky=blue) and white initials failed contrast
 2026-11-05 | control tokens translucent instead of opaque greys | a secondary button vanished on surface cards
 2026-11-05 | neutrals tinted toward the brand blue; floating layers translucent with shadow; selection in blue | the app read as dull grey and menus covered the chat like slabs (user: "muito opaco")
+2026-11-05 | dark neutrals to the landing's graphite (chroma 0.005, sidebar a step above the rail) | user preferred the landing's tone over the stronger blue tint

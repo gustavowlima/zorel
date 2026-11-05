@@ -10,10 +10,10 @@
 @custom-variant dark (&:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *));
 
 :root {
-  /* Neutrals carry a trace of the brand blue (OKLCH hue 255, chroma ~0.013), each at the lightness of the grey it
-     replaced, so contrast is unchanged: a graphite night, not a dead grey. */
-  --z-bg-frame: #0a0d12;
-  --z-bg-canvas: #13171d;
+  /* Neutrals carry a trace of the brand blue (OKLCH hue 260, chroma 0.005): the landing's graphite. Frame 15.5%,
+     sidebar 17.5%, canvas 21%, surface 23.5%, raised 25% (OKLCH lightness). */
+  --z-bg-frame: #0b0c0e;
+  --z-bg-canvas: #17181b;
   /* Chart series (categorical, fixed order, validated for CVD and contrast on the canvas; see DESIGN.md Charts). */
   --z-series-1: #3987e5;
   --z-series-2: #d95926;
@@ -22,22 +22,22 @@
   --z-series-5: #d55181;
   --z-series-6: #008300;
   --z-series-7: #9085e9;
-  --z-bg-sidebar: #0a0d12; /* the sidebar sits on the frame; content lives in one card */
-  --z-bg-surface: #1f242a;
-  --z-bg-raised: #22272d;
+  --z-bg-sidebar: #0f1113; /* a step above the rail (frame), as on the landing; content lives in one card */
+  --z-bg-surface: #1c1e21;
+  --z-bg-raised: #202225;
   /* Controls are a translucent layer, not a grey of their own: they read on the frame, the canvas and a surface
      card alike (an opaque #232323 vanished on surface, which has the same tone). */
   --z-bg-control: rgba(255, 255, 255, 0.07);
   --z-bg-control-hover: rgba(255, 255, 255, 0.09);
-  --z-bg-hover: #1e2329; /* rows and ghost controls on the frame and the canvas: a wash, not a control */
+  --z-bg-hover: #1a1c1f; /* rows and ghost controls on the frame and the canvas: a wash, not a control */
   --z-bg-control-active: rgba(255, 255, 255, 0.12);
-  --z-bg-code: #101419;
+  --z-bg-code: #111315;
   --z-border: rgba(255, 255, 255, 0.06);
   --z-border-strong: rgba(255, 255, 255, 0.1);
   --z-text: #ffffff;
-  --z-text-secondary: #d9dce1;
-  --z-text-muted: #92989f;
-  --z-text-dim: #858b92; /* 5.3:1 on canvas: the lowest grey that still passes for reading */
+  --z-text-secondary: #dbdcdf;
+  --z-text-muted: #96989c;
+  --z-text-dim: #8a8c90; /* 5.3:1 on canvas: the lowest grey that still passes for reading */
   --z-accent: #0071e3; /* white text on it: 4.7:1 */
   --z-accent-hover: #0062c4; /* hover deepens: lightening would drop below 4.5:1 */
   --z-accent-text: #42a0ff;
@@ -55,7 +55,7 @@
   --z-on-accent: #ffffff;
   /* Floating layers (menus, popovers, the / list, the palette): a slightly see-through raised tone with blur and
      a shadow, so they float over the chat instead of covering it like a slab. Dialogs and tooltips stay solid. */
-  --z-bg-float: rgba(34, 39, 45, 0.86);
+  --z-bg-float: rgba(32, 34, 37, 0.86);
   --z-shadow-float: 0 18px 40px -16px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.45);
   --z-overlay: rgba(0, 0, 0, 0.5);
   /* Agent identity: avatars only, never actions (the blue stays the only accent). Same in both themes. One lightness
