@@ -21,6 +21,8 @@ import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
+import { freePort, outputTail, PREVIEW_TOOL, previewFolder, previewKey, previewLine, previewUrl, waitForPort } from "./preview.ts"
+import { managerOf, scriptsOf, shellAlive, startShell } from "./terminals.ts"
 import { exposedName, type GatewayHandle, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
 import { asMemory, picked, readSkill } from "./file-skills.ts"
 import { accessChange, browserRoute, mcpRoute, permissionsOf, REQUEST_ACCESS_TOOL, withAlways } from "./permissions.ts"
@@ -227,6 +229,7 @@ export const makeRuntime = Effect.gen(function* () {
   const running = new Map<string, Fiber.Fiber<unknown, unknown>>()
   const waiting = new Map<string, Deferred.Deferred<ApprovalOutcome>>()
   const answers = new Map<string, string>() // question id → the person's answer (zorel_ask_user)
+  const previews = new Map<string, { shellId: string; port: number }>() // chat + preview key → its running server
   const tasked = new Map<string, Set<string>>() // turn id → teammates it gave a task to (not chained again by mention)
   // chat id → a hand-off by mention waiting for its teammates' answers, to give the asker a wrap-up turn.
   const wraps = new Map<string, { askerId: string; waiting: Set<string>; covered: boolean; depth: number }>()
@@ -263,7 +266,7 @@ export const makeRuntime = Effect.gen(function* () {
     // access is "ask", like any tool that writes.
     if (perms.browser) for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
-    for (const t of [...TEAM_TOOLS, TASK_TOOL, ASK_TOOL, MEMORY_TOOL, ROUTINES_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    for (const t of [...TEAM_TOOLS, TASK_TOOL, ASK_TOOL, MEMORY_TOOL, ROUTINES_TOOL, PREVIEW_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
       return { tools: undefined as TurnTools | undefined, close: () => {} }
@@ -284,6 +287,53 @@ export const makeRuntime = Effect.gen(function* () {
       }
       await finish(s, "ok", answer)
       return textResult(`The user answered: ${answer}`)
+    }
+
+    // zorel_preview (preview.ts): the project's dev server on a free port, in a shell of the chat, its page in the chat's
+    // browser. It runs outside the agent's sandbox, so below full access the person approves the exact command.
+    const previewCall = async (args: Record<string, unknown>) => {
+      const root = workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined))
+      const where = previewFolder(root, args.folder)
+      if (typeof where === "string") return textResult(where, true)
+      const port = await freePort()
+      const built = previewLine(args, scriptsOf(where.dir), managerOf(where.dir), port)
+      if (typeof built === "string") return textResult(built, true)
+      const key = previewKey(chat.projectId ?? chat.id, root, where.dir, built.label)
+      const show = async (at: number) => {
+        const url = previewUrl(at, args.path)
+        const opened = await browsers
+          .newTab(chat.id, url, profileOf(agent?.id))
+          .then((tab) => browsers.select(chat.id, tab).then(() => true))
+          .catch(() => false) // no browser on this computer: the URL still works in the person's own
+        const look = opened ? ` It's open in this chat's Browser panel${perms.browser ? "; read it with your browser tools" : ""}.` : ""
+        return textResult(`Running at ${url} (port ${at}).${look} Its output is in the Terminal panel, tab "${built.label}".`)
+      }
+      const known = previews.get(`${chat.id}|${key}`)
+      if (known && shellAlive(known.shellId)) return show(known.port)
+      const s = await step(`Preview ${built.label}`, PREVIEW_TOOL.name)
+      if (effectiveAccess(chat, agent) !== "full") {
+        const card = { kind: "tool" as const, tool: PREVIEW_TOOL.name, summary: `${nameOf(agent)} wants to run the dev server: ${built.line}`, args: built.line, cwd: where.dir }
+        const outcome = await run(askApproval(chat, row, agent, s, card, key))
+        if (outcome === "denied" || outcome === "expired") {
+          await finish(s, "refused")
+          return textResult("The user declined to run it. Ask them to start the server, or go on without the preview.", true)
+        }
+      }
+      onWrite()
+      const shell = startShell(chat.id, where.dir, built.label, built.line, { PORT: String(port) })
+      if (!shell) {
+        await finish(s, "error", "Too many terminals open")
+        return textResult("Too many terminals are open; ask the user to close one in the Terminal panel.", true)
+      }
+      const at = await waitForPort(shell.pid, port, shell.ended)
+      if (at === undefined) {
+        const tail = outputTail(shell.output())
+        await finish(s, "error", tail.split("\n").at(-1) ?? "")
+        return textResult(`The server didn't start listening.${tail ? ` Its last output:\n${tail}` : ""}`, true)
+      }
+      previews.set(`${chat.id}|${key}`, { shellId: shell.id, port: at })
+      await finish(s, "ok", previewUrl(at, args.path))
+      return show(at)
     }
 
     // zorel_start_task: checks, then the teammate's own chat. A teammate with wider access than the caller only
@@ -534,6 +584,7 @@ export const makeRuntime = Effect.gen(function* () {
       }
       if (name === MEMORY_TOOL.name) return memoryCall(args)
       if (name === TASK_TOOL.name) return taskCall(args)
+      if (name === PREVIEW_TOOL.name) return previewCall(args)
       if (name === ASK_TOOL.name) return askCall(args)
       if (TEAM_TOOLS.some((t) => t.name === name)) return teamCall(name, args)
       const builtin = BROWSER_TOOLS.find((t) => t.name === name)
