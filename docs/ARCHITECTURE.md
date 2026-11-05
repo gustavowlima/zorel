@@ -1,105 +1,105 @@
-# Arquitetura do Zorel
+# Zorel architecture
 
-Este documento registra o estado atual, a arquitetura alvo e as decisões tomadas, com o motivo e as alternativas descartadas.
+This document records the current state, the target architecture and the decisions made, with the reason and the discarded alternatives.
 
-Ele vem antes do código: ao mudar uma decisão, atualize aqui e em `.agent/memory/`. Para saber de onde veio cada prática (Tucano, T3 Code, OpenBot, Zeron, ai-memory), consulte [references.md](references.md).
+It comes before the code: when you change a decision, update it here and in `.agent/memory/`.
 
-Revisado em 2026-11-04.
+Reviewed on 2026-11-04.
 
-**Processos em segundo plano (2026-11-04):** Settings › Processes e o botão do cabeçalho do chat leem `GET /api/processes`: servidores escutando portas dentro da pasta de algum chat (um `lsof` para todas as pastas; a pasta do projeto é de todos os chats dele, uma worktree é de um), terminais vivos, sessões de engine guardadas entre turnos e conexões MCP abertas. Parar um servidor só aceita um pid dessa lista (nunca um processo qualquer); fechar uma sessão nunca acontece sob um turno rodando. Os turnos rodando vêm dos status ao vivo que o web já recebe.
+**Background processes (2026-11-04):** Settings › Processes and the chat header button read `GET /api/processes`: servers listening on ports inside some chat's folder (one `lsof` for all folders; the project folder belongs to all of its chats, a worktree belongs to one), live terminals, engine sessions kept between turns and open MCP connections. Stopping a server only accepts a pid from that list (never an arbitrary process); closing a session never happens under a running turn. Running turns come from the live statuses the web already receives.
 
-**Windows, macOS e Linux (2026-11-04, regra do usuário: todo recurso nos três):** o terminal abre o PowerShell no Windows (`pwsh` quando instalado) e o `$SHELL` como login shell nos outros; o binário do server sai `zorel-server.exe` no Windows e o empacotamento leva os dois nomes; agentes ACP abaixo de "Acesso total" rodam confinados no Seatbelt (macOS) ou no bubblewrap (Linux, quando instalado: o sistema todo só leitura e as mesmas pastas graváveis), testado de verdade num container; no Windows ainda não há sandbox equivalente e o turno é recusado com a explicação. O CI tem um job por sistema para o que depende dele (processos, terminal, sandbox) e gera o app para os três (dmg/zip, instalador do Windows, AppImage); o certificado Developer ID só entra no job de macOS. O repositório ainda não tem remote, então o CI não rodou.
+**Windows, macOS and Linux (2026-11-04, user rule: every feature on all three):** the terminal opens PowerShell on Windows (`pwsh` when installed) and `$SHELL` as a login shell on the others; the server binary comes out as `zorel-server.exe` on Windows and packaging carries both names; ACP agents below "Full access" run confined in Seatbelt (macOS) or bubblewrap (Linux, when installed: the whole system read-only and the same writable folders), tested for real in a container; on Windows there is no equivalent sandbox yet and the turn is refused with the explanation. CI has one job per system for what depends on it (processes, terminal, sandbox) and builds the app for all three (dmg/zip, Windows installer, AppImage); the Developer ID certificate only enters the macOS job. The repository has no remote yet, so CI has not run.
 
-**Consumo em tempo real e os três sistemas (2026-11-04):** `server/procs.ts` lê a tabela de processos no Windows (um PowerShell aberto durante a vida do server, consultado a cada leitura: `Get-CimInstance Win32_Process`), no Linux (`/proc`, sem processo novo) e no macOS (`ps`), as portas em escuta (`netstat`, `ss`, `lsof`) e a pasta de trabalho onde o sistema diz (Linux e macOS). A CPU sai da diferença do tempo de CPU entre duas leituras (100% = um núcleo). A árvore do Zorel parte do app desktop (`ZOREL_PARENT_PID`) ou do server e soma tudo o que eles iniciaram; cada linha conta o próprio processo e os filhos, e as partes não se repetem (sessões de agente, terminais, conexões, servidor, outros, app). Um servidor pertence a um chat pela pasta (Linux e macOS) ou por ter nascido de um terminal ou sessão do chat (os três; é como o Windows os acha). O pid das sessões vem do próprio engine (Claude: `spawnClaudeCodeProcess` igual ao do SDK; Codex: o app-server; MCP local: o transporte). Os parsers têm testes com saída de exemplo de cada sistema; o Linux foi rodado de verdade num container; o Windows só pelos testes.
+**Real-time usage and the three systems (2026-11-04):** `server/procs.ts` reads the process table on Windows (one PowerShell kept open for the server's lifetime, queried on each read: `Get-CimInstance Win32_Process`), on Linux (`/proc`, no new process) and on macOS (`ps`), the listening ports (`netstat`, `ss`, `lsof`) and the working folder where the system reports it (Linux and macOS). CPU comes from the difference in CPU time between two reads (100% = one core). Zorel's tree starts at the desktop app (`ZOREL_PARENT_PID`) or at the server and adds up everything they started; each row counts its own process and its children, and the parts do not overlap (agent sessions, terminals, connections, server, others, app). A server belongs to a chat by its folder (Linux and macOS) or by having been born from a terminal or session of the chat (all three; this is how Windows finds them). The session pid comes from the engine itself (Claude: `spawnClaudeCodeProcess` identical to the SDK's; Codex: the app-server; local MCP: the transport). The parsers have tests with sample output from each system; Linux was run for real in a container; Windows only through the tests.
 
-**Mudar de computador (2026-11-04, fase 7):** Settings › Storage › "Move to another computer". Exportar (`GET /api/workspace/export`) gera um `.tar.gz` (`Bun.Archive`, sem dependência) com uma cópia consistente do banco (`VACUUM INTO`), os anexos e um manifesto com a pasta de origem. Importar (`POST /api/workspace/import`) confere o arquivo (manifesto e tabelas do Zorel), guarda como `import-pending.tar.gz` e aplica na próxima inicialização, antes de o banco abrir: banco e anexos atuais vão para `backups/before-import-<data>/`, os importados entram no lugar e os caminhos dos anexos são reescritos para a pasta nova (desembrulhado dentro da pasta de dados, para não mover arquivos entre discos). Não viajam: segredos do keychain (chaves de API, logins de conectores), logins das CLIs (`accounts/`), pontos de restauração (`workspaces/`), perfis do navegador e backups. `server/transfer.ts`, com teste de ida e volta.
+**Moving to another computer (2026-11-04, phase 7):** Settings › Storage › "Move to another computer". Export (`GET /api/workspace/export`) produces a `.tar.gz` (`Bun.Archive`, no dependency) with a consistent copy of the database (`VACUUM INTO`), the attachments and a manifest with the source folder. Import (`POST /api/workspace/import`) checks the file (manifest and Zorel tables), stores it as `import-pending.tar.gz` and applies it on the next startup, before the database opens: the current database and attachments go to `backups/before-import-<time>/`, the imported ones take their place and attachment paths are rewritten to the new folder (unpacked inside the data folder, so files are not moved between disks). What does not travel: keychain secrets (API keys, connector logins), CLI logins (`accounts/`), restore points (`workspaces/`), browser profiles and backups. `server/transfer.ts`, with a round-trip test.
 
-**Idioma dos prompts (2026-11-04):** tudo o que vai ao modelo (prompt base, consolidação, resultados de ferramentas, erros dos engines) é em inglês, e nada manda responder num idioma: o modelo segue o idioma de quem escreve.
+**Prompt language (2026-11-04):** everything that goes to the model (base prompt, consolidation, tool results, engine errors) is in English, and nothing tells it to reply in a given language: the model follows the language of whoever writes.
 
-**Nome (2026-11-04):** o projeto se chamava **Zero** e passou a **Zorel** ("Zero" colidia com outros produtos e não tinha domínio; zorel.dev é do autor). O que já existia continua funcionando: a pasta `~/.zero` (com `zero.db`) segue em uso quando existe e `~/.zorel` não, sem ser movida, porque o banco guarda caminhos absolutos de anexos e contas; segredos do keychain são lidos do serviço antigo `dev.zero.app` e copiados para `dev.zorel.app`; preferências `zero.*` do navegador são copiadas para `zorel.*`; backups `zero-*.db` continuam sendo podados; agentes exportados como `zero.agent` ainda são importados. O app desktop muda de appId (`dev.zorel.app`), então a pasta de dados do Electron é nova (logins das abas dos agentes recomeçam).
+**Name (2026-11-04):** the project was called **Zero** and became **Zorel** ("Zero" collided with other products and had no domain; zorel.dev belongs to the author). What already existed keeps working: the `~/.zero` folder (with `zero.db`) stays in use when it exists and `~/.zorel` does not, without being moved, because the database stores absolute paths of attachments and accounts; keychain secrets are read from the old service `dev.zero.app` and copied to `dev.zorel.app`; browser preferences `zero.*` are copied to `zorel.*`; `zero-*.db` backups keep being pruned; agents exported as `zero.agent` are still imported. The desktop app changes its appId (`dev.zorel.app`), so Electron's data folder is new (logins in the agents' tabs start over).
 
-**Propósito:** o Zorel é, **agora**, uma plataforma de agentes **para código**: desktop e web local, projetos, equipe de agentes, memória e contexto próprios. **Depois**, evolui para **hospedado e automação**, sem reescrever, porque as portas para isso ficam abertas desde já (D17).
+**Purpose:** Zorel is, **now**, an agent platform **for code**: desktop and local web, projects, a team of agents, its own memory and context. **Later**, it evolves toward **hosted and automation**, without a rewrite, because the doors for that stay open from now on (D17).
 
 ---
 
-## 1. Decisões
+## 1. Decisions
 
-| # | Decisão | Por quê | Descartado |
+| # | Decision | Why | Discarded |
 |---|---|---|---|
-| D0 | **Leve primeiro**: um processo, um arquivo de banco, **nenhum serviço externo obrigatório** (nada de Qdrant, Ollama, Redis ou mem0 para funcionar). Cada recurso começa no mínimo útil e só cresce quando uma medição (latência, recall, custo) mostra que precisa; o resto vai para o backlog com critério de entrada | Pedido explícito: simples, leve e eficiente. Menos peças = menos falhas e instalação trivial (desktop e, depois, hospedado) | Recursos completos desde o início (tiers, grafo, RAG de documentos, várias fontes): mais código e mais dependências antes de provar valor |
-| D1 | **Effect de ponta a ponta**: server, contrato e front | Um schema, um modelo de erro, um modelo de stream, do banco até o componente. É a mesma escolha do T3 Code, que tem ~490 átomos no front e usa `effect/rpc` em web, desktop e mobile | **oRPC**: a integração com Effect é experimental, traduz erros e streams nas duas pontas e não tem referência desse porte. **tRPC/Hono**: abandonaria o `HttpApi` |
-| D2 | **Effect Schema**, sem Zod | O `HttpApi`/`effect/rpc` geram validação, codificação, erros e client a partir dele. É bidirecional | Zod. Ele só entra como dependência interna do Claude Agent SDK, restrito ao adaptador do Claude |
-| D3 | **Transporte**: `HttpApi` para o CRUD; `effect/rpc` sobre WebSocket para turnos e eventos | O turno sai da requisição HTTP. Comandos e assinatura ficam separados | SSE preso ao `POST` (o modelo atual). oRPC |
-| D4 | **Front com átomos** (`effect/reactivity` + `@effect/atom-react`): `AtomHttpApi` no CRUD, `AtomRpc` no chat | Cache, stale-while-revalidate, invalidação por chave e otimismo, gerados do mesmo contrato | TanStack Query. Exigiria oRPC ou um client paralelo |
-| D5 | **Harness primeiro, com uma regra por credencial**. **Assinatura → harness do dono**: Claude Agent SDK, Codex App Server ou ACP da CLI. **API key → OpenCode via ACP, para todos os providers**, inclusive Anthropic e OpenAI. O `effect/ai` fica só para tarefas internas (consolidação, títulos, roteamento, revisão de memória) e para a conversa rápida sem workspace | Sessão viva, steering, interrupção e troca de modelo ao vivo, com ferramentas de código maduras (arquivos, shell, edição, LSP, compactação, permissões). No modo chave há um só caminho: injeção de credenciais, catálogo de modelos (models.dev) e permissões, com o mesmo comportamento ao trocar entre modelos. Os adaptadores de assinatura não precisam tratar chave. É o desenho de OpenBot, T3 Code e Zeron. **Custo aceito:** os modelos da Anthropic e da OpenAI podem render um pouco menos no OpenCode do que nos harnesses dos donos. A medição por turno decide se algum provider ganha rota nativa | `claude -p` / `codex exec` por turno (3–7 s por turno, perde o trabalho entre turnos). Loop de ferramentas próprio sobre `effect/ai` para agentes com API key (reinventaria um harness, pior). ACP também para Claude/Codex (fica atrás do nativo). Mastra/LangGraph (dois runtimes, estado e memória duplicados, Zod) |
-| D6 | **Contexto híbrido**: sessão nativa quando o engine permite, com o **contexto em camadas do Zorel como ponto de retomada** | Mantém o diferencial (contexto curado, memórias aprovadas, troca livre de modelo) e ganha latência, cache e continuidade das ferramentas | Só sessão nativa (perde o controle do contexto; handoff cru de 32k como no OpenBot). Só sem sessão (custo de processo por turno; perde o trabalho entre turnos) |
-| D7 | **Aprendizado contínuo com controle**: o Zorel aprende sozinho enquanto trabalha (D18). **O conhecimento do projeto entra direto**, com histórico de versões, desfazer e um feed "o que o Zorel aprendeu". **O que é sobre você** (preferências, jeito de trabalhar, que vale em todos os projetos) **passa pela sua aprovação** | Aprovar cada página de conhecimento vira trabalho demais em aprendizado contínuo; versão + desfazer + feed dão controle com custo baixo (como o ai-memory). O que é pessoal e atravessa projetos continua sob aprovação | Aprovar tudo (trava o aprendizado). Gravar tudo sem revisão nem histórico (OpenBot) |
-| D8 | **Ferramentas só pelo gateway do Zorel** | Política e aprovação valem para todo engine | Ferramentas configuradas direto em cada CLI |
-| D9 | **Drizzle ORM 1.0 (rc, versão fixada) sobre `@effect/sql`**: **`@effect/sql-sqlite-bun`** (o SQLite do próprio Bun) agora e `@effect/sql-pg` quando hospedado. Tabelas simples, mais recibos idempotentes onde há retentativa. Migrations geradas pelo `drizzle-kit`. FTS5 e triggers em SQL puro (`sql`). Tipos do repositório derivados por `drizzle-orm/effect-schema`; **o contrato da API continua separado das tabelas** | Consultas tipadas e schema em TypeScript sem sair do Effect: o Drizzle roda sobre o cliente do `@effect/sql`, então erros, transações e traces continuam no Effect. Trocar de banco é trocar o driver do Effect. Integração nativa com Effect 4 a partir do `drizzle-orm@1.0.0-beta.24`; no `rc.5`, com os drivers `sqlite-bun`, `pg` e outros. O SQLite do Bun não exige módulo nativo extra (D0) | `bun:sqlite` direto (o estado atual: tudo à mão, sem portabilidade). libSQL (vetores nativos): só se justificava com RAG de documentos, que saiu do escopo (D18); se embeddings vierem a ser necessários, começam por força bruta no próprio SQLite. `@effect/sql-drizzle` (só Effect 3). Event sourcing completo (OpenBot, T3 Code): só com sincronização entre dispositivos. **Risco aceito:** a 1.0 ainda é release candidate, e o schema é por banco (`sqliteTable` → `pgTable` exige portar uma vez ao hospedar) |
-| D10 | **Rotinas e fluxos duráveis com `effect/workflow`** (fase futura) | Já está no pacote `effect` | LangGraph, Temporal |
-| D11 | **Desktop com Electron** (decidido em 2026-11-04; antes Electrobun). O processo principal (Node) só cuida da janela e do navegador nativo; **o server continua Bun**, compilado num binário (`bun build --compile`) e iniciado pelo Electron como **processo separado**: fechar a janela não para turnos nem rotinas, e a janela só se conecta (como o Zeron faz). O navegador dos agentes no desktop são `WebContentsView` nativas que o server controla por CDP (Playwright `connectOverCDP` na porta de depuração do Electron, só nos alvos das abas); na web, o mesmo serviço usa um Chrome sem janela e o painel transmite quadros | Navegador nativo dentro do app com controle por CDP, como o OpenBot: página de verdade na janela (rolagem e digitação instantâneas), as mesmas ferramentas `browser_*` nos dois casos. O WKWebView do Electrobun não fala CDP, e o CEF do Electrobun pesa tanto quanto o Electron sem o ecossistema | Electrobun (sem CDP no WebKit; CEF como opção pesada). Server dentro do processo principal (exigiria portar o server do Bun para Node e morre com a janela). **Custo aceito:** dois runtimes no app (Node do Electron + o binário do server) **Hoje (2026-11-04):** shell feito — `apps/desktop` em Electron 45, server como processo filho (binário compilado no pacote, `bun` em dev), janela fechada mantém app e server, watchdog do pai no server, tray fora do macOS, ~215 MB Electron + ~80 MB server. **Navegador nativo (2026-11-04):** o Electron recusa `Target.createTarget`, então o processo principal cria as abas (`WebContentsView`) a pedido do server por um endpoint local com token, e o server as adota pelo CDP (porta livre em 127.0.0.1, lida de `DevToolsActivePort`). Uma partição `persist:agent-<id>` por agente (logins próprios, `you` para abas abertas pela pessoa); permissões negadas, downloads bloqueados, popups na mesma aba, sem preload nas abas, no máximo 24 vivas. As views moram numa janela oculta (o agente navega com a janela fechada) e o painel as empresta no seu retângulo pelo preload (`window.zorelDesktop`). "Assumir": uma camada transparente por cima recebe o clique humano (o input por CDP vai direto à página e também dispara os eventos de mouse do Electron, por isso não dá para distinguir de outro jeito). Na web segue o Chrome sem janela com perfil único **Distribuição (2026-11-04):** "Open Zorel when you log in" em Settings › General (só no desktop; aberto pelo login sobe sem janela, `wasOpenedAtLogin` no macOS, `--hidden` no Windows); atualização automática com `electron-updater` (GitHub Releases; confere ao abrir e a cada 6 h, instala ao sair; destino em `ZOREL_RELEASE_OWNER`/`ZOREL_RELEASE_REPO`); job `release` no CI por tag `v*`. Falta só o certificado Developer ID (segredos `CSC_LINK`…): sem ele o macOS não roda nem atualiza o app empacotado. **Boas práticas (2026-11-04):** menu de app e não de navegador (macOS: app, Edit e Window; Windows/Linux sem barra; Reload/DevTools só em dev); clique direito só com Cut/Copy/Paste em texto; sem zoom; permissões só notificações, clipboard e tela cheia, e só para a janela do Zorel; fuses no binário (sem RunAsNode, NODE_OPTIONS ou --inspect, só o app.asar verificado, cookies criptografados); ícone no grid da Apple (824 de 1024 com margem transparente, gerado por `scripts/icons.sh` com Chrome headless); a atualização baixada aparece como botão no canto do trilho e reinicia nela (`update:get`/`update:install` no preload) |
-| D12 | **Licença Apache-2.0**. Código derivado só de projetos MIT/Apache, com `NOTICE` | — | Código do OpenBot (PolyForm Noncommercial) |
-| D13 | **i18n desde já, com inglês como único idioma por enquanto**. Todo texto visível ao usuário sai de um catálogo tipado (`packages/i18n`). O inglês é a fonte da verdade, e um idioma novo só entra completo | Adicionar idiomas depois vira só traduzir, sem caçar texto no código. Chave faltando não compila | Texto fixo nos componentes (o estado atual, em português). Libs pesadas (i18next, FormatJS) enquanto houver um só idioma: `Intl` cobre plural, datas e números |
-| D14 | **Multicontas por provider**: cada conta é um registro com credencial isolada (pasta de login própria da CLI para assinaturas; chave própria no chaveiro para API keys). Agente e chat escolhem a conta. Trocar de conta funciona como trocar de provider (o ponto de retomada entra na sessão nova). **Troca automática (failover) opcional**: lista ordenada de alternativas por agente/chat, acionada por limite ou erro do provider, **ligada só por escolha explícita** e com aviso de termos para assinaturas | Separar conta de trabalho e pessoal e dividir limites é um pedido comum, e a troca automática evita parar o trabalho no meio. T3 Code e OpenBot suportam multicontas, e o OpenBot faz o failover automático. Com o nosso contexto, a troca não precisa do "shadow home" do T3 Code e pode ir até para outro provider | Failover ligado por padrão: alternar contas de assinatura para contornar limite pode violar os termos dos providers (o T3 Code recusa por isso), então o risco precisa ser assumido explicitamente pelo usuário. Pool com rodízio de contas no Zorel: fica com proxy externo |
-| D15 | **Área de consumo**: tokens, custo estimado e tempo por turno, agregados por agente, projeto, conta e modelo, mais as janelas de limite de cada assinatura e alertas configuráveis | Saber quanto cada agente e projeto consome, quanto falta da assinatura e quando ela reseta. É a base do failover e da decisão de rota nativa vs OpenCode. OpenBot e Tucano têm | Só tokens por mensagem (o estado atual). Bloqueio rígido por orçamento sem aviso prévio |
-| D16 | **Projeto próprio, sem fork do T3 Code**. Do T3 Code (MIT) **copiamos** `packages/effect-acp`, com atribuição no `NOTICE`. **Revisado em 2026-11-03:** o `effect-codex-app-server` não é copiado (cerca de 61 mil linhas, quase todas schema gerado do protocolo inteiro); o Zorel tem um cliente mínimo próprio (`engines/codex.ts`) só com os métodos e campos que usa, como o OpenBot faz (só ideia), e usa o pacote do T3 Code como referência do protocolo. Os adaptadores do Claude e do OpenCode, os leitores de uso e o padrão de átomos e RPC servem de **referência** | O diferencial do Zorel (contexto, memória, equipe) fica no centro do desenho, e não enxertado em 94 mil linhas de orquestração. O trabalho de código é feito pelos harnesses, então a interface de código que precisamos é moderada. O server em Bun é enxuto e vira binário único para hospedar | Fork rígido do T3 Code: traria git, terminal e acesso remoto prontos, mas também Node + pnpm + Electron, ~600 mil linhas para manter e nenhum i18n. **Critério para rever:** se a experiência completa de git dele (worktrees, PRs, revisão, terminal) virar prioridade de curto prazo |
-| D17 | **Portas abertas para hospedar**, sem construir a hospedagem agora: (1) toda requisição resolve um `Actor` (hoje, sempre o dono local; `LocalOnly` vira uma forma de acesso); (2) banco via `@effect/sql` + Drizzle (D9); (3) segredos só pelo serviço `Secrets` (chaveiro agora, cofre no banco depois); (4) serviço `Workspace` (pasta local + sandbox do harness agora, container depois); (5) memória com **de quem é** e **quem ouve** desde a primeira migration; (6) agente como dado versionado; (7) motores atrás da interface `Engine` (um runtime leve para automação entra depois como mais um motor) | Cada item custa pouco agora e muito depois, principalmente dados (memória sem dono/público, banco preso ao driver) | Construir a hospedagem já (login, equipe, cofre, Postgres, containers): fica para a fase 8. Ignorar a hospedagem: obrigaria a reescrever acesso, banco e memória |
-| D18 | **Conhecimento aprendido, no modelo do ai-memory**: **captura → consolida → recupera → passa o bastão**. Um único modelo, a **página de conhecimento** (fato, decisão, como-fazer, armadilha, referência, sessão), substitui as tabelas de memórias e skills. A captura sai do próprio runtime; a consolidação funciona **sem LLM** (página de sessão extraída dos passos) e, opcionalmente, com uma chamada de modelo barato; a recuperação é um **resumo de entrada curto** no contexto + busca FTS sob demanda | O agente continua o trabalho sem reexplicações: o que foi decidido, o que falhou, como se faz aqui. Um modelo só é mais simples que memórias + skills + base de documentos. Sem LLM obrigatório, sem serviço externo (D0) | RAG de documentos por upload (fica no backlog). mem0 (grava sem controle, exige banco vetorial externo no SDK TS; disponível via MCP para quem quiser). Grafo, entidades e tiers de decaimento (backlog) |
-| D19 | **Design system próprio inspirado no OpenBot, mantido com a skill impeccable**: `DESIGN.md` (tokens + regras) e `PRODUCT.md` (verdade do produto) na raiz do app web como autoridade; tokens `--z-*` como única fonte de cor, tamanho, raio e duração; primitivas em `apps/web/src/ui/` como a única API visual das telas, **geradas pelo shadcn (CLI 4.x, `--base aria` = React Aria Components) e reestilizadas com os nossos tokens**; detector do impeccable ligado nas edições de UI e `audit` + `polish` ao fechar cada fase | Consistência que não depende de memória de quem codifica: o padrão está escrito (DESIGN.md), é verificado mecanicamente (detector e `check:ui`) e é refinado em passes curtos e com limite. As regras de fundação do OpenBot (escala de controles, só tokens, interações) são boas e testadas | Copiar CSS ou componentes do OpenBot (licença: só ideias). Usar o shadcn **com a aparência padrão dele** (paleta neutra, `--radius` dele): viraria a cara de todo app. MUI e afins como dependência visual. Escrever os componentes complexos do zero (acessibilidade e teclado são caros). Storybook ou página de galeria (peso e uma tela a mais para manter; as telas reais são a referência) |
-| D20 | **Sem Rust como stack principal** (como o Zeron usa). Rust só para **peças pontuais** com limite medido (ex.: supervisor de processos ou sandbox no modo hospedado, embeddings locais pesados), chamadas pelo server | O tempo de um turno é do modelo e da CLI, não do server. O ecossistema de agentes é TypeScript primeiro (Claude Agent SDK, `effect-acp`, `effect-codex-app-server`). As decisões D1–D19 (Effect, Drizzle, shadcn + React Aria, i18n) continuam valendo. A lógica de produto muda rápido | Reescrever em Rust + gpui: refaz o design system e a acessibilidade, reimplementa à mão o que o Agent SDK dá. Tauri: só se interface nativa virar prioridade |
+| D0 | **Light first**: one process, one database file, **no required external service** (no Qdrant, Ollama, Redis or mem0 needed to work). Each feature starts at the useful minimum and only grows when a measurement (latency, recall, cost) shows it needs to; the rest goes to the backlog with an entry criterion | Explicit request: simple, light and efficient. Fewer parts = fewer failures and trivial installation (desktop and, later, hosted) | Complete features from the start (tiers, graph, document RAG, multiple sources): more code and more dependencies before proving value |
+| D1 | **Effect end to end**: server, contract and front end | One schema, one error model, one stream model, from the database to the component. | **oRPC**: the Effect integration is experimental, translates errors and streams at both ends and has no reference of that size. **tRPC/Hono**: would abandon `HttpApi` |
+| D2 | **Effect Schema**, no Zod | `HttpApi`/`effect/rpc` generate validation, encoding, errors and client from it. It is bidirectional | Zod. It only comes in as an internal dependency of the Claude Agent SDK, restricted to the Claude adapter |
+| D3 | **Transport**: `HttpApi` for CRUD; `effect/rpc` over WebSocket for turns and events | The turn leaves the HTTP request. Commands and subscription stay separate | SSE tied to the `POST` (the current model). oRPC |
+| D4 | **Front end with atoms** (`effect/reactivity` + `@effect/atom-react`): `AtomHttpApi` for CRUD, `AtomRpc` for chat | Cache, stale-while-revalidate, invalidation by key and optimism, generated from the same contract | TanStack Query. It would require oRPC or a parallel client |
+| D5 | **Harness first, with one rule per credential**. **Subscription → the owner's harness**: Claude Agent SDK, Codex App Server or the CLI's ACP. **API key → OpenCode via ACP, for all providers**, including Anthropic and OpenAI. `effect/ai` stays only for internal tasks (consolidation, titles, routing, memory review) and for the quick conversation without a workspace | Live session, steering, interruption and live model switching, with mature code tools (files, shell, editing, LSP, compaction, permissions). In key mode there is a single path: credential injection, model catalog (models.dev) and permissions, with the same behavior when switching between models. The subscription adapters do not need to handle keys. **Accepted cost:** Anthropic and OpenAI models may perform a little worse in OpenCode than in the owners' harnesses. Per-turn measurement decides whether some provider gets a native route | `claude -p` / `codex exec` per turn (3–7 s per turn, loses the work between turns). Own tool loop over `effect/ai` for agents with an API key (would reinvent a harness, worse). ACP also for Claude/Codex (lags behind native). Mastra/LangGraph (two runtimes, duplicated state and memory, Zod) |
+| D6 | **Hybrid context**: native session when the engine allows it, with **Zorel's layered context as the resume point** | Keeps the differentiator (curated context, approved memories, free model switching) and gains latency, cache and tool continuity | Native session only (loses control of the context; raw 32k handoff). No session only (process cost per turn; loses the work between turns) |
+| D7 | **Continuous learning with control**: Zorel learns on its own while it works (D18). **Project knowledge goes in directly**, with version history, undo and a "what Zorel learned" feed. **What is about you** (preferences, way of working, valid across all projects) **goes through your approval** | Approving every knowledge page becomes too much work in continuous learning; version + undo + feed give control at low cost. What is personal and spans projects remains under approval | Approve everything (stalls learning). Write everything with no review or history |
+| D8 | **Tools only through Zorel's gateway** | Policy and approval apply to every engine | Tools configured directly in each CLI |
+| D9 | **Drizzle ORM 1.0 (rc, pinned version) over `@effect/sql`**: **`@effect/sql-sqlite-bun`** (Bun's own SQLite) now and `@effect/sql-pg` when hosted. Simple tables, plus idempotent receipts where there are retries. Migrations generated by `drizzle-kit`. FTS5 and triggers in plain SQL (`sql`). Repository types derived via `drizzle-orm/effect-schema`; **the API contract stays separate from the tables** | Typed queries and schema in TypeScript without leaving Effect: Drizzle runs over the `@effect/sql` client, so errors, transactions and traces stay in Effect. Switching databases is switching the Effect driver. Native integration with Effect 4 since `drizzle-orm@1.0.0-beta.24`; in `rc.5`, with the `sqlite-bun`, `pg` and other drivers. Bun's SQLite needs no extra native module (D0) | `bun:sqlite` directly (the current state: everything by hand, no portability). libSQL (native vectors): only justified with document RAG, which left the scope (D18); if embeddings become necessary, they start with brute force in SQLite itself. `@effect/sql-drizzle` (Effect 3 only). Full event sourcing: only with cross-device sync. **Accepted risk:** 1.0 is still a release candidate, and the schema is per database (`sqliteTable` → `pgTable` requires porting once when hosting) |
+| D10 | **Durable routines and flows with `effect/workflow`** (future phase) | Already in the `effect` package | LangGraph, Temporal |
+| D11 | **Desktop with Electron** (decided on 2026-11-04; Electrobun before). The main process (Node) only takes care of the window; **the server stays Bun**, compiled into a binary (`bun build --compile`) and started by Electron as a **separate process**: closing the window does not stop turns or routines, and the window only connects. The agents' browser is the same on desktop and web: a windowless Chromium that the server opens through Playwright **over a pipe** (installed Chrome, else Edge, else Playwright's headless Chromium, which the desktop ships in the package: the app does not depend on an installed browser), **one context per agent** (separate cookies, storage and logins; the person's tabs in another), logins saved in `<data>/browser/state/<profile>.bin` with AES-256-GCM and the key in the keychain; the panel streams frames. | Native browser inside the app with CDP control: a real page in the window (instant scrolling and typing), the same `browser_*` tools in both cases. Electrobun's WKWebView does not speak CDP, and Electrobun's CEF weighs as much as Electron without the ecosystem | Electrobun (no CDP in WebKit; CEF as a heavy option). Server inside the main process (would require porting the server from Bun to Node and dies with the window). **Accepted cost:** two runtimes in the app (Electron's Node + the server binary) **Today (2026-11-04):** shell done — `apps/desktop` on Electron 45, server as a child process (compiled binary in the package, `bun` in dev), a closed window keeps app and server running, parent watchdog in the server, tray outside macOS, ~215 MB Electron + ~80 MB server. **Native browser (2026-11-04, removed the same day by the security audit: Electron's debugging port has no authentication, so any local process, including an agent, could control the app window; the accepted cost is ~93 MB more in the download, for the embedded Chromium, and replacing the native view with frames; researched in 2026-11: Electron does not accept `--remote-debugging-pipe` and Playwright only attaches to Electron through a port):** Electron refuses `Target.createTarget`, so the main process creates the tabs (`WebContentsView`) at the server's request through a local endpoint with a token, and the server adopts them over CDP (free port on 127.0.0.1, read from `DevToolsActivePort`). One `persist:agent-<id>` partition per agent (its own logins, `you` for tabs opened by the person); permissions denied, downloads blocked, popups in the same tab, no preload in the tabs, at most 24 alive. The views live in a hidden window (the agent browses with the window closed) and the panel borrows them into its rectangle through the preload (`window.zorelDesktop`). "Take over": a transparent layer on top receives the human click (CDP input goes straight to the page and also fires Electron's mouse events, so there is no other way to tell them apart). On the web it stays the windowless Chrome with a single profile **Distribution (2026-11-04):** "Open Zorel when you log in" in Settings › General (desktop only; opened at login it starts without a window, `wasOpenedAtLogin` on macOS, `--hidden` on Windows); automatic updates with `electron-updater` (GitHub Releases; checks on open and every 6 h, installs on quit; fixed target in `electron-builder.yml` (gustavowlima/zorel, the same as `install.sh`)); `release` job in CI on a `v*` tag. Only the Developer ID certificate is missing (secrets `CSC_LINK`…): without it macOS neither runs nor updates the packaged app. **Good practices (2026-11-04):** an app menu, not a browser menu (macOS: app, Edit and Window; Windows/Linux without a bar; Reload/DevTools only in dev); right click only with Cut/Copy/Paste on text; no zoom; permissions only for notifications, clipboard and full screen, and only for the Zorel window; fuses in the binary (no RunAsNode, NODE_OPTIONS or --inspect, only the verified app.asar, encrypted cookies); icon on Apple's grid (824 of 1024 with a transparent margin, generated by `scripts/icons.sh` with headless Chrome); a downloaded update shows up as a button in the corner of the rail and restarts into it (`update:get`/`update:install` in the preload) |
+| D12 | **Apache-2.0 license**. Code derived only from MIT/Apache projects, with `NOTICE` | — | Code under non-commercial licenses (PolyForm Noncommercial) |
+| D13 | **i18n from now on, with English as the only language for now**. All user-visible text comes from a typed catalog (`packages/i18n`). English is the source of truth, and a new language only goes in complete | Adding languages later becomes just translating, without hunting for text in the code. A missing key does not compile | Text hard-coded in the components (the current state, in Portuguese). Heavy libs (i18next, FormatJS) while there is only one language: `Intl` covers plurals, dates and numbers |
+| D14 | **Multiple accounts per provider**: each account is a record with an isolated credential (the CLI's own login folder for subscriptions; its own key in the keychain for API keys). Agent and chat choose the account. Switching accounts works like switching providers (the resume point goes into the new session). **Optional automatic switching (failover)**: an ordered list of alternatives per agent/chat, triggered by a limit or a provider error, **turned on only by explicit choice** and with a terms warning for subscriptions | Separating work and personal accounts and splitting limits is a common request, and automatic switching avoids stopping work midway. With our context, the switch does not need a separate "shadow home" and can even go to another provider | Failover on by default: rotating subscription accounts to get around a limit may violate the providers' terms, so the user must take on the risk explicitly. A pool with account rotation in Zorel: left to an external proxy |
+| D15 | **Usage area**: tokens, estimated cost and time per turn, aggregated by agent, project, account and model, plus the limit windows of each subscription and configurable alerts | Knowing how much each agent and project consumes, how much of the subscription is left and when it resets. It is the basis of failover and of the native route vs OpenCode decision. | Tokens per message only (the current state). Hard budget block without prior warning |
+| D16 | **Our own project, not a fork**. The protocol clients are Zorel's own, each with only what it uses: ACP in `engines/acp.ts`, Codex App Server in `engines/codex.ts`. **Revised on 2026-11-03:** `effect-codex-app-server` is not copied (about 61 thousand lines, almost all generated schema for the whole protocol); Zorel has its own minimal client (`engines/codex.ts`) with only the methods and fields it uses, and uses the original package as the protocol reference. The Claude and OpenCode adapters, the usage readers and the atoms and RPC pattern serve as **reference** | Zorel's differentiator (context, memory, team) stays at the center of the design, not grafted onto 94 thousand lines of orchestration. The code work is done by the harnesses, so the code interface we need is moderate. The Bun server is lean and becomes a single binary for hosting | A rigid fork of an existing app: would bring git, terminal and remote access ready-made, but also Node + pnpm + Electron, ~600 thousand lines to maintain and no i18n. **Criterion to revisit:** if its full git experience (worktrees, PRs, review, terminal) becomes a short-term priority |
+| D17 | **Doors open for hosting**, without building hosting now: (1) every request resolves an `Actor` (today, always the local owner; `LocalOnly` becomes one form of access); (2) database via `@effect/sql` + Drizzle (D9); (3) secrets only through the `Secrets` service (keychain now, vault in the database later); (4) `Workspace` service (local folder + harness sandbox now, container later); (5) memory with **whose it is** and **who hears it** from the first migration; (6) agent as versioned data; (7) engines behind the `Engine` interface (a light runtime for automation comes in later as one more engine) | Each item costs little now and a lot later, especially data (memory without owner/audience, database tied to the driver) | Building hosting now (login, team, vault, Postgres, containers): left for phase 8. Ignoring hosting: would force rewriting access, database and memory |
+| D18 | **Learned knowledge**: **capture → consolidate → retrieve → hand off**. A single model, the **knowledge page** (fact, decision, how-to, pitfall, reference, session), replaces the memories and skills tables. Capture comes from the runtime itself; consolidation works **without an LLM** (session page extracted from the steps) and, optionally, with a call to a cheap model; retrieval is a **short entry brief** in the context + on-demand FTS search | The agent continues the work without re-explaining: what was decided, what failed, how things are done here. A single model is simpler than memories + skills + a document base. No required LLM, no external service (D0) | Document RAG by upload (stays in the backlog). mem0 (writes without control, requires an external vector database in the TS SDK; available via MCP for whoever wants it). Graph, entities and decay tiers (backlog) |
+| D19 | **Our own design system, maintained with the impeccable skill**: `DESIGN.md` (tokens + rules) and `PRODUCT.md` (product truth) at the root of the web app as the authority; `--z-*` tokens as the only source of color, size, radius and duration; primitives in `apps/web/src/ui/` as the only visual API of the screens, **generated by shadcn (CLI 4.x, `--base aria` = React Aria Components) and restyled with our tokens**; impeccable's detector on for UI edits and `audit` + `polish` when closing each phase | Consistency that does not depend on the memory of whoever codes: the standard is written (DESIGN.md), checked mechanically (detector and `check:ui`) and refined in short, bounded passes. Foundation rules (control scale, tokens only, interactions) are good and tested | Copying CSS or components from other apps (license: ideas only). Using shadcn **with its default look** (neutral palette, its `--radius`): it would become the face of every app. MUI and the like as a visual dependency. Writing the complex components from scratch (accessibility and keyboard are expensive). Storybook or a gallery page (weight and one more screen to maintain; the real screens are the reference) |
+| D20 | **No Rust as the main stack**. Rust only for **specific pieces** with a measured limit (e.g. process supervisor or sandbox in hosted mode, heavy local embeddings), called by the server | A turn's time belongs to the model and the CLI, not the server. The agent ecosystem is TypeScript first (Claude Agent SDK, `effect-acp`, `effect-codex-app-server`). Decisions D1–D19 (Effect, Drizzle, shadcn + React Aria, i18n) still hold. Product logic changes fast | Rewriting in Rust + gpui: redoes the design system and accessibility, reimplements by hand what the Agent SDK provides. Tauri: only if a native interface becomes a priority |
 
 ---
 
-## 2. Visão geral (alvo)
+## 2. Overview (target)
 
 ```
- apps/web (React + átomos)          apps/desktop (Electron: janela + server filho)
+ apps/web (React + atoms)           apps/desktop (Electron: window + child server)
    │ AtomHttpApi ──── HTTP ────┐       │
-   │ AtomRpc ─── WebSocket ────┤       │ sobe o mesmo server numa porta livre
+   │ AtomRpc ─── WebSocket ────┤       │ starts the same server on a free port
    ▼                           ▼       ▼
- apps/server ── LocalOnly (Host/Origin) ───────────────────────────────────
-   ├─ HttpApi (CRUD: projetos, agentes, chats, memórias, MCP, contas, consumo, settings)
+ apps/server ── LocalOnly (Host/Origin/session)──────────────────────────────────
+   ├─ HttpApi (CRUD: projects, agents, chats, memories, MCP, accounts, usage, settings)
    ├─ Rpc (send, steer, interrupt, decide, subscribeChat)
-   ├─ Runtime de turnos ── fila por chat · estado persistido · recuperação no boot
-   │     ├─ Contexto ─── camadas + marcação de leitura por sessão + passos de trabalho
+   ├─ Turn runtime ── queue per chat · persisted state · recovery on boot
+   │     ├─ Context ──── layers + read marking per session + work steps
    │     ├─ Engines ──── ClaudeSdk │ CodexAppServer │ Acp(*) │ Api(effect/ai)
-   │     └─ Gateway MCP ─ zorel.* (ferramentas internas) + MCP do usuário · política · aprovação
-   ├─ Conhecimento ── captura (passos + mensagens) → consolidação → páginas versionadas → resumo de entrada + busca FTS
-   ├─ Contas e consumo ── provider_accounts · failover · janelas de limite · custo
-   ├─ Actor (acesso) · Workspace (onde o agente trabalha)
-   └─ Store (Drizzle sobre @effect/sql: SQLite do Bun agora, Postgres depois) · Secrets (chaveiro agora, cofre depois)
+   │     └─ MCP gateway ─ zorel.* (internal tools) + user MCP · policy · approval
+   ├─ Knowledge ── capture (steps + messages) → consolidation → versioned pages → entry brief + FTS search
+   ├─ Accounts and usage ── provider_accounts · failover · limit windows · cost
+   ├─ Actor (access) · Workspace (where the agent works)
+   └─ Store (Drizzle over @effect/sql: Bun's SQLite now, Postgres later) · Secrets (keychain now, vault later)
 ```
 
 ---
 
-## 3. Módulos
+## 3. Modules
 
-| Módulo | Hoje | Alvo |
+| Module | Today | Target |
 |---|---|---|
-| `packages/contracts` | Entidades + `Api` (HttpApi) + `SendEvent` | + `ZorelRpc` (`RpcGroup`) com `ChatEvent` tipado. O `SendEvent` sai |
-| `server/db.ts` | 3 migrations; repositório síncrono sobre `bun:sqlite` | `db/schema.ts` (Drizzle) + `db/migrations/` (`drizzle-kit`) + repositórios em Effect sobre `@effect/sql-sqlite-bun`. Novas tabelas: `turns`, `approvals`, `provider_sessions`, `provider_accounts`, `usage_windows`, passos de trabalho estruturados, `projects.path`, lista de failover em agente e chat, `observations`, `pages` (+ `page_versions`, FTS5) com dono/público, versões de agente |
-| `server/access.ts`, `server/workspace.ts` | — | `Actor` (quem faz a requisição) e `Workspace` (onde o agente trabalha): portas da D17 |
-| `server/usage/` | Tokens por mensagem | `pricing.ts` (preço por modelo, do catálogo do OpenCode/models.dev, com fallback manual), `windows.ts` (leitura das janelas de limite por conta, com cache e espaçamento), `aggregate.ts` (consultas da área de consumo) |
-| `server/engines.ts` | Wrappers de CLI + `effect/ai` num arquivo só | Pasta `engines/`: `types.ts` (interface + capacidades), `claude-sdk.ts`, `codex-app-server.ts`, `acp.ts` (sobre `packages/effect-acp`, copiado do T3 Code), `api.ts`. O Codex usa `packages/effect-codex-app-server`, também copiado |
-| `server/chat.ts` | Turno dentro do stream da requisição | `runtime/`: `queue.ts` (fila por chat), `turn.ts` (execução de uma resposta), `recovery.ts` (boot), `events.ts` (PubSub por chat) |
-| `server/context.ts` | Montagem completa a cada turno | + `deltaSince(sessão)` (só o que a sessão não viu); a montagem completa vira o ponto de retomada |
-| `server/tools.ts` | Hub + gateway + política | + ferramentas internas `zorel.*`; ponte de permissões das ferramentas nativas |
-| `server/knowledge/` | Memórias e skills espalhadas em `chat.ts`/`db.ts`/`context.ts` | `capture.ts` (observações por turno, sem segredos), `consolidate.ts` (página de sessão sem LLM + propostas com LLM opcional), `brief.ts` (resumo de entrada), `search.ts` (FTS), `redact.ts` |
-| `web/api.ts`, `state.ts` | `call()` + `useState` + `reload()` | `client.ts` (`AtomHttpApi.Service` + `AtomRpc`) e átomos por recurso |
+| `packages/contracts` | Entities + `Api` (HttpApi) + `SendEvent` | + `ZorelRpc` (`RpcGroup`) with a typed `ChatEvent`. `SendEvent` goes away |
+| `server/db.ts` | 3 migrations; synchronous repository over `bun:sqlite` | `db/schema.ts` (Drizzle) + `db/migrations/` (`drizzle-kit`) + Effect repositories over `@effect/sql-sqlite-bun`. New tables: `turns`, `approvals`, `provider_sessions`, `provider_accounts`, `usage_windows`, structured work steps, `projects.path`, failover list on agent and chat, `observations`, `pages` (+ `page_versions`, FTS5) with owner/audience, agent versions |
+| `server/access.ts`, `server/workspace.ts` | — | `Actor` (who makes the request) and `Workspace` (where the agent works): D17's doors |
+| `server/usage/` | Tokens per message | `pricing.ts` (price per model, from the OpenCode/models.dev catalog, with a manual fallback), `windows.ts` (reading the limit windows per account, with cache and spacing), `aggregate.ts` (queries for the usage area) |
+| `server/engines.ts` | CLI wrappers + `effect/ai` in a single file | `engines/` folder: `types.ts` (interface + capabilities), `claude-sdk.ts`, `codex-app-server.ts`, `acp.ts` (own JSON-RPC client), `api.ts`. Codex has its own minimal App Server client (`codex.ts`) |
+| `server/chat.ts` | Turn inside the request stream | `runtime/`: `queue.ts` (queue per chat), `turn.ts` (execution of one response), `recovery.ts` (boot), `events.ts` (PubSub per chat) |
+| `server/context.ts` | Full assembly on every turn | + `deltaSince(session)` (only what the session has not seen); the full assembly becomes the resume point |
+| `server/tools.ts` | Hub + gateway + policy | + internal `zorel.*` tools; permission bridge for native tools |
+| `server/knowledge/` | Memories and skills scattered across `chat.ts`/`db.ts`/`context.ts` | `capture.ts` (observations per turn, no secrets), `consolidate.ts` (session page without LLM + proposals with optional LLM), `brief.ts` (entry brief), `search.ts` (FTS), `redact.ts` |
+| `web/api.ts`, `state.ts` | `call()` + `useState` + `reload()` | `client.ts` (`AtomHttpApi.Service` + `AtomRpc`) and atoms per resource |
 
-Regra: o domínio (contexto, engines, aprendizado, ferramentas) não importa nada de transporte. `main.ts` e `rpc.ts` só traduzem.
+Rule: the domain (context, engines, learning, tools) imports nothing from transport. `main.ts` and `rpc.ts` only translate.
 
 ---
 
-## 4. Contrato e transporte
+## 4. Contract and transport
 
-**CRUD (`HttpApi`, já existe):** projetos, agentes, chats (sem envio), memórias, servidores MCP, chaves, modelos. **Novos:** contas (`provider_accounts`, login, failover) e consumo (agregados, janelas, orçamentos).
+**CRUD (`HttpApi`, already exists):** projects, agents, chats (no sending), memories, MCP servers, keys, models. **New:** accounts (`provider_accounts`, login, failover) and usage (aggregates, windows, budgets).
 
-**Turnos (`effect/rpc` em `/rpc`, WebSocket):**
+**Turns (`effect/rpc` at `/rpc`, WebSocket):**
 
 ```ts
 RpcGroup.make(
-  Rpc.make("send",          { payload: { chatId, clientId, text, model? }, success: { turnId } }),  // clientId: idempotência
+  Rpc.make("send",          { payload: { chatId, clientId, text, model? }, success: { turnId } }),  // clientId: idempotency
   Rpc.make("steer",         { payload: { chatId, text } }),
   Rpc.make("interrupt",     { payload: { chatId } }),
   Rpc.make("decide",        { payload: { approvalId, approve } }),
@@ -108,37 +108,37 @@ RpcGroup.make(
 )
 ```
 
-- `subscribeChat` sempre começa com um `snapshot` (mensagens desde o resumo, turno em andamento, aprovações abertas, fila) e segue com eventos ao vivo. **Reconectar é assinar de novo.**
-- `ChatEvent` (em `packages/contracts/src/events.ts`): `snapshot | message | queued | turn-started | text (agrupado) | reasoning | step-started | step-finished | approval | approval-resolved | handoff | model-switched | learned | context-usage | turn-completed | turn-failed | interrupted | status`. Os passos (`WorkStep`) trazem tipo, título, arquivos, duração e mudanças por arquivo: é o que a pílula de atividade do chat mostra.
-- `subscribeStatus`: status de todos os chats (rodando, esperando você, falhou), para a barra lateral e "Precisa de você".
-- **Deltas de texto agrupados a cada 100 ms** ou 8 KiB (referência: OpenBot 100 ms, Zeron 120 ms).
-- `LocalOnly` cobre HTTP e WebSocket.
+- `subscribeChat` always starts with a `snapshot` (messages since the summary, turn in progress, open approvals, queue) and continues with live events. **Reconnecting is subscribing again.**
+- `ChatEvent` (in `packages/contracts/src/events.ts`): `snapshot | message | queued | turn-started | text (agrupado) | reasoning | step-started | step-finished | approval | approval-resolved | handoff | model-switched | learned | context-usage | turn-completed | turn-failed | interrupted | status`. The steps (`WorkStep`) carry type, title, files, duration and changes per file: this is what the chat's activity pill shows.
+- `subscribeStatus`: status of all chats (running, waiting for you, failed), for the sidebar and "Needs you".
+- **Text deltas grouped every 100 ms** or 8 KiB.
+- `LocalOnly` covers HTTP and WebSocket, with the session secret (section 11).
 
 ---
 
-## 5. Runtime de turnos
+## 5. Turn runtime
 
-**Estados** (tabela `turns`): `queued → running → completed | failed | interrupted`. As colunas são `chat_id`, `agent_id`, `model`, `client_id UNIQUE`, `started_at`, `ended_at`, `error`, `usage`.
+**States** (`turns` table): `queued → running → completed | failed | interrupted`. The columns are `chat_id`, `agent_id`, `model`, `client_id UNIQUE`, `started_at`, `ended_at`, `error`, `usage`.
 
-- **Fila por chat**, com um turno por vez. O encadeamento de agentes (@menção, até 3 repasses) gera novos turnos na mesma fila.
-- **Mensagem com o agente ocupado:** vai para a fila por padrão. Vira `steer` se o engine suportar e você pedir.
-- **Interromper:** pelo engine (`interrupt`/`turn/interrupt`). O texto parcial é gravado como `interrupted`.
-- **Aprovações** ficam persistidas (`approvals`) e não mais só em memória. Ao fechar o turno, as abertas viram recusa.
-- **Idempotência:** `send` com o mesmo `clientId` devolve o mesmo `turnId`, então reenviar não duplica.
-- **Recuperação no boot:** um turno `running` sem processo vira `interrupted`, e a mensagem parcial é preservada. Nunca repete efeito colateral incerto (regra do OpenBot).
-- **O turno não depende do cliente.** Fechar a aba não para nada.
-- **Proteções do turno** (ideias do Tucano; `runawayGuard` em runtime.ts):
-  - **travado:** 10 min sem nenhum evento do engine, fora de aprovação esperando, encerra o turno e reabre a sessão no próximo;
-  - **loop:** o mesmo passo (tipo, título e começo da saída) 4 vezes seguidas encerra o turno dizendo qual;
-  - **falhas:** 6 passos seguidos com erro encerram o turno.
+- **Queue per chat**, with one turn at a time. Agent chaining (@mention, up to 3 hand-offs) creates new turns in the same queue.
+- **Message while the agent is busy:** goes to the queue by default. Becomes `steer` if the engine supports it and you ask for it.
+- **Interrupt:** through the engine (`interrupt`/`turn/interrupt`). The partial text is saved as `interrupted`.
+- **Approvals** are persisted (`approvals`) and no longer only in memory. When the turn closes, the open ones become refusals.
+- **Idempotency:** `send` with the same `clientId` returns the same `turnId`, so resending does not duplicate.
+- **Recovery on boot:** a `running` turn without a process becomes `interrupted`, and the partial message is preserved. It never repeats an uncertain side effect.
+- **The turn does not depend on the client.** Closing the tab stops nothing.
+- **Turn guards** (`runawayGuard` in runtime.ts):
+  - **stuck:** 10 min without any engine event, outside of a pending approval, ends the turn and reopens the session on the next one;
+  - **loop:** the same step (type, title and start of the output) 4 times in a row ends the turn saying which one;
+  - **failures:** 6 steps in a row with an error end the turn.
   
-- **Retomar no reset** (ideia do T3 Code, automática): quando o turno falha sem ter agido e **todas** as rotas do chat estão no limite de uso, o chat grava `resumeAt` = o reset mais próximo. O tick de 30 s das rotinas manda nessa hora "The usage limit has reset. Continue where you left off." (clientId `resume:<chat>:<hora>`, idempotente; com tudo pausado, fica na fila). O chat mostra a faixa com Cancel; escrever você mesmo também cancela.
-- **Editar daqui** (ideia do T3 Code): `POST /api/chats/:id/rewind {messageId, files}` com o chat parado. Com `files`, primeiro desfaz pelos checkpoints os turnos posteriores ainda não desfeitos, do mais novo para o mais velho (um conflito para tudo, sem tocar na conversa). Depois apaga a mensagem e o que veio depois, zera o resumo se ele cobria o trecho e fecha as sessões nativas do chat (`runtime.forget`), para o próximo turno começar do que o Zorel guarda e o provider não lembrar o que saiu. O texto volta para o campo de mensagem.
-- **Busca** (Cmd+K, ideia do T3 Code): `GET /api/search?q=` procura nas mensagens (LIKE com escape, as 30 mais novas; FTS5 como o `memory_index` quando o volume pedir) e devolve chat, mensagem, hora e o trecho em volta. Lugares, chats, projetos e agentes são filtrados no cliente.
-- **Pausar tudo** (ideia do Tucano): `PUT /api/pause` grava a preferência `paused`; pausar interrompe os turnos rodando, e enquanto pausado os turnos novos ficam `queued` (o worker do chat não começa) e as rotinas não disparam (seguem devidas); despausar acorda a fila de cada chat. Sobrevive a reiniciar o servidor.
-- **Notificações** (no cliente): o fluxo `subscribeStatus` que já alimenta a barra dispara uma notificação do sistema quando um chat passa a esperar você, falha ou termina enquanto você olha outro lugar; ligada em Settings › General.
+- **Resume at reset** (automatic): when the turn fails without having acted and **all** of the chat's routes are at the usage limit, the chat saves `resumeAt` = the nearest reset. The routines' 30 s tick sends at that time "The usage limit has reset. Continue where you left off." (clientId `resume:<chat>:<time>`, idempotent; with everything paused, it stays in the queue). The chat shows the banner with Cancel; writing something yourself also cancels.
+- **Edit from here**: `POST /api/chats/:id/rewind {messageId, files}` with the chat stopped. With `files`, it first undoes, through the checkpoints, the later turns not yet undone, from newest to oldest (a conflict stops everything, without touching the conversation). Then it deletes the message and what came after it, clears the summary if it covered that stretch and closes the chat's native sessions (`runtime.forget`), so the next turn starts from what Zorel keeps and the provider does not remember what was removed. The text goes back into the message field.
+- **Search** (Cmd+K): `GET /api/search?q=` searches the messages (LIKE with escaping, the 30 newest; FTS5 like `memory_index` when the volume calls for it) and returns chat, message, time and the surrounding snippet. Places, chats, projects and agents are filtered on the client.
+- **Pause everything**: `PUT /api/pause` saves the `paused` preference; pausing interrupts running turns, and while paused new turns stay `queued` (the chat's worker does not start) and routines do not fire (they stay due); unpausing wakes each chat's queue. It survives a server restart.
+- **Notifications** (on the client): the `subscribeStatus` stream that already feeds the sidebar fires a system notification when a chat starts waiting for you, fails or finishes while you are looking elsewhere; turned on in Settings › General.
 
-  Loop e falhas valem para os passos nativos e para as ferramentas do gateway. Não são falha de provider, então não disparam failover. O failover em si só troca de rota se o turno ainda não agiu (editou, rodou ou chamou ferramenta que escreve), para nunca repetir um efeito.
+  Loop and failures apply to native steps and to gateway tools. They are not provider failures, so they do not trigger failover. Failover itself only switches routes if the turn has not acted yet (edited, ran or called a tool that writes), so it never repeats an effect.
 
 ---
 
@@ -147,13 +147,13 @@ RpcGroup.make(
 ```ts
 interface Engine {
   readonly capabilities: {
-    session: "native" | "none"          // native: mantém sessão viva entre turnos
+    session: "native" | "none"          // native: keeps a live session between turns
     steer: boolean
     interrupt: boolean
-    liveModelSwitch: boolean            // troca de modelo sem nova sessão
+    liveModelSwitch: boolean            // model switch without a new session
     images: boolean
     reasoningEffort: ReadonlyArray<"low" | "medium" | "high" | "max">
-    nativeTools: boolean                // shell/edição próprios da CLI
+    nativeTools: boolean                // the CLI's own shell/editing
   }
   open(input: { chatId; agentId; model; cwd; resume?: ProviderSessionId; tools?: TurnTools; permissions }): Effect<EngineSession>
 }
@@ -167,485 +167,491 @@ interface EngineSession {
 }
 ```
 
-| Adaptador | Base | Sessão | Observações |
+| Adapter | Base | Session | Notes |
 |---|---|---|---|
-| `claude-sdk` | `@anthropic-ai/claude-agent-sdk` (roda a CLI oficial **instalada**, via `pathToClaudeCodeExecutable`: o binário de ~300 MB que o pacote traz nunca é usado nem empacotado) | nativa: um processo por (chat, agente) com entrada em streaming; `persistSession: false` (retomar usa o ponto de retomada do Zorel) | `setModel` ao vivo. Gateway do turno trocado com `setMcpServers`. Ferramentas próprias desligadas (`tools: []`). Login nunca é lido |
-| `codex-app-server` | `codex app-server` (JSON-RPC), cliente mínimo próprio | nativa: um processo e uma thread por (chat, agente), `ephemeral` (retomar usa o ponto de retomada). `CODEX_HOME` próprio do Zorel por conta: o `config.toml` do usuário (MCP, `AGENTS.md`, memórias) nunca chega aos agentes, e o `app-server` não tem `--ignore-user-config` | Modelo por `turn/start`. `turn/steer`, `turn/interrupt`, `thread/compact/start`, `model/list`, `account/rateLimits/read`. Sandbox `read-only`/`workspace-write` |
-| `acp` | `effect-acp` (T3 Code, MIT) | nativa quando o agente suporta | **OpenCode** (harness de **todas** as API keys), Gemini CLI, Cursor, Kimi, Cline, Grok, Hermes |
-| `api` | `effect/ai` | `none` | **Não é agente de projeto.** Só para consolidação, títulos, roteamento, revisão de memória e conversa rápida sem workspace. Marcadores de cache, uma mensagem por bloco |
+| `claude-sdk` | `@anthropic-ai/claude-agent-sdk` (runs the **installed** official CLI, via `pathToClaudeCodeExecutable`: the ~300 MB binary the package ships is never used or packaged) | native: one process per (chat, agent) with streaming input; `persistSession: false` (resuming uses Zorel's resume point) | Live `setModel`. The turn's gateway swapped with `setMcpServers`. Its own tools turned off (`tools: []`). Login is never read |
+| `codex-app-server` | `codex app-server` (JSON-RPC), our own minimal client | native: one process and one thread per (chat, agent), `ephemeral` (resuming uses the resume point). Zorel's own `CODEX_HOME` per account: the user's `config.toml` (MCP, `AGENTS.md`, memories) never reaches the agents, and `app-server` has no `--ignore-user-config` | Model per `turn/start`. `turn/steer`, `turn/interrupt`, `thread/compact/start`, `model/list`, `account/rateLimits/read`. Sandbox `read-only`/`workspace-write` |
+| `acp` | own JSON-RPC client over stdio (`engines/acp.ts`) | native when the agent supports it | **OpenCode** (the harness for **all** API keys), Gemini CLI, Cursor, Kimi, Cline, Grok, Hermes |
+| `api` | `effect/ai` | `none` | **Not a project agent.** Only for consolidation, titles, routing, memory review and quick conversation without a workspace. Cache markers, one message per block |
 
-**Credencial → harness:**
+**Credential → harness:**
 
-| Credencial | Harness | Como a credencial chega |
+| Credential | Harness | How the credential arrives |
 |---|---|---|
-| Assinatura Claude (Pro/Max) | `claude-sdk` | Login da própria CLI (nunca lido pelo Zorel) |
-| Assinatura ChatGPT | `codex-app-server` | Login da própria CLI |
-| Outras CLIs com assinatura própria (Gemini CLI, Cursor, Kimi…) | `acp` | Login da própria CLI |
-| **Qualquer API key**: Anthropic, OpenAI, OpenRouter, Gemini, DeepSeek, Groq; ou servidor local (Ollama, LM Studio, base OpenAI-compatível) | `acp` → `opencode acp` | Config injetada por `OPENCODE_CONFIG_CONTENT` (provider, modelo, `baseURL`, `apiKey` vinda do chaveiro). O `opencode.json` do usuário nunca é tocado. A permissão vem do nível de acesso do Zorel (seção 9) |
+| Claude subscription (Pro/Max) | `claude-sdk` | The CLI's own login (never read by Zorel) |
+| ChatGPT subscription | `codex-app-server` | The CLI's own login |
+| Other CLIs with their own subscription (Gemini CLI, Cursor, Kimi…) | `acp` | The CLI's own login |
+| **Any API key**: Anthropic, OpenAI, OpenRouter, Gemini, DeepSeek, Groq; or a local server (Ollama, LM Studio, OpenAI-compatible base) | `acp` → `opencode acp` | Config injected through `OPENCODE_CONFIG_CONTENT` (provider, model, `baseURL`, `apiKey` taken from the keychain). The user's `opencode.json` is never touched. Permission comes from Zorel's access level (section 9) |
 
-**Quem decide o harness é a conta, não o nome do modelo.** A escolha é o par `{ accountId, model }`: uma conta `subscription/claude` usa o Claude Agent SDK, e uma conta `api-key/anthropic` usa o OpenCode, mesmo que o modelo seja o mesmo. O seletor mostra os dois ("Sonnet · Claude pessoal" e "Sonnet · chave Anthropic"). Trocar entre eles equivale a trocar de provider: o ponto de retomada entra na sessão nova.
+**The account decides the harness, not the model name.** The choice is the pair `{ accountId, model }`: a `subscription/claude` account uses the Claude Agent SDK, and an `api-key/anthropic` account uses OpenCode, even if the model is the same. The picker shows both ("Sonnet · personal Claude" and "Sonnet · Anthropic key"). Switching between them is the same as switching providers: the resume point goes into the new session.
 
-*Migração do estado atual:* os ids `claude-cli/…`, `codex-cli/…` e `anthropic/…` viram a conta padrão do provider correspondente mais o nome do modelo.
+*Migration from the current state:* the ids `claude-cli/…`, `codex-cli/…` and `anthropic/…` become the default account of the matching provider plus the model name.
 
-- **Mesmas garantias para todos:** contexto em camadas e ponto de retomada, conhecimento aprendido, gateway MCP com política e aprovação, fila, interrupção e troca de modelo. O harness só faz o trabalho de agente de código.
-- **Várias contas por provider:** ver 6.1.
-- **Modelos** listados pelo próprio harness (`model/list`, catálogo do OpenCode via models.dev), e não por lista fixa. Cada conta tem a sua lista, porque contas diferentes podem ter modelos diferentes.
+- **Same guarantees for all:** layered context and resume point, learned knowledge, MCP gateway with policy and approval, queue, interruption and model switching. The harness only does the code agent's work.
+- **Several accounts per provider:** see 6.1.
+- **Models** listed by the harness itself (`model/list`, OpenCode's catalog via models.dev), not by a fixed list. Each account has its own list, because different accounts may have different models.
 
-### 6.1 Multicontas (D14)
+### 6.1 Multiple accounts (D14)
 
-**Modelo de dados.** Tabela `provider_accounts`:
+**Data model.** `provider_accounts` table:
 
-| coluna | descrição |
+| column | description |
 |---|---|
-| `id`, `label` | ex.: "Claude trabalho", "Claude pessoal" |
+| `id`, `label` | e.g. "Work Claude", "Personal Claude" |
 | `kind` | `subscription` \| `api-key` |
-| `provider` | `claude`, `codex`, `gemini-cli`… (assinatura) ou `anthropic`, `openai`, `openrouter`… (chave) |
-| `home` | assinatura: pasta de login gerenciada pelo Zorel, `~/.zorel/accounts/<id>`, ou `null` para o login padrão da CLI |
-| `secret` | chave: nome no chaveiro (`account:<id>`). O valor nunca vai para o banco |
-| `base_url` | chave: opcional (Ollama, LM Studio, base OpenAI-compatível) |
-| `identity` | o que o harness reportar (e-mail ou plano), só para exibição |
+| `provider` | `claude`, `codex`, `gemini-cli`… (subscription) or `anthropic`, `openai`, `openrouter`… (key) |
+| `home` | subscription: login folder managed by Zorel, `~/.zorel/accounts/<id>`, or `null` for the CLI's default login |
+| `secret` | key: name in the keychain (`account:<id>`). The value never goes to the database |
+| `base_url` | key: optional (Ollama, LM Studio, OpenAI-compatible base) |
+| `identity` | whatever the harness reports (e-mail or plan), for display only |
 
-A conta "padrão" de cada CLI aparece sem cadastro. **Claude:** é o login que já está no seu computador (`home = null`). **Codex:** é uma pasta do próprio Zorel (`~/.zorel/accounts/codex-default`), com login feito uma vez pelo Zorel, porque o `codex app-server` sempre carrega o `config.toml` do usuário (servidores MCP, `AGENTS.md`, memórias) e não tem como ignorá-lo (implementado em 2026-11-03).
+The "default" account of each CLI shows up without registration. **Claude:** it is the login already on your computer (`home = null`). **Codex:** it is a folder of Zorel's own (`~/.zorel/accounts/codex-default`), with a login done once through Zorel, because `codex app-server` always loads the user's `config.toml` (MCP servers, `AGENTS.md`, memories) and has no way to ignore it (implemented on 2026-11-03).
 
-**Como a credencial chega ao harness:**
+**How the credential reaches the harness:**
 
-| Tipo | Isolamento |
+| Type | Isolation |
 |---|---|
-| Claude (assinatura) | `CLAUDE_CONFIG_DIR=<home>` no processo do SDK. Não muda `HOME` nem o chaveiro do sistema (mesmo cuidado do T3 Code) |
-| Codex (assinatura) | `CODEX_HOME=<home>`. Se a CLI usar o chaveiro do sistema para o login, a conta extra precisa de armazenamento em arquivo (limitação do Codex, também documentada pelo T3 Code) |
-| CLIs ACP (assinatura) | A variável de pasta de cada CLI (`GEMINI_HOME`, `GROK_HOME`…), declarada no adaptador |
-| API key (OpenCode) | A chave da conta vai na config injetada daquela sessão. Duas contas Anthropic são dois providers distintos na config |
+| Claude (subscription) | `CLAUDE_CONFIG_DIR=<home>` in the SDK process. Does not change `HOME` or the system keychain |
+| Codex (subscription) | `CODEX_HOME=<home>`. If the CLI uses the system keychain for the login, the extra account needs file storage (a Codex limitation) |
+| ACP CLIs (subscription) | Each CLI's folder variable (`GEMINI_HOME`, `GROK_HOME`…), declared in the adapter |
+| API key (OpenCode) | The account's key goes in that session's injected config. Two Anthropic accounts are two distinct providers in the config |
 
-**Login dentro do Zorel.**
-- O Zorel roda o comando de login oficial da CLI com a pasta da conta. Por exemplo: `CLAUDE_CONFIG_DIR=… claude auth login`, `CODEX_HOME=… codex login`.
-- O fluxo acontece no navegador do provider. O Zorel nunca vê nem guarda o token.
-- Depois, o Zorel lê do harness só a identidade, para exibir.
-- Remover a conta apaga a pasta, com confirmação.
+**Login inside Zorel.**
+- Zorel runs the CLI's official login command with the account's folder. For example: `CLAUDE_CONFIG_DIR=… claude auth login`, `CODEX_HOME=… codex login`.
+- The flow happens in the provider's browser. Zorel never sees or stores the token.
+- Afterwards, Zorel reads only the identity from the harness, for display.
+- Removing the account deletes the folder, with confirmation.
 
-**Escolha da conta:**
-- Agente e chat têm `accountId`. O id do modelo continua `provider/modelo`.
-- O seletor de modelo lista modelos por conta ("Sonnet · Claude pessoal").
-- Os membros de um canal podem usar contas diferentes.
-- **Trocar de conta no meio do chat** encerra a sessão da conta antiga e abre outra na conta nova com o ponto de retomada, igual a uma troca de provider. Não reaproveita a sessão nativa entre contas, então não há "shadow home": é mais simples e não depende de como cada CLI guarda sessões.
+**Choosing the account:**
+- Agent and chat have `accountId`. The model id stays `provider/model`.
+- The model picker lists models per account ("Sonnet · personal Claude").
+- Members of a channel can use different accounts.
+- **Switching accounts mid-chat** ends the old account's session and opens another on the new account with the resume point, just like a provider switch. It does not reuse the native session across accounts, so there is no "shadow home": it is simpler and does not depend on how each CLI stores sessions.
 
-**Troca automática (failover).**
+**Automatic switching (failover).**
 
-*Configuração:* cada agente (e cada chat, quando sobrescreve) tem uma lista ordenada de até 8 alternativas `{ conta, modelo }`. As alternativas podem ser de outro provider, por exemplo: assinatura Claude pessoal → assinatura Claude trabalho → chave da Anthropic via OpenCode → chave do OpenRouter. Como o contexto é nosso, qualquer alternativa continua o trabalho. A lista começa vazia, e o failover fica desligado até você montá-la.
+*Configuration:* each agent (and each chat, when it overrides) has an ordered list of up to 8 alternatives `{ account, model }`. The alternatives may be from another provider, for example: personal Claude subscription → work Claude subscription → Anthropic key via OpenCode → OpenRouter key. Since the context is ours, any alternative continues the work. The list starts empty, and failover stays off until you build it.
 
-*Aviso:* ao incluir uma **segunda conta de assinatura do mesmo provider** na lista, o Zorel mostra uma vez, e grava que você aceitou: "Alternar contas de assinatura para contornar limites pode violar os termos do provider e levar a bloqueio da conta. O risco é seu." Alternativas por API key não têm esse aviso, mas mostram que passam a ter custo por token.
+*Warning:* when you add a **second subscription account from the same provider** to the list, Zorel shows once, and records that you accepted: "Switching subscription accounts to get around limits may violate the provider's terms and lead to the account being blocked. The risk is yours." API key alternatives do not have this warning, but they show that they now cost per token.
 
-*Gatilhos* (classificados pelo adaptador a partir do sinal de cada harness: `rate_limit_event` do Claude, erros e `account/rateLimits` do Codex, erros do OpenCode):
+*Triggers* (classified by the adapter from each harness's signal: Claude's `rate_limit_event`, Codex's errors and `account/rateLimits`, OpenCode's errors):
 
-| Gatilho | O que acontece |
+| Trigger | What happens |
 |---|---|
-| **Limite da assinatura** (com horário de volta) | A conta fica em espera até o reset. O turno vai para a primeira alternativa pronta. **Volta sozinho** para a conta principal quando o reset passa |
-| **Erro do provider**: `rate_limit`, `billing`, `unavailable`, `auth`, `network`, `timeout` | **Só se o turno ainda não agiu**: nenhuma ferramenta que escreve foi executada. A mensagem volta para a fila e roda na próxima alternativa. A conta que falhou é pulada por 10 min |
-| Erro depois de o turno ter agido | **Não troca.** Falha com a explicação e oferece retomar manualmente; nunca repete efeito colateral incerto |
-| Erro de conteúdo / pedido inválido | Não troca: outro modelo daria o mesmo erro |
+| **Subscription limit** (with a return time) | The account waits until the reset. The turn goes to the first ready alternative. **Switches back on its own** to the main account when the reset passes |
+| **Provider error**: `rate_limit`, `billing`, `unavailable`, `auth`, `network`, `timeout` | **Only if the turn has not acted yet**: no tool that writes was executed. The message goes back to the queue and runs on the next alternative. The account that failed is skipped for 10 min |
+| Error after the turn has acted | **Does not switch.** Fails with the explanation and offers to resume manually; never repeats an uncertain side effect |
+| Content error / invalid request | Does not switch: another model would give the same error |
 
-*Limites:* cada mensagem tenta cada alternativa no máximo uma vez. Se todas falharem, o turno falha e lista o motivo de cada tentativa.
+*Limits:* each message tries each alternative at most once. If all of them fail, the turn fails and lists the reason for each attempt.
 
-*Visibilidade:*
-- Toda troca aparece no chat ("Limite da Claude pessoal até 14:30, continuando com Claude trabalho").
-- A mensagem guarda conta e modelo que de fato responderam.
-- A medição por turno registra as trocas.
+*Visibility:*
+- Every switch shows up in the chat ("Personal Claude limited until 14:30, continuing with work Claude").
+- The message stores the account and model that actually replied.
+- Per-turn measurement records the switches.
 
-*Leitura de uso por conta:* as janelas de limite da assinatura (Claude, Codex) entram junto com o failover. Assim o Zorel sabe quando a conta volta e pode avisar antes de chegar ao limite.
+*Reading usage per account:* the subscription's limit windows (Claude, Codex) come in together with failover. That way Zorel knows when the account comes back and can warn before the limit is reached.
 
-*Como ficou (2026-11-03):*
-- Lista em `agents.failover` e `chats.failover` (null = a do agente líder), editada na página do agente e em "Fallbacks…" no menu do chat. O aviso de termos é aceito uma vez (`preferences`).
-- Classificação: o parser do Claude lê `rate_limit_event` (`rejected` + `resetsAt` vira `limit`) e o código de erro das mensagens do assistente; o Codex lê `codexErrorInfo` do `turn/completed` e `account/rateLimits` (pede a leitura no início de cada turno e ouve as atualizações); API e processos usam heurística sobre a mensagem (`classifyMessage`).
-- "Já agiu" = o gateway executou uma ferramenta de classe `write` ou `sensitive` (mesmo que tenha falhado).
-- Espera por limite fica em `provider_accounts.limited_until` (sobrevive a reinício); os outros erros pulam a rota por 10 min, em memória. A última leitura de uso fica em `provider_accounts.usage` e aparece em Usage e no seletor de modelo.
-- Trocas: evento `failover` ao vivo, `messages.switches` e `turns.switches`; o turno guarda o modelo e a conta que responderam.
+*How it turned out (2026-11-03):*
+- List in `agents.failover` and `chats.failover` (null = the lead agent's), edited on the agent page and in "Fallbacks…" in the chat menu. The terms warning is accepted once (`preferences`).
+- Classification: Claude's parser reads `rate_limit_event` (`rejected` + `resetsAt` becomes `limit`) and the error code of assistant messages; Codex reads `codexErrorInfo` from `turn/completed` and `account/rateLimits` (requests the read at the start of each turn and listens for updates); API and processes use a heuristic over the message (`classifyMessage`).
+- "Already acted" = the gateway executed a tool of class `write` or `sensitive` (even if it failed).
+- The wait for a limit lives in `provider_accounts.limited_until` (survives a restart); other errors skip the route for 10 min, in memory. The latest usage read lives in `provider_accounts.usage` and shows up in Usage and in the model picker.
+- Switches: live `failover` event, `messages.switches` and `turns.switches`; the turn stores the model and account that replied.
 
-*Pool com rodízio* de várias contas para distribuir carga continua fora do Zorel (proxy externo como API key de base compatível). O failover só troca quando há falha ou limite, não para balancear.
+*A rotating pool* of several accounts to spread load stays outside Zorel (an external proxy as an API key with a compatible base). Failover only switches on a failure or a limit, not to balance.
 
 ---
 
-## 7. Contexto (D6)
+## 7. Context (D6)
 
-**Ponto de retomada**, sempre atualizado e guardado no Zorel:
+**Resume point**, always up to date and kept in Zorel:
 
 ```
-base → agente → canal → sobre você (aprovado) → projeto (brief) → resumo de entrada do conhecimento
-     → resumo do chat → passos de trabalho (compactados) → últimas 30 mensagens
+base → agent → channel → about you (approved) → project (brief) → knowledge entry brief
+     → chat summary → work steps (compacted) → last 30 messages
 ```
 
-**Regras por situação:**
+**Rules per situation:**
 
-| Situação | Enviado |
+| Situation | Sent |
 |---|---|
-| Sessão viva, mesmo provider | Só as mensagens após a marcação da sessão (`provider_sessions.seen_message_id`), mais as camadas que mudaram desde o último envio (identificadas por hash) |
-| Troca de modelo no mesmo provider | `setModel` ao vivo (Claude: só no modo de entrada em streaming, que é o que usamos), então igual à linha de cima. **Cada modelo tem seu próprio cache de prompt**, e a primeira chamada depois da troca paga a conversa sem cache |
-| Troca de provider / sessão nova / retomada falhou | **Ponto de retomada completo** |
-| Volta a um provider já usado | Retoma a sessão dele e envia só o que ele ainda não viu (ideia do Zeron) |
-| Engine `api` | Ponto de retomada a cada turno, com cache de prompt |
+| Live session, same provider | Only the messages after the session's marker (`provider_sessions.seen_message_id`), plus the layers that changed since the last send (identified by hash) |
+| Model switch within the same provider | Live `setModel` (Claude: only in streaming input mode, which is what we use), so the same as the row above. **Each model has its own prompt cache**, and the first call after the switch pays for the conversation without cache |
+| Provider switch / new session / resume failed | **Full resume point** |
+| Back to a provider already used | Resumes its session and sends only what it has not seen yet |
+| `api` engine | Resume point on every turn, with prompt cache |
 
-- **Passos de trabalho:** de cada turno ficam guardadas as ferramentas usadas, os comandos e os arquivos alterados. Entram compactados no ponto de retomada; o detalhe fica disponível por `zorel.history_read`.
-- **Handoff tipado:** `{ feito, falhou, em aberto, próximo passo, arquivos }`, gerado sem LLM a partir dos passos de trabalho. Fica preso ao chat e é **oferecido**, nunca consumido automaticamente (lição do ai-memory).
-- **Compactação nativa** da CLI pode acontecer à vontade: o ponto de retomada não depende dela.
-- **Medição em todo turno:** latência até o primeiro token, latência total, tokens de entrada, tokens lidos do cache e tokens de saída. As decisões de contexto se baseiam nesses números.
+- **Work steps:** from each turn, the tools used, the commands and the changed files are kept. They go into the resume point compacted; the detail is available through `zorel.history_read`.
+- **Typed handoff:** `{ done, failed, open, next step, files }`, generated without an LLM from the work steps. It is tied to the chat and is **offered**, never consumed automatically.
+- The CLI's **native compaction** can happen freely: the resume point does not depend on it.
+- **Measurement on every turn:** latency to the first token, total latency, input tokens, tokens read from cache and output tokens. Context decisions are based on these numbers.
 
 ---
 
-## 8. Conhecimento aprendido (D18, D7)
+## 8. Learned knowledge (D18, D7)
 
-**Hoje (implementado, 2026-11-03):** memórias (`fact`) e skills em SQLite, com escopo você/projeto/agente. **Skills como no Tucano (2026-11-04):** o contexto lista os títulos e traz o passo a passo das mais relevantes; o agente lê qualquer outra com `zorel_read_skill` e propõe uma nova ou uma **melhoria** com `zorel_propose_skill` (título, passos, motivo, `improves`), que fica pendente (no máximo 5 por chat). A melhoria aponta para a skill que substitui (`memories.replaces`) e guarda o motivo; em Knowledge a pessoa vê o diff linha a linha e "Apply the change" grava o texto novo na skill, com o anterior em `memory_versions` (toda edição também vira versão, com restaurar). **Skills do computador (2026-11-04):** Settings › Skills lista as SKILL.md já existentes (Claude Code `~/.claude/skills`, plugins do Claude Code na versão mais nova, Codex `~/.codex/skills`, `~/.agents/skills`; uma pasta ligada em dois lugares conta uma vez) e a pessoa escolhe quais os agentes do Zorel usam (preferência `fileSkills`, só caminhos achados pela varredura). As escolhidas entram na lista de skills do contexto (título e para que serve) e `zorel_read_skill` lê o arquivo na hora (`server/file-skills.ts`). À parte, **"Let Claude Code and Codex use their own skills"** (preferência `nativeSkills`, desligada por padrão): o Claude ganha a ferramenta `Skill` (lê as skills do usuário e dos plugins) e o Codex deixa de desligar a descoberta e as skills que encontra; vale a partir da próxima sessão de cada chat. Testado ao vivo: skill de arquivo lida pelo agente; com as nativas ligadas o Claude enxergou 119 skills.
-- **Consolidação** com LLM quando o chat passa de 50 mensagens além do resumo: o trecho que sai da janela vira resumo e **propostas** de memória e skill, pendentes até você aprovar em "Precisa de você". O que você mandou esquecer vai no prompt para não voltar.
-- **Regra da evidência humana** (ideia do Tucano): o trecho chega numerado e cada memória proposta cita os números das mensagens que a provam. Só vale mensagem sua: palpite, plano ou suposição de agente nunca vira memória. Skills não exigem (procedimento pode nascer do trabalho do agente).
-- **Confirmação:** a consolidação devolve os ids das memórias existentes que o trecho confirmou de novo, e repetir uma memória ativa (por qualquer caminho) também a confirma. `confirmedAt` ordena o orçamento.
-- **Recuperação em três níveis:** até 8.000 caracteres das mais recentemente confirmadas vão fixas no contexto; a cada turno, a busca FTS5 (BM25) traz as 5 que mais casam com a mensagem; e o agente busca o resto quando precisa com a ferramenta `zorel_search_memories` (até 10, sempre nos escopos do chat). Sem embeddings: o Tucano mostra que busca por palavra basta.
-- **Próximo (fase 3b):** as páginas abaixo. A wiki do Tucano (arquivos Markdown como verdade, índice FTS5 com links, versões, pacotes de mudança com hash e rebase, curador ao fim da conversa, fontes citadas, revisão periódica de contradições) é a referência de desenho; só ideias, a licença dele é Apache-2.0 mas não copiamos código.
+**Today (implemented, 2026-11-03):** memories (`fact`) and skills in SQLite, with you/project/agent scope. **Skills (2026-11-04):** the context lists the titles and brings the step by step of the most relevant ones; the agent reads any other with `zorel_read_skill` and proposes a new one or an **improvement** with `zorel_propose_skill` (title, steps, reason, `improves`), which stays pending (at most 5 per chat). The improvement points to the skill it replaces (`memories.replaces`) and stores the reason; in Knowledge the person sees the diff line by line and "Apply the change" writes the new text into the skill, with the previous one in `memory_versions` (every edit also becomes a version, with restore). **Skills from the computer (2026-11-04):** Settings › Skills lists the SKILL.md files that already exist (Claude Code `~/.claude/skills`, Claude Code plugins at their newest version, Codex `~/.codex/skills`, `~/.agents/skills`; a folder linked in two places counts once) and the person chooses which ones Zorel's agents use (`fileSkills` preference, only paths found by the scan). The chosen ones go into the context's skill list (title and what it is for) and `zorel_read_skill` reads the file on the spot (`server/file-skills.ts`). Separately, **"Let Claude Code and Codex use their own skills"** (`nativeSkills` preference, off by default): Claude gets the `Skill` tool (reads the user's and the plugins' skills) and Codex stops turning off discovery and the skills it finds; it applies from each chat's next session. Tested live: a file skill read by the agent; with the native ones on, Claude saw 119 skills.
+- **Consolidation** with an LLM when the chat goes past 50 messages beyond the summary: the stretch that leaves the window becomes a summary and memory and skill **proposals**, pending until you approve them in "Needs you". What you told it to forget goes in the prompt so it does not come back.
+- **Human evidence rule**: the stretch arrives numbered and each proposed memory cites the numbers of the messages that prove it. Only your messages count: an agent's guess, plan or assumption never becomes a memory. Skills do not require it (a procedure can come from the agent's work).
+- **Confirmation:** consolidation returns the ids of existing memories that the stretch confirmed again, and repeating an active memory (by any path) also confirms it. `confirmedAt` orders the budget.
+- **Retrieval in three levels:** up to 8,000 characters fixed in the context: first the memories you marked as **essential** ("Always in context"), then the most recently confirmed of each scope in rotation (you, the project and the agent share the space; before, yours took up almost all of it). On each turn, the FTS5 search (BM25) brings the 5 that best match **your last 3 messages**; and the agent searches for the rest with `zorel_search_memories` (up to 10), which asks for words and synonyms and tells it to try again before treating the fact as never stored. Consolidation writes **keywords** into each memory (synonyms, related terms, the other language), indexed in the search and never shown, so a question in other words finds the fact. Personal memories (`user`) only reach their own owner (`owner`); the unique key is still (scope, text) and will include the owner once there is hosting. No embeddings for now: FTS5 (BM25) only; the 2026-11-04 evaluation (`apps/server/bench/`) measures when it becomes worth it.
+- **Evaluation (2026-11-04, `apps/server/bench/`):** `memory-recall.bench.ts` (10 thousand memories, no model: time, accuracy, budget, leakage across scopes and owners) and `memory-consolidation.bench.ts` (15 conversations with a real model). With Haiku: 11/11 facts learned, 0 false memories, 0/2 secrets stored, a correction becomes a replacement 1/1, and the learned fact is found with other words 4/4. Building a turn's memory with 10 thousand memories: p95 ~50 ms.
+- **Consolidation with rules in the code, not only in the prompt:** the text goes to the model without credentials (`redact`: `secretlint`'s recommended rules, the secrets Zorel stores and "the password is X" said in words), and summaries, memories and skills with credentials are discarded; the response is read with Effect Schema, item by item; a memory must cite one of your messages and cannot carry a name or number that only the agent said (the cat "Whiskers" from the agent's poem); a fact that only rewrites an active memory confirms it (words in common, Jaccard ≥ 0.6), and a correction ("I moved to Berlin") stays pending as an update of the old memory (`replaces`), applied on approval, without leaving the two contradicting each other. Temporary instructions ("only this week") do not become memories.
+- **Next (phase 3b):** the pages below. The design target: Markdown files as the truth, FTS5 index with links, versions, change packages with hash and rebase, curator at the end of the conversation, cited sources, periodic review of contradictions.
 
-**Modelo único: a página.**
+**Single model: the page.**
 
 ```
-página = { escopo: projeto | agente | você, tipo, título, resumo (1 linha), corpo,
-           estado: ativa | pendente (só "você") | aposentada, versão anterior,
-           usos, último uso, origem: turnos que a geraram, dono e público (D17) }
+page = { scope: project | agent | you, type, title, summary (1 line), body,
+         state: active | pending ("you" only) | retired, previous version,
+         uses, last use, origin: turns that produced it, owner and audience (D17) }
 
-tipo: fato · decisão · como-fazer · armadilha · referência · sessão
+type: fact · decision · how-to · pitfall · reference · session
 ```
 
-As memórias e skills de hoje migram para páginas: memória → `fato`, skill → `como-fazer`.
+Today's memories and skills migrate to pages: memory → `fact`, skill → `how-to`.
 
-**1. Captura.** O runtime já vê cada turno. Ele grava as **observações**: o pedido, os passos de trabalho (ferramentas, arquivos, comandos, erros) e a resposta, **com segredos removidos antes de gravar**. Não há hooks nem processo extra.
+**1. Capture.** The runtime already sees each turn. It records the **observations**: the request, the work steps (tools, files, commands, errors) and the response, **with secrets removed before writing**. There are no hooks and no extra process.
 
-**2. Consolidação**, disparada ao fechar um bloco de trabalho (fração da janela de contexto atingida, fim do chat ou botão):
-- **Sem LLM, sempre:** página `sessão` extraída das observações (o que foi pedido, feito, alterado, o que falhou e o que ficou aberto) e o **handoff tipado** do chat.
-- **Com LLM, opcional** (um modelo barato, uma chamada por bloco): propõe criar ou atualizar páginas de `decisão`, `armadilha`, `como-fazer` e `fato`, e **aposentar** a página que a conversa mostrou estar desatualizada.
-  - O que é do **projeto ou do agente** entra direto, como nova versão.
-  - O que é **sobre você** fica pendente até aprovação.
-  - Teto de pendentes: 20.
+**2. Consolidation**, triggered when a block of work closes (a fraction of the context window reached, end of the chat or a button):
+- **Without an LLM, always:** a `session` page extracted from the observations (what was asked, done, changed, what failed and what was left open) and the chat's **typed handoff**.
+- **With an LLM, optional** (a cheap model, one call per block): proposes creating or updating `decision`, `pitfall`, `how-to` and `fact` pages, and **retiring** the page the conversation showed to be outdated.
+  - What belongs to the **project or the agent** goes in directly, as a new version.
+  - What is **about you** stays pending until approval.
+  - Cap on pending items: 20.
 
-**3. Recuperação:**
-- **Resumo de entrada** (camada do contexto, seção 7): título + resumo de 1 linha das páginas **fixadas** e das mais relevantes (recência + usos), dentro de um orçamento de ~1.500 tokens. O corpo não entra.
-- **`zorel.knowledge_search`**: busca FTS5 (BM25) no título, resumo e corpo, devolvendo trechos com o link da página. **`zorel.knowledge_read`**: abre a página inteira.
-- Cada página entregue ao modelo conta um uso. O que é usado sobe no resumo de entrada; o que não é, desce sozinho.
-- **Embeddings só com medição:** se a avaliação mostrar que a busca por palavra perde recall em paráfrases, entra um modelo local pequeno no processo, por força bruta no SQLite (sem índice vetorial nem serviço externo).
+**3. Retrieval:**
+- **Entry brief** (a context layer, section 7): title + 1-line summary of the **pinned** pages and the most relevant ones (recency + uses), within a budget of ~1,500 tokens. The body does not go in.
+- **`zorel.knowledge_search`**: FTS5 search (BM25) over title, summary and body, returning snippets with the page link. **`zorel.knowledge_read`**: opens the whole page.
+- Each page delivered to the model counts as one use. What is used rises in the entry brief; what is not sinks on its own.
+- **Embeddings only with measurement:** if the evaluation shows that word search loses recall on paraphrases, a small local model comes into the process, with brute force in SQLite (no vector index or external service).
 
-**4. Passar o bastão.** O handoff tipado (`feito, falhou, em aberto, próximo passo, arquivos`) fica preso ao chat. Ele é **oferecido** na retomada e nunca consumido sozinho (lição do ai-memory).
+**4. Hand off.** The typed handoff (`feito, falhou, em aberto, próximo passo, arquivos`) is tied to the chat. It is **offered** on resume and never consumed on its own.
 
-### 8.1 Gerenciar o conhecimento
+### 8.1 Managing knowledge
 
-| Ação | Onde |
+| Action | Where |
 |---|---|
-| **Feed "o que o Zorel aprendeu"**: páginas criadas, atualizadas e aposentadas, por projeto e por dia | Tela Conhecimento |
-| Ler, editar, **fixar**, aposentar e restaurar uma página | Tela Conhecimento |
-| **Histórico de versões e desfazer** de cada página | Página |
-| Aprovar, editar ou descartar o que é **sobre você** | Fila "Para revisar" |
-| Ver de onde a página veio (turnos de origem, com link) | Página |
-| **"O que o modelo viu"**: por resposta, as camadas enviadas e os tokens de cada uma (gravado no turno) | Chat |
-| Desligar o aprendizado de um agente ou de um projeto | Configurações do agente ou do projeto |
-| Exportar o conhecimento do projeto em Markdown | Tela Conhecimento |
+| **"What Zorel learned" feed**: pages created, updated and retired, per project and per day | Knowledge screen |
+| Read, edit, **pin**, retire and restore a page | Knowledge screen |
+| **Version history and undo** for each page | Page |
+| Approve, edit or discard what is **about you** | "To review" queue |
+| See where the page came from (origin turns, with a link) | Page |
+| **"What the model saw"**: per response, the layers sent and the tokens of each one (recorded in the turn) | Chat |
+| Turn off learning for an agent or a project | Agent or project settings |
+| Export the project's knowledge as Markdown | Knowledge screen |
 
-**Backlog com critério de entrada:**
+**Backlog with entry criteria:**
 
-| Item | Entra quando |
+| Item | Comes in when |
 |---|---|
-| Embeddings locais | A avaliação mostrar perda de recall em paráfrases |
-| Detecção de quase-duplicata e contradição | Duplicatas aparecerem no feed com frequência |
-| Feedback "ajudou / errada" | O resumo de entrada trouxer páginas inúteis com frequência |
-| Espelho em Markdown na pasta do projeto | Pedido de versionar o conhecimento junto com o código |
-| RAG de documentos por upload | Necessidade real de buscar em documentos que não nasceram do trabalho |
-| Grafo, entidades, tiers de decaimento | Mais de ~5 mil páginas por projeto ou recall insuficiente |
-| Integração mem0 | Via MCP, para quem quiser, já funciona sem código novo |
+| Local embeddings | The evaluation shows recall loss on paraphrases |
+| Near-duplicate and contradiction detection | Duplicates show up in the feed often |
+| "Helped / wrong" feedback | The entry brief often brings useless pages |
+| Markdown mirror in the project folder | A request to version knowledge together with the code |
+| Document RAG by upload | A real need to search documents that did not come from the work |
+| Graph, entities, decay tiers | More than ~5 thousand pages per project or insufficient recall |
+| mem0 integration | Via MCP, for whoever wants it, it already works without new code |
 
-## 9. Ferramentas, aprovações e interação entre agentes
+## 9. Tools, approvals and interaction between agents
 
-Referência: OpenBot (`docs/architecture/agents.md` "Agent communication policy" e `structure.md` sobre permissões). Só ideias: a licença é PolyForm Noncommercial. O Tucano entra no vínculo da aprovação à chamada exata e na recusa com motivo.
+### 9.1 Tools
 
-### 9.1 Ferramentas
+- **MCP gateway per turn** (already exists): secret URL, closed list, `read`/`approve`/`auto` modes per server and global or per-project scope.
+- **Internal `zorel.*` tools** in the same gateway: knowledge (`knowledge_search`, `knowledge_read`), history (`history_search`, `history_read`), team (`list_agents`, `send_message`, `start_task`, `interrupt_agent`) and `ask_user`. When they go past about 15, they come in through on-demand search (`tool_search`).
+- **Project's default agent:** a new chat in the project starts with it; any member can reply afterwards.
+- **Project workspace:** the project gets `path` (a folder on disk, optional). It is the `cwd` of the project's agents; without a folder, the agent runs in an empty Zorel folder, as today. **The agent never adds folders to itself** (only you do), and Zorel refuses the disk root, the home folder and Zorel's data folder.
+- **Undoing edits:** the Claude Agent SDK has `rewindFiles` (checkpoint per message). The other harnesses depend on git: Zorel suggests committing or using a worktree before Workspace-level work.
+- **Connectors with OAuth (done on 2026-11-04):** Settings › Connectors brings ready-made services. Remote ones that follow the MCP authorization spec (Notion, Linear, Jira and Confluence, Sentry, Vercel, Supabase, Stripe) connect with one click: the SDK does discovery, dynamic client registration, PKCE and refresh (`server/oauth.ts`, `McpOAuth`). The client registration, the tokens and the verifier live in the keychain (`mcp-oauth:<id>`), never in the database. Connecting (`POST /api/mcp/:id/sign-in`) returns the authorization URL, which opens in the browser; the service comes back to `GET /api/oauth/callback`, which only accepts a `state` issued by Zorel, once, for 10 minutes. `mcp_servers.auth` (`none`/`oauth`) says whether the Hub passes the `authProvider`. GitHub does not register clients, so it asks for a personal token (it becomes the `Authorization` header). Context7, Figma (desktop app) and Playwright ask for nothing. When the service refuses the credential (401, or a revoked OAuth token with no refresh), the Hub marks the server as refused (`hub.refused`, cleared when connecting or changing the credential) and Settings asks to "Reconnect"; a new token comes in through `PATCH /api/mcp/:id` with `env`, without recreating the server (per-agent permissions, tied to the id, remain). Connectors start in `approve` mode; the list of custom servers ("Custom servers") remains for anything else.
 
-- **Gateway MCP por turno** (já existe): URL secreta, lista fechada, modos `read`/`approve`/`auto` por servidor e escopo global ou por projeto.
-- **Ferramentas internas `zorel.*`** no mesmo gateway: conhecimento (`knowledge_search`, `knowledge_read`), histórico (`history_search`, `history_read`), equipe (`list_agents`, `send_message`, `start_task`, `interrupt_agent`) e `ask_user`. Quando passarem de cerca de 15, entram por busca sob demanda (`tool_search`), como no OpenBot.
-- **Agente padrão do projeto:** o chat novo no projeto começa com ele; qualquer membro pode responder depois (ideia do AgenticOS).
-- **Workspace do projeto:** o projeto ganha `path` (pasta no disco, opcional). Ela é o `cwd` dos agentes do projeto; sem pasta, o agente roda numa pasta vazia do Zorel, como hoje. **O agente nunca acrescenta pastas a si mesmo** (só você), e o Zorel recusa a raiz do disco, a home e a pasta de dados do Zorel.
-- **Desfazer edições:** o Claude Agent SDK tem `rewindFiles` (checkpoint por mensagem). Os outros harnesses dependem de git: o Zorel sugere commitar ou usar uma worktree antes de trabalho em nível Workspace.
-- **Conectores com OAuth (feito em 2026-11-04):** Settings › Connectors traz serviços prontos. Os remotos que seguem a especificação de autorização do MCP (Notion, Linear, Jira e Confluence, Sentry, Vercel, Supabase, Stripe) conectam com um clique: o SDK faz a descoberta, o registro dinâmico do cliente, o PKCE e a renovação (`server/oauth.ts`, `McpOAuth`). O registro do cliente, os tokens e o verificador ficam no keychain (`mcp-oauth:<id>`), nunca no banco. Conectar (`POST /api/mcp/:id/sign-in`) devolve a URL de autorização, que abre no navegador; o serviço volta para `GET /api/oauth/callback`, que só aceita um `state` emitido pelo Zorel, uma vez, por 10 minutos. `mcp_servers.auth` (`none`/`oauth`) diz se o Hub passa o `authProvider`. O GitHub não registra clientes, então pede um token pessoal (vira o cabeçalho `Authorization`). Context7, Figma (app desktop) e Playwright não pedem nada. Quando o serviço recusa a credencial (401, ou token OAuth revogado sem renovação), o Hub marca o servidor como recusado (`hub.refused`, limpo ao conectar ou trocar a credencial) e Settings pede "Reconnect"; um token novo entra pelo `PATCH /api/mcp/:id` com `env`, sem recriar o servidor (as permissões por agente, presas ao id, continuam). Conectores entram em modo `approve`; a lista de servidores próprios ("Custom servers") continua para qualquer outro.
+**How it turned out (2026-11-03):**
+- `projects.path` validated by the `Workspace` service (absolute, real, a folder; refuses the root, home and the data folder). Without a folder, the agent works in `<dataDir>/runs/<chat>`.
+- **Restore points the same for all harnesses** (revised decision: instead of `rewindFiles` on Claude and git only on the others): a **shadow** git repository per project in `<dataDir>/workspaces/<id>.git` (`GIT_DIR` there, `GIT_WORK_TREE` = the folder). Before and after each turn Zorel records the tree (`git add -A` + `write-tree`, respecting the project's `.gitignore`, plus `node_modules`). The turn's diff and undo come from these two trees; undo refuses if a file from the turn changed afterwards (`UndoConflict`). The project's own git repository is never touched.
+- Claude: `tools` = Read, Glob, Grep, Edit, Write, Bash; `canUseTool` applies the level (`engines/policy.ts`: commands that delete, publish or use the network always ask in Workspace). Codex: `sandbox`/`approvalPolicy` per level, shell on in the app-server, `item/commandExecution/requestApproval` and `item/fileChange/requestApproval` answered by Zorel's card. The machine's skills turned off in Zorel's `CODEX_HOME` (`skills/config/write`), never in the user's.
+- Native steps (Claude's `tool_use`/`tool_result`, Codex's `commandExecution`/`fileChange` items) become `WorkStep`; reading and searching do not count as "acted" for failover, editing and commands do.
+- Handoff: each response carries into the next turn a note of what it did ("[Done in this turn: edited a.ts (+2 −1); ran `bun test` (ok)]"), so another agent or another provider knows what changed.
+- Watchdog: an engine with no signal at all for 10 min, with no approval pending, fails as `unavailable` (the process may have died without the SDK noticing) and the session is closed.
+- **Files like an editor's explorer** (2026-11-04): `POST /api/chats/:id/fs {op, path?, to?, paths?, id?}` with `op` = create | rename | move | delete | restore | open | reveal, over the chat's folder (`chatRoot`: the worktree or the project folder). `fs-ops.ts` checks that every path stays inside the folder (`relative()`, works on Windows), moves across disks (EXDEV → copy and delete) and sends what is deleted to Zorel's trash (`<dataDir>/trash/<id>/`, keeping the paths; `restore` undoes it; it goes away after 7 days). Open and reveal in folder use each system's command (`open`/`open -R`, `cmd /c start`/`explorer /select,`, `xdg-open`). In the interface, React Aria `Tree` (already installed, instead of @headless-tree): multiple selection, F2 renames in place, Delete deletes with Undo, dragging moves into the folder, double click opens (a changed file opens the diff), context menu. Icons per format: the language's brand from `simple-icons` (already installed) in its color, lucide shapes for the rest. The tree is virtualized (React Aria's `Virtualizer` + `ListLayout`, 28px rows): only the visible rows stay in the DOM. Opening a file (double click, Cmd+Enter, Open menu) creates a tab with the code (`GET /api/chats/:id/file`, @pierre/diffs's `File`); the first tab is always the tree. Search by name filters the tree and opens the folders along the path.
+- Interface: a summary of changes under each response (view, undo), a Changes/Files right panel and a read-only terminal with the agents' commands. The diff uses `@pierre/diffs` 1.6.1 (`FileDiff`, syntax highlighting, in-line changes, unchanged lines collapsed) **inside a worker pool** (`diff-pool.tsx`). Without the pool, a bug in the lib shows up: with React 19's `StrictMode` and `disableFileHeader`, the remount finds the empty `<pre>` from the first mount, treats it as already rendered and never draws (no error). Colors come from the `--z-*` tokens via `unsafeCSS` (CSS variables cross the shadow DOM) and the theme follows Zorel's light/dark. The panel loads the viewer on demand.
 
-**Como ficou (2026-11-03):**
-- `projects.path` validado pelo serviço `Workspace` (absoluto, real, pasta; recusa raiz, home e a pasta de dados). Sem pasta, o agente trabalha em `<dataDir>/runs/<chat>`.
-- **Pontos de restauração iguais para todos os harnesses** (decisão revisada: em vez de `rewindFiles` no Claude e git só nos outros): um repositório git **sombra** por projeto em `<dataDir>/workspaces/<id>.git` (`GIT_DIR` lá, `GIT_WORK_TREE` = a pasta). Antes e depois de cada turno o Zorel grava a árvore (`git add -A` + `write-tree`, respeitando o `.gitignore` do projeto, mais `node_modules`). O diff do turno e o desfazer saem dessas duas árvores; o desfazer recusa se um arquivo do turno mudou depois (`UndoConflict`). O repositório git do próprio projeto nunca é tocado.
-- Claude: `tools` = Read, Glob, Grep, Edit, Write, Bash; `canUseTool` aplica o nível (`engines/policy.ts`: comandos que apagam, publicam ou usam a rede sempre perguntam em Workspace). Codex: `sandbox`/`approvalPolicy` por nível, shell ligado no app-server, `item/commandExecution/requestApproval` e `item/fileChange/requestApproval` respondidos pelo cartão do Zorel. Skills da máquina desligadas no `CODEX_HOME` do Zorel (`skills/config/write`), nunca no do usuário.
-- Passos nativos (`tool_use`/`tool_result` do Claude, itens `commandExecution`/`fileChange` do Codex) viram `WorkStep`; leitura e busca não contam como "agiu" para o failover, edição e comando contam.
-- Handoff: cada resposta leva para o próximo turno uma nota do que fez ("[Feito neste turno: editou a.ts (+2 −1); rodou `bun test` (ok)]"), então outro agente ou outro provider sabe o que mudou.
-- Vigia: um engine sem nenhum sinal por 10 min, sem aprovação esperando, falha como `unavailable` (o processo pode ter morrido sem o SDK perceber) e a sessão é fechada.
-- **Files como o explorer de um editor** (2026-11-04): `POST /api/chats/:id/fs {op, path?, to?, paths?, id?}` com `op` = create | rename | move | delete | restore | open | reveal, sobre a pasta do chat (`chatRoot`: a worktree ou a pasta do projeto). `fs-ops.ts` confere que todo caminho fica dentro da pasta (`relative()`, vale no Windows), move entre discos (EXDEV → copia e apaga) e manda o apagado para a lixeira do Zorel (`<dataDir>/trash/<id>/`, mantendo os caminhos; `restore` desfaz; some depois de 7 dias). Abrir e mostrar na pasta usam o comando de cada sistema (`open`/`open -R`, `cmd /c start`/`explorer /select,`, `xdg-open`). Na interface, React Aria `Tree` (já instalado, em vez do @headless-tree): seleção múltipla, F2 renomeia no lugar, Delete apaga com Undo, arrastar move para a pasta, duplo clique abre (o arquivo mudado abre o diff), menu de contexto. Ícones por formato: a marca da linguagem do `simple-icons` (já instalado) na cor dela, formas do lucide para o resto. A árvore é virtualizada (`Virtualizer` + `ListLayout` do React Aria, linhas de 28px): só as linhas visíveis ficam no DOM. Abrir um arquivo (duplo clique, Cmd+Enter, menu Open) cria uma aba com o código (`GET /api/chats/:id/file`, `File` do @pierre/diffs); a primeira aba é sempre a árvore. Busca por nome filtra a árvore e abre as pastas do caminho.
-- Interface: resumo de mudanças sob cada resposta (ver, desfazer), painel direito Changes/Files e terminal só leitura com os comandos dos agentes. O diff usa o `@pierre/diffs` 1.6.1 (`FileDiff`, realce de sintaxe, mudança dentro da linha, linhas inalteradas recolhidas) **dentro de um pool de workers** (`diff-pool.tsx`, como o T3 Code faz). Sem o pool, um bug da lib aparece: com o `StrictMode` do React 19 e `disableFileHeader`, a remontagem acha o `<pre>` vazio da primeira montagem, trata como já renderizado e nunca desenha (sem erro). As cores vêm dos tokens `--z-*` via `unsafeCSS` (variáveis CSS atravessam o shadow DOM) e o tema segue o claro/escuro do Zorel. O painel carrega o visualizador sob demanda.
+### 9.2 Approvals
 
-### 9.2 Aprovações
+**Access level per agent**, chosen only by you, one of three:
 
-**Nível de acesso por agente**, escolhido só por você, os mesmos três do OpenBot:
-
-| Nível | O que faz sem perguntar | O que pergunta | Claude SDK | Codex | OpenCode/ACP |
+| Level | What it does without asking | What it asks about | Claude SDK | Codex | OpenCode/ACP |
 |---|---|---|---|---|---|
-| **Workspace** (padrão) | Ler; editar e rodar comandos **dentro** do workspace (pasta do projeto + pastas que você adicionou) | Escrever fora dele; rede; comandos destrutivos; ferramentas MCP de escrita conforme o modo do servidor | `canUseTool` decide por caminho e comando | sandbox `workspace-write` + `approvalPolicy: on-request` | `session/request_permission` + permissões injetadas na config |
-| **Perguntar antes** | Só ler | Toda escrita e todo comando | `canUseTool` pergunta tudo que não é leitura | `read-only` + `on-request` | tudo em `ask` |
-| **Acesso total** | Tudo | Nada (só o que o modo do servidor MCP exigir) | tudo permitido | `danger-full-access` | tudo em `allow` |
+| **Workspace** (default) | Read; edit and run commands **inside** the workspace (project folder + folders you added) | Writing outside it; network; destructive commands; MCP write tools according to the server's mode | `canUseTool` decides by path and command | sandbox `workspace-write` + `approvalPolicy: on-request` | `session/request_permission` + permissions injected in the config |
+| **Ask first** | Read only | Every write and every command | `canUseTool` asks about everything that is not reading | `read-only` + `on-request` | everything on `ask` |
+| **Full access** | Everything | Nothing (only what the MCP server's mode requires) | everything allowed | `danger-full-access` | everything on `allow` |
 
-**Permissões por agente (feito em 2026-11-04, ideias do Tucano, código próprio):** além do nível de acesso (pasta e shell), cada agente tem `permissions` (coluna JSON): `web` (busca e leitura de páginas pelas ferramentas do próprio engine: `WebSearch`/`WebFetch` no Claude, `web_search` no Codex, pedidos `fetch` no ACP), `browser` (as ferramentas `browser_*` do Zorel), `grants` por servidor MCP — `none` esconde, `read` expõe só ferramentas de leitura, `write` todas; sem entrada segue o modo do servidor — e `always`, as regras do "Sempre permitir" (`<servidor>:<ferramenta>` ou `browser`). Ferramentas destrutivas (classe `sensitive`: apagar, enviar, publicar, pagar…) sempre pedem, salvo servidor em `auto` ou regra `always`; cliques no navegador cujo rótulo compromete algo (comprar, publicar, enviar, apagar…) pedem sempre e não aceitam "sempre". O agente pede mais com `zorel_request_access` (web, browser ou um conector com nível), aprovado num cartão. A regra pura fica em `server/permissions.ts`; a página do agente tem a aba **Tools and access**. Padrão: web e browser ligados, conectores pelo modo do servidor.
+**Per-agent permissions (done on 2026-11-04):** besides the access level (folder and shell), each agent has `permissions` (a JSON column): `web` (search and page reading through the engine's own tools: `WebSearch`/`WebFetch` on Claude, `web_search` on Codex, `fetch` requests on ACP), `browser` (Zorel's `browser_*` tools), `grants` per MCP server — `none` hides, `read` exposes only read tools, `write` all of them; with no entry it follows the server's mode — and `always`, the "Always allow" rules (`<server>:<tool>` or `browser`). Destructive tools (class `sensitive`: delete, send, publish, pay…) always ask, except for a server on `auto` or an `always` rule; browser clicks whose label commits to something (buy, publish, send, delete…) always ask and do not accept "always". The agent asks for more with `zorel_request_access` (web, browser or a connector with a level), approved on a card. The pure rule lives in `server/permissions.ts`; the agent page has the **Tools and access** tab. Default: web and browser on, connectors by the server's mode.
 
-**Criar agente com IA (2026-11-04):** o Builder é um agente do próprio Zorel (`agents.builtin = "builder"`), fora das listas e dos seletores e das ferramentas de equipe; conversa-se com ele só na tela **Build with AI** (`#/build[/projeto]`), num chat oculto (`chats.hidden`) recriado a cada visita. A proposta (`zorel_create_agent`) aparece como prévia ao lado, com Criar e Agora não (o mesmo cartão de aprovação). Como no Tucano, a proposta já traz os poderes (`web`, `browser`, `connectors` por nome com nível, `reason`); o Builder propõe o mínimo (navegador só se pedido, conectores listados, o resto sem acesso) e seu teto é workspace (não o "ask" dele, que não age); a tela segue em dois passos (Describe, Powers) e termina criando o agente com os poderes ajustados e abrindo a página dele (sem primeira tarefa, por decisão do usuário). Testado ao vivo com Claude: proposta em ~10 s. O prompt do Builder é do Zorel e se atualiza ao abrir a tela; para trabalho de código sem projeto ele pede para escolher o projeto no seletor da tela antes de propor. As ferramentas do gateway têm prazo maior que o do cartão de aprovação (Claude `MCP_TOOL_TIMEOUT`, Codex `tool_timeout_sec`: 31 min), senão uma aprovação demorada derrubava a chamada (~60 s no Claude).
+**Creating an agent with AI (2026-11-04):** the Builder is an agent of Zorel's own (`agents.builtin = "builder"`), outside the lists, the pickers and the team tools; you talk to it only on the **Build with AI** screen (`#/build[/project]`), in a hidden chat (`chats.hidden`) recreated on each visit. The proposal (`zorel_create_agent`) shows up as a preview on the side, with Create and Not now (the same approval card). The proposal already carries the powers (`web`, `browser`, `connectors` by name with level, `reason`); the Builder proposes the minimum (browser only if asked, connectors listed, the rest without access) and its ceiling is workspace (not its own "ask", which does not act); the screen follows two steps (Describe, Powers) and ends by creating the agent with the adjusted powers and opening its page (no first task, by the user's decision). Tested live with Claude: proposal in ~10 s. The Builder's prompt belongs to Zorel and updates when the screen opens; for code work without a project it asks you to choose the project in the screen's picker before proposing. Gateway tools have a longer timeout than the approval card's (Claude `MCP_TOOL_TIMEOUT`, Codex `tool_timeout_sec`: 31 min), otherwise a slow approval would drop the call (~60 s on Claude).
 
-**O cartão de aprovação**, igual para ferramenta nativa e MCP:
-- Mostra o agente, a ferramenta, os argumentos (com segredos mascarados) e a pasta.
-- **Vínculo à chamada exata:** um hash da ferramenta mais os argumentos canônicos. Uma aprovação não vale para outra chamada.
-- Respostas possíveis:
-  - **Aprovar uma vez.**
-  - **Sempre permitir** esta ferramenta, neste agente. Isso grava uma regra visível e revogável (feito em 2026-11-04 para ferramentas MCP e o navegador: o cartão só mostra o botão quando a aprovação traz `alwaysKey`; ferramentas nativas do engine ainda aprovam uma vez).
-  - **Recusar com motivo.** O agente lê o motivo e não tenta de novo sem pedir.
-- **Persistido no banco** (`approvals`): sobrevive a reinício e fechamento da aba.
-- **Expira** (padrão 30 min), e a expiração vale como recusa.
-- **Promover um agente a Acesso total responde sozinho** as aprovações que ele tem esperando (como `answerGrantedRequests` do OpenBot).
+**The approval card**, the same for native and MCP tools:
+- Shows the agent, the tool, the arguments (with secrets masked) and the folder.
+- **Bound to the exact call:** a hash of the tool plus the canonical arguments. An approval does not apply to another call.
+- Possible answers:
+  - **Approve once.**
+  - **Always allow** this tool, for this agent. This records a visible and revocable rule (done on 2026-11-04 for MCP tools and the browser: the card only shows the button when the approval carries `alwaysKey`; the engine's native tools still approve once).
+  - **Refuse with a reason.** The agent reads the reason and does not try again without asking.
+- **Persisted in the database** (`approvals`): survives a restart and closing the tab.
+- **Expires** (default 30 min), and expiry counts as a refusal.
+- **Promoting an agent to Full access answers on its own** the approvals it has pending.
 
-**Tela "Precisa de você":** reúne aprovações, perguntas (`ask_user`) e logins pendentes de todos os chats, tarefas e rotinas, com link para a origem e notificação do desktop.
-- A aprovação de uma tarefa delegada aparece **também** no chat de quem delegou.
-- **Rotina não tem ninguém olhando.** Cada rotina define o que fazer quando precisar de aprovação:
-  - **recusar e reportar** (padrão);
-  - **esperar** até X horas, avisando.
+**"Needs you" screen:** gathers pending approvals, questions (`ask_user`) and logins from all chats, tasks and routines, with a link to the origin and a desktop notification.
+- The approval of a delegated task **also** shows up in the chat of whoever delegated it.
+- **A routine has nobody watching.** Each routine defines what to do when it needs approval:
+  - **refuse and report** (default);
+  - **wait** up to X hours, with a notice.
 
-**Regras de segurança** (do OpenBot, mantidas):
-- **Um agente só pode restringir acesso** (o próprio ou de um colega), nunca ampliar. Só você amplia.
-- **Agente criado por outro herda os limites do criador.** Um agente em Workspace não escapa do sandbox criando um colega.
-- **Mudança em servidor MCP feita por agente** (só quando você pede) sempre passa por aprovação. As ferramentas nunca recebem nem devolvem valores de cabeçalho ou variável: chave você digita na tela de MCP.
-- **Ferramentas de canal** recusam pedidos que não vieram de uma pessoa.
+**Security rules**:
+- **An agent can only restrict access** (its own or a colleague's), never widen it. Only you widen it.
+- **An agent created by another inherits its creator's limits.** An agent in Workspace does not escape the sandbox by creating a colleague.
+- **A change to an MCP server made by an agent** (only when you ask) always goes through approval. Tools never receive or return header or variable values: you type keys on the MCP screen.
+- **Channel tools** refuse requests that did not come from a person.
 
-### 9.3 Interação entre agentes
+### 9.3 Interaction between agents
 
-**Implementado (2026-11-03):** delegação por `@menção` (handoff com teto de 3 respostas seguidas) e as ferramentas próprias do Zorel, oferecidas a todo turno ao lado das MCP:
-- `zorel_list_agents` e `zorel_read_agent`: leem a equipe (globais + do projeto; agente por id ou `@handle`). Livres.
-- `zorel_create_agent` e `zorel_update_agent`: viram **cartão de aprovação** com o perfil campo a campo e só gravam no seu OK; auditadas em nome do agente e registradas como versão do agente. O novo agente nunca tem acesso acima de quem propõe (ask < workspace < full) e um agente só estreita o acesso de outro. Sem modelo, herda o de quem propõe; modelo inválido volta como erro com os providers válidos (sem uma `list_models` à parte).
-- `zorel_create_agent` aceita **uma equipe inteira** (`agents: [...]`, até 8, nomes distintos): um cartão só com cada perfil sob o nome dele; aprovar cria todos.
-- **Builder** (ideia do "Tuca" do Tucano, para equipes): um agente global de sistema (título "Designs agents and teams", acesso `ask`), criado na primeira vez que você usa **Build with AI** (tela Agents ou aba Agents do projeto), que abre um chat com ele no projeto. Ele entende o objetivo (no máximo 3 perguntas), lê a equipe para não duplicar (melhora um agente existente com `zorel_update_agent` em vez de criar um quase igual), propõe a equipe num cartão e, se o trabalho for recorrente, as rotinas. É um agente comum: dá para editar as instruções dele.
-- `zorel_search_memories`: busca na memória além do orçamento do contexto (seção 8).
-- **Navegador** (ideias do OpenBot, mais enxutas): além de abrir, ler e clicar, `browser_hover`, `browser_select`, `browser_scroll`, `browser_upload` (só arquivos da pasta do chat, por input ou pelo seletor de arquivos), `browser_dialog` (alert/confirm/prompt são recusados por padrão e relatados no próximo resultado; aceitar o próximo é pedido explícito) e `browser_run` — até 20 passos declarativos numa chamada, devolvendo a página uma vez (o `run_script` do OpenBot sem executar JavaScript arbitrário). Perfis separados por agente ficam de fora: cada perfil é outro processo do Chrome; entram se logins separados virarem necessidade.
-- `zorel_routines`: lista, propõe e cancela rotinas (seção 13, fase 7), sempre com cartão.
-- Cada perfil de agente guarda **versões** (quem mudou, quando) com restaurar, e exporta/importa como `.agent.json` sem a conta.
+**Implemented (2026-11-03):** delegation by `@mention` (handoff with a cap of 3 replies in a row) and Zorel's own tools, offered on every turn alongside the MCP ones:
+- `zorel_list_agents` and `zorel_read_agent`: read the team (global + project; agent by id or `@handle`). Free.
+- `zorel_create_agent` and `zorel_update_agent`: become an **approval card** with the profile field by field and only save on your OK; audited in the agent's name and recorded as an agent version. The new agent never has access above whoever proposes it (ask < workspace < full) and an agent only narrows another's access. Without a model, it inherits the proposer's; an invalid model comes back as an error with the valid providers (without a separate `list_models`).
+- `zorel_create_agent` accepts **a whole team** (`agents: [...]`, up to 8, distinct names): a single card with each profile under its name; approving creates all of them.
+- **Builder** (for teams): a global system agent (title "Designs agents and teams", `ask` access), created the first time you use **Build with AI** (Agents screen or the project's Agents tab), which opens a chat with it in the project. It understands the goal (at most 3 questions), reads the team so as not to duplicate (it improves an existing agent with `zorel_update_agent` instead of creating a near-copy), proposes the team on a card and, if the work is recurring, the routines. It is an ordinary agent: its instructions can be edited.
+- `zorel_search_memories`: searches memory beyond the context budget (section 8).
+- **Browser** (lean): besides opening, reading and clicking, `browser_hover`, `browser_select`, `browser_scroll`, `browser_upload` (only files from the chat's folder, through an input or the file picker), `browser_dialog` (alert/confirm/prompt are refused by default and reported in the next result; accepting the next one is an explicit request) and `browser_run` — up to 20 declarative steps in one call, returning the page once (without running arbitrary JavaScript). Separate profiles per agent are left out: each profile is another Chrome process; they come in if separate logins become a need.
+- `zorel_routines`: lists, proposes and cancels routines (section 13, phase 7), always with a card.
+- Each agent profile keeps **versions** (who changed it, when) with restore, and exports/imports as `.agent.json` without the account.
 
-- **`zorel_start_task` (2026-11-04)**, a delegação com retorno: o colega trabalha num **chat próprio** (aparece na barra lateral com status ao vivo; título "<agente>: <tarefa>"), com a tarefa como primeira mensagem; quando a fila desse chat esvazia, a última resposta volta ao chat de origem como mensagem do colega, com o link "Open the task", e quem pediu faz o próximo turno ali. `reply: false` entrega sem retorno (cobre o `send_message` sem resposta). Limites: 4 tarefas abertas por chat, 2 níveis de aninhamento; colega com acesso maior que o de quem pede só trabalha com cartão de aprovação. `chats.task_of` (o chat que espera o resultado, zerado ao entregar) e `chats.task_by` (quem pediu). Testado ao vivo com Claude Haiku: delegar, responder e continuar em ~6 s.
+- **`zorel_start_task` (2026-11-04)**, delegation with a return: the colleague works in **its own chat** (it shows up in the sidebar with live status; title "<agent>: <task>"), with the task as the first message; when that chat's queue empties, the last reply goes back to the origin chat as a message from the colleague, with the "Open the task" link, and whoever asked takes the next turn there. `reply: false` delivers without a return (covers `send_message` without a reply). Limits: 4 open tasks per chat, 2 levels of nesting; a colleague with more access than the requester only works with an approval card. `chats.task_of` (the chat waiting for the result, cleared on delivery) and `chats.task_by` (who asked). Tested live with Claude Haiku: delegate, reply and continue in ~6 s.
 
-- **Conversa entre agentes (2026-11-04, ideias do OpenBot e do Tucano, código próprio):**
-  - **Roteador (2026-11-04, ideias do Tucano e do OpenBot):** numa equipe, a mensagem sem menção (e que não é complemento) vai para um turno marcado `route`; quando ele começa, uma chamada curta a um modelo barato (`ZOREL_ROUTER_MODEL`, ou o Haiku da assinatura Claude, ou o modelo do chat) lê os papéis da equipe e as últimas 10 mensagens e escolhe **um** agente: o especialista quando o pedido é de um colega, o líder quando é coordenação, vago ou de várias áreas (o líder então divide e fecha). Falha ou resposta ilegível: o líder. Linha "Sent to Tester · <motivo>". `server/router.ts`. Ao vivo: testes → Tester e README → Docsync direto (21 s cada); "lançar a v1" → Tech Lead, que dividiu e fechou.
-  - **Gateway em SSE (2026-11-04):** as chamadas de ferramenta respondem em SSE com um ping a cada 30 s; antes, a resposta JSON só saía no fim, e o cliente HTTP dos engines (undici: 300 s até o primeiro byte) derrubava qualquer aprovação ou pergunta que esperasse mais de 5 minutos.
-  - **Quem responde sem menção (antes do roteador):** o líder (que roteia pelas descrições dos colegas, ver prompt do canal); mas uma mensagem sem menção logo depois de você ter falado com um colega pelo @handle, e ele ter respondido, continua com esse colega (complemento, como no Tucano). O placeholder do campo diz para quem vai.
-  - **Fechamento:** quem passa trabalho por @menção ganha um turno depois que **todos** os chamados respondem (as respostas chegam juntas, como as respostas retidas do OpenBot), salvo se um deles já o chamou de volta; uma resposta que falhou também conta, para nada esperar para sempre. Linha "X handed back to Y".
-  - **Formato de quem recebe trabalho:** Status: done | partial | blocked · Result · Evidence (curto, conferível; do OpenBot). Quem pede não repete a resposta, só fecha; nunca menciona alguém só para agradecer.
-  - **Uma entrega, um repasse:** um colega que recebeu `zorel_start_task` no turno não é chamado de novo pela menção dele na resposta.
-  - **Limite:** 3 respostas seguidas sem mensagem sua; ao parar, a linha "The agents stopped here so they don't talk in circles. Send a message to go on." (como no Tucano).
-  - **Steer** só aparece quando o motor do turno aceita correção no meio (Codex).
-  - Testado ao vivo com Claude Haiku (Tech Lead + Tester + Docsync no demo-app): pedido sem menção → líder passa ao Tester com briefing → Tester responde em Status/Result/Evidence → líder fecha; complemento sem menção fica com o Tester; pedido de README + testes → líder divide entre os dois e fecha uma vez com as duas entregas.
+- **Conversation between agents (2026-11-04):**
+  - **Router (2026-11-04):** in a team, a message without a mention (and that is not a follow-up) goes to a turn marked `route`; when it starts, a short call to a cheap model (`ZOREL_ROUTER_MODEL`, or the Claude subscription's Haiku, or the chat's model) reads the team's roles and the last 10 messages and picks **one** agent: the specialist when the request belongs to a colleague, the lead when it is coordination, vague or spans several areas (the lead then splits and closes). Failure or an unreadable response: the lead. Line "Sent to Tester · <reason>". `server/router.ts`. Live: tests → Tester and README → Docsync directly (21 s each); "launch v1" → Tech Lead, which split and closed.
+  - **Gateway over SSE (2026-11-04):** tool calls respond over SSE with a ping every 30 s; before, the JSON response only came out at the end, and the engines' HTTP client (undici: 300 s to the first byte) dropped any approval or question that waited more than 5 minutes.
+  - **Who replies without a mention (before the router):** the lead (which routes by the colleagues' descriptions, see the channel prompt); but a message without a mention right after you talked to a colleague by @handle, and it replied, continues with that colleague (a follow-up). The field's placeholder says who it goes to.
+  - **Closing:** whoever passes work by @mention gets a turn after **all** of those called reply (the replies arrive together), unless one of them already called it back; a reply that failed also counts, so nothing waits forever. Line "X handed back to Y".
+  - **Format for whoever receives work:** Status: done | partial | blocked · Result · Evidence (short, checkable). Whoever asks does not repeat the answer, only closes; never mentions someone just to thank them.
+  - **One delivery, one hand-off:** a colleague that received `zorel_start_task` in the turn is not called again by its mention in the reply.
+  - **Limit:** 3 replies in a row without a message from you; when it stops, the line "The agents stopped here so they don't talk in circles. Send a message to go on.".
+  - **Steer** only shows up when the turn's engine accepts mid-turn correction (Codex).
+  - Tested live with Claude Haiku (Tech Lead + Tester + Docsync in demo-app): request without a mention → the lead passes it to Tester with a briefing → Tester replies in Status/Result/Evidence → the lead closes; a follow-up without a mention stays with Tester; a README + tests request → the lead splits it between the two and closes once with both deliveries.
 
-- **`zorel_ask_user` (2026-11-04)**: o agente pergunta e espera. A pergunta é um cartão do tipo `question` no mesmo mecanismo das aprovações (chat, "Precisa de você", notificação, 30 min e depois segue): até 6 opções de um clique, resposta livre ou "Skip". A resposta viaja no `reason` do `decide` e volta como resultado da ferramenta ("The user answered: …"); sem resposta, o agente segue com o melhor palpite e diz o que assumiu. O status do chat diz "asks you something" (rótulo `question`). Testado ao vivo com Claude Haiku.
+- **`zorel_ask_user` (2026-11-04)**: the agent asks and waits. The question is a card of type `question` on the same mechanism as approvals (chat, "Needs you", notification, 30 min and then it moves on): up to 6 one-click options, a free answer or "Skip". The answer travels in `decide`'s `reason` and comes back as the tool result ("The user answered: …"); with no answer, the agent continues with its best guess and says what it assumed. The chat status says "asks you something" (label `question`). Tested live with Claude Haiku.
 
-**Planejado — ferramentas** (`zorel.*`):
+**Planned — tools** (`zorel.*`):
 
-| Ferramenta | Comportamento |
+| Tool | Behavior |
 |---|---|
-| `list_agents` | Agentes visíveis com **responsabilidades**, status (`working`/`idle`), fila e última atividade. É o primeiro passo antes de delegar |
-| `send_message(to[], text, expectsReply = true, replyTo?)` | Entrega na fila de cada destinatário. Com `expectsReply`, **a resposta final do destinatário volta sozinha** para quem pediu, como mensagem sem pedido de resposta. Há proteção contra loop de repasse (a origem da cadeia é carregada) e idempotência por chave, para reenvio não duplicar |
-| `start_task(agent, text)` | **Feito como `zorel_start_task`** (acima). Planejado original: abre uma **tarefa paralela**: thread lateral com sessão própria e o resultado de volta. No máximo 2 tarefas rodando por agente (configurável até 4) e 8 abertas por iniciativa do próprio agente |
-| `interrupt_agent(agent)` | Só interrompe trabalho **que o próprio chamador pediu**. Nunca trabalho seu, de rotina ou de outro agente. Cancela primeiro os pedidos dele que estão na fila e deixa um aviso ao alvo do motivo da parada |
-| `ask_user` | **Feito como `zorel_ask_user`** (acima). Planejado original: pergunta a você (aparece em "Precisa de você"). No Claude, usa o `AskUserQuestion` nativo |
+| `list_agents` | Visible agents with **responsibilities**, status (`working`/`idle`), queue and last activity. It is the first step before delegating |
+| `send_message(to[], text, expectsReply = true, replyTo?)` | Delivers to each recipient's queue. With `expectsReply`, **the recipient's final reply comes back on its own** to whoever asked, as a message with no reply requested. There is protection against hand-off loops (the origin of the chain is carried) and idempotency by key, so a resend does not duplicate |
+| `start_task(agent, text)` | **Done as `zorel_start_task`** (above). Original plan: opens a **parallel task**: a side thread with its own session and the result coming back. At most 2 tasks running per agent (configurable up to 4) and 8 open on the agent's own initiative |
+| `interrupt_agent(agent)` | Only interrupts work **that the caller itself asked for**. Never your work, a routine's or another agent's. First cancels its requests that are in the queue and leaves the target a notice of the reason for stopping |
+| `ask_user` | **Done as `zorel_ask_user`** (above). Original plan: asks you (shows up in "Needs you"). On Claude, uses the native `AskUserQuestion` |
 
-**Semântica:**
-- **Pedido para vários agentes:** as respostas esperam na fila de quem pediu até **todas** as cópias terminarem, e então entram num turno só, que diz quem não respondeu. Uma mensagem sua não espera: entra na hora e leva o que já chegou.
-- **Agente ocupado:** a mensagem de outro agente segue o modo do destinatário (fila por padrão, ou steering se o harness suportar). Respostas de pedido múltiplo e trabalho de canal ficam sempre na fila, para chegarem juntas.
-- **Política de delegação no prompt base:**
-  - consultar `list_agents` antes de dizer que não consegue;
-  - delegar a quem tem a responsabilidade;
-  - nunca devolver a tarefa a quem a passou;
-  - não narrar preparação nem trocar confirmações em loop;
-  - resposta delegada no formato **Status / Resultado / Evidência / Desbloqueio**;
-  - a síntese para você começa com o nome do colega;
-  - nunca dizer que verificou algo sem resultado de ferramenta ou resposta que mostre isso;
-  - pode oferecer criar um especialista, mas só cria se você aceitar.
+**Semantics:**
+- **Request to several agents:** the replies wait in the requester's queue until **all** copies finish, and then go into a single turn, which says who did not reply. A message from you does not wait: it goes in right away and carries what has already arrived.
+- **Busy agent:** another agent's message follows the recipient's mode (queue by default, or steering if the harness supports it). Replies to a multiple request and channel work always stay in the queue, so they arrive together.
+- **Delegation policy in the base prompt:**
+  - check `list_agents` before saying it cannot do something;
+  - delegate to whoever has the responsibility;
+  - never hand the task back to whoever passed it;
+  - do not narrate preparation or exchange confirmations in a loop;
+  - delegated reply in the **Status / Result / Evidence / Unblock** format;
+  - the synthesis for you starts with the colleague's name;
+  - never say it verified something without a tool result or reply that shows it;
+  - may offer to create a specialist, but only creates one if you accept.
 
-**Canais:**
-- **Roteamento determinístico primeiro:** destinatário explícito, `@menção` ou `@todos`, resposta a uma tarefa, membro único.
-- **Sem isso, o líder decide** numa chamada sem ferramentas, lendo o resumo do canal e as **responsabilidades** dos membros.
-- Cada membro escolhido recebe a sua tarefa.
-- Limites: até 8 atribuições automáticas por pedido e 2 em paralelo por canal.
-- O repasse por `@menção` entre agentes continua com teto de 3 respostas seguidas sem mensagem sua.
+**Channels:**
+- **Deterministic routing first:** explicit recipient, `@mention` or `@all`, reply to a task, single member.
+- **Without that, the lead decides** in a call without tools, reading the channel summary and the members' **responsibilities**.
+- Each chosen member receives its task.
+- Limits: up to 8 automatic assignments per request and 2 in parallel per channel.
+- Hand-off by `@mention` between agents keeps the cap of 3 replies in a row without a message from you.
 
-**Visibilidade (onde o Zorel vai além):**
-- A troca entre agentes aparece no chat como um bloco **recolhido** "conversa entre agentes": quem pediu o quê, a quem, e o resultado.
-- O **consumo por delegação** (tokens e custo de cada colega) entra na área de consumo.
-- O **"o que o modelo viu"** de cada colega também fica acessível.
+**Visibility (where Zorel goes further):**
+- The exchange between agents shows up in the chat as a **collapsed** "conversation between agents" block: who asked what, of whom, and the result.
+- **Usage per delegation** (tokens and cost of each colleague) goes into the usage area.
+- Each colleague's **"what the model saw"** is also accessible.
 
-## 10. Front
+## 10. Front end
 
-- **Runtime da página:** `ZorelClient = AtomHttpApi.Service(...)` + `AtomRpc` sobre WebSocket com reconexão.
-- **CRUD:** `ZorelClient.query(..., { reactivityKeys })` + `Atom.swr`. Mutations com as mesmas chaves revalidam sozinhas, e o `reload()` some.
-- **Chat:** `Atom.family(chatId → subscribeChat)`. O componente lê o estado (snapshot + eventos) e renderiza a resposta ao vivo agrupada.
-- **Como ficou (2026-11-03, `apps/web/src/client.ts`):** `Zorel` (`AtomHttpApi`) e `Live` (`AtomRpc`, um WebSocket). Uma query por recurso com a chave dele (`projects`, `agents`, `chats`, `memories`, `servers`, `accounts`, `keys`, `models`, `usage`, `approvals`). O chat é `Atom.family` sobre `subscribeChat` dobrado por `reduceChat` com `Stream.scan`; não usa a query de stream do `AtomRpc` porque ela acumula em lotes (`PullResult`). Os status de todos os chats vêm de um átomo mantido vivo sobre `subscribeStatus`. Quando um chat sai de "rodando", o `App` invalida `chats`, `memories`, `usage` e `approvals`, porque o server muda título, memórias propostas e consumo sozinho. Sem `Atom.swr` por enquanto: a invalidação por chave basta.
-- **Design system:** ver 10.3.
+- **Page runtime:** `ZorelClient = AtomHttpApi.Service(...)` + `AtomRpc` over WebSocket with reconnection.
+- **CRUD:** `ZorelClient.query(..., { reactivityKeys })` + `Atom.swr`. Mutations with the same keys revalidate on their own, and `reload()` goes away.
+- **Chat:** `Atom.family(chatId → subscribeChat)`. The component reads the state (snapshot + events) and renders the grouped live response.
+- **How it turned out (2026-11-03, `apps/web/src/client.ts`):** `Zorel` (`AtomHttpApi`) and `Live` (`AtomRpc`, one WebSocket). One query per resource with its key (`projects`, `agents`, `chats`, `memories`, `servers`, `accounts`, `keys`, `models`, `usage`, `approvals`). The chat is `Atom.family` over `subscribeChat` folded by `reduceChat` with `Stream.scan`; it does not use `AtomRpc`'s stream query because that accumulates in batches (`PullResult`). The statuses of all chats come from an atom kept alive over `subscribeStatus`. When a chat leaves "running", `App` invalidates `chats`, `memories`, `usage` and `approvals`, because the server changes the title, proposed memories and usage on its own. No `Atom.swr` for now: invalidation by key is enough.
+- **Design system:** see 10.3.
 
 ## 10.3 Design system (D19)
 
-**Fundação (regras inspiradas no `ui-foundation.md` do OpenBot, implementação nossa):**
-- **Escala de controles:** 24 px (apoio), 28 px (barras), **32 px (padrão)**, 36 px (ação importante). Já existe em `styles.css` (`--spacing-control-*`).
-- **Tema:** dark por padrão, light por `data-theme`, seguindo o sistema. O tema light só **troca valores** de tokens, nunca cria tokens.
-- **Só tokens:** cor, tamanho de texto, raio, sombra e duração vêm dos tokens `--z-*`. Literal de cor fora do arquivo de tokens é erro.
-- **Interação:** hover só com ponteiro fino (`@media (hover: hover) and (pointer: fine)`); pressionar = `scale(0.97)`; animações abaixo de 300 ms e respeitando `prefers-reduced-motion`.
-- **Estados obrigatórios** em todo componente: padrão, hover, `focus-visible`, ativo, desabilitado, carregando/vazio quando se aplica. Teclado completo e rótulo acessível (`IconButton` sempre com `label`).
+**Foundation:**
+- **Control scale:** 24 px (support), 28 px (bars), **32 px (default)**, 36 px (important action). Already exists in `styles.css` (`--spacing-control-*`).
+- **Theme:** dark by default, light through `data-theme`, following the system. The light theme only **changes token values**, never creates tokens.
+- **Tokens only:** color, text size, radius, shadow and duration come from the `--z-*` tokens. A color literal outside the tokens file is an error.
+- **Interaction:** hover only with a fine pointer (`@media (hover: hover) and (pointer: fine)`); press = `scale(0.97)`; animations under 300 ms and respecting `prefers-reduced-motion`.
+- **Required states** in every component: default, hover, `focus-visible`, active, disabled, loading/empty when it applies. Full keyboard support and an accessible label (`IconButton` always with `label`).
 
-**Primitivas** (`apps/web/src/ui/`, a única API visual das telas):
-- **Simples:** `Text`, `Heading`, `Button` (`default` para a ação principal do contexto, `secondary`, `ghost` em barras, `destructive`, `link`), `IconButton`, `Badge`, `Card`, `Separator`, `Spinner`, `Skeleton`, `Kbd`.
-- **Formulário:** `Field` (rótulo, descrição, erro, `aria-describedby`) envolvendo `Input`, `Textarea` e `Select`. `Switch` só para mudança imediata.
-- **Origem: shadcn.** O CLI (`shadcn init --base aria`, depois `shadcn add <componente>`) copia o código para `ui/`. **O código é nosso**: sem dependência do shadcn em runtime, editável à vontade. Base headless: **React Aria Components** (Adobe). É referência em acessibilidade (teclado, foco, leitores de tela) e traz internacionalização embutida (datas, números, direita-para-esquerda por locale), o que reforça a D13. **Radix e Base UI não são usados.**
-- **Tema:** o `styles.css` mapeia uma vez os tokens semânticos do shadcn (`background`, `foreground`, `primary`, `border`, `input`, `ring`, `popover`…) para os `--z-*`. A paleta neutra e o `--radius` padrão do shadcn não são usados. Alturas ajustadas à escala 24/28/32/36.
-- **Complexos, sobre React Aria via shadcn**: `Dialog`, `AlertDialog`, `DropdownMenu`, `Popover`, `Tooltip`, `Tabs`, `RadioGroup`, `Combobox`. As telas **nunca importam a biblioteca headless nem os ícones direto**, só as primitivas. Assim, trocar ou atualizar a biblioteca não toca nenhuma tela (mesmo princípio do OpenBot com o Kobalte).
-- **Do Zorel:** bolha de mensagem, bloco de passos de ferramenta, cartão de aprovação, cartão de proposta, chip de membro, seletor de modelo e conta, inspetor "o que o modelo viu".
+**Primitives** (`apps/web/src/ui/`, the only visual API of the screens):
+- **Simple:** `Text`, `Heading`, `Button` (`default` for the context's main action, `secondary`, `ghost` in bars, `destructive`, `link`), `IconButton`, `Badge`, `Card`, `Separator`, `Spinner`, `Skeleton`, `Kbd`.
+- **Form:** `Field` (label, description, error, `aria-describedby`) wrapping `Input`, `Textarea` and `Select`. `Switch` only for an immediate change.
+- **Origin: shadcn.** The CLI (`shadcn init --base aria`, then `shadcn add <component>`) copies the code into `ui/`. **The code is ours**: no runtime dependency on shadcn, editable at will. Headless base: **React Aria Components** (Adobe). It is a reference in accessibility (keyboard, focus, screen readers) and has built-in internationalization (dates, numbers, right-to-left by locale), which reinforces D13. **Radix and Base UI are not used.**
+- **Theme:** `styles.css` maps shadcn's semantic tokens (`background`, `foreground`, `primary`, `border`, `input`, `ring`, `popover`…) to the `--z-*` ones once. shadcn's neutral palette and default `--radius` are not used. Heights adjusted to the 24/28/32/36 scale.
+- **Complex ones, over React Aria via shadcn**: `Dialog`, `AlertDialog`, `DropdownMenu`, `Popover`, `Tooltip`, `Tabs`, `RadioGroup`, `Combobox`. Screens **never import the headless library or the icons directly**, only the primitives. That way, swapping or updating the library touches no screen.
+- **Zorel's own:** message bubble, tool steps block, approval card, proposal card, member chip, model and account picker, "what the model saw" inspector.
 
-**Artefatos do impeccable** (na raiz de `apps/web`):
-- **`PRODUCT.md`** (`/impeccable init`): o que é o Zorel, para quem, modo **Operate** (app de trabalho: legibilidade, consistência e expectativas nativas acima de expressão; a marca vive nos detalhes) e tom.
-- **`DESIGN.md`** (`/impeccable document`): os tokens em YAML e as regras acima, gerados do código atual. É a referência que todo agente (e todo dev) consulta antes de criar tela.
+**impeccable artifacts** (at the root of `apps/web`):
+- **`PRODUCT.md`** (`/impeccable init`): what Zorel is, for whom, **Operate** mode (a work app: legibility, consistency and native expectations above expression; the brand lives in the details) and tone.
+- **`DESIGN.md`** (`/impeccable document`): the tokens in YAML and the rules above, generated from the current code. It is the reference every agent (and every dev) checks before creating a screen.
 
-**Fluxo por tela ou fase:**
+**Flow per screen or phase:**
 
-| Momento | Comando | Saída |
+| Moment | Command | Output |
 |---|---|---|
-| Antes de uma tela ou fluxo novo | `/impeccable shape` | Plano de UX/UI antes do código |
-| Durante as edições de UI | detector ligado (`/impeccable hooks on`) | Problemas mecânicos na hora: contraste, overflow, literais, fontes |
-| Ao terminar a tela | `/impeccable audit` | Acessibilidade, desempenho, responsivo |
-| Ao fechar a fase | `/impeccable polish` (um passe, com limite) | Acabamento final |
-| Textos, erros e i18n | `/impeccable harden` e `clarify` | Estados de erro, casos de borda, textos curtos e claros |
-| Componente repetido em 2+ telas | `/impeccable extract` | Vira primitiva |
+| Before a new screen or flow | `/impeccable shape` | UX/UI plan before the code |
+| During UI edits | detector on (`/impeccable hooks on`) | Mechanical problems on the spot: contrast, overflow, literals, fonts |
+| When the screen is finished | `/impeccable audit` | Accessibility, performance, responsive |
+| When the phase closes | `/impeccable polish` (one pass, bounded) | Final finish |
+| Copy, errors and i18n | `/impeccable harden` and `clarify` | Error states, edge cases, short and clear copy |
+| Component repeated on 2+ screens | `/impeccable extract` | Becomes a primitive |
 
-**Verificação mecânica no CI:** `check:ui` falha com cor literal fora dos tokens, tamanho, raio ou duração fora da escala, `<button>` ou diálogo feito à mão nas telas, ou import direto da biblioteca headless ou de ícones fora de `ui/`. É o equivalente leve do `check:ui` do OpenBot. Funciona como catraca (`scripts/check-ui.ts`): a dívida que já existe fica congelada em `apps/web/ui-baseline.json` por arquivo e regra, e só pode cair; `bun run check:ui --update` trava a melhora. `src/ui/` e `src/dev/` ficam de fora, porque são o próprio design system.
+**Mechanical check in CI:** `check:ui` fails on a color literal outside the tokens, a size, radius or duration outside the scale, a hand-made `<button>` or dialog in the screens, or a direct import of the headless library or icons outside `ui/`. It works as a ratchet (`scripts/check-ui.ts`): the debt that already exists is frozen in `apps/web/ui-baseline.json` per file and rule, and can only go down; `bun run check:ui --update` locks in the improvement. `src/ui/` and `src/dev/` are left out, because they are the design system itself.
 
-**Protótipo das telas** (fonte do redesenho, fase UI): chat com pílulas expansíveis e painéis direito e de baixo, "Precisa de você", conhecimento, agente, consumo e configurações (conectores, MCP, skills). Link no `.agent/memory/design-system.md`.
+**Screen prototype** (source of the redesign, UI phase): chat with expandable pills and right and bottom panels, "Needs you", knowledge, agent, usage and settings (connectors, MCP, skills). Link in `.agent/memory/design-system.md`.
 
-**Sem galeria (decisão do usuário, 2026-11-03):** não há página de primitivas nem Storybook. As telas reais são a referência visual; as primitivas são verificadas pelo `check:ui`, pelo detector e pela revisão das telas nos dois temas.
+**No gallery (user's decision, 2026-11-03):** there is no primitives page and no Storybook. The real screens are the visual reference; the primitives are checked by `check:ui`, by the detector and by reviewing the screens in both themes.
 
 ---
 
-## 10.1 Internacionalização (D13)
+## 10.1 Internationalization (D13)
 
-**Hoje (2026-11-03):** feito na web. `packages/i18n` tem o catálogo `en.ts`, `t()` com plural por `Intl.PluralRules` e formatadores (números, porcentagem, duração, idade, data). O `check:i18n` (`scripts/check-i18n.ts`) lê a AST de cada `.tsx` com `@babel/parser` e falha com texto em JSX ou em props lidas pela pessoa (`placeholder`, `aria-label`, `title`…). Falta no server: as dicas de modelo (`listModels`) e o rótulo do status ainda saem como texto; a web ignora os dois e monta o texto pelo catálogo.
+**Today (2026-11-03):** done on the web. `packages/i18n` has the `en.ts` catalog, `t()` with plurals through `Intl.PluralRules` and formatters (numbers, percentage, duration, age, date). `check:i18n` (`scripts/check-i18n.ts`) reads the AST of each `.tsx` with `@babel/parser` and fails on text in JSX or in props read by the person (`placeholder`, `aria-label`, `title`…). Missing on the server: the model hints (`listModels`) and the status label still come out as text; the web ignores both and builds the text from the catalog.
 
-**Alvo:**
+**Target:**
 
-- **`packages/i18n`:** `en.ts` é o catálogo fonte, um objeto aninhado por área (`chat.send`, `knowledge.approve`…). Os outros idiomas são `satisfies Messages`, então chave faltando ou sobrando quebra o typecheck.
-- **API de uso:** `t("chat.send")` e `t("knowledge.pending", { count })`.
-  - Plural com `Intl.PluralRules`.
-  - Datas e números com `Intl.DateTimeFormat` / `Intl.NumberFormat`.
-  - Interpolação simples (`{count}`), sem HTML no catálogo.
-- **Idioma:** só `en` por enquanto. A escolha (`navigator.language`, preferência salva) já passa por uma função única, para não mudar quando houver outros idiomas.
-- **Server:** erros e avisos ao usuário saem como **código + parâmetros** (`{ code: "chat.busy" }`, `{ code: "agents.chain_stopped", max: 3 }`) no contrato, e o front traduz. O server não manda frase pronta para a interface.
-- **Prompts dos modelos:** em inglês (prompt base, consolidação, protocolo de canal). A instrução "responda no idioma do usuário" continua valendo, então o idioma da conversa não depende do idioma da interface.
-- **Conteúdo do usuário** (brief, memórias, mensagens, nomes) **não é traduzido**: fica como foi escrito.
-- **Verificação:** um script no CI acusa texto literal em JSX (`check:i18n`, como o `i18n-check` do OpenBot), com exceções explícitas.
+- **`packages/i18n`:** `en.ts` is the source catalog, an object nested by area (`chat.send`, `knowledge.approve`…). The other languages are `satisfies Messages`, so a missing or extra key breaks the typecheck.
+- **Usage API:** `t("chat.send")` and `t("knowledge.pending", { count })`.
+  - Plurals with `Intl.PluralRules`.
+  - Dates and numbers with `Intl.DateTimeFormat` / `Intl.NumberFormat`.
+  - Simple interpolation (`{count}`), no HTML in the catalog.
+- **Language:** only `en` for now. The choice (`navigator.language`, saved preference) already goes through a single function, so it does not change when there are other languages.
+- **Server:** errors and warnings for the user come out as **code + parameters** (`{ code: "chat.busy" }`, `{ code: "agents.chain_stopped", max: 3 }`) in the contract, and the front end translates. The server does not send ready-made sentences for the interface.
+- **Model prompts:** in English (base prompt, consolidation, channel protocol). The instruction "reply in the user's language" still applies, so the conversation's language does not depend on the interface's language.
+- **User content** (brief, memories, messages, names) **is not translated**: it stays as it was written.
+- **Check:** a script in CI flags literal text in JSX (`check:i18n`), with explicit exceptions.
 
-## 10.2 Área de consumo (D15)
+## 10.2 Usage area (D15)
 
-**Hoje (2026-11-03, fase 2c concluída):**
-- **Custo:** `pricing.ts` lê o catálogo do models.dev (USD por 1M de tokens), guarda em `<dataDir>/pricing.json` e atualiza uma vez por dia; offline usa a última cópia. Cada turno e mensagem grava `cost` e `account_id`. Apelidos das CLIs (`claude-cli/opus`) usam o modelo mais novo da família.
-- **Janelas de limite:** `POST /api/accounts/:id/limits` lê todas as janelas da conta pela própria CLI (Claude: `usage_EXPERIMENTAL…` do Agent SDK; Codex: `account/rateLimits/read` num app-server curto). Cache de 4 min, uma leitura por vez, falhas com espera crescente (5 a 60 min). Os eventos `limits` dos turnos também atualizam as janelas.
-- **Tela Usage** (layout inspirado no Usage do OpenBot): filtros de agente, métrica (custo ou tokens) e período no cabeçalho; número principal com o total; harnesses com participação (a legenda do gráfico); área empilhada por dia e harness com leitura por hover e teclado; totais de tokens (com e sem cache); detalhamento por modelo, agente, projeto, conta ou dia; um cartão por assinatura com as janelas e o reset; turnos mais caros (`GET /api/usage/top`); aviso a partir de 80% (`LIMIT_ALERT`). A barra lateral mostra a janela mais cheia ao lado de Usage, e cada resposta mostra conta e custo.
-- **Nomes reais dos modelos:** o seletor usa a lista que cada CLI oferece hoje (`supportedModels()` do Agent SDK, `model/list` do Codex), com nome e descrição ("Opus 5.5"). Fica em `preferences` (`cliModels`), é servida na hora e relida em segundo plano depois de 1 h; sem CLI, voltam os apelidos fixos.
+**Today (2026-11-03, phase 2c done):**
+- **Cost:** `pricing.ts` reads the models.dev catalog (USD per 1M tokens), stores it in `<dataDir>/pricing.json` and updates once a day; offline it uses the last copy. Each turn and message records `cost` and `account_id`. CLI aliases (`claude-cli/opus`) use the newest model of the family.
+- **Limit windows:** `POST /api/accounts/:id/limits` reads all of the account's windows through the CLI itself (Claude: the Agent SDK's `usage_EXPERIMENTAL…`; Codex: `account/rateLimits/read` in a short-lived app-server). 4 min cache, one read at a time, failures with growing backoff (5 to 60 min). The turns' `limits` events also update the windows.
+- **Usage screen**: agent, metric (cost or tokens) and period filters in the header; main number with the total; harnesses with their share (the chart legend); stacked area per day and harness with reading by hover and keyboard; token totals (with and without cache); breakdown by model, agent, project, account or day; one card per subscription with the windows and the reset; most expensive turns (`GET /api/usage/top`); warning from 80% (`LIMIT_ALERT`). The sidebar shows the fullest window next to Usage, and each response shows the account and cost.
+- **Real model names:** the picker uses the list each CLI offers today (the Agent SDK's `supportedModels()`, Codex's `model/list`), with name and description ("Opus 5.5"). It lives in `preferences` (`cliModels`), is served right away and re-read in the background after 1 h; without a CLI, the fixed aliases come back.
 
-**Fonte dos dados:** a tabela `turns`, que a fase 1 já grava. Cada turno registra conta, modelo, harness, tokens (entrada, cache lido, cache escrito, saída), custo estimado, tempo até o primeiro token, tempo total e trocas de failover.
+**Data source:** the `turns` table, which phase 1 already writes. Each turn records account, model, harness, tokens (input, cache read, cache written, output), estimated cost, time to first token, total time and failover switches.
 
-**Custo:**
-- **API key:** custo estimado = tokens × preço do modelo. O preço vem do catálogo do OpenCode/models.dev, com a possibilidade de corrigir à mão.
-- **Assinatura:** o custo por token não se aplica. Mostra o "equivalente em API", só como referência, e o que importa: as janelas de limite.
+**Cost:**
+- **API key:** estimated cost = tokens × the model's price. The price comes from the OpenCode/models.dev catalog, with the option to correct it by hand.
+- **Subscription:** cost per token does not apply. It shows the "API equivalent", only as a reference, and what matters: the limit windows.
 
-**Janelas de limite por conta**, lidas do harness:
-- Claude: `rate_limit_event` com janela de 5 h e janela semanal.
+**Limit windows per account**, read from the harness:
+- Claude: `rate_limit_event` with a 5 h window and a weekly window.
 - Codex: `account/rateLimits/read`.
-- Outras: quando o harness reportar.
+- Others: when the harness reports them.
 
-A leitura acontece **uma por vez, com cache de 4 min e espaçamento crescente em falha** (5/10/20/40 min, até 1 h), mesma cadência do OpenBot e do T3 Code, para não gastar limite só para medir.
+The read happens **one at a time, with a 4 min cache and growing spacing on failure** (5/10/20/40 min, up to 1 h), so as not to spend limit just to measure.
 
-**Tela:**
-- Mês atual por agente, projeto, conta e modelo, com gráfico diário.
-- Cartão por conta de assinatura: uso das janelas e horário de reset.
-- Os turnos mais caros, com link para o chat.
+**Screen:**
+- Current month by agent, project, account and model, with a daily chart.
+- Card per subscription account: window usage and reset time.
+- The most expensive turns, with a link to the chat.
 
-**Alertas e orçamento** (opcionais):
-- Aviso ao atingir 80% de uma janela de assinatura ou de um orçamento mensal (por agente ou por conta de API key).
-- Ao atingir 100% do orçamento: o turno pede confirmação para continuar. Não bloqueia em silêncio.
-- O limite de assinatura alimenta o failover (seção 6.1).
+**Alerts and budget** (optional):
+- Warning on reaching 80% of a subscription window or of a monthly budget (per agent or per API key account).
+- On reaching 100% of the budget: the turn asks for confirmation to continue. It does not block silently.
+- The subscription limit feeds failover (section 6.1).
 
-**No chat:** cada mensagem já mostra tokens. Passa a mostrar também o custo estimado, ou "assinatura", e a conta usada.
+**In the chat:** each message already shows tokens. It also starts showing the estimated cost, or "subscription", and the account used.
 
-## 11. Segurança
+## 11. Security
 
-- **Server só local:** escuta em `127.0.0.1` e o `LocalOnly` exige Host e Origin locais.
-- **Segredos:** chaves de API e variáveis MCP no chaveiro do sistema, nunca no banco nem devolvidas pela API.
-- **Login das CLIs de assinatura:** nunca é lido nem guardado.
-- **Termos:** usar a assinatura do Claude via Agent SDK num app de terceiros é zona cinzenta. O OpenBot documenta que a Anthropic não confirmou que é permitido e recomenda API key. O T3 Code faz o mesmo que nós: a CLI oficial com o login do próprio usuário. O Zorel mostra esse aviso ao conectar uma conta de assinatura Claude. Com API key, o caminho é o OpenCode, sem esse risco.
-- **Ferramentas** só pelo gateway, com política e aprovação.
-- **Armazenamento** (Settings › Storage, 2026-11-03): mede a pasta de dados sob demanda (workspaces, anexos, banco, backups, pastas de chat, contas), por projeto e os maiores chats. Limpar só remove backups antigos (fica o mais recente) e pastas de chats e projetos apagados; nunca roda `git gc` nos snapshots, porque as árvores não têm refs e o gc apagaria o histórico do diff e do desfazer. Cada limpeza vai para o audit log.
-- **Audit log** (Settings › Audit log, 2026-11-03): cada mudança em providers (contas, chaves por nome, nunca o valor), projetos, agentes, servidores MCP, termos de failover, cada aprovação ou negação e cada turno desfeito. Feito com os helpers de auditoria do evlog (`defineAuditAction`, `audit`, `auditDiff` com campos sensíveis redigidos) e gravado na tabela `audit_events` dentro do mesmo Effect da mudança; falha ao gravar só loga, nunca desfaz a mudança. Só SQLite por enquanto: sem diário com cadeia de hash.
-- **Sanitização de segredos** antes de gravar observações e páginas (seção 8, captura).
-- **Conteúdo não confiável:** saída de ferramenta, páginas e memórias são tratadas como não confiáveis no prompt base.
+- **Server local only and for the owner only** (security audit, 2026-11-04): listens on `127.0.0.1`. `LocalOnly` requires a local Host, an Origin (when present) equal to its own origin (another localhost port is also refused) and, on `/api` and `/rpc`, the **session secret**: 32 random bytes per startup. A local address alone proves nothing, because the agents and any process on the machine reach the loopback. The desktop generates the secret, hands it to the server through `ZOREL_SESSION` (the server reads it and deletes it from the env, so no child process inherits it) and injects it as the `x-zorel-token` header on the window's requests, from the main process (the page never sees the secret). In the browser, the link printed at startup (`/api/login?t=…`) sets an `HttpOnly; SameSite=Strict` cookie. Only the web files, the login, the OAuth callback (tied to the state) and `/api/hooks/:token` stay open. The names live in `@zorel/contracts/session`.
+- **Confinement of agents below "full":** ACP runs in Seatbelt/bubblewrap; the shared git folder only comes in as writable in a real worktree (the `gitdir` must point back to the folder's `.git`). Claude Code runs the shell in Claude Code's own sandbox (Seatbelt; on Linux, bubblewrap + socat), with writing only in the folder and no network (`strictAllowlist` in the managed tier, no escape from the sandbox). Without a sandbox (Windows), only read commands without shell syntax, with paths inside the folder, run without asking.
+- **The approval card shows what runs:** the task, the agent proposal, the routine and the MCP and browser arguments go to the card in full (up to 12,000 characters); larger than that, the tool refuses and asks to split. The card for a native call says how many characters were left out.
+- **A workspace import arrives inert:** routines and MCP servers turned off, `full` agents become `ask` and attachments outside `<data>/attachments` are discarded (serving an attachment also checks the folder).
+- **Attachments:** only passive types (raster images, PDF, plain text, audio, video) open as a page; the rest is downloaded. All with `CSP: sandbox`.
+- **Agents' browser:** only http(s) addresses, also in a new tab. Controlled over a pipe, never over a debugging port (not even Electron's). The desktop window only navigates within its own origin (compared by origin, not by prefix).
+- **Opening a file on Windows:** `rundll32 url.dll,FileProtocolHandler`, never through `cmd`.
+- **Secrets:** API keys and MCP variables in the system keychain, never in the database or returned by the API.
+- **Login of the subscription CLIs:** never read or stored.
+- **Terms:** using the Claude subscription through the Agent SDK in a third-party app is a gray area: Anthropic has not confirmed it is allowed. Zorel uses the official CLI with the user's own login and shows this warning when connecting a Claude subscription account. With an API key, the path is OpenCode, without that risk.
+- **Tools** only through the gateway, with policy and approval.
+- **Storage** (Settings › Storage, 2026-11-03): measures the data folder on demand (workspaces, attachments, database, backups, chat folders, accounts), per project and the largest chats. Cleaning only removes old backups (the most recent stays) and folders of deleted chats and projects; it never runs `git gc` on the snapshots, because the trees have no refs and gc would delete the diff and undo history. Each cleanup goes to the audit log.
+- **Audit log** (Settings › Audit log, 2026-11-03): every change to providers (accounts, keys by name, never the value), projects, agents, MCP servers, failover terms, every approval or denial and every undone turn. Built with evlog's audit helpers (`defineAuditAction`, `audit`, `auditDiff` with sensitive fields redacted) and written to the `audit_events` table inside the same Effect as the change; a failure to write only logs, it never undoes the change. SQLite only for now: no hash-chained journal.
+- **Secret sanitization** before writing observations and pages (section 8, capture).
+- **Untrusted content:** tool output, pages and memories are treated as untrusted in the base prompt.
 
 ---
 
-## 12. Transversal
+## 12. Cross-cutting
 
-Pela régua da D0, cada tema na forma mínima.
+By D0's yardstick, each topic in its minimal form.
 
-**Observabilidade:**
-- Logs estruturados do Effect (`Effect.log*` com anotações de chat, turno, agente e conta), sempre passando pelo **mascaramento de segredos**: os valores do `Secrets` são registrados como sensíveis, como no `registerSecretValue` do OpenBot.
-- Spans do Effect por turno, chamada de engine e chamada de ferramenta.
-- **"Exportar diagnóstico"** gera um JSON com versões, status dos harnesses e contas (sem e-mail nem token), contagens e erros recentes. Nunca inclui conteúdo de conversa.
+**Observability:**
+- Effect structured logs (`Effect.log*` with chat, turn, agent and account annotations), always going through **secret masking**: the `Secrets` values are registered as sensitive.
+- Effect spans per turn, engine call and tool call.
+- **"Export diagnostics"** produces a JSON with versions, status of harnesses and accounts (no e-mail or token), counts and recent errors. It never includes conversation content.
 
-**Testes**, em três camadas:
-1. **Unitários** de funções puras: montagem de contexto, política e classificação de ferramentas, parsers, consolidação sem LLM e menções.
-2. **Ponta a ponta com engine falso**: server real, banco em memória e client tipado. É o padrão de hoje (`main.test.ts`). Cobre cada critério de pronto das fases.
-3. **Smoke com CLIs reais** (Claude Code, Codex, OpenCode): manual ou agendado, nunca obrigatório no CI, porque gasta assinatura.
+**Tests**, in three layers:
+1. **Unit tests** of pure functions: context assembly, tool policy and classification, parsers, consolidation without an LLM and mentions.
+2. **End to end with a fake engine**: real server, in-memory database and typed client. It is today's pattern (`main.test.ts`). Covers each phase's done criterion.
+3. **Smoke with real CLIs** (Claude Code, Codex, OpenCode): manual or scheduled, never required in CI, because it spends subscription.
 
-No CI rodam lint, typecheck, i18n e as camadas 1 e 2. **Cada migration tem teste** que parte do schema anterior com dados.
+CI runs lint, typecheck, i18n and layers 1 and 2. **Each migration has a test** that starts from the previous schema with data.
 
-**Migração dos dados atuais** (fase 1):
-- Uma migration do Drizzle traz o schema de hoje inteiro: projetos, agentes, chats, membros, mensagens, memórias, servidores MCP.
-- Na fase 3b, memória vira página `fato` e skill vira `como-fazer`, mantendo estado, escopo e datas.
-- **Backup automático** do arquivo antes de migrar. Teste com um banco real copiado.
+**Migration of current data** (phase 1):
+- One Drizzle migration brings today's whole schema: projects, agents, chats, members, messages, memories, MCP servers.
+- In phase 3b, a memory becomes a `fact` page and a skill becomes `how-to`, keeping state, scope and dates.
+- **Automatic backup** of the file before migrating. Tested with a copied real database.
 
-**Backup e exportação:**
-- Backup do arquivo SQLite com `VACUUM INTO`: diário e antes de cada migration, guardando os últimos 7.
-- **Exportar e importar o workspace** em `.zip` (projetos, agentes, chats, conhecimento e configurações), **sem segredos**. Servidores MCP voltam desligados.
+**Backup and export:**
+- Backup of the SQLite file with `VACUUM INTO`: daily and before each migration, keeping the last 7.
+- **Export and import the workspace** as a `.zip` (projects, agents, chats, knowledge and settings), **without secrets**. MCP servers come back turned off.
 
-**Notificações** (desktop):
-- Disparam em: aprovação ou pergunta esperando, tarefa ou rotina concluída ou com falha, limite de conta atingido, failover acionado.
-- Ligam e desligam por tipo, agente e projeto. Não notificam a janela que está em foco.
+**Notifications** (desktop):
+- Fire on: an approval or question waiting, a task or routine done or failed, an account limit reached, failover triggered.
+- Turn on and off by type, agent and project. They do not notify the window that is in focus.
 
-**Anexos e imagens** (fase 2):
-- Arrastar ou colar no chat. Limites de 10 por mensagem, 20 MB cada.
-- Guardados em `ZOREL_HOME/attachments/<chat>`.
-- Imagem vai como imagem para o harness que suporta (Claude SDK, Codex `--image`/item local, OpenCode). Outros arquivos vão como **caminho**, para o agente ler com as ferramentas dele.
-- Apagar o chat apaga os anexos.
+**Attachments and images** (phase 2):
+- Drag or paste into the chat. Limits of 10 per message, 20 MB each.
+- Stored in `ZOREL_HOME/attachments/<chat>`.
+- An image goes as an image to the harness that supports it (Claude SDK, Codex `--image`/local item, OpenCode). Other files go as a **path**, for the agent to read with its own tools.
+- Deleting the chat deletes the attachments.
 
-**Atualização do app** (fase 7):
-- O electron-builder gera o pacote (dmg; `electron-updater` com canais `stable` e `beta` quando houver Developer ID — o macOS só atualiza app assinado).
-- **A troca espera os turnos em andamento terminarem.** As migrations rodam na subida, depois do backup.
-- O server em background reinicia na versão nova.
+**App update** (phase 7):
+- electron-builder produces the package (dmg; `electron-updater` with `stable` and `beta` channels once there is a Developer ID — macOS only updates a signed app).
+- **The swap waits for running turns to finish.** Migrations run at startup, after the backup.
+- The background server restarts on the new version.
 
-## 13. Fases
+## 13. Phases
 
-**Ordem:** engine primeiro (fases 1 e 2), depois a interface nova (fase UI), desenhada a partir do protótipo e sobre os eventos reais. Cada fase termina com lint, typecheck e testes verdes e um teste real com Claude Code e Codex. A partir da fase UI, também `check:ui` e `check:i18n` verdes e, nas telas que mudaram, **detector limpo + `/impeccable audit` + um passe de `/impeccable polish`**.
+**Order:** engine first (phases 1 and 2), then the new interface (UI phase), designed from the prototype and on top of the real events. Each phase ends with lint, typecheck and tests green and a real test with Claude Code and Codex. From the UI phase on, also `check:ui` and `check:i18n` green and, on the screens that changed, **clean detector + `/impeccable audit` + one `/impeccable polish` pass**.
 
-| Fase | Entrega | Pronto quando |
+| Phase | Delivery | Done when |
 |---|---|---|
-| **1. Runtime** (concluída em 2026-11-03) | **Contrato de eventos** (`ChatEvent`, `ZorelRpc`, feito); **banco migrado para Drizzle + `@effect/sql-sqlite-bun`, com a migração dos dados atuais e backup** (seção 12); logs com mascaramento e spans; testes nas camadas 1 e 2 no CI; (com dono/público nas tabelas que guardam conhecimento), **`Actor`**, `turns`, fila, `ZorelRpc` + `subscribeChat`, interrupt, recuperação no boot, deltas agrupados, medição por turno gravada em `turns`, erros do server como código. **A tela de chat atual só passa a consumir o `subscribeChat`** (sem redesenho) | Fechar a aba no meio de um turno e reabrir mostra o turno continuando. `kill -9` no server marca o turno `interrupted` com o texto parcial. Reenviar o mesmo `clientId` não duplica |
-| **2. Engines vivos** (concluída em 2026-11-03) | Claude Agent SDK + Codex App Server com sessão, marcação por sessão, steering, `setModel`, esforço de raciocínio, imagens. **Só assinaturas** (API keys são da fase 5). **Multicontas de assinatura** (`provider_accounts`, login dentro do Zorel, `accountId` em agente e chat); **anexos e imagens** (seção 12) | O segundo turno no mesmo chat não sobe processo. Trocar Claude → Codex → Claude envia só o delta ao voltar. Os números de latência e cache estão registrados |
-| **UI. Interface nova** (concluída em 2026-11-03) | Design system completo: `DESIGN.md` atualizado pelo protótipo, tokens, primitivas que faltam, `check:ui` no CI, detector ligado; estrutura do app (barra lateral em árvore com status ao vivo) e **todas as telas reescritas uma vez**, já com **`packages/i18n` (en) e `t()`** e **átomos no chat e no CRUD**; pílula de atividade expansível, cartões de aprovação, seletor de modelo com contas | Nenhum texto literal em JSX fora do catálogo (`check:i18n` verde), `check:ui` verde, detector limpo e `/impeccable audit` em cada tela |
-| **2b. Failover** (concluída em 2026-11-03) | Lista de alternativas por agente e chat, classificação de erros por adaptador, espera por limite com retorno automático, regra "só se ainda não agiu", aviso de termos, leitura de uso por conta, trocas visíveis no chat | Com a conta principal em limite, o turno continua na alternativa e volta sozinho após o reset. Um erro depois de uma ferramenta de escrita não repete o turno. Sem lista configurada, nada troca |
-| **2c. Consumo** (concluída em 2026-11-03) | Área de consumo (seção 10.2): agregados por agente, projeto, conta e modelo; custo estimado; janelas de limite por conta; alertas | A tela mostra o consumo do mês por agente e o quanto falta de cada assinatura com o horário de reset. Um alerta de 80% aparece antes do limite |
-| **3. Workspace de código** (fase central, concluída em 2026-11-03) | `projects.path`, serviço `Workspace`, `cwd` do projeto, níveis de acesso, aprovação das ferramentas nativas, **diff das mudanças de cada turno** no painel direito (Changes e Files, com `@pierre/diffs`) e o terminal só leitura com os comandos dos agentes, **checkpoint e desfazer** (`rewindFiles` no Claude, git nos outros), passos de trabalho e handoff tipado | Um agente lê, edita e roda os testes do projeto com aprovação. O diff do turno aparece no chat e dá para desfazer. Depois de trocar de provider, o novo agente sabe o que foi feito |
-| **3b. Conhecimento aprendido** (base feita em 2026-11-03, enxuta: tabela `pages` à parte das memórias — escopo você/projeto/agente, Markdown até 100k, FTS5 `page_index` por gatilhos, toda edição vira `page_versions` com restaurar, fixar põe só o título no contexto; agentes com `zorel_knowledge_search`/`read`/`write`, escrita no projeto ou no agente direto como versão e sobre você só com aprovação; aba Pages na tela Knowledge. Fica para depois, na ordem do valor: curador automático ao fim da conversa (hoje o agente escreve quando decide), links entre páginas, espelho em Markdown na pasta, ingestão de documentos e a revisão periódica de contradições — tudo com a wiki do Tucano como referência) | Seção 8: páginas (migração de memórias e skills), captura por turno com segredos removidos, consolidação sem LLM (página de sessão + handoff) e com LLM opcional, resumo de entrada, `zorel.knowledge_search`/`read`, tela Conhecimento com feed, versões e desfazer, fila de aprovação do que é sobre você, "o que o modelo viu" | Depois de um chat de trabalho, a página de sessão e o handoff existem sem nenhuma chamada de LLM. Um chat novo no projeto recebe o resumo de entrada e acha por busca a decisão tomada antes. Desfazer uma atualização de página restaura a versão anterior |
-| **3c. Painel de execução** (concluída em 2026-11-03, enxuta: scripts do `package.json` em abas do terminal e Servidores com abrir no navegador e parar; Tests e Problems são os scripts `test`/`typecheck`/`lint` rodando ali, com a saída indo ao agente por "Add to chat" e os caminhos clicáveis. Listas próprias de testes e problemas entram se esse fluxo não bastar) | Painel de baixo: terminal interativo na pasta do projeto (sujeito às aprovações), Tests (rodar de novo as falhas, mandar para um agente), Problems (`tsc` e Biome), Processes (servidores com parar e reiniciar) e Logs | Um teste quebrado aparece em Tests e um agente o corrige a partir dali. Um servidor iniciado por um agente aparece em Processes e pode ser parado |
-| **4. Equipe** (feita em 2026-11-03, enxuta: tela Agents; criar/editar agentes e equipes pela conversa com cartão de proposta, acesso nunca acima de quem propõe; Builder; versões com restaurar; exportar/importar sem segredos; agente padrão por projeto; catálogo de conectores MCP pré-preenchidos (GitHub, Notion, Context7, Figma, Playwright, Filesystem, Postgres) com token, sem OAuth no app; notificações e pausar tudo. "Responsabilidades" ficam na descrição do agente, que é o que os outros leem para rotear — um campo à parte entra se a descrição não bastar. Fica para depois: OAuth dos conectores, construtor com chat de teste, "sempre permitir" persistido) | Agente como dado versionado (versões, publicação, voltar versão, exportar sem segredos); campo de **responsabilidades**; criar e configurar agentes pela conversa (`zorel.create_agent`/`update_agent`/`read_agent`/`list_models`) com **cartão de proposta**; construtor com chat de teste; **interação da seção 9.3** (`list_agents`, `send_message` com resposta automática e espera de pedidos múltiplos, `start_task`, `interrupt_agent`, `ask_user`, política de delegação, roteamento do líder); **aprovações da 9.2** (três níveis, "sempre permitir", recusa com motivo, persistidas, "Precisa de você", regras de restrição e herança); tela de equipe com status, fila e consumo; **catálogo de conectores** (GitHub, Notion, Figma… como servidores MCP já configurados, com login OAuth); **notificações** (seção 12); agente padrão por projeto | Um agente delega a dois colegas, as duas respostas voltam juntas num turno só, e a aprovação de um deles aparece no chat de origem e em "Precisa de você". Um agente em Workspace não consegue criar um colega com Acesso total. Restaurar uma versão anterior do perfil funciona |
-| **5. ACP** (começou em 2026-11-03, enxuto: `engines/acp.ts` próprio, um cliente JSON-RPC por stdio só com o que o Zorel usa — `initialize`, `session/new` com o gateway de ferramentas como MCP HTTP quando o agente aceita, `session/set_model`, `session/prompt`, `session/update` virando texto e passos, `session/request_permission` respondido pelo nível de acesso (em "Perguntar antes" recusa e avisa na resposta; cartão de aprovação fica para a versão com sessão viva). Sem estado entre turnos, como o fallback de CLI. Providers **OpenCode** (`opencode acp`, testado ponta a ponta) e **Gemini CLI** (`gemini --acp`; o Google desligou o cliente para contas individuais, então só funciona com conta Workspace/chave). No seletor aparecem quando o binário está instalado. **Confinamento (2026-11-04):** abaixo de "Acesso total", o processo inteiro do agente ACP roda no sandbox do macOS (`sandbox-exec`, Seatbelt): escrita só na pasta do chat (em Workspace, mais o `.git` principal de uma worktree), temporárias, caches e as pastas de estado da própria CLI; leitura, rede e processos ficam abertos. Fora do macOS, abaixo de "Acesso total" o turno é recusado (Linux com bubblewrap entra quando houver uso). Ideia do OpenBot, código próprio. **Chaves de API pelo OpenCode (2026-11-04):** um turno de chat com modelo de chave (Anthropic, OpenAI, OpenRouter, Ollama, LM Studio) roda no `opencode acp` quando ele está instalado: config em `OPENCODE_CONFIG_CONTENT` (modelo `provedor/modelo`; locais como provedor OpenAI-compatível com a URL), a chave numa variável que a config referencia (`{env:ZOREL_PROVIDER_KEY}`), sem `.claude`, skills externas nem config do projeto do usuário; mesmo sandbox e permissões dos agentes ACP. Tarefas internas e máquinas sem OpenCode seguem no motor direto (`ZOREL_API_ENGINE=direct` força). Testado ao vivo o caminho de injeção (config + sandbox) com o provedor gratuito do próprio OpenCode; com uma chave paga real ainda não. Os tokens vêm na resposta de `session/prompt` (`usage`) e entram no consumo. Falta: sessão viva, modelos lidos do harness (o OpenCode os lista em `configOptions` ao abrir a sessão)) | `effect-acp`, **primeiro com OpenCode como harness de todas as API keys**, inclusive Anthropic e OpenAI (config injetada), **com várias chaves por provider**; depois Gemini CLI, Cursor, Kimi…; várias contas; modelos lidos de cada harness. O engine `api` deixa de aparecer como agente de projeto | Um agente de projeto com uma chave do OpenRouter lê, edita e roda testes igual a um com Claude |
-| **6. Conhecimento 2** | Itens do backlog da seção 8.1 que tiverem batido o critério de entrada, mais a avaliação de recall rodando no CI | Cada item entra com o número que justificou a entrada registrado |
-| **7. Automação local** (em andamento: server do desktop em processo próprio, que segue com a janela fechada, feito em 2026-11-04 (falta abrir no login e atualização do app); rotinas feitas em 2026-11-03 — cada rotina é de um agente e tem o próprio chat; cada execução é uma mensagem nele pelo runtime normal; cron com `croner` (fuso e horário de verão) checado a cada 30 s, alcançando uma vez o que perdeu dormindo; "Run now"; webhook local `POST /api/hooks/:token` com o corpo na mensagem; execução idempotente por horário (clientId) e pulada se o chat estiver ocupado; agentes listam, propõem e cancelam com `zorel_routines`, sempre com cartão de aprovação. Falta: server em background, atualização do app, exportar/importar workspace) | Server do desktop em background separado da janela; rotinas (cron, horário de verão) com agente responsável, rodando uma **versão publicada** do agente; webhooks com HMAC sobre `effect/workflow`; **atualização do app** com canais e espera de turnos (seção 12); exportar e importar workspace | Uma rotina diária roda com o app fechado (server/desktop em background) |
-| **8. Hospedado** | Sobre as portas da D17: login (e-mail + senha ou OIDC) e `Actor` real; equipe e papéis simples; memória por público aplicada; cofre de segredos no banco com criptografia envelope; Postgres (`@effect/sql-pg` + schema Drizzle portado); container por projeto ou agente; imagem Docker + binário único; API para rodar agentes; runtime leve para agentes de automação (sem harness); canais (Slack, Telegram) | O mesmo Zorel roda num servidor com login, duas pessoas usam projetos diferentes, uma memória privada nunca aparece no projeto da outra, e o shell do agente roda isolado em container |
+| **1. Runtime** (done on 2026-11-03) | **Event contract** (`ChatEvent`, `ZorelRpc`, done); **database migrated to Drizzle + `@effect/sql-sqlite-bun`, with migration of the current data and backup** (section 12); logs with masking and spans; tests in layers 1 and 2 in CI; (with owner/audience in the tables that store knowledge), **`Actor`**, `turns`, queue, `ZorelRpc` + `subscribeChat`, interrupt, recovery on boot, grouped deltas, per-turn measurement recorded in `turns`, server errors as codes. **The current chat screen only starts consuming `subscribeChat`** (no redesign) | Closing the tab in the middle of a turn and reopening shows the turn continuing. `kill -9` on the server marks the turn `interrupted` with the partial text. Resending the same `clientId` does not duplicate |
+| **2. Live engines** (done on 2026-11-03) | Claude Agent SDK + Codex App Server with session, per-session marker, steering, `setModel`, reasoning effort, images. **Subscriptions only** (API keys belong to phase 5). **Multiple subscription accounts** (`provider_accounts`, login inside Zorel, `accountId` on agent and chat); **attachments and images** (section 12) | The second turn in the same chat does not start a process. Switching Claude → Codex → Claude sends only the delta when coming back. The latency and cache numbers are recorded |
+| **UI. New interface** (done on 2026-11-03) | Complete design system: `DESIGN.md` updated from the prototype, tokens, missing primitives, `check:ui` in CI, detector on; app structure (tree sidebar with live status) and **all screens rewritten once**, already with **`packages/i18n` (en) and `t()`** and **atoms in the chat and in CRUD**; expandable activity pill, approval cards, model picker with accounts | No literal text in JSX outside the catalog (`check:i18n` green), `check:ui` green, clean detector and `/impeccable audit` on each screen |
+| **2b. Failover** (done on 2026-11-03) | List of alternatives per agent and chat, error classification per adapter, waiting on a limit with automatic return, "only if it has not acted yet" rule, terms warning, usage reading per account, switches visible in the chat | With the main account at its limit, the turn continues on the alternative and comes back on its own after the reset. An error after a write tool does not repeat the turn. With no list configured, nothing switches |
+| **2c. Usage** (done on 2026-11-03) | Usage area (section 10.2): aggregates by agent, project, account and model; estimated cost; limit windows per account; alerts | The screen shows the month's usage per agent and how much is left of each subscription with the reset time. An 80% alert shows up before the limit |
+| **3. Code workspace** (central phase, done on 2026-11-03) | `projects.path`, `Workspace` service, the project's `cwd`, access levels, approval of native tools, **diff of each turn's changes** in the right panel (Changes and Files, with `@pierre/diffs`) and the read-only terminal with the agents' commands, **checkpoint and undo** (`rewindFiles` on Claude, git on the others), work steps and typed handoff | An agent reads, edits and runs the project's tests with approval. The turn's diff shows up in the chat and can be undone. After switching providers, the new agent knows what was done |
+| **3b. Learned knowledge** (base done on 2026-11-03, lean: a `pages` table separate from memories — you/project/agent scope, Markdown up to 100k, FTS5 `page_index` via triggers, every edit becomes `page_versions` with restore, pinning puts only the title in the context; agents with `zorel_knowledge_search`/`read`/`write`, writing to the project or agent directly as a version and about you only with approval; Pages tab on the Knowledge screen. Later, in order of value: automatic curator at the end of the conversation (today the agent writes when it decides), links between pages, Markdown mirror in the folder, document ingestion and the periodic review of contradictions) | Section 8: pages (migration of memories and skills), per-turn capture with secrets removed, consolidation without an LLM (session page + handoff) and with an optional LLM, entry brief, `zorel.knowledge_search`/`read`, Knowledge screen with feed, versions and undo, approval queue for what is about you, "what the model saw" | After a work chat, the session page and the handoff exist without any LLM call. A new chat in the project receives the entry brief and finds the decision made earlier through search. Undoing a page update restores the previous version |
+| **3c. Run panel** (done on 2026-11-03, lean: `package.json` scripts in terminal tabs and Servers with open in browser and stop; Tests and Problems are the `test`/`typecheck`/`lint` scripts running there, with the output going to the agent through "Add to chat" and clickable paths. Dedicated test and problem lists come in if this flow is not enough) | Bottom panel: interactive terminal in the project folder (subject to approvals), Tests (rerun the failures, send to an agent), Problems (`tsc` and Biome), Processes (servers with stop and restart) and Logs | A broken test shows up in Tests and an agent fixes it from there. A server started by an agent shows up in Processes and can be stopped |
+| **4. Team** (done on 2026-11-03, lean: Agents screen; create/edit agents and teams through conversation with a proposal card, access never above the proposer's; Builder; versions with restore; export/import without secrets; default agent per project; catalog of pre-filled MCP connectors (GitHub, Notion, Context7, Figma, Playwright, Filesystem, Postgres) with a token, no OAuth in the app; notifications and pause everything. "Responsibilities" live in the agent's description, which is what the others read to route — a separate field comes in if the description is not enough. Later: OAuth for connectors, builder with a test chat, persisted "always allow") | Agent as versioned data (versions, publishing, reverting a version, exporting without secrets); **responsibilities** field; creating and configuring agents through conversation (`zorel.create_agent`/`update_agent`/`read_agent`/`list_models`) with a **proposal card**; builder with a test chat; **interaction from section 9.3** (`list_agents`, `send_message` with automatic reply and waiting on multiple requests, `start_task`, `interrupt_agent`, `ask_user`, delegation policy, lead routing); **approvals from 9.2** (three levels, "always allow", refusal with a reason, persisted, "Needs you", restriction and inheritance rules); team screen with status, queue and usage; **connector catalog** (GitHub, Notion, Figma… as MCP servers already configured, with OAuth login); **notifications** (section 12); default agent per project | An agent delegates to two colleagues, both replies come back together in a single turn, and the approval of one of them shows up in the origin chat and in "Needs you". An agent in Workspace cannot create a colleague with Full access. Restoring a previous version of the profile works |
+| **5. ACP** (started on 2026-11-03, lean: our own `engines/acp.ts`, a JSON-RPC client over stdio with only what Zorel uses — `initialize`, `session/new` with the tool gateway as HTTP MCP when the agent accepts it, `session/set_model`, `session/prompt`, `session/update` becoming text and steps, `session/request_permission` answered by the access level (in "Ask first" it refuses and notes it in the reply; the approval card is left for the version with a live session). No state between turns, like the CLI fallback. Providers **OpenCode** (`opencode acp`, tested end to end) and **Gemini CLI** (`gemini --acp`; Google turned off the client for individual accounts, so it only works with a Workspace account/key). They show up in the picker when the binary is installed. **Confinement (2026-11-04):** below "Full access", the ACP agent's whole process runs in the macOS sandbox (`sandbox-exec`, Seatbelt): writing only in the chat's folder (in Workspace, plus a worktree's main `.git`), temporary files, caches and the CLI's own state folders; reading, network and processes stay open. On Linux, the same with bubblewrap (2026-11-04); on Windows, below "Full access" the turn is refused. **API keys through OpenCode (2026-11-04):** a chat turn with a key model (Anthropic, OpenAI, OpenRouter, Ollama, LM Studio) runs on `opencode acp` when it is installed: config in `OPENCODE_CONFIG_CONTENT` (model `provider/model`; local ones as an OpenAI-compatible provider with the URL), the key in a variable that the config references (`{env:ZOREL_PROVIDER_KEY}`), without `.claude`, external skills or the user's project config; same sandbox and permissions as the ACP agents. Internal tasks and machines without OpenCode stay on the direct engine (`ZOREL_API_ENGINE=direct` forces it). The injection path (config + sandbox) was tested live with OpenCode's own free provider; not yet with a real paid key. Tokens come in the `session/prompt` response (`usage`) and go into usage. **Approvals (2026-11-04):** in "Ask first", each `session/request_permission` becomes the turn's approval card (the agent waits for the decision), without needing a live session. Cut (ponytail): live session (it would only save the latency of starting the process per turn), and models read from the harness (the picker's list is enough until someone misses it). Not tested: a real paid key through OpenCode) | `effect-acp`, **first with OpenCode as the harness for all API keys**, including Anthropic and OpenAI (injected config), **with several keys per provider**; then Gemini CLI, Cursor, Kimi…; multiple accounts; models read from each harness. The `api` engine stops showing up as a project agent | A project agent with an OpenRouter key reads, edits and runs tests just like one with Claude |
+| **6. Knowledge 2** (2026-11-04: the evaluation runs in CI — `memory-recall.bench.ts 1000 --check` fails if a memory crosses scope or owner, if the pin goes over the budget or if a fact asked in its own words does not reach the prompt. Embeddings stay out: with the consolidation's keywords, 4/4 learned facts are found with other words) | Backlog items from section 8.1 that have met the entry criterion, plus the recall evaluation running in CI | Each item comes in with the number that justified its entry recorded |
+| **7. Local automation** (done on 2026-11-04: the desktop's server in its own process, which keeps running with the window closed; open at login; app update with notice, progress and "Check for updates"; keep the computer awake when plugged in; export and import workspace (the import arrives turned off: routines and MCP off, "full" access becomes "ask"); routines done on 2026-11-03 — each routine belongs to an agent and has its own chat; each run is a message in it through the normal runtime; cron with `croner` (time zone and daylight saving time) checked every 30 s, catching up once on what it missed while asleep; "Run now"; local webhook `POST /api/hooks/:token` with the body in the message; run idempotent per time slot (clientId) and skipped if the chat is busy; agents list, propose and cancel with `zorel_routines`, always with an approval card. Cut (ponytail): a published version separate from the agent's edits, because each change already becomes a version with restore and the proposal card; HMAC on webhooks, because the 256-bit token in the URL is already the secret and only the computer itself calls it) | Desktop server in the background separate from the window; routines (cron, daylight saving time) with a responsible agent, running a **published version** of the agent; webhooks with HMAC over `effect/workflow`; **app update** with channels and waiting on turns (section 12); export and import workspace | A daily routine runs with the app closed (server/desktop in the background) |
+| **8. Hosted** | On top of D17's doors: login (e-mail + password or OIDC) and a real `Actor`; team and simple roles; memory by audience enforced; secrets vault in the database with envelope encryption; Postgres (`@effect/sql-pg` + ported Drizzle schema); container per project or agent; Docker image + single binary; API to run agents; light runtime for automation agents (no harness); channels (Slack, Telegram) | The same Zorel runs on a server with login, two people use different projects, a private memory never shows up in the other's project, and the agent's shell runs isolated in a container |
 
-**Fora do escopo atual:** sincronização entre dispositivos, **app mobile e interface nativa** (gpui, SwiftUI, Tauri com tela nativa; o desktop é Electron com a interface web, D11/D20), router por LLM, pool com rodízio de contas e assinatura macOS.
+**Out of current scope:** cross-device sync, **mobile app and native interface** (gpui, SwiftUI, Tauri with a native screen; the desktop is Electron with the web interface, D11/D20), LLM router, account rotation pool and macOS signing.
 
-**Backlog avaliado (sem fase ainda):** **loja de agentes prontos** (agentes publicados com instruções, poderes, skills e rotinas, instaláveis em um clique; a ideia do usuário em 2026-11-04, no lugar de modelos fixos no formulário; o OpenBot tem um marketplace parecido); arquivos de contexto compartilhados com modo `inject`/`link` (AgenticOS; hoje o brief e as páginas fixadas cobrem: entra se o mesmo texto começar a ser repetido entre agentes); detector de loop de ferramentas, monitor de quebra de cache de prompt por run, revisor durante o run e auditoria encadeada por hash (ideias do AgenticOS); respostas visuais salvas como páginas; o Zorel como servidor MCP para outros clientes (Claude Code, Cursor). Os motivos estão em [references.md](references.md).
+**Evaluated backlog (no phase yet):** **store of ready-made agents** (published agents with instructions, powers, skills and routines, installable in one click; the user's idea on 2026-11-04, instead of fixed templates in the form); shared context files with `inject`/`link` mode (today the brief and the pinned pages cover it: it comes in if the same text starts being repeated across agents); tool loop detector, prompt cache break monitor per run, reviewer during the run and hash-chained audit; visual responses saved as pages; Zorel as an MCP server for other clients (Claude Code, Cursor).

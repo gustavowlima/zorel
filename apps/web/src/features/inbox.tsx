@@ -166,7 +166,10 @@ function MemoryItem({ memory: m }: { memory: Memory }) {
           {m.reason && <span className="block text-sm text-muted">{m.reason}</span>}
         </p>
       ) : (
-        <p>{m.text}</p>
+        <p>
+          {m.text}
+          {m.replaces && <span className="text-muted">{` · ${t("inbox.updatesMemory")}`}</span>}
+        </p>
       )}
     </Item>
   )

@@ -95,6 +95,8 @@ export function readText(root: string, path: string): { contents: string | null;
 // The system's own commands: open in the default app, or show it selected in the file manager.
 export function osCommand(action: "open" | "reveal", abs: string, platform = process.platform): string[] {
   if (platform === "darwin") return action === "open" ? ["open", abs] : ["open", "-R", abs]
-  if (platform === "win32") return action === "open" ? ["cmd", "/c", "start", '""', abs] : ["explorer", `/select,${abs}`]
+  // Windows: never through cmd, which would read & | ^ in a file name as commands. FileProtocolHandler takes the rest
+  // of its command line as the path.
+  if (platform === "win32") return action === "open" ? ["rundll32", "url.dll,FileProtocolHandler", abs] : ["explorer", `/select,${abs}`]
   return ["xdg-open", action === "open" ? abs : dirname(abs)] // Linux file managers don't share a "select" flag
 }

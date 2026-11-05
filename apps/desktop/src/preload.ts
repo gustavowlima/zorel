@@ -1,24 +1,24 @@
-// The app window's bridge (sandboxed preload): the Browser panel places the native agent browser and hears when a
-// person clicks it. Only for Zorel's own page; agent tabs get no preload.
+// The app window's bridge (sandboxed preload): open at login and app updates. Only for Zorel's own page.
 import { contextBridge, ipcRenderer } from "electron"
 
 contextBridge.exposeInMainWorld("zorelDesktop", {
-  browser: (state: { tab: string; rect: { x: number; y: number; width: number; height: number }; overlay: boolean } | null) => ipcRenderer.send("browser:show", state),
   // Open Zorel at login (it then starts without a window).
   openAtLogin: { get: (): Promise<boolean> => ipcRenderer.invoke("login:get"), set: (on: boolean): Promise<boolean> => ipcRenderer.invoke("login:set", on) },
+  // The system's notification settings for Zorel (false where there's no such page).
+  notificationSettings: (): Promise<boolean> => ipcRenderer.invoke("notifications:settings"),
+  // The system's folder picker (a project's folder): the absolute path, or null when cancelled.
+  pickFolder: (start?: string): Promise<string | null> => ipcRenderer.invoke("folder:pick", start),
+  // Keep the computer awake (on power) so routines run on time.
+  keepAwake: { get: (): Promise<boolean> => ipcRenderer.invoke("awake:get"), set: (on: boolean): Promise<boolean> => ipcRenderer.invoke("awake:set", on) },
   // A new version: downloading (ready false) or ready to install with a restart.
   update: {
-    get: (): Promise<{ version: string; ready: boolean } | null> => ipcRenderer.invoke("update:get"),
+    get: (): Promise<{ version: string; ready: boolean; percent?: number } | null> => ipcRenderer.invoke("update:get"),
     install: (): Promise<boolean> => ipcRenderer.invoke("update:install"),
-    on: (callback: (u: { version: string; ready: boolean } | null) => void) => {
-      const listener = (_e: unknown, u: { version: string; ready: boolean } | null) => callback(u)
+    check: (): Promise<"latest" | "available" | "failed" | "unsupported"> => ipcRenderer.invoke("update:check"),
+    on: (callback: (u: { version: string; ready: boolean; percent?: number } | null) => void) => {
+      const listener = (_e: unknown, u: { version: string; ready: boolean; percent?: number } | null) => callback(u)
       ipcRenderer.on("update", listener)
       return () => void ipcRenderer.off("update", listener)
     }
-  },
-  onTake: (callback: () => void) => {
-    const listener = () => callback()
-    ipcRenderer.on("browser:take", listener)
-    return () => void ipcRenderer.off("browser:take", listener)
   }
 })

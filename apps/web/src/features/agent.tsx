@@ -1,4 +1,4 @@
-// Agent page, in three tabs (as in Tucano): Profile (who it is, its model and fallbacks, its instructions), Tools
+// Agent page, in three tabs: Profile (who it is, its model and fallbacks, its instructions), Tools
 // and access (folder access, web, browser, connectors, what was allowed for good), and Knowledge and activity
 // (its memories and skills, usage, routines, versions). One Save in the header saves every tab. Without an id it
 // creates one, in a project or global.

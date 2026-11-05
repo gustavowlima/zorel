@@ -22,7 +22,7 @@
       "frame": {
         "role": "neutral",
         "displayName": "Moldura",
-        "canonical": "#0d0d0d",
+        "canonical": "#0b0c0e",
         "tonalRamp": [
           "#0d0d0d",
           "#141414",
@@ -42,22 +42,22 @@
       "sidebar": {
         "role": "neutral",
         "displayName": "Barra Lateral",
-        "canonical": "#0d0d0d"
+        "canonical": "#0b0c0e"
       },
       "surface": {
         "role": "neutral",
         "displayName": "Superfície",
-        "canonical": "#232323"
+        "canonical": "#1c1e21"
       },
       "raised": {
         "role": "neutral",
         "displayName": "Elevado",
-        "canonical": "#262626"
+        "canonical": "#202225"
       },
       "text-muted": {
         "role": "neutral",
         "displayName": "Texto Apagado",
-        "canonical": "#979797"
+        "canonical": "#96989c"
       },
       "success": {
         "role": "status",
@@ -77,37 +77,37 @@
       "text-dim": {
         "role": "neutral",
         "displayName": "Texto Mais Apagado",
-        "canonical": "#8a8a8a"
+        "canonical": "#8a8c90"
       },
       "agent-violet": {
         "role": "identity",
         "displayName": "Agente Violeta",
-        "canonical": "#6d5df6"
+        "canonical": "#918ddf"
       },
       "agent-teal": {
         "role": "identity",
         "displayName": "Agente Verde-água",
-        "canonical": "#12a594"
+        "canonical": "#00afa9"
       },
       "agent-rose": {
         "role": "identity",
         "displayName": "Agente Rosa",
-        "canonical": "#e5484d"
+        "canonical": "#d47795"
       },
-      "agent-amber": {
+      "agent-ochre": {
         "role": "identity",
-        "displayName": "Agente Âmbar",
-        "canonical": "#d6851e"
+        "displayName": "Agente Ocre",
+        "canonical": "#aa9935"
       },
-      "agent-sky": {
+      "agent-orchid": {
         "role": "identity",
-        "displayName": "Agente Céu",
-        "canonical": "#3a8ee6"
+        "displayName": "Agente Orquídea",
+        "canonical": "#bd7dc1"
       },
-      "agent-green": {
+      "agent-clay": {
         "role": "identity",
-        "displayName": "Agente Verde",
-        "canonical": "#46a758"
+        "displayName": "Agente Argila",
+        "canonical": "#d67d5e"
       }
     },
     "typographyMeta": {
@@ -267,7 +267,6 @@
       "Don't usar sombras para profundidade.",
       "Don't criar um quinto tamanho de texto.",
       "Don't aplicar hover em dispositivos sem ponteiro fino.",
-      "Don't copiar código ou CSS do OpenBot (licença PolyForm Noncommercial); só a direção.",
       "Don't usar Radix nem a paleta neutra e o --radius padrão do shadcn; as primitivas saem do shadcn --base aria já mapeadas para os tokens --z-*.",
       "Don't pintar botão, link ou estado com cor de agente.",
       "Don't pôr card dentro de card: dentro do cartão de conteúdo, separe por linha e espaço."

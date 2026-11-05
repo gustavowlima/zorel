@@ -155,8 +155,14 @@ export const memories = sqliteTable(
     confirmedAt: integer("confirmed_at").notNull(),
     // D17 seams for hosting: who owns it and who hears it. Today always the local owner.
     owner: text().notNull().default("local"),
-    audience: text({ enum: ["owner", "project", "workspace"] }).notNull().default("project")
+    audience: text({ enum: ["owner", "project", "workspace"] }).notNull().default("project"),
+    // Other words for the same idea (consolidation writes them): indexed for search, never shown or sent.
+    keywords: text().notNull().default(""),
+    // Always in the prompt (the person marks it), ahead of the most recent ones.
+    essential: integer({ mode: "boolean" }).notNull().default(false)
   },
+  // ponytail: one memory per text and scope, whoever owns it; with more than one owner (hosting, D17) the key becomes
+  // (scope, owner, normalized), in a migration that keeps memory_versions (rebuilding the table cascades them away).
   (t) => [unique("memories_scope_normalized").on(t.scope, t.normalized)]
 )
 
@@ -310,7 +316,7 @@ export const routines = sqliteTable("routines", {
   createdAt: integer("created_at").notNull()
 })
 
-// Knowledge pages (phase 3b; Tucano's wiki as reference): longer Markdown notes by scope ("user", "project:<id>",
+// Knowledge pages (phase 3b): longer Markdown notes by scope ("user", "project:<id>",
 // "agent:<id>", as memories), searched with FTS (page_index, kept by triggers), every change kept as a version.
 // pinned: its title goes into every turn's context in that scope (the body is read on demand).
 export const pages = sqliteTable("pages", {

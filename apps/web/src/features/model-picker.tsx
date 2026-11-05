@@ -9,7 +9,7 @@ import { ACCOUNT_OF_MODEL, modelName, modelNote, providerHint, providerLabel, sp
 import { go } from "../state.ts"
 import { LimitWindows } from "./limits.tsx"
 import { providerPageOf } from "./providers.tsx"
-import { Button, cx, FieldButton, Input, OptionButton, Popover, ProviderIcon, RailButton, Search, Tab, TabList, Tabs } from "@/ui"
+import { Button, cx, FieldButton, Input, OptionButton, Popover, ProviderIcon, RailButton, SearchInput, Tab, TabList, Tabs } from "@/ui"
 
 export interface ModelChoice {
   readonly model: string
@@ -262,10 +262,7 @@ function EntryPane({ entry, isSelected, pick, close }: { entry: Entry; isSelecte
 
 function SearchField({ value, onChange }: { value: string; onChange: (v: string) => void }): ReactNode {
   return (
-    <div className="relative">
-      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted" aria-hidden="true" />
-      <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={t("model.search")} aria-label={t("model.search")} className="pl-8" autoFocus />
-    </div>
+    <SearchInput value={value} onChange={(e) => onChange(e.target.value)} placeholder={t("model.search")} aria-label={t("model.search")} autoFocus />
   )
 }
 

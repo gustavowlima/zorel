@@ -10,7 +10,7 @@ import { AsyncResult } from "effect/reactivity"
 import { useAtomValue } from "@effect/atom-react"
 import { mutations, serversAtom, signedInAtom, useInvalidate, useMutation, useReading } from "../client.ts"
 import { ReadingState } from "./reading.tsx"
-import { Badge, Button, Check, Code, ConfirmButton, Field, IconButton, Input, Menu, MenuItem, MenuSeparator, MoreHorizontal, RefreshCw, Plus, Section, Select, Spinner, Switch, Textarea, EmptyState, Plug, Trash2 } from "@/ui"
+import { Badge, Button, Check, Code, ConfirmButton, Dialog, Field, IconButton, Input, Menu, MenuItem, MenuSeparator, MoreHorizontal, RefreshCw, Plus, Section, Select, Spinner, Switch, Textarea, EmptyState, Plug, Trash2 } from "@/ui"
 
 const MODES = ["read", "approve", "auto"] as const
 const modeOptions = () => MODES.map((m) => ({ value: m, label: t(`mcp.modes.${m}`) }))
@@ -29,7 +29,7 @@ export function McpSection({ projectId }: { projectId: string | null }) {
         title={projectId ? t("settings.mcp") : t("mcp.servers")}
         description={projectId ? t("mcp.projectIntro") : t("mcp.intro")}
         action={
-          !adding && servers.length > 0 && (
+          servers.length > 0 && (
             <Button size="sm" variant="secondary" onPress={() => setAdding(true)}>
               <Plus />
               {t("mcp.add")}
@@ -37,9 +37,12 @@ export function McpSection({ projectId }: { projectId: string | null }) {
           )
         }
       >
-        {adding && <NewServer projectId={projectId} onDone={() => setAdding(false)} />}
+        {/* Adding a server is a centred dialog, not a form pushed into the page. */}
+        <Dialog title={t("mcp.add")} size="lg" isOpen={adding} onOpenChange={setAdding}>
+          {(close) => <NewServer projectId={projectId} onDone={close} />}
+        </Dialog>
         <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["servers"])} />
-        {!reading.loading && !reading.failed && servers.length === 0 && !adding && (
+        {!reading.loading && !reading.failed && servers.length === 0 && (
           <EmptyState
             icon={<Plug />}
             title={t("mcp.empty")}
@@ -160,11 +163,11 @@ function NewServer({ projectId, onDone }: { projectId: string | null; onDone: ()
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4 border-y border-subtle py-5">
-      <div className="grid grid-cols-3 gap-3">
-        <Field label={t("mcp.name")}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required spellCheck={false} placeholder={t("mcp.namePlaceholder")} />
-        </Field>
+    <form onSubmit={submit} className="flex flex-col gap-4">
+      <Field label={t("mcp.name")}>
+        <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required spellCheck={false} placeholder={t("mcp.namePlaceholder")} autoFocus />
+      </Field>
+      <div className="grid grid-cols-2 gap-3">
         <Field label={t("mcp.type")}>
           <Select
             value={kind}
@@ -193,12 +196,12 @@ function NewServer({ projectId, onDone }: { projectId: string | null; onDone: ()
         <Textarea value={env} onChange={(e) => setEnv(e.target.value)} rows={3} spellCheck={false} className="font-mono" />
       </Field>
       {error && <p className="text-sm text-danger">{error}</p>}
-      <div className="flex gap-2">
-        <Button type="submit" variant="default" isDisabled={!name.trim()}>
-          {t("common.add")}
-        </Button>
+      <div className="flex justify-end gap-2">
         <Button variant="ghost" onPress={onDone}>
           {t("common.cancel")}
+        </Button>
+        <Button type="submit" variant="default" isDisabled={!name.trim()}>
+          {t("common.add")}
         </Button>
       </div>
     </form>

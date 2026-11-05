@@ -1,0 +1,8 @@
+# LF everywhere, whatever core.autocrlf says: a Windows checkout with CRLF breaks the shell scripts (install.sh)
+# and makes every diff noisy.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.png binary
+*.icns binary
+*.ico binary

@@ -10,14 +10,15 @@
 // shell, edits and every process or MCP server it starts can write only to the chat's folder ("workspace"), the
 // temporary folders, caches and the CLI's own state. Reads, network and process starts stay open, as the access
 // level says. On Linux the same rule runs in bubblewrap (bwrap: the whole system read-only, the roots bound writable),
-// when it is installed. On Windows there is no such sandbox yet: below "full" the turn is refused (idea from
-// OpenBot, own code).
+// when it is installed. On Windows there is no such sandbox yet: below "full" the turn is refused.
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 import type { Access } from "@zorel/contracts"
 import { Stream } from "effect"
 import type { EngineEvent, NativeStep } from "../engines.ts"
+import { approvalFor } from "./policy.ts"
+import type { Approver, NativeApproval } from "./session.ts"
 
 export interface AcpTurn {
   readonly bin: string
@@ -30,6 +31,7 @@ export interface AcpTurn {
   readonly web?: boolean // the agent may fetch and search the web
   readonly state?: ReadonlyArray<string> // folders under home the CLI writes its own data to
   readonly env?: Readonly<Record<string, string>> // extra environment (OpenCode's injected config and the API key)
+  readonly approve?: Approver | undefined // at "ask", each permission request becomes the turn's approval card
 }
 
 // OpenCode as the harness of an API-key model (phase 5): its config goes in OPENCODE_CONFIG_CONTENT, the key in an
@@ -59,6 +61,10 @@ const PROTOCOL = 1
 // ACP tool kinds to Zorel's step kinds.
 export const kindOf = (k: unknown): NativeStep["kind"] => (k === "read" ? "read" : k === "edit" || k === "delete" || k === "move" ? "edit" : k === "execute" ? "run" : k === "search" || k === "fetch" ? "search" : "tool")
 
+const CANCELLED = { outcome: { outcome: "cancelled" } }
+// The approval card's kind for an ACP tool kind.
+const CARD_KIND: Record<string, NativeApproval["kind"]> = { edit: "edit", delete: "edit", move: "edit", execute: "command", fetch: "network" }
+
 // The permission answer for an access level: the first "allow once" option, else cancelled.
 export function permission(options: ReadonlyArray<{ optionId: string; kind: string }>, access: Access): Json {
   const allow = access !== "ask" && (options.find((o) => o.kind === "allow_once") ?? options.find((o) => o.kind === "allow_always"))
@@ -66,21 +72,32 @@ export function permission(options: ReadonlyArray<{ optionId: string; kind: stri
 }
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+// .native: on Windows it also expands short names (RUNNER~1), so a path compares equal however it was written.
 const real = (p: string) => {
   try {
-    return realpathSync(p)
+    return realpathSync.native(p)
   } catch {
     return resolve(p)
   }
 }
 const quote = (p: string) => JSON.stringify(p) // Seatbelt strings use the same escapes as JSON
 
-// A git worktree keeps its index and refs in the main repository's .git: commits there need it writable.
-function gitCommonDir(cwd: string): string | undefined {
+// A git worktree keeps its index and refs in the main repository's .git: commits there need it writable. cwd/.git is
+// a file the agent itself can write, so its "gitdir:" is believed only for a real worktree: <repo>/.git/worktrees/<name>
+// whose own gitdir file (outside cwd, out of the agent's reach) points back at this .git.
+export function gitCommonDir(cwd: string): string | undefined {
   const dotGit = join(cwd, ".git")
   if (!existsSync(dotGit)) return undefined
   const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, "utf8").toString().trim())
-  return m ? dirname(dirname(resolve(cwd, m[1]!.trim()))) : undefined // <repo>/.git/worktrees/<name> → <repo>/.git
+  if (!m) return undefined
+  const gitdir = real(resolve(cwd, m[1]!.trim()))
+  const common = dirname(dirname(gitdir))
+  if (basename(dirname(gitdir)) !== "worktrees" || basename(common) !== ".git") return undefined
+  try {
+    return real(readFileSync(join(gitdir, "gitdir"), "utf8").trim()) === real(dotGit) ? common : undefined
+  } catch {
+    return undefined
+  }
 }
 
 // The folders a confined agent may write, by access level.
@@ -168,10 +185,20 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
       return
     }
     if (m.method === "session/request_permission") {
-      const webAsk = m.params?.toolCall?.kind === "fetch" && !t.web
-      const answer = webAsk ? { outcome: { outcome: "cancelled" } } : permission(m.params?.options ?? [], t.access)
-      if (answer.outcome.outcome === "cancelled") refused++
-      send({ id: m.id, result: answer })
+      const options = m.params?.options ?? []
+      const call = m.params?.toolCall ?? {}
+      const reply = (answer: Json) => {
+        if (answer.outcome.outcome === "cancelled") refused++
+        send({ id: m.id, result: answer })
+      }
+      if (call.kind === "fetch" && !t.web) return reply(CANCELLED)
+      if (t.access !== "ask" || !t.approve) return reply(permission(options, t.access))
+      // "Ask first": the person decides on the turn's approval card while the agent waits.
+      const title = String(call.title ?? "A tool call")
+      void t.approve(approvalFor(CARD_KIND[String(call.kind)] ?? "tool", title, title, call.rawInput ?? call, t.cwd)).then(
+        (ok) => reply(ok ? permission(options, "workspace") : CANCELLED),
+        () => reply(CANCELLED)
+      )
       return
     }
     if (m.method !== undefined && m.id !== undefined) {
@@ -254,7 +281,7 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
       yield { type: "error", message: `${t.bin}: ${failed.message}${err ? `\n${err}` : ""}`, failure: { reason: /auth|login|credential/i.test(`${failed.message} ${err}`) ? "auth" : "unavailable" } }
       return
     }
-    if (refused) yield { type: "text", delta: `\n\n_(${refused} action${refused > 1 ? "s" : ""} refused: this agent's access is "Ask first", which this engine can't ask for yet.)_` }
+    if (refused && !t.approve) yield { type: "text", delta: `\n\n_(${refused} action${refused > 1 ? "s" : ""} refused: this agent's access is "Ask first", and nobody was there to ask.)_` }
     // The prompt's answer carries the turn's tokens (OpenCode does; an agent that doesn't counts 0).
     const u = done?.usage
     yield { type: "done", usage: { inputTokens: Number(u?.inputTokens) || 0, outputTokens: Number(u?.outputTokens) || 0, ...(u?.cachedReadTokens ? { cachedTokens: Number(u.cachedReadTokens) } : {}) } }

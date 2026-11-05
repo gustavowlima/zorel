@@ -8,7 +8,7 @@ import { type Access, type Agent, type AgentPermissions, DEFAULT_PERMISSIONS, ty
 import { handleOf } from "./context.ts"
 import { PROVIDERS } from "./engines.ts"
 
-// What a proposed agent may reach (as in Tucano): the least the work needs. connectors: MCP servers here by name,
+// What a proposed agent may reach: the least the work needs. connectors: MCP servers here by name,
 // each read or write (any not listed: no access); reason: why this agent, in a sentence. The person reviews and can change all of it before it is created.
 const POWERS = {
   web: { type: "boolean", description: "Search and read the web. Only if the work needs it." },
@@ -115,12 +115,12 @@ export const MAX_TASK_DEPTH = 2 // a task may start tasks, whose tasks may not
 export const MEMORY_TOOL = {
   name: "zorel_search_memories",
   description:
-    "Search what you and the team learned (the user's preferences, this project's facts, your own work notes) beyond what is already in your context. query: words to look for. Returns up to 10 memories, best match first.",
-  inputSchema: { properties: { query: { type: "string" } }, required: ["query"] },
+    "Search what you and the team learned (the user's preferences, this project's facts, your own work notes) beyond what is already in your context. Use it when a preference, decision or fact from before could help now. query: the words that would be in such a memory, with synonyms and both languages the user writes in (e.g. \"deploy release vercel friday sexta\"); no match means try other words once, then take it as never saved: don't make it up. Returns up to 10 memories, best match first.",
+  inputSchema: { properties: { query: { type: "string", description: "words that would be in the memory, synonyms included" } }, required: ["query"] },
   writes: false
 } as const
 
-// Skills (as in Tucano): read a recipe when the task matches; propose a new one or a better version of one, with
+// Skills: read a recipe when the task matches; propose a new one or a better version of one, with
 // the reason. Proposals wait for the person in Knowledge, who sees what changes before approving.
 export const SKILL_TOOLS = [
   {
@@ -208,8 +208,8 @@ export interface NewAgentInput {
   readonly notes: { readonly reason: string; readonly connectors: string } // shown on the card, not stored
 }
 
-// The powers asked for, as permissions: web as given (default on), the browser only when asked for (as in Tucano:
-// the least the work needs), connectors by name among
+// The powers asked for, as permissions: web as given (default on), the browser only when asked for (the least
+// the work needs), connectors by name among
 // the servers here (unlisted ones: no access, when any are listed); unknown names are an error to fix.
 function powersOf(args: Record<string, unknown>, servers: ReadonlyArray<{ id: string; name: string }>): { permissions: AgentPermissions; connectors: string } {
   const listed = Array.isArray(args.connectors) ? (args.connectors as Array<Record<string, unknown>>) : undefined
@@ -304,11 +304,11 @@ export function updateInput(args: Record<string, unknown>, target: Agent, caller
   return out as AgentChanges
 }
 
-// The proposal card's text: the fields, one per line (instructions cut for the card; the whole text is written).
+// The proposal card's text: the fields, one per line, in full (what's written is what was shown).
 export const proposalText = (fields: Record<string, unknown>) =>
   Object.entries(fields)
     .filter(([, v]) => v !== undefined && v !== null && v !== "")
-    .map(([k, v]) => `${k}: ${typeof v === "string" ? (v.length > 1200 ? `${v.slice(0, 1200)}…` : v) : JSON.stringify(v)}`)
+    .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
     .join("\n")
 
 // Routines from the conversation (phase 7): list them, or propose one or its removal (both are approval cards).
@@ -330,7 +330,7 @@ export const ROUTINES_TOOL = {
   writes: true
 } as const
 
-// ---------- the Builder: the agent that designs agents and teams with you (Tucano's "Tuca", for whole teams) ----------
+// ---------- the Builder: the agent that designs agents and teams with you ----------
 
 export const BUILDER = {
   name: "Builder",

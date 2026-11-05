@@ -1,21 +1,32 @@
 Zorel
 Copyright 2026 Gustavo Lima
 
-Partes deste projeto derivam de:
+Parts of this project derive from:
 
 - Tucano (https://github.com/eduwxyz/tucano), Apache License 2.0, Copyright Eduardo da Silva.
-  Usado: argumentos de isolamento e parsers de stream do Claude Code e do Codex
-  (apps/server/src/engines.ts), fixtures em apps/server/src/fixtures/, o modelo de
-  contexto montado por turno com resumo + memórias + skills propostas e o roteamento por
-  @menção com limite de repasses (apps/server/src/context.ts, chat.ts), e a classificação
-  de ferramentas e o gateway MCP por turno (apps/server/src/tools.ts).
-
-- T3 Code (https://github.com/pingdotgg/t3code), MIT License, Copyright 2026 T3 Tools Inc.
-  Referência de arquitetura (contracts com Effect Schema, adapters de provider).
+  Used: isolation arguments and stream parsers for Claude Code and Codex
+  (apps/server/src/engines.ts), fixtures in apps/server/src/fixtures/, the per-turn context
+  model with summary + memories + proposed skills and @mention routing with a handoff limit
+  (apps/server/src/context.ts, chat.ts), and tool classification and the per-turn MCP gateway
+  (apps/server/src/tools.ts).
 
 - Lobe Icons (https://github.com/lobehub/lobe-icons), MIT License, Copyright LobeHub.
-  Usado: logos dos providers (Claude, Codex, opencode, OpenRouter, Ollama) em
-  apps/web/src/ui/provider-icon.tsx, a partir de @lobehub/icons-static-svg 1.102.0.
+  Used: provider logos (Claude, Codex, opencode, OpenRouter, Ollama) in
+  apps/web/src/ui/provider-icon.tsx, from @lobehub/icons-static-svg 1.102.0.
 
-O design system é inspirado visualmente no OpenBot (PolyForm Noncommercial 1.0.0);
-nenhum código do OpenBot foi copiado.
+- shadcn/ui (https://github.com/shadcn-ui/ui), MIT License, Copyright (c) 2023 shadcn.
+  Used: components generated with the shadcn CLI and adapted (apps/web/src/ui/button.tsx,
+  dialog.tsx, select.tsx, date-range.tsx).
+
+Bundled with the app under their own terms:
+
+- Inter (https://github.com/rsms/inter), SIL Open Font License 1.1, Copyright 2016 The Inter
+  Project Authors. The font files ship in the web app (via @fontsource-variable/inter).
+
+The full license text of every package that ships inside the app (the font's included) is in
+THIRD_PARTY_LICENSES.md, generated at build time (scripts/third-party-licenses.ts) and placed
+next to the app's resources.
+
+- Claude Agent SDK (@anthropic-ai/claude-agent-sdk), Copyright Anthropic PBC, all rights reserved.
+  Not covered by Zorel's license: its use is subject to Anthropic's legal agreements
+  (https://code.claude.com/docs/en/legal-and-compliance).

@@ -1,4 +1,4 @@
-// Per-agent permissions (ARCHITECTURE §9.2; ideas from Tucano, own code): which MCP tools an agent sees and which
+// Per-agent permissions (ARCHITECTURE §9.2): which MCP tools an agent sees and which
 // wait for the person, whether it may use the browser, and the "always allow" rules it was given. `access`
 // (files and shell) stays the engine's sandbox; this covers everything that reaches past the folder.
 import { type AgentPermissions, DEFAULT_PERMISSIONS, type Grant, type McpServer, type ToolInfo } from "@zorel/contracts"

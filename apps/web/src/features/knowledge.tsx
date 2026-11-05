@@ -7,9 +7,7 @@ import { agentsAtom, chatsAtom, memoriesAtom, memoryVersionsAtom, mutations, pag
 import { NewPage, PageView } from "./pages.tsx"
 import { chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import {
-  BookOpen, Button, cx, EmptyState, Field, Input, Pin, Plus, Screen, Search, Select, Tab, TabList, Tabs, Textarea, LineDiff, Rows, Undo2
-} from "@/ui"
+import { BookOpen, Button, cx, EmptyState, Field, Input, LineDiff, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Tab, TabList, Tabs, Textarea, Tooltip, Undo2 } from "@/ui"
 
 type Filter = "all" | "fact" | "skill" | "page" | "pending" | "forgotten"
 
@@ -56,10 +54,7 @@ export function KnowledgeView({ selected }: { selected: string | undefined }) {
       bodyClassName="flex"
       actions={
         <>
-          <div className="relative w-56">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted" aria-hidden="true" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("knowledge.search")} className="h-control-sm pl-8 text-sm" />
-          </div>
+          <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("knowledge.search")} />
           <Button size="sm" variant="secondary" onPress={() => (showPages ? setCreatingPage(true) : setCreating("fact"))}>
             <Plus />
             {t("knowledge.new")}
@@ -162,7 +157,7 @@ function Reader({ memory: m }: { memory: Memory }) {
   const chat = chats.find((c) => c.id === m.chatId)
   // A proposed improvement: the skill it would replace (the person sees what changes before approving).
   const target = useList(memoriesAtom).find((x) => x.id === m.replaces)
-  const patch = (payload: { state?: Memory["state"]; title?: string; text?: string }) => update({ params: { id: m.id }, payload, reactivityKeys: ["memories"] })
+  const patch = (payload: { state?: Memory["state"]; title?: string; text?: string; essential?: boolean }) => update({ params: { id: m.id }, payload, reactivityKeys: ["memories"] })
 
   return (
     <article className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-10 py-8">
@@ -181,11 +176,17 @@ function Reader({ memory: m }: { memory: Memory }) {
           )}
           <span>·</span>
           <span>{formatDate(m.createdAt)}</span>
+          {m.essential && (
+            <>
+              <span>·</span>
+              <span className="text-accent-text">{t("knowledge.essential")}</span>
+            </>
+          )}
         </p>
       </div>
       {m.state !== "active" && (
         <div className="flex flex-col gap-1 rounded-card bg-surface px-4 py-3 text-sm">
-          <span className="text-secondary">{target && m.state === "pending" ? t("knowledge.improves", { title: target.title }) : t(`knowledge.state.${m.state}`)}</span>
+          <span className="text-secondary">{target && m.state === "pending" ? (skill ? t("knowledge.improves", { title: target.title }) : t("knowledge.updatesFact")) : t(`knowledge.state.${m.state}`)}</span>
           {m.reason && <span className="text-muted">{t("knowledge.why", { reason: m.reason })}</span>}
         </div>
       )}
@@ -238,6 +239,14 @@ function Reader({ memory: m }: { memory: Memory }) {
               <Button size="sm" variant="secondary" onPress={() => setEditing(true)}>
                 {t("common.edit")}
               </Button>
+              {m.state === "active" && !skill && (
+                <Tooltip content={t("knowledge.essentialHint")}>
+                  <Button size="sm" variant="secondary" onPress={() => void patch({ essential: !m.essential })}>
+                    {m.essential ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+                    {m.essential ? t("knowledge.notEssential") : t("knowledge.essential")}
+                  </Button>
+                </Tooltip>
+              )}
               <Button size="sm" variant="ghost" onPress={() => void patch({ state: "forgotten" })}>
                 {m.state === "pending" ? t("inbox.discard") : t("knowledge.forget")}
               </Button>

@@ -1,4 +1,4 @@
-// Settings › Audit log (inspired by OpenBot's): every change to providers, projects, agents, MCP servers and
+// Settings › Audit log: every change to providers, projects, agents, MCP servers and
 // every approval or undo, newest first by day, with who did it and the fields before → after. Filters by kind,
 // words and a span of days run on the server, which sends one page of 50 and the total. Records come from the server's Audit service (evlog audit events in SQLite).
 import { useAtomValue } from "@effect/atom-react"
@@ -9,7 +9,7 @@ import { type ReactNode, useEffect, useState } from "react"
 import { agentsAtom, auditAtom, useInvalidate, useList } from "../client.ts"
 import { ReadingState } from "./reading.tsx"
 import { modelLabel } from "../labels.ts"
-import { ArrowRight, Bot, Button, ChevronRight, DateRangeField, Folder, Input, KeyRound, Plug, Rows, Search, Section, Select, Shield, Undo2, cx } from "@/ui"
+import { ArrowRight, Bot, Button, ChevronRight, cx, DateRangeField, Folder, KeyRound, Plug, Rows, SearchInput, Section, Select, Shield, Undo2 } from "@/ui"
 
 const KINDS: ReadonlyArray<AuditKind> = ["all", "providers", "projects", "tools", "approvals"]
 
@@ -121,10 +121,7 @@ export function AuditSection() {
             onChange={(v) => narrow(setKind)(v as AuditKind)}
             options={KINDS.map((k) => ({ value: k, label: t(`audit.kinds.${k}`) }))}
           />
-          <label className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted" />
-            <Input className="pl-8" placeholder={t("audit.search")} aria-label={t("audit.search")} value={typed} onChange={(e) => setTyped(e.target.value)} />
-          </label>
+          <SearchInput className="flex-1" placeholder={t("audit.search")} aria-label={t("audit.search")} value={typed} onChange={(e) => setTyped(e.target.value)} />
         </div>
         <DateRangeField
           label={t("audit.days")}

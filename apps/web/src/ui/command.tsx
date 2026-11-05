@@ -31,7 +31,7 @@ export function CommandPalette({
   const shown = sections.filter((s) => s.items.length)
   return (
     <ModalOverlay isDismissable isOpen={isOpen} onOpenChange={onOpenChange} className="fixed inset-0 z-50 flex items-start justify-center bg-overlay p-4 pt-[12vh] data-entering:animate-in data-entering:fade-in-0 motion-reduce:animate-none">
-      <Modal className="w-full max-w-xl overflow-hidden rounded-sheet border border-strong bg-raised text-fg outline-none data-entering:animate-in data-entering:zoom-in-95 motion-reduce:animate-none">
+      <Modal className="w-full max-w-xl overflow-hidden rounded-sheet border border-strong bg-float shadow-float backdrop-blur-xl backdrop-saturate-150 text-fg outline-none data-entering:animate-in data-entering:zoom-in-95 motion-reduce:animate-none">
         <Dialog aria-label={label} className="flex max-h-[60vh] flex-col outline-none">
           {({ close }) => (
             <Autocomplete inputValue={query} onInputChange={onQuery}>
@@ -59,7 +59,7 @@ export function CommandPalette({
                           id={i.id}
                           textValue={i.text}
                           className={cn(
-                            "flex cursor-default items-center gap-2.5 rounded-control px-2.5 py-2 text-secondary outline-none data-focused:bg-control-hover data-focused:text-fg [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted"
+                            "flex cursor-default items-center gap-2.5 rounded-control px-2.5 py-2 text-secondary outline-none data-focused:bg-accent-soft data-focused:text-fg [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted data-focused:[&_svg]:text-accent-text"
                           )}
                         >
                           {i.icon}

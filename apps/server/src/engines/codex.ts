@@ -1,7 +1,7 @@
 // Native Codex session (ARCHITECTURE §6, adapter `codex-app-server`): one `codex app-server` process
 // per (chat, agent) speaking JSON-RPC over stdio, one thread kept across turns.
 // Minimal hand-written client (D16 revised): only the methods and fields Zorel uses; unknown fields are
-// ignored, so protocol changes elsewhere don't break us. Robustness ideas from OpenBot (no code):
+// ignored, so protocol changes elsewhere don't break us. Robustness:
 // per-request timeouts, a dead process fails the turn, a line-size cap.
 // Isolation: CODEX_HOME is a Zorel-owned folder, so the user's config.toml (MCP servers, AGENTS.md,
 // memories) never reaches Zorel's agents (D8). Zorel never reads the login inside it.

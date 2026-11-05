@@ -1,6 +1,6 @@
 /* Design system (apps/web/DESIGN.md): dark by default, as in the screen prototype; compact
    24/28/32/36px controls, near-invisible borders, one blue accent, depth by tone (no shadows).
-   Inspired by OpenBot, our own values. Colors come only from these tokens. */
+   Colors come only from these tokens. */
 @import "@fontsource-variable/inter";
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -10,8 +10,10 @@
 @custom-variant dark (&:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *));
 
 :root {
-  --z-bg-frame: #0d0d0d;
-  --z-bg-canvas: #171717;
+  /* Neutrals carry a trace of the brand blue (OKLCH hue 260, chroma 0.005): the landing's graphite. Frame 15.5%,
+     sidebar 17.5%, canvas 21%, surface 23.5%, raised 25% (OKLCH lightness). */
+  --z-bg-frame: #0b0c0e;
+  --z-bg-canvas: #17181b;
   /* Chart series (categorical, fixed order, validated for CVD and contrast on the canvas; see DESIGN.md Charts). */
   --z-series-1: #3987e5;
   --z-series-2: #d95926;
@@ -20,20 +22,22 @@
   --z-series-5: #d55181;
   --z-series-6: #008300;
   --z-series-7: #9085e9;
-  --z-bg-sidebar: #0d0d0d; /* the sidebar sits on the frame; content lives in one card */
-  --z-bg-surface: #232323;
-  --z-bg-raised: #262626;
-  --z-bg-control: #232323;
-  --z-bg-control-hover: #292929;
-  --z-bg-hover: #222222; /* rows and ghost controls on the frame and the canvas: a wash, not a control */
-  --z-bg-control-active: #2c2c2c;
-  --z-bg-code: #141414;
+  --z-bg-sidebar: #0f1113; /* a step above the rail (frame), as on the landing; content lives in one card */
+  --z-bg-surface: #1c1e21;
+  --z-bg-raised: #202225;
+  /* Controls are a translucent layer, not a grey of their own: they read on the frame, the canvas and a surface
+     card alike (an opaque #232323 vanished on surface, which has the same tone). */
+  --z-bg-control: rgba(255, 255, 255, 0.07);
+  --z-bg-control-hover: rgba(255, 255, 255, 0.09);
+  --z-bg-hover: #1a1c1f; /* rows and ghost controls on the frame and the canvas: a wash, not a control */
+  --z-bg-control-active: rgba(255, 255, 255, 0.12);
+  --z-bg-code: #111315;
   --z-border: rgba(255, 255, 255, 0.06);
   --z-border-strong: rgba(255, 255, 255, 0.1);
   --z-text: #ffffff;
-  --z-text-secondary: #dcdcdc;
-  --z-text-muted: #979797;
-  --z-text-dim: #8a8a8a; /* 5.3:1 on canvas: the lowest grey that still passes for reading */
+  --z-text-secondary: #dbdcdf;
+  --z-text-muted: #96989c;
+  --z-text-dim: #8a8c90; /* 5.3:1 on canvas: the lowest grey that still passes for reading */
   --z-accent: #0071e3; /* white text on it: 4.7:1 */
   --z-accent-hover: #0062c4; /* hover deepens: lightening would drop below 4.5:1 */
   --z-accent-text: #42a0ff;
@@ -49,14 +53,21 @@
   --z-diff-add: rgba(49, 207, 118, 0.1);
   --z-diff-del: rgba(255, 107, 115, 0.1);
   --z-on-accent: #ffffff;
+  /* Floating layers (menus, popovers, the / list, the palette): a slightly see-through raised tone with blur and
+     a shadow, so they float over the chat instead of covering it like a slab. Dialogs and tooltips stay solid. */
+  --z-bg-float: rgba(32, 34, 37, 0.86);
+  --z-shadow-float: 0 18px 40px -16px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.45);
   --z-overlay: rgba(0, 0, 0, 0.5);
-  /* Agent identity: avatars only, never actions (the blue stays the only accent). Same in both themes. */
-  --z-agent-1: #6d5df6;
-  --z-agent-2: #12a594;
-  --z-agent-3: #e5484d;
-  --z-agent-4: #d6851e;
-  --z-agent-5: #3a8ee6;
-  --z-agent-6: #46a758;
+  /* Agent identity: avatars only, never actions (the blue stays the only accent). Same in both themes. One lightness
+     and chroma (OKLCH 68% 0.12), six hues kept clear of danger, warning, success and the blue, so an avatar never
+     reads as a state; the initial is dark (≥6:1 on every one; white failed 4.5:1 on five of the old six). */
+  --z-agent-1: #918ddf; /* violet */
+  --z-agent-2: #00afa9; /* teal */
+  --z-agent-3: #d47795; /* rose */
+  --z-agent-4: #aa9935; /* ochre */
+  --z-agent-5: #bd7dc1; /* orchid */
+  --z-agent-6: #d67d5e; /* clay */
+  --z-on-agent: #141414;
   color-scheme: dark;
 
   /* shadcn semantic tokens, mapped once to --z-* (the light theme only swaps --z-*).
@@ -81,7 +92,7 @@
 }
 
 :root[data-theme="light"] {
-  --z-bg-frame: #ececec;
+  --z-bg-frame: #e9ecf1;
   --z-bg-canvas: #ffffff;
   --z-series-1: #2a78d6;
   --z-series-2: #eb6834;
@@ -90,20 +101,20 @@
   --z-series-5: #e87ba4;
   --z-series-6: #008300;
   --z-series-7: #6250d6;
-  --z-bg-sidebar: #ececec;
-  --z-bg-surface: #f2f2f2;
+  --z-bg-sidebar: #e9ecf1;
+  --z-bg-surface: #eff2f6;
   --z-bg-raised: #ffffff;
-  --z-bg-control: #ededed;
-  --z-bg-control-hover: #e4e4e4;
-  --z-bg-hover: #e4e4e4;
-  --z-bg-control-active: #dadada;
-  --z-bg-code: #f6f6f6;
+  --z-bg-control: rgba(20, 20, 20, 0.07);
+  --z-bg-control-hover: rgba(20, 20, 20, 0.1);
+  --z-bg-hover: #e1e4ea;
+  --z-bg-control-active: rgba(20, 20, 20, 0.14);
+  --z-bg-code: #f4f6fa;
   --z-border: rgba(20, 20, 20, 0.08);
   --z-border-strong: rgba(20, 20, 20, 0.14);
-  --z-text: #141414;
-  --z-text-secondary: #2b2b2b;
-  --z-text-muted: #5a5a5a; /* 5.8:1 on the frame */
-  --z-text-dim: #6b6b6b; /* 4.5:1 on the frame (the lightest background), 5.3:1 on white */
+  --z-text: #101419;
+  --z-text-secondary: #272b31;
+  --z-text-muted: #555b62; /* 5.8:1 on the frame */
+  --z-text-dim: #666c73; /* 4.5:1 on the frame (the lightest background), 5.3:1 on white */
   --z-accent-text: #0066cc;
   --z-accent-faint: rgba(0, 113, 227, 0.06);
   --z-accent-line: rgba(0, 113, 227, 0.3);
@@ -111,6 +122,8 @@
   --z-success-faint: rgba(26, 158, 85, 0.07);
   --z-success-line: rgba(26, 158, 85, 0.35);
   --z-diff-add: rgba(26, 158, 85, 0.1);
+  --z-bg-float: rgba(255, 255, 255, 0.86);
+  --z-shadow-float: 0 18px 40px -16px rgba(16, 20, 25, 0.22), 0 4px 12px -6px rgba(16, 20, 25, 0.12);
   --z-diff-del: rgba(196, 35, 45, 0.08);
   color-scheme: light;
 }
@@ -125,6 +138,7 @@
   --color-surface: var(--z-bg-surface);
   --color-hover: var(--z-bg-hover);
   --color-raised: var(--z-bg-raised);
+  --color-float: var(--z-bg-float);
   --color-control: var(--z-bg-control);
   --color-control-hover: var(--z-bg-control-hover);
   --color-control-active: var(--z-bg-control-active);
@@ -156,6 +170,7 @@
   --color-agent-5: var(--z-agent-5);
   --color-agent-6: var(--z-agent-6);
   --color-on-accent: var(--z-on-accent);
+  --color-on-agent: var(--z-on-agent);
   --color-overlay: var(--z-overlay);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -178,6 +193,7 @@
   --spacing-control-lg: 36px;
   --radius-control: 8px;
   /* The open chat in the sidebar: a raised chip (hairline ring + a soft drop). */
+  --shadow-float: var(--z-shadow-float);
   --shadow-chip: inset 0 0 0 1px var(--z-border-strong), 0 6px 16px -8px rgba(0, 0, 0, 0.6);
   --radius-card: 12px;
   --radius-sheet: 16px;
@@ -245,7 +261,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Press feedback like OpenBot: scale 0.97, < 300ms, hover only with a fine pointer. */
+/* Press feedback: scale 0.97, < 300ms, hover only with a fine pointer. */
 .pressable { transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out); }
 .pressable:active { transform: scale(0.97); }
 @media not ((hover: hover) and (pointer: fine)) { .pressable:hover { background-color: inherit; } }

@@ -1,15 +1,18 @@
 import { discovered, pickedPaths } from "./file-skills.ts"
+import { listFolders } from "./folders.ts"
 import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS } from "@zorel/contracts"
+import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
 import { ZorelRpc } from "@zorel/contracts/events"
+import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
 import { Effect, Layer, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
 import { HttpApiBuilder, HttpApiError } from "effect/http-api"
+import { randomBytes, timingSafeEqual } from "node:crypto"
 import { existsSync, mkdirSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
-import { join, normalize, resolve } from "node:path"
+import { join, normalize, resolve, sep } from "node:path"
 import { ask, consolidate, DataDir, DbPath, prepare } from "./chat.ts"
 import * as Git from "./git.ts"
 import { MAX_AFTER, snippet } from "./context.ts"
@@ -60,6 +63,10 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
       input.path ? Effect.map(workspace.validate(input.path), (path) => ({ ...input, path })) : Effect.succeed(input)
     return h
       .handle("list", () => store.projects())
+      // The subfolders of one folder, to pick a project's folder (names and paths only).
+      .handle("folders", ({ query }) =>
+        Effect.try({ try: () => listFolders(query.dir), catch: (e) => (e instanceof WorkspaceInvalid ? e : new WorkspaceInvalid({ reason: "forbidden" })) })
+      )
       .handle("create", ({ payload }) =>
         Effect.flatMap(withPath(payload), store.createProject).pipe(
           Effect.tap((p) => audit.record(Actions.projectCreated, { target: p, after: { name: p.name, path: p.path } }))
@@ -131,7 +138,7 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
           const existing = found && found.instructions !== BUILDER.instructions ? yield* store.updateAgent(found.id, { instructions: BUILDER.instructions, description: BUILDER.description }, "Zorel") : found
           const builder = existing ?? (yield* store.createAgent({ projectId: null, name: BUILDER.name, title: BUILDER.title, description: BUILDER.description, instructions: BUILDER.instructions, model: payload.model, access: BUILDER.access, builtin: "builder" }))
           if (!existing) yield* audit.record(Actions.agentCreated, { target: builder, after: { name: builder.name, model: builder.model, access: builder.access } })
-          // Each visit starts fresh (as in Tucano): the screen's previous conversation here goes away.
+          // Each visit starts fresh: the screen's previous conversation here goes away.
           for (const old of yield* store.hiddenChats(payload.projectId)) yield* store.removeChat(old.id)
           const chat = yield* store.createChat({ projectId: payload.projectId, agentIds: [builder.id], model: payload.model, hidden: true })
           return (yield* store.updateChat(chat.id, { title: "Build agents" }))!
@@ -813,15 +820,30 @@ const AttachmentUpload = HttpRouter.add(
     return HttpServerResponse.jsonUnsafe(yield* store.addAttachment({ id, chatId, name, mime, size: body.length, path: join(dir, id) }))
   }).pipe(Effect.catchTag("SchemaError", () => Effect.succeed(HttpServerResponse.jsonUnsafe({ error: "bad_request" }, { status: 400 }))), Effect.orDie)
 )
+// No scripts, no requests out: a file is shown, never run.
+const ATTACHMENT_CSP = "sandbox; default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'"
+const INLINE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "application/pdf", "text/plain", "audio/mpeg", "audio/wav", "video/mp4", "video/webm"])
 const AttachmentFile = HttpRouter.add(
   "GET",
   "/api/attachments/:id",
   Effect.gen(function* () {
     const { id } = yield* HttpRouter.schemaPathParams(Schema.Struct({ id: Schema.String }))
     const a = yield* (yield* Store).attachment(id)
-    if (!a || !existsSync(a.path)) return HttpServerResponse.empty({ status: 404 })
+    const root = resolve(yield* DataDir, "attachments") + sep
+    if (!a || !resolve(a.path).startsWith(root) || !existsSync(a.path)) return HttpServerResponse.empty({ status: 404 })
+    // The type is what the uploader declared. Only passive types open as a page; anything else (HTML, SVG…) downloads
+    // when opened, so a file can't run as a page on the API's own address (an <img> still shows an SVG, scripts off).
+    // The CSP sandbox stops scripts even if a browser shows it anyway.
+    const shown = INLINE_TYPES.has(a.mime)
     return yield* HttpServerResponse.file(a.path).pipe(
-      Effect.map(HttpServerResponse.setHeaders({ "content-type": a.mime, "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(a.name)}`, "x-content-type-options": "nosniff" }))
+      Effect.map(
+        HttpServerResponse.setHeaders({
+          "content-type": a.mime,
+          "content-disposition": `${shown ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(a.name)}`,
+          "x-content-type-options": "nosniff",
+          "content-security-policy": ATTACHMENT_CSP
+        })
+      )
     )
   }).pipe(Effect.orDie)
 )
@@ -858,9 +880,9 @@ const WorkspaceImport = HttpRouter.add(
 
 // Connectors (oauth.ts): the service sends the person back here after they allow Zorel.
 const escapeHtml = (v: string) => v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`) // error text comes from the service
-const page = (title: string, text: string, status = 200) =>
+const page = (title: string, text: string, status = 200, close = true) =>
   HttpServerResponse.text(
-    `<!doctype html><meta charset="utf-8"><title>Zorel</title><body style="font:15px system-ui;background:#111;color:#eee;display:grid;place-items:center;height:90vh;margin:0"><div style="text-align:center"><h1 style="font-size:20px;font-weight:600">${escapeHtml(title)}</h1><p style="opacity:.7">${escapeHtml(text.slice(0, 300))}</p></div><script>setTimeout(()=>window.close(),1500)</script>`,
+    `<!doctype html><meta charset="utf-8"><title>Zorel</title><body style="font:15px system-ui;background:#111;color:#eee;display:grid;place-items:center;height:90vh;margin:0"><div style="text-align:center"><h1 style="font-size:20px;font-weight:600">${escapeHtml(title)}</h1><p style="opacity:.7">${escapeHtml(text.slice(0, 300))}</p></div>${close ? "<script>setTimeout(()=>window.close(),1500)</script>" : ""}`,
     { status, contentType: "text/html; charset=utf-8" }
   )
 const OAuthCallback = HttpRouter.add(
@@ -886,14 +908,20 @@ const OAuthCallback = HttpRouter.add(
 const WebRoute = (dir: string) =>
   HttpRouter.add("GET", "/*", (req) => {
     const path = normalize(join(dir, decodeURIComponent(new URL(req.url, "http://x").pathname)))
-    const file = path.startsWith(dir) && existsSync(path) && !path.endsWith("/") && Bun.file(path).size > 0 ? path : join(dir, "index.html")
+    const file = path.startsWith(dir + sep) && existsSync(path) && !path.endsWith("/") && Bun.file(path).size > 0 ? path : join(dir, "index.html")
+    // The app itself only with a session: without one it couldn't load anything, so say how to get one.
+    if (file.endsWith("index.html") && !signedIn(req.headers)) return Effect.succeed(page("Open Zorel from its link", "Use the link Zorel printed when it started (it ends in /api/login?t=…).", 401, false))
     // index.html always revalidates (it points at the current build); hashed assets never change.
     const cache = file.endsWith("index.html") ? "no-cache" : "public, max-age=31536000, immutable"
     return HttpServerResponse.file(file).pipe(Effect.map(HttpServerResponse.setHeader("cache-control", cache)), Effect.orDie)
   })
 
-// The server is local, with no login: it only accepts clients that talk to it as local. Unlisted Host blocks DNS rebinding;
-// Origin from another site blocks CSRF (a "simple" POST from any page would trigger a turn with tools).
+// The server is local and only its owner's UI may call it. Host must be local (blocks DNS rebinding) and an Origin,
+// when sent, must be this very origin (blocks CSRF from other sites and other localhost ports). Past that, every
+// /api and /rpc request carries the per-launch session secret: other processes on this computer (agents included)
+// reach 127.0.0.1 too, so a local address alone proves nothing. The desktop app adds it as a header from its main
+// process; a browser gets it as a cookie from /api/login?t=<secret>, the link printed at start. The secret never sits
+// in process.env, so nothing the server spawns inherits it.
 const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]", "::1"])
 const hostname = (value: string | undefined) => {
   if (!value) return undefined
@@ -903,18 +931,39 @@ const hostname = (value: string | undefined) => {
     return "invalid"
   }
 }
-export function isLocalRequest(headers: Readonly<Record<string, string | undefined>>): boolean {
+export const SESSION = process.env[SESSION_ENV] || randomBytes(SESSION_BYTES).toString("hex")
+delete process.env[SESSION_ENV]
+const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
+const cookieOf = (cookie: string | undefined) => (cookie ?? "").split(/;\s*/).find((c) => c.startsWith(`${SESSION_COOKIE}=`))?.slice(SESSION_COOKIE.length + 1) ?? ""
+// Open without the secret: the web app's files, the login link, the OAuth return (state-bound) and routine webhooks (token-bound).
+const open = (path: string) => (!path.startsWith("/api/") && path !== "/rpc") || path === LOGIN_PATH || path === "/api/oauth/callback" || path.startsWith("/api/hooks/")
+const signedIn = (headers: Readonly<Record<string, string | undefined>>, session = SESSION) => same(headers[SESSION_HEADER] ?? "", session) || same(cookieOf(headers.cookie), session)
+export function isLocalRequest(headers: Readonly<Record<string, string | undefined>>, path = "/", session = SESSION): boolean {
   const host = hostname(headers.host)
   if (!host || !LOCAL.has(host)) return false
-  if (!headers.origin) return true // same origin on GET, curl, CLIs
-  return LOCAL.has(hostname(headers.origin) ?? "") // "null" (sandbox, file://) is also rejected
+  if (headers.origin) {
+    try {
+      if (new URL(headers.origin).host !== headers.host) return false // "null" (sandbox, file://) throws: rejected
+    } catch {
+      return false
+    }
+  }
+  return open(path) || signedIn(headers, session)
 }
+
+
+// The login link: sets the session cookie (HttpOnly, this site only) and opens the app.
+const Login = HttpRouter.add("GET", LOGIN_PATH, (req) => {
+  const t = new URL(req.url, "http://x").searchParams.get("t") ?? ""
+  if (!same(t, SESSION)) return Effect.succeed(HttpServerResponse.text("This link is out of date: open the one Zorel printed when it started.", { status: 403 }))
+  return Effect.succeed(HttpServerResponse.empty({ status: 302, headers: { location: "/", "set-cookie": `${SESSION_COOKIE}=${SESSION}; Path=/; HttpOnly; SameSite=Strict` } }))
+})
 
 const LocalOnly = HttpRouter.middleware(
   (app) =>
     Effect.gen(function* () {
       const req = yield* HttpServerRequest.HttpServerRequest
-      return isLocalRequest(req.headers) ? yield* app : HttpServerResponse.text("forbidden", { status: 403 })
+      return isLocalRequest(req.headers, new URL(req.url, "http://x").pathname) ? yield* app : HttpServerResponse.text("forbidden", { status: 403 })
     }),
   { global: true }
 )
@@ -997,6 +1046,7 @@ const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
 export const AppLive = (webDir?: string) =>
   Layer.mergeAll(
     LocalOnly,
+    Login,
     HttpApiBuilder.layer(Api).pipe(Layer.provide([Projects, Agents, Chats, Memories, ToolsGroup, AccountsGroup, Settings, RoutinesGroup, PagesGroup])),
     RoutineScheduler,
     RpcRoute,
@@ -1047,6 +1097,8 @@ export async function start(o: StartOptions = {}) {
     BunRuntime.runMain
   )
   watchParent()
+  // The desktop app brings its own secret; elsewhere this link is how the owner's browser gets in.
+  if (!process.env.ZOREL_PARENT_PID) console.info(`Open Zorel: ${process.env.ZOREL_WEB_ORIGIN ?? `http://127.0.0.1:${port}`}${LOGIN_PATH}?t=${SESSION}`)
   return `http://127.0.0.1:${port}`
 }
 

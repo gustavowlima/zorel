@@ -1,4 +1,4 @@
-// Who answers a message that names no one, in a chat with several agents (ideas from Tucano and OpenBot, own code):
+// Who answers a message that names no one, in a chat with several agents:
 // one short call to a cheap model with the team's roles and the last messages, before the turn runs. It picks one
 // agent: a specialist when the message is in one teammate's remit, the lead when it is coordination, unclear or
 // spans several areas (the lead then splits it and wraps up). Any failure falls back to the lead.

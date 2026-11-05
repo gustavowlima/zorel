@@ -1,43 +1,43 @@
-2026-11-03 | telas reescritas pelo protótipo, átomos (AtomHttpApi/AtomRpc), i18n en, api.ts/accounts/memories/tools removidos | fase UI passos 2 e 3
-2026-11-03 | painel de mudanças, desfazer, terminal, pasta do projeto, nível de acesso | fase 3
-2026-11-03 | diff volta ao @pierre/diffs com pool de workers | a falha era o bug StrictMode + disableFileHeader sem pool
-2026-11-03 | tela Usage reescrita, limites no seletor e na sidebar, nomes reais dos modelos | fase 2c
-2026-11-03 | tela Usage redesenhada (hero, harnesses, área empilhada, totais, detalhamento) | inspiração OpenBot pedida pelo usuário
-2026-11-03 | Accounts + API keys viram Settings › Providers (lista e página por provider) | pedido do usuário, inspirado no OpenBot
-2026-11-03 | Settings › Storage; cn com tokens do tema; lookup de plural corrigido | pedido do usuário + bugs achados
-2026-11-03 | composer em Tiptap com # @ $ /, fila de mensagens, medidor de contexto; seletor de agente saiu do campo | pedido do usuário
+2026-11-03 | screens rewritten from the prototype, atoms (AtomHttpApi/AtomRpc), i18n en, api.ts/accounts/memories/tools removed | UI phase steps 2 and 3
+2026-11-03 | changes panel, undo, terminal, project folder, access level | phase 3
+2026-11-03 | diff back to @pierre/diffs with worker pool | the failure was the StrictMode + disableFileHeader bug without a pool
+2026-11-03 | Usage screen rewritten, limits in the picker and the sidebar, real model names | phase 2c
+2026-11-03 | Usage screen redesigned (hero, harnesses, stacked area, totals, breakdown) | user request: usage readable at a glance
+2026-11-03 | Accounts + API keys become Settings › Providers (list and per-provider page) | user request: one place per provider
+2026-11-03 | Settings › Storage; cn with theme tokens; plural lookup fixed | user request + bugs found
+2026-11-03 | composer in Tiptap with # @ $ /, message queue, context meter; agent picker left the field | user request
 2026-11-03 | sidebar: icon tabs replaced by named Chats|Projects switch; Knowledge/Settings back as fixed rows; usage foot as per-window bars | impeccable critique 21/36 (consistency 1)
 2026-11-03 | sidebar: tabs and Chats|Projects switch removed; stacked sections with icons; chats on one line | user: too cluttered, prefers no tabs
-2026-11-03 | terminal: Run a script, Servers; fix de shell órfão no StrictMode | fase 3c
-2026-11-03 | GitControl no cabeçalho do chat | lacuna vs T3 Code
-2026-11-03 | Changes/Files/Browser/Terminal viram abas de um painel lateral redimensionável; cabeçalho com um botão só | pedido do usuário, como no T3 Code
-2026-11-03 | fixar abas do painel e shells na linha do título (clique direito); ⋯ sem Summarize and learn | pedido do usuário
-2026-11-03 | Git sai do popover e vira aba do painel lateral, com arquivos e commits; abas só com ícone no painel estreito | pedido do usuário
-2026-11-03 | comentar linhas do diff → composer; último shell não fecha; Git no título só quando fixado | pedidos do usuário + lacuna vs T3 Code
-2026-11-03 | tela Agents na barra lateral | fase 4, pedido do usuário
-2026-11-03 | trilho de ícones à esquerda com os lugares do app; barra lateral só com chats e projetos; tela Routines | pedido do usuário (OpenBot)
-2026-11-03 | chats na barra em 2 linhas sem ícone, com agentes participantes; seções sem ícone e mais espaçadas | pedido do usuário
-2026-11-03 | projetos na barra como subtítulos alinhados aos chats | pedido do usuário
-2026-11-03 | divisória entre trilho e barra; barra lateral recolhível (botão, ⌘B, Chats) | pedido do usuário
-2026-11-03 | cartão de conteúdo com 100% da altura, colado à direita, raio só à esquerda | pedido do usuário
-2026-11-03 | Motion (motion.dev) na barra lateral: recolher, seções e destaque do trilho | pedido do usuário; dependência: animar width/height auto e layoutId sem desmontar
-2026-11-03 | chat em toda a largura do painel (sem coluna de 720px) | pedido do usuário
-2026-11-03 | Cmd+K com busca nas mensagens | item 3 da lista (T3 Code)
-2026-11-04 | Build with AI vira tela fixa; Builder interno; página Agents com menu único | pedido do usuário (Tucano/OpenBot)
-2026-11-04 | Build with AI em três passos como no Tucano (poderes, primeira tarefa); teto do Builder = workspace; navegador só se pedido | teste ao vivo mostrou acesso errado e cartão duplicado
-2026-11-04 | Build with AI sem o passo de primeira tarefa (Describe → Powers → página do agente) | pedido do usuário
-2026-11-04 | modelos prontos de agente, seletor de projeto no Build with AI, prazo do gateway maior que o da aprovação | itens 4 e bug do timeout de 60 s
-2026-11-04 | modelos prontos removidos do formulário de agente; loja de agentes vai para o backlog | decisão do usuário
-2026-11-04 | Settings › Connectors em cartões; catálogo de pílulas do formulário removido | usuário pediu conectores tipo GitHub/Notion
-2026-11-04 | conectores com logos (simple-icons) e estado Reconnect | usuário pediu logos e o padrão do OpenBot
-2026-11-04 | Test connection nos conectores + teste ao conectar | usuário pediu teste na conexão
-2026-11-04 | renomeado Zero → Zorel (textos, pacotes, localStorage migrado) | usuário escolheu o nome Zorel
-2026-11-04 | ponytail review+audit: removidos signOut, AvatarStack, Card, windowShort, SessionAccess, TeamToolName, MODEL_OF_ACCOUNT/accountProviderOf, dep shadcn | código sem uso
-2026-11-04 | logo Z do Zorel; barra lateral relê chats criados pelo servidor | renomeação e tarefas entre agentes
-2026-11-04 | Settings › Processes e contagem de processos no cabeçalho do chat | usuário pediu página de processos em segundo plano, também por conversa
-2026-11-04 | Processes enxuta: resumo com ícones de CPU/memória, uma lista com colunas, ação por ícone; sem hero, sparkline e barras | usuário achou a página poluída
-2026-11-04 | chat: coluna de leitura max-w-chat, text-chat 14px, sem avatar em chat de um agente, resumo do turno com duração, ShimmerText, PendingTray, ChatMarkdown com CodeBlock/TableFrame | ideias do OpenBot, pedido do usuário
-2026-11-04 | notas "handed back"/"agents stopped", placeholder com destino do complemento, Steer só no Codex | conversa entre agentes
-2026-11-04 | SortableList (arrastar e teclado) nos fallbacks; grupos do Changes abrem e fecham | pedidos do usuário
-2026-11-04 | Files vira explorer (FileTree, FileIcon, mutations.fs) | usuário pediu renomear/selecionar/apagar como no VS Code
-2026-11-04 | painel Git redesenhado, StatusMark em @/ui, Settings em coluna max-w-5xl | pedido: tela de PR impecável; páginas de Settings desalinhadas e estreitas
+2026-11-03 | terminal: Run a script, Servers; orphan shell fix in StrictMode | phase 3c
+2026-11-03 | GitControl in the chat header | git actions without leaving the chat
+2026-11-03 | Changes/Files/Browser/Terminal become tabs of a resizable side panel; header with a single button | user request: one panel instead of scattered buttons
+2026-11-03 | pin panel tabs and shells to the title row (right click); ⋯ without Summarize and learn | user request
+2026-11-03 | Git leaves the popover and becomes a side panel tab, with files and commits; icon-only tabs in the narrow panel | user request
+2026-11-03 | comment diff lines → composer; last shell does not close; Git in the title only when pinned | user requests: review diffs in the chat flow
+2026-11-03 | Agents screen in the sidebar | phase 4, user request
+2026-11-03 | icon rail on the left with the app's places; sidebar only with chats and projects; Routines screen | user request
+2026-11-03 | sidebar chats in 2 lines without icon, with participating agents; sections without icon and more spaced | user request
+2026-11-03 | projects in the sidebar as subtitles aligned to the chats | user request
+2026-11-03 | divider between rail and sidebar; collapsible sidebar (button, ⌘B, Chats) | user request
+2026-11-03 | content card at 100% height, flush right, radius only on the left | user request
+2026-11-03 | Motion (motion.dev) in the sidebar: collapse, sections and rail highlight | user request; dependency: animate auto width/height and layoutId without unmounting
+2026-11-03 | chat at full panel width (no 720px column) | user request
+2026-11-03 | Cmd+K with message search | item 3 of the list
+2026-11-04 | Build with AI becomes a fixed screen; internal Builder; Agents page with a single menu | user request
+2026-11-04 | Build with AI in three steps (powers, first task); Builder ceiling = workspace; browser only if requested | live test showed wrong access and duplicated card
+2026-11-04 | Build with AI without the first task step (Describe → Powers → agent page) | user request
+2026-11-04 | ready-made agent templates, project picker in Build with AI, gateway deadline longer than the approval's | items 4 and the 60 s timeout bug
+2026-11-04 | ready-made templates removed from the agent form; agent store goes to the backlog | user decision
+2026-11-04 | Settings › Connectors in cards; form pill catalog removed | user asked for connectors like GitHub/Notion
+2026-11-04 | connectors with logos (simple-icons) and Reconnect state | user asked for logos and a visible reconnect state
+2026-11-04 | Test connection on connectors + test on connect | user asked for a connection test
+2026-11-04 | renamed Zero → Zorel (texts, packages, localStorage migrated) | user chose the name Zorel
+2026-11-04 | ponytail review+audit: removed signOut, AvatarStack, Card, windowShort, SessionAccess, TeamToolName, MODEL_OF_ACCOUNT/accountProviderOf, shadcn dep | unused code
+2026-11-04 | Zorel Z logo; sidebar rereads chats created by the server | rename and tasks between agents
+2026-11-04 | Settings › Processes and process count in the chat header | user asked for a background processes page, also per conversation
+2026-11-04 | lean Processes: summary with CPU/memory icons, one list with columns, icon actions; no hero, sparkline or bars | user found the page cluttered
+2026-11-04 | chat: max-w-chat reading column, text-chat 14px, no avatar in single-agent chat, turn summary with duration, ShimmerText, PendingTray, ChatMarkdown with CodeBlock/TableFrame | user request: more readable chat
+2026-11-04 | "handed back"/"agents stopped" notes, placeholder with the follow-up target, Steer only in Codex | conversation between agents
+2026-11-04 | SortableList (drag and keyboard) in fallbacks; Changes groups expand and collapse | user requests
+2026-11-04 | Files becomes an explorer (FileTree, FileIcon, mutations.fs) | user asked to rename/select/delete like in VS Code
+2026-11-04 | Git panel redesigned, StatusMark in @/ui, Settings in a max-w-5xl column | request: flawless PR screen; Settings pages misaligned and narrow
