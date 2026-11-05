@@ -61,6 +61,11 @@ install_mac() {
   say "Baixando o Zorel ${VERSION:-}…" "Downloading Zorel ${VERSION:-}…"
   fetch "${ZOREL_ZIP:-$LATEST/zorel-mac-$ARCH.zip}" "$TMP/zorel.zip"
   [ -n "${ZOREL_ZIP:-}" ] || verify "$TMP/zorel.zip" "zorel-mac-$ARCH.zip"
+  # Unpacked, then copied into place: about three times the download, free on this disk (a full disk failed midway
+  # with "No space left on device" and left the old app; 2026-11-05).
+  NEED=$(($(wc -c <"$TMP/zorel.zip") / 1024 * 3))
+  FREE=$(df -k "$TMP" | awk 'NR==2 {print $4}')
+  [ "$FREE" -ge "$NEED" ] || fail "Falta espaço em disco: o Zorel precisa de $((NEED / 1048576 + 1)) GB livres para atualizar." "Not enough disk space: Zorel needs $((NEED / 1048576 + 1)) GB free to update."
   ditto -x -k "$TMP/zorel.zip" "$TMP/app"
   [ -d "$TMP/app/Zorel.app" ] || fail "O arquivo baixado não tem o Zorel.app." "The download doesn't contain Zorel.app."
 
