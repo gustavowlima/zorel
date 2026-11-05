@@ -1,7 +1,7 @@
 // An agent's work (its page › Work, where its row on the Agents screen opens). Now: what it's doing this moment, live
 // from the chats' statuses (working, or waiting on you first). Sessions: every time it worked, newest first, each
-// with its project and chat, when, how long, how it ended and its tokens; open one for its steps (what it ran, read,
-// edited, with their output) and a way into that chat. Each chat is one session of the agent (one engine session
+// with its project and chat, when, how long, how it ended and its tokens; pressing one opens that chat on its reply
+// (its steps are there, under the reply). Each chat is one session of the agent (one engine session
 // per chat), so a run names the chat it continued.
 import type { Agent, AgentRun, Chat } from "@zorel/contracts"
 import type { ChatStatus } from "@zorel/contracts/events"
@@ -10,7 +10,6 @@ import { useEffect, useState } from "react"
 import { agentRunsAtom, chatsAtom, mutations, projectsAtom, useInvalidate, useList, useMutation, useReading, useStatuses } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
-import { StepList } from "./chat.tsx"
 import { Button, ChevronRight, CircleCheck, CircleX, Dot, ListRow, MessageCircle, Rows, Section, Square, Tag } from "@/ui"
 
 const ACTIVE = new Set<ChatStatus["state"]>(["running", "waiting"])
@@ -100,10 +99,9 @@ export function AgentWork({ agent }: { agent: Agent }) {
   )
 }
 
-// One run: where (project › chat), how it ended, when and for how long, its steps and tokens. Open: its steps, and
-// "Open the chat".
+// One run: where (project › chat), how it ended, when, how long, its steps and tokens. Pressing it opens that chat,
+// the agent's session, on this run's reply.
 function RunRow({ run: r, agent, chat, project }: { run: AgentRun; agent: Agent; chat: Chat | undefined; project: string }) {
-  const [open, setOpen] = useState(false)
   const failed = r.state === "failed"
   const stopped = r.state === "interrupted"
   const errors = r.steps.filter((s) => s.status === "error").length
@@ -117,35 +115,23 @@ function RunRow({ run: r, agent, chat, project }: { run: AgentRun; agent: Agent;
   ].filter(Boolean)
   const icon =
     r.state === "running" ? <Dot tone="accent" /> : failed ? <CircleX className="size-4 text-danger" /> : stopped ? <Square className="size-3.5 text-warning" /> : <CircleCheck className="size-4 text-success" />
+  const name = chat ? chatTitle(chat) : t("agent.work.deletedChat")
   return (
-    <div className="flex flex-col">
-      <ListRow
-        label={`${project} › ${chat ? chatTitle(chat) : t("agent.work.deletedChat")}`}
-        onPress={() => setOpen(!open)}
-        icon={icon}
-        title={
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 text-muted">{project}</span>
-            <ChevronRight className="size-3.5 shrink-0 text-dim" />
-            <span className="truncate">{chat ? chatTitle(chat) : t("agent.work.deletedChat")}</span>
-            {chat && isTask(chat, agent) && <Tag>{t("agent.work.task")}</Tag>}
-          </span>
-        }
-        hint={failed || stopped ? `${t(failed ? "agent.work.failed" : "agent.work.stopped")}${r.preview ? ` · ${plain(r.preview)}` : ""}` : plain(r.preview) || meta.join(" · ")}
-        {...(failed && { hintTone: "warning" as const })}
-        aside={meta.join(" · ")}
-      />
-      {open && (
-        <div className="flex flex-col gap-2 pb-3.5 pl-9">
-          {r.steps.length > 0 ? <StepList steps={r.steps} /> : <p className="text-sm text-muted">{t("agent.work.noSteps")}</p>}
-          {chat && (
-            <Button size="sm" variant="ghost" className="-ml-2 self-start" onPress={() => go({ view: "chat", id: chat.id })}>
-              <MessageCircle />
-              {t("agent.work.openChat")}
-            </Button>
-          )}
-        </div>
-      )}
-    </div>
+    <ListRow
+      label={`${t("agent.work.openChat")}: ${project} › ${name}`}
+      onPress={() => chat && go({ view: "chat", id: chat.id, ...(r.messageId && { at: r.messageId }) })}
+      icon={icon}
+      title={
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 text-muted">{project}</span>
+          <ChevronRight className="size-3.5 shrink-0 text-dim" />
+          <span className="truncate">{name}</span>
+          {chat && isTask(chat, agent) && <Tag>{t("agent.work.task")}</Tag>}
+        </span>
+      }
+      hint={failed || stopped ? `${t(failed ? "agent.work.failed" : "agent.work.stopped")}${r.preview ? ` · ${plain(r.preview)}` : ""}` : plain(r.preview) || meta.join(" · ")}
+      {...(failed && { hintTone: "warning" as const })}
+      aside={meta.join(" · ")}
+    />
   )
 }
