@@ -994,7 +994,8 @@ export const makeRuntime = Effect.gen(function* () {
   const startTask = (origin: Chat, by: Agent | undefined, target: Agent, task: string, reply: boolean) =>
     Effect.gen(function* () {
       const c = yield* store.createChat({
-        projectId: origin.projectId, agentIds: [target.id], model: target.model, accountId: target.accountId, effort: target.effort,
+        // The asking chat's access level comes along: a chat's level covers the work it hands off, too.
+        projectId: origin.projectId, agentIds: [target.id], model: target.model, accountId: target.accountId, effort: target.effort, access: origin.access,
         title: `${target.name}: ${task.replace(/\s+/g, " ").slice(0, 60)}`, taskOf: reply ? origin.id : null, taskBy: by?.id ?? null
       })
       const back = reply

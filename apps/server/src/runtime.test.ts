@@ -507,7 +507,7 @@ test("start_task: the teammate's answer comes back to the asking chat and the as
     const runtime = yield* Runtime
     const lead = yield* store.createAgent({ projectId: null, name: "Lead", instructions: "", model: "x/y" })
     yield* store.createAgent({ projectId: null, name: "Helper", instructions: "", model: "x/y" })
-    const chat = yield* store.createChat({ projectId: null, agentIds: [lead.id], model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [lead.id], model: "x/y", access: "workspace" })
     yield* runtime.send({ chatId: chat.id, clientId: "task-1", text: "delegate" })
     let msgs = yield* store.messages(chat.id)
     for (let i = 0; i < 300 && msgs.length < 4; i++) {
@@ -517,6 +517,7 @@ test("start_task: the teammate's answer comes back to the asking chat and the as
     expect(msgs.map((m) => m.text.split("\n")[0])).toEqual(["delegate", "started", "the answer is 42", "thanks, got it"])
     expect(msgs[2]!.text).toContain("[Open the task](#/chat/")
     expect(yield* store.openTasks()).toEqual([]) // reported once
+    expect((yield* store.chats()).find((c) => c.id !== chat.id)?.access).toBe("workspace") // the chat's level carries over
   })))
 
 // zorel_ask_user: the agent waits on a question card; the person's answer comes back as the tool's result.
