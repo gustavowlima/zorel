@@ -399,6 +399,7 @@ Today's memories and skills migrate to pages: memory → `fact`, skill → `how-
 - **Persisted in the database** (`approvals`): survives a restart and closing the tab.
 - **Expires** (default 30 min), and expiry counts as a refusal.
 - **Promoting an agent to Full access answers on its own** the approvals it has pending.
+- **A chat can set its own level (2026-11-05).** `chats.access` (null: each agent's own) applies to every agent in that chat and only narrows: each agent works at the narrower of the chat's level and its own (workspace at most in a chat with no agent), so full access stays a choice on the agent's page; it is the person's choice, recorded in the audit log, and the engine session reopens because the sandbox is fixed when it opens. Delegating (`zorel_start_task`) compares the target with the chat's level; agent proposals are never wider than the narrower of the chat's level and the proposer's own.
 
 **"Needs you" screen:** gathers pending approvals, questions (`ask_user`) and logins from all chats, tasks and routines, with a link to the origin and a desktop notification.
 - The approval of a delegated task **also** shows up in the chat of whoever delegated it.
