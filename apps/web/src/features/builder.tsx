@@ -439,11 +439,16 @@ function AgentReview({ draft, tone }: { draft: Draft; tone: number }) {
             {head}
             {f.description && <p className="text-secondary">{f.description}</p>}
             {tags}
-            {f.reason && <p className="text-sm text-muted">{t("knowledge.why", { reason: f.reason })}</p>}
+            {f.reason && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm text-muted">{t("builder.why")}</span>
+                <p className="text-sm text-secondary">{f.reason}</p>
+              </div>
+            )}
             {f.instructions && (
               <div className="flex flex-col gap-1.5">
                 <span className="text-sm text-muted">{t("builder.instructions")}</span>
-                <p className="max-h-80 overflow-y-auto rounded-control bg-code px-3 py-2.5 text-sm whitespace-pre-wrap text-secondary">{f.instructions}</p>
+                <p className="max-h-80 overflow-y-auto rounded-control bg-control px-3 py-2.5 text-sm whitespace-pre-wrap text-secondary">{f.instructions}</p>
               </div>
             )}
             <div className="flex justify-end">
