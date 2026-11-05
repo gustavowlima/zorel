@@ -9,7 +9,7 @@ import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
 import { AgentRow, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
 import {
-  Bot, Button, ChatStatusIcon, Select, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Screen, Section, Tab,
+  ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, Select, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Screen, Section, Tab,
   TabList, TabPanel, Tabs, Textarea, Trash2
 } from "@/ui"
 
@@ -45,9 +45,10 @@ export function NewProjectButton() {
 function AddProject({ onDone }: { onDone: () => void }) {
   const create = useMutation(mutations.createProject)
   const [input, setInput] = useState("~/")
+  const [history, setHistory] = useState({ stack: ["~"], at: 0 }) // folders visited, for back and forward
   const [listing, setListing] = useState<FolderListing>()
   const [missing, setMissing] = useState(false)
-  const [selected, setSelected] = useState(-1) // -1: nothing highlighted until the arrows move
+  const [selected, setSelected] = useState(-1) // -1: nothing selected
   const [name, setName] = useState("")
   const [named, setNamed] = useState(false) // the person typed a name: stop following the folder
   const [error, setError] = useState<string>()
@@ -75,20 +76,34 @@ function AddProject({ onDone }: { onDone: () => void }) {
   const shown = (listing?.folders ?? []).filter((f) =>
     partial ? f.name.toLowerCase().startsWith(partial.toLowerCase()) : !f.name.startsWith(".")
   )
-  // Typing a name highlights the first match; with nothing typed, only the arrows highlight a folder.
+  // Typing a name selects the first match; otherwise a click or the arrows select.
   const pick = selected >= 0 ? shown[Math.min(selected, shown.length - 1)] : partial ? shown[0] : undefined
-  // The folder that becomes the project: the one typed (path ending in /) or the highlighted one.
-  const target = missing || !listing ? undefined : partial ? pick?.path : listing.dir
+  // What gets added: the selected folder, or the folder being shown.
+  const target = missing || !listing ? undefined : (pick?.path ?? (partial ? undefined : listing.dir))
+  const refused = !!listing && (target === listing.home || target === "/") // the server refuses home and the root
   useEffect(() => {
-    if (!named) setName(target ? baseName(target) : "")
-  }, [target, named])
+    if (!named) setName(target && !refused ? baseName(target) : "")
+  }, [target, refused, named])
 
-  const type = (value: string) => {
-    setInput(value)
+  const show = (folder: string) => {
+    setInput(folder === "/" ? "/" : `${folder}/`)
     setSelected(-1)
   }
-  const enter = (path: string) => listing && type(`${tilde(path, listing.home)}/`)
-  const submit = (path: string | null) => {
+  // Opening a folder (double click, Enter, the row's arrow, the path bar, Up) is a step back can undo.
+  const open = (path: string) => {
+    if (!listing) return
+    const folder = tilde(path, listing.home)
+    setHistory((h) => ({ stack: [...h.stack.slice(0, h.at + 1), folder], at: h.at + 1 }))
+    show(folder)
+  }
+  const step = (by: -1 | 1) => {
+    const at = history.at + by
+    if (at < 0 || at >= history.stack.length) return
+    setHistory({ ...history, at })
+    show(history.stack[at] ?? "~")
+  }
+  const up = () => listing?.parent && open(listing.parent)
+  const add = (path: string | null) => {
     if (!name.trim()) return
     setBusy(true)
     setError(undefined)
@@ -100,36 +115,67 @@ function AddProject({ onDone }: { onDone: () => void }) {
       .finally(() => setBusy(false))
   }
   const keys = (e: KeyboardEvent<HTMLInputElement>) => {
+    const atEnd = e.currentTarget.selectionStart === input.length
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault()
       setSelected((i) => Math.max(0, Math.min(shown.length - 1, (i < 0 && partial ? 0 : i) + (e.key === "ArrowDown" ? 1 : -1))))
-    } else if ((e.key === "Tab" || e.key === "Enter") && pick) {
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
-      enter(pick.path)
-    } else if (e.key === "Enter" && !partial && target) {
+      if (target && !refused) add(target)
+    } else if ((e.key === "Enter" || e.key === "Tab" || (e.key === "ArrowRight" && atEnd)) && pick) {
       e.preventDefault()
-      submit(target)
+      open(pick.path)
+    } else if (e.key === "ArrowLeft" && atEnd && !partial && listing?.parent) {
+      e.preventDefault()
+      up()
+    } else if (e.key === "Enter" && target && !refused) {
+      e.preventDefault()
+      add(target)
     }
   }
   const browse = async () => {
     const chosen = await desktop?.pickFolder?.(listing?.dir)
-    if (chosen && listing) type(`${tilde(chosen, listing.home)}/`)
+    if (chosen) open(chosen)
   }
 
+  // The path bar: ~ and each folder below it (or / and each folder outside home), every part a way back.
+  const crumbs = (() => {
+    if (!listing) return []
+    const inHome = listing.dir === listing.home || listing.dir.startsWith(`${listing.home}/`)
+    const root = inHome ? listing.home : "/"
+    const parts = listing.dir.slice(root.length).split("/").filter(Boolean)
+    return [{ label: inHome ? "~" : "/", path: root }, ...parts.map((part, i) => ({ label: part, path: `${root === "/" ? "" : root}/${parts.slice(0, i + 1).join("/")}` }))]
+  })()
+
   return (
-    <div className="flex flex-col gap-4">
-      <Field label={t("project.pathLabel")} hint={t("project.pathHint")}>
-        <Input
-          value={input}
-          onChange={(e) => type(e.target.value)}
-          onKeyDown={keys}
-          placeholder={t("project.pathPlaceholder")}
-          spellCheck={false}
-          autoFocus
-          className="font-mono"
-        />
-      </Field>
-      <div role="listbox" aria-label={t("project.pathLabel")} className="-mt-1 flex max-h-64 min-h-24 flex-col gap-px overflow-y-auto rounded-card border border-subtle p-1">
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-1">
+        <IconButton label={t("project.back")} size="sm" isDisabled={history.at === 0} onPress={() => step(-1)}>
+          <ArrowLeft />
+        </IconButton>
+        <IconButton label={t("project.forward")} size="sm" isDisabled={history.at >= history.stack.length - 1} onPress={() => step(1)}>
+          <ArrowRight />
+        </IconButton>
+        <IconButton label={t("project.up")} size="sm" isDisabled={!listing?.parent} onPress={up}>
+          <ArrowUp />
+        </IconButton>
+        <nav aria-label={t("project.pathLabel")} className="ml-1 flex min-w-0 items-center gap-0.5 overflow-hidden text-sm">
+          {crumbs.map((c, i) => (
+            <span key={c.path} className="flex min-w-0 items-center gap-0.5">
+              {i > 0 && <ChevronRight className="size-3.5 shrink-0 text-dim" />}
+              <Button
+                variant="ghost"
+                size="sm"
+                onPress={() => open(c.path)}
+                className={cx("min-w-0 truncate px-1.5", i === crumbs.length - 1 ? "text-fg" : "text-muted")}
+              >
+                {c.label}
+              </Button>
+            </span>
+          ))}
+        </nav>
+      </div>
+      <div role="listbox" aria-label={t("project.pathLabel")} className="flex h-64 flex-col gap-px overflow-y-auto rounded-card border border-subtle p-1">
         {shown.length === 0 && <p className="px-2.5 py-2 text-sm text-dim">{t("project.noFolders")}</p>}
         {shown.map((f, i) => (
           <div
@@ -137,20 +183,32 @@ function AddProject({ onDone }: { onDone: () => void }) {
             role="option"
             aria-selected={f === pick}
             tabIndex={-1}
-            onMouseEnter={() => setSelected(i)}
             onMouseDown={(e) => {
-              e.preventDefault() // keep the field's focus
-              enter(f.path)
+              e.preventDefault() // keep the path field's focus: the keyboard works from there
+              setSelected(i)
             }}
-            className={cx("flex h-control-sm shrink-0 cursor-default items-center gap-2.5 rounded-control px-2.5", f === pick ? "bg-accent-soft text-fg" : "text-secondary")}
+            onDoubleClick={() => open(f.path)}
+            className={cx("group flex h-control-sm shrink-0 cursor-default items-center gap-2.5 rounded-control pr-1 pl-2.5", f === pick ? "bg-accent-soft text-fg" : "text-secondary hover:bg-hover")}
           >
             <span className={cx("flex size-4 shrink-0", f === pick ? "text-accent-text" : "text-muted")}>{f.git ? <GitBranch /> : <Folder />}</span>
-            <span className="min-w-0 truncate">{f.name}</span>
-            {f.git && <span className="ml-auto text-xs text-dim">{t("project.gitRepo")}</span>}
+            <span className="min-w-0 flex-1 truncate">{f.name}</span>
+            {f.git && <span className="text-xs text-dim">{t("project.gitRepo")}</span>}
+            <IconButton label={t("project.open", { name: f.name })} size="xs" onPress={() => open(f.path)} className="text-muted">
+              <ChevronRight />
+            </IconButton>
           </div>
         ))}
       </div>
-      <Field label={t("project.name")} hint={target && listing ? t("project.adds", { path: tilde(target, listing.home) }) : undefined}>
+      <Field label={t("project.pathLabel")} hint={t("project.pathHint")}>
+        <Input value={input} onChange={(e) => {
+            setInput(e.target.value)
+            setSelected(-1)
+          }} onKeyDown={keys} placeholder={t("project.pathPlaceholder")} spellCheck={false} autoFocus className="font-mono" />
+      </Field>
+      <Field
+        label={t("project.name")}
+        hint={refused ? <span className="text-warning">{t("project.chooseInside")}</span> : target && listing ? t("project.adds", { path: tilde(target, listing.home) }) : undefined}
+      >
         <Input
           value={name}
           onChange={(e) => {
@@ -161,21 +219,21 @@ function AddProject({ onDone }: { onDone: () => void }) {
         />
       </Field>
       {error && <p className="text-sm text-danger">{error}</p>}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 pt-1">
         {desktop?.pickFolder && (
           <Button variant="secondary" onPress={() => void browse()}>
             <FolderOpen />
             {t("project.browse")}
           </Button>
         )}
-        <Button variant="ghost" isDisabled={busy || !name.trim()} onPress={() => submit(null)}>
+        <Button variant="ghost" isDisabled={busy || !name.trim()} onPress={() => add(null)}>
           {t("project.withoutFolder")}
         </Button>
         <span className="ml-auto flex gap-2">
           <Button variant="ghost" onPress={onDone}>
             {t("common.cancel")}
           </Button>
-          <Button variant="default" isPending={busy} isDisabled={busy || !target || !name.trim()} onPress={() => target && submit(target)}>
+          <Button variant="default" isPending={busy} isDisabled={busy || !target || refused || !name.trim()} onPress={() => target && add(target)}>
             {t("project.add")}
           </Button>
         </span>
