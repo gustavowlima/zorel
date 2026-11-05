@@ -206,7 +206,7 @@ Layered near-black neutral grays, one signal blue and three state colors. All va
 - **Diff** (diff-add, diff-del): background of added and removed lines.
 
 ### Agent identity
-- **Six colors** (agent-violet, agent-teal, agent-rose, agent-ochre, agent-orchid, agent-clay): each agent gets one, in the order it joins the project. They appear only in the avatar (a square with the initial, dark: on-agent) and never on a button, link or state. All six share one lightness and chroma (OKLCH 68% 0.12) and keep their hues clear of danger, warning, success and the blue, so an avatar never reads as a state or an action.
+- **Six colors** (agent-violet, agent-teal, agent-rose, agent-ochre, agent-orchid, agent-clay): each agent gets one, in the order it joins the project. They appear only in the avatar and never on a button, link or state. The avatar is a little object with eyes (Open Bot Avatar, MIT) inside a soft tile of the agent's color (the color at 15%): the shape comes from the agent's id, so teammates differ by shape as well as color. Lists and the chat use still SVGs; the Builder's review shows them live (breathing, blinking), still under reduced motion. All six share one lightness and chroma (OKLCH 68% 0.12) and keep their hues clear of danger, warning, success and the blue, so an avatar never reads as a state or an action.
 
 ### Named Rules
 **The One Voice Rule.** Signal blue is the only accent. If it appears on something that is not an action, focus, selection or link, it is wrong.
@@ -302,6 +302,7 @@ Compact and direct, with a physical squeeze on press.
 - **Rows / ListRow:** every list between hairlines on a page is `Rows` (a row that opens something is `ListRow`); screens don't write `divide-y` themselves.
 - **IconTile:** the square that holds an icon beside a row or a heading (connectors, git, inbox, processes, empty states): sm 28px, md 32px, lg 40px, on the translucent control tone.
 - **Notice:** an alert card on a page (a usage limit reached, failover terms): the icon in the state color, the text in the page's own, an optional action under it. The app-wide offline strip is its own thing.
+- **Builder:** before a proposal, the conversation leads and the side explains the flow in four steps; once a proposal arrives, reviewing it is the main task: it takes the middle (the team's faces, "Review the team", "N agents · scope · nothing is created until you approve", a card per agent with role, description, model, access, reach and instructions on demand, the decision in a bar that stays in view) and the conversation moves to the side to keep refining it. The Describe → Powers stepper shows only for a single agent.
 - **OptionList / OptionRow:** options whose keyboard lives in a text field beside them (the composer's / @ $ # list, the folder browser): the field keeps the focus, a press selects a row without taking it, a double click opens a row that has something to open; selected = accent-soft with the icon in accent-text. A choice without a text field is a `Select` or a `Menu`.
 
 ### Select

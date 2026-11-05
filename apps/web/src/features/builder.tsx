@@ -66,7 +66,7 @@ function ScreenHeader({ title, subtitle, action }: { title: string; subtitle: st
   )
 }
 
-function Conversation({ chat }: { chat: Chat }) {
+function Conversation({ chat, side = false }: { chat: Chat; side?: boolean }) {
   const state = useChat(chat.id)
   const agents = useList(agentsAtom)
   const projects = useList(projectsAtom)
@@ -79,7 +79,7 @@ function Conversation({ chat }: { chat: Chat }) {
   const empty = state.ready && state.messages.length === 0 && !state.live && state.pending === 0
 
   return (
-    <section aria-label={t("builder.conversation")} className="flex min-w-0 flex-1 flex-col">
+    <section aria-label={t("builder.conversation")} className={cx("flex min-w-0 flex-col", side ? "order-2 w-104 shrink-0 border-l border-subtle" : "flex-1")}>
       {empty ? (
         // Before the first message: what to say, and a few starting points.
         <div className="flex flex-1 flex-col items-center justify-center gap-5 px-8 text-center">
@@ -100,7 +100,16 @@ function Conversation({ chat }: { chat: Chat }) {
         </div>
       ) : (
         // The proposal is reviewed on the right: no second card for it inside the conversation.
-        <Timeline chat={chat} state={{ ...state, approvals: state.approvals.filter((a) => a.tool !== "zorel_create_agent") }} agents={agents} onView={() => {}} onEdit={() => {}} />
+        <>
+          <Timeline chat={chat} state={{ ...state, approvals: state.approvals.filter((a) => a.tool !== "zorel_create_agent") }} agents={agents} onView={() => {}} onEdit={() => {}} />
+          {/* While a proposal waits, the turn only shows "waiting": say where it is and what this box is for now. */}
+          {side && (
+            <p className="mx-6 mb-2 flex items-start gap-2 rounded-card border border-subtle px-3 py-2.5 text-sm text-secondary">
+              <Sparkles className="mt-0.5 size-4 shrink-0 text-accent-text" />
+              {t("builder.readyHint")}
+            </p>
+          )}
+        </>
       )}
       <div className="flex w-full flex-col gap-1.5 px-8 pt-2 pb-4.5">
         {/* A question or an approval of the Builder's (not the proposal: that's reviewed on the right) waits here,
@@ -122,7 +131,7 @@ function Conversation({ chat }: { chat: Chat }) {
           onStop={() => void interrupt({ payload: { chatId: chat.id } })}
           onSubmit={submit}
           upload={(f) => uploadAttachment(chat.id, f)}
-          placeholder={t("builder.placeholder")}
+          placeholder={side ? t("builder.refinePlaceholder") : t("builder.placeholder")}
           tools={
             <ModelPicker
               value={model}
@@ -234,48 +243,51 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <Stepper step={step} />
-      {/* Step 1 stays mounted (the conversation keeps its scroll and draft) while the others show. */}
+      {/* Steps only where there are steps: one agent goes on to its powers; a team is created as proposed. */}
+      {(single || step === "powers") && <Stepper step={step} />}
+      {/* Step 1 stays mounted (the conversation keeps its scroll and draft) while the others show. Before a
+          proposal the conversation leads and the side explains the flow; once one arrives, reviewing it is the
+          main task, so it takes the middle and the conversation moves to the side to keep refining it. */}
       <div className={cx("min-h-0 flex-1", step === "describe" ? "flex" : "hidden")}>
-        <Conversation chat={chat} />
-        <aside aria-label={t("builder.proposal")} className="flex w-96 shrink-0 flex-col gap-6 overflow-y-auto border-l border-subtle px-5 py-6">
-          <Section title={t("builder.proposal")}>
-            {open ? (
-              <div className="flex flex-col gap-3">
-                {drafts.map((d) => (
-                  <DraftCard key={d.name} draft={d} />
-                ))}
-                {single?.fields.reason && <p className="text-sm text-muted">{t("knowledge.why", { reason: single.fields.reason })}</p>}
-                <div className="flex items-center justify-end gap-2">
-                  <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => choose(open, "denied")}>
-                    {t("builder.notNow")}
-                  </Button>
-                  {single ? (
-                    <Button size="sm" variant="default" onPress={() => setStep("powers")}>
-                      {t("builder.useIt")}
-                      <ChevronRight />
-                    </Button>
-                  ) : (
-                    <Button size="sm" variant="default" isPending={busy} isDisabled={busy} onPress={() => choose(open, "approved")}>
-                      {t("builder.createAll", { count: drafts.length })}
-                    </Button>
-                  )}
-                </div>
-              </div>
+        <Conversation chat={chat} side={!!open} />
+        {open ? (
+          <ProposalReview
+            drafts={drafts}
+            single={!!single}
+            busy={busy}
+            reason={single?.fields.reason}
+            onCreate={() => (single ? setStep("powers") : choose(open, "approved"))}
+            onDecline={() => choose(open, "denied")}
+          />
+        ) : (
+          <aside aria-label={t("builder.proposal")} className="flex w-80 shrink-0 flex-col gap-8 overflow-y-auto border-l border-subtle px-6 py-7">
+            {finishing ? (
+              <p className="text-sm text-muted">{t("builder.creating")}</p>
             ) : (
-              <p className="text-sm text-muted">{finishing ? t("builder.creating") : t("builder.waiting")}</p>
+              <Section title={t("builder.howTitle")}>
+                <ol className="flex flex-col gap-3 text-sm">
+                  {(["describe", "ask", "review", "create"] as const).map((k, i) => (
+                    <li key={k} className="flex gap-3">
+                      <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-full border border-strong text-xs text-muted tabular-nums">
+                        {i + 1}
+                      </span>
+                      <span className="text-secondary">{t(`builder.how.${k}`)}</span>
+                    </li>
+                  ))}
+                </ol>
+              </Section>
             )}
-          </Section>
-          {created.length > 0 && (
-            <Section title={t("builder.created")} description={t("builder.createdHint")}>
-              <div className="flex flex-col gap-1">
-                {created.map((a) => (
-                  <CreatedRow key={a.id} agent={a} agents={agents} />
-                ))}
-              </div>
-            </Section>
-          )}
-        </aside>
+            {created.length > 0 && (
+              <Section title={t("builder.created")} description={t("builder.createdHint")}>
+                <div className="flex flex-col gap-1">
+                  {created.map((a) => (
+                    <CreatedRow key={a.id} agent={a} agents={agents} />
+                  ))}
+                </div>
+              </Section>
+            )}
+          </aside>
+        )}
       </div>
 
       {step === "powers" && single && (
@@ -348,26 +360,72 @@ function StepPage({ title, hint, footer, children }: { title: string; hint: stri
   )
 }
 
-function DraftCard({ draft }: { draft: Draft }) {
+// The proposal under review: the team at a glance, one card per agent (what it does, how it runs, what it reaches,
+// its instructions on demand), and the decision in a bar that stays in view.
+function ProposalReview({ drafts, single, busy, reason, onCreate, onDecline }: { drafts: Draft[]; single: boolean; busy: boolean; reason: string | undefined; onCreate: () => void; onDecline: () => void }) {
+  const scope = drafts.every((d) => d.fields.scope === "project") ? t("builder.inProject") : t("builder.everywhere")
+  return (
+    <section aria-label={t("builder.proposal")} className="flex min-w-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-8 py-8">
+          <header className="flex items-center gap-4">
+            <span className="flex -space-x-2">
+              {drafts.map((d, i) => (
+                <AgentAvatar key={d.name} id={d.name} name={d.name} tone={i} size={40} className="ring-2 ring-canvas" />
+              ))}
+            </span>
+            <div className="flex min-w-0 flex-col">
+              <h2 className="text-lg font-semibold">{single ? t("builder.reviewOne") : t("builder.reviewTeam")}</h2>
+              <p className="text-sm text-muted">{[t("builder.teamSize", { count: drafts.length }), scope, t("builder.untilYouApprove")].join(" · ")}</p>
+            </div>
+          </header>
+          <div className={cx("grid gap-3", !single && "lg:grid-cols-2")}>
+            {drafts.map((d, i) => (
+              <AgentReview key={d.name} draft={d} tone={i} />
+            ))}
+          </div>
+          {reason && <p className="text-sm text-muted">{t("knowledge.why", { reason })}</p>}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-3 border-t border-subtle px-8 py-3.5">
+        <span className="min-w-0 flex-1 truncate text-sm text-muted">{t("builder.refineHint")}</span>
+        <Button variant="ghost" isDisabled={busy} onPress={onDecline}>
+          {t("builder.notNow")}
+        </Button>
+        <Button variant="default" isPending={busy && !single} isDisabled={busy} onPress={onCreate}>
+          {single ? t("builder.useIt") : t("builder.createAll", { count: drafts.length })}
+          {single && <ChevronRight />}
+        </Button>
+      </div>
+    </section>
+  )
+}
+
+function AgentReview({ draft, tone }: { draft: Draft; tone: number }) {
   const f = draft.fields
   const [more, setMore] = useState(false)
-  const facts = [f.model && modelLabel(f.model), f.access && t(`access.${f.access as "workspace" | "ask" | "full"}`), f.scope === "project" ? t("builder.inProject") : t("builder.everywhere")].filter(Boolean)
+  const facts = [f.model && modelLabel(f.model), f.access && t(`access.${f.access as "workspace" | "ask" | "full"}`)].filter(Boolean)
   const powers = [f.web === "true" && t("builder.web"), f.browser === "true" && t("builder.browser"), f.connectors && f.connectors !== "none" && f.connectors].filter(Boolean)
   return (
-    <article className="flex flex-col gap-2.5 rounded-card border border-subtle bg-surface p-3.5">
-      <div className="flex items-center gap-2.5">
-        <AgentAvatar id={draft.name} name={draft.name} size={28} />
+    <article className="flex flex-col gap-3 rounded-card border border-subtle p-4">
+      <div className="flex items-center gap-3">
+        <AgentAvatar id={draft.name} name={draft.name} tone={tone} size={40} live />
         <span className="flex min-w-0 flex-col">
           <span className="truncate font-medium">{draft.name}</span>
           {f.title && <span className="truncate text-sm text-muted">{f.title}</span>}
         </span>
       </div>
       {f.description && <p className="text-secondary">{f.description}</p>}
-      <p className="text-sm text-muted">{facts.join(" · ")}</p>
-      <p className="text-sm text-muted">{powers.length ? t("builder.reaches", { what: powers.join(", ") }) : t("builder.reachesNothing")}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {[...facts, powers.length ? t("builder.reaches", { what: powers.join(", ") }) : t("builder.reachesNothing")].map((x) => (
+          <span key={x} className="rounded-control bg-control px-2 py-0.5 text-sm text-secondary">
+            {x}
+          </span>
+        ))}
+      </div>
       {f.instructions && (
-        <div className="flex flex-col gap-1">
-          <p className={more ? "whitespace-pre-wrap text-sm text-secondary" : "line-clamp-3 whitespace-pre-wrap text-sm text-secondary"}>{f.instructions}</p>
+        <div className="mt-auto flex flex-col gap-1 border-t border-subtle pt-3">
+          <p className={cx("whitespace-pre-wrap text-sm text-secondary", !more && "line-clamp-3")}>{f.instructions}</p>
           <Button size="sm" variant="ghost" className="-ml-2.5 self-start" onPress={() => setMore(!more)}>
             {more ? t("builder.less") : t("builder.more")}
           </Button>
