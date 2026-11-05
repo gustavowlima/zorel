@@ -400,7 +400,7 @@ export const en = {
     addTitle: "Add project",
     pathLabel: "Folder",
     pathPlaceholder: "Type a path, like ~/dev/app",
-    pathHint: "Or type a path. ↑↓ select · Enter opens · ← goes up · ⌘Enter adds",
+    pathHint: "Double-click opens a folder. In the path: ↑↓ select, Enter opens, ← goes up, ⌘Enter adds.",
     back: "Back",
     forward: "Forward",
     up: "Enclosing folder",

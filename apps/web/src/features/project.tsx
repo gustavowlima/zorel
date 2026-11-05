@@ -138,17 +138,9 @@ function AddProject({ onDone }: { onDone: () => void }) {
     if (chosen) open(chosen)
   }
 
-  // The path bar: ~ and each folder below it (or / and each folder outside home), every part a way back.
-  const crumbs = (() => {
-    if (!listing) return []
-    const inHome = listing.dir === listing.home || listing.dir.startsWith(`${listing.home}/`)
-    const root = inHome ? listing.home : "/"
-    const parts = listing.dir.slice(root.length).split("/").filter(Boolean)
-    return [{ label: inHome ? "~" : "/", path: root }, ...parts.map((part, i) => ({ label: part, path: `${root === "/" ? "" : root}/${parts.slice(0, i + 1).join("/")}` }))]
-  })()
-
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col">
+      {/* The browser, one block: an address bar (back, forward, up, the path, the system picker) over the list. */}
       <div className="flex items-center gap-1">
         <IconButton label={t("project.back")} size="sm" isDisabled={history.at === 0} onPress={() => step(-1)}>
           <ArrowLeft />
@@ -159,23 +151,26 @@ function AddProject({ onDone }: { onDone: () => void }) {
         <IconButton label={t("project.up")} size="sm" isDisabled={!listing?.parent} onPress={up}>
           <ArrowUp />
         </IconButton>
-        <nav aria-label={t("project.pathLabel")} className="ml-1 flex min-w-0 items-center gap-0.5 overflow-hidden text-sm">
-          {crumbs.map((c, i) => (
-            <span key={c.path} className="flex min-w-0 items-center gap-0.5">
-              {i > 0 && <ChevronRight className="size-3.5 shrink-0 text-dim" />}
-              <Button
-                variant="ghost"
-                size="sm"
-                onPress={() => open(c.path)}
-                className={cx("min-w-0 truncate px-1.5", i === crumbs.length - 1 ? "text-fg" : "text-muted")}
-              >
-                {c.label}
-              </Button>
-            </span>
-          ))}
-        </nav>
+        <Input
+          aria-label={t("project.pathLabel")}
+          value={input}
+          onChange={(e) => {
+            setInput(e.target.value)
+            setSelected(-1)
+          }}
+          onKeyDown={keys}
+          placeholder={t("project.pathPlaceholder")}
+          spellCheck={false}
+          autoFocus
+          className="ml-1 h-control-sm min-w-0 flex-1 font-mono text-sm"
+        />
+        {desktop?.pickFolder && (
+          <IconButton label={t("project.browse")} size="sm" onPress={() => void browse()}>
+            <FolderOpen />
+          </IconButton>
+        )}
       </div>
-      <div role="listbox" aria-label={t("project.pathLabel")} className="flex h-64 flex-col gap-px overflow-y-auto rounded-card border border-subtle p-1">
+      <div role="listbox" aria-label={t("project.pathLabel")} className="mt-2 flex h-64 flex-col gap-px overflow-y-auto rounded-card border border-subtle p-1">
         {shown.length === 0 && <p className="px-2.5 py-2 text-sm text-dim">{t("project.noFolders")}</p>}
         {shown.map((f, i) => (
           <div
@@ -190,43 +185,42 @@ function AddProject({ onDone }: { onDone: () => void }) {
             onDoubleClick={() => open(f.path)}
             className={cx("group flex h-control-sm shrink-0 cursor-default items-center gap-2.5 rounded-control pr-1 pl-2.5", f === pick ? "bg-accent-soft text-fg" : "text-secondary hover:bg-hover")}
           >
-            <span className={cx("flex size-4 shrink-0", f === pick ? "text-accent-text" : "text-muted")}>{f.git ? <GitBranch /> : <Folder />}</span>
+            <span className={cx("flex size-4 shrink-0 items-center justify-center [&_svg]:size-4", f === pick ? "text-accent-text" : "text-muted")}>{f.git ? <GitBranch /> : <Folder />}</span>
             <span className="min-w-0 flex-1 truncate">{f.name}</span>
             {f.git && <span className="text-xs text-dim">{t("project.gitRepo")}</span>}
-            <IconButton label={t("project.open", { name: f.name })} size="xs" onPress={() => open(f.path)} className="text-muted">
+            {/* Opening is always one double click away; the arrow shows where the pointer or the selection is. */}
+            <IconButton
+              label={t("project.open", { name: f.name })}
+              size="xs"
+              onPress={() => open(f.path)}
+              className={cx("text-muted", f === pick ? "opacity-100" : "opacity-0 group-hover:opacity-100 data-focus-visible:opacity-100")}
+            >
               <ChevronRight />
             </IconButton>
           </div>
         ))}
       </div>
-      <Field label={t("project.pathLabel")} hint={t("project.pathHint")}>
-        <Input value={input} onChange={(e) => {
-            setInput(e.target.value)
-            setSelected(-1)
-          }} onKeyDown={keys} placeholder={t("project.pathPlaceholder")} spellCheck={false} autoFocus className="font-mono" />
-      </Field>
-      <Field
-        label={t("project.name")}
-        hint={refused ? <span className="text-warning">{t("project.chooseInside")}</span> : target && listing ? t("project.adds", { path: tilde(target, listing.home) }) : undefined}
-      >
-        <Input
-          value={name}
-          onChange={(e) => {
-            setName(e.target.value)
-            setNamed(true)
-          }}
-          maxLength={80}
-        />
-      </Field>
-      {error && <p className="text-sm text-danger">{error}</p>}
-      <div className="flex flex-wrap items-center gap-2 pt-1">
-        {desktop?.pickFolder && (
-          <Button variant="secondary" onPress={() => void browse()}>
-            <FolderOpen />
-            {t("project.browse")}
-          </Button>
-        )}
-        <Button variant="ghost" isDisabled={busy || !name.trim()} onPress={() => add(null)}>
+      <p className="mt-1.5 text-xs text-dim">{t("project.pathHint")}</p>
+
+      <div className="mt-5">
+        <Field
+          label={t("project.name")}
+          hint={refused ? <span className="text-warning">{t("project.chooseInside")}</span> : target && listing ? t("project.adds", { path: tilde(target, listing.home) }) : undefined}
+        >
+          <Input
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value)
+              setNamed(true)
+            }}
+            maxLength={80}
+          />
+        </Field>
+      </div>
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
+
+      <div className="mt-6 flex items-center gap-2">
+        <Button variant="ghost" size="sm" isDisabled={busy || !name.trim()} onPress={() => add(null)} className="-ml-2 text-muted">
           {t("project.withoutFolder")}
         </Button>
         <span className="ml-auto flex gap-2">
