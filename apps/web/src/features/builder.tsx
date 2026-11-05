@@ -10,7 +10,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react"
 import { agentsAtom, mutations, projectsAtom, serversAtom, uploadAttachment, useChat, useInvalidate, useList, useMutation } from "../client.ts"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { Timeline } from "./chat.tsx"
+import { PendingTray, Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
@@ -103,6 +103,9 @@ function Conversation({ chat }: { chat: Chat }) {
         <Timeline chat={chat} state={{ ...state, approvals: state.approvals.filter((a) => a.tool !== "zorel_create_agent") }} agents={agents} onView={() => {}} onEdit={() => {}} />
       )}
       <div className="flex w-full flex-col gap-1.5 px-8 pt-2 pb-4.5">
+        {/* A question or an approval of the Builder's (not the proposal: that's reviewed on the right) waits here,
+            above the message box, as in any chat: before, a question had nowhere to be answered. */}
+        <PendingTray approvals={state.approvals.filter((a) => a.tool !== "zorel_create_agent")} />
         {/* Where the new agents live: picking a project starts the conversation over in it (as on Home). */}
         <Select
           variant="ghost"
