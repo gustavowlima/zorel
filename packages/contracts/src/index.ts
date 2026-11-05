@@ -118,9 +118,18 @@ export const Agent = Schema.Struct({
   access: Access,
   permissions: AgentPermissions,
   builtin: Schema.optionalKey(Schema.NullOr(Schema.Literal("builder"))), // Zorel's own agent: kept out of lists and pickers
+  // Archived: out of the lists and pickers, answers no one and runs no routine; its history stays. Restorable.
+  archivedAt: Schema.NullOr(Schema.Number),
+  // Token limits (input + output): a month's (UTC) total, and one reply's. null: none. Over the month's, it doesn't
+  // start; past a reply's, the reply stops and can go on (Continue).
+  monthlyTokens: Schema.NullOr(Schema.Number),
+  replyTokens: Schema.NullOr(Schema.Number),
   createdAt: Schema.Number
 })
 export type Agent = typeof Agent.Type
+// The agents that are teammates: not Zorel's own (the Builder), not archived.
+export const isTeammate = (a: Pick<Agent, "builtin" | "archivedAt">) => !a.builtin && !a.archivedAt
+export const TOKEN_LIMIT = Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 1000, maximum: 1_000_000_000 })))
 
 // A saved state of an agent's profile (newest first in lists). by: "you" or the agent that proposed it.
 export const AgentVersion = Schema.Struct({
@@ -135,8 +144,13 @@ export const AgentVersion = Schema.Struct({
 })
 export type AgentVersion = typeof AgentVersion.Type
 
+// What a routine watches: a connector's read-only tool, called every few minutes; the routine runs when its result
+// has items it hasn't seen (a new issue, a failing monitor, an email).
+export const RoutineWatch = Schema.Struct({ serverId: Id, tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)), args: Schema.Record(Schema.String, Schema.Unknown) })
+export type RoutineWatch = typeof RoutineWatch.Type
 // A routine (phase 7): an agent's recurring or triggered work, run as a message in its own chat. cron: when it
 // runs by itself (null: only on demand or by webhook). token: its local webhook (POST /api/hooks/:token).
+// watch: a connector it polls, running on what's new.
 export const Routine = Schema.Struct({
   id: Id,
   agentId: Id,
@@ -145,6 +159,7 @@ export const Routine = Schema.Struct({
   prompt: Schema.String,
   cron: Schema.NullOr(Schema.String),
   token: Schema.NullOr(Schema.String),
+  watch: Schema.NullOr(RoutineWatch),
   enabled: Schema.Boolean,
   nextRunAt: Schema.NullOr(Schema.Number),
   lastRunAt: Schema.NullOr(Schema.Number),
@@ -153,7 +168,7 @@ export const Routine = Schema.Struct({
 })
 export type Routine = typeof Routine.Type
 const Cron = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(9), Schema.isMaxLength(100))
-export const NewRoutine = Schema.Struct({ agentId: Id, name: Name, prompt: Short(8000), cron: Schema.NullOr(Cron), webhook: Schema.Boolean })
+export const NewRoutine = Schema.Struct({ agentId: Id, name: Name, prompt: Short(8000), cron: Schema.NullOr(Cron), webhook: Schema.Boolean, watch: Schema.optional(Schema.NullOr(RoutineWatch)) })
 export const RoutinePatch = Schema.Struct({ name: Schema.optional(Name), prompt: Schema.optional(Short(8000)), cron: Schema.optional(Schema.NullOr(Cron)), webhook: Schema.optional(Schema.Boolean), enabled: Schema.optional(Schema.Boolean) })
 // A cron pattern Zorel refuses (with croner's reason).
 export class CronInvalid extends Schema.Error<CronInvalid>("zorel/CronInvalid")({ _tag: Schema.tag("CronInvalid"), message: Schema.String }, { httpApiStatus: 400 }) {}
@@ -169,6 +184,7 @@ export const Chat = Schema.Struct({
   title: Schema.String,
   accountId: Schema.NullOr(Id), // the lead's account; null: default
   effort: Schema.NullOr(Effort), // the lead's reasoning effort; null: the model's default
+  access: Schema.NullOr(Access), // this chat's level for every agent in it; null: each agent's own
   model: Schema.String, // leader's model for the next turn; other members use their own model
   summary: Schema.String, // summary of what left the window (consolidation)
   summaryUntil: Schema.Number, // `at` of the last message covered by the summary
@@ -297,6 +313,22 @@ export const Step = Schema.Struct({
   result: Schema.String // start of the result
 })
 export type Step = typeof Step.Type
+// One run of an agent (a turn): the chat it was in (so its project), when, how it ended, its tokens and steps.
+// messageId: its reply in the chat (null when it wrote none, e.g. stopped before any text).
+export const AgentRun = Schema.Struct({
+  turnId: Id,
+  chatId: Id,
+  messageId: Schema.NullOr(Id),
+  state: Schema.Literals(["queued", "running", "completed", "failed", "interrupted"]),
+  startedAt: Schema.NullOr(Schema.Number),
+  endedAt: Schema.NullOr(Schema.Number),
+  error: Schema.NullOr(Schema.String),
+  inputTokens: Schema.Number,
+  outputTokens: Schema.Number,
+  preview: Schema.String, // its reply's first words
+  steps: Schema.Array(Step)
+})
+export type AgentRun = typeof AgentRun.Type
 
 // A file sent with a message (ARCHITECTURE §12). Images go to the engine as images; other files as text
 // (small text files) or by name until the workspace phase gives agents file tools.
@@ -391,6 +423,12 @@ export const namedSkills = <S extends { readonly title: string }>(text: string, 
   return skills.filter((s) => handles.has(skillHandle(s.title)))
 }
 
+// How a message names a teammate: "@handle". The one rule for the server (who is called) and the screen (who gets a
+// chip). The "@" must not be glued to a letter, digit, "_", "." or "-", so an e-mail ("foo@tester.com") calls no one,
+// while "(@tester)" and "—@tester" do. Capture 1 is the token. Read it with `matchAll` (which copies the regex), never
+// `exec` or `test` on this shared object: the `g` flag keeps state between uses.
+export const MENTION_RE = /(?<![\p{L}\p{N}_.-])@([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu
+
 export const ModelInfo = Schema.Struct({
   id: Schema.String,
   provider: Schema.String,
@@ -469,9 +507,9 @@ export const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: 
 const AgentTitle = Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(60))
 const AgentDescription = LongText(300)
 export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions) })
-export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions) })
-export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)) })
-export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
+export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions), archived: Schema.optional(Schema.Boolean), monthlyTokens: Schema.optional(TOKEN_LIMIT), replyTokens: Schema.optional(TOKEN_LIMIT) })
+export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)) })
+export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000) })
 export const MemoryPatch = Schema.Struct({ state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)), essential: Schema.optional(Schema.Boolean) })
 // stdio: environment variables; http: headers. Values go to the system keychain.
@@ -490,7 +528,10 @@ export const McpServerPatch = Schema.Struct({ mode: Schema.optional(ToolMode), e
 export const KeyInput = Schema.Struct({ value: LongText(500) }) // empty deletes
 // One-time choices recorded on the server (the failover terms warning is shown once).
 // nativeSkills: Claude Code and Codex may use their own skills (the person's ~/.claude/skills, plugins, Codex's).
-export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean })
+// maxRunning: how many chats may have an agent working at once (the rest wait for a free slot); 0 = no limit.
+export const MAX_RUNNING_DEFAULT = 4
+export const MAX_RUNNING_CHOICES = [0, 1, 2, 3, 4, 6, 8, 12] as const
+export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number })
 
 // Turns (send, events, interrupt, approve): see events.ts (RPC over WebSocket at /rpc).
 export const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
@@ -549,6 +590,10 @@ export const GitStatus = Schema.Struct({
 })
 export type GitStatus = typeof GitStatus.Type
 // git or gh refused (its message, shown as is).
+// What the chat's Run starts: a package.json script, or a command for any stack, in the project or a folder of it.
+export const PreviewRequest = Schema.Struct({ script: Schema.optional(LongText(100)), command: Schema.optional(LongText(1000)), folder: Schema.optional(LongText(500)) })
+// Why it didn't come up (the problem, or the server's last output).
+export class PreviewFailed extends Schema.Error<PreviewFailed>("zorel/PreviewFailed")({ _tag: Schema.tag("PreviewFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
 export class GitFailed extends Schema.Error<GitFailed>("zorel/GitFailed")({ _tag: Schema.tag("GitFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
 const GitText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(20_000))
 export const GitDraft = Schema.Struct({ title: Schema.String, body: Schema.String })
@@ -581,6 +626,8 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.delete("remove", "/api/agents/:id", { params: idParam }))
       // A chat with the Builder (created the first time), in a project or General.
       .add(HttpApiEndpoint.post("builder", "/api/agents/builder", { payload: Schema.Struct({ projectId: Schema.NullOr(Id), model: ModelId }), success: Chat, error: HttpApiError.NotFound }))
+      // Its sessions' runs, newest first: each time it worked, in which chat, how long, its steps and tokens.
+      .add(HttpApiEndpoint.get("runs", "/api/agents/:id/runs", { params: idParam, success: Schema.Array(AgentRun), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.get("versions", "/api/agents/:id/versions", { params: idParam, success: Schema.Array(AgentVersion), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("restore", "/api/agents/:id/versions/:n/restore", { params: Schema.Struct({ id: Schema.String, n: Schema.NumberFromString }), success: Agent, error: HttpApiError.NotFound }))
   )
@@ -628,6 +675,8 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.post("rewind", "/api/chats/:id/rewind", { params: idParam, payload: Schema.Struct({ messageId: Id, files: Schema.Boolean }), success: Schema.Struct({ text: Schema.String }), error: [HttpApiError.NotFound, HttpApiError.Conflict, UndoConflict] }))
       .add(HttpApiEndpoint.get("search", "/api/search", { query: Schema.Struct({ q: Schema.String.check(Schema.isMinLength(2), Schema.isMaxLength(200)) }), success: Schema.Array(SearchHit) }))
       .add(HttpApiEndpoint.get("scripts", "/api/chats/:id/scripts", { params: idParam, success: Schema.Array(ProjectScript), error: HttpApiError.NotFound }))
+      // Run: the person starts the project's server on a free port (a script, or a command with {port}); the URL to open.
+      .add(HttpApiEndpoint.post("preview", "/api/chats/:id/preview", { params: idParam, payload: PreviewRequest, success: Schema.Struct({ url: Schema.String }), error: [HttpApiError.NotFound, PreviewFailed] }))
       .add(HttpApiEndpoint.get("servers", "/api/chats/:id/servers", { params: idParam, success: Schema.Array(LocalServer), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("stopServer", "/api/chats/:id/servers/:pid", { params: Schema.Struct({ id: Schema.String, pid: Schema.NumberFromString }), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("openFile", "/api/chats/:id/open", { params: idParam, payload: OpenFile, error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
@@ -691,6 +740,7 @@ export const Api = HttpApi.make("zorel")
       // Pause everything: running turns stop, new ones wait queued, routines wait; false resumes.
       .add(HttpApiEndpoint.put("pause", "/api/pause", { payload: Schema.Struct({ paused: Schema.Boolean }) }))
       .add(HttpApiEndpoint.put("nativeSkills", "/api/preferences/native-skills", { payload: Schema.Struct({ enabled: Schema.Boolean }), success: Preferences }))
+      .add(HttpApiEndpoint.put("maxRunning", "/api/preferences/max-running", { payload: Schema.Struct({ value: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 32 })) }), success: Preferences }))
       .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))
   )

@@ -41,3 +41,6 @@
 2026-11-04 | SortableList (drag and keyboard) in fallbacks; Changes groups expand and collapse | user requests
 2026-11-04 | Files becomes an explorer (FileTree, FileIcon, mutations.fs) | user asked to rename/select/delete like in VS Code
 2026-11-04 | Git panel redesigned, StatusMark in @/ui, Settings in a max-w-5xl column | request: flawless PR screen; Settings pages misaligned and narrow
+2026-11-05 | sidebar: section icons, search button, project folder + ⋯, chat avatar and 'Agent · model' line, empty states (reverts earlier no-icon rows) | user asked for a more intuitive chats list (designer spec)
+2026-11-05 | '#' in the composer calls an agent (@handle chip, outside agents join the chat) instead of changing the lead | user could not call an agent from the box; lead stays in the header team picker
+2026-11-05 | Work tab and live status on Agents screen; row opens Work, gear opens Profile | user asked for agents' activity on the Agents screen

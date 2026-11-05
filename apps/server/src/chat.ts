@@ -26,8 +26,9 @@ const MAX_PENDING = 20 // proposals awaiting review; above this, consolidation o
 const QUERY_MESSAGES = 3 // the person's latest messages that make the memory search (one alone is often "ok, do it")
 const consolidating = new Set<string>()
 
+// The chat's agents who answer: an archived one stays a member (its history) but answers no one.
 export const members = (store: Repository, chat: Chat) =>
-  Effect.forEach(chat.agentIds, store.agent).pipe(Effect.map((xs) => xs.filter((a): a is NonNullable<typeof a> => !!a)))
+  Effect.forEach(chat.agentIds, store.agent).pipe(Effect.map((xs) => xs.filter((a): a is NonNullable<typeof a> => !!a && !a.archivedAt)))
 
 // ---------- context ----------
 

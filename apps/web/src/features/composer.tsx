@@ -18,7 +18,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react"
 import { attachmentUrl } from "../client.ts"
 import { ArrowUp, cx, File, IconButton, OptionList, OptionRow, pickFiles, Plus, Spinner, Square, Tooltip, X } from "@/ui"
 
-// Something "@", "$" or "/" can pick. `id` is what the text carries after the trigger (an agent's handle, a
+// Something "@", "#", "$" or "/" can pick. `id` is what the text carries after the trigger (an agent's handle, a
 // skill's handle); commands run `run` instead of leaving a chip, and a command without `run` (the engine's own)
 // is written out as "/id " for the engine to run when the message is sent.
 export interface ComposerOption {
@@ -28,16 +28,19 @@ export interface ComposerOption {
   readonly icon?: ReactNode
   readonly run?: () => void
 }
+
+// A reason to show as it is when a submit fails (the other failures read "Couldn't send").
+export class SendError extends Error {}
 export interface ComposerSources {
   readonly agents?: ReadonlyArray<ComposerOption> // "@": mention a member in the message, or a file (path as id)
   readonly skills?: ReadonlyArray<ComposerOption> // "$"
   readonly commands?: ReadonlyArray<ComposerOption> // "/" at the start of a line
-  readonly leads?: ReadonlyArray<ComposerOption> // "#": make an agent the one who answers
+  readonly leads?: ReadonlyArray<ComposerOption> // "#": call an agent (the same chip as "@")
 }
 
 type Trigger = "@" | "$" | "/" | "#"
 // Triggers that run their option instead of leaving a chip.
-const ACTIONS: ReadonlySet<Trigger> = new Set(["/", "#"])
+const ACTIONS: ReadonlySet<Trigger> = new Set(["/"])
 const LIST_LABELS = { "@": "composer.agents", $: "composer.skills", "/": "composer.commands", "#": "composer.leads" } as const
 type Menu = { trigger: Trigger; items: ReadonlyArray<ComposerOption>; selected: number; pick: (o: ComposerOption) => void }
 
@@ -167,10 +170,10 @@ export function Composer({
     editor.commands.clearContent(true)
     setFiles([])
     setError(undefined)
-    onSubmit(body, ids).catch(() => {
+    onSubmit(body, ids).catch((e: unknown) => {
       // Nothing is lost: the text comes back so it can be sent again.
       if (editor.isEmpty) editor.commands.setContent(textToDoc(body))
-      setError(t("chat.sendFailed"))
+      setError(e instanceof SendError ? e.message : t("chat.sendFailed"))
     })
     editor.commands.focus()
   }
@@ -183,6 +186,7 @@ export function Composer({
   }, [dragging, placeholder])
 
   return (
+    <div className="flex flex-col gap-1">
     <form
       aria-label={t("composer.label")}
       onSubmit={(e) => {
@@ -225,8 +229,6 @@ export function Composer({
           <Plus />
         </IconButton>
         <EditorContent editor={editor} className="min-w-0 flex-1 self-center" />
-        {/* The same 32px box as the buttons beside it: a 28px chip sits centred, not on the bottom edge. */}
-        <span className="flex h-control shrink-0 items-center gap-0.5">{tools}</span>
         {busy && onStop && (
           <Tooltip content={t("composer.stop")}>
             <IconButton label={t("composer.stop")} variant="secondary" shape="pill" size="md" onPress={onStop}>
@@ -246,6 +248,10 @@ export function Composer({
         </p>
       )}
     </form>
+    {/* Under the box, outside it: the message's controls (model, access, context). The box keeps attach, the text,
+        Stop and Send. */}
+    {tools && <div className="flex min-w-0 items-center gap-0.5 px-1">{tools}</div>}
+    </div>
   )
 }
 
@@ -280,10 +286,12 @@ function suggestion(
         editor.chain().focus().insertContentAt(range, `/${props.id} `).run()
         return
       }
+      // "#" calls an agent exactly as "@" does: the same chip, and "@handle" in the text.
+      const mark = char === "#" ? "@" : char
       editor
         .chain()
         .focus()
-        .insertContentAt(range, [{ type: "mention", attrs: { id: props.id, label: props.label, mentionSuggestionChar: char } }, { type: "text", text: " " }])
+        .insertContentAt(range, [{ type: "mention", attrs: { id: props.id, label: props.label, mentionSuggestionChar: mark } }, { type: "text", text: " " }])
         .run()
     },
     render: () => ({

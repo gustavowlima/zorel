@@ -4,6 +4,34 @@ What changed in each version of Zorel. The format follows [Keep a Changelog](htt
 and versions follow [Semantic Versioning](https://semver.org) (while in 0.x, a minor version may change things). Each
 section is also the release's notes on GitHub.
 
+## [0.4.0] - 2026-11-05
+
+### Added
+
+- **See your agents work.** The Agents screen says what each one is doing now; **Watch** opens the chat it is
+  running in. An agent's new **Work** tab lists what it's doing this moment and every session it ran (project › chat,
+  how it ended, how long, steps, tokens); a session opens its chat on that reply. **Chat with** opens your own chat
+  with it.
+- **Run** in a chat's header: start the project's server (a package.json script, or any command with `{port}`) on a
+  free port, its output in the Terminal panel and its page in the Browser panel. Agents can do the same
+  (`zorel_preview`), with your OK below full access.
+- **Chat access** beside the model: Agents' own, Ask first, Workspace or **Full access** for every agent in that chat
+  (Full access asks once what it means). Delegated tasks keep the chat's level.
+- **Token limits per agent:** a monthly one and one per reply (with **Continue**), on the agent's page.
+- **Try again** on a reply that failed or was stopped.
+- **Archive an agent:** out of the team and every picker, its history kept; Restore brings it back.
+- **Routines that watch a connector:** a read-only tool checked every 5 minutes; the routine runs on what's new (a new
+  issue, a failing monitor, an email).
+- **Agents working at once:** a limit in Settings › General; chats over it wait in line.
+- **"#" calls an agent into a chat**, mentions show as chips, and the sidebar gets faces and search.
+- **Steering:** a message sent while Claude or Codex works reaches it in the running turn.
+
+### Changed
+
+- The message box keeps the text, attach, Stop and Send; the model, access and context sit under it.
+- A reply keeps every step (reads and searches too) and more of each output, with **Show all**.
+- Quitting the desktop app asks first when agents or routines would stop.
+
 ## [0.3.0] - 2026-11-05
 
 ### Added

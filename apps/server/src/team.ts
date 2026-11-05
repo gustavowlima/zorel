@@ -4,7 +4,7 @@
 // on their OK. A teammate never gets more access than the agent proposing it has (ask < workspace < full), and
 // an agent can only narrow a teammate's access, never widen it: widening is the person's, on the agent's page.
 // Models are checked by provider (any model of a known provider can be typed, as in the picker).
-import { type Access, type Agent, type AgentPermissions, DEFAULT_PERMISSIONS, type Effort, type Grant } from "@zorel/contracts"
+import { type Access, type Agent, type AgentPermissions, DEFAULT_PERMISSIONS, type Effort, type Grant, isTeammate } from "@zorel/contracts"
 import { handleOf } from "./context.ts"
 import { PROVIDERS } from "./engines.ts"
 
@@ -143,6 +143,13 @@ export const SKILL_TOOLS = [
 
 const RANK: Record<Access, number> = { ask: 0, workspace: 1, full: 2 }
 export const narrower = (a: Access, b: Access): Access => (RANK[a] <= RANK[b] ? a : b)
+// The level an agent works at in a chat: the chat's when the person set one there (for every agent in it, wider or
+// narrower than their own: the person chose it for this chat, Full access after a warning), else the agent's own
+// (workspace with no agent). The Builder keeps its own: it designs agents, it never needs more.
+export const effectiveAccess = (chat: { readonly access: Access | null }, agent: { readonly access: Access; readonly builtin?: string | null | undefined } | undefined): Access => {
+  const own = agent?.access ?? "workspace"
+  return agent?.builtin ? own : (chat.access ?? own)
+}
 const LIMITS = { name: 80, title: 60, description: 300, instructions: 8000 } as const
 
 const str = (v: unknown, max: number, field: string): string | undefined => {
@@ -173,7 +180,7 @@ export const findAgent = (all: ReadonlyArray<Agent>, ref: unknown): Agent | unde
 }
 
 // The agents visible from a chat: the global ones and those of its project.
-export const visibleTo = (all: ReadonlyArray<Agent>, projectId: string | null) => all.filter((a) => !a.builtin && (a.projectId === null || a.projectId === projectId))
+export const visibleTo = (all: ReadonlyArray<Agent>, projectId: string | null) => all.filter((a) => isTeammate(a) && (a.projectId === null || a.projectId === projectId))
 
 export const listText = (agents: ReadonlyArray<Agent>, working: (id: string) => boolean) =>
   JSON.stringify(

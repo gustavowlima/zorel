@@ -3,17 +3,19 @@
 // skills, usage, routines, versions). One Save in the header saves every tab; unsaved edits survive leaving the page.
 // Without an id it creates one, in a project or global.
 import { type Access, type Agent, type AgentPermissions, type AgentVersion, DEFAULT_PERMISSIONS, type FailoverTarget } from "@zorel/contracts"
-import { formatAge, t } from "@zorel/i18n"
+import { formatAge, formatCompact, t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
 import { agentsAtom, agentVersionsAtom, memoriesAtom, mutations, projectsAtom, serversAtom, useList, useMutation, useReading } from "../client.ts"
 import { agentTone } from "../labels.ts"
-import { go } from "../state.ts"
+import { type AgentTab, go } from "../state.ts"
+import { AgentWork } from "./agent-work.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { AgentRoutines } from "./routines.tsx"
+import { useArchive } from "./agents.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import {
-  AgentAvatar, BookOpen, Button, ChartColumn, ConfirmDialog, Download, Field, IconButton, Input, ListRow, Menu, MenuItem, MoreHorizontal, Rows, Screen, Section, SettingRow, Sparkles, Tab, TabList,
+  AgentAvatar, Archive, ArchiveRestore, BookOpen, Button, ChartColumn, ConfirmDialog, Download, Field, IconButton, Input, ListRow, Menu, MenuItem, MoreHorizontal, Notice, Rows, Screen, Section, Select, SettingRow, Sparkles, Tab, TabList,
   TabPanel, Tabs, Textarea, Trash2, Undo2
 } from "@/ui"
 
@@ -59,7 +61,7 @@ function writeDraft(key: string, draft: Draft | undefined) {
   }
 }
 
-export function AgentView({ agent, projectId }: { agent?: Agent; projectId: string | null }) {
+export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; projectId: string | null; tab?: AgentTab | undefined }) {
   const agents = useList(agentsAtom)
   const projects = useList(projectsAtom)
   const servers = useList(serversAtom)
@@ -70,10 +72,18 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
   const [form, setForm] = useState<Draft>(() => readDraft(key) ?? fromAgent(agent))
   const set = (patch: Partial<Draft>) => setForm((f) => ({ ...f, ...patch }))
   const { name, title, description, instructions, choice, failover, access, permissions } = form
-  const [tab, setTab] = useState<"profile" | "tools" | "activity">("profile")
+  const [tab, setTab] = useState<AgentTab>(opened ?? "profile")
+  useEffect(() => {
+    if (opened) setTab(opened) // opened again on another tab (the Agents screen's row: Work; its gear: Profile)
+  }, [opened])
   const termsPending = useTermsPending({ model: choice.model, accountId: choice.accountId }, failover)
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
+  const archive = useArchive()
+  const limits = useMutation(mutations.updateAgent)
+  // The token limits apply at once (not part of the profile's Save): a limit is a guard, not a draft.
+  const setLimit = (field: "monthlyTokens" | "replyTokens", v: string) =>
+    agent && void limits({ params: { id: agent.id }, payload: { [field]: v ? Number(v) : null }, reactivityKeys: ["agents"] })
 
   // Another agent, or this one saved (or changed elsewhere): its draft if it has one, else the saved profile.
   useEffect(() => setForm(readDraft(key) ?? fromAgent(agent)), [agent, key])
@@ -126,6 +136,9 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
               <MenuItem icon={<Download />} onAction={() => exportAgent(agent)}>
                 {t("agent.export")}
               </MenuItem>
+              <MenuItem icon={agent.archivedAt ? <ArchiveRestore /> : <Archive />} onAction={() => archive(agent, !agent.archivedAt)}>
+                {agent.archivedAt ? t("agent.restoreArchived") : t("agent.archive")}
+              </MenuItem>
               <MenuItem icon={<Trash2 />} tone="danger" onAction={() => setConfirm(true)}>
                 {t("agent.deleteAction")}
               </MenuItem>
@@ -144,13 +157,24 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
           if (dirty && name.trim() && !termsPending) save()
         }}
       >
+        {agent?.archivedAt && (
+          <Notice icon={<Archive />} className="mb-6" title={t("agent.archivedTitle")} action={<Button size="sm" variant="secondary" onPress={() => archive(agent, false)}>{t("agent.restoreArchived")}</Button>}>
+            {t("agent.archivedBody")}
+          </Notice>
+        )}
         <Tabs selectedKey={tab} onSelectionChange={(k) => setTab(k as typeof tab)} className="gap-7">
           <TabList label={agent ? t("agent.tabsLabel", { name: agent.name }) : t("agent.newTitle")}>
+            {agent && <Tab id="work">{t("agent.tabs.work")}</Tab>}
             <Tab id="profile">{t("agent.tabs.profile")}</Tab>
             <Tab id="tools">{t("agent.tabs.tools")}</Tab>
             {agent && <Tab id="activity">{t("agent.tabs.activity")}</Tab>}
           </TabList>
 
+          {agent && (
+            <TabPanel id="work" className="flex flex-col gap-10">
+              <AgentWork agent={agent} />
+            </TabPanel>
+          )}
           <TabPanel id="profile" className="flex flex-col gap-10">
             {/* Who it is: other agents read the title and description to know whom to hand work to. */}
             <Section title={t("agent.who")}>
@@ -183,6 +207,16 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
                   </span>
                   <FailoverEditor primary={{ model: choice.model, accountId: choice.accountId }} value={failover} onChange={(f) => set({ failover: f })} />
                 </div>
+                {agent && (
+                  <SettingRow title={t("agent.monthlyLimit")} hint={t("agent.monthlyLimitHint")}>
+                    <Select size="sm" className="w-36" aria-label={t("agent.monthlyLimit")} value={String(agent.monthlyTokens ?? "")} onChange={(v) => setLimit("monthlyTokens", v)} options={limitOptions(MONTHLY, agent.monthlyTokens)} />
+                  </SettingRow>
+                )}
+                {agent && (
+                  <SettingRow title={t("agent.replyLimit")} hint={t("agent.replyLimitHint")}>
+                    <Select size="sm" className="w-36" aria-label={t("agent.replyLimit")} value={String(agent.replyTokens ?? "")} onChange={(v) => setLimit("replyTokens", v)} options={limitOptions(PER_REPLY, agent.replyTokens)} />
+                  </SettingRow>
+                )}
               </Rows>
             </Section>
             <Section title={t("agent.instructions")} description={t("agent.roleHint")}>
@@ -250,6 +284,14 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
     </Screen>
   )
 }
+
+// ---------- token limits ----------
+
+const MONTHLY = [1_000_000, 5_000_000, 20_000_000, 50_000_000, 100_000_000]
+const PER_REPLY = [100_000, 250_000, 500_000, 1_000_000, 2_000_000]
+// The choices of a limit's select: none, the steps, and the agent's own value when it is none of them.
+const limitOptions = (steps: ReadonlyArray<number>, current: number | null) =>
+  [null, ...steps, ...(current && !steps.includes(current) ? [current] : [])].map((n) => ({ value: n === null ? "" : String(n), label: n === null ? t("agent.noLimit") : t("agent.tokens", { n: formatCompact(n) }) }))
 
 // ---------- versions ----------
 

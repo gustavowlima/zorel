@@ -102,7 +102,7 @@ export function closeTerminal(id: string) {
 // ---------- project scripts: package.json "scripts", run with the package manager its lockfile names ----------
 
 const SCRIPT_NAME = /^[\w:.@/-]{1,100}$/ // safe to type into a shell unquoted
-const managerOf = (cwd: string) =>
+export const managerOf = (cwd: string) =>
   existsSync(join(cwd, "bun.lock")) || existsSync(join(cwd, "bun.lockb"))
     ? "bun"
     : existsSync(join(cwd, "pnpm-lock.yaml"))
@@ -130,13 +130,13 @@ export function shellCommand(platform = process.platform, env = process.env): st
   return [env.SHELL || (existsSync("/bin/zsh") ? "/bin/zsh" : "/bin/bash"), "-l"]
 }
 
-function open(chatId: string, cwd: string, cols: number, rows: number, run?: { name: string; line: string }): Session {
+function open(chatId: string, cwd: string, cols: number, rows: number, run?: { name: string; line: string }, extraEnv: Record<string, string> = {}): Session {
   const n = Math.max(0, ...[...sessions.values()].filter((s) => s.chatId === chatId).map((s) => s.n)) + 1
   const output = new Ring(SCROLLBACK)
   let session: Session | undefined
   const proc = Bun.spawn(shellCommand(), {
     cwd,
-    env: { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor" },
+    env: { ...process.env, ...extraEnv, TERM: "xterm-256color", COLORTERM: "truecolor" },
     terminal: {
       cols,
       rows,
@@ -156,6 +156,19 @@ function open(chatId: string, cwd: string, cols: number, rows: number, run?: { n
   })
   sessions.set(s.id, s)
   return s
+}
+
+// A shell the server opens itself for the chat (an agent's preview, preview.ts): it shows in the Terminal panel like
+// one the person opened, with its output and its tab. Undefined when the shells are at their limit.
+export function startShell(chatId: string, cwd: string, label: string, line: string, env: Record<string, string>) {
+  if (live() >= MAX_TERMINALS) return undefined
+  const s = open(chatId, cwd, 120, 30, { name: label, line: `${line}\r` }, env)
+  return { id: s.id, pid: s.proc.pid, ended: () => s.ended, output: () => s.output.read() }
+}
+// A shell still running, by id (a preview reused across calls).
+export const shellAlive = (id: string) => {
+  const s = sessions.get(id)
+  return !!s && !s.ended
 }
 
 export const TerminalSocket = HttpRouter.add(

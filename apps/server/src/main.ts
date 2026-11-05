@@ -2,7 +2,7 @@ import { discovered, pickedPaths } from "./file-skills.ts"
 import { listFolders } from "./folders.ts"
 import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
+import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
 import { ZorelRpc } from "@zorel/contracts/events"
 import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
 import { Effect, Layer, Schema } from "effect"
@@ -26,7 +26,7 @@ import { Accounts } from "./accounts.ts"
 import { Actor } from "./access.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { LoggerLive } from "./observability.ts"
-import { Runtime, type RuntimeService } from "./runtime.ts"
+import { MAX_RUNNING_KEY, parseMaxRunning, Runtime, type RuntimeService } from "./runtime.ts"
 import { RoutineScheduler, runRoutine } from "./routines.ts"
 import { createRoutineFor, newToken, nextRun } from "./schedule.ts"
 import { BUILDER } from "./team.ts"
@@ -110,7 +110,7 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
   })
 )
 
-const AGENT_FIELDS = ["name", "title", "description", "instructions", "model", "accountId", "effort", "failover", "access", "permissions"] as const
+const AGENT_FIELDS = ["name", "title", "description", "instructions", "model", "accountId", "effort", "failover", "access", "permissions", "archivedAt", "monthlyTokens", "replyTokens"] as const
 
 const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
   Effect.gen(function* () {
@@ -126,7 +126,10 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
       .handle("update", ({ params, payload }) =>
         Effect.gen(function* () {
           const before = yield* store.agent(params.id)
-          const after = yield* found(store.updateAgent(params.id, payload))
+          // "archived" is a switch; the row keeps when (null: not archived). Archiving again keeps the first time.
+          const { archived, ...rest } = payload
+          const archivedAt = archived === undefined ? undefined : archived ? (before?.archivedAt ?? Date.now()) : null
+          const after = yield* found(store.updateAgent(params.id, { ...rest, ...(archivedAt !== undefined && { archivedAt }) }))
           if (before) yield* audit.record(Actions.agentUpdated, { target: after, ...changed(before, after, AGENT_FIELDS) })
           return after
         })
@@ -147,6 +150,7 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
           return (yield* store.updateChat(chat.id, { title: "Build agents" }))!
         })
       )
+      .handle("runs", ({ params }) => Effect.flatMap(store.agent(params.id), (a) => (a ? store.agentRuns(a.id) : notFound())))
       .handle("versions", ({ params }) =>
         Effect.flatMap(store.agent(params.id), (a) => (a ? Effect.map(store.agentVersions(a.id), (vs) => vs.map(({ agentId: _, ...v }) => v)) : notFound()))
       )
@@ -222,7 +226,10 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         Effect.gen(function* () {
           const chat = yield* store.chat(params.id)
           if (!chat || (payload.agentIds && !(yield* validAgents(store, payload.agentIds, chat.projectId)))) return yield* notFound()
-          return yield* found(store.updateChat(params.id, payload))
+          const updated = yield* found(store.updateChat(params.id, payload))
+          // The level agents work at is a security choice: it leaves a record, like the same choice on an agent.
+          if (payload.access !== undefined && payload.access !== chat.access) yield* audit.record(Actions.chatAccessChanged, { target: { id: chat.id, name: chat.title }, ...changed(chat, updated, ["access"] as const) })
+          return updated
         })
       )
       .handle("remove", ({ params }) =>
@@ -354,6 +361,12 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         Effect.map(store.searchMessages(query.q.trim()), (rows) => rows.map((m) => ({ chatId: m.chatId, messageId: m.id, at: m.at, snippet: snippet(m.text, query.q.trim()) })))
       )
       .handle("scripts", ({ params }) => Effect.map(chatRoot(params.id), scriptsOf))
+      .handle("preview", ({ params, payload }) =>
+        runtime.preview(params.id, payload).pipe(
+          Effect.mapError(() => new HttpApiError.NotFound()),
+          Effect.flatMap((r) => ("error" in r ? Effect.fail(new PreviewFailed({ message: r.error })) : Effect.succeed(r)))
+        )
+      )
       .handle("servers", ({ params }) => Effect.flatMap(chatRoot(params.id), (root) => chatServers(params.id, root)))
       // Stops a server of that list (SIGTERM); a pid outside it is not found.
       .handle("stopServer", ({ params }) =>
@@ -628,10 +641,11 @@ const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
 // The failover terms warning (§6.1) is accepted once and remembered here.
 const FAILOVER_TERMS = "failover_terms_accepted_at"
 const preferencesOf = (store: Repository) =>
-  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills")]), ([v, p, n]) => ({
+  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills"), store.preference(MAX_RUNNING_KEY)]), ([v, p, n, m]) => ({
     failoverTermsAcceptedAt: v ? Number(v) : null,
     paused: p === "1",
-    nativeSkills: n === "1"
+    nativeSkills: n === "1",
+    maxRunning: parseMaxRunning(m)
   }))
 
 // The processes a chat started (its shells, its agent sessions) → the chat's folder, to place the servers they run.
@@ -761,6 +775,7 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       .handle("pause", ({ payload }) => runtime.setPaused(payload.paused))
       // The harnesses' own skills on or off (the next session of each chat picks it up).
       .handle("nativeSkills", ({ payload }) => Effect.andThen(store.setPreference("nativeSkills", payload.enabled ? "1" : "0"), preferencesOf(store)))
+      .handle("maxRunning", ({ payload }) => Effect.andThen(runtime.setMaxRunning(payload.value), preferencesOf(store)))
       .handle("acceptFailoverTerms", () =>
         Effect.andThen(
           store.setPreference(FAILOVER_TERMS, String(Date.now())).pipe(Effect.tap(() => audit.record(Actions.failoverTermsAccepted, { target: { id: FAILOVER_TERMS, name: "Failover" } }))),
@@ -788,6 +803,7 @@ const RpcHandlers = ZorelRpc.toLayer(
       send: (p) => runtime.send(p),
       steer: (p) => runtime.steer(p.chatId, p.text, p.attachmentIds),
       interrupt: (p) => runtime.interrupt(p.chatId),
+      retry: (p) => runtime.retry(p.chatId, p.messageId),
       decide: (p) => runtime.decide(p.approvalId, p.outcome, p.reason),
       subscribeChat: (p) => runtime.subscribeChat(p.chatId),
       subscribeStatus: () => runtime.subscribeStatus,
@@ -1020,6 +1036,7 @@ const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
         Effect.gen(function* () {
           const agent = yield* store.agent(payload.agentId)
           if (!agent) return yield* notFound()
+          if (payload.watch && !(yield* store.mcpServer(payload.watch.serverId))) return yield* notFound()
           return yield* createRoutineFor(store, agent, payload).pipe(Effect.mapError((message) => new CronInvalid({ message })))
         })
       )

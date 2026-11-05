@@ -1,6 +1,7 @@
 // Project: overview (name, brief: the stable context of every turn, and its chats), its agents, and the
 // MCP servers only its chats see. The chats themselves live in the sidebar tree.
 import type { FolderListing, Project } from "@zorel/contracts"
+import { isTeammate } from "@zorel/contracts"
 import { formatAge, t } from "@zorel/i18n"
 import { type KeyboardEvent, useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
@@ -8,7 +9,7 @@ import { agentTone, chatTitle, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
 import { AgentItem, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
-import { AgentAvatar, ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, ChoiceCards, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, IconTile, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, RowHit, Rows, Screen, Section, Select, Tab, TabList, TabPanel, Tabs, Textarea, Trash2 } from "@/ui"
+import { AgentAvatar, ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, ChoiceCards, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, IconTile, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, RowHit, Rows, Screen, Section, Select, Tab, TabList, TabPanel, Tabs, Textarea, Tooltip, Trash2 } from "@/ui"
 
 // The reason a folder was refused (WorkspaceInvalid), in words.
 const REASONS = ["relative", "missing", "not_directory", "forbidden"] as const
@@ -25,13 +26,22 @@ const desktop = (window as { zorelDesktop?: { pickFolder?: (start?: string) => P
 const baseName = (p: string) => p.replace(/\/+$/, "").split("/").pop() ?? p
 const tilde = (p: string, home: string) => (p === home ? "~" : p.startsWith(`${home}/`) ? `~${p.slice(home.length)}` : p)
 
-export function NewProjectButton() {
+// The "+" of the Projects section (an icon with a tooltip) or, given a `label`, a secondary button (the empty state).
+export function NewProjectButton({ label }: { label?: string }) {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <IconButton label={t("nav.newProject")} size="xs" onPress={() => setOpen(true)}>
-        <Plus className="size-3.5" />
-      </IconButton>
+      {label ? (
+        <Button size="sm" onPress={() => setOpen(true)}>
+          {label}
+        </Button>
+      ) : (
+        <Tooltip content={t("nav.newProject")}>
+          <IconButton label={t("nav.newProject")} size="xs" onPress={() => setOpen(true)}>
+            <Plus className="size-3.5" />
+          </IconButton>
+        </Tooltip>
+      )}
       <Dialog title={t("project.addTitle")} size="lg" isOpen={open} onOpenChange={setOpen}>
         {(close) => <AddProject onDone={close} />}
       </Dialog>
@@ -306,7 +316,7 @@ function Overview({ project }: { project: Project }) {
   const dirty = name !== project.name || brief !== project.brief || path.trim() !== (project.path ?? "")
   // Who answers first leads the row.
   const team = agents
-    .filter((a) => !a.builtin && (a.projectId === project.id || a.projectId === null))
+    .filter((a) => isTeammate(a) && (a.projectId === project.id || a.projectId === null))
     .sort((a, b) => Number(b.id === project.defaultAgentId) - Number(a.id === project.defaultAgentId))
   return (
     <div className="flex flex-col gap-10">
@@ -398,7 +408,7 @@ function Agents({ projectId }: { projectId: string }) {
   const mine = agents.filter((a) => a.projectId === projectId)
   const project = useList(projectsAtom).find((p) => p.id === projectId)
   const update = useMutation(mutations.updateProject)
-  const choices = agents.filter((a) => !a.builtin && (a.projectId === projectId || a.projectId === null))
+  const choices = agents.filter((a) => isTeammate(a) && (a.projectId === projectId || a.projectId === null))
   const working = useWorking()
   const del = useDeleteAgent()
   return (
@@ -442,7 +452,7 @@ function Agents({ projectId }: { projectId: string }) {
         ) : (
           <Rows>
             {mine.map((a) => (
-              <AgentItem key={a.id} agent={a} agents={agents} working={working.has(a.id)} onDelete={del.ask} />
+              <AgentItem key={a.id} agent={a} agents={agents} status={working.get(a.id)} onDelete={del.ask} />
             ))}
           </Rows>
         )}

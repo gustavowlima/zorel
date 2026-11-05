@@ -1,6 +1,6 @@
 // Database schema (Drizzle). Mirrors the tables the MVP created with hand-written SQL, column by column,
 // so the existing database is adopted without copying (see migrate.ts). Changed something here? `bun run db:generate`.
-import type { AccountUsage, AgentPermissions, FailoverTarget, FileChange, Switch } from "@zorel/contracts"
+import type { AccountUsage, AgentPermissions, FailoverTarget, FileChange, RoutineWatch, Switch } from "@zorel/contracts"
 import { sql } from "drizzle-orm"
 import { type AnySQLiteColumn, check, index, integer, primaryKey, real, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
 
@@ -45,6 +45,9 @@ export const agents = sqliteTable("agents", {
   access: text({ enum: ["workspace", "ask", "full"] }).notNull().default("workspace"), // §9.2, chosen only by you
   permissions: text({ mode: "json" }).$type<AgentPermissions>().notNull().default({ web: true, browser: true, grants: {}, always: [] }),
   builtin: text({ enum: ["builder"] }), // Zorel's own agent (the Builder): not a teammate, kept out of pickers
+  archivedAt: integer("archived_at"), // archived: answers no one, out of lists; history kept
+  monthlyTokens: integer("monthly_tokens"), // a month's (UTC) token limit; null: none
+  replyTokens: integer("reply_tokens"), // one reply's token limit; null: none
   createdAt: integer("created_at").notNull()
 })
 
@@ -88,6 +91,7 @@ export const chats = sqliteTable("chats", {
   model: text().notNull(),
   accountId: text("account_id"), // the lead's account; null: the default one
   effort: text({ enum: ["low", "medium", "high", "max"] }), // the lead's; null: the model's default
+  access: text({ enum: ["workspace", "ask", "full"] }), // the chat's level for every agent in it; null: each agent's own
   summary: text().notNull().default(""),
   summaryUntil: integer("summary_until").notNull().default(0),
   failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>(), // null: the lead agent's list
@@ -309,6 +313,9 @@ export const routines = sqliteTable("routines", {
   prompt: text().notNull(),
   cron: text(),
   token: text().unique(),
+  watch: text({ mode: "json" }).$type<RoutineWatch>(), // a connector's read tool it polls; null: none
+  watchSeen: text("watch_seen", { mode: "json" }).$type<ReadonlyArray<string>>(), // keys of the items already seen; null: not polled yet
+  watchAt: integer("watch_at"), // last poll
   enabled: integer({ mode: "boolean" }).notNull().default(true),
   nextRunAt: integer("next_run_at"),
   lastRunAt: integer("last_run_at"),
