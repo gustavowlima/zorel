@@ -49,7 +49,7 @@ export const agents = sqliteTable("agents", {
   monthlyTokens: integer("monthly_tokens"), // a month's (UTC) token limit; null: none
   replyTokens: integer("reply_tokens"), // one reply's token limit; null: none
   memory: text({ enum: ["auto", "ask", "read"] }).notNull().default("ask"), // what it does with what it learns
-  knowledge: text({ enum: ["read", "none"] }).notNull().default("read"), // whether it sees the knowledge pages
+  knowledge: text({ enum: ["write", "read", "none"] }).notNull().default("read"), // its access to the pages (new agents: "write", set by createAgent)
   createdAt: integer("created_at").notNull()
 })
 
@@ -75,7 +75,7 @@ export type AgentProfile = {
   access: "workspace" | "ask" | "full"
   permissions?: AgentPermissions // absent in versions saved before permissions existed
   memory?: "auto" | "ask" | "read" // absent in versions saved before them
-  knowledge?: "read" | "none"
+  knowledge?: "write" | "read" | "none"
 }
 
 // Earlier texts of a memory or skill (each edit or approved improvement keeps the one before), newest first.

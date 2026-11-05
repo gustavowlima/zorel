@@ -141,10 +141,10 @@ export const SKILL_TOOLS = [
   }
 ] as const
 
-// What an agent learns and sees (Agent.memory / Agent.knowledge; no agent: the defaults, "ask" and "read").
+// What an agent learns and sees (Agent.memory / Agent.knowledge; no agent: the defaults, "ask" and "write").
 type Learner = { readonly memory?: Agent["memory"] | undefined; readonly knowledge?: Agent["knowledge"] | undefined }
 export const memoryModeOf = (a: Learner | undefined): Agent["memory"] => a?.memory ?? "ask"
-export const knowledgeOf = (a: Learner | undefined): Agent["knowledge"] => a?.knowledge ?? "read"
+export const knowledgeOf = (a: Learner | undefined): Agent["knowledge"] => a?.knowledge ?? "write"
 // What a chat's consolidation does is for the whole chat, so the strictest member decides: one that only reads keeps
 // the chat from learning at all, and facts are saved on their own only when every agent in it allows it.
 export const learningOf = (members: ReadonlyArray<Learner>): Agent["memory"] => {
@@ -154,8 +154,8 @@ export const learningOf = (members: ReadonlyArray<Learner>): Agent["memory"] => 
 // The tools the agent doesn't get. The server refuses them even if the model names one anyway.
 export const withheldTools = (a: Learner | undefined): ReadonlySet<string> =>
   new Set([
-    ...(memoryModeOf(a) === "read" ? ["zorel_knowledge_write", "zorel_propose_skill"] : []),
-    ...(knowledgeOf(a) === "none" ? KNOWLEDGE_TOOLS.map((t) => t.name) : [])
+    ...(memoryModeOf(a) === "read" ? ["zorel_propose_skill"] : []),
+    ...(knowledgeOf(a) === "none" ? KNOWLEDGE_TOOLS.map((t) => t.name) : knowledgeOf(a) === "read" ? ["zorel_knowledge_write"] : [])
   ])
 
 const RANK: Record<Access, number> = { ask: 0, workspace: 1, full: 2 }
@@ -390,7 +390,7 @@ export const KNOWLEDGE_TOOLS = [
   {
     name: "zorel_knowledge_write",
     description:
-      "Create or update a knowledge page in Markdown: a decision and why, a how-to that worked, a gotcha, a reference. page: an existing page's id to update (send the whole new body). scope: 'project' (default), 'agent' (your own notes) or 'user' (about the user: they approve it first). Keep pages short and current; update instead of duplicating.",
+      "Create or update a knowledge page in Markdown: a decision and why, a how-to that worked, a gotcha, a reference. page: an existing page's id to update (send the whole new body; the user approves a change to an existing page first). scope: 'project' (default), 'agent' (your own notes) or 'user' (about the user: they approve it first). Keep pages short and current; update instead of duplicating.",
     inputSchema: {
       properties: { page: { type: "string" }, title: { type: "string" }, body: { type: "string" }, scope: { type: "string", enum: ["project", "agent", "user"] } },
       required: ["title", "body"]

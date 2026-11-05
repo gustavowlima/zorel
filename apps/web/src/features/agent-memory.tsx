@@ -5,12 +5,13 @@
 import type { Agent, AgentPatch, FileSkill, Memory } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
-import { agentsAtom, chatsAtom, fileSkillsAtom, memoriesAtom, mutations, useInvalidate, useList, useMutation, useReading } from "../client.ts"
+import { agentsAtom, chatsAtom, fileSkillsAtom, memoriesAtom, mutations, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { go } from "../state.ts"
+import { ScopeIcon } from "./knowledge.tsx"
 import { ReadingState } from "./reading.tsx"
 import { sees, teamOf, withAgent, withoutAgent } from "./skill-agents.ts"
 import { UsedByBadge } from "./used-by.tsx"
-import { BookOpen, Button, cx, Info, ListRow, Notice, Rows, Section, Segmented, SettingRow, ShieldAlert } from "@/ui"
+import { Button, cx, Info, ListRow, Notice, Rows, Section, Segmented, SettingRow, ShieldAlert } from "@/ui"
 
 type Field = "memory" | "knowledge"
 type Status = "idle" | "saving" | "saved" | "error"
@@ -66,11 +67,21 @@ function sharedRule(agent: Agent, mode: Agent["memory"], chats: ReadonlyArray<{ 
 }
 
 const MEMORY_HINT = { auto: "agent.mem.autoHint", ask: "agent.mem.askHint", read: "agent.mem.readHint" } as const
+const KNOW_HINT = { none: "agent.know.noneHint", read: "agent.know.readHint", write: "agent.know.writeHint" } as const
 
 export function AgentMemory({ agent }: { agent: Agent }) {
   const team = teamOf(useList(agentsAtom))
   const chats = useList(chatsAtom)
-  const facts = useList(memoriesAtom).filter((m) => m.scope === `agent:${agent.id}` && m.kind === "fact" && m.state !== "forgotten")
+  const projects = useList(projectsAtom)
+  const facts = useList(memoriesAtom).filter((m) => m.kind === "fact" && m.state === "active")
+  const count = (scope: string) => facts.filter((m) => m.scope === scope).length
+  const project = projects.find((p) => p.id === agent.projectId)
+  // About you, its project (a global agent works in many: none listed), its own notes.
+  const places = [
+    { scope: "user", title: t("memory.aboutYou"), hint: t("agent.mem.seenByAll") },
+    ...(project ? [{ scope: `project:${project.id}`, title: project.name, hint: t("agent.mem.seenByProject", { name: project.name }) }] : []),
+    { scope: `agent:${agent.id}`, title: t("agent.mem.notes", { name: agent.name }), hint: t("agent.mem.notesHint", { name: agent.name }) }
+  ]
   const memory = useInstant(agent, "memory")
   const knowledge = useInstant(agent, "knowledge")
   const shared = sharedRule(agent, memory.value, chats, team)
@@ -99,15 +110,21 @@ export function AgentMemory({ agent }: { agent: Agent }) {
             {shared}
           </Notice>
         )}
+      </Section>
+      {/* Where what it keeps goes: Zorel picks the owner for each memory; a memory can be moved later. */}
+      <Section title={t("agent.mem.whereTitle")} description={<span className="block max-w-prose">{t("agent.mem.whereHint")}</span>}>
         <Rows>
-          <ListRow
-            icon={<BookOpen className="size-4 text-muted" />}
-            title={t("agent.mem.notes", { name: agent.name })}
-            hint={t("agent.mem.notesHint", { name: agent.name })}
-            aside={t("agent.mem.notesCount", { count: facts.length })}
-            label={t("agent.mem.notesLink")}
-            onPress={() => go({ view: "memory", tab: `agent:${agent.id}` })}
-          />
+          {places.map((p) => (
+            <ListRow
+              key={p.scope}
+              icon={<ScopeIcon scope={p.scope} agents={team} />}
+              title={p.title}
+              hint={p.hint}
+              aside={t("agent.mem.notesCount", { count: count(p.scope) })}
+              label={`${p.title}: ${t("agent.mem.notesLink")}`}
+              onPress={() => go({ view: "memory", tab: p.scope })}
+            />
+          ))}
         </Rows>
       </Section>
       <Section title={t("agent.know.title")} description={<span className="block max-w-prose">{t("agent.know.hint", { name: agent.name })}</span>} action={<SaveStatus status={knowledge.status} onRetry={knowledge.retry} />}>
@@ -117,10 +134,12 @@ export function AgentMemory({ agent }: { agent: Agent }) {
           value={knowledge.value}
           onChange={knowledge.set}
           options={[
+            { id: "none", label: t("agent.know.none") },
             { id: "read", label: t("agent.know.read") },
-            { id: "none", label: t("agent.know.none") }
+            { id: "write", label: t("agent.know.write") }
           ]}
         />
+        <p className="text-sm text-muted">{t(KNOW_HINT[knowledge.value])}</p>
         <div>
           <Button size="sm" variant="ghost" onPress={() => go({ view: "pages" })}>
             {t("agent.know.open")}

@@ -700,8 +700,11 @@ export const makeRuntime = Effect.gen(function* () {
       const scope = existing?.scope ?? (want === "user" ? "user" : want === "agent" ? (agent ? `agent:${agent.id}` : "") : chat.projectId ? `project:${chat.projectId}` : "")
       if (!scope) return textResult(want === "agent" ? "Only an agent has its own pages." : "This chat has no project: use scope 'user' or 'agent'.", true)
       const s = await step(`${existing ? "Update" : "Write"} page: ${title}`, name)
-      if (scope === "user") {
-        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to ${existing ? "update" : "write"} a page about you: ${title}`, args: `# ${title}\n\n${body}`.slice(0, 12_000), cwd: null }))
+      // A page about the user, or a change to one that exists (someone wrote it; an agent doesn't overwrite it
+      // unseen), waits for the user's OK. A new project or agent page goes in at once, as a version.
+      if (scope === "user" || existing) {
+        const summary = scope === "user" ? `${nameOf(agent)} wants to ${existing ? "update" : "write"} a page about you: ${title}` : `${nameOf(agent)} wants to change the page ${existing!.title}`
+        const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary, args: `# ${title}\n\n${body}`.slice(0, 12_000), cwd: null }))
         if (outcome !== "approved" && outcome !== "always") {
           await finish(s, "refused")
           return textResult("The user declined this page.", true)

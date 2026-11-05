@@ -590,6 +590,10 @@ export const en = {
       notesHint: "What {name} learned about this work. Only {name} sees them.",
       notesCount: { one: "1 note", other: "{count} notes" },
       notesLink: "View in Memory",
+      whereTitle: "Where it goes",
+      whereHint: "Zorel picks the place for each memory. You can move one later, from the chat or from Memory.",
+      seenByAll: "Seen by every agent",
+      seenByProject: "Seen by the agents working in {name}",
       saving: "Saving…",
       saved: "Saved",
       failed: "Not saved."
@@ -598,7 +602,11 @@ export const en = {
       title: "Pages",
       hint: "The team's longer notes in Pages. With access, {name} looks them up before answering. Without it, {name} gets no pinned pages and can't search, read or write them.",
       label: "Pages access",
-      read: "Reads pages",
+      read: "Reads",
+      write: "Reads and writes",
+      noneHint: "No pinned pages in its context and no page tools.",
+      readHint: "Looks pages up before answering and cites them. Writes none.",
+      writeHint: "Also writes new pages in the project or its own notes. A change to an existing page waits for you.",
       none: "No access",
       open: "Open Pages"
     },

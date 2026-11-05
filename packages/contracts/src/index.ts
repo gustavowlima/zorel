@@ -127,14 +127,15 @@ export const Agent = Schema.Struct({
   // What the agent learns from its chats: "auto" saves facts straight away (with a notice and Undo; skills still wait
   // for you), "ask" proposes them for review (the default), "read" learns nothing and can't write knowledge or propose skills.
   memory: Schema.Literals(["auto", "ask", "read"]),
-  // "read": consults the knowledge pages; "none": no pinned pages in its context and no knowledge tools.
-  knowledge: Schema.Literals(["read", "none"]),
+  // Pages: "write" reads them and writes new ones (a change to an existing page waits for you), "read" only
+  // consults them, "none": no pinned pages in its context and no page tools.
+  knowledge: Schema.Literals(["write", "read", "none"]),
   createdAt: Schema.Number
 })
 export type Agent = typeof Agent.Type
 export const MemoryMode = Schema.Literals(["auto", "ask", "read"])
 export type MemoryMode = typeof MemoryMode.Type
-export const KnowledgeAccess = Schema.Literals(["read", "none"])
+export const KnowledgeAccess = Schema.Literals(["write", "read", "none"])
 export type KnowledgeAccess = typeof KnowledgeAccess.Type
 // The agents that are teammates: not Zorel's own (the Builder), not archived.
 export const isTeammate = (a: Pick<Agent, "builtin" | "archivedAt">) => !a.builtin && !a.archivedAt
