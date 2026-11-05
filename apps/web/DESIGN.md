@@ -7,9 +7,9 @@ colors:
   sidebar: "#0d0d0d"
   surface: "#232323"
   raised: "#262626"
-  control: "#232323"
-  control-hover: "#292929"
-  control-active: "#2c2c2c"
+  control: "rgba(255, 255, 255, 0.07)"
+  control-hover: "rgba(255, 255, 255, 0.09)"
+  control-active: "rgba(255, 255, 255, 0.12)"
   code: "#141414"
   border-subtle: "rgba(255, 255, 255, 0.06)"
   border-strong: "rgba(255, 255, 255, 0.1)"
@@ -33,12 +33,13 @@ colors:
   overlay: "rgba(0, 0, 0, 0.5)"
   diff-add: "rgba(49, 207, 118, 0.1)"
   diff-del: "rgba(255, 107, 115, 0.1)"
-  agent-violet: "#6d5df6"
-  agent-teal: "#12a594"
-  agent-rose: "#e5484d"
-  agent-amber: "#d6851e"
-  agent-sky: "#3a8ee6"
-  agent-green: "#46a758"
+  agent-violet: "#918ddf"
+  agent-teal: "#00afa9"
+  agent-rose: "#d47795"
+  agent-ochre: "#aa9935"
+  agent-orchid: "#bd7dc1"
+  agent-clay: "#d67d5e"
+  on-agent: "#141414"
 typography:
   title:
     fontFamily: "Inter Variable, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
@@ -192,7 +193,7 @@ Layered near-black neutral grays, one signal blue and three state colors. All va
   - Projects and chats are a React Aria tree (one Tab, arrows, type-ahead search, `aria-level`). Projects reorder by dragging; chats only within their own group, never across projects. The ones without a project are in the **Chats** section.
   - Row actions (new chat, settings) appear on hover or focus in place of the count, never over the name or the arrow, and do not receive clicks while hidden.
 - **Surface** (surface) and **Raised** (raised): cards, code blocks and panels on top of the workbench.
-- **Control** (control, control-hover, control-active): background of secondary buttons, fields and selected items, in three steps.
+- **Control** (control, control-hover, control-active): background of secondary buttons, fields and selected items, in three steps. A translucent layer (white at 7/9/12%; black in the light theme), not a grey of its own, so a control reads on the frame, the canvas and a surface card alike.
 - **Subtle border** (border-subtle) and **Strong border** (border-strong): minimal separation; the strong one only on field focus, tables and quotes.
 - **Text** in four steps: text (titles and content), text-secondary, text-muted (labels, inactive items), text-dim (hints, placeholders, sections). All pass 4.5:1 on the workbench; text-dim is the lowest gray that still passes.
 - **Code** (code): code blocks, terminal and diff, one step below the workbench.
@@ -204,7 +205,7 @@ Layered near-black neutral grays, one signal blue and three state colors. All va
 - **Diff** (diff-add, diff-del): background of added and removed lines.
 
 ### Agent identity
-- **Six colors** (agent-violet, agent-teal, agent-rose, agent-amber, agent-sky, agent-green): each agent gets one, in the order it joins the project. They appear only in the avatar (a square with the initial) and never on a button, link or state.
+- **Six colors** (agent-violet, agent-teal, agent-rose, agent-ochre, agent-orchid, agent-clay): each agent gets one, in the order it joins the project. They appear only in the avatar (a square with the initial, dark: on-agent) and never on a button, link or state. All six share one lightness and chroma (OKLCH 68% 0.12) and keep their hues clear of danger, warning, success and the blue, so an avatar never reads as a state or an action.
 
 ### Named Rules
 **The One Voice Rule.** Signal blue is the only accent. If it appears on something that is not an action, focus, selection or link, it is wrong.
@@ -239,7 +240,7 @@ The whole window in four layers: the frame; the **icon rail** (60px) and the 248
 - **Sidebar:** only the Chats and Projects sections, which scroll (details in Navigation).
 - **Chat (2026-11-04):** the timeline and the message field share a centered **reading column** (`max-w-chat`, 46rem, ~75 characters per line), with 32px of breathing room outside it, and align on the same edge. Message text uses `text-chat` (14/22), one step above the interface's 13px. The bubbles of your messages sit on the right with their own width. In a chat with only one agent (or none) the reply has no avatar or name (the header already says who it is); with several, the author appears once per sequence (same agent within 5 min). The side panel (Changes, Git, Files, Browser, Terminal) opens on the right and the chat gives up the space.
 - **Chat components:** `ChatMarkdown` (features/chat-markdown.tsx) renders the text: code in `CodeBlock` (header with the language and Copy, scrolls sideways) and tables in `TableFrame` (`rounded-card` frame, header in `surface`, hairlines between rows), both in `@/ui`. While the agent works, the label of the current step passes with a shimmer (`ShimmerText`, token `--animate-shimmer`, still with reduced motion); before anything comes back, it says "Waiting for <provider>" without shimmer; the time only appears after 5 s. When finished, the steps become one line: "3 steps · 1 failed · 12s". Approvals and questions stay **above the message field** (`PendingTray`) until you decide, never scrolling away with the conversation. Each one is a `TrayCard`: the same frame as the message field (`canvas`, `strong` border, `rounded-card`), so the two read as a single piece; the accent is only on the small line of who is waiting, with an icon ("Lead asks you" with `MessageCircleQuestion`, "Lead waits for your OK" with `ShieldAlert`); the text in `fg`; options, field and "Send" in the `control` family (blue is kept for the main action: Allow, and the message field's send).
-- **Pages** (settings, knowledge, accounts) sit in a column of up to 672px flush against the left navigation (not centered), with sections as rows between subtle hairlines directly on the canvas, never in cards: a secondary button (`bg-control`) disappears on a `surface` card, which has the same tone. Section title in 12px muted, with an optional hint in `dim` below. Each area has at most one blue primary action ("Add key" with no key, "Sign in" when disconnected). A detail page opens with a small back link ("‹ Providers") above the icon and title (h1) header; it does not repeat the title in a breadcrumb. While the first read is loading, nothing says "not connected": the summary shows "Checking…"; a failure becomes an error line with try again. Actions that delete something (key, account) ask for confirmation. The Settings tabs, in this order: General (preferences for this computer; Appearance with the theme in a segmented control, and whatever comes later), Providers, Connectors, Skills, Storage, Audit log; the sidebar gear opens General. Long lists (Audit log) filter on the server (type, words, day range in a `DateRangeField`: React Aria's DateRangePicker in the shadcn aria style, two typeable fields and a range calendar in the popover; never the browser's native calendar) and paginate 50 at a time with "1–50 of N" and Newer/Older; entries grouped by day (Today, Yesterday, date).
+- **Pages** (settings, knowledge, accounts) sit in a column of up to 672px flush against the left navigation (not centered), with sections as rows between subtle hairlines directly on the canvas, never in cards: a page is a list of settings, not a dashboard. Section title in 12px muted, with an optional hint in `dim` below. Each area has at most one blue primary action ("Add key" with no key, "Sign in" when disconnected). A detail page opens with a small back link ("‹ Providers") above the icon and title (h1) header; it does not repeat the title in a breadcrumb. While the first read is loading, nothing says "not connected": the summary shows "Checking…"; a failure becomes an error line with try again. Actions that delete something (key, account) ask for confirmation. The Settings tabs, in this order: General (preferences for this computer; Appearance with the theme in a segmented control, and whatever comes later), Providers, Connectors, Skills, Storage, Audit log; the sidebar gear opens General. Long lists (Audit log) filter on the server (type, words, day range in a `DateRangeField`: React Aria's DateRangePicker in the shadcn aria style, two typeable fields and a range calendar in the popover; never the browser's native calendar) and paginate 50 at a time with "1–50 of N" and Newer/Older; entries grouped by day (Today, Yesterday, date).
 
 The internal rhythm uses the 4px scale, almost always 4, 8, 12 and 16px; between messages, 24px.
 

@@ -13,3 +13,5 @@
 2026-11-04 | contrast (accent and light-theme grays), IconButton xs/sm/md, pill shape, header actions sm, document without scrolling | sweep of all screens + critical bug
 2026-11-04 | Settings refined by impeccable critique: ListRow, status with action on providers, visible active nav, empty states, General split, storage with the browser | user request
 2026-11-04 | Build with AI in full-screen steps and powers as pickers (no access / read / read and write) | user found it corporate; simpler, guided creation
+2026-11-05 | agent colors: one lightness/chroma, hues clear of states and the blue, dark initial | old ones read as states (rose=danger, green=success, sky=blue) and white initials failed contrast
+2026-11-05 | control tokens translucent instead of opaque greys | a secondary button vanished on surface cards

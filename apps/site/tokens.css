@@ -38,11 +38,11 @@
   --color-wait: oklch(78% 0.12 80);
   --color-wait-bg: oklch(78% 0.12 80 / 0.12);
   /* agent identity: one lightness and chroma, four hues clear of the status colors (no red, no green) */
-  --color-agent-1: oklch(68% 0.13 285);
-  --color-agent-2: oklch(68% 0.13 180);
-  --color-agent-3: oklch(68% 0.13 345);
-  --color-agent-4: oklch(68% 0.13 60);
-  --color-on-agent: oklch(18% 0.01 260);
+  --color-agent-1: #918ddf; /* the app's agent palette (apps/web/src/styles.css) */
+  --color-agent-2: #00afa9;
+  --color-agent-3: #d47795;
+  --color-agent-4: #aa9935;
+  --color-on-agent: #141414;
   /* the cards' layers: card → stage (darker) → row (lighter) */
   --color-stage: oklch(16.5% 0.005 260);
   --color-row: oklch(21% 0.005 260);
