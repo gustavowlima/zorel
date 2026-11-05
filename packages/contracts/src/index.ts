@@ -504,6 +504,19 @@ export class WorkspaceInvalid extends Schema.Error<WorkspaceInvalid>("zorel/Work
   { httpApiStatus: 400 }
 ) {}
 
+// Picking a project's folder (the New project dialog): the subfolders of one folder, absolute paths, and which of
+// them are git repositories. `~` and nothing both mean the home folder.
+export const MAX_FOLDERS = 500
+export const Folder = Schema.Struct({ name: Schema.String, path: Schema.String, git: Schema.Boolean })
+export type Folder = typeof Folder.Type
+export const FolderListing = Schema.Struct({
+  dir: Schema.String, // the folder listed, absolute and real
+  home: Schema.String, // shown as ~
+  parent: Schema.NullOr(Schema.String),
+  folders: Schema.Array(Folder)
+})
+export type FolderListing = typeof FolderListing.Type
+
 export const FileDiff = Schema.Struct({
   path: Schema.String,
   status: Schema.Literals(["added", "modified", "deleted"]),
@@ -553,6 +566,7 @@ export const Api = HttpApi.make("zorel")
     HttpApiGroup.make("projects")
       .add(HttpApiEndpoint.get("list", "/api/projects", { success: Schema.Array(Project) }))
       .add(HttpApiEndpoint.post("create", "/api/projects", { payload: NewProject, success: Project, error: WorkspaceInvalid }))
+      .add(HttpApiEndpoint.get("folders", "/api/folders", { query: { dir: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))) }, success: FolderListing, error: WorkspaceInvalid }))
       .add(HttpApiEndpoint.patch("update", "/api/projects/:id", { params: idParam, payload: ProjectPatch, success: Project, error: [HttpApiError.NotFound, WorkspaceInvalid] }))
       // Files of the workspace (up to MAX_WORKSPACE_FILES), marked with what changed since the project's first checkpoint in this chat.
       .add(HttpApiEndpoint.get("files", "/api/projects/:id/files", { params: idParam, query: { chatId: Schema.optionalKey(Id) }, success: Schema.Array(WorkspaceFile), error: HttpApiError.NotFound }))

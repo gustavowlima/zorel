@@ -17,3 +17,4 @@
 2026-11-05 | control tokens translucent instead of opaque greys | a secondary button vanished on surface cards
 2026-11-05 | neutrals tinted toward the brand blue; floating layers translucent with shadow; selection in blue | the app read as dull grey and menus covered the chat like slabs (user: "muito opaco")
 2026-11-05 | dark neutrals to the landing's graphite (chroma 0.005, sidebar a step above the rail) | user preferred the landing's tone over the stronger blue tint
+2026-11-05 | New project and Add custom server open centred dialogs; projects are added by browsing folders | user: the project picker should be a centred modal that maps folders like T3 Code

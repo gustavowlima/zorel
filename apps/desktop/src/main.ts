@@ -301,6 +301,12 @@ function systemIpc() {
     keepAwake()
     return on
   })
+  // The system's folder picker, for a project's folder: the chosen absolute path, or null when cancelled.
+  ipcMain.handle("folder:pick", async (e, start: unknown) => {
+    if (!fromApp(e) || !win) return null
+    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory", "createDirectory"], ...(typeof start === "string" && { defaultPath: start }) })
+    return r.canceled ? null : (r.filePaths[0] ?? null)
+  })
   powerMonitor.on("on-ac", keepAwake)
   powerMonitor.on("on-battery", keepAwake)
   keepAwake()
