@@ -27,3 +27,10 @@ export const Dot = ({ tone }: { tone: "success" | "warning" | "danger" | "accent
     className={cn("size-1.5 shrink-0 rounded-full", tone === "success" && "bg-success", tone === "warning" && "bg-warning", tone === "danger" && "bg-danger", tone === "accent" && "bg-accent-text")}
   />
 )
+
+// A fact about something, as a quiet chip (an agent's model, access, reach); `hint` explains it on hover.
+export const Tag = ({ hint, children }: { hint?: string; children: ReactNode }) => (
+  <span title={hint} className="rounded-control bg-control px-2 py-0.5 text-sm text-secondary">
+    {children}
+  </span>
+)

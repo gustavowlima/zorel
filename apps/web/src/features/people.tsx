@@ -4,7 +4,8 @@ import type { Agent, Chat } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { agentsAtom, mutations, useList, useMutation } from "../client.ts"
 import { agentTone, handleOf, modelLabel, splitModel } from "../labels.ts"
-import { AgentAvatar, Badge, Button, IconButton, ModelAvatar, Plus, Popover, X } from "@/ui"
+import { useState } from "react"
+import { AgentAvatar, Badge, Button, IconButton, ModelAvatar, Plus, Popover, SearchInput, X } from "@/ui"
 
 type Size = 16 | 20 | 28 | 32
 
@@ -22,6 +23,11 @@ export function TeamPicker({ chat }: { chat: Chat }) {
   const team = chat.agentIds.flatMap((id) => agents.find((a) => a.id === id) ?? [])
   const candidates = agents.filter((a) => !a.builtin && (a.projectId === null || a.projectId === chat.projectId) && !chat.agentIds.includes(a.id))
   const lead = team[0]
+  // A long list gets a search field (the same threshold as Select's).
+  const [query, setQuery] = useState("")
+  const q = query.trim().toLowerCase()
+  const searchable = candidates.length > 8
+  const shown = q ? candidates.filter((a) => `${a.name} ${handleOf(a)} ${a.title}`.toLowerCase().includes(q)) : candidates
   const setTeam = (agentIds: ReadonlyArray<string>, model?: string) =>
     update({ params: { id: chat.id }, payload: { agentIds, ...(model && { model }) }, reactivityKeys: ["chats"] })
   // No agents to pick: the model answers on its own and the model chip already says which.
@@ -49,7 +55,7 @@ export function TeamPicker({ chat }: { chat: Chat }) {
         </Button>
       }
     >
-      <div className="flex flex-col gap-1 p-2">
+      <div className="flex min-h-0 flex-col gap-1 p-2">
         <p className="px-2 pt-1 pb-1.5 text-sm font-medium text-muted">{t("team.title")}</p>
         {team.length === 0 && candidates.length === 0 && (
           <p className="px-2 pb-2 text-sm text-dim">
@@ -79,18 +85,22 @@ export function TeamPicker({ chat }: { chat: Chat }) {
         {candidates.length > 0 && (
           <>
             <p className="mt-1 border-t border-subtle px-2 pt-2.5 pb-1 text-sm font-medium text-muted">{t("team.add")}</p>
-            {candidates.map((a) => (
-              <Button
-                key={a.id}
-                variant="ghost"
-                className="h-auto justify-start gap-2.5 px-2 py-1.5 text-left font-normal text-fg"
-                onPress={() => void setTeam([...chat.agentIds, a.id], chat.agentIds.length ? undefined : a.model)}
-              >
-                <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} />
-                <span className="min-w-0 flex-1 truncate">{a.name}</span>
-                <Plus className="size-3.5 text-muted" />
-              </Button>
-            ))}
+            {searchable && <SearchInput size="sm" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("agents.search")} aria-label={t("agents.search")} className="mx-1 mb-1" />}
+            <div className="scroll-quiet flex min-h-0 flex-col gap-1 overflow-y-auto">
+              {shown.length === 0 && <p className="px-2 py-1.5 text-sm text-muted">{t("agents.noMatch")}</p>}
+              {shown.map((a) => (
+                <Button
+                  key={a.id}
+                  variant="ghost"
+                  className="h-auto justify-start gap-2.5 px-2 py-1.5 text-left font-normal text-fg"
+                  onPress={() => void setTeam([...chat.agentIds, a.id], chat.agentIds.length ? undefined : a.model)}
+                >
+                  <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} />
+                  <span className="min-w-0 flex-1 truncate">{a.name}</span>
+                  <Plus className="size-3.5 text-muted" />
+                </Button>
+              ))}
+            </div>
           </>
         )}
         {team.length > 1 && <p className="border-t border-subtle px-2 pt-2 text-sm text-dim">{t("team.mentionHint")}</p>}

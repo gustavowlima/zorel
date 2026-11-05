@@ -8,7 +8,7 @@ import { AsyncResult } from "effect/reactivity"
 import { mutations, projectsAtom, storageAtom, useInvalidate, useList, useMutation } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
-import { Button, ChevronRight, ConfirmButton, ConfirmDialog, Download, Meter, pickFiles, RefreshCw, Rows, Section, ListRow, Upload } from "@/ui"
+import { Button, ChevronRight, ConfirmButton, ConfirmDialog, Download, Meter, pickFiles, RefreshCw, Rows, Section, SettingRow, ListRow, Upload } from "@/ui"
 import { ReadingState } from "./reading.tsx"
 import { useEffect, useState } from "react"
 
@@ -143,11 +143,7 @@ function Cleanups({ report }: { report: StorageReport }) {
     <Section title={t("storage.cleanUp")} action={<span className="text-sm text-muted">{freeable ? t("storage.canFree", { size: formatBytes(freeable) }) : t("storage.nothing")}</span>}>
       <Rows>
         {report.cleanup.map((c) => (
-          <div key={c.id} className="flex flex-wrap items-center gap-4 py-3.5">
-            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="font-medium">{name(c.id)}</span>
-              <span className="text-sm text-muted">{t(`storage.cleanups.${c.id}Hint`)}</span>
-            </span>
+          <SettingRow key={c.id} title={name(c.id)} hint={t(`storage.cleanups.${c.id}Hint`)}>
             <span className="tabular-nums">{formatBytes(c.bytes)}</span>
             <ConfirmButton
               size="sm"
@@ -163,7 +159,7 @@ function Cleanups({ report }: { report: StorageReport }) {
             >
               {t("storage.clean")}
             </ConfirmButton>
-          </div>
+          </SettingRow>
         ))}
       </Rows>
       {failed && <p className="text-sm text-danger">{failed}</p>}
@@ -192,29 +188,23 @@ function Move() {
   return (
     <Section title={t("storage.move.title")} description={t("storage.move.hint")}>
       <Rows>
-        <div className="flex flex-wrap items-center gap-4 py-3.5">
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="font-medium">{t("storage.move.export")}</span>
-            <span className="text-sm text-muted">{t("storage.move.exportHint")}</span>
-          </span>
+        <SettingRow title={t("storage.move.export")} hint={t("storage.move.exportHint")}>
           <Button size="sm" variant="secondary" onPress={() => window.open("/api/workspace/export", "_self")}>
             <Download />
             {t("storage.move.exportAction")}
           </Button>
-        </div>
-        <div className="flex flex-wrap items-center gap-4 py-3.5">
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="font-medium">{t("storage.move.import")}</span>
-            <span className={state.error ? "text-sm text-danger" : state.pending ? "text-sm text-accent-text" : "text-sm text-muted"}>
-              {state.error
-                ? t("storage.move.notAnExport")
-                : state.pending
-                  ? state.projects === undefined
-                    ? t("storage.move.pendingShort")
-                    : t("storage.move.pending", { projects: state.projects, chats: state.chats ?? 0 })
-                  : t("storage.move.importHint")}
-            </span>
-          </span>
+        </SettingRow>
+        <SettingRow title={t("storage.move.import")} hint={
+              <span className={state.error ? "text-sm text-danger" : state.pending ? "text-sm text-accent-text" : "text-sm text-muted"}>
+                {state.error
+                  ? t("storage.move.notAnExport")
+                  : state.pending
+                    ? state.projects === undefined
+                      ? t("storage.move.pendingShort")
+                      : t("storage.move.pending", { projects: state.projects, chats: state.chats ?? 0 })
+                    : t("storage.move.importHint")}
+              </span>
+          }>
           {state.pending ? (
             <Button size="sm" variant="ghost" onPress={cancel}>
               {t("storage.move.cancel")}
@@ -230,7 +220,7 @@ function Move() {
               {t("storage.move.importAction")}
             </Button>
           )}
-        </div>
+        </SettingRow>
       </Rows>
       <ConfirmDialog
         isOpen={!!file}

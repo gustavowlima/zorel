@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react"
 import { agentsAtom, chatsAtom, useList, useStatuses } from "../client.ts"
 import { chatTitle, noteworthy, statusLabel } from "../labels.ts"
 import { go, type Route } from "../state.ts"
-import { Button, Switch } from "@/ui"
+import { Button, SettingRow, Switch } from "@/ui"
 
 const KEY = "zorel.notify"
 const SOUND_KEY = "zorel.sound"
@@ -88,12 +88,12 @@ export function NotifySetting() {
   const [on, setOn] = useState(enabled)
   if (!supported) return null
   return (
-    <div className="flex flex-wrap items-center gap-3 py-3.5">
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="font-medium">{t("notify.title")}</span>
-        <span className="text-sm text-muted">{Notification.permission === "denied" ? t("notify.denied") : t("notify.hint")}</span>
-        {on && desktop?.notificationSettings && <span className="text-sm text-dim">{t("notify.systemHint")}</span>}
-      </span>
+    <SettingRow title={t("notify.title")} hint={
+        <>
+          <span className="text-sm text-muted">{Notification.permission === "denied" ? t("notify.denied") : t("notify.hint")}</span>
+          {on && desktop?.notificationSettings && <span className="text-sm text-dim">{t("notify.systemHint")}</span>}
+        </>
+      }>
       {on && (
         <Button size="sm" variant="ghost" onPress={() => new Notification(t("app.name"), { body: t("notify.test") })}>
           {t("notify.sendTest")}
@@ -117,7 +117,7 @@ export function NotifySetting() {
           else save(next)
         }}
       />
-    </div>
+    </SettingRow>
   )
 }
 
@@ -125,11 +125,7 @@ export function NotifySetting() {
 export function SoundSetting() {
   const [on, setOn] = useState(soundOn)
   return (
-    <div className="flex flex-wrap items-center gap-3 py-3.5">
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="font-medium">{t("notify.sound")}</span>
-        <span className="text-sm text-muted">{t("notify.soundHint")}</span>
-      </span>
+    <SettingRow title={t("notify.sound")} hint={t("notify.soundHint")}>
       <Button size="sm" variant="ghost" onPress={chime}>
         {t("notify.listen")}
       </Button>
@@ -142,6 +138,6 @@ export function SoundSetting() {
           if (v) chime()
         }}
       />
-    </div>
+    </SettingRow>
   )
 }

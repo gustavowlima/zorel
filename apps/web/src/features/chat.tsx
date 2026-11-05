@@ -800,7 +800,8 @@ function StoredActivity({ steps, durationMs }: { steps: Message["steps"]; durati
         {parts.join(" · ")}
       </DisclosurePill>
       {open && (
-        <ol id={id} className="flex max-w-130 basis-full flex-col gap-2.5 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
+        <div className="basis-full">
+        <ol id={id} className="flex max-w-130 flex-col gap-2.5 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
           {steps.map((s, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: stored steps are immutable and may repeat a tool
             <li key={i} className="flex gap-2.5">
@@ -816,6 +817,7 @@ function StoredActivity({ steps, durationMs }: { steps: Message["steps"]; durati
             </li>
           ))}
         </ol>
+        </div>
       )}
     </>
   )
@@ -871,7 +873,10 @@ function LiveMessage({ live, agents, receipts, bare }: { live: LiveTurn; agents:
             {label}
           </DisclosurePill>
           {open && live.steps.length > 0 && (
-            <ol id={id} className="flex max-w-130 basis-full flex-col gap-2 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
+            // A full-width line of its own: with max-w on the list itself, flex measured it at 520px and set it
+            // beside the pill whenever the column had room.
+            <div className="basis-full">
+            <ol id={id} className="flex max-w-130 flex-col gap-2 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
               {live.steps.map((s) => (
                 <li key={s.id} className="flex items-start gap-2.5">
                   <StepIcon status={s.status} />
@@ -883,6 +888,7 @@ function LiveMessage({ live, agents, receipts, bare }: { live: LiveTurn; agents:
                 </li>
               ))}
             </ol>
+            </div>
           )}
         </>
       }
@@ -955,7 +961,7 @@ function LiveText({ text }: { text: string }) {
 
 // What waits for you in this chat (approvals, questions), right above the message box until you decide, so it
 // never scrolls out of sight with the conversation.
-function PendingTray({ approvals }: { approvals: ReadonlyArray<Approval> }) {
+export function PendingTray({ approvals }: { approvals: ReadonlyArray<Approval> }) {
   if (!approvals.length) return null
   return (
     <section className="mb-2 flex flex-col gap-2" aria-label={t("approval.waiting")}>

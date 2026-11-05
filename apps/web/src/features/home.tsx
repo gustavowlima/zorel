@@ -5,9 +5,10 @@ import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
 import { agentsAtom, mutations, projectsAtom, uploadAttachment, useList, useMutation } from "../client.ts"
 import { go } from "../state.ts"
-import { Composer } from "./composer.tsx"
+import { Composer, type ComposerSources } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
-import { Bot, Folder, Select } from "@/ui"
+import { agentTone, handleOf, modelLabel } from "../labels.ts"
+import { AgentAvatar, Folder, IconButton, Select, X } from "@/ui"
 
 const DEFAULT_MODEL: ModelChoice = { model: "claude-cli/sonnet", accountId: null, effort: null }
 
@@ -26,6 +27,17 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
     setAgentId(id)
     const a = agents.find((x) => x.id === id)
     if (a) setChoice({ model: a.model, accountId: a.accountId, effort: a.effort })
+  }
+  const lead = available.find((a) => a.id === agentId)
+  // "#" in the box picks who answers (the same as in a chat); typing filters, so a long team stays usable.
+  const sources: ComposerSources = {
+    leads: available.map((a) => ({
+      id: handleOf(a),
+      label: a.name,
+      hint: a.id === agentId ? t("composer.answering") : a.title || modelLabel(a.model),
+      icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} />,
+      run: () => pickAgent(a.id)
+    }))
   }
   // A project's chat starts with its default agent (Agents tab of the project), if it has one.
   const defaultAgent = projects.find((p) => p.id === projectId)?.defaultAgentId ?? null
@@ -76,24 +88,26 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
                 pickAgent(null)
               }}
               options={[{ value: "", label: t("home.noProject") }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+              searchLabel={t("home.searchProjects")}
             />
-            {available.length > 0 && (
-              <Select
-                variant="ghost"
-                icon={<Bot />}
-                className="w-auto max-w-56"
-                aria-label={t("home.agent")}
-                value={agentId ?? ""}
-                onChange={(v) => pickAgent(v || null)}
-                options={[{ value: "", label: t("home.noAgent") }, ...available.map((a) => ({ value: a.id, label: a.name }))]}
-              />
+            {lead && (
+              // Who answers, once picked ("#" in the box, or the project's default): its face and name, × goes back
+              // to a plain chat. Picking happens in the box itself, so there is no list of names here.
+              <span className="flex h-control-sm items-center gap-1.5 rounded-full bg-control pr-0.5 pl-1 text-sm text-fg">
+                <AgentAvatar id={lead.id} name={lead.name} tone={agentTone(lead, agents)} size={20} />
+                <span className="max-w-40 truncate">{t("home.answers", { name: lead.name })}</span>
+                <IconButton label={t("home.clearAgent", { name: lead.name })} size="xs" shape="pill" onPress={() => pickAgent(null)}>
+                  <X className="size-3.5" />
+                </IconButton>
+              </span>
             )}
           </div>
           <Composer
             autoFocus
+            sources={sources}
             onSubmit={submit}
             upload={(f) => ensureChat().then((id) => uploadAttachment(id, f))}
-            placeholder={t("composer.placeholder")}
+            placeholder={t(available.length ? "home.placeholder" : "home.placeholderPlain")}
             tools={<ModelPicker value={choice} onChange={setChoice} />}
           />
         </div>

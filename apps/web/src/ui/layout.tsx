@@ -49,10 +49,27 @@ export function Section({ title, description, action, children, className }: { t
   )
 }
 
-// A list of rows separated by hairlines (settings, inbox): flat, no nested cards.
+// A group of rows (settings, lists on a page): one card a tone above the canvas, hairlines between its rows, 16px
+// inside. The section's title sits outside, above it. Flat: the tone step is the depth, no shadow; never nested.
 export const Rows = ({ children, className }: { children: ReactNode; className?: string }) => (
-  <div className={cn("flex flex-col divide-y divide-subtle border-y border-subtle", className)}>{children}</div>
+  <div className={cn("flex flex-col divide-y divide-subtle rounded-card border border-subtle bg-surface px-4", className)}>{children}</div>
 )
+
+// One setting in a group: what it is (an optional icon tile, title, a line of explanation) and its control on the
+// right. On a narrow column the control wraps under the text instead of squeezing it. A hint in a state color
+// passes its own span (<span className="text-warning">).
+export function SettingRow({ icon, title, hint, children, className }: { icon?: ReactNode; title: ReactNode; hint?: ReactNode; children?: ReactNode; className?: string }) {
+  return (
+    <div className={cn("flex flex-wrap items-center gap-x-4 gap-y-2 py-3.5", className)}>
+      {icon && <IconTile>{icon}</IconTile>}
+      <span className="flex min-w-48 flex-1 flex-col gap-0.5">
+        <span className="font-medium">{title}</span>
+        {hint && <span className="flex flex-col text-sm text-muted">{hint}</span>}
+      </span>
+      {children && <span className="flex shrink-0 items-center gap-2">{children}</span>}
+    </div>
+  )
+}
 
 // The square that holds an icon beside a row or a heading: sm 28px, md 32px, lg 40px (empty states). A translucent
 // control tone, so it reads on the canvas and on a surface alike.
@@ -113,18 +130,20 @@ export const Code = ({ children, className }: { children: ReactNode; className?:
   <code className={cn("rounded-md bg-surface px-1.5 py-0.5 font-mono text-sm", className)}>{children}</code>
 )
 
-// A row of a list between hairlines (Rows) that opens something: content flush with the section heading, a chevron,
-// and on hover a faint wash inset inside the hairlines (never a card over them). The whole row is one button (an
-// overlay under the content); `trailing` holds a control of its own (a "Sign in"), pressable on top of it.
-// A whole row as one press target (the row's content stays on top, unpressable): hover tint inside the hairlines.
-export const RowHit = ({ label, onPress }: { label: string; onPress: () => void }) => (
+// A whole row as one press target (the row's content stays on top, unpressable): on hover a faint wash that reaches
+// 6px from the group's edge.
+export const RowHit = ({ label, onPress, className }: { label: string; onPress: () => void; className?: string }) => (
   <AriaButton
     aria-label={label}
     onPress={onPress}
-    className="absolute -inset-x-2.5 inset-y-1 cursor-default rounded-control outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:bg-hover data-pressed:bg-control-active motion-reduce:transition-none"
+    className={cn("absolute -inset-x-2.5 inset-y-1 cursor-default rounded-control outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:bg-control data-pressed:bg-control-hover motion-reduce:transition-none", className)}
   />
 )
 
+// A row of a group (Rows) that opens something: the content on the group's 16px edge, a chevron, and on hover a
+// faint wash that reaches 6px from the card's edge (never a card over the card). The whole row is one button (an
+// overlay under the content); `trailing` holds a control of its own (a "Sign in", a ⋯), pressable on top of it. The
+// icon may be a 20px glyph or a face (up to 28px).
 export function ListRow({
   icon,
   title,
@@ -147,7 +166,7 @@ export function ListRow({
   return (
     <div className="relative flex min-h-14 items-center gap-3.5 py-2.5">
       <RowHit label={label} onPress={onPress} />
-      {icon && <span className="pointer-events-none relative flex size-5 shrink-0 items-center justify-center">{icon}</span>}
+      {icon && <span className="pointer-events-none relative flex min-w-5 shrink-0 items-center justify-center">{icon}</span>}
       <span className="pointer-events-none relative flex min-w-0 flex-1 flex-col">
         <span className="truncate font-medium">{title}</span>
         {hint && <span className={cn("truncate text-sm", hintTone === "warning" ? "text-warning" : hintTone === "success" ? "text-success" : "text-muted")}>{hint}</span>}

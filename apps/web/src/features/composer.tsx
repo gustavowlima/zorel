@@ -225,7 +225,8 @@ export function Composer({
           <Plus />
         </IconButton>
         <EditorContent editor={editor} className="min-w-0 flex-1 self-center" />
-        <span className="flex shrink-0 items-center gap-0.5">{tools}</span>
+        {/* The same 32px box as the buttons beside it: a 28px chip sits centred, not on the bottom edge. */}
+        <span className="flex h-control shrink-0 items-center gap-0.5">{tools}</span>
         {busy && onStop && (
           <Tooltip content={t("composer.stop")}>
             <IconButton label={t("composer.stop")} variant="secondary" shape="pill" size="md" onPress={onStop}>

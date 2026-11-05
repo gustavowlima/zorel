@@ -1,7 +1,7 @@
 {
   "name": "@zorel/desktop",
   "productName": "Zorel",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Zorel desktop app",
   "private": true,
   "main": "dist/main.cjs",
