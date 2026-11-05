@@ -186,6 +186,7 @@ export function Composer({
   }, [dragging, placeholder])
 
   return (
+    <div className="flex flex-col gap-1">
     <form
       aria-label={t("composer.label")}
       onSubmit={(e) => {
@@ -223,13 +224,8 @@ export function Composer({
           )}
         </div>
       )}
-      {/* The message's controls (model, access, context) in a row above the text, so the text keeps the full width. */}
-      {tools && <div className="flex min-w-0 items-center gap-0.5">{tools}</div>}
       <div className="flex items-end gap-1">
-        <IconButton label={t("composer.attach")} className="size-control" isDisabled={files.length >= MAX_ATTACHMENTS} onPress={() => void pickFiles().then(attach)}>
-          <Plus />
-        </IconButton>
-        <EditorContent editor={editor} className="min-w-0 flex-1 self-center" />
+        <EditorContent editor={editor} className="min-w-0 flex-1 self-center pl-1" />
         {busy && onStop && (
           <Tooltip content={t("composer.stop")}>
             <IconButton label={t("composer.stop")} variant="secondary" shape="pill" size="md" onPress={onStop}>
@@ -249,6 +245,15 @@ export function Composer({
         </p>
       )}
     </form>
+    {/* Under the box, outside it: attach, then the message's controls (model, access, context). The box keeps only
+        the text, Stop and Send. */}
+    <div className="flex min-w-0 items-center gap-0.5 px-1">
+      <IconButton label={t("composer.attach")} size="sm" isDisabled={files.length >= MAX_ATTACHMENTS} onPress={() => void pickFiles().then(attach)}>
+        <Plus />
+      </IconButton>
+      {tools}
+    </div>
+    </div>
   )
 }
 
