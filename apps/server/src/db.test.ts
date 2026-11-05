@@ -7,6 +7,7 @@ import { Effect } from "effect"
 import { sameName, Store } from "./db.ts"
 import { LEGACY_MIGRATIONS } from "./migrate.ts"
 import { recall } from "./chat.ts"
+import { mappedOf } from "./context.ts"
 
 const run = <A>(path: string, f: (r: typeof Store.Service) => Effect.Effect<A>) =>
   Effect.runPromise(Effect.scoped(Effect.gen(function* () { return yield* f(yield* Store) }).pipe(Effect.provide(Store.layer(path)))))
@@ -355,5 +356,16 @@ test("recall by association finds a fact its words don't (the measure for A2): d
       const recalled = (yield* recall(r, [scope], query, [])).map((m) => m.text)
       expect(recalled).toContain("Builds need NODE_VERSION 22 set in the dashboard") // association does
       expect(recalled).not.toContain("Lunch is at noon")
+    })
+  ))
+
+test("aliases and categories let a question in other words reach the fact (paraphrase without embeddings)", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const m = (yield* r.addMemory({ scope: "user", text: "Drinks green tea in the morning", state: "active", origin: "auto", chatId: null }))!
+      yield* r.linkMemory(m.id, "user", mappedOf([{ name: "Green tea", type: "concept", aliases: ["chá verde"], category: "Beverage" }], []))
+      expect((yield* r.searchMemories(["user"], "which hot beverage do I like?", [], 5)).length).toBe(0) // its words don't match
+      expect((yield* recall(r, ["user"], "which hot beverage do I like?", [])).map((x) => x.id)).toEqual([m.id]) // its category does
+      expect((yield* recall(r, ["user"], "quero um chá verde?", [])).map((x) => x.id)).toEqual([m.id]) // and its other name
     })
   ))

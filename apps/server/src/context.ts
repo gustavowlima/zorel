@@ -97,9 +97,11 @@ export function spread(points: ReadonlyArray<string>, links: ReadonlyArray<{ a: 
 
 // The points a text names: their name or an alias as whole words in it ("deploy to vercel" names Deploy and Vercel).
 export function namedPoints(text: string, points: ReadonlyArray<{ id: string; normalized: string; aliases: ReadonlyArray<string> }>): string[] {
-  const t = ` ${normalize(text)} `
-  return points.filter((p) => [p.normalized, ...p.aliases].some((n) => n.length >= 3 && t.includes(` ${n} `))).map((p) => p.id)
+  const t = ` ${singular(normalize(text))} `
+  return points.filter((p) => [p.normalized, ...p.aliases].some((n) => n.length >= 3 && t.includes(` ${singular(n)} `))).map((p) => p.id)
 }
+// "releases deploys" → "release deploy": a plural still names the point (a final -s off words of 5+ letters, not -ss).
+const singular = (t: string) => t.split(" ").map((w) => (w.length >= 5 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w)).join(" ")
 
 // Two wordings of the same idea: most of their words shared (Jaccard over words of 3+ letters). Consolidation
 // treats a new proposal this close to an existing memory as that memory said again.
@@ -261,7 +263,7 @@ export const CONSOLIDATION_SYSTEM = [
   "You keep the memory of a chat between a person and AI agents.",
   "You get the current summary, a stretch of messages about to leave the window, and the memories and skills that already exist.",
   "Answer ONLY with JSON, no text around it, in this shape:",
-  '{"summary": "...", "memories": [{"scope": "user" | "project" | "agent", "text": "...", "keywords": "...", "evidence": [3], "replaces": "m4", "entities": [{"name": "Vercel", "type": "concept"}], "relations": [["Deploy", "goes to", "Vercel"]]}], "confirm": ["m2"], "skills": [{"scope": "user" | "project" | "agent", "title": "...", "text": "..."}]}',
+  '{"summary": "...", "memories": [{"scope": "user" | "project" | "agent", "text": "...", "keywords": "...", "evidence": [3], "replaces": "m4", "entities": [{"name": "Vercel", "type": "concept", "aliases": ["vercel.com"], "category": "Hosting"}], "relations": [["Deploy", "goes to", "Vercel"]]}], "confirm": ["m2"], "skills": [{"scope": "user" | "project" | "agent", "title": "...", "text": "..."}]}',
   '- "summary": the new summary, merging the previous one and the stretch. Up to 400 words. Keep decisions, open items, numbers, names and the state of the work.',
   '- "memories": only durable facts that hold outside this conversation. An empty list is the norm.',
   '  - "user": the person\'s preferences and way of working (holds everywhere).',
@@ -271,6 +273,7 @@ export const CONSOLIDATION_SYSTEM = [
   '  - "evidence": the numbers (#) of the messages in the stretch that prove the fact. Only the person\'s messages ([user]) count: an agent\'s guess, plan or assumption never becomes a memory, and neither do details only an agent added (a name, a number).',
   '  - "keywords": 5 to 10 other words someone might use when this would help (synonyms, related terms, the other language), separated by spaces. They are only for search.',
   '  - "entities": the things the memory is about, 1 to 5, each named as it would be anywhere ("Vercel", not "vercel deploys"): "concept" for a concrete thing (a tool, a service, a file, a day), "subject" for a theme or a decision ("Deploy", "Authentication"). Use the project\'s and the agents\' own names when the memory is about them.',
+  '  - Each entity may carry "aliases" (up to 3 other names someone would use for it, the other language included: "green tea" for "Chá verde") and a "category" (what kind of thing it is, one or two words: "Hosting" for Vercel, "Drink" for green tea), so a question in other words still finds it.',
   '  - "relations": how its entities relate, as [from, relation, to] with a short relation in a few words ("goes to", "uses", "decided"). Only what the memory says.',
   '  - "replaces": when the person corrects or updates an existing memory (they moved, changed a preference), the id (m1, m2…) of the one it replaces. Never leave two memories that contradict each other.',
   '  - Not a memory: anything temporary or time-boxed ("this week", "for now", "today"), and never a password, key, token or other credential, not even in the summary. A message that holds a credential can still hold facts: keep those.',
@@ -337,23 +340,30 @@ const ProposedMemory = Schema.Struct({
 // goes, the rest stays) and capped. A relation's ends become entities too.
 export type EntityType = "concept" | "subject"
 export interface Mapped {
-  readonly entities: ReadonlyArray<{ name: string; type: EntityType }>
+  readonly entities: ReadonlyArray<{ name: string; type: EntityType; aliases?: ReadonlyArray<string> }>
   readonly relations: ReadonlyArray<readonly [string, string, string]>
 }
+export const IS_A = "is a" // the relation a category becomes: "Green tea" is a "Drink"
 const MAX_ENTITIES = 6
 const NAME_MAX = 60
 export function mappedOf(entities: ReadonlyArray<unknown> = [], relations: ReadonlyArray<unknown> = []): Mapped {
   const clean = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, NAME_MAX) : "")
+  const categories: Array<readonly [string, string, string]> = []
   const es = entities.flatMap((e) => {
-    const o = (e ?? {}) as { name?: unknown; type?: unknown }
+    const o = (e ?? {}) as { name?: unknown; type?: unknown; aliases?: unknown; category?: unknown }
     const name = clean(typeof e === "string" ? e : o.name)
-    return name ? [{ name, type: (o.type === "concept" ? "concept" : "subject") as EntityType }] : []
+    if (!name) return []
+    const aliases = (Array.isArray(o.aliases) ? o.aliases : []).map(clean).filter((a) => a && normalize(a) !== normalize(name)).slice(0, 3)
+    const category = clean(o.category)
+    if (category && normalize(category) !== normalize(name)) categories.push([name, IS_A, category] as const)
+    return [{ name, type: (o.type === "concept" ? "concept" : "subject") as EntityType, ...(aliases.length && { aliases }) }]
   })
-  const rs = relations.flatMap((r) => {
+  const named = relations.flatMap((r) => {
     if (!Array.isArray(r) || r.length !== 3) return []
     const [a, rel, b] = r.map(clean)
     return a && rel && b && normalize(a) !== normalize(b) ? [[a, rel.toLowerCase().slice(0, 40), b] as const] : []
   })
+  const rs = [...named, ...categories]
   const seen = new Set<string>()
   const all = [...es, ...rs.flatMap(([a, , b]) => [{ name: a!, type: "subject" as EntityType }, { name: b!, type: "subject" as EntityType }])].filter((e) => {
     const k = normalize(e.name)
@@ -361,7 +371,7 @@ export function mappedOf(entities: ReadonlyArray<unknown> = [], relations: Reado
     seen.add(k)
     return true
   })
-  return { entities: all.slice(0, MAX_ENTITIES), relations: rs.slice(0, MAX_ENTITIES) }
+  return { entities: all.slice(0, MAX_ENTITIES + categories.length), relations: rs.slice(0, MAX_ENTITIES + categories.length) }
 }
 const ProposedSkill = Schema.Struct({ scope: Scope, title: Text(80), text: Text(4000) })
 const decodeReply = Schema.decodeUnknownOption(Reply)
