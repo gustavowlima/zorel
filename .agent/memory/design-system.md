@@ -74,3 +74,4 @@ updated: 2026-11-05
 - floating layers use bg-float (raised at 86%) + shadow-float + backdrop-blur-xl: menu, select, popover, command palette, composer option list; dialogs/tooltips solid
 - selection is blue: menus/lists focus = bg-accent-soft + icon text-accent-text (4.9:1); rail current = icon accent-text on accent-faint
 - dark neutrals set to the landing's graphite (2026-11-05, user choice): OKLCH hue 260 chroma 0.005; frame #0b0c0e, sidebar #0f1113 (a step above the rail), canvas #17181b, surface #1c1e21, raised #202225; replaces the stronger tint (chroma 0.013) of the same day
+- creating with several fields = centred Dialog (Dialog Rule): Add project (folder browser via GET /api/folders, desktop folder:pick IPC, name from the folder) and Add custom server (MCP)

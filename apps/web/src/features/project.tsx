@@ -1,15 +1,15 @@
 // Project: overview (name, brief: the stable context of every turn, and its chats), its agents, and the
 // MCP servers only its chats see. The chats themselves live in the sidebar tree.
-import type { Project } from "@zorel/contracts"
+import type { FolderListing, Project } from "@zorel/contracts"
 import { formatAge, t } from "@zorel/i18n"
-import { type FormEvent, useEffect, useState } from "react"
+import { type KeyboardEvent, useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
 import { chatTitle, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
 import { AgentRow, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
 import {
-  Bot, Button, ChatStatusIcon, Select, ConfirmDialog, EmptyState, Field, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Popover, Screen, Section, Tab,
+  Bot, Button, ChatStatusIcon, Select, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Screen, Section, Tab,
   TabList, TabPanel, Tabs, Textarea, Trash2
 } from "@/ui"
 
@@ -20,65 +20,167 @@ export function folderError(e: unknown): string {
   return REASONS.includes(reason as (typeof REASONS)[number]) ? t(`workspace.invalid.${reason as (typeof REASONS)[number]}`) : String(e)
 }
 
-// New project: a small popover from the sidebar's "+" (name and an optional brief), not a page.
-// The brief can be written later in the project's overview.
+// New project: the sidebar's "+" opens a centred dialog that maps a folder to a project, as T3 Code does. Type a path
+// from ~/ and the folders below it are listed as you go (git repositories marked); the desktop app also offers the
+// system's folder picker. The name comes from the folder. The brief is written later, in the project's overview.
+const desktop = (window as { zorelDesktop?: { pickFolder?: (start?: string) => Promise<string | null> } }).zorelDesktop
+
+const baseName = (p: string) => p.replace(/\/+$/, "").split("/").pop() ?? p
+const tilde = (p: string, home: string) => (p === home ? "~" : p.startsWith(`${home}/`) ? `~${p.slice(home.length)}` : p)
+
 export function NewProjectButton() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <IconButton label={t("nav.newProject")} size="xs" onPress={() => setOpen(true)}>
+        <Plus className="size-3.5" />
+      </IconButton>
+      <Dialog title={t("project.addTitle")} size="lg" isOpen={open} onOpenChange={setOpen}>
+        {(close) => <AddProject onDone={close} />}
+      </Dialog>
+    </>
+  )
+}
+
+function AddProject({ onDone }: { onDone: () => void }) {
   const create = useMutation(mutations.createProject)
+  const [input, setInput] = useState("~/")
+  const [listing, setListing] = useState<FolderListing>()
+  const [missing, setMissing] = useState(false)
+  const [selected, setSelected] = useState(-1) // -1: nothing highlighted until the arrows move
   const [name, setName] = useState("")
-  const [brief, setBrief] = useState("")
-  const [path, setPath] = useState("")
+  const [named, setNamed] = useState(false) // the person typed a name: stop following the folder
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
-  const [open, setOpen] = useState(false)
-  const submit = (e: FormEvent) => {
-    e.preventDefault()
+
+  // What's typed is a folder (up to the last /) and the start of a name inside it.
+  const cut = input.lastIndexOf("/")
+  const dir = cut < 0 ? "~" : input.slice(0, cut) || "/"
+  const partial = cut < 0 ? input : input.slice(cut + 1)
+  useEffect(() => {
+    const id = setTimeout(() => {
+      fetch(`/api/folders?${new URLSearchParams({ dir })}`)
+        .then((r) => (r.ok ? (r.json() as Promise<FolderListing>) : Promise.reject()))
+        .then(
+          (l) => {
+            setListing(l)
+            setMissing(false)
+          },
+          () => setMissing(true)
+        )
+    }, 120)
+    return () => clearTimeout(id)
+  }, [dir])
+
+  const shown = (listing?.folders ?? []).filter((f) =>
+    partial ? f.name.toLowerCase().startsWith(partial.toLowerCase()) : !f.name.startsWith(".")
+  )
+  // Typing a name highlights the first match; with nothing typed, only the arrows highlight a folder.
+  const pick = selected >= 0 ? shown[Math.min(selected, shown.length - 1)] : partial ? shown[0] : undefined
+  // The folder that becomes the project: the one typed (path ending in /) or the highlighted one.
+  const target = missing || !listing ? undefined : partial ? pick?.path : listing.dir
+  useEffect(() => {
+    if (!named) setName(target ? baseName(target) : "")
+  }, [target, named])
+
+  const type = (value: string) => {
+    setInput(value)
+    setSelected(-1)
+  }
+  const enter = (path: string) => listing && type(`${tilde(path, listing.home)}/`)
+  const submit = (path: string | null) => {
     if (!name.trim()) return
     setBusy(true)
     setError(undefined)
-    create({ payload: { name: name.trim(), brief, path: path.trim() || null }, reactivityKeys: ["projects"] })
+    create({ payload: { name: name.trim(), brief: "", path }, reactivityKeys: ["projects"] })
       .then((p) => {
-        setOpen(false)
-        setName("")
-        setBrief("")
-        setPath("")
+        onDone()
         go({ view: "project", id: p.id, tab: "overview" })
       }, (e: unknown) => setError(folderError(e)))
       .finally(() => setBusy(false))
   }
+  const keys = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault()
+      setSelected((i) => Math.max(0, Math.min(shown.length - 1, (i < 0 && partial ? 0 : i) + (e.key === "ArrowDown" ? 1 : -1))))
+    } else if ((e.key === "Tab" || e.key === "Enter") && pick) {
+      e.preventDefault()
+      enter(pick.path)
+    } else if (e.key === "Enter" && !partial && target) {
+      e.preventDefault()
+      submit(target)
+    }
+  }
+  const browse = async () => {
+    const chosen = await desktop?.pickFolder?.(listing?.dir)
+    if (chosen && listing) type(`${tilde(chosen, listing.home)}/`)
+  }
+
   return (
-    <Popover
-      label={t("project.newTitle")}
-      placement="bottom start"
-      className="w-80"
-      isOpen={open}
-      onOpenChange={setOpen}
-      trigger={
-        <IconButton label={t("nav.newProject")} size="xs">
-          <Plus className="size-3.5" />
-        </IconButton>
-      }
-    >
-      <form onSubmit={submit} className="flex flex-col gap-3 p-4">
-        <p className="font-semibold">{t("project.newTitle")}</p>
-        <Field label={t("project.name")}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required autoFocus />
-        </Field>
-        <Field label={t("workspace.folder")} hint={error ? <span className="text-danger">{error}</span> : t("project.briefHintShort")}>
-          <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder={t("workspace.folderPlaceholder")} spellCheck={false} className="font-mono" />
-        </Field>
-        <Field label={t("project.brief")} hint={t("project.briefHintShort")}>
-          <Textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={3} maxLength={8000} />
-        </Field>
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onPress={() => setOpen(false)}>
+    <div className="flex flex-col gap-4">
+      <Field label={t("project.pathLabel")} hint={t("project.pathHint")}>
+        <Input
+          value={input}
+          onChange={(e) => type(e.target.value)}
+          onKeyDown={keys}
+          placeholder={t("project.pathPlaceholder")}
+          spellCheck={false}
+          autoFocus
+          className="font-mono"
+        />
+      </Field>
+      <div role="listbox" aria-label={t("project.pathLabel")} className="-mt-1 flex max-h-64 min-h-24 flex-col gap-px overflow-y-auto rounded-card border border-subtle p-1">
+        {shown.length === 0 && <p className="px-2.5 py-2 text-sm text-dim">{t("project.noFolders")}</p>}
+        {shown.map((f, i) => (
+          <div
+            key={f.path}
+            role="option"
+            aria-selected={f === pick}
+            tabIndex={-1}
+            onMouseEnter={() => setSelected(i)}
+            onMouseDown={(e) => {
+              e.preventDefault() // keep the field's focus
+              enter(f.path)
+            }}
+            className={cx("flex h-control-sm shrink-0 cursor-default items-center gap-2.5 rounded-control px-2.5", f === pick ? "bg-accent-soft text-fg" : "text-secondary")}
+          >
+            <span className={cx("flex size-4 shrink-0", f === pick ? "text-accent-text" : "text-muted")}>{f.git ? <GitBranch /> : <Folder />}</span>
+            <span className="min-w-0 truncate">{f.name}</span>
+            {f.git && <span className="ml-auto text-xs text-dim">{t("project.gitRepo")}</span>}
+          </div>
+        ))}
+      </div>
+      <Field label={t("project.name")} hint={target && listing ? t("project.adds", { path: tilde(target, listing.home) }) : undefined}>
+        <Input
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value)
+            setNamed(true)
+          }}
+          maxLength={80}
+        />
+      </Field>
+      {error && <p className="text-sm text-danger">{error}</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        {desktop?.pickFolder && (
+          <Button variant="secondary" onPress={() => void browse()}>
+            <FolderOpen />
+            {t("project.browse")}
+          </Button>
+        )}
+        <Button variant="ghost" isDisabled={busy || !name.trim()} onPress={() => submit(null)}>
+          {t("project.withoutFolder")}
+        </Button>
+        <span className="ml-auto flex gap-2">
+          <Button variant="ghost" onPress={onDone}>
             {t("common.cancel")}
           </Button>
-          <Button type="submit" variant="default" isPending={busy} isDisabled={busy || !name.trim()}>
-            {t("project.create")}
+          <Button variant="default" isPending={busy} isDisabled={busy || !target || !name.trim()} onPress={() => target && submit(target)}>
+            {t("project.add")}
           </Button>
-        </div>
-      </form>
-    </Popover>
+        </span>
+      </div>
+    </div>
   )
 }
 

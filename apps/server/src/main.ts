@@ -1,7 +1,8 @@
 import { discovered, pickedPaths } from "./file-skills.ts"
+import { listFolders } from "./folders.ts"
 import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS } from "@zorel/contracts"
+import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
 import { ZorelRpc } from "@zorel/contracts/events"
 import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
 import { Effect, Layer, Schema } from "effect"
@@ -62,6 +63,10 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
       input.path ? Effect.map(workspace.validate(input.path), (path) => ({ ...input, path })) : Effect.succeed(input)
     return h
       .handle("list", () => store.projects())
+      // The subfolders of one folder, to pick a project's folder (names and paths only).
+      .handle("folders", ({ query }) =>
+        Effect.try({ try: () => listFolders(query.dir), catch: (e) => (e instanceof WorkspaceInvalid ? e : new WorkspaceInvalid({ reason: "forbidden" })) })
+      )
       .handle("create", ({ payload }) =>
         Effect.flatMap(withPath(payload), store.createProject).pipe(
           Effect.tap((p) => audit.record(Actions.projectCreated, { target: p, after: { name: p.name, path: p.path } }))
