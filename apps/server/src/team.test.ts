@@ -8,12 +8,13 @@ const agent = (over: Partial<Agent>): Agent => ({
 })
 const caller = { model: "codex-cli/default", effort: "high" as const, access: "workspace" as const }
 
-test("effectiveAccess: the agent's level, narrowed by the chat's; a chat never widens it", () => {
+test("effectiveAccess: the chat's level for every agent in it when set, else the agent's own; the Builder keeps its own", () => {
   expect(effectiveAccess({ access: null }, agent({ access: "ask" }))).toBe("ask")
-  expect(effectiveAccess({ access: "full" }, agent({ access: "ask" }))).toBe("ask") // never above the agent's own
-  expect(effectiveAccess({ access: "ask" }, agent({ access: "full" }))).toBe("ask") // only below it
+  expect(effectiveAccess({ access: "full" }, agent({ access: "ask" }))).toBe("full") // the person widened this chat
+  expect(effectiveAccess({ access: "ask" }, agent({ access: "full" }))).toBe("ask") // or narrowed it
   expect(effectiveAccess({ access: null }, undefined)).toBe("workspace") // a chat with no agent
-  expect(effectiveAccess({ access: "full" }, undefined)).toBe("workspace") // full is chosen on an agent's page only
+  expect(effectiveAccess({ access: "full" }, undefined)).toBe("full")
+  expect(effectiveAccess({ access: "full" }, agent({ access: "workspace", builtin: "builder" }))).toBe("workspace")
 })
 
 test("narrower keeps the smaller access", () => {

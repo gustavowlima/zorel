@@ -21,6 +21,7 @@ import { QueuePanel, useQueue } from "./queue.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { chatDelta, Delta, type Focus, PinItem, type Pins, RunControl, type ShellPin, SIDE_ICON, SidePanel, type SideTab, sideLabel, TurnChanges, usePins } from "./workspace.tsx"
 import { ModelPicker } from "./model-picker.tsx"
+import { AccessChip } from "./access-chip.tsx"
 import { GitControl } from "./git.tsx"
 import { ContextMenu, PageHeader, ShimmerText } from "@/ui"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
@@ -211,6 +212,7 @@ export function ChatView({ chat }: { chat: Chat }) {
                     value={{ model: chat.model, accountId: chat.accountId, effort: chat.effort }}
                     onChange={(v) => void updateChat({ params: { id: chat.id }, payload: v, reactivityKeys: ["chats", "context"] })}
                   />
+                  <AccessChip chat={chat} />
                   <ContextMeter chatId={chat.id} onCompact={compact} onNewChat={newChat} />
                 </>
               }

@@ -143,12 +143,12 @@ export const SKILL_TOOLS = [
 
 const RANK: Record<Access, number> = { ask: 0, workspace: 1, full: 2 }
 export const narrower = (a: Access, b: Access): Access => (RANK[a] <= RANK[b] ? a : b)
-// The level an agent works at in a chat: the agent's own (workspace with no agent), narrowed by the chat's when the
-// person set one there. A chat only ever restricts: full access stays the person's choice on the agent's page, so a
-// chat set to "full" never takes an "Ask first" agent out of its sandbox.
-export const effectiveAccess = (chat: { readonly access: Access | null }, agent: { readonly access: Access } | undefined): Access => {
+// The level an agent works at in a chat: the chat's when the person set one there (for every agent in it, wider or
+// narrower than their own: the person chose it for this chat, Full access after a warning), else the agent's own
+// (workspace with no agent). The Builder keeps its own: it designs agents, it never needs more.
+export const effectiveAccess = (chat: { readonly access: Access | null }, agent: { readonly access: Access; readonly builtin?: string | null | undefined } | undefined): Access => {
   const own = agent?.access ?? "workspace"
-  return chat.access ? narrower(chat.access, own) : own
+  return agent?.builtin ? own : (chat.access ?? own)
 }
 const LIMITS = { name: 80, title: 60, description: 300, instructions: 8000 } as const
 
