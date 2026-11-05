@@ -7,8 +7,11 @@ import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, ne, notInA
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { LOCAL_ACTOR } from "./access.ts"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
-import { Context, Effect, Layer } from "effect"
+import { existsSync } from "node:fs"
+import { join } from "node:path"
+import { Context, Effect, Layer, Semaphore } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
+import { fileTitle, hashOf, markdownFiles, pageText, parsePageText, readText, removeFile, slugOf, titleOfFile, writeAtomic } from "./page-files.ts"
 import { type AgentProfile, agents, agentVersions, memoryVersions, pages, pageVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
 
 // The part of an agent a version keeps (everything but its id, project and creation time).
@@ -77,9 +80,78 @@ const defined = <T extends Record<string, unknown>>(o: T) => Object.fromEntries(
 const makeDb = Drizzle.makeWithDefaults()
 type Db = Effect.Success<typeof makeDb>
 
-export const repository = (db: Db) => {
+export const repository = (db: Db, pagesDir?: string) => {
   const orDie = <A, E>(e: Effect.Effect<A, E>) => Effect.orDie(e)
   const first = <A>(rows: ReadonlyArray<A>) => rows[0]
+
+  // ---------- knowledge pages as files (page-files.ts) ----------
+  // With a folder, every page is also its Markdown file, written through here (the file is the truth; the row
+  // indexes it). Without one (tests in memory), only rows.
+  type PageRow = typeof pages.$inferSelect
+  const pageLock = Semaphore.makeUnsafe(1) // writes and the sync of outside edits, one at a time
+  const pathOf = (file: string) => join(pagesDir!, ...file.split("/"))
+  const nameOf = (scope: string) =>
+    Effect.gen(function* () {
+      const [kind, id = ""] = scope.split(":")
+      if (kind === "project") return (yield* db.select({ name: projects.name }).from(projects).where(eq(projects.id, id)))[0]?.name
+      if (kind === "agent") return (yield* db.select({ name: agents.name }).from(agents).where(eq(agents.id, id)))[0]?.name
+      return undefined
+    })
+  // you/, projects/<name>/, agents/<name>/; a folder another scope already uses gets the id too.
+  const folderOf = (scope: string) =>
+    Effect.gen(function* () {
+      if (scope === "user") return "you"
+      const [kind, id = ""] = scope.split(":")
+      const base = `${kind === "project" ? "projects" : "agents"}/${slugOf((yield* nameOf(scope)) ?? id)}`
+      const taken = yield* db.select({ id: pages.id }).from(pages).where(and(sql`${pages.file} like ${`${base}/%`}`, ne(pages.scope, scope))).limit(1)
+      return taken.length ? `${base}-${id.slice(0, 6)}` : base
+    })
+  const fileTaken = (file: string, id: string) =>
+    Effect.map(db.select({ id: pages.id }).from(pages).where(and(eq(pages.file, file), ne(pages.id, id))).limit(1), (r) => r.length > 0 || existsSync(pathOf(file)))
+  // Writes the row's file (renamed when the title changed; "Title (2).md" when the name is taken) and records it.
+  const writePageFile = (row: PageRow) =>
+    Effect.gen(function* () {
+      if (!pagesDir) return row
+      const folder = row.file ? row.file.slice(0, row.file.lastIndexOf("/")) : yield* folderOf(row.scope)
+      const name = fileTitle(row.title)
+      let file = `${folder}/${name}.md`
+      for (let i = 2; file !== row.file && (yield* fileTaken(file, row.id)); i++) file = `${folder}/${name} (${i}).md`
+      const text = pageText({ id: row.id, scope: row.scope, title: row.title, pinned: row.pinned, body: row.body })
+      writeAtomic(pathOf(file), text)
+      if (row.file && row.file !== file) removeFile(pathOf(row.file))
+      const hash = hashOf(text)
+      yield* db.update(pages).set({ file, hash }).where(eq(pages.id, row.id))
+      return { ...row, file, hash }
+    })
+  const removePageFiles = (rows: ReadonlyArray<{ file: string | null }>) =>
+    Effect.sync(() => {
+      if (pagesDir) for (const r of rows) if (r.file) removeFile(pathOf(r.file))
+    })
+  const addPageVersion = (pageId: string, title: string, body: string, by: string, at: number) =>
+    Effect.gen(function* () {
+      const [{ n = 0 } = {}] = yield* db.select({ n: sql<number>`coalesce(max(${pageVersions.n}), 0)` }).from(pageVersions).where(eq(pageVersions.pageId, pageId))
+      yield* db.insert(pageVersions).values({ id: crypto.randomUUID(), pageId, n: n + 1, title, body, by, at })
+    })
+  // The scope of a file that came from outside: its front matter's (if it names one that exists), else its folder's.
+  const scopeOfFile = (file: string, said: string | undefined, rows: ReadonlyArray<PageRow>) =>
+    Effect.gen(function* () {
+      const exists = (scope: string) =>
+        Effect.gen(function* () {
+          if (scope === "user") return true
+          const [kind, id = ""] = scope.split(":")
+          const table = kind === "project" ? projects : kind === "agent" ? agents : undefined
+          return !!table && (yield* db.select({ id: table.id }).from(table).where(eq(table.id, id))).length > 0
+        })
+      if (said && (yield* exists(said))) return said
+      const folder = file.slice(0, file.lastIndexOf("/"))
+      if (folder === "you") return "user"
+      const sibling = rows.find((r) => r.file?.startsWith(`${folder}/`))
+      if (sibling) return sibling.scope
+      const [kind, slug] = folder.split("/")
+      if (kind === "projects") return (yield* db.select({ id: projects.id, name: projects.name }).from(projects)).filter((p) => slugOf(p.name) === slug).map((p) => `project:${p.id}`)[0]
+      if (kind === "agents") return (yield* db.select({ id: agents.id, name: agents.name }).from(agents)).filter((a) => slugOf(a.name) === slug).map((a) => `agent:${a.id}`)[0]
+      return undefined
+    })
 
   // Members in order (the first is the leader), and the last message as a one-line preview.
   const withMembers = (rows: ReadonlyArray<typeof chats.$inferSelect>) =>
@@ -154,14 +226,21 @@ export const repository = (db: Db) => {
         return yield* project(id)
       }).pipe(orDie),
     removeProject: (id: string) =>
-      orDie(
-        db.transaction((tx) =>
+      pageLock.withPermit(
+        orDie(
           Effect.gen(function* () {
-            const own = yield* tx.select({ id: agents.id }).from(agents).where(eq(agents.projectId, id))
-            const scopes = [`project:${id}`, ...own.map((a) => `agent:${a.id}`)]
-            yield* tx.delete(memories).where(inArray(memories.scope, scopes))
-            yield* tx.delete(pages).where(inArray(pages.scope, scopes)) // versions cascade
-            yield* tx.delete(projects).where(eq(projects.id, id)) // agents, chats and MCP servers cascade
+            const gone = yield* db.transaction((tx) =>
+              Effect.gen(function* () {
+                const own = yield* tx.select({ id: agents.id }).from(agents).where(eq(agents.projectId, id))
+                const scopes = [`project:${id}`, ...own.map((a) => `agent:${a.id}`)]
+                const files = yield* tx.select({ file: pages.file }).from(pages).where(inArray(pages.scope, scopes))
+                yield* tx.delete(memories).where(inArray(memories.scope, scopes))
+                yield* tx.delete(pages).where(inArray(pages.scope, scopes)) // versions cascade
+                yield* tx.delete(projects).where(eq(projects.id, id)) // agents, chats and MCP servers cascade
+                return files
+              })
+            )
+            yield* removePageFiles(gone)
           })
         )
       ),
@@ -222,12 +301,19 @@ export const repository = (db: Db) => {
       ),
     agentVersions: (agentId: string) => orDie(db.select().from(agentVersions).where(eq(agentVersions.agentId, agentId)).orderBy(desc(agentVersions.n))),
     removeAgent: (id: string) =>
-      orDie(
-        db.transaction((tx) =>
+      pageLock.withPermit(
+        orDie(
           Effect.gen(function* () {
-            yield* tx.delete(memories).where(eq(memories.scope, `agent:${id}`))
-            yield* tx.delete(pages).where(eq(pages.scope, `agent:${id}`))
-            yield* tx.delete(agents).where(eq(agents.id, id))
+            const gone = yield* db.transaction((tx) =>
+              Effect.gen(function* () {
+                const files = yield* tx.select({ file: pages.file }).from(pages).where(eq(pages.scope, `agent:${id}`))
+                yield* tx.delete(memories).where(eq(memories.scope, `agent:${id}`))
+                yield* tx.delete(pages).where(eq(pages.scope, `agent:${id}`))
+                yield* tx.delete(agents).where(eq(agents.id, id))
+                return files
+              })
+            )
+            yield* removePageFiles(gone)
           })
         )
       ),
@@ -235,22 +321,88 @@ export const repository = (db: Db) => {
     // ---------- knowledge pages (phase 3b) ----------
     pages: () => orDie(db.select().from(pages).orderBy(desc(pages.updatedAt))),
     page: (id: string) => orDie(db.select().from(pages).where(eq(pages.id, id)).pipe(Effect.map(first))),
-    // Every change of title or body is kept as a version (the first one too), with who made it.
+    // Every change of title or body is kept as a version (the first one too), with who made it; the file follows.
     savePage: (input: { id?: string | undefined; scope: string; title: string; body: string }, by = "you") =>
-      Effect.gen(function* () {
-        const at = now()
-        const existing = input.id ? (yield* db.select().from(pages).where(eq(pages.id, input.id)))[0] : undefined
-        const id = existing?.id ?? crypto.randomUUID()
-        if (existing) {
-          if (existing.title === input.title && existing.body === input.body) return existing
-          yield* db.update(pages).set({ title: input.title, body: input.body, updatedAt: at }).where(eq(pages.id, id))
-        } else yield* db.insert(pages).values({ id, scope: input.scope, title: input.title, body: input.body, pinned: false, updatedAt: at, createdAt: at })
-        const [{ n = 0 } = {}] = yield* db.select({ n: sql<number>`coalesce(max(${pageVersions.n}), 0)` }).from(pageVersions).where(eq(pageVersions.pageId, id))
-        yield* db.insert(pageVersions).values({ id: crypto.randomUUID(), pageId: id, n: n + 1, title: input.title, body: input.body, by, at })
-        return (yield* db.select().from(pages).where(eq(pages.id, id)))[0]!
-      }).pipe(orDie),
-    pinPage: (id: string, pinned: boolean) => orDie(db.update(pages).set({ pinned }).where(eq(pages.id, id)).pipe(Effect.asVoid)),
-    removePage: (id: string) => orDie(db.delete(pages).where(eq(pages.id, id)).pipe(Effect.asVoid)),
+      pageLock.withPermit(
+        Effect.gen(function* () {
+          const at = now()
+          const existing = input.id ? (yield* db.select().from(pages).where(eq(pages.id, input.id)))[0] : undefined
+          const id = existing?.id ?? crypto.randomUUID()
+          if (existing) {
+            if (existing.title === input.title && existing.body === input.body) return existing
+            yield* db.update(pages).set({ title: input.title, body: input.body, updatedAt: at }).where(eq(pages.id, id))
+          } else yield* db.insert(pages).values({ id, scope: input.scope, title: input.title, body: input.body, pinned: false, updatedAt: at, createdAt: at })
+          yield* addPageVersion(id, input.title, input.body, by, at)
+          return yield* writePageFile((yield* db.select().from(pages).where(eq(pages.id, id)))[0]!)
+        }).pipe(orDie)
+      ),
+    pinPage: (id: string, pinned: boolean) =>
+      pageLock.withPermit(
+        Effect.gen(function* () {
+          yield* db.update(pages).set({ pinned }).where(eq(pages.id, id))
+          const row = (yield* db.select().from(pages).where(eq(pages.id, id)))[0]
+          if (row) yield* writePageFile(row)
+        }).pipe(orDie)
+      ),
+    removePage: (id: string) =>
+      pageLock.withPermit(
+        Effect.gen(function* () {
+          const gone = yield* db.delete(pages).where(eq(pages.id, id)).returning({ file: pages.file })
+          yield* removePageFiles(gone)
+        }).pipe(orDie)
+      ),
+    // Brings the folder and the rows together. A file edited, added or moved outside Zorel updates its page (a
+    // version by "outside"); a row without its file gets it written (first run, an imported workspace), unless
+    // `deleted` says the folder lost it while Zorel watched it, then the page goes. A file whose scope can't be
+    // told (no front matter, a folder nobody owns) is left alone.
+    syncPages: (deleted = false) =>
+      !pagesDir
+        ? Effect.succeed({ imported: 0, updated: 0, written: 0, removed: 0 })
+        : pageLock.withPermit(
+            Effect.gen(function* () {
+              const report = { imported: 0, updated: 0, written: 0, removed: 0 }
+              const rows = yield* db.select().from(pages)
+              const matched = new Set<string>()
+              const disk = markdownFiles(pagesDir)
+              for (const file of disk) {
+                const text = readText(pathOf(file))
+                const hash = hashOf(text)
+                const parsed = parsePageText(text)
+                const row = rows.find((r) => r.file === file) ?? (parsed.id ? rows.find((r) => r.id === parsed.id && !matched.has(r.id) && !(r.file && disk.includes(r.file))) : undefined) // moved or renamed outside
+                if (row) matched.add(row.id)
+                if (row && row.file === file && row.hash === hash) continue
+                const title = parsed.title ?? titleOfFile(file)
+                const at = now()
+                if (row) {
+                  const changed = row.title !== title || row.body !== parsed.body
+                  yield* db.update(pages).set({ title, body: parsed.body, pinned: parsed.pinned ?? row.pinned, file, hash, ...(changed && { updatedAt: at }) }).where(eq(pages.id, row.id))
+                  if (changed) yield* addPageVersion(row.id, title, parsed.body, "outside", at)
+                  report.updated++
+                  continue
+                }
+                const scope = yield* scopeOfFile(file, parsed.scope, rows)
+                if (!scope) continue
+                const id = parsed.id && !rows.some((r) => r.id === parsed.id) ? parsed.id : crypto.randomUUID()
+                yield* db.insert(pages).values({ id, scope, title, body: parsed.body, pinned: parsed.pinned ?? false, file, hash, updatedAt: at, createdAt: at })
+                yield* addPageVersion(id, title, parsed.body, "outside", at)
+                matched.add(id)
+                report.imported++
+                // Its front matter gets the id and scope, so a later rename or move keeps it the same page.
+                if (parsed.id !== id || parsed.scope !== scope) yield* writePageFile((yield* db.select().from(pages).where(eq(pages.id, id)))[0]!)
+              }
+              for (const r of rows) {
+                if (matched.has(r.id)) continue
+                if (deleted && r.file) {
+                  yield* db.delete(pages).where(eq(pages.id, r.id))
+                  report.removed++
+                } else {
+                  yield* writePageFile(r)
+                  report.written++
+                }
+              }
+              return report
+            }).pipe(orDie)
+          ),
     pageVersions: (pageId: string) => orDie(db.select().from(pageVersions).where(eq(pageVersions.pageId, pageId)).orderBy(desc(pageVersions.n))),
     // BM25 over title + body in the scopes; the words around the first match.
     searchPages: (scopes: ReadonlyArray<string>, query: string, limit: number) => {
@@ -734,8 +886,9 @@ export const openDb = Effect.gen(function* () {
 })
 
 export class Store extends Context.Service<Store, Repository>()("Store") {
-  static layer = (path: string) =>
-    Layer.effect(Store, Effect.map(Effect.orDie(openDb), repository)).pipe(
+  // pagesDir: where knowledge pages live as Markdown files (none: rows only, as in the tests).
+  static layer = (path: string, pagesDir?: string) =>
+    Layer.effect(Store, Effect.map(Effect.orDie(openDb), (db) => repository(db, pagesDir))).pipe(
       Layer.provide(Layer.orDie(Layer.suspend(() => {
         prepare(path) // MVP database: backup and adoption before SqliteClient opens the file
         return SqliteClient.layer({ filename: path })

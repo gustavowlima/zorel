@@ -35,6 +35,12 @@ export function PageView({ page }: { page: Page }) {
             <h2 className="text-lg font-semibold">{page.title}</h2>
           )}
           <p className="text-sm text-muted">{`${scopeLabel(page.scope, projects, agents)} · ${t("pages.updated", { age: formatAge(page.updatedAt) })}`}</p>
+          {/* The page is a Markdown file: open it in any editor; edits there come back here. */}
+          {page.file && (
+            <p className="truncate font-mono text-xs text-dim" title={t("pages.fileHint")}>
+              {`knowledge/${page.file}`}
+            </p>
+          )}
         </div>
         {!editing && (
           <div className="flex gap-1.5">

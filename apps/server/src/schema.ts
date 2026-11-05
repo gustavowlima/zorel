@@ -340,6 +340,10 @@ export const pages = sqliteTable("pages", {
   title: text().notNull(),
   body: text().notNull(),
   pinned: integer({ mode: "boolean" }).notNull().default(false),
+  // Its Markdown file, relative to the knowledge folder ("projects/zorel/Deploy.md"), and that file's hash as last
+  // written or read: a file whose hash differs was edited outside Zorel. null: not written yet.
+  file: text(),
+  hash: text(),
   updatedAt: integer("updated_at").notNull(),
   createdAt: integer("created_at").notNull()
 })

@@ -421,7 +421,8 @@ export type MemoryVersion = typeof MemoryVersion.Type
 
 // A knowledge page (phase 3b): a longer Markdown note by scope (as memories). pinned: its title goes into every
 // turn's context in that scope.
-export const Page = Schema.Struct({ id: Id, scope: MemoryScope, title: Schema.String, body: Schema.String, pinned: Schema.Boolean, updatedAt: Schema.Number, createdAt: Schema.Number })
+// file: its Markdown file inside the knowledge folder ("projects/zorel/Deploy.md"); null until written.
+export const Page = Schema.Struct({ id: Id, scope: MemoryScope, title: Schema.String, body: Schema.String, pinned: Schema.Boolean, file: Schema.optionalKey(Schema.NullOr(Schema.String)), updatedAt: Schema.Number, createdAt: Schema.Number })
 export type Page = typeof Page.Type
 export const PageVersion = Schema.Struct({ id: Schema.String, n: Schema.Number, title: Schema.String, body: Schema.String, by: Schema.String, at: Schema.Number })
 export type PageVersion = typeof PageVersion.Type

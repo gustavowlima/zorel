@@ -19,6 +19,8 @@ import { MAX_AFTER, snippet } from "./context.ts"
 
 const CHARS_PER_TOKEN = 4 // rough, provider-neutral: the meter says it is an estimate
 import { Store, type Repository } from "./db.ts"
+import { PAGES_DIR } from "./page-files.ts"
+import { PageSync } from "./page-sync.ts"
 import { Engines, listModels, splitModel } from "./engines.ts"
 import { claudeCommands } from "./engines/claude-sdk.ts"
 import { API_KEYS, mcpEnvName, oauthKey, Secrets } from "./secrets.ts"
@@ -1104,7 +1106,8 @@ export const AppLive = (webDir?: string) =>
 
 // Services with real dependencies (system keychain). Tests build their own with Secrets.memory.
 export const services = (dbPath: string, dataDir: string, secrets?: Layer.Layer<Secrets, never, Store>) => {
-  const store = Store.layer(dbPath)
+  const pagesDir = join(dataDir, PAGES_DIR) // knowledge pages as Markdown files (page-files.ts)
+  const store = Layer.provideMerge(PageSync(pagesDir), Store.layer(dbPath, pagesDir))
   const withSecrets = Layer.provideMerge(secrets ?? Secrets.layer, store)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(Engines.layer, Tools.layer), withSecrets), DataDir.layer(dataDir), DbPath.layer(dbPath))
   const withAccounts = Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.layer, Audit.layer, BrowserService.layer), base)
