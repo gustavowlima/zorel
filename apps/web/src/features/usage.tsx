@@ -12,7 +12,7 @@ import { accountsAtom, agentsAtom, mutations, projectsAtom, topTurnsAtom, usageA
 import { chatTitle, formatCost, fullest, modelLabel, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
 import { LimitWindows } from "./limits.tsx"
-import { Button, ChartColumn, CircleAlert, EmptyState, IconButton, ProviderIcon, Screen, Section, Select, Tab, TabList, Tabs } from "@/ui"
+import { Button, ChartColumn, CircleAlert, EmptyState, IconButton, Notice, ProviderIcon, Rows, Screen, Section, Select, Tab, TabList, Tabs } from "@/ui"
 
 type Range = "month" | "7" | "30"
 type Metric = "cost" | "tokens"
@@ -100,10 +100,7 @@ export function UsageView({ agentId }: { agentId?: string | undefined }) {
     >
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-12 px-7 py-8">
         {alerts.length > 0 && (
-          <div role="alert" className="flex items-center gap-2 rounded-card border border-subtle bg-surface px-4 py-3 text-sm text-warning">
-            <CircleAlert className="size-4 shrink-0" />
-            {t("usage.alert", { count: alerts.length })}
-          </div>
+          <Notice icon={<CircleAlert />}>{t("usage.alert", { count: alerts.length })}</Notice>
         )}
 
         {turns === 0 ? (
@@ -455,7 +452,7 @@ function TopTurns({ since }: { since: number }) {
       {top.length === 0 ? (
         <p className="text-muted">{t("usage.noTopTurns")}</p>
       ) : (
-        <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
+        <Rows>
           {top.map((turn) => (
             <Button key={turn.turnId} variant="ghost" className="h-auto justify-start gap-3 rounded-none px-1 py-2.5 font-normal text-fg" onPress={() => go({ view: "chat", id: turn.chatId })}>
               <ProviderIcon provider={splitModel(turn.model).provider} size={16} />
@@ -469,7 +466,7 @@ function TopTurns({ since }: { since: number }) {
               </span>
             </Button>
           ))}
-        </div>
+        </Rows>
       )}
     </Section>
   )

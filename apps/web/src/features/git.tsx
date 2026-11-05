@@ -9,7 +9,7 @@ import { AsyncResult } from "effect/reactivity"
 import { useAtomValue } from "@effect/atom-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { gitAtom, mutations, useInvalidate, useMutation } from "../client.ts"
-import { ArrowUp, ArrowUpRight, Badge, BareTextarea, Button, Check, CircleCheck, cx, FileIcon, FolderOpen, GitBranch, GitPullRequest, Input, Sparkles, Spinner, StatusMark, Textarea } from "@/ui"
+import { ArrowUp, ArrowUpRight, Badge, BareTextarea, Button, Check, CircleCheck, cx, FileIcon, FolderOpen, GitBranch, GitPullRequest, IconTile, Input, Sparkles, Spinner, StatusMark, Textarea } from "@/ui"
 
 const errorOf = (e: unknown) => (e as { message?: string })?.message || t("git.failed")
 
@@ -84,7 +84,7 @@ export function GitPanel({ chatId, worktree }: { chatId: string; worktree: strin
     <div className="flex flex-col">
       {/* The branch, where it syncs to and where its pull request goes. */}
       <header className="flex items-center gap-3 px-4 py-3">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-control bg-control text-muted">{worktree ? <FolderOpen className="size-4" /> : <GitBranch className="size-4" />}</span>
+        <IconTile className="text-muted">{worktree ? <FolderOpen /> : <GitBranch />}</IconTile>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate font-mono text-sm font-medium text-fg" title={s.branch ?? undefined}>
             {s.branch ?? t("git.detached")}

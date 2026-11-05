@@ -19,3 +19,4 @@
 2026-11-05 | dark neutrals to the landing's graphite (chroma 0.005, sidebar a step above the rail) | user preferred the landing's tone over the stronger blue tint
 2026-11-05 | New project and Add custom server open centred dialogs; projects are added by browsing folders | user: the project picker should be a centred modal that maps folders like T3 Code
 2026-11-05 | Input size prop, SearchInput, OptionList/OptionRow; check:ui rules hand-search, hand-listbox, input-height | five hand-built search fields with different icon offsets and sizes; two hand-rolled listboxes; height classes on fields
+2026-11-05 | IconTile, Notice; hairline lists through Rows; check:ui hand-list, hand-notice | ideas from the old design-system-pass worktree, rewritten on current main

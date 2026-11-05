@@ -12,7 +12,7 @@ import { type ReactNode, useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, mutations, processesAtom, projectsAtom, useInvalidate, useList, useMutation, useStatuses } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
-import { Activity, AppWindow, Button, CircleStop, Cpu, Dot, EmptyState, Globe, IconButton, MemoryStick, Plug, Popover, RowHit, Section, Server, Sparkles, SquareTerminal, Tooltip, X } from "@/ui"
+import { Activity, AppWindow, Button, CircleStop, Cpu, Dot, EmptyState, Globe, IconButton, IconTile, MemoryStick, Plug, Popover, RowHit, Section, Server, Sparkles, SquareTerminal, Tooltip, X } from "@/ui"
 
 const EMPTY: ProcessList = { servers: [], terminals: [], sessions: [], connections: [], usage: { cpu: 0, memory: 0, cores: 1, totalMemory: 1, parts: [] } }
 const cpuText = (cpu: number) => `${formatNumber(Math.round(cpu))}%`
@@ -241,7 +241,7 @@ export function ProcessesSection() {
 // CPU or memory in the summary line: icon, value, what it is and its scale.
 const Stat = ({ icon, value, label, hint }: { icon: ReactNode; value: string; label: string; hint: string }) => (
   <span className="flex items-center gap-2">
-    <span className="flex size-7 items-center justify-center rounded-control bg-control text-secondary [&_svg]:size-4">{icon}</span>
+    <IconTile size="sm">{icon}</IconTile>
     <span className="flex flex-col leading-tight">
       <span className="font-semibold tabular-nums">
         {value} <span className="font-normal text-muted">{label}</span>
