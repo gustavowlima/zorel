@@ -90,3 +90,4 @@
 2026-11-05 | memory map A2: recall() in prepare = association (namedPoints seeds → spread PPR → factsAbout scored) + FTS, deduped, 2k chars | facts reachable through the map but not by their words weren't recalled (paraphrase recall 0/25 stays for A4 embeddings)
 2026-11-05 | Preferences.memoryModel (PUT /api/preferences/memory-model), memoryModelFor: chosen → env → cheapModel; Settings › General › Memory section | tucano has a memory model picker in settings; choosing beats only the automatic
 2026-11-05 | Preferences.routerModel (PUT /api/preferences/router-model), routerModel(chatModel, chosen) | the routing model gets the same picker as the memory model (tucano)
+2026-11-05 | memory map A4.1: entity aliases + category (IS_A relation) in extraction and backfill, namedPoints tolerates plurals, bench asks in other words via recall (and fixed the bench's old consolidate(chat, true) call) | paraphrase recall without embeddings: real Haiku run words 3/5 → recall 4/5

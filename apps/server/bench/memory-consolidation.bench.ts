@@ -6,7 +6,7 @@ import { Effect, Layer, Stream } from "effect"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { consolidate, DataDir } from "../src/chat.ts"
+import { consolidate, DataDir, recall } from "../src/chat.ts"
 import { Store } from "../src/db.ts"
 import { Engines, type Usage } from "../src/engines.ts"
 import { Secrets } from "../src/secrets.ts"
@@ -32,12 +32,12 @@ interface Case {
 
 const CASES: Case[] = [
   { id: "prefs", what: "explicit preferences", lines: [["user", "Quick note: I prefer answers as bullet points, and please never use emojis with me."], ["assistant", "Got it — bullet points, no emojis."]], expect: [/bullet/i, /emoji/i], forbid: [], ask: "how should replies be laid out for me?" },
-  { id: "bio", what: "facts about the person", lines: [["user", "Context: I'm a backend developer at Acme Corp, I work mostly in Go and Postgres."], ["assistant", "Thanks! I'll keep Go and Postgres in mind."], ["user", "Cool. Can you explain what a CTE is?"], ["assistant", "A CTE is a named subquery defined with WITH..."]], expect: [/acme/i, /\bgo\b|golang/i], forbid: [/cte/i] },
+  { id: "bio", what: "facts about the person", lines: [["user", "Context: I'm a backend developer at Acme Corp, I work mostly in Go and Postgres."], ["assistant", "Thanks! I'll keep Go and Postgres in mind."], ["user", "Cool. Can you explain what a CTE is?"], ["assistant", "A CTE is a named subquery defined with WITH..."]], expect: [/acme/i, /\bgo\b|golang/i], forbid: [/cte/i], ask: "which employer am I with?" },
   { id: "asst-claims", what: "assistant assumption must not become memory", lines: [["user", "Which database would you pick for a small queue?"], ["assistant", "I'd use DynamoDB. I assume your team is already all-in on AWS and runs Kubernetes."], ["user", "ok, thanks"]], expect: [], forbid: [/dynamo/i, /aws/i, /kubernetes/i] },
   { id: "correction", what: "moved city; old memory exists", existing: [{ scope: "user", text: "Lives in Porto, Portugal." }], lines: [["user", "Small update: actually I moved to Berlin last month, I don't live in Porto anymore."], ["assistant", "Congrats on the move to Berlin!"]], expect: [/berlin/i], forbid: [/lives in porto/i], replaced: /porto/i, ask: "which city is my home now?" },
-  { id: "api-key", what: "secret in the text", project: true, lines: [["user", "Use this OpenAI key for the script: sk-proj-Zx9QwErTy7781LmNoPq. Also, we always deploy on Fridays after 4pm."], ["assistant", "Will do."]], expect: [/friday/i], forbid: [/sk-proj/i], secrets: ["sk-proj-Zx9QwErTy7781LmNoPq"] }, // gitleaks:allow (a fake key: the case checks a secret never becomes a memory)
+  { id: "api-key", what: "secret in the text", project: true, lines: [["user", "Use this OpenAI key for the script: sk-proj-Zx9QwErTy7781LmNoPq. Also, we always deploy on Fridays after 4pm."], ["assistant", "Will do."]], expect: [/friday/i], forbid: [/sk-proj/i], secrets: ["sk-proj-Zx9QwErTy7781LmNoPq"], ask: "when do releases go out?" }, // gitleaks:allow (a fake key: the case checks a secret never becomes a memory)
   { id: "chitchat", what: "nothing to learn", lines: [["user", "hey, how's it going?"], ["assistant", "All good! How can I help?"], ["user", "nothing much, nice weather today"], ["assistant", "Enjoy it!"]], expect: [], forbid: [/weather/i, /./] },
-  { id: "project-facts", what: "project facts", project: true, agent: true, lines: [["user", "For this project: staging lives at staging.acme.dev and we deploy with GitHub Actions on merge to main."], ["assistant", "Noted."]], expect: [/staging\.acme\.dev/i, /github actions/i], forbid: [] },
+  { id: "project-facts", what: "project facts", project: true, agent: true, lines: [["user", "For this project: staging lives at staging.acme.dev and we deploy with GitHub Actions on merge to main."], ["assistant", "Noted."]], expect: [/staging\.acme\.dev/i, /github actions/i], forbid: [], ask: "where is the pre-production site?" },
   { id: "procedure", what: "user corrects how to do something", project: true, agent: true, lines: [["user", "Run the tests."], ["assistant", "Running `bun test` from the repo root."], ["user", "No — here you always run `bun test --bail` from apps/server, the root picks up the e2e suite which needs Docker."], ["assistant", "Understood, running `bun test --bail` in apps/server."]], expect: [/bun test --bail|--bail/i], forbid: [] },
   { id: "transient", what: "transient state", lines: [["user", "I'm starving, going to grab lunch, brb in 30 min"], ["assistant", "Enjoy your lunch!"]], expect: [], forbid: [/lunch|hungry|starving/i] },
   { id: "third-party", what: "someone else's preference", lines: [["user", "My colleague João prefers tabs, but I always use spaces, 2 of them."], ["assistant", "Spaces it is."]], expect: [/spaces/i], forbid: [/(prefers|uses) tabs/i], ask: "how do I like my code indented?" },
@@ -86,7 +86,7 @@ const runCase = (c: Case) => {
     for (const [role, text] of c.lines) yield* store.addMessage({ chatId: chat.id, role, agentId: role === "assistant" && c.agent ? agent.id : null, text, steps: [] } as any)
     const before = calls.length
     const t0 = performance.now()
-    const after = yield* consolidate(chat.id, true).pipe(Effect.orDie)
+    const after = yield* consolidate(chat.id, "all").pipe(Effect.orDie)
     const ms = performance.now() - t0
     const proposed = (yield* store.memories()).filter((m) => m.chatId === chat.id)
     const texts = proposed.map((m) => `${m.title} ${m.text}`)
@@ -97,17 +97,21 @@ const runCase = (c: Case) => {
     // A correction waits for review as an update that replaces the old memory (approving applies it).
     const replaced = c.replaced ? proposed.some((m) => old.some((o) => o.id === m.replaces && c.replaced!.test(o.text))) : undefined
     const confirmed = c.confirm ? now.some((m, i) => !!m && m.confirmedAt > old[i]!.confirmedAt) : undefined
-    // Approve what was learned, then ask in other words (the keywords' job).
+    // Approve what was learned, then ask in other words: by its words alone (keywords' job), and as a turn recalls
+    // (the map's association, then words).
     let found: boolean | undefined
+    let recalled: boolean | undefined
     if (c.ask) {
       for (const m of proposed) yield* store.updateMemory(m.id, { state: "active" })
       const scopes = ["user", `project:${project.id}`, ...(c.agent ? [`agent:${agent.id}`] : [])]
       const hits = yield* store.searchMemories(scopes, c.ask, [], 5)
       found = hits.some((h) => proposed.some((p) => p.id === h.id))
+      recalled = (yield* recall(store, scopes, c.ask, [])).some((h) => proposed.some((p) => p.id === h.id))
+      if (process.env.BENCH_MAP) console.error(c.id, "map:", JSON.stringify((yield* store.entitiesIn(scopes)).map((e) => e.name)), JSON.stringify((yield* store.entityNames(scopes)).map((e) => [e.normalized, e.aliases])))
     }
     const call = calls[before]
     console.error(`${c.id}: ${proposed.length} proposals, ${ms.toFixed(0)} ms${call?.error ? ` ERROR ${call.error}` : ""}`)
-    return { c, proposed, learned, falses, leaked, replaced, confirmed, found, ms, call, summary: after.summary, parsed: after.summaryUntil > 0 }
+    return { c, proposed, learned, falses, leaked, replaced, confirmed, found, recalled, ms, call, summary: after.summary, parsed: after.summaryUntil > 0 }
   }).pipe(Effect.scoped, Effect.provide(services))
 }
 
@@ -115,15 +119,15 @@ const rows = []
 for (const c of CASES.filter((c) => !only || only.includes(c.id))) rows.push(await Effect.runPromise(runCase(c)))
 
 console.log(`\n## Part 2 — consolidation with ${MODEL} (${rows.length} cases, ${calls.length} model calls)\n`)
-console.log("| case | what | proposals | learned | missed | false | secret leaked | correction | confirmed | found in other words | parsed | ms | in/out tok |")
+console.log("| case | what | proposals | learned | missed | false | secret leaked | correction | confirmed | found in other words | recalled (map + words) | parsed | ms | in/out tok |")
 console.log("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 const yn = (b: boolean | undefined) => (b === undefined ? "–" : b ? "yes" : "NO")
 for (const r of rows)
   console.log(
-    `| ${r.c.id} | ${r.c.what} | ${r.proposed.length} | ${r.learned}/${r.c.expect.length} | ${r.c.expect.length - r.learned} | ${r.falses.length} | ${r.c.secrets ? (r.leaked.length ? "YES" : "no") : "–"} | ${yn(r.replaced)} | ${yn(r.confirmed)} | ${yn(r.found)} | ${r.parsed ? "yes" : "NO"} | ${r.ms.toFixed(0)} | ${r.call?.usage ? `${r.call.usage.inputTokens}/${r.call.usage.outputTokens}` : "?"} |`
+    `| ${r.c.id} | ${r.c.what} | ${r.proposed.length} | ${r.learned}/${r.c.expect.length} | ${r.c.expect.length - r.learned} | ${r.falses.length} | ${r.c.secrets ? (r.leaked.length ? "YES" : "no") : "–"} | ${yn(r.replaced)} | ${yn(r.confirmed)} | ${yn(r.found)} | ${yn(r.recalled)} | ${r.parsed ? "yes" : "NO"} | ${r.ms.toFixed(0)} | ${r.call?.usage ? `${r.call.usage.inputTokens}/${r.call.usage.outputTokens}` : "?"} |`
   )
 const sum = (f: (r: (typeof rows)[number]) => number) => rows.reduce((n, r) => n + f(r), 0)
-console.log(`\nTotals: learned ${sum((r) => r.learned)}/${sum((r) => r.c.expect.length)}, false ${sum((r) => r.falses.length)}, secrets leaked ${sum((r) => r.leaked.length)}/${sum((r) => r.c.secrets?.length ?? 0)}, corrections handled ${rows.filter((r) => r.replaced).length}/${rows.filter((r) => r.replaced !== undefined).length}, confirms ${rows.filter((r) => r.confirmed).length}/${rows.filter((r) => r.confirmed !== undefined).length}, found in other words ${rows.filter((r) => r.found).length}/${rows.filter((r) => r.found !== undefined).length}, parse failures ${rows.filter((r) => !r.parsed).length}`)
+console.log(`\nTotals: learned ${sum((r) => r.learned)}/${sum((r) => r.c.expect.length)}, false ${sum((r) => r.falses.length)}, secrets leaked ${sum((r) => r.leaked.length)}/${sum((r) => r.c.secrets?.length ?? 0)}, corrections handled ${rows.filter((r) => r.replaced).length}/${rows.filter((r) => r.replaced !== undefined).length}, confirms ${rows.filter((r) => r.confirmed).length}/${rows.filter((r) => r.confirmed !== undefined).length}, found in other words ${rows.filter((r) => r.found).length}/${rows.filter((r) => r.found !== undefined).length}, recalled ${rows.filter((r) => r.recalled).length}/${rows.filter((r) => r.recalled !== undefined).length}, parse failures ${rows.filter((r) => !r.parsed).length}`)
 const lat = rows.map((r) => r.ms).sort((a, b) => a - b)
 console.log(`Latency per consolidation: p50 ${lat[Math.floor(lat.length / 2)]?.toFixed(0)} ms, max ${lat.at(-1)?.toFixed(0)} ms`)
 console.log("\n### Proposals per case\n")

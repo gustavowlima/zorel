@@ -392,3 +392,10 @@ test("the routing model: the one chosen in Settings, else the provider's small o
   expect(routerModel("claude-cli/opus")).toBe("claude-cli/haiku")
   expect(routerModel("claude-cli/opus", "anthropic/claude-haiku-5-5")).toBe("anthropic/claude-haiku-5-5")
 })
+
+test("named points tolerate a plural", () => {
+  const points = [{ id: "1", normalized: "deploy", aliases: ["release"] }, { id: "2", normalized: "bus", aliases: [] }]
+  expect(namedPoints("when do releases go out?", points)).toEqual(["1"])
+  expect(namedPoints("two deploys", points)).toEqual(["1"])
+  expect(namedPoints("the bus", points)).toEqual(["2"]) // short words aren't cut
+})

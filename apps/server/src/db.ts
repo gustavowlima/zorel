@@ -651,27 +651,28 @@ export const repository = (db: Db, pagesDir?: string) => {
       Effect.gen(function* () {
         const at = now()
         const ids = new Map<string, string>() // normalized name → entity id
-        const resolve = (name: string, wanted: EntityType | "project" | "agent") =>
+        const resolve = (name: string, wanted: EntityType | "project" | "agent", given: ReadonlyArray<string> = []) =>
           Effect.gen(function* () {
             const norm = normalize(name)
+            const extra = given.map(normalize).filter((a) => a && a !== norm)
             if (!norm) return undefined
             if (ids.has(norm)) return ids.get(norm)
             const type = known.find((k) => normalize(k.name) === norm)?.type ?? wanted
             const found = yield* findEntity(scope, norm)
             let id = found?.id
             if (found) {
-              const aliases = found.normalized !== norm && !found.aliases.includes(norm) ? [...found.aliases, norm].slice(-10) : found.aliases
+              const aliases = [...new Set([...found.aliases, ...(found.normalized !== norm ? [norm] : []), ...extra])].filter((a) => a !== found.normalized).slice(-10)
               yield* db.update(entities).set({ weight: sql`${entities.weight} + 1`, usedAt: at, aliases }).where(eq(entities.id, found.id))
             } else {
               id = crypto.randomUUID()
-              yield* db.insert(entities).values({ id, scope, name, normalized: norm, type, createdAt: at, usedAt: at }).onConflictDoNothing()
+              yield* db.insert(entities).values({ id, scope, name, normalized: norm, type, aliases: [...new Set(extra)].slice(0, 10), createdAt: at, usedAt: at }).onConflictDoNothing()
             }
             ids.set(norm, id!)
             return id
           })
         const own = known.find((k) => `${k.type}:${k.id}` === scope)
         for (const e of [...(own ? [{ name: own.name, type: own.type }] : []), ...mapped.entities]) {
-          const id = yield* resolve(e.name, e.type)
+          const id = yield* resolve(e.name, e.type, "aliases" in e ? e.aliases : [])
           if (id) yield* db.insert(memoryEntities).values({ memoryId, entityId: id }).onConflictDoNothing()
         }
         for (const [a, rel, b] of mapped.relations) {
