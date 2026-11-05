@@ -223,13 +223,13 @@ export function Composer({
           )}
         </div>
       )}
+      {/* The message's controls (model, access, context) in a row above the text, so the text keeps the full width. */}
+      {tools && <div className="flex min-w-0 items-center gap-0.5">{tools}</div>}
       <div className="flex items-end gap-1">
         <IconButton label={t("composer.attach")} className="size-control" isDisabled={files.length >= MAX_ATTACHMENTS} onPress={() => void pickFiles().then(attach)}>
           <Plus />
         </IconButton>
         <EditorContent editor={editor} className="min-w-0 flex-1 self-center" />
-        {/* The same 32px box as the buttons beside it: a 28px chip sits centred, not on the bottom edge. */}
-        <span className="flex h-control shrink-0 items-center gap-0.5">{tools}</span>
         {busy && onStop && (
           <Tooltip content={t("composer.stop")}>
             <IconButton label={t("composer.stop")} variant="secondary" shape="pill" size="md" onPress={onStop}>

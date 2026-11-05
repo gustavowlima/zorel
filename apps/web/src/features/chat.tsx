@@ -213,7 +213,9 @@ export function ChatView({ chat }: { chat: Chat }) {
                     onChange={(v) => void updateChat({ params: { id: chat.id }, payload: v, reactivityKeys: ["chats", "context"] })}
                   />
                   <AccessChip chat={chat} />
-                  <ContextMeter chatId={chat.id} onCompact={compact} onNewChat={newChat} />
+                  <span className="ml-auto flex">
+                    <ContextMeter chatId={chat.id} onCompact={compact} onNewChat={newChat} />
+                  </span>
                 </>
               }
             />
