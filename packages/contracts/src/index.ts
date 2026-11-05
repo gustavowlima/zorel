@@ -169,6 +169,7 @@ export const Chat = Schema.Struct({
   title: Schema.String,
   accountId: Schema.NullOr(Id), // the lead's account; null: default
   effort: Schema.NullOr(Effort), // the lead's reasoning effort; null: the model's default
+  access: Schema.NullOr(Access), // this chat's level for every agent in it; null: each agent's own
   model: Schema.String, // leader's model for the next turn; other members use their own model
   summary: Schema.String, // summary of what left the window (consolidation)
   summaryUntil: Schema.Number, // `at` of the last message covered by the summary
@@ -391,6 +392,12 @@ export const namedSkills = <S extends { readonly title: string }>(text: string, 
   return skills.filter((s) => handles.has(skillHandle(s.title)))
 }
 
+// How a message names a teammate: "@handle". The one rule for the server (who is called) and the screen (who gets a
+// chip). The "@" must not be glued to a letter, digit, "_", "." or "-", so an e-mail ("foo@tester.com") calls no one,
+// while "(@tester)" and "—@tester" do. Capture 1 is the token. Read it with `matchAll` (which copies the regex), never
+// `exec` or `test` on this shared object: the `g` flag keeps state between uses.
+export const MENTION_RE = /(?<![\p{L}\p{N}_.-])@([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu
+
 export const ModelInfo = Schema.Struct({
   id: Schema.String,
   provider: Schema.String,
@@ -470,8 +477,8 @@ const AgentTitle = Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(60
 const AgentDescription = LongText(300)
 export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions) })
 export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions) })
-export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)) })
-export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
+export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)) })
+export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000) })
 export const MemoryPatch = Schema.Struct({ state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)), essential: Schema.optional(Schema.Boolean) })
 // stdio: environment variables; http: headers. Values go to the system keychain.

@@ -5,7 +5,7 @@
 // Each layer has a budget; what doesn't fit stays searchable (FTS) and comes back when relevant.
 // Parts of the rolling summary + memories + proposed skills model are third-party code, see NOTICE.
 import { join } from "node:path"
-import type { Agent, Chat, Memory, Message, Project } from "@zorel/contracts"
+import { type Agent, type Chat, MENTION_RE, type Memory, type Message, type Project } from "@zorel/contracts"
 import { Option, Schema } from "effect"
 import { normalize } from "./db.ts"
 import type { Turn, TurnMessage, TurnTools } from "./engines.ts"
@@ -30,7 +30,7 @@ export const handleOf = (a: Pick<Agent, "name">) => normalize(a.name).replace(/ 
 // Mentioned agents (@handle) in order of appearance; code in backticks doesn't count.
 export function mentioned(text: string, agents: ReadonlyArray<Agent>): Agent[] {
   const plain = text.replace(/```[\s\S]*?```|`[^`]*`/g, " ")
-  const handles = [...plain.matchAll(/@([\p{L}\p{N}][\p{L}\p{N}_-]*)/gu)].map((m) => normalize(m[1]!).replace(/ /g, "-"))
+  const handles = [...plain.matchAll(MENTION_RE)].map((m) => normalize(m[1]!).replace(/ /g, "-"))
   return [...new Set(handles)].flatMap((h) => agents.filter((a) => handleOf(a) === h))
 }
 

@@ -46,7 +46,7 @@ test("context: the memory budget favors the recent ones; layers in stable → vo
   expect(pinned([mem("stale", 1), mem("fresh", 2), mem("x".repeat(50), 3)], 59).map((m) => m.id)).toEqual(["x".repeat(50)])
   const dev = agentOf("a", "Dev", "INSTR")
   const turn = buildTurn({
-    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, effort: null, model: "anthropic/m", summary: "SUMMARYTEXT", summaryUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
+    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, effort: null, access: null, model: "anthropic/m", summary: "SUMMARYTEXT", summaryUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
     model: "anthropic/m",
     project: { id: "p", name: "P", brief: "BRIEF", path: null, defaultAgentId: null, createdAt: 0 },
     agent: dev,
@@ -70,7 +70,8 @@ test("context: the memory budget favors the recent ones; layers in stable → vo
 test("mentions: by handle without accents, in order, ignoring code", () => {
   const a = [agentOf("1", "Léo"), agentOf("2", "Ana Paula"), agentOf("3", "Nico")]
   expect(mentioned("@ana-paula and @leo, take a look; `@nico` not", a).map((x) => x.id)).toEqual(["2", "1"])
-  expect(mentioned("email@nico.com", a).map((x) => x.id)).toEqual(["3"]) // ponytail: simple heuristic
+  expect(mentioned("email@nico.com", a).map((x) => x.id)).toEqual([]) // an e-mail calls no one
+  expect(mentioned("(@nico) and —@leo", a).map((x) => x.id)).toEqual(["3", "1"]) // punctuation before the @ still does
 })
 
 test("tool policy: annotation > name; sensitive beats read", () => {

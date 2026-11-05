@@ -260,6 +260,46 @@ test("steering: joins the running turn when the session can; otherwise it become
     expect((yield* store.messages(chat.id)).at(-1)).toMatchObject({ role: "assistant", text: "ok" })
   })))
 
+// No steering in the engine: the first call hangs after "part"; later ones answer.
+const hangs = { calls: 0 }
+const HangThenEcho = Layer.succeed(Engines, {
+  run: (t) =>
+    hangs.calls++ === 0
+      ? Stream.concat(Stream.make<EngineEvent[]>({ type: "text", delta: "part" }), Stream.never)
+      : Stream.make<EngineEvent[]>({ type: "text", delta: `echo: ${t.messages.at(-1)!.text}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+})
+
+test("steering without engine support: stops the running turn and sends the message as the next one", () =>
+  runWith(":memory:", HangThenEcho, Effect.gen(function* () {
+    hangs.calls = 0
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "long job" })
+    while (!c.events.some((e) => e._tag === "text")) yield* Effect.sleep("10 millis")
+    yield* runtime.steer(chat.id, "do this now")
+    yield* c.done
+    const msgs = yield* store.messages(chat.id)
+    expect(msgs.map((m) => [m.role, m.text])).toEqual([["user", "long job"], ["assistant", "part"], ["user", "do this now"], ["assistant", "echo: do this now"]])
+    expect(c.events.some((e) => e._tag === "interrupted")).toBe(true) // the first turn was stopped, not left running
+    expect(yield* store.activeTurns(chat.id)).toEqual([])
+  })))
+
+test("steering with images: the running turn is stopped too, the message is not lost", () =>
+  runWith(":memory:", Steerable, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "codex-cli/default" })
+    const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "slow" })
+    while (!c.events.some((e) => e._tag === "text")) yield* Effect.sleep("10 millis")
+    yield* runtime.steer(chat.id, "look at this", ["no-such-attachment"])
+    yield* c.done
+    expect(c.events.some((e) => e._tag === "interrupted")).toBe(true)
+    expect((yield* store.messages(chat.id)).at(-1)).toMatchObject({ role: "assistant", text: "ok" })
+  })))
+
 test("effort: the chat's level reaches the session on every turn", () =>
   runWith(":memory:", Sessions, Effect.gen(function* () {
     const store = yield* Store

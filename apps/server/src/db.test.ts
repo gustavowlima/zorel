@@ -170,6 +170,19 @@ test("resume after limit: due chats only, cleared by setting null", () =>
     })
   ))
 
+test("chat access: null by default, set on create or by patch, cleared with null, untouched by other patches", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const a = yield* r.createChat({ projectId: null, agentIds: [], model: "x/y" })
+      expect(a.access).toBeNull() // each agent's own level
+      const b = yield* r.createChat({ projectId: null, agentIds: [], model: "x/y", access: "ask" })
+      expect(b.access).toBe("ask")
+      expect((yield* r.updateChat(a.id, { access: "full" }))!.access).toBe("full")
+      expect((yield* r.updateChat(a.id, { title: "renamed" }))!.access).toBe("full") // another patch leaves it
+      expect((yield* r.updateChat(a.id, { access: null }))!.access).toBeNull() // back to the agents' own
+    })
+  ))
+
 test("searchMessages: case-insensitive words, newest first, % and _ are literal", () =>
   run(":memory:", (r) =>
     Effect.gen(function* () {
