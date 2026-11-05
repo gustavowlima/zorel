@@ -1,7 +1,8 @@
 # Desktop package (D11). The app is only the Electron main process; the Zorel server (compiled Bun binary), the web
 # build and the migrations ship as resources next to it. Version: `version` in package.json; a `v<version>` tag
 # releases it (CI). Signing: with CSC_LINK + CSC_KEY_PASSWORD (and APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD +
-# APPLE_TEAM_ID to notarize) it's a Developer ID build. Without them the app is signed ad hoc (scripts/adhoc-sign.cjs)
+# APPLE_TEAM_ID to notarize) it's a Developer ID build; `bun run release:mac` (scripts/release-mac.sh) makes the same
+# build on a Mac, with the Developer ID in its keychain. Without either the app is signed ad hoc (scripts/adhoc-sign.cjs)
 # and updates through install.sh, but macOS 27 refuses to run ad hoc apps ("Evaluating blocked code", even with no
 # quarantine mark; tested 2026-11-04): on macOS only a Developer ID build runs. Until then, `bun run desktop` (dev).
 appId: dev.zorel.app
@@ -48,6 +49,11 @@ mac:
   artifactName: zorel-mac-${arch}.${ext}
   icon: assets/icon.png
   category: public.app-category.developer-tools
+  # With a Developer ID: the hardened runtime (notarization requires it) and its exceptions, for the app and for
+  # every program inside it. An ad hoc build ignores both (adhoc-sign.cjs signs it without the runtime).
+  hardenedRuntime: true
+  entitlements: assets/entitlements.mac.plist
+  entitlementsInherit: assets/entitlements.mac.plist
 win:
   icon: assets/icon.png
   artifactName: zorel-windows-setup.${ext} # one name every version: zorel.dev links releases/latest/download/ to it
