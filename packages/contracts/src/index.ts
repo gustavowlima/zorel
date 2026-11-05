@@ -144,8 +144,13 @@ export const AgentVersion = Schema.Struct({
 })
 export type AgentVersion = typeof AgentVersion.Type
 
+// What a routine watches: a connector's read-only tool, called every few minutes; the routine runs when its result
+// has items it hasn't seen (a new issue, a failing monitor, an email).
+export const RoutineWatch = Schema.Struct({ serverId: Id, tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)), args: Schema.Record(Schema.String, Schema.Unknown) })
+export type RoutineWatch = typeof RoutineWatch.Type
 // A routine (phase 7): an agent's recurring or triggered work, run as a message in its own chat. cron: when it
 // runs by itself (null: only on demand or by webhook). token: its local webhook (POST /api/hooks/:token).
+// watch: a connector it polls, running on what's new.
 export const Routine = Schema.Struct({
   id: Id,
   agentId: Id,
@@ -154,6 +159,7 @@ export const Routine = Schema.Struct({
   prompt: Schema.String,
   cron: Schema.NullOr(Schema.String),
   token: Schema.NullOr(Schema.String),
+  watch: Schema.NullOr(RoutineWatch),
   enabled: Schema.Boolean,
   nextRunAt: Schema.NullOr(Schema.Number),
   lastRunAt: Schema.NullOr(Schema.Number),
@@ -162,7 +168,7 @@ export const Routine = Schema.Struct({
 })
 export type Routine = typeof Routine.Type
 const Cron = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(9), Schema.isMaxLength(100))
-export const NewRoutine = Schema.Struct({ agentId: Id, name: Name, prompt: Short(8000), cron: Schema.NullOr(Cron), webhook: Schema.Boolean })
+export const NewRoutine = Schema.Struct({ agentId: Id, name: Name, prompt: Short(8000), cron: Schema.NullOr(Cron), webhook: Schema.Boolean, watch: Schema.optional(Schema.NullOr(RoutineWatch)) })
 export const RoutinePatch = Schema.Struct({ name: Schema.optional(Name), prompt: Schema.optional(Short(8000)), cron: Schema.optional(Schema.NullOr(Cron)), webhook: Schema.optional(Schema.Boolean), enabled: Schema.optional(Schema.Boolean) })
 // A cron pattern Zorel refuses (with croner's reason).
 export class CronInvalid extends Schema.Error<CronInvalid>("zorel/CronInvalid")({ _tag: Schema.tag("CronInvalid"), message: Schema.String }, { httpApiStatus: 400 }) {}

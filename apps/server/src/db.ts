@@ -1,9 +1,9 @@
 // Local database: SQLite via Drizzle over Effect's SqliteClient (D9). Every method returns an Effect;
 // a database error is a defect (orDie): the caller can do nothing but fail the request.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import { type Access, type Agent, type AgentPermissions, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type Switch } from "@zorel/contracts"
+import { type Access, type Agent, type AgentPermissions, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type RoutineWatch, type Switch } from "@zorel/contracts"
 import type { Approval, ApprovalOutcome, Turn, WorkStep } from "@zorel/contracts/events"
-import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { LOCAL_ACTOR } from "./access.ts"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
@@ -227,13 +227,13 @@ export const repository = (db: Db) => {
     routines: () => orDie(db.select().from(routines).orderBy(asc(routines.createdAt))),
     routine: (id: string) => orDie(db.select().from(routines).where(eq(routines.id, id)).pipe(Effect.map(first))),
     routineByToken: (token: string) => orDie(db.select().from(routines).where(eq(routines.token, token)).pipe(Effect.map(first))),
-    createRoutine: (input: { agentId: string; chatId: string; name: string; prompt: string; cron: string | null; token: string | null; nextRunAt: number | null }) =>
+    createRoutine: (input: { agentId: string; chatId: string; name: string; prompt: string; cron: string | null; token: string | null; nextRunAt: number | null; watch: RoutineWatch | null }) =>
       Effect.gen(function* () {
-        const r = { id: crypto.randomUUID(), ...input, enabled: true, lastRunAt: null, lastStatus: null, createdAt: now() } as const
+        const r = { id: crypto.randomUUID(), ...input, watchSeen: null, watchAt: null, enabled: true, lastRunAt: null, lastStatus: null, createdAt: now() } as const
         yield* db.insert(routines).values(r)
         return r
       }).pipe(orDie),
-    updateRoutine: (id: string, input: { [K in "name" | "prompt" | "cron" | "token" | "enabled" | "nextRunAt" | "lastRunAt" | "lastStatus"]?: (typeof routines.$inferInsert)[K] | undefined }) =>
+    updateRoutine: (id: string, input: { [K in "name" | "prompt" | "cron" | "token" | "watch" | "watchSeen" | "watchAt" | "enabled" | "nextRunAt" | "lastRunAt" | "lastStatus"]?: (typeof routines.$inferInsert)[K] | undefined }) =>
       Effect.gen(function* () {
         const set = defined(input)
         if (Object.keys(set).length) yield* db.update(routines).set(set).where(eq(routines.id, id))
@@ -241,6 +241,8 @@ export const repository = (db: Db) => {
       }).pipe(orDie),
     removeRoutine: (id: string) => orDie(db.delete(routines).where(eq(routines.id, id)).pipe(Effect.asVoid)),
     // Enabled, scheduled and due by `at`.
+    // Enabled and watching a connector.
+    watchingRoutines: () => orDie(db.select().from(routines).where(and(eq(routines.enabled, true), isNotNull(routines.watch)))),
     dueRoutines: (at: number) => orDie(db.select().from(routines).where(and(eq(routines.enabled, true), sql`${routines.nextRunAt} <= ${at}`))),
 
     // ---------- chats and messages ----------

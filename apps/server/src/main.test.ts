@@ -523,6 +523,8 @@ test("routines: created with their own chat, invalid cron 400, the webhook sends
   const agent = await api((c) => c.agents.create({ payload: { projectId: null, name: "Ops", instructions: "", model: "claude-cli/sonnet" } }))
   const bad = await api((c) => c.routines.create({ payload: { agentId: agent.id, name: "X", prompt: "p", cron: "not a cron!", webhook: false } })).catch((e: unknown) => e)
   expect((bad as { _tag?: string })._tag).toBe("CronInvalid")
+  const noServer = await api((c) => c.routines.create({ payload: { agentId: agent.id, name: "W", prompt: "p", cron: null, webhook: false, watch: { serverId: "missing", tool: "list_issues", args: {} } } })).catch((e: unknown) => e)
+  expect((noServer as { _tag?: string })._tag).toBe("NotFound") // a connector that isn't there
   const r = await api((c) => c.routines.create({ payload: { agentId: agent.id, name: "Triage", prompt: "Triage the issue", cron: "0 9 * * *", webhook: true } }))
   expect(r.nextRunAt).toBeGreaterThan(Date.now())
   expect(r.token).toBeTruthy()

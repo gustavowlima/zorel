@@ -1,6 +1,6 @@
 // Database schema (Drizzle). Mirrors the tables the MVP created with hand-written SQL, column by column,
 // so the existing database is adopted without copying (see migrate.ts). Changed something here? `bun run db:generate`.
-import type { AccountUsage, AgentPermissions, FailoverTarget, FileChange, Switch } from "@zorel/contracts"
+import type { AccountUsage, AgentPermissions, FailoverTarget, FileChange, RoutineWatch, Switch } from "@zorel/contracts"
 import { sql } from "drizzle-orm"
 import { type AnySQLiteColumn, check, index, integer, primaryKey, real, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
 
@@ -313,6 +313,9 @@ export const routines = sqliteTable("routines", {
   prompt: text().notNull(),
   cron: text(),
   token: text().unique(),
+  watch: text({ mode: "json" }).$type<RoutineWatch>(), // a connector's read tool it polls; null: none
+  watchSeen: text("watch_seen", { mode: "json" }).$type<ReadonlyArray<string>>(), // keys of the items already seen; null: not polled yet
+  watchAt: integer("watch_at"), // last poll
   enabled: integer({ mode: "boolean" }).notNull().default(true),
   nextRunAt: integer("next_run_at"),
   lastRunAt: integer("last_run_at"),
