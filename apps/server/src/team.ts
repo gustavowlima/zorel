@@ -159,12 +159,9 @@ export const SKILL_TOOLS = [
 type Learner = { readonly memory?: Agent["memory"] | undefined; readonly knowledge?: Agent["knowledge"] | undefined }
 export const memoryModeOf = (a: Learner | undefined): Agent["memory"] => a?.memory ?? "ask"
 export const knowledgeOf = (a: Learner | undefined): Agent["knowledge"] => a?.knowledge ?? "write"
-// What a chat's consolidation does is for the whole chat, so the strictest member decides: one that only reads keeps
-// the chat from learning at all, and facts are saved on their own only when every agent in it allows it.
-export const learningOf = (members: ReadonlyArray<Learner>): Agent["memory"] => {
-  const modes = members.map(memoryModeOf)
-  return modes.includes("read") ? "read" : modes.length && modes.every((m) => m === "auto") ? "auto" : "ask"
-}
+// Whether a chat learns is for the whole chat: one agent that doesn't learn ("read") keeps it from learning at all.
+// Whether what it learns waits for review is the person's one setting (Preferences.memoryApproval), not an agent's.
+export const learningOf = (members: ReadonlyArray<Learner>): "learn" | "read" => (members.some((m) => memoryModeOf(m) === "read") ? "read" : "learn")
 // The tools the agent doesn't get. The server refuses them even if the model names one anyway.
 export const withheldTools = (a: Learner | undefined): ReadonlySet<string> =>
   new Set([

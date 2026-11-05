@@ -5,13 +5,15 @@
 import type { Agent, AgentPatch, FileSkill, Memory } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
-import { agentsAtom, chatsAtom, fileSkillsAtom, memoriesAtom, mutations, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
+import { useAtomValue } from "@effect/atom-react"
+import { AsyncResult } from "effect/reactivity"
+import { agentsAtom, chatsAtom, fileSkillsAtom, memoriesAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { go } from "../state.ts"
 import { ScopeIcon } from "./knowledge.tsx"
 import { ReadingState } from "./reading.tsx"
 import { sees, teamOf, withAgent, withoutAgent } from "./skill-agents.ts"
 import { UsedByBadge } from "./used-by.tsx"
-import { Button, cx, Info, ListRow, Notice, Rows, Section, Segmented, SettingRow, ShieldAlert } from "@/ui"
+import { Button, cx, Info, ListRow, Notice, Rows, Section, Segmented, SettingRow, ShieldAlert, Switch } from "@/ui"
 
 type Field = "memory" | "knowledge"
 type Status = "idle" | "saving" | "saved" | "error"
@@ -57,16 +59,11 @@ function SaveStatus({ status, onRetry }: { status: Status; onRetry: () => void }
   )
 }
 
-// The strictest mode in a chat wins (the server's rule): what the agent's shared chats can do, given the others in them.
-function sharedRule(agent: Agent, mode: Agent["memory"], chats: ReadonlyArray<{ agentIds: ReadonlyArray<string> }>, team: ReadonlyArray<Agent>) {
-  const others = team.filter((a) => a.id !== agent.id && chats.some((c) => c.agentIds.includes(agent.id) && c.agentIds.includes(a.id)))
-  const reader = others.find((a) => a.memory === "read")
-  if (reader && mode !== "read") return t("agent.mem.sharedRead", { other: reader.name, name: agent.name })
-  const asker = others.find((a) => a.memory === "ask")
-  return asker && mode === "auto" ? t("agent.mem.sharedAsk", { other: asker.name, name: agent.name }) : undefined
+// A chat learns only if every agent in it does (the server's rule): the agents this one shares a chat with that don't.
+function notLearning(agent: Agent, chats: ReadonlyArray<{ agentIds: ReadonlyArray<string> }>, team: ReadonlyArray<Agent>) {
+  return team.find((a) => a.id !== agent.id && a.memory === "read" && chats.some((c) => c.agentIds.includes(agent.id) && c.agentIds.includes(a.id)))
 }
 
-const MEMORY_HINT = { auto: "agent.mem.autoHint", ask: "agent.mem.askHint", read: "agent.mem.readHint" } as const
 const KNOW_HINT = { none: "agent.know.noneHint", read: "agent.know.readHint", write: "agent.know.writeHint" } as const
 
 export function AgentMemory({ agent }: { agent: Agent }) {
@@ -84,32 +81,27 @@ export function AgentMemory({ agent }: { agent: Agent }) {
   ]
   const memory = useInstant(agent, "memory")
   const knowledge = useInstant(agent, "knowledge")
-  const shared = sharedRule(agent, memory.value, chats, team)
+  const learns = memory.value !== "read"
+  const blocker = learns ? notLearning(agent, chats, team) : undefined
+  const prefs = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)
   return (
     <>
       <Section title={t("agent.mem.title")} description={<span className="block max-w-prose">{t("agent.mem.hint", { name: agent.name })}</span>} action={<SaveStatus status={memory.status} onRetry={memory.retry} />}>
-        <Segmented
-          fill
-          label={t("agent.mem.label")}
-          value={memory.value}
-          onChange={memory.set}
-          options={[
-            { id: "auto", label: t("agent.mem.auto") },
-            { id: "ask", label: t("agent.mem.ask") },
-            { id: "read", label: t("agent.mem.read") }
-          ]}
-        />
-        <p className="text-sm text-muted">{t(MEMORY_HINT[memory.value])}</p>
-        {memory.value === "auto" && (
-          <Notice icon={<ShieldAlert />} title={t("agent.mem.autoTitle")}>
-            {t("agent.mem.autoBody")}
-          </Notice>
-        )}
-        {shared && (
+        <Rows>
+          <SettingRow title={t("agent.mem.learns")} hint={learns ? t(prefs?.memoryApproval === "undo" ? "agent.mem.learnsUndo" : "agent.mem.learnsReview") : t("agent.mem.readHint")}>
+            <Switch aria-label={t("agent.mem.learns")} isSelected={learns} onChange={(on) => memory.set(on ? "ask" : "read")} />
+          </SettingRow>
+        </Rows>
+        {blocker && (
           <Notice tone="neutral" icon={<Info />} title={t("agent.mem.sharedTitle")}>
-            {shared}
+            {t("agent.mem.sharedRead", { other: blocker.name, name: agent.name })}
           </Notice>
         )}
+        <div>
+          <Button size="sm" variant="ghost" onPress={() => go({ view: "memory" })}>
+            {t("agent.mem.approvalLink")}
+          </Button>
+        </div>
       </Section>
       {/* Where what it keeps goes: Zorel picks the owner for each memory; a memory can be moved later. */}
       <Section title={t("agent.mem.whereTitle")} description={<span className="block max-w-prose">{t("agent.mem.whereHint")}</span>}>

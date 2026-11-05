@@ -114,9 +114,10 @@ export function stretchOf<M extends { role: string; at: number; text: string }>(
 // The "agent" scope goes to the agent that replied after the proof (the lead when none did). A message already learned from is read for context only: it can't be
 // the evidence of a memory twice. It runs on the provider's small model (ZOREL_MEMORY_MODEL overrides), falling
 // back to the chat's own when that one fails.
-// What the agents' memory modes allow (learningOf): "ask" proposes facts and skills for review; "auto" saves the new
-// facts as active (corrections of an existing memory and every skill still wait: a skill is instructions for the
-// agent, so it never turns on by itself) and tells `onRemembered` what it saved; "read" only folds the summary.
+// Whether the chat learns (learningOf: an agent that doesn't learn keeps it from learning) and what becomes of a new
+// fact (Preferences.memoryApproval): "review" proposes it; "undo" keeps it at once and tells `onRemembered`. A
+// correction of an existing memory and every skill still wait (a skill is instructions for the agent, so it never
+// turns on by itself); a chat that doesn't learn only folds the summary.
 export const consolidate = Effect.fn("consolidate")(function* (chatId: string, how: Consolidation = "window", onRemembered: (saved: ReadonlyArray<Memory>) => Effect.Effect<void> = () => Effect.void) {
   const store = yield* Store
   const engines = yield* Engines
@@ -202,7 +203,7 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, h
       }
       facts.push({ scope: target?.scope ?? scope, kind: "fact", title: "", text: m.text, keywords: m.keywords, replaces: target?.id ?? null, reason: null, agentId: credited })
     }
-    const onItsOwn = mode === "auto" ? facts.filter((f) => !f.replaces) : []
+    const onItsOwn = (yield* store.preference("memoryApproval")) === "undo" ? facts.filter((f) => !f.replaces) : []
     const saved: Memory[] = []
     for (const f of onItsOwn.slice(0, MAX_AUTO)) {
       const m = yield* store.addMemory({ ...f, state: "active", origin: "auto", chatId: chat.id })

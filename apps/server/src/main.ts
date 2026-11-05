@@ -681,8 +681,10 @@ const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
 
 // The failover terms warning (§6.1) is accepted once and remembered here.
 const FAILOVER_TERMS = "failover_terms_accepted_at"
+const MEMORY_APPROVAL = "memoryApproval" // "review" (default) or "undo": see Preferences
 const preferencesOf = (store: Repository) =>
-  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills"), store.preference(MAX_RUNNING_KEY)]), ([v, p, n, m]) => ({
+  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills"), store.preference(MAX_RUNNING_KEY), store.preference(MEMORY_APPROVAL)]), ([v, p, n, m, a]) => ({
+    memoryApproval: a === "undo" ? ("undo" as const) : ("review" as const),
     failoverTermsAcceptedAt: v ? Number(v) : null,
     paused: p === "1",
     nativeSkills: n === "1",
@@ -819,6 +821,7 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       .handle("pause", ({ payload }) => runtime.setPaused(payload.paused))
       // The harnesses' own skills on or off (the next session of each chat picks it up).
       .handle("nativeSkills", ({ payload }) => Effect.andThen(store.setPreference("nativeSkills", payload.enabled ? "1" : "0"), preferencesOf(store)))
+      .handle("memoryApproval", ({ payload }) => Effect.andThen(store.setPreference(MEMORY_APPROVAL, payload.approval), preferencesOf(store)))
       .handle("maxRunning", ({ payload }) => Effect.andThen(runtime.setMaxRunning(payload.value), preferencesOf(store)))
       .handle("acceptFailoverTerms", () =>
         Effect.andThen(

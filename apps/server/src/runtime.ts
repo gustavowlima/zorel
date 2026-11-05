@@ -17,7 +17,7 @@ import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
 import { cardText, TOO_LARGE } from "./engines/policy.ts"
-import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, memoryModeOf, narrower, proposalText, readText, REMEMBER_TOOL, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo } from "./team.ts"
+import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, REMEMBER_TOOL, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
@@ -592,7 +592,7 @@ export const makeRuntime = Effect.gen(function* () {
       return textResult(found.length ? found.map((m) => `- ${m.text}`).join("\n") : "Nothing found. Try other words.")
     }
 
-    // zorel_remember: a fact the person said, kept now (auto) or proposed (ask), with the same rules as a chat's
+    // zorel_remember: a fact the person said, kept now ("undo") or proposed ("review", Preferences.memoryApproval), with the same rules as a chat's
     // learning: the person's words (no name or number only an agent said), no credential, no repeat of one kept or
     // forgotten, a correction waits for review. The chat's note comes from the memory itself (agentId, chatId).
     const rememberCall = async (args: Record<string, unknown>) => {
@@ -618,7 +618,7 @@ export const makeRuntime = Effect.gen(function* () {
         }
       }
       if ((await run(store.pendingCount(scopes))) >= MAX_PENDING_MEMORIES) return textResult("Too many memories already wait for the user's review. Go on without it.", true)
-      const kept = memoryModeOf(agent) === "auto" && !target
+      const kept = (await run(store.preference("memoryApproval"))) === "undo" && !target
       const s = await step(`${kept ? "Remember" : "Propose to remember"}: ${text.slice(0, 60)}`, REMEMBER_TOOL.name)
       const m = await run(store.addMemory({ scope: target?.scope ?? scope, kind: "fact", text, state: kept ? "active" : "pending", origin: "auto", chatId: chat.id, agentId: agent?.id ?? null, replaces: target?.id ?? null }))
       await finish(s, m ? "ok" : "refused", text)
