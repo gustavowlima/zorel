@@ -369,3 +369,35 @@ test("aliases and categories let a question in other words reach the fact (parap
       expect((yield* recall(r, ["user"], "quero um chá verde?", [])).map((x) => x.id)).toEqual([m.id]) // and its other name
     })
   ))
+
+test("a bridge between two projects' points: on both maps, and recall crosses it to that point's own facts only", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const add = (scope: string, text: string, ents: Array<{ name: string; type: "concept" | "subject" }>, rels: Array<[string, string, string]> = []) =>
+        Effect.gen(function* () {
+          const m = (yield* r.addMemory({ scope, text, state: "active", origin: "auto", chatId: null }))!
+          yield* r.linkMemory(m.id, scope, mappedOf(ents, rels))
+          return m
+        })
+      yield* add("project:a", "Billing runs on Stripe", [{ name: "Billing", type: "subject" }, { name: "Stripe", type: "concept" }], [["Billing", "runs on", "Stripe"]])
+      const webhooks = yield* add("project:b", "Stripe webhooks need the signing secret", [{ name: "Stripe", type: "concept" }, { name: "Webhooks", type: "concept" }])
+      const unrelated = yield* add("project:b", "Webhooks retry three times", [{ name: "Webhooks", type: "concept" }, { name: "Retry", type: "concept" }])
+      const pointIn = (scope: string) => Effect.map(r.entitiesIn([scope]), (es) => es.find((e) => e.name === "Stripe")!.id)
+      const [a, b] = [yield* pointIn("project:a"), yield* pointIn("project:b")]
+      const before = (yield* recall(r, ["user", "project:a"], "how is billing set up?", [])).map((m) => m.id)
+      expect(before).not.toContain(webhooks.id)
+      yield* r.connectEntities(b, a)
+      expect((yield* r.bridgesOf([a])).others.map((o) => o.id)).toEqual([b])
+      const after = (yield* recall(r, ["user", "project:a"], "how is billing set up?", [])).map((m) => m.id)
+      expect(after).toContain(webhooks.id) // the other side's point's own fact
+      expect(after).not.toContain(unrelated.id) // not the rest of that project's map
+      yield* r.disconnectEntities(a, b)
+      expect((yield* r.bridgesOf([a])).links).toEqual([])
+      yield* r.connectEntities(a, b)
+      const project = yield* r.createProject({ name: "B", brief: "" })
+      yield* r.linkMemory(webhooks.id, `project:${project.id}`, mappedOf([{ name: "Gone", type: "concept" }], []))
+      expect((yield* r.entitiesIn([`project:${project.id}`])).length).toBe(1)
+      yield* r.removeProject(project.id)
+      expect((yield* r.entitiesIn([`project:${project.id}`])).length).toBe(0) // a removed project takes its map along
+    })
+  ))

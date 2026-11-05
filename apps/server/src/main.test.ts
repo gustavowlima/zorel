@@ -219,6 +219,10 @@ test("project → agent → chat: streaming, layered context, model switch, cons
   const named = (id: string) => map.points.find((p) => p.id === id)?.name
   expect(map.points.map((p) => [p.name, p.type, p.pending]).sort()).toEqual([["Deploy", "subject", 1], ["Fridays", "concept", 1], ["Site", "project", 1]])
   expect(map.links.map((l) => [named(l.a), l.rel, named(l.b)])).toContainEqual(["Deploy", "happens on", "Fridays"])
+  const bad = (f: () => Promise<unknown>) => f().then(() => "ok", (e: { _tag?: string }) => e._tag)
+  const [deploy, fridays] = ["Deploy", "Fridays"].map((n) => map.points.find((p) => p.name === n)!.id) as [string, string]
+  expect(await bad(() => api((c) => c.memories.connect({ payload: { a: deploy, b: fridays } })))).toBe("BadRequest") // same map
+  expect(await bad(() => api((c) => c.memories.connect({ payload: { a: deploy, b: "nothing" } })))).toBe("NotFound")
 
   await send(chat.id, { text: "como publico?" })
   expect(turns.at(-1)!.system).toContain("They talked about deploying.")
