@@ -1,9 +1,9 @@
 // The message queue: what you send while a turn runs waits here, above the message box, and
-// goes out by itself when the chat is free again, one at a time. Each item can be pushed into the running turn
-// now (steer), brought back to the box to edit, or dropped. Kept per chat on this computer, so a reload keeps it.
+// goes out by itself when the chat is free again, one at a time. While a turn runs, each item can be sent now (into
+// the reply in progress when the engine takes it, else by stopping the reply), brought back to the box to edit, or dropped. Kept per chat on this computer, so a reload keeps it.
 import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
-import { Button, CornerDownRight, IconButton, Pencil, Trash2 } from "@/ui"
+import { Button, CornerDownRight, IconButton, Pencil, Tooltip, Trash2 } from "@/ui"
 
 export interface Queued {
   readonly id: string
@@ -60,14 +60,16 @@ export function useQueue(chatId: string, busy: boolean, ready: boolean, send: (t
 
 export function QueuePanel({
   items,
-  canSteer,
-  onSteer,
+  busy,
+  joinsTurn,
+  onSendNow,
   onEdit,
   onRemove
 }: {
   items: ReadonlyArray<Queued>
-  canSteer: boolean
-  onSteer: (item: Queued) => void
+  busy: boolean // a turn runs: items can be sent now (an idle chat drains the queue by itself)
+  joinsTurn: (item: Queued) => boolean // sending it adds it to the running reply (else it stops the reply first)
+  onSendNow: (item: Queued) => void
   onEdit: (item: Queued) => void
   onRemove: (item: Queued) => void
 }) {
@@ -80,11 +82,13 @@ export function QueuePanel({
           <span className="min-w-0 flex-1 truncate text-secondary" title={item.text}>
             {item.text}
           </span>
-          {canSteer && (
-            <Button size="sm" variant="ghost" className="text-muted" onPress={() => onSteer(item)}>
-              <CornerDownRight />
-              {t("queue.steer")}
-            </Button>
+          {busy && (
+            <Tooltip content={joinsTurn(item) ? t("queue.sendNowJoin") : t("queue.sendNowStop")}>
+              <Button size="sm" variant="ghost" className="text-muted" onPress={() => onSendNow(item)}>
+                <CornerDownRight />
+                {t("queue.sendNow")}
+              </Button>
+            </Tooltip>
           )}
           <IconButton label={t("queue.edit")} size="xs" onPress={() => onEdit(item)}>
             <Pencil className="size-3.5" />

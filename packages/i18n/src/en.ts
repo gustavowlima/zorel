@@ -52,6 +52,12 @@ export const en = {
     projects: "Projects",
     chats: "Chats",
     noChats: "No chats yet",
+    chatsHint: "Conversations outside any project",
+    emptyProjects: "Projects hold chats, files and a team",
+    addProject: "Add project",
+    emptyProjectStart: "No chats in this project · Start one",
+    withModel: "{agent} · {model}",
+    moreFor: "More actions for {name}",
     reorder: "Reorder {name}",
     newProject: "New project",
     newChatIn: "New chat in {name}",
@@ -79,13 +85,13 @@ export const en = {
   },
   home: {
     title: "What are we working on?",
-    subtitle: "Pick a project, type # for who answers, or just start typing.",
+    subtitle: "Pick a project, type # to call an agent, or just start typing.",
     project: "Project",
     noProject: "No project",
     answers: "{name} answers",
     clearAgent: "Stop {name} answering: a plain chat",
     searchProjects: "Search projects",
-    placeholder: "Message · # who answers",
+    placeholder: "Message · # call an agent",
     placeholderPlain: "Message"
   },
   chat: {
@@ -130,6 +136,7 @@ export const en = {
     cached: "{cached} cached",
     disconnected: "Connection lost. Reconnecting…",
     sendFailed: "The message wasn't sent. It's back in the box.",
+    addFailed: "Couldn't add the agent to the chat, so the message wasn't sent. It's back in the box.",
     approvalGone: "That request was already decided or expired."
   },
   activity: {
@@ -172,14 +179,14 @@ export const en = {
   },
   composer: {
     label: "Message",
-    placeholder: "Message · # who answers, @ mention, $ skill, / command",
+    placeholder: "Message · # call an agent, @ mention, $ skill, / command",
     queue: "Add to the queue",
     agents: "Agents",
     skills: "Skills",
     commands: "Commands",
-    leads: "Who answers",
+    leads: "Call an agent",
+    addToChat: "Add to chat",
     file: "file",
-    answering: "answers now",
     command: {
       compact: "Compact",
       compactHint: "Fold the older messages into the summary",
@@ -728,9 +735,14 @@ export const en = {
       provider: "Provider"
     }
   },
+  mention: {
+    open: "Open {name}"
+  },
   queue: {
     label: "Waiting to send",
-    steer: "Steer",
+    sendNow: "Send now",
+    sendNowJoin: "Adds it to the reply in progress",
+    sendNowStop: "Stops the reply and sends this now",
     edit: "Edit",
     remove: "Remove"
   },
