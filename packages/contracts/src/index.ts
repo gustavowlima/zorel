@@ -536,7 +536,7 @@ export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Sc
 export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)) })
 export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000), agents: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) })
-export const MemoryPatch = Schema.Struct({ state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)), essential: Schema.optional(Schema.Boolean), agents: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) })
+export const MemoryPatch = Schema.Struct({ scope: Schema.optional(MemoryScope), state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)), essential: Schema.optional(Schema.Boolean), agents: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) })
 // stdio: environment variables; http: headers. Values go to the system keychain.
 const McpEnv = Schema.Record(Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_-]*$/)), LongText(4000))
 export const NewMcpServer = Schema.Struct({
@@ -718,6 +718,8 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.get("list", "/api/memories", { success: Schema.Array(Memory) }))
       .add(HttpApiEndpoint.post("create", "/api/memories", { payload: NewMemory, success: Memory, error: HttpApiError.BadRequest }))
       .add(HttpApiEndpoint.patch("update", "/api/memories/:id", { params: idParam, payload: MemoryPatch, success: Memory, error: [HttpApiError.NotFound, HttpApiError.BadRequest, HttpApiError.Conflict] }))
+      // Delete for good: only a forgotten one (the record that kept it from being learned again goes too).
+      .add(HttpApiEndpoint.delete("remove", "/api/memories/:id", { params: idParam, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
       .add(HttpApiEndpoint.get("versions", "/api/memories/:id/versions", { params: idParam, success: Schema.Array(MemoryVersion), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("restore", "/api/memories/:id/restore", { params: idParam, payload: Schema.Struct({ versionId: Id }), success: Memory, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
   )

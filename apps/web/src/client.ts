@@ -108,6 +108,7 @@ export const mutations = {
   consolidate: Zorel.mutation("chats", "consolidate"),
   createMemory: Zorel.mutation("memories", "create"),
   updateMemory: Zorel.mutation("memories", "update"),
+  removeMemory: Zorel.mutation("memories", "remove"),
   createServer: Zorel.mutation("tools", "create"),
   updateServer: Zorel.mutation("tools", "update"),
   removeServer: Zorel.mutation("tools", "remove"),

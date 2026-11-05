@@ -609,16 +609,19 @@ export const repository = (db: Db, pagesDir?: string) => {
     // Still true (consolidation saw it again): ranks first for the prompt's budget.
     confirmMemories: (ids: ReadonlyArray<string>) =>
       ids.length ? orDie(db.update(memories).set({ confirmedAt: now() }).where(and(inArray(memories.id, [...ids]), eq(memories.state, "active"))).pipe(Effect.asVoid)) : Effect.void,
+    removeMemory: (id: string) => orDie(db.delete(memories).where(eq(memories.id, id)).pipe(Effect.asVoid)), // versions cascade
     // Another memory of the scope already says this (the unique key would refuse the edit).
     textTaken: (id: string, scope: string, text: string) =>
       orDie(db.select({ id: memories.id }).from(memories).where(and(eq(memories.scope, scope), eq(memories.normalized, normalize(text)), ne(memories.id, id))).pipe(Effect.map((r) => r.length > 0))),
     // A changed text or title keeps the one before as a version (by: who changed it).
-    updateMemory: (id: string, input: { state?: Memory["state"] | undefined; title?: string | undefined; text?: string | undefined; essential?: boolean | undefined; agents?: ReadonlyArray<string> | undefined }, by = "you") =>
+    updateMemory: (id: string, input: { scope?: string | undefined; state?: Memory["state"] | undefined; title?: string | undefined; text?: string | undefined; essential?: boolean | undefined; agents?: ReadonlyArray<string> | undefined }, by = "you") =>
       Effect.gen(function* () {
         const before = yield* memory(id)
         if (before && ((input.text !== undefined && input.text !== before.text) || (input.title !== undefined && input.title !== before.title)))
           yield* db.insert(memoryVersions).values({ id: crypto.randomUUID(), memoryId: id, title: before.title, text: before.text, by, at: now() })
-        const set = defined({ ...input, normalized: input.text && normalize(input.text), confirmedAt: now() })
+        // A move to "you" makes it the owner's alone, like one created there (audience: see addMemory).
+        const audience = input.scope === undefined ? undefined : input.scope === "user" ? ("owner" as const) : ("project" as const)
+        const set = defined({ ...input, audience, normalized: input.text && normalize(input.text), confirmedAt: now() })
         yield* db.update(memories).set(set).where(eq(memories.id, id))
         return yield* memory(id)
       }).pipe(orDie),

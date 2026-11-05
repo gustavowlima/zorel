@@ -495,6 +495,16 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
   })
 )
 
+// A scope a memory can move to: you, a project that exists, or an agent that is a teammate.
+const scopeExists = (store: Repository, scope: string) =>
+  Effect.gen(function* () {
+    if (scope === "user") return true
+    const [kind, id = ""] = scope.split(":")
+    if (kind === "project") return !!(yield* store.project(id))
+    const a = kind === "agent" ? yield* store.agent(id) : undefined
+    return !!a && isTeammate(a)
+  })
+
 const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
@@ -522,10 +532,20 @@ const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
             const applied = yield* store.applyImprovement(before.id, "you")
             if (applied) return applied
           }
-          // Edited into the words of another memory of the scope: refused, not a crash on the unique key.
-          if (before && payload.text !== undefined && (yield* store.textTaken(before.id, before.scope, payload.text))) return yield* new HttpApiError.Conflict()
+          // Moved to another owner: one that exists (you, a project, a teammate); its old one keeps nothing of it.
+          if (payload.scope !== undefined && before && payload.scope !== before.scope && !(yield* scopeExists(store, payload.scope))) return yield* badRequest()
+          // Edited or moved into the words of another memory of the scope: refused, not a crash on the unique key.
+          if (before && (payload.text !== undefined || payload.scope !== undefined) && (yield* store.textTaken(before.id, payload.scope ?? before.scope, payload.text ?? before.text))) return yield* new HttpApiError.Conflict()
           const { agents: _, ...rest } = payload
           return yield* found(store.updateMemory(params.id, { ...rest, agents: only }))
+        })
+      )
+      .handle("remove", ({ params }) =>
+        Effect.gen(function* () {
+          const m = yield* store.memory(params.id)
+          if (!m) return yield* notFound()
+          if (m.state !== "forgotten") return yield* new HttpApiError.Conflict() // forget it first
+          yield* store.removeMemory(m.id)
         })
       )
       .handle("versions", ({ params }) => Effect.flatMap(store.memory(params.id), (m) => (m ? store.memoryVersions(m.id) : notFound())))

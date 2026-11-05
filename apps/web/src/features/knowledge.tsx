@@ -1,203 +1,27 @@
-// Knowledge (prototype "Knowledge"): what the chats learned and what you wrote, as a list and a reader.
-// Facts are durable sentences; skills are procedures. Nothing reaches the model until it is approved.
+// Shared pieces of what agents know: the reader of one memory or skill (diff of a proposed improvement, versions,
+// approve, edit, forget), the form for a new one, and a scope's mark. The screens are Memory (facts), Skills and
+// Pages; Knowledge was the single screen they split from. Nothing reaches the model until it is approved.
 import type { Agent, Memory } from "@zorel/contracts"
 import { isTeammate } from "@zorel/contracts"
 import { formatAge, formatDate, t } from "@zorel/i18n"
-import { useEffect, useState } from "react"
-import { agentsAtom, chatsAtom, memoriesAtom, memoryVersionsAtom, mutations, pagesAtom, projectsAtom, useList, useMutation, useReading } from "../client.ts"
-import { NewPage, PageView } from "./pages.tsx"
+import { useState } from "react"
+import { agentsAtom, chatsAtom, memoriesAtom, memoryVersionsAtom, mutations, projectsAtom, useList, useMutation, useReading } from "../client.ts"
 import { agentTone, chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { UsedBy, UsedByBadge, useUsedBy } from "./used-by.tsx"
-import { AgentAvatar, BookOpen, Button, cx, EmptyState, Field, Folder, Input, LineDiff, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Tab, TabList, Tabs, Textarea, Tooltip, Undo2, User } from "@/ui"
+import { AgentAvatar, Button, cx, Field, Folder, Input, LineDiff, Pin, PinOff, Rows, Select, Textarea, Tooltip, Undo2, User } from "@/ui"
 
-// What is shown: a kind (the tabs) and a state (the "Show" select): active, waiting for review, or forgotten.
-type Kind = "all" | "fact" | "skill" | "page"
-type State = "active" | "pending" | "forgotten"
-
-const matches = (m: Memory, kind: Kind, state: State) => m.state === state && (kind === "all" || m.kind === kind)
+// Where a memory lives now: a skill in Skills, a fact in Memory.
+export const openMemory = (m: Pick<Memory, "id" | "kind">) => go(m.kind === "skill" ? { view: "skills", id: m.id } : { view: "memory" })
 
 // A scope's mark in a list: the agent's face, a folder for a project, a person for "about you".
-function ScopeIcon({ scope, agents }: { scope: string; agents: ReadonlyArray<Agent> }) {
+export function ScopeIcon({ scope, agents }: { scope: string; agents: ReadonlyArray<Agent> }) {
   const agent = scope.startsWith("agent:") ? agents.find((a) => `agent:${a.id}` === scope) : undefined
   if (agent) return <AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={16} />
   return scope.startsWith("project:") ? <Folder className="size-4 text-muted" /> : <User className="size-4 text-muted" />
 }
 
-export function KnowledgeView({ selected, scope: openScope, kind: openKind }: { selected: string | undefined; scope?: string | undefined; kind?: "fact" | "skill" | undefined }) {
-  const memories = useList(memoriesAtom)
-  const pages = useList(pagesAtom)
-  const projects = useList(projectsAtom)
-  const agents = useList(agentsAtom)
-  const [kind, setKind] = useState<Kind>(openKind ?? "all")
-  const [state, setState] = useState<State>("active")
-  const [scope, setScope] = useState(openScope ?? "")
-  // Opened filtered (an agent's memories, from its page): the route sets the scope and the kind.
-  useEffect(() => {
-    if (openScope) setScope(openScope)
-    if (openKind) setKind(openKind)
-  }, [openScope, openKind])
-  const [query, setQuery] = useState("")
-  const [creating, setCreating] = useState<Memory["kind"]>()
-  const [creatingPage, setCreatingPage] = useState(false)
-
-  const q = query.trim().toLowerCase()
-  const list = memories
-    .filter((m) => matches(m, kind, state) && (!scope || m.scope === scope) && (!q || `${m.title} ${m.text}`.toLowerCase().includes(q)))
-    .sort((a, b) => Math.max(b.createdAt, b.confirmedAt) - Math.max(a.createdAt, a.confirmedAt))
-  const current = memories.find((m) => m.id === selected)
-  const page = pages.find((p) => p.id === selected)
-  const pageList = pages.filter((p) => (!scope || p.scope === scope) && (!q || `${p.title} ${p.body}`.toLowerCase().includes(q)))
-  const showPages = kind === "page"
-  const scopes = [...new Set(showPages ? pages.map((p) => p.scope) : memories.map((m) => m.scope))]
-  const count = memories.filter((m) => m.state !== "forgotten").length
-  const pendingCount = memories.filter((m) => m.state === "pending").length
-  // Nothing learned or written yet: one empty state for the whole screen, not one per pane.
-  const nothing = memories.length === 0 && pages.length === 0 && !creating && !creatingPage && !selected
-
-  useEffect(() => {
-    if (selected) {
-      setCreating(undefined)
-      setCreatingPage(false)
-    }
-  }, [selected])
-  // A page opened by link shows in the Pages list.
-  useEffect(() => {
-    if (page) setKind("page")
-  }, [page])
-
-  return (
-    <Screen
-      title={t("knowledge.title")}
-      subtitle={t("knowledge.subtitle", { count })}
-      bodyClassName="flex"
-      actions={
-        <>
-          <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("knowledge.search")} />
-          <Button size="sm" variant="secondary" onPress={() => (showPages ? setCreatingPage(true) : setCreating("fact"))}>
-            <Plus />
-            {t("knowledge.new")}
-          </Button>
-        </>
-      }
-    >
-      {nothing ? (
-        <div className="flex flex-1 items-center justify-center">
-          <EmptyState
-            icon={<BookOpen />}
-            title={t("knowledge.empty")}
-            hint={t("knowledge.emptyHint")}
-            action={
-              <Button size="sm" variant="default" onPress={() => setCreating("fact")}>
-                <Plus />
-                {t("knowledge.new")}
-              </Button>
-            }
-          />
-        </div>
-      ) : (
-      <>
-      <nav aria-label={t("knowledge.title")} className="flex w-96 shrink-0 flex-col gap-3 overflow-y-auto border-r border-subtle py-4 pr-3 pl-4">
-        <Tabs selectedKey={kind} onSelectionChange={(k) => setKind(k as Kind)}>
-          <TabList label={t("knowledge.title")}>
-            <Tab id="all">{t("knowledge.all")}</Tab>
-            <Tab id="fact">{t("knowledge.facts")}</Tab>
-            <Tab id="skill">{t("knowledge.skills")}</Tab>
-            <Tab id="page">{t("pages.pages")}</Tab>
-          </TabList>
-        </Tabs>
-        <div className="grid grid-cols-2 gap-2">
-          {!showPages && (
-            <Select
-              size="sm"
-              aria-label={t("knowledge.show")}
-              value={state}
-              onChange={(v) => setState(v as State)}
-              options={[
-                { value: "active", label: t("knowledge.active") },
-                { value: "pending", label: pendingCount ? `${t("knowledge.pending")} · ${pendingCount}` : t("knowledge.pending") },
-                { value: "forgotten", label: t("knowledge.forgotten") }
-              ]}
-            />
-          )}
-          {scopes.length > 1 && (
-            <Select
-              size="sm"
-              aria-label={t("knowledge.scope")}
-              value={scope}
-              onChange={setScope}
-              searchLabel={t("knowledge.searchScopes")}
-              options={[{ value: "", label: t("knowledge.allScopes") }, ...scopes.map((s) => ({ value: s, label: scopeLabel(s, projects, agents), icon: <ScopeIcon scope={s} agents={agents} /> }))]}
-            />
-          )}
-        </div>
-        {showPages && (
-          <ul className="flex flex-col gap-0.5">
-            {pageList.map((p) => (
-              <li key={p.id}>
-                <Button
-                  variant="ghost"
-                  onPress={() => go({ view: "knowledge", id: p.id })}
-                  className={cx(
-                    "h-auto w-full flex-col items-start gap-0.5 rounded-card border px-3 py-2.5 text-left font-normal whitespace-normal",
-                    p.id === selected ? "border-subtle bg-surface text-fg" : "border-transparent text-fg"
-                  )}
-                >
-                  <span className="flex w-full items-center gap-1.5 truncate font-medium">
-                    {p.pinned && <Pin className="size-3 shrink-0 text-muted" />}
-                    {p.title}
-                  </span>
-                  <span className="block w-full truncate text-sm text-muted">{[scopeLabel(p.scope, projects, agents), formatAge(p.updatedAt)].join(" · ")}</span>
-                </Button>
-              </li>
-            ))}
-            {pageList.length === 0 && <p className="px-2 py-6 text-center text-muted">{t("pages.empty")}</p>}
-          </ul>
-        )}
-        <ul className={cx("flex flex-col gap-0.5", showPages && "hidden")}>
-          {list.map((m) => (
-            <li key={m.id}>
-              <Button
-                variant="ghost"
-                onPress={() => go({ view: "knowledge", id: m.id })}
-                className={cx(
-                  "h-auto w-full flex-col items-start gap-0.5 rounded-card border px-3 py-2.5 text-left font-normal whitespace-normal",
-                  m.id === selected ? "border-subtle bg-surface text-fg" : "border-transparent text-fg"
-                )}
-              >
-                <span className="flex w-full items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate font-medium">{m.kind === "skill" ? m.title : m.text}</span>
-                  {m.kind === "skill" && m.agents?.length ? <UsedByBadge ids={m.agents} /> : null}
-                </span>
-                <span className="block w-full truncate text-sm text-muted">
-                  {[m.kind === "skill" ? t("knowledge.skill") : t("knowledge.fact"), scopeLabel(m.scope, projects, agents), formatAge(Math.max(m.createdAt, m.confirmedAt))].join(" · ")}
-                </span>
-              </Button>
-            </li>
-          ))}
-        </ul>
-        {!showPages && list.length === 0 && <p className="px-2 py-6 text-center text-muted">{memories.length ? t("knowledge.noMatch") : t("knowledge.empty")}</p>}
-      </nav>
-      <div className="min-w-0 flex-1 overflow-y-auto">
-        {creatingPage ? (
-          <NewPage onDone={(id) => (id ? go({ view: "knowledge", id }) : setCreatingPage(false))} />
-        ) : page ? (
-          <PageView key={page.id} page={page} />
-        ) : creating ? (
-          <NewMemory kind={creating} onKind={setCreating} onDone={(id) => (id ? go({ view: "knowledge", id }) : setCreating(undefined))} />
-        ) : current ? (
-          <Reader key={current.id} memory={current} />
-        ) : (
-          <EmptyState icon={<BookOpen />} title={t("knowledge.select")} />
-        )}
-      </div>
-      </>
-      )}
-    </Screen>
-  )
-}
-
-function Reader({ memory: m }: { memory: Memory }) {
+export function Reader({ memory: m }: { memory: Memory }) {
   const projects = useList(projectsAtom)
   const agents = useList(agentsAtom)
   const chats = useList(chatsAtom)
@@ -303,7 +127,7 @@ function Reader({ memory: m }: { memory: Memory }) {
       {!editing && (
         <div className="flex flex-wrap gap-2">
           {m.state === "pending" && (
-            <Button size="sm" variant="default" onPress={() => void patch({ state: "active" }).then((applied) => applied.id !== m.id && go({ view: "knowledge", id: applied.id }))}>
+            <Button size="sm" variant="default" onPress={() => void patch({ state: "active" }).then((applied) => applied.id !== m.id && openMemory(applied))}>
               {target ? t("knowledge.applyImprovement") : t("knowledge.approve")}
             </Button>
           )}
@@ -365,7 +189,7 @@ function MemoryVersions({ memory: m }: { memory: Memory }) {
   )
 }
 
-function NewMemory({ kind, onKind, onDone }: { kind: Memory["kind"]; onKind: (k: Memory["kind"]) => void; onDone: (id?: string) => void }) {
+export function NewMemory({ kind, onKind, onDone }: { kind: Memory["kind"]; onKind?: ((k: Memory["kind"]) => void) | undefined; onDone: (id?: string) => void }) {
   const projects = useList(projectsAtom)
   const agents = useList(agentsAtom)
   const create = useMutation(mutations.createMemory)
@@ -383,7 +207,7 @@ function NewMemory({ kind, onKind, onDone }: { kind: Memory["kind"]; onKind: (k:
     >
       <h2 className="text-lg font-semibold">{skill ? t("knowledge.newSkill") : t("knowledge.newFact")}</h2>
       <div className="flex flex-wrap gap-3">
-        <Field label={t("knowledge.kind")} className="w-40">
+        {onKind && <Field label={t("knowledge.kind")} className="w-40">
           <Select
             value={kind}
             onChange={(v) => onKind(v as Memory["kind"])}
@@ -393,7 +217,7 @@ function NewMemory({ kind, onKind, onDone }: { kind: Memory["kind"]; onKind: (k:
               { value: "skill", label: t("knowledge.skill") }
             ]}
           />
-        </Field>
+        </Field>}
         <Field label={t("knowledge.scope")} className="min-w-56 flex-1">
           <Select
             value={scope}
