@@ -225,7 +225,10 @@ export function Composer({
         </div>
       )}
       <div className="flex items-end gap-1">
-        <EditorContent editor={editor} className="min-w-0 flex-1 self-center pl-1" />
+        <IconButton label={t("composer.attach")} className="size-control" isDisabled={files.length >= MAX_ATTACHMENTS} onPress={() => void pickFiles().then(attach)}>
+          <Plus />
+        </IconButton>
+        <EditorContent editor={editor} className="min-w-0 flex-1 self-center" />
         {busy && onStop && (
           <Tooltip content={t("composer.stop")}>
             <IconButton label={t("composer.stop")} variant="secondary" shape="pill" size="md" onPress={onStop}>
@@ -245,14 +248,9 @@ export function Composer({
         </p>
       )}
     </form>
-    {/* Under the box, outside it: attach, then the message's controls (model, access, context). The box keeps only
-        the text, Stop and Send. */}
-    <div className="flex min-w-0 items-center gap-0.5 px-1">
-      <IconButton label={t("composer.attach")} size="sm" isDisabled={files.length >= MAX_ATTACHMENTS} onPress={() => void pickFiles().then(attach)}>
-        <Plus />
-      </IconButton>
-      {tools}
-    </div>
+    {/* Under the box, outside it: the message's controls (model, access, context). The box keeps attach, the text,
+        Stop and Send. */}
+    {tools && <div className="flex min-w-0 items-center gap-0.5 px-1">{tools}</div>}
     </div>
   )
 }
