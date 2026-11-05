@@ -8,7 +8,7 @@ import { agentsAtom, mutations, projectsAtom, useList, useMutation, useStatuses 
 import { exportAgent, importedAgent } from "./agent.tsx"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { AgentAvatar, Bot, Button, ChevronDown, ChevronRight, Column, ConfirmDialog, Dot, Download, EmptyState, IconButton, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, Section, Sparkles, Trash2, Upload } from "@/ui"
+import { AgentAvatar, Bot, Button, ChevronDown, ChevronRight, ConfirmDialog, Dot, Download, EmptyState, IconButton, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, RowHit, Screen, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
 
 // The agents working now (a chat of theirs is running or waiting).
 export function useWorking() {
@@ -64,6 +64,57 @@ export function AgentRow({ agent, agents, working, onDelete }: { agent: Agent; a
         </Menu>
       </span>
     </div>
+  )
+}
+
+// One agent as a card (the Agents screen, like the Builder's review): face, name (and "working"), role, what it does,
+// how it runs. The whole card opens its page; the ⋯ menu sits on top of it.
+function AgentCard({ agent, agents, working, onDelete }: { agent: Agent; agents: ReadonlyArray<Agent>; working: boolean; onDelete: (a: Agent) => void }) {
+  return (
+    <article className="relative flex flex-col gap-3 rounded-card border border-subtle p-4 transition-colors duration-120 hover:border-strong motion-reduce:transition-none">
+      <RowHit label={t("agents.open") + ": " + agent.name} onPress={() => go({ view: "agent", id: agent.id })} className="inset-0 rounded-card data-hovered:bg-transparent" />
+      <div className="pointer-events-none relative flex items-center gap-3 pr-8">
+        <AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={40} />
+        <span className="flex min-w-0 flex-col">
+          <span className="flex items-center gap-2 truncate font-medium">
+            {agent.name}
+            {working && (
+              <span className="inline-flex items-center gap-1 text-sm font-normal text-accent-text">
+                <Dot tone="accent" />
+                {t("agents.working")}
+              </span>
+            )}
+          </span>
+          {agent.title && <span className="truncate text-sm text-muted">{agent.title}</span>}
+        </span>
+      </div>
+      {agent.description && <p className="pointer-events-none relative line-clamp-2 text-secondary">{agent.description}</p>}
+      <div className="pointer-events-none relative mt-auto flex flex-wrap gap-1.5">
+        <Tag hint={t("builder.runsOnHint")}>{t("builder.runsOn", { model: modelLabel(agent.model) })}</Tag>
+        <Tag hint={t(`access.${agent.access}Hint`)}>{t("builder.accessIs", { access: t(`access.${agent.access}`) })}</Tag>
+      </div>
+      <span className="absolute top-3 right-3">
+        <Menu
+          label={t("agents.actions", { name: agent.name })}
+          trigger={
+            <IconButton label={t("agents.actions", { name: agent.name })}>
+              <MoreHorizontal />
+            </IconButton>
+          }
+        >
+          <MenuItem icon={<ChevronRight />} onAction={() => go({ view: "agent", id: agent.id })}>
+            {t("agents.open")}
+          </MenuItem>
+          <MenuItem icon={<Download />} onAction={() => exportAgent(agent)}>
+            {t("agent.export")}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem icon={<Trash2 />} tone="danger" onAction={() => onDelete(agent)}>
+            {t("agent.deleteAction")}
+          </MenuItem>
+        </Menu>
+      </span>
+    </article>
   )
 }
 
@@ -146,7 +197,8 @@ export function AgentsView() {
   const team = agents.filter((a) => !a.builtin)
   return (
     <Screen title={t("agents.title")} subtitle={t("agents.subtitle")} actions={<NewAgentMenu />}>
-      <Column>
+      {/* Wider than a settings column: the agents are cards, two per row. */}
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-8 py-8">
         {team.length === 0 ? (
           <EmptyState
             icon={<Bot />}
@@ -164,15 +216,15 @@ export function AgentsView() {
             .filter((g) => g.list.length > 0)
             .map((g) => (
               <Section key={g.id ?? "global"} title={g.name} description={g.hint} action={g.id ? <NewAgentMenu projectId={g.id} projectName={g.name} compact /> : undefined}>
-                <Rows>
+                <div className="grid gap-3 lg:grid-cols-2">
                   {g.list.map((a) => (
-                    <AgentRow key={a.id} agent={a} agents={agents} working={working.has(a.id)} onDelete={del.ask} />
+                    <AgentCard key={a.id} agent={a} agents={agents} working={working.has(a.id)} onDelete={del.ask} />
                   ))}
-                </Rows>
+                </div>
               </Section>
             ))
         )}
-      </Column>
+      </div>
       {del.dialog}
     </Screen>
   )

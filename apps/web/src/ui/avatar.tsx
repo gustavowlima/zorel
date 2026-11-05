@@ -11,7 +11,15 @@ import { cn } from "@/lib/utils"
 import { ProviderIcon } from "./provider-icon"
 
 const TONE_COUNT = 6 // --z-agent-1..6 in styles.css
-const TILES = ["bg-agent-1/15", "bg-agent-2/15", "bg-agent-3/15", "bg-agent-4/15", "bg-agent-5/15", "bg-agent-6/15"] as const
+// Solid tiles (the agent's color mixed into the raised tone), so overlapping faces don't show through each other.
+const TILES = [
+  "bg-[color-mix(in_oklch,var(--color-agent-1)_22%,var(--color-raised))]",
+  "bg-[color-mix(in_oklch,var(--color-agent-2)_22%,var(--color-raised))]",
+  "bg-[color-mix(in_oklch,var(--color-agent-3)_22%,var(--color-raised))]",
+  "bg-[color-mix(in_oklch,var(--color-agent-4)_22%,var(--color-raised))]",
+  "bg-[color-mix(in_oklch,var(--color-agent-5)_22%,var(--color-raised))]",
+  "bg-[color-mix(in_oklch,var(--color-agent-6)_22%,var(--color-raised))]"
+] as const // written out: Tailwind only builds classes it can read in the source
 const SIZES = { 16: "size-4 rounded-[5px] text-[9px]", 20: "size-5 rounded-[6px] text-[11px]", 28: "size-7 rounded-[9px] text-xs", 32: "size-8 rounded-[10px] text-base", 40: "size-10 rounded-[12px] text-lg" } as const
 const FIGURE = 0.82 // the object's share of its tile
 

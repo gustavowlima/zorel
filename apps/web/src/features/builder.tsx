@@ -14,7 +14,7 @@ import { PendingTray, Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
-import { AgentAvatar, Button, Check, ChevronRight, cx, Folder, PageHeader, Pencil, Section, Select, Sparkles, Spinner } from "@/ui"
+import { AgentAvatar, Button, Check, ChevronRight, cx, Folder, PageHeader, Pencil, Section, Select, Sparkles, Spinner, Tag } from "@/ui"
 
 const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builder.suggest.docs", "builder.suggest.team"] as const
 type Step = "describe" | "powers"
@@ -131,7 +131,7 @@ function Conversation({ chat, side = false }: { chat: Chat; side?: boolean }) {
           onStop={() => void interrupt({ payload: { chatId: chat.id } })}
           onSubmit={submit}
           upload={(f) => uploadAttachment(chat.id, f)}
-          placeholder={side ? t("builder.refinePlaceholder") : t("builder.placeholder")}
+          placeholder={side ? "" : t("builder.placeholder")}
           tools={
             <ModelPicker
               value={model}
@@ -404,7 +404,7 @@ function ProposalReview({ drafts, single, busy, reason, onCreate, onDecline }: {
 function AgentReview({ draft, tone }: { draft: Draft; tone: number }) {
   const f = draft.fields
   const [more, setMore] = useState(false)
-  const facts = [f.model && modelLabel(f.model), f.access && t(`access.${f.access as "workspace" | "ask" | "full"}`)].filter(Boolean)
+  const access = f.access === "ask" || f.access === "full" ? f.access : f.access ? "workspace" : undefined
   const powers = [f.web === "true" && t("builder.web"), f.browser === "true" && t("builder.browser"), f.connectors && f.connectors !== "none" && f.connectors].filter(Boolean)
   return (
     <article className="flex flex-col gap-3 rounded-card border border-subtle p-4">
@@ -417,11 +417,9 @@ function AgentReview({ draft, tone }: { draft: Draft; tone: number }) {
       </div>
       {f.description && <p className="text-secondary">{f.description}</p>}
       <div className="flex flex-wrap gap-1.5">
-        {[...facts, powers.length ? t("builder.reaches", { what: powers.join(", ") }) : t("builder.reachesNothing")].map((x) => (
-          <span key={x} className="rounded-control bg-control px-2 py-0.5 text-sm text-secondary">
-            {x}
-          </span>
-        ))}
+        {f.model && <Tag hint={t("builder.runsOnHint")}>{t("builder.runsOn", { model: modelLabel(f.model) })}</Tag>}
+        {access && <Tag hint={t(`access.${access}Hint`)}>{t("builder.accessIs", { access: t(`access.${access}`) })}</Tag>}
+        <Tag hint={t("builder.reachesHint")}>{powers.length ? t("builder.reaches", { what: powers.join(", ") }) : t("builder.reachesNothing")}</Tag>
       </div>
       {f.instructions && (
         <div className="mt-auto flex flex-col gap-1 border-t border-subtle pt-3">

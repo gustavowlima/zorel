@@ -117,11 +117,11 @@ export const Code = ({ children, className }: { children: ReactNode; className?:
 // and on hover a faint wash inset inside the hairlines (never a card over them). The whole row is one button (an
 // overlay under the content); `trailing` holds a control of its own (a "Sign in"), pressable on top of it.
 // A whole row as one press target (the row's content stays on top, unpressable): hover tint inside the hairlines.
-export const RowHit = ({ label, onPress }: { label: string; onPress: () => void }) => (
+export const RowHit = ({ label, onPress, className }: { label: string; onPress: () => void; className?: string }) => (
   <AriaButton
     aria-label={label}
     onPress={onPress}
-    className="absolute -inset-x-2.5 inset-y-1 cursor-default rounded-control outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:bg-hover data-pressed:bg-control-active motion-reduce:transition-none"
+    className={cn("absolute -inset-x-2.5 inset-y-1 cursor-default rounded-control outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:bg-hover data-pressed:bg-control-active motion-reduce:transition-none", className)}
   />
 )
 

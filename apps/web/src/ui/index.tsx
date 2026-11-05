@@ -30,7 +30,7 @@ export { SortableList } from "./sortable"
 export { NavItem, NavLabel, NavTree, NavTreeItem, type NavKey, useNavReorder } from "./nav"
 export { I18nProvider } from "react-aria-components" // React Aria's own strings follow Zorel's language
 export { FieldButton, OptionButton, RailButton } from "./picker"
-export { DisclosurePill, Dot } from "./pill"
+export { DisclosurePill, Dot, Tag } from "./pill"
 export { Popover } from "./popover"
 export { ProviderIcon } from "./provider-icon"
 export { Select, type SelectOption } from "./select"

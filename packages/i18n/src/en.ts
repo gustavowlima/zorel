@@ -1176,7 +1176,6 @@ export const en = {
     reviewOne: "Review the agent",
     untilYouApprove: "nothing is created until you approve",
     refineHint: "Want changes? Ask the Builder on the right; it updates the proposal.",
-    refinePlaceholder: "Ask for changes…",
     readyHint: "The proposal is ready to review. Create it there, or tell me here what to change.",
     howTitle: "How it works",
     how: {
@@ -1191,6 +1190,10 @@ export const en = {
     web: "web",
     browser: "its own browser",
     reaches: "Reaches: {what}",
+    reachesHint: "What it can use beyond the project folder: the web, its own browser, connectors.",
+    runsOn: "Runs on {model}",
+    runsOnHint: "The tool and the model it works with, on your own sign-in.",
+    accessIs: "Access: {access}",
     reachesNothing: "Reaches only its folder",
     more: "Show all instructions",
     less: "Show less",
