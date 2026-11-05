@@ -7,6 +7,9 @@
 @import "shadcn/tailwind.css";
 
 /* `dark:` applies in the dark theme, which is the default (there is no .dark class). */
+/* A trigger whose menu, list or popover is open: React Aria marks a menu or select trigger (aria-haspopup +
+   aria-expanded); a dialog popover's trigger has no aria-haspopup, so Popover wraps it in [data-popup-open]. */
+@custom-variant popup-open (&:is([aria-haspopup][aria-expanded="true"], [data-popup-open] > *));
 @custom-variant dark (&:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *));
 
 :root {
@@ -226,6 +229,13 @@ html, body, #root { height: 100%; }
 /* An app shell: the document itself never scrolls (each region scrolls on its own). Absolutely placed helpers
    (React Aria's hidden native selects) are contained by the card and the screen bodies, which are relative. */
 html, body { overflow: hidden; overscroll-behavior: none; }
+
+/* Focus as in a native app: the ring shows once the keyboard moves focus (Tab) and goes with the next pointer
+   press (main.tsx sets data-keyboard). Without it, focus coming back to a trigger after a menu or select closes
+   would draw a ring, a web page's habit. Text fields keep their border change; keyboard users keep every ring. */
+:root:not([data-keyboard]) :is([data-focus-visible], :focus-visible) { --tw-ring-shadow: 0 0 #0000 !important; --tw-ring-offset-shadow: 0 0 #0000 !important; }
+/* An app never drags a ghost of its images or links. */
+img, svg, a { -webkit-user-drag: none; }
 
 /* Browser surfaces in the palette (selection, caret, scrollbars): the parts no component draws. */
 ::selection { background: var(--z-accent-soft); color: var(--z-text); }

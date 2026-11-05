@@ -7,8 +7,8 @@ import { agentsAtom, chatsAtom, mutations, projectsAtom, useList, useMutation, u
 import { agentTone, chatTitle, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
-import { AgentCard, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
-import { AgentAvatar, ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, ChoiceCards, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, IconTile, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, Rows, Screen, Section, Tab, TabList, TabPanel, Tabs, Textarea, Trash2 } from "@/ui"
+import { AgentItem, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
+import { AgentAvatar, ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, ChoiceCards, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, IconTile, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, RowHit, Rows, Screen, Section, Select, Tab, TabList, TabPanel, Tabs, Textarea, Trash2 } from "@/ui"
 
 // The reason a folder was refused (WorkspaceInvalid), in words.
 const REASONS = ["relative", "missing", "not_directory", "forbidden"] as const
@@ -285,6 +285,9 @@ export function ProjectView({ project, tab }: { project: Project; tab: ProjectTa
   )
 }
 
+// A long team shows its first faces and a "+N more" that opens the Agents tab.
+const TEAM_SHOWN = 8
+
 function Overview({ project }: { project: Project }) {
   const update = useMutation(mutations.updateProject)
   const chats = useList(chatsAtom).filter((c) => c.projectId === project.id)
@@ -301,36 +304,39 @@ function Overview({ project }: { project: Project }) {
     setPathError(undefined)
   }, [project])
   const dirty = name !== project.name || brief !== project.brief || path.trim() !== (project.path ?? "")
+  // Who answers first leads the row.
+  const team = agents
+    .filter((a) => !a.builtin && (a.projectId === project.id || a.projectId === null))
+    .sort((a, b) => Number(b.id === project.defaultAgentId) - Number(a.id === project.defaultAgentId))
   return (
-    <div className="flex flex-col gap-8">
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(e) => {
-          e.preventDefault()
-          setPathError(undefined)
-          update({ params: { id: project.id }, payload: { name: name.trim(), brief, path: path.trim() || null }, reactivityKeys: ["projects"] }).catch((e: unknown) =>
-            setPathError(folderError(e))
-          )
-        }}
-      >
-        <Field label={t("project.name")}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
-        </Field>
-        <Field label={t("workspace.folder")} hint={pathError ? <span className="text-danger">{pathError}</span> : t("workspace.folderHint")}>
-          <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder={t("workspace.folderPlaceholder")} spellCheck={false} className="font-mono" />
-        </Field>
-        <Field label={t("project.brief")} hint={t("project.briefHint")}>
-          <Textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={7} maxLength={8000} />
-        </Field>
-        {dirty && (
-          <div className="flex items-center gap-3">
-            <Button type="submit" variant="default" isDisabled={!name.trim()}>
-              {t("common.save")}
+    <div className="flex flex-col gap-10">
+      {/* The team first: who answers here is part of the project, not a setting buried in a tab. */}
+      {team.length > 0 && (
+        <Section
+          title={t("project.team")}
+          description={t("project.teamHint")}
+          action={
+            <Button size="sm" variant="ghost" onPress={() => go({ view: "project", id: project.id, tab: "agents" })}>
+              {t("project.manageTeam")}
             </Button>
-            <span className="text-sm text-muted">{t("project.unsaved")}</span>
+          }
+        >
+          <div className="flex flex-wrap gap-1.5">
+            {team.slice(0, TEAM_SHOWN).map((a) => (
+              <Button key={a.id} size="sm" variant="secondary" shape="pill" className="pl-1" onPress={() => go({ view: "agent", id: a.id })}>
+                <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} />
+                {a.name}
+                {a.id === project.defaultAgentId && <span className="text-muted">· {t("project.answersFirst")}</span>}
+              </Button>
+            ))}
+            {team.length > TEAM_SHOWN && (
+              <Button size="sm" variant="ghost" shape="pill" onPress={() => go({ view: "project", id: project.id, tab: "agents" })}>
+                {t("project.moreAgents", { count: team.length - TEAM_SHOWN })}
+              </Button>
+            )}
           </div>
-        )}
-      </form>
+        </Section>
+      )}
       <Section title={t("project.chats")}>
         {chats.length === 0 ? (
           <p className="text-muted">{t("project.noChats")}</p>
@@ -342,15 +348,46 @@ function Overview({ project }: { project: Project }) {
                 const s = statuses[c.id]
                 const live = s && s.state !== "idle" ? s : undefined
                 return (
-                  <Button key={c.id} variant="ghost" className="h-11 justify-start gap-3 rounded-none px-1 font-normal text-fg" onPress={() => go({ view: "chat", id: c.id })}>
-                    {live ? <ChatStatusIcon state={live.state === "idle" ? "running" : live.state} /> : <MessageCircle className="text-muted" />}
-                    <span className="min-w-0 flex-1 truncate text-left">{chatTitle(c)}</span>
-                    <span className="shrink-0 text-sm text-muted">{live ? statusLabel(live, agents) : formatAge(c.createdAt)}</span>
-                  </Button>
+                  <div key={c.id} className="relative flex h-11 items-center gap-3">
+                    <RowHit label={chatTitle(c)} onPress={() => go({ view: "chat", id: c.id })} />
+                    <span className="pointer-events-none relative flex [&_svg]:size-4">{live ? <ChatStatusIcon state={live.state === "idle" ? "running" : live.state} /> : <MessageCircle className="text-muted" />}</span>
+                    <span className="pointer-events-none relative min-w-0 flex-1 truncate">{chatTitle(c)}</span>
+                    <span className="pointer-events-none relative shrink-0 text-sm text-muted">{live ? statusLabel(live, agents) : formatAge(c.createdAt)}</span>
+                  </div>
                 )
               })}
           </Rows>
         )}
+      </Section>
+      <Section title={t("project.about")}>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            setPathError(undefined)
+            update({ params: { id: project.id }, payload: { name: name.trim(), brief, path: path.trim() || null }, reactivityKeys: ["projects"] }).catch((e: unknown) =>
+              setPathError(folderError(e))
+            )
+          }}
+        >
+          <Field label={t("project.name")}>
+            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
+          </Field>
+          <Field label={t("workspace.folder")} hint={pathError ? <span className="text-danger">{pathError}</span> : t("workspace.folderHint")}>
+            <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder={t("workspace.folderPlaceholder")} spellCheck={false} className="font-mono" />
+          </Field>
+          <Field label={t("project.brief")} hint={t("project.briefHint")}>
+            <Textarea value={brief} onChange={(e) => setBrief(e.target.value)} rows={7} maxLength={8000} />
+          </Field>
+          {dirty && (
+            <div className="flex items-center gap-3">
+              <Button type="submit" variant="default" isDisabled={!name.trim()}>
+                {t("common.save")}
+              </Button>
+              <span className="text-sm text-muted">{t("project.unsaved")}</span>
+            </div>
+          )}
+        </form>
       </Section>
     </div>
   )
@@ -368,33 +405,46 @@ function Agents({ projectId }: { projectId: string }) {
     <div className="flex flex-col gap-12">
       {/* Who a new chat in the project starts with: the faces to pick from, not a dropdown of names. */}
       <Section title={t("project.defaultAgent")} description={t("project.defaultAgentHint")}>
-        <ChoiceCards
-          grid
-          label={t("project.defaultAgent")}
-          value={project?.defaultAgentId ?? ""}
-          onChange={(v) => void update({ params: { id: projectId }, payload: { defaultAgentId: v || null }, reactivityKeys: ["projects"] })}
-          options={[
-            { value: "", title: t("project.plainChat"), description: t("project.plainChatHint"), icon: <IconTile size="lg" className="text-muted"><MessageCircle /></IconTile> },
-            ...choices.map((a) => ({
-              value: a.id,
-              title: a.name,
-              description: a.title || (a.projectId ? t("project.onlyHere") : t("agents.global")),
-              icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={40} />
-            }))
-          ]}
-        />
+        {choices.length > TEAM_SHOWN ? (
+          <Select
+            className="max-w-sm"
+            aria-label={t("project.defaultAgent")}
+            searchLabel={t("agents.search")}
+            emptyLabel={t("agents.noMatch")}
+            value={project?.defaultAgentId ?? ""}
+            onChange={(v) => void update({ params: { id: projectId }, payload: { defaultAgentId: v || null }, reactivityKeys: ["projects"] })}
+            options={[
+              { value: "", label: t("project.plainChat"), icon: <MessageCircle className="size-4 text-muted" /> },
+              ...choices.map((a) => ({ value: a.id, label: a.name, icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} /> }))
+            ]}
+          />
+        ) : (
+          <ChoiceCards
+            grid
+            label={t("project.defaultAgent")}
+            value={project?.defaultAgentId ?? ""}
+            onChange={(v) => void update({ params: { id: projectId }, payload: { defaultAgentId: v || null }, reactivityKeys: ["projects"] })}
+            options={[
+              { value: "", title: t("project.plainChat"), description: t("project.plainChatHint"), icon: <IconTile size="lg" className="text-muted"><MessageCircle /></IconTile> },
+              ...choices.map((a) => ({
+                value: a.id,
+                title: a.name,
+                description: a.title || (a.projectId ? t("project.onlyHere") : t("agents.global")),
+                icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={40} />
+              }))
+            ]}
+          />
+        )}
       </Section>
       <Section title={t("project.ownAgents")} description={t("project.ownAgentsHint")} action={mine.length > 0 && <NewAgentMenu projectId={projectId} />}>
         {mine.length === 0 ? (
-          <div className="rounded-card border border-dashed border-subtle">
-            <EmptyState icon={<Bot />} title={t("project.noAgents")} hint={t("project.noAgentsHint")} action={<NewAgentMenu projectId={projectId} />} />
-          </div>
+          <EmptyState icon={<Bot />} title={t("project.noAgents")} hint={t("project.noAgentsHint")} action={<NewAgentMenu projectId={projectId} />} />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <Rows>
             {mine.map((a) => (
-              <AgentCard key={a.id} agent={a} agents={agents} working={working.has(a.id)} onDelete={del.ask} />
+              <AgentItem key={a.id} agent={a} agents={agents} working={working.has(a.id)} onDelete={del.ask} />
             ))}
-          </div>
+          </Rows>
         )}
       </Section>
       {del.dialog}

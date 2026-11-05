@@ -22,3 +22,13 @@
 2026-11-05 | IconTile, Notice; hairline lists through Rows; check:ui hand-list, hand-notice | ideas from the old design-system-pass worktree, rewritten on current main
 2026-11-05 | agent avatars from open-bot-avatar in a tinted tile; Builder review takes the middle | user asked for friendlier avatars and a clearer proposal panel
 2026-11-05 | project agent picker as avatar tiles, Builder chat fixed right, model per card | user: too compact, Assistant label, customize before create
+2026-11-05 | FacePicker on home, project overview Team→Chats→About, sidebar folds under 900px | user asked for a more intuitive, fluid UI after OpenBot
+2026-11-05 | FacePicker removed; Select gets option icons + search past 8 options | user: a row of faces does not scale to hundreds of agents
+2026-11-05 | floating lists unified (focus blue, float surface, 6px rows), open triggers lit, popover body shrinks, team picker search | user asked for layout+polish of menus, inputs, selects, dropdowns
+2026-11-05 | Popover triggers light while open (data-popup-open wrapper); context menu checked on screen | leftover items from the menus/selects polish
+2026-11-05 | page sections become grouped cards (Rows) with SettingRow; replaces "rows on the canvas, never in cards" | user preferred the grouped-inset settings style
+2026-11-05 | grouped settings adopted as the standard; check:ui hand-setting-row | user approved after seeing it in dev
+2026-11-05 | focus rings only during keyboard navigation; home picks who answers with # (agent select removed) | user: blue ring after closing a select felt like a web page; # already does what the select did
+2026-11-05 | model picker reasoning tabs → StepSlider footer; footer text removed, Providers gear on the rail | user found the picker cluttered
+2026-11-05 | picker: fixed body height, unavailable providers just point to their settings page | user: squeezed rail, no "Add key" instructions in the picker
+2026-11-05 | agent pages: rows instead of cards, grouped profile with kept drafts, filtered Knowledge route, routines dialog, Builder recovery; DESIGN.md one spec per surface | impeccable critique of agent pages, user: apply all

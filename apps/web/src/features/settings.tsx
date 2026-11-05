@@ -15,7 +15,7 @@ import { ProvidersSection } from "./providers.tsx"
 import { ReadingState } from "./reading.tsx"
 import { ProcessesSection } from "./processes.tsx"
 import { StorageSection } from "./storage.tsx"
-import { Activity, ArrowRight, BookOpen, Button, EmptyState, FolderOpen, HardDrive, History, NavItem, Plug, Rows, Screen, SearchInput, Section, Segmented, Settings, Sparkles, Switch } from "@/ui"
+import { Activity, ArrowRight, BookOpen, Button, EmptyState, FolderOpen, HardDrive, History, NavItem, Plug, Rows, Screen, SearchInput, Section, Segmented, SettingRow, Settings, Sparkles, Switch } from "@/ui"
 
 const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, skills: <BookOpen />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
 
@@ -132,13 +132,9 @@ function NativeSkills() {
   return (
     <Section title={t("skills.nativeTitle")}>
       <Rows>
-        <div className="flex items-center gap-3 py-3.5">
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="font-medium">{t("skills.native")}</span>
-            <span className="text-sm text-muted">{t("skills.nativeHint")}</span>
-          </span>
+        <SettingRow title={t("skills.native")} hint={t("skills.nativeHint")}>
           <Switch aria-label={t("skills.native")} isSelected={!!prefs?.nativeSkills} isDisabled={!prefs} onChange={(enabled) => void set({ payload: { enabled }, reactivityKeys: ["preferences"] })} />
-        </div>
+        </SettingRow>
       </Rows>
     </Section>
   )
@@ -226,13 +222,9 @@ function DesktopSwitch({ item, title, hint }: { item: LoginItem; title: string; 
     void item.get().then(setOn)
   }, [item])
   return (
-    <div className="flex items-center gap-3 py-3.5">
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="font-medium">{title}</span>
-        <span className="text-sm text-muted">{hint}</span>
-      </span>
+    <SettingRow title={title} hint={hint}>
       <Switch aria-label={title} isSelected={!!on} isDisabled={on === undefined} onChange={(v) => void item.set(v).then(setOn)} />
-    </div>
+    </SettingRow>
   )
 }
 function StartupSetting() {
@@ -256,11 +248,7 @@ function AboutSetting() {
   return (
     <Section title={t("appearance.about")}>
       <Rows>
-        <div className="flex flex-wrap items-center gap-3 py-3.5">
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="font-medium tabular-nums">{t("appearance.version", { version: __ZOREL_VERSION__ })}</span>
-            <span className="text-sm text-muted">{check ? t(CHECK_TEXT[check]) : t("appearance.versionHint")}</span>
-          </span>
+        <SettingRow title={<span className="tabular-nums">{t("appearance.version", { version: __ZOREL_VERSION__ })}</span>} hint={check ? t(CHECK_TEXT[check]) : t("appearance.versionHint")}>
           {updates && (
             <Button
               size="sm"
@@ -274,7 +262,7 @@ function AboutSetting() {
               {t("appearance.checkUpdates")}
             </Button>
           )}
-        </div>
+        </SettingRow>
       </Rows>
     </Section>
   )
@@ -288,11 +276,7 @@ function General() {
     <>
     <Section title={t("appearance.title")}>
       <Rows>
-        <div className="flex flex-wrap items-center gap-3 py-3.5">
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="font-medium">{t("appearance.theme")}</span>
-            <span className="text-sm text-muted">{t("appearance.themeHint")}</span>
-          </span>
+        <SettingRow title={t("appearance.theme")} hint={t("appearance.themeHint")}>
           <Segmented
             label={t("appearance.theme")}
             value={pref}
@@ -302,7 +286,7 @@ function General() {
             }}
             options={(["system", "dark", "light"] as const).map((p) => ({ id: p, label: t(`appearance.${p}`) }))}
           />
-        </div>
+        </SettingRow>
       </Rows>
     </Section>
     <Section title={t("appearance.notifications")}>

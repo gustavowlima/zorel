@@ -1,13 +1,14 @@
-// An agent's routines (phase 7), on its page: recurring or triggered work that runs as a message in the routine's
-// own chat. Each row: name, when it runs next (or "on demand"), on/off, Run now, its chat, and its webhook URL
-// when it has one. New ones from a short form with schedule presets (or a cron pattern); agents can also propose
-// them from a chat (zorel_routines), as approval cards.
+// An agent's routines (phase 7), on its page and on the Routines screen: recurring or triggered work that runs as a
+// message in the routine's own chat. Each row: name, when it runs next (or "on demand"), Run now and on/off, and in
+// ⋯ its chat, its webhook URL and delete. New ones in a dialog with schedule presets (or a cron pattern); agents can
+// also propose them from a chat (zorel_routines), as approval cards.
 import type { Agent, Routine } from "@zorel/contracts"
 import { formatAge, formatTime, t } from "@zorel/i18n"
 import { useState } from "react"
 import { agentsAtom, mutations, routinesAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
+import { agentTone } from "../labels.ts"
 import { go } from "../state.ts"
-import { AlarmClock, Button, Column, EmptyState, Screen, ConfirmDialog, Copy, Field, IconButton, Input, MessageCircle, Play, Plus, Rows, Section, Select, Switch, Textarea, Tooltip, Trash2 } from "@/ui"
+import { AgentAvatar, AlarmClock, Button, Column, ConfirmDialog, Copy, Dialog, EmptyState, Field, IconButton, Input, Menu, MenuItem, MenuSeparator, MessageCircle, MoreHorizontal, Play, Plus, Rows, Screen, Section, Select, Switch, Textarea, Tooltip, Trash2 } from "@/ui"
 
 const PRESETS = [
   { value: "0 * * * *", key: "hourly" },
@@ -21,24 +22,43 @@ const PRESETS = [
 const when = (r: Routine) =>
   !r.enabled ? t("routines.off") : r.nextRunAt ? t("routines.next", { when: formatTime(r.nextRunAt) }) : t("routines.onDemand")
 
-// Every agent's routines on one page, one section per agent (the agent's name opens its page).
+// Every agent's routines on one page, one section per agent (the agent's name opens its page). "New routine" asks
+// which agent runs it.
 export function RoutinesView() {
   const agents = useList(agentsAtom)
   const routines = useReading(routinesAtom).items
-  const withRoutines = agents.filter((a) => routines.some((r) => r.agentId === a.id))
+  const team = agents.filter((a) => !a.builtin)
+  const withRoutines = team.filter((a) => routines.some((r) => r.agentId === a.id))
+  const [adding, setAdding] = useState(false)
+  const newButton = (variant: "default" | "secondary") =>
+    team.length ? (
+      <Button size="sm" variant={variant} onPress={() => setAdding(true)}>
+        <Plus />
+        {t("routines.new")}
+      </Button>
+    ) : (
+      <Button size="sm" variant={variant} onPress={() => go({ view: "agents" })}>
+        {t("routines.noAgents")}
+      </Button>
+    )
   return (
-    <Screen title={t("routines.title")} subtitle={t("routines.pageHint")}>
-      <Column>
+    <Screen title={t("routines.title")} subtitle={t("routines.pageHint")} actions={withRoutines.length > 0 && newButton("secondary")}>
+      <Column className="gap-10">
         {withRoutines.length === 0 ? (
-          <EmptyState icon={<AlarmClock />} title={t("routines.emptyTitle")} hint={t("routines.emptyHint")} action={<Button size="sm" variant="secondary" onPress={() => go({ view: "agents" })}>{t("nav.agents")}</Button>} />
+          <EmptyState icon={<AlarmClock />} title={t("routines.emptyTitle")} hint={t("routines.emptyHint")} action={newButton("default")} />
         ) : (
           withRoutines.map((a) => <AgentRoutines key={a.id} agent={a} title={a.name} />)
         )}
       </Column>
+      <Dialog title={t("routines.new")} size="lg" isOpen={adding} onOpenChange={setAdding}>
+        {(close) => <NewRoutine onDone={close} />}
+      </Dialog>
     </Screen>
   )
 }
 
+// One agent's routines: a group of rows (name; when it runs next and how the last run went; Run now, ⋯ and on/off on
+// the right; its chat, its webhook and delete in ⋯). With a webhook, its URL on a muted line.
 export function AgentRoutines({ agent, title }: { agent: Agent; title?: string }) {
   const all = useReading(routinesAtom).items
   const mine = all.filter((r) => r.agentId === agent.id)
@@ -55,59 +75,67 @@ export function AgentRoutines({ agent, title }: { agent: Agent; title?: string }
       title={title ? <Button variant="ghost" className="-ml-2 h-auto px-2 py-0.5 text-sm font-medium text-muted" onPress={() => go({ view: "agent", id: agent.id })}>{title}</Button> : t("routines.title")}
       description={title ? undefined : t("routines.hint")}
       action={
-        !adding && (
-          <Button size="sm" variant="ghost" onPress={() => setAdding(true)}>
-            <Plus />
-            {t("routines.new")}
-          </Button>
-        )
+        <Button size="sm" variant="ghost" onPress={() => setAdding(true)}>
+          <Plus />
+          {t("routines.new")}
+        </Button>
       }
     >
-      {adding && <NewRoutine agent={agent} onDone={() => setAdding(false)} />}
-      {mine.length > 0 && (
-        <Rows>
-          {mine.map((r) => (
-            <div key={r.id} className="flex flex-col gap-1 py-2.5">
-              <div className="flex items-center gap-2">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate">{r.name}</span>
-                  <span className="truncate text-sm text-muted">
-                    {[when(r), r.cron, r.lastRunAt && t(`routines.last.${r.lastStatus ?? "started"}`, { age: formatAge(r.lastRunAt) })].filter(Boolean).join(" · ")}
-                  </span>
+      <Rows>
+        {mine.length === 0 && <p className="py-3.5 text-muted">{t("routines.none")}</p>}
+        {mine.map((r) => (
+          <div key={r.id} className="flex flex-col gap-1 py-3">
+            <div className="flex items-center gap-2">
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate font-medium">{r.name}</span>
+                <span className="truncate text-sm text-muted">
+                  {[when(r), r.lastRunAt && t(`routines.last.${r.lastStatus ?? "started"}`, { age: formatAge(r.lastRunAt) })].filter(Boolean).join(" · ")}
                 </span>
-                <Tooltip content={t("routines.openChat")}>
-                  <IconButton label={t("routines.openChat")} size="xs" onPress={() => go({ view: "chat", id: r.chatId })}>
-                    <MessageCircle className="size-3.5" />
+              </span>
+              <Tooltip content={t("routines.runNow")}>
+                <IconButton
+                  label={t("routines.runNow")}
+                  onPress={() => {
+                    setError(undefined)
+                    void runNow({ params: { id: r.id }, ...keys })
+                      .then(() => invalidate(["chats"]))
+                      .catch(() => setError(t("routines.runFailed")))
+                  }}
+                >
+                  <Play />
+                </IconButton>
+              </Tooltip>
+              <Menu
+                label={t("routines.actions", { name: r.name })}
+                trigger={
+                  <IconButton label={t("routines.actions", { name: r.name })}>
+                    <MoreHorizontal />
                   </IconButton>
-                </Tooltip>
-                <Tooltip content={t("routines.runNow")}>
-                  <IconButton
-                    label={t("routines.runNow")}
-                    size="xs"
-                    onPress={() => {
-                      setError(undefined)
-                      void runNow({ params: { id: r.id }, ...keys })
-                        .then(() => invalidate(["chats"]))
-                        .catch(() => setError(t("routines.runFailed")))
-                    }}
-                  >
-                    <Play className="size-3.5" />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip content={t("common.delete")}>
-                  <IconButton label={t("common.delete")} size="xs" onPress={() => setConfirm(r)}>
-                    <Trash2 className="size-3.5" />
-                  </IconButton>
-                </Tooltip>
-                <Switch aria-label={t("routines.enabled", { name: r.name })} isSelected={r.enabled} onChange={(enabled) => void update({ params: { id: r.id }, payload: { enabled }, ...keys })} />
-              </div>
-              {r.token && <HookUrl token={r.token} />}
+                }
+              >
+                <MenuItem icon={<MessageCircle />} onAction={() => go({ view: "chat", id: r.chatId })}>
+                  {t("routines.openChat")}
+                </MenuItem>
+                {r.token && (
+                  <MenuItem icon={<Copy />} onAction={() => void navigator.clipboard.writeText(hookOf(r.token ?? ""))}>
+                    {t("routines.copyHook")}
+                  </MenuItem>
+                )}
+                <MenuSeparator />
+                <MenuItem icon={<Trash2 />} tone="danger" onAction={() => setConfirm(r)}>
+                  {t("common.delete")}
+                </MenuItem>
+              </Menu>
+              <Switch aria-label={t("routines.enabled", { name: r.name })} isSelected={r.enabled} onChange={(enabled) => void update({ params: { id: r.id }, payload: { enabled }, ...keys })} />
             </div>
-          ))}
-        </Rows>
-      )}
-      {!adding && mine.length === 0 && <p className="text-sm text-muted">{t("routines.none")}</p>}
+            {r.token && <code className="truncate font-mono text-sm text-dim">{`POST ${hookOf(r.token)}`}</code>}
+          </div>
+        ))}
+      </Rows>
       {error && <p className="text-sm text-danger">{error}</p>}
+      <Dialog title={t("routines.newFor", { name: agent.name })} size="lg" isOpen={adding} onOpenChange={setAdding}>
+        {(close) => <NewRoutine agent={agent} onDone={close} />}
+      </Dialog>
       <ConfirmDialog
         isOpen={!!confirm}
         onOpenChange={(o) => !o && setConfirm(undefined)}
@@ -120,29 +148,13 @@ export function AgentRoutines({ agent, title }: { agent: Agent; title?: string }
 }
 
 // The routine's local webhook: POST JSON to it from a script or service on this computer to run it.
-function HookUrl({ token }: { token: string }) {
-  const url = `${location.origin}/api/hooks/${token}`
-  const [copied, setCopied] = useState(false)
-  return (
-    <span className="flex items-center gap-2 pl-0.5">
-      <code className="min-w-0 flex-1 truncate font-mono text-sm text-muted">{`POST ${url}`}</code>
-      <IconButton
-        label={copied ? t("common.copied") : t("routines.copyHook")}
-        size="xs"
-        onPress={() => {
-          void navigator.clipboard.writeText(url)
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1500)
-        }}
-      >
-        <Copy className="size-3.5" />
-      </IconButton>
-    </span>
-  )
-}
+const hookOf = (token: string) => `${location.origin}/api/hooks/${token}`
 
-function NewRoutine({ agent, onDone }: { agent: Agent; onDone: () => void }) {
+function NewRoutine({ agent, onDone }: { agent?: Agent; onDone: () => void }) {
   const create = useMutation(mutations.createRoutine)
+  const agents = useList(agentsAtom)
+  const team = agents.filter((a) => !a.builtin)
+  const [agentId, setAgentId] = useState(agent?.id ?? team[0]?.id ?? "")
   const invalidate = useInvalidate()
   const [name, setName] = useState("")
   const [prompt, setPrompt] = useState("")
@@ -154,13 +166,14 @@ function NewRoutine({ agent, onDone }: { agent: Agent; onDone: () => void }) {
   const cron = preset === "none" ? null : preset === "custom" ? custom.trim() : preset
   return (
     <form
-      className="flex flex-col gap-3 rounded-card border border-subtle p-4"
+      className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault()
-        if (!name.trim() || !prompt.trim() || cron === "") return
+        e.stopPropagation() // a dialog's form: its submit must not reach a form around the page
+        if (!agentId || !name.trim() || !prompt.trim() || cron === "") return
         setBusy(true)
         setError(undefined)
-        create({ payload: { agentId: agent.id, name: name.trim(), prompt: prompt.trim(), cron, webhook }, reactivityKeys: ["routines"] })
+        create({ payload: { agentId, name: name.trim(), prompt: prompt.trim(), cron, webhook }, reactivityKeys: ["routines"] })
           .then(() => {
             invalidate(["chats"])
             onDone()
@@ -169,8 +182,20 @@ function NewRoutine({ agent, onDone }: { agent: Agent; onDone: () => void }) {
           .finally(() => setBusy(false))
       }}
     >
+      {!agent && (
+        <Field label={t("routines.agent")}>
+          <Select
+            aria-label={t("routines.agent")}
+            value={agentId}
+            onChange={setAgentId}
+            searchLabel={t("agents.search")}
+            emptyLabel={t("agents.noMatch")}
+            options={team.map((a) => ({ value: a.id, label: a.name, icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} /> }))}
+          />
+        </Field>
+      )}
       <Field label={t("routines.name")}>
-        <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder={t("routines.namePlaceholder")} />
+        <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder={t("routines.namePlaceholder")} />
       </Field>
       <Field label={t("routines.prompt")} hint={t("routines.promptHint")}>
         <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} maxLength={8000} />
@@ -193,7 +218,7 @@ function NewRoutine({ agent, onDone }: { agent: Agent; onDone: () => void }) {
         <Button size="sm" variant="ghost" onPress={onDone}>
           {t("common.cancel")}
         </Button>
-        <Button size="sm" type="submit" isPending={busy} isDisabled={!name.trim() || !prompt.trim() || cron === "" || busy}>
+        <Button size="sm" type="submit" isPending={busy} isDisabled={!agentId || !name.trim() || !prompt.trim() || cron === "" || busy}>
           {t("routines.create")}
         </Button>
       </div>

@@ -44,9 +44,6 @@ export function modelNote(id: string): string {
   return has(NOTES, model) ? t(`model.notes.${model}` as MessageKey) : ""
 }
 
-const HINTS = { "claude-cli": 1, "codex-cli": 1, anthropic: 1, openai: 1, openrouter: 1, ollama: 1, lmstudio: 1 }
-export const providerHint = (provider: string) => (has(HINTS, provider) ? t(`model.hints.${provider}` as MessageKey) : "")
-
 // Account provider that serves a model provider (multi-account subscriptions).
 export const ACCOUNT_OF_MODEL: Record<string, "claude" | "codex"> = { "claude-cli": "claude", "codex-cli": "codex" }
 
