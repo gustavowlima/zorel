@@ -1,7 +1,7 @@
 # design-system
 keywords: ui, tailwind, tokens, theme, button, css, check:ui, avatar, provider icon, detector
 status: active
-updated: 2026-11-03
+updated: 2026-11-05
 
 ## current
 
@@ -67,3 +67,6 @@ updated: 2026-11-03
 - motion: Motion only where CSS cannot do it (width/height auto, layoutId); one spring (spring in ui/motion.tsx); reduced motion respected via MotionConfig
 - polish 2026-11-04 (impeccable critique+polish): integer line-heights (--text-*--line-height 16/16/20/22); Select popup = Menu surface (rounded-card, p-1, items rounded-md); offset 6 on Select/Menu/Popover/Tooltip; entry fade+zoom 0.98; tooltip min-h-control-sm; segmented 28 (pill h-5.5 rounded-md); TabList nowrap with scroll; Select variant "ghost" + icon (home screen: project and agent above the box, box only with model as in chat)
 - 2026-11-04: colors — accent #0071e3 (white 4.7:1), hover darkens #0062c4; light: muted #5a5a5a, dim #6b6b6b (≥4.5 on the frame). IconButton xs/sm/md = 24/28/32 (default sm); Button/IconButton shape="pill" instead of rounded-full; header actions always size sm; document never scrolls (html/body overflow hidden; card and screen body relative because of React Aria's hidden <select>). Sweep of all screens: Select/Menu popups r12 p4 items 28/r6 gap 6
+
+- agent palette (2026-11-05): six hues at one OKLCH lightness/chroma (68% 0.12), clear of danger/warning/success/blue: violet #918ddf, teal #00afa9, rose #d47795, ochre #aa9935, orchid #bd7dc1, clay #d67d5e; initial dark (--z-on-agent #141414, ≥6:1; white failed 4.5:1 on five of the old six). The landing (apps/site/tokens.css) uses the same values
+- control tokens are translucent (dark: white 7/9/12%; light: black 7/10/14%): a secondary button reads on frame, canvas and surface alike (the opaque #232323 vanished on surface)

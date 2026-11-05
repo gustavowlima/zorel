@@ -23,10 +23,12 @@
   --z-bg-sidebar: #0d0d0d; /* the sidebar sits on the frame; content lives in one card */
   --z-bg-surface: #232323;
   --z-bg-raised: #262626;
-  --z-bg-control: #232323;
-  --z-bg-control-hover: #292929;
+  /* Controls are a translucent layer, not a grey of their own: they read on the frame, the canvas and a surface
+     card alike (an opaque #232323 vanished on surface, which has the same tone). */
+  --z-bg-control: rgba(255, 255, 255, 0.07);
+  --z-bg-control-hover: rgba(255, 255, 255, 0.09);
   --z-bg-hover: #222222; /* rows and ghost controls on the frame and the canvas: a wash, not a control */
-  --z-bg-control-active: #2c2c2c;
+  --z-bg-control-active: rgba(255, 255, 255, 0.12);
   --z-bg-code: #141414;
   --z-border: rgba(255, 255, 255, 0.06);
   --z-border-strong: rgba(255, 255, 255, 0.1);
@@ -50,13 +52,16 @@
   --z-diff-del: rgba(255, 107, 115, 0.1);
   --z-on-accent: #ffffff;
   --z-overlay: rgba(0, 0, 0, 0.5);
-  /* Agent identity: avatars only, never actions (the blue stays the only accent). Same in both themes. */
-  --z-agent-1: #6d5df6;
-  --z-agent-2: #12a594;
-  --z-agent-3: #e5484d;
-  --z-agent-4: #d6851e;
-  --z-agent-5: #3a8ee6;
-  --z-agent-6: #46a758;
+  /* Agent identity: avatars only, never actions (the blue stays the only accent). Same in both themes. One lightness
+     and chroma (OKLCH 68% 0.12), six hues kept clear of danger, warning, success and the blue, so an avatar never
+     reads as a state; the initial is dark (≥6:1 on every one; white failed 4.5:1 on five of the old six). */
+  --z-agent-1: #918ddf; /* violet */
+  --z-agent-2: #00afa9; /* teal */
+  --z-agent-3: #d47795; /* rose */
+  --z-agent-4: #aa9935; /* ochre */
+  --z-agent-5: #bd7dc1; /* orchid */
+  --z-agent-6: #d67d5e; /* clay */
+  --z-on-agent: #141414;
   color-scheme: dark;
 
   /* shadcn semantic tokens, mapped once to --z-* (the light theme only swaps --z-*).
@@ -93,10 +98,10 @@
   --z-bg-sidebar: #ececec;
   --z-bg-surface: #f2f2f2;
   --z-bg-raised: #ffffff;
-  --z-bg-control: #ededed;
-  --z-bg-control-hover: #e4e4e4;
+  --z-bg-control: rgba(20, 20, 20, 0.07);
+  --z-bg-control-hover: rgba(20, 20, 20, 0.1);
   --z-bg-hover: #e4e4e4;
-  --z-bg-control-active: #dadada;
+  --z-bg-control-active: rgba(20, 20, 20, 0.14);
   --z-bg-code: #f6f6f6;
   --z-border: rgba(20, 20, 20, 0.08);
   --z-border-strong: rgba(20, 20, 20, 0.14);
@@ -156,6 +161,7 @@
   --color-agent-5: var(--z-agent-5);
   --color-agent-6: var(--z-agent-6);
   --color-on-accent: var(--z-on-accent);
+  --color-on-agent: var(--z-on-agent);
   --color-overlay: var(--z-overlay);
   --color-background: var(--background);
   --color-foreground: var(--foreground);

@@ -82,32 +82,32 @@
       "agent-violet": {
         "role": "identity",
         "displayName": "Agente Violeta",
-        "canonical": "#6d5df6"
+        "canonical": "#918ddf"
       },
       "agent-teal": {
         "role": "identity",
         "displayName": "Agente Verde-água",
-        "canonical": "#12a594"
+        "canonical": "#00afa9"
       },
       "agent-rose": {
         "role": "identity",
         "displayName": "Agente Rosa",
-        "canonical": "#e5484d"
+        "canonical": "#d47795"
       },
-      "agent-amber": {
+      "agent-ochre": {
         "role": "identity",
-        "displayName": "Agente Âmbar",
-        "canonical": "#d6851e"
+        "displayName": "Agente Ocre",
+        "canonical": "#aa9935"
       },
-      "agent-sky": {
+      "agent-orchid": {
         "role": "identity",
-        "displayName": "Agente Céu",
-        "canonical": "#3a8ee6"
+        "displayName": "Agente Orquídea",
+        "canonical": "#bd7dc1"
       },
-      "agent-green": {
+      "agent-clay": {
         "role": "identity",
-        "displayName": "Agente Verde",
-        "canonical": "#46a758"
+        "displayName": "Agente Argila",
+        "canonical": "#d67d5e"
       }
     },
     "typographyMeta": {
