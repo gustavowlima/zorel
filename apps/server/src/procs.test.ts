@@ -52,4 +52,4 @@ test("a process's tree, and this machine's table includes this process", async (
   expect(subtree(procs, 99)).toEqual([])
   expect((await listProcs()).some((p) => p.pid === process.pid)).toBe(true)
   expect(listeners()).toBeInstanceOf(Map) // this system's port tool runs and parses (CI: Linux, macOS, Windows)
-})
+}, 30_000) // the real system tools: a cold PowerShell on a Windows runner takes over 5 s (it timed out the 0.4.0 tag)
