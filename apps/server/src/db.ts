@@ -11,8 +11,9 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { Context, Effect, Layer, Semaphore } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
+import type { EntityType, Mapped } from "./context.ts"
 import { fileTitle, hashOf, markdownFiles, pageText, parsePageText, readText, removeFile, slugOf, titleOfFile, writeAtomic } from "./page-files.ts"
-import { type AgentProfile, agents, agentVersions, memoryVersions, pages, pageVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
+import { type AgentProfile, agents, agentVersions, entities, entityLinks, memoryEntities, memoryVersions, relations, pages, pageVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
 
 // The part of an agent a version keeps (everything but its id, project and creation time).
 export const profileOf = (a: Agent): AgentProfile => ({
@@ -29,6 +30,20 @@ const STOPWORDS = new Set(
     "que para com uma por mais nao isso esse essa este esta ele ela eles elas dos das nos nas foi ser tem como mas seu sua meu minha voce aqui ali pra pelo pela sobre quando onde"
   ).split(" ")
 )
+// Two spellings of one name: one holds the other whole ("vercel" in "vercel com"), or their letter pairs mostly match
+// (Dice ≥ 0.8: "versel" / "vercel"). Short names must match exactly.
+export function sameName(a: string, b: string): boolean {
+  if (a === b) return true
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a]
+  if (short.length < 4) return false
+  if (` ${long} `.includes(` ${short} `)) return true
+  const pairs = (t: string) => new Set(Array.from({ length: t.length - 1 }, (_, i) => t.slice(i, i + 2)))
+  const x = pairs(a)
+  const y = pairs(b)
+  const shared = [...x].filter((p) => y.has(p)).length
+  return (2 * shared) / (x.size + y.size) >= 0.8
+}
+
 // An FTS5 query from free text: each word of 3+ letters that isn't a stopword, as a prefix, any of them.
 export const ftsQuery = (text: string) =>
   normalize(text)
@@ -132,6 +147,25 @@ export const repository = (db: Db, pagesDir?: string) => {
       const [{ n = 0 } = {}] = yield* db.select({ n: sql<number>`coalesce(max(${pageVersions.n}), 0)` }).from(pageVersions).where(eq(pageVersions.pageId, pageId))
       yield* db.insert(pageVersions).values({ id: crypto.randomUUID(), pageId, n: n + 1, title, body, by, at })
     })
+  // An entity of the scope by its name or an alias, else by a close spelling (trigrams: "vercel.com", "Versel").
+  const findEntity = (scope: string, norm: string) =>
+    Effect.gen(function* () {
+      const exact = yield* db.all<{ id: string; normalized: string; aliases: string }>(
+        sql`SELECT id, normalized, aliases FROM entities WHERE scope = ${scope} AND (normalized = ${norm} OR EXISTS (SELECT 1 FROM json_each(aliases) WHERE value = ${norm})) LIMIT 1`
+      )
+      // Candidates share a word of 3+ letters (trigrams need 3); sameName decides.
+      const words = norm.split(" ").filter((w) => w.length >= 3)
+      const near =
+        exact[0] ??
+        (words.length
+          ? (yield* db.all<{ id: string; normalized: string; aliases: string }>(
+              sql`SELECT e.id, e.normalized, e.aliases FROM entity_index JOIN entities e ON e.id = entity_index.id
+                  WHERE entity_index MATCH ${words.map((w) => `"${w}"`).join(" OR ")} AND e.scope = ${scope} LIMIT 10`
+            )).find((e) => sameName(e.normalized, norm) || (JSON.parse(e.aliases) as string[]).some((a) => sameName(a, norm)))
+          : undefined)
+      return near && { id: near.id, normalized: near.normalized, aliases: JSON.parse(near.aliases) as string[] }
+    })
+
   // The scope of a file that came from outside: its front matter's (if it names one that exists), else its folder's.
   const scopeOfFile = (file: string, said: string | undefined, rows: ReadonlyArray<PageRow>) =>
     Effect.gen(function* () {
@@ -609,6 +643,95 @@ export const repository = (db: Db, pagesDir?: string) => {
     // Still true (consolidation saw it again): ranks first for the prompt's budget.
     confirmMemories: (ids: ReadonlyArray<string>) =>
       ids.length ? orDie(db.update(memories).set({ confirmedAt: now() }).where(and(inArray(memories.id, [...ids]), eq(memories.state, "active"))).pipe(Effect.asVoid)) : Effect.void,
+    // ---------- the memory's map (entities and relations) ----------
+    // Files a fact on the map: each thing it's about becomes an entity of its scope (found by name, alias or a close
+    // spelling before a new one is made), mentioned by the fact; its relations join them. A fact of a project or of
+    // an agent also hangs off that project's or agent's own point. `known`: the names that are a project or an agent.
+    linkMemory: (memoryId: string, scope: string, mapped: Mapped, known: ReadonlyArray<{ id: string; name: string; type: "project" | "agent" }> = []) =>
+      Effect.gen(function* () {
+        const at = now()
+        const ids = new Map<string, string>() // normalized name → entity id
+        const resolve = (name: string, wanted: EntityType | "project" | "agent") =>
+          Effect.gen(function* () {
+            const norm = normalize(name)
+            if (!norm) return undefined
+            if (ids.has(norm)) return ids.get(norm)
+            const type = known.find((k) => normalize(k.name) === norm)?.type ?? wanted
+            const found = yield* findEntity(scope, norm)
+            let id = found?.id
+            if (found) {
+              const aliases = found.normalized !== norm && !found.aliases.includes(norm) ? [...found.aliases, norm].slice(-10) : found.aliases
+              yield* db.update(entities).set({ weight: sql`${entities.weight} + 1`, usedAt: at, aliases }).where(eq(entities.id, found.id))
+            } else {
+              id = crypto.randomUUID()
+              yield* db.insert(entities).values({ id, scope, name, normalized: norm, type, createdAt: at, usedAt: at }).onConflictDoNothing()
+            }
+            ids.set(norm, id!)
+            return id
+          })
+        const own = known.find((k) => `${k.type}:${k.id}` === scope)
+        for (const e of [...(own ? [{ name: own.name, type: own.type }] : []), ...mapped.entities]) {
+          const id = yield* resolve(e.name, e.type)
+          if (id) yield* db.insert(memoryEntities).values({ memoryId, entityId: id }).onConflictDoNothing()
+        }
+        for (const [a, rel, b] of mapped.relations) {
+          const [src, dst] = [yield* resolve(a, "subject"), yield* resolve(b, "subject")]
+          if (src && dst && src !== dst) yield* db.insert(relations).values({ id: crypto.randomUUID(), scope, src, dst, rel, memoryId, createdAt: at }).onConflictDoNothing()
+        }
+        return [...ids.values()]
+      }).pipe(orDie),
+    // Active and pending facts made before the map existed and not on it yet, oldest first after `after` (the
+    // backfill's cursor, so a fact the model found nothing in isn't read again).
+    unmappedMemories: (limit: number, after: number, before: number) =>
+      orDie(
+        db
+          .select()
+          .from(memories)
+          .where(
+            and(
+              eq(memories.kind, "fact"),
+              inArray(memories.state, ["active", "pending"]),
+              gt(memories.createdAt, after),
+              lt(memories.createdAt, before),
+              sql`NOT EXISTS (SELECT 1 FROM memory_entities me WHERE me.memory_id = ${memories.id})`
+            )
+          )
+          .orderBy(asc(memories.createdAt))
+          .limit(limit)
+          .pipe(Effect.map((r) => r.map(toMemory)))
+      ),
+    // The entities of these scopes that a living fact mentions, with how many facts and whether all of them wait.
+    entitiesIn: (scopes: ReadonlyArray<string>) =>
+      scopes.length
+        ? orDie(
+            db.all<{ id: string; scope: string; name: string; type: string; weight: number; facts: number; pending: number }>(
+              sql`SELECT e.id, e.scope, e.name, e.type, e.weight, count(m.id) AS facts, sum(m.state = 'pending') AS pending
+                  FROM entities e JOIN memory_entities me ON me.entity_id = e.id JOIN memories m ON m.id = me.memory_id
+                  WHERE e.scope IN (${sql.join(scopes.map((x) => sql`${x}`), sql`, `)}) AND m.state IN ('active', 'pending')
+                  GROUP BY e.id`
+            )
+          )
+        : Effect.succeed([]),
+    // The links among these entities: valid relations, then pairs that one living fact names together (unlabeled).
+    linksAmong: (ids: ReadonlyArray<string>) =>
+      ids.length
+        ? orDie(
+            Effect.gen(function* () {
+              const list = sql.join(ids.map((x) => sql`${x}`), sql`, `)
+              const named = yield* db.all<{ a: string; b: string; rel: string }>(
+                sql`SELECT src AS a, dst AS b, rel FROM relations WHERE invalid_at IS NULL AND src IN (${list}) AND dst IN (${list})`
+              )
+              const together = yield* db.all<{ a: string; b: string }>(
+                sql`SELECT DISTINCT x.entity_id AS a, y.entity_id AS b FROM memory_entities x
+                    JOIN memory_entities y ON y.memory_id = x.memory_id AND x.entity_id < y.entity_id
+                    JOIN memories m ON m.id = x.memory_id AND m.state IN ('active', 'pending')
+                    WHERE x.entity_id IN (${list}) AND y.entity_id IN (${list})`
+              )
+              const seen = new Set(named.map((l) => [l.a, l.b].sort().join("|")))
+              return [...named, ...together.filter((l) => !seen.has([l.a, l.b].sort().join("|"))).map((l) => ({ ...l, rel: "" }))]
+            })
+          )
+        : Effect.succeed([] as Array<{ a: string; b: string; rel: string }>),
     removeMemory: (id: string) => orDie(db.delete(memories).where(eq(memories.id, id)).pipe(Effect.asVoid)), // versions cascade
     // Another memory of the scope already says this (the unique key would refuse the edit).
     textTaken: (id: string, scope: string, text: string) =>

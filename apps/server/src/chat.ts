@@ -4,7 +4,7 @@ import { type Agent, type Chat, type Memory, namedSkills, type Project } from "@
 import { Context, Data, Effect, Layer, Stream } from "effect"
 import { join } from "node:path"
 import {
-  buildTurn, CONSOLIDATION_SYSTEM, consolidationPrompt, HISTORY_CHARS, KEEP_CHARS, MAX_AFTER, parseConsolidation, pinned, RETRIEVED, reviewed, scopesOf, similar, WINDOW, withinBudget
+  buildTurn, CONSOLIDATION_SYSTEM, consolidationPrompt, type Mapped, mappedOf, HISTORY_CHARS, KEEP_CHARS, MAX_AFTER, parseConsolidation, pinned, RETRIEVED, reviewed, scopesOf, similar, WINDOW, withinBudget
 } from "./context.ts"
 import { hasCredential, redact } from "./observability.ts"
 import { Store, type Repository } from "./db.ts"
@@ -31,6 +31,14 @@ const consolidating = new Set<string>()
 // The chat's agents who answer: an archived one stays a member (its history) but answers no one.
 export const members = (store: Repository, chat: Chat) =>
   Effect.forEach(chat.agentIds, store.agent).pipe(Effect.map((xs) => xs.filter((a): a is NonNullable<typeof a> => !!a && !a.archivedAt)))
+
+// The names on a chat's map that stand for its project and its agents (so "Zorel" is the project's point, not a concept).
+export const knownNames = (store: Repository, chat: Pick<Chat, "projectId" | "agentIds">) =>
+  Effect.gen(function* () {
+    const project = chat.projectId ? yield* store.project(chat.projectId) : undefined
+    const agents = yield* members(store, chat as Chat)
+    return [...(project ? [{ id: project.id, name: project.name, type: "project" as const }] : []), ...agents.map((a) => ({ id: a.id, name: a.name, type: "agent" as const }))]
+  })
 
 // ---------- context ----------
 
@@ -188,7 +196,7 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, h
     // A proposal that only rewords an active memory confirms it; one that rewords a pending one is dropped. A
     // correction (replaces) waits for review as an update of the memory it replaces.
     const pending = yield* store.pendingMemories(scopes)
-    const facts: Array<{ scope: string; kind: "fact"; title: string; text: string; keywords: string; replaces: string | null; reason: string | null; agentId: string | null }> = []
+    const facts: Array<{ scope: string; kind: "fact"; title: string; text: string; keywords: string; replaces: string | null; reason: string | null; agentId: string | null; mapped: Mapped }> = []
     for (const m of parsed.memories) {
       const credited = m.scope === "agent" ? creditedAgent(m.evidence) : null
       const scope = m.scope === "agent" ? `agent:${credited}` : scopeOf[m.scope]
@@ -201,12 +209,16 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, h
         }
         if (pending.some((p) => p.scope === scope && similar(p.text, m.text))) continue
       }
-      facts.push({ scope: target?.scope ?? scope, kind: "fact", title: "", text: m.text, keywords: m.keywords, replaces: target?.id ?? null, reason: null, agentId: credited })
+      facts.push({ scope: target?.scope ?? scope, kind: "fact", title: "", text: m.text, keywords: m.keywords, replaces: target?.id ?? null, reason: null, agentId: credited, mapped: { entities: m.entities, relations: m.relations } })
     }
+    // Each fact kept or proposed goes on the map of its scope (what it's about, how those relate).
+    const known = yield* knownNames(store, chat)
+    const map = (m: Memory | undefined, mapped: Mapped) => (m ? store.linkMemory(m.id, m.scope, mapped, known).pipe(Effect.asVoid) : Effect.void)
     const onItsOwn = (yield* store.preference("memoryApproval")) === "undo" ? facts.filter((f) => !f.replaces) : []
     const saved: Memory[] = []
-    for (const f of onItsOwn.slice(0, MAX_AUTO)) {
+    for (const { mapped, ...f } of onItsOwn.slice(0, MAX_AUTO)) {
       const m = yield* store.addMemory({ ...f, state: "active", origin: "auto", chatId: chat.id })
+      yield* map(m, mapped)
       if (m) saved.push(m)
     }
     if (onItsOwn.length > MAX_AUTO) yield* Effect.logInfo("facts over the automatic cap; the extra ones were dropped", { cap: MAX_AUTO, proposed: onItsOwn.length })
@@ -215,7 +227,75 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, h
     const proposals = [...facts.filter((f) => !onItsOwn.includes(f)), ...parsed.skills.map((s) => ({ scope: scopeOf[s.scope], kind: "skill" as const, title: s.title, text: s.text }))]
     const room = Math.max(0, MAX_PENDING - (yield* store.pendingCount(scopes)))
     if (proposals.length > room) yield* Effect.logInfo("proposals over the pending cap; the extra ones were dropped", { room, proposed: proposals.length })
-    for (const p of proposals.slice(0, room)) yield* store.addMemory({ ...p, state: "pending", origin: "auto", chatId: chat.id })
+    for (const p of proposals.slice(0, room)) {
+      const { mapped, ...rest } = { mapped: undefined as Mapped | undefined, ...p }
+      const m = yield* store.addMemory({ ...rest, state: "pending", origin: "auto", chatId: chat.id })
+      if (mapped) yield* map(m, mapped)
+    }
     return (yield* store.chat(chat.id))!
   }).pipe(Effect.ensuring(Effect.sync(() => consolidating.delete(chatId))))
 })
+
+// ---------- the map of facts kept before it existed (one-time backfill) ----------
+
+const MAP_SINCE = "memoryMapSince" // when the map began: facts older than this are the backfill's
+const MAP_CURSOR = "memoryMapCursor" // createdAt of the last fact it read
+const MAP_BATCH = 30 // facts per call
+export const MAP_SYSTEM = [
+  "You file facts on a map of what they are about. For each numbered fact, list:",
+  '- "entities": the things it is about, 1 to 5, each named as it would be anywhere ("Vercel", not "vercel deploys"): "concept" for a concrete thing (a tool, a service, a file, a day), "subject" for a theme or a decision ("Deploy", "Authentication"). Use a project\'s or an agent\'s own name when the fact is about it.',
+  '- "relations": how those entities relate, as [from, relation, to] with a short relation ("goes to", "uses"). Only what the fact says.',
+  'Answer ONLY with JSON: {"items": [{"n": 1, "entities": [{"name": "...", "type": "concept" | "subject"}], "relations": [["...", "...", "..."]]}]}'
+].join("\n")
+
+// Reads the facts kept before the map in batches on the small model and files them. Stops at a failed call (the next
+// start goes on from the cursor). Returns how many facts it read.
+export const mapEarlierFacts = Effect.fn("mapEarlierFacts")(function* () {
+  const store = yield* Store
+  const engines = yield* Engines
+  const dataDir = yield* DataDir
+  let since = Number(yield* store.preference(MAP_SINCE))
+  if (!since) {
+    // Just after the newest fact kept so far (the store's clock, not the wall's: it can run ahead of it).
+    since = Math.max(0, ...(yield* store.memories()).map((m) => m.createdAt)) + 1
+    yield* store.setPreference(MAP_SINCE, String(since))
+  }
+  const latest = (yield* store.chats())[0]
+  const model = process.env.ZOREL_MEMORY_MODEL || (latest ? cheapModel(latest.model) : "")
+  if (!model) return 0
+  const projects = yield* store.projects()
+  const agents = (yield* store.agents()).filter((a) => !a.builtin)
+  const known = [...projects.map((p) => ({ id: p.id, name: p.name, type: "project" as const })), ...agents.map((a) => ({ id: a.id, name: a.name, type: "agent" as const }))]
+  let read = 0
+  while (true) {
+    const after = Number(yield* store.preference(MAP_CURSOR)) || 0
+    const facts = yield* store.unmappedMemories(MAP_BATCH, after, since)
+    if (!facts.length) return read
+    const text = facts.map((f, i) => `#${i + 1} ${f.text}`).join("\n")
+    const result = yield* collect(engines.run({ model, system: MAP_SYSTEM, messages: [{ role: "user", text }], cwd: join(dataDir, "runs", "_memory") }))
+    if (result.error) {
+      yield* Effect.logWarning("memory map backfill stopped", result.error)
+      return read
+    }
+    const items = parseMapItems(result.text)
+    for (const [i, f] of facts.entries()) {
+      const item = items.find((x) => x.n === i + 1)
+      yield* store.linkMemory(f.id, f.scope, mappedOf(item?.entities, item?.relations), known)
+    }
+    yield* store.setPreference(MAP_CURSOR, String(facts.at(-1)!.createdAt))
+    read += facts.length
+  }
+})
+
+// {"items": [{"n", "entities", "relations"}]} with text around it; anything unreadable is no item.
+export function parseMapItems(text: string): Array<{ n: number; entities: unknown[]; relations: unknown[] }> {
+  try {
+    const json = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as { items?: unknown }
+    return (Array.isArray(json.items) ? json.items : []).flatMap((x) => {
+      const o = (x ?? {}) as { n?: unknown; entities?: unknown; relations?: unknown }
+      return typeof o.n === "number" ? [{ n: o.n, entities: Array.isArray(o.entities) ? o.entities : [], relations: Array.isArray(o.relations) ? o.relations : [] }] : []
+    })
+  } catch {
+    return []
+  }
+}

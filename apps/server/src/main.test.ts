@@ -87,7 +87,7 @@ const FakeEngines = Layer.succeed(Engines, {
       )
     if (t.system === CONSOLIDATION_SYSTEM)
       return Stream.make(
-        { type: "text" as const, delta: JSON.stringify({ summary: "They talked about deploying.", memories: [{ scope: "project", text: "Deploys go out on fridays", evidence: [1] }, { scope: "team", text: "out of scope", evidence: [1] }], skills: [{ scope: "project", title: "Publish the site", text: "1. bun run build\n2. vercel deploy" }] }) },
+        { type: "text" as const, delta: JSON.stringify({ summary: "They talked about deploying.", memories: [{ scope: "project", text: "Deploys go out on fridays", evidence: [1], entities: [{ name: "Deploy", type: "subject" }, { name: "Fridays", type: "concept" }], relations: [["Deploy", "happens on", "Fridays"]] }, { scope: "team", text: "out of scope", evidence: [1] }], skills: [{ scope: "project", title: "Publish the site", text: "1. bun run build\n2. vercel deploy" }] }) },
         { type: "done" as const, usage: { inputTokens: 1, outputTokens: 1 } }
       )
     const last = t.messages.at(-1)!.text
@@ -214,6 +214,11 @@ test("project → agent → chat: streaming, layered context, model switch, cons
     ["skill", `project:${project.id}`, "Publish the site"],
     ["fact", `project:${project.id}`, "Deploys go out on fridays"]
   ])
+  // The fact is on the project's map: its point, what it's about and how those relate (pending until approved).
+  const map = await api((c) => c.memories.map({ query: { scope: `project:${project.id}` } }))
+  const named = (id: string) => map.points.find((p) => p.id === id)?.name
+  expect(map.points.map((p) => [p.name, p.type, p.pending]).sort()).toEqual([["Deploy", "subject", 1], ["Fridays", "concept", 1], ["Site", "project", 1]])
+  expect(map.links.map((l) => [named(l.a), l.rel, named(l.b)])).toContainEqual(["Deploy", "happens on", "Fridays"])
 
   await send(chat.id, { text: "como publico?" })
   expect(turns.at(-1)!.system).toContain("They talked about deploying.")

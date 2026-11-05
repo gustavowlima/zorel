@@ -9,7 +9,7 @@ import { join } from "node:path"
 import { Accounts } from "./accounts.ts"
 import { Audit } from "./audit.ts"
 import { BrowserService } from "./browser.ts"
-import { consolidate, DataDir } from "./chat.ts"
+import { consolidate, DataDir, mapEarlierFacts } from "./chat.ts"
 import { Store } from "./db.ts"
 import { Engines, type EngineEvent } from "./engines.ts"
 import { Runtime, replyTiming, runawayGuard } from "./runtime.ts"
@@ -1059,3 +1059,33 @@ test("reading tools come once there's something to read: pages, skills, memories
     yield* turnOnce("again")
     for (const now of ["zorel_knowledge_search", "zorel_knowledge_read", "zorel_read_skill"]) expect(offered.at(-1)!).toContain(now)
   })))
+
+// The facts kept before the map existed are filed on it in batches, once (a cursor keeps them from being read again).
+let mapCalls = 0
+const Mapper = Layer.succeed(Engines, {
+  run: (t) => {
+    mapCalls++
+    const n = (t.messages.at(-1)!.text.match(/^#\d+/gm) ?? []).length
+    const items = Array.from({ length: n }, (_, i) => ({ n: i + 1, entities: [{ name: "Deploy", type: "subject" }, { name: "Vercel", type: "concept" }], relations: [["Deploy", "goes to", "Vercel"]] }))
+    return Stream.make<EngineEvent[]>({ type: "text", delta: `ok ${JSON.stringify({ items })}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+  }
+})
+
+test("earlier facts go on the map once, on the small model", () =>
+  Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const store = yield* Store
+        const p = yield* store.createProject({ name: "Zorel", brief: "" })
+        yield* store.createChat({ projectId: p.id, agentIds: [], model: "claude-cli/sonnet" })
+        for (const text of ["Deploys go to Vercel", "Deploys happen on Fridays", "Previews deploy on Vercel"]) yield* store.addMemory({ scope: `project:${p.id}`, text, state: "active", origin: "manual", chatId: null })
+        yield* Effect.sleep("2 millis")
+        expect(yield* mapEarlierFacts()).toBe(3)
+        expect(mapCalls).toBe(1) // one batch
+        const map = yield* store.entitiesIn([`project:${p.id}`])
+        expect(map.map((e) => [e.name, Number(e.facts)]).sort()).toEqual([["Deploy", 3], ["Vercel", 3], ["Zorel", 3]])
+        expect(yield* mapEarlierFacts()).toBe(0) // nothing left: no call
+        expect(mapCalls).toBe(1)
+      })
+    ).pipe(Effect.provide(layer(":memory:", Mapper)))
+  ))
