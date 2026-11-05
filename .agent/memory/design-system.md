@@ -79,3 +79,6 @@ updated: 2026-11-05
 - ported from the dropped design-system-pass worktree (2026-11-05): IconTile (sm/md/lg) and Notice in ui/layout.tsx; every hairline list uses Rows; check:ui hand-list and hand-notice (card alerts only; App.tsx offline strip is separate). Not ported: Appearance as a Select (DESIGN.md keeps the segmented control)
 - agent avatars (2026-11-05): open-bot-avatar 0.2.0 (MIT, published 2026-11-02: exception to the 2-week dependency rule, approved by the user) — shape by id among its 7 examples, inside a tile bg-agent-n/15; still SVG (cached per shape/tone/size) everywhere, live (mountAvatar) in the Builder review; NOTICE credits it
 - Builder screen: proposal review in the middle (ProposalReview/AgentReview), conversation on the side while a proposal is open; stepper only for a single agent
+- ChoiceCards `grid` + per-option `icon`: avatar tiles (check on the right) for picking an agent; project "Who answers a new chat" uses it (no dropdown of names; "No agent" = plain chat, never "Assistant")
+- Project Agents tab: max-w-3xl, sections gap-12, own agents as AgentCard grid (exported from agents.tsx); empty state in a dashed card with NewAgentMenu
+- Builder: the conversation always sits on the right (w-104); the middle shows How it works, then the proposal; each review card has a ModelPicker (primary model) applied after creation via updateAgent

@@ -394,8 +394,13 @@ export const en = {
     manage: "Manage"
   },
   project: {
-    defaultAgent: "New chats start with",
-    defaultAgentHint: "The agent that answers a new chat in this project (you can change it before sending).",
+    defaultAgent: "Who answers a new chat",
+    defaultAgentHint: "Whoever you pick replies first in this project's new chats. You can still switch before sending.",
+    plainChat: "No agent",
+    plainChatHint: "A plain chat with the model you pick",
+    onlyHere: "This project only",
+    ownAgents: "This project's agents",
+    ownAgentsHint: "They work only here. Global agents are on the Agents screen.",
     newTitle: "New project",
     addTitle: "Add project",
     pathLabel: "Folder",
@@ -1187,6 +1192,7 @@ export const en = {
     details: "Details of {name}",
     instructions: "Instructions",
     why: "Why this agent",
+    primaryModel: "Primary model",
     seeDetails: "See details",
     creating: "Creating…",
     web: "web",

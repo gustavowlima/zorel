@@ -4,11 +4,11 @@ import type { FolderListing, Project } from "@zorel/contracts"
 import { formatAge, t } from "@zorel/i18n"
 import { type KeyboardEvent, useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
-import { chatTitle, statusLabel } from "../labels.ts"
+import { agentTone, chatTitle, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
-import { AgentRow, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
-import { ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, Rows, Screen, Section, Select, Tab, TabList, TabPanel, Tabs, Textarea, Trash2 } from "@/ui"
+import { AgentCard, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
+import { AgentAvatar, ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, ChoiceCards, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, IconTile, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, Rows, Screen, Section, Tab, TabList, TabPanel, Tabs, Textarea, Trash2 } from "@/ui"
 
 // The reason a folder was refused (WorkspaceInvalid), in words.
 const REASONS = ["relative", "missing", "not_directory", "forbidden"] as const
@@ -258,7 +258,7 @@ export function ProjectView({ project, tab }: { project: Project; tab: ProjectTa
         </>
       }
     >
-      <Tabs selectedKey={tab} onSelectionChange={(k) => go({ view: "project", id: project.id, tab: k as ProjectTab })} className="mx-auto w-full max-w-2xl gap-6 px-8 py-6">
+      <Tabs selectedKey={tab} onSelectionChange={(k) => go({ view: "project", id: project.id, tab: k as ProjectTab })} className="mx-auto w-full max-w-3xl gap-8 px-8 py-8">
         <TabList label={project.name}>
           <Tab id="overview">{t("project.overview")}</Tab>
           <Tab id="agents">{t("project.agents")}</Tab>
@@ -365,31 +365,39 @@ function Agents({ projectId }: { projectId: string }) {
   const working = useWorking()
   const del = useDeleteAgent()
   return (
-    <Section
-      title={t("project.agents")}
-      action={
-        <NewAgentMenu projectId={projectId} />
-      }
-    >
-      {/* Who a new chat in the project starts with. */}
-      <Field label={t("project.defaultAgent")} hint={t("project.defaultAgentHint")}>
-        <Select
-          aria-label={t("project.defaultAgent")}
+    <div className="flex flex-col gap-12">
+      {/* Who a new chat in the project starts with: the faces to pick from, not a dropdown of names. */}
+      <Section title={t("project.defaultAgent")} description={t("project.defaultAgentHint")}>
+        <ChoiceCards
+          grid
+          label={t("project.defaultAgent")}
           value={project?.defaultAgentId ?? ""}
           onChange={(v) => void update({ params: { id: projectId }, payload: { defaultAgentId: v || null }, reactivityKeys: ["projects"] })}
-          options={[{ value: "", label: t("common.assistant") }, ...choices.map((a) => ({ value: a.id, label: a.title ? `${a.name} · ${a.title}` : a.name }))]}
+          options={[
+            { value: "", title: t("project.plainChat"), description: t("project.plainChatHint"), icon: <IconTile size="lg" className="text-muted"><MessageCircle /></IconTile> },
+            ...choices.map((a) => ({
+              value: a.id,
+              title: a.name,
+              description: a.title || (a.projectId ? t("project.onlyHere") : t("agents.global")),
+              icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={40} />
+            }))
+          ]}
         />
-      </Field>
-      {mine.length === 0 ? (
-        <EmptyState icon={<Bot />} title={t("project.noAgents")} hint={t("project.noAgentsHint")} />
-      ) : (
-        <Rows>
-          {mine.map((a) => (
-            <AgentRow key={a.id} agent={a} agents={agents} working={working.has(a.id)} onDelete={del.ask} />
-          ))}
-        </Rows>
-      )}
+      </Section>
+      <Section title={t("project.ownAgents")} description={t("project.ownAgentsHint")} action={mine.length > 0 && <NewAgentMenu projectId={projectId} />}>
+        {mine.length === 0 ? (
+          <div className="rounded-card border border-dashed border-subtle">
+            <EmptyState icon={<Bot />} title={t("project.noAgents")} hint={t("project.noAgentsHint")} action={<NewAgentMenu projectId={projectId} />} />
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {mine.map((a) => (
+              <AgentCard key={a.id} agent={a} agents={agents} working={working.has(a.id)} onDelete={del.ask} />
+            ))}
+          </div>
+        )}
+      </Section>
       {del.dialog}
-    </Section>
+    </div>
   )
 }

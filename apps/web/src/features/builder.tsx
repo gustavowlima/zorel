@@ -12,12 +12,13 @@ import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { PendingTray, Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
-import { ModelPicker } from "./model-picker.tsx"
+import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
 import { AgentAvatar, Button, Check, ChevronRight, cx, Dialog, Folder, PageHeader, Pencil, Section, Select, Sparkles, Spinner, Tag } from "@/ui"
 
 const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builder.suggest.docs", "builder.suggest.team"] as const
 type Step = "describe" | "powers"
+type Edit = { name: string; patch: Partial<ModelChoice> & { access?: Access; permissions?: AgentPermissions } }
 const STEPS: ReadonlyArray<Step> = ["describe", "powers"]
 
 export function BuilderView({ projectId }: { projectId: string | null }) {
@@ -66,7 +67,7 @@ function ScreenHeader({ title, subtitle, action }: { title: string; subtitle: st
   )
 }
 
-function Conversation({ chat, side = false }: { chat: Chat; side?: boolean }) {
+function Conversation({ chat, reviewing }: { chat: Chat; reviewing: boolean }) {
   const state = useChat(chat.id)
   const agents = useList(agentsAtom)
   const projects = useList(projectsAtom)
@@ -79,7 +80,7 @@ function Conversation({ chat, side = false }: { chat: Chat; side?: boolean }) {
   const empty = state.ready && state.messages.length === 0 && !state.live && state.pending === 0
 
   return (
-    <section aria-label={t("builder.conversation")} className={cx("flex min-w-0 flex-col", side ? "order-2 w-104 shrink-0 border-l border-subtle" : "flex-1")}>
+    <section aria-label={t("builder.conversation")} className="order-2 flex w-104 shrink-0 flex-col border-l border-subtle">
       {empty ? (
         // Before the first message: what to say, and a few starting points.
         <div className="flex flex-1 flex-col items-center justify-center gap-5 px-8 text-center">
@@ -90,7 +91,7 @@ function Conversation({ chat, side = false }: { chat: Chat; side?: boolean }) {
             <h2 className="text-lg font-semibold">{t("builder.introTitle")}</h2>
             <p className="text-muted">{t("builder.introBody")}</p>
           </div>
-          <div className="flex max-w-xl flex-wrap justify-center gap-1.5">
+          <div className="flex flex-wrap justify-center gap-1.5">
             {SUGGESTIONS.map((k) => (
               <Button key={k} size="sm" variant="secondary" shape="pill" className="font-normal" onPress={() => void submit(t(k))}>
                 {t(k)}
@@ -103,7 +104,7 @@ function Conversation({ chat, side = false }: { chat: Chat; side?: boolean }) {
         <>
           <Timeline chat={chat} state={{ ...state, approvals: state.approvals.filter((a) => a.tool !== "zorel_create_agent") }} agents={agents} onView={() => {}} onEdit={() => {}} />
           {/* While a proposal waits, the turn only shows "waiting": say where it is and what this box is for now. */}
-          {side && (
+          {reviewing && (
             <p className="mx-6 mb-2 flex items-start gap-2 rounded-card border border-subtle px-3 py-2.5 text-sm text-secondary">
               <Sparkles className="mt-0.5 size-4 shrink-0 text-accent-text" />
               {t("builder.readyHint")}
@@ -131,7 +132,7 @@ function Conversation({ chat, side = false }: { chat: Chat; side?: boolean }) {
           onStop={() => void interrupt({ payload: { chatId: chat.id } })}
           onSubmit={submit}
           upload={(f) => uploadAttachment(chat.id, f)}
-          placeholder={side ? "" : t("builder.placeholder")}
+          placeholder=""
           tools={
             <ModelPicker
               value={model}
@@ -201,12 +202,16 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
   const [access, setAccess] = useState<Access>("workspace")
   const [perms, setPerms] = useState<AgentPermissions>(DEFAULT_PERMISSIONS)
   const [busy, setBusy] = useState(false)
-  // After Create: the agent appears once the Builder's turn applies the proposal; then its powers, and its page.
-  const [finishing, setFinishing] = useState<{ name: string; access: Access; permissions: AgentPermissions; at: number }>()
+  // A model picked per agent on its card (by name) before anything exists.
+  const [models, setModels] = useState<Record<string, ModelChoice>>({})
+  // After Create: the agents appear once the Builder's turn applies the proposal; then what was changed here
+  // (a model, one agent's powers) is applied to each, and a single agent's page opens.
+  const [finishing, setFinishing] = useState<{ at: number; edits: Edit[]; open: boolean }>()
 
   // A new proposal is prefilled into the next steps.
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new proposal resets
   useEffect(() => {
+    setModels({})
     if (!single) return
     const f = single.fields
     setAccess(f.access === "ask" || f.access === "full" ? f.access : "workspace")
@@ -216,16 +221,17 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the agent shows up (stable mutations)
   useEffect(() => {
     if (!finishing) return
-    // By name; else the agent that appeared right after Create (the Builder may have tidied the name).
-    const made = created.find((a) => a.name.toLowerCase() === finishing.name.toLowerCase()) ?? created.filter((a) => a.createdAt >= finishing.at - 2000).at(-1)
-    if (!made) {
+    // By name; else, for one agent, the one that appeared right after Create (the Builder may have tidied the name).
+    const fresh = created.filter((a) => a.createdAt >= finishing.at - 2000)
+    const made = finishing.edits.map((e) => fresh.find((a) => a.name.toLowerCase() === e.name.toLowerCase()) ?? (finishing.edits.length === 1 ? fresh.at(-1) : undefined))
+    if (made.some((a) => !a)) {
       const poll = setInterval(() => invalidate(["agents"]), 700)
       return () => clearInterval(poll)
     }
     setFinishing(undefined)
     void (async () => {
-      await updateAgent({ params: { id: made.id }, payload: { access: finishing.access, permissions: finishing.permissions }, reactivityKeys: ["agents"] })
-      go({ view: "agent", id: made.id })
+      for (const [i, e] of finishing.edits.entries()) await updateAgent({ params: { id: made[i]!.id }, payload: e.patch, reactivityKeys: ["agents"] })
+      if (finishing.open) go({ view: "agent", id: made[0]!.id })
     })().finally(() => setBusy(false))
     return undefined
   }, [finishing, created.length])
@@ -236,7 +242,13 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
   }
   const create = () => {
     if (!open || !single) return
-    setFinishing({ name: single.name, access, permissions: perms, at: Date.now() })
+    setFinishing({ at: Date.now(), open: true, edits: [{ name: single.name, patch: { access, permissions: perms, ...models[single.name] } }] })
+    choose(open, "approved")
+  }
+  const createAll = () => {
+    if (!open) return
+    const edits = Object.entries(models).map(([name, patch]) => ({ name, patch }))
+    if (edits.length) setFinishing({ at: Date.now(), open: false, edits })
     choose(open, "approved")
   }
   const name = single?.name ?? ""
@@ -245,22 +257,24 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Steps only where there are steps: one agent goes on to its powers; a team is created as proposed. */}
       {(single || step === "powers") && <Stepper step={step} />}
-      {/* Step 1 stays mounted (the conversation keeps its scroll and draft) while the others show. Before a
-          proposal the conversation leads and the side explains the flow; once one arrives, reviewing it is the
-          main task, so it takes the middle and the conversation moves to the side to keep refining it. */}
+      {/* Step 1 stays mounted (the conversation keeps its scroll and draft) while the others show. The
+          conversation always sits on the right; the middle explains the flow, then holds the proposal to review. */}
       <div className={cx("min-h-0 flex-1", step === "describe" ? "flex" : "hidden")}>
-        <Conversation chat={chat} side={!!open} />
+        <Conversation chat={chat} reviewing={!!open} />
         {open ? (
           <ProposalReview
             drafts={drafts}
             single={!!single}
             busy={busy}
             reason={single?.fields.reason}
-            onCreate={() => (single ? setStep("powers") : choose(open, "approved"))}
+            models={models}
+            onModel={(name, v) => setModels((m) => ({ ...m, [name]: v }))}
+            onCreate={() => (single ? setStep("powers") : createAll())}
             onDecline={() => choose(open, "denied")}
           />
         ) : (
-          <aside aria-label={t("builder.proposal")} className="flex w-80 shrink-0 flex-col gap-8 overflow-y-auto border-l border-subtle px-6 py-7">
+          <section aria-label={t("builder.proposal")} className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+            <div className="m-auto flex w-full max-w-xl flex-col gap-8 px-8 py-10">
             {finishing ? (
               <p className="text-sm text-muted">{t("builder.creating")}</p>
             ) : (
@@ -286,7 +300,8 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
                 </div>
               </Section>
             )}
-          </aside>
+            </div>
+          </section>
         )}
       </div>
 
@@ -362,7 +377,9 @@ function StepPage({ title, hint, footer, children }: { title: string; hint: stri
 
 // The proposal under review: the team at a glance, one card per agent (what it does, how it runs, what it reaches,
 // its instructions on demand), and the decision in a bar that stays in view.
-function ProposalReview({ drafts, single, busy, reason, onCreate, onDecline }: { drafts: Draft[]; single: boolean; busy: boolean; reason: string | undefined; onCreate: () => void; onDecline: () => void }) {
+function ProposalReview({
+  drafts, single, busy, reason, models, onModel, onCreate, onDecline
+}: { drafts: Draft[]; single: boolean; busy: boolean; reason: string | undefined; models: Record<string, ModelChoice>; onModel: (name: string, v: ModelChoice) => void; onCreate: () => void; onDecline: () => void }) {
   const scope = drafts.every((d) => d.fields.scope === "project") ? t("builder.inProject") : t("builder.everywhere")
   return (
     <section aria-label={t("builder.proposal")} className="flex min-w-0 flex-1 flex-col">
@@ -381,7 +398,7 @@ function ProposalReview({ drafts, single, busy, reason, onCreate, onDecline }: {
           </header>
           <div className={cx("grid gap-3", !single && "lg:grid-cols-2")}>
             {drafts.map((d, i) => (
-              <AgentReview key={d.name} draft={d} tone={i} />
+              <AgentReview key={d.name} draft={d} tone={i} choice={models[d.name]} onChoice={(v) => onModel(d.name, v)} />
             ))}
           </div>
           {reason && <p className="text-sm text-muted">{t("knowledge.why", { reason })}</p>}
@@ -401,8 +418,9 @@ function ProposalReview({ drafts, single, busy, reason, onCreate, onDecline }: {
   )
 }
 
-function AgentReview({ draft, tone }: { draft: Draft; tone: number }) {
+function AgentReview({ draft, tone, choice, onChoice }: { draft: Draft; tone: number; choice: ModelChoice | undefined; onChoice: (v: ModelChoice) => void }) {
   const f = draft.fields
+  const model = choice?.model ?? f.model
   const [details, setDetails] = useState(false)
   const access = f.access === "ask" || f.access === "full" ? f.access : f.access ? "workspace" : undefined
   const powers = [f.web === "true" && t("builder.web"), f.browser === "true" && t("builder.browser"), f.connectors && f.connectors !== "none" && f.connectors].filter(Boolean)
@@ -417,7 +435,6 @@ function AgentReview({ draft, tone }: { draft: Draft; tone: number }) {
   )
   const tags = (
     <div className="flex flex-wrap gap-1.5">
-      {f.model && <Tag hint={t("builder.runsOnHint")}>{t("builder.runsOn", { model: modelLabel(f.model) })}</Tag>}
       {access && <Tag hint={t(`access.${access}Hint`)}>{t("builder.accessIs", { access: t(`access.${access}`) })}</Tag>}
       <Tag hint={t("builder.reachesHint")}>{powers.length ? t("builder.reaches", { what: powers.join(", ") }) : t("builder.reachesNothing")}</Tag>
     </div>
@@ -428,6 +445,13 @@ function AgentReview({ draft, tone }: { draft: Draft; tone: number }) {
     <article className="flex flex-col gap-3 rounded-card border border-subtle p-4">
       {head}
       {f.description && <p className="line-clamp-3 text-secondary">{f.description}</p>}
+      {/* The primary model can be changed here, before the agent exists; the rest is on its page afterwards. */}
+      {f.model && (
+        <span className="flex items-center gap-2 text-sm text-muted" title={t("builder.runsOnHint")}>
+          {t("builder.primaryModel")}
+          <ModelPicker variant="field" className="min-w-0 flex-1" value={choice ?? { model: f.model, accountId: null, effort: null }} onChange={onChoice} />
+        </span>
+      )}
       {tags}
       {f.instructions && <p className="mt-auto line-clamp-3 border-t border-subtle pt-3 text-sm whitespace-pre-wrap text-muted">{f.instructions}</p>}
       <Button size="sm" variant="ghost" className="-ml-2.5 self-start" onPress={() => setDetails(true)}>
@@ -438,6 +462,7 @@ function AgentReview({ draft, tone }: { draft: Draft; tone: number }) {
           <div className="flex flex-col gap-4">
             {head}
             {f.description && <p className="text-secondary">{f.description}</p>}
+            {model && <Tag hint={t("builder.runsOnHint")}>{t("builder.runsOn", { model: modelLabel(model) })}</Tag>}
             {tags}
             {f.reason && (
               <div className="flex flex-col gap-1.5">
