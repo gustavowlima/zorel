@@ -88,6 +88,7 @@ export const chats = sqliteTable("chats", {
   model: text().notNull(),
   accountId: text("account_id"), // the lead's account; null: the default one
   effort: text({ enum: ["low", "medium", "high", "max"] }), // the lead's; null: the model's default
+  access: text({ enum: ["workspace", "ask", "full"] }), // the chat's level for every agent in it; null: each agent's own
   summary: text().notNull().default(""),
   summaryUntil: integer("summary_until").notNull().default(0),
   failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>(), // null: the lead agent's list

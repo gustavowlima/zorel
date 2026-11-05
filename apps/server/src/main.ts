@@ -222,7 +222,10 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         Effect.gen(function* () {
           const chat = yield* store.chat(params.id)
           if (!chat || (payload.agentIds && !(yield* validAgents(store, payload.agentIds, chat.projectId)))) return yield* notFound()
-          return yield* found(store.updateChat(params.id, payload))
+          const updated = yield* found(store.updateChat(params.id, payload))
+          // The level agents work at is a security choice: it leaves a record, like the same choice on an agent.
+          if (payload.access !== undefined && payload.access !== chat.access) yield* audit.record(Actions.chatAccessChanged, { target: { id: chat.id, name: chat.title }, ...changed(chat, updated, ["access"] as const) })
+          return updated
         })
       )
       .handle("remove", ({ params }) =>

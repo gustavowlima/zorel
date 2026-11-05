@@ -252,12 +252,12 @@ export const repository = (db: Db) => {
         )
       ),
     chat,
-    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; hidden?: boolean | undefined; title?: string | undefined; taskOf?: string | null | undefined; taskBy?: string | null | undefined }) =>
+    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; access?: Access | null | undefined; hidden?: boolean | undefined; title?: string | undefined; taskOf?: string | null | undefined; taskBy?: string | null | undefined }) =>
       Effect.gen(function* () {
         const id = crypto.randomUUID()
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: input.title ?? "New chat", model: input.model, accountId: input.accountId ?? null, effort: input.effort ?? null, hidden: input.hidden ?? false, taskOf: input.taskOf ?? null, taskBy: input.taskBy ?? null, createdAt: now() })
+            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: input.title ?? "New chat", model: input.model, accountId: input.accountId ?? null, effort: input.effort ?? null, access: input.access ?? null, hidden: input.hidden ?? false, taskOf: input.taskOf ?? null, taskBy: input.taskBy ?? null, createdAt: now() })
             yield* setMembers(tx, id, input.agentIds)
           })
         )
@@ -266,11 +266,11 @@ export const repository = (db: Db) => {
     // Tasks still owing a result (zorel_start_task), and closing one once its result went back.
     openTasks: () => orDie(db.select({ id: chats.id, taskOf: chats.taskOf, taskBy: chats.taskBy }).from(chats).where(sql`${chats.taskOf} is not null`)),
     closeTask: (id: string) => orDie(db.update(chats).set({ taskOf: null }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
-    updateChat: (id: string, input: { resumeAt?: null | undefined; title?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | null | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
+    updateChat: (id: string, input: { resumeAt?: null | undefined; title?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; access?: Access | null | undefined; failover?: ReadonlyArray<FailoverTarget> | null | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
       Effect.gen(function* () {
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            const set = defined({ title: input.title, model: input.model, accountId: input.accountId, effort: input.effort, failover: input.failover, resumeAt: input.resumeAt })
+            const set = defined({ title: input.title, model: input.model, accountId: input.accountId, effort: input.effort, access: input.access, failover: input.failover, resumeAt: input.resumeAt })
             if (Object.keys(set).length) yield* tx.update(chats).set(set).where(eq(chats.id, id))
             if (input.agentIds) yield* setMembers(tx, id, input.agentIds)
           })

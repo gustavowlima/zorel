@@ -16,7 +16,7 @@ import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
 import { cardText, TOO_LARGE } from "./engines/policy.ts"
-import { ASK_TOOL, createInputs, findAgent, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
+import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
@@ -231,7 +231,7 @@ export const makeRuntime = Effect.gen(function* () {
   const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, legacy: Step[], onWrite: () => void, fixed?: GatewayHandle, onFinished: (s: WorkStep) => void = () => {}) => {
     const routes = new Map<string, { server: string; tool: string; approve: boolean; writes: boolean; alwaysKey: string }>()
     const perms = permissionsOf(agent)
-    const askFirst = (agent?.access ?? "workspace") === "ask"
+    const askFirst = effectiveAccess(chat, agent) === "ask"
     const defs: ToolDef[] = []
     const step = (title: string, tool: string) => run(store.addStep({ turnId: row.id, kind: "tool", title, tool, files: [], status: "running" }).pipe(Effect.tap((s) => publish(chat.id, ev("step-started", { step: s })))))
     const finish = (s: WorkStep, status: WorkStep["status"], output = "") =>
@@ -292,7 +292,7 @@ export const makeRuntime = Effect.gen(function* () {
       for (let up = open.find((t) => t.id === chat.id); up?.taskOf; up = open.find((t) => t.id === up!.taskOf)) depth++
       if (depth >= MAX_TASK_DEPTH) return textResult("This is already a task inside a task: do it here, or answer with what you have.", true)
       const s = await step(`Task for ${target.name}`, TASK_TOOL.name)
-      const mine = agent?.access ?? "workspace"
+      const mine = effectiveAccess(chat, agent) // the level this chat gives the caller
       if (narrower(target.access, mine) !== target.access) {
         const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: TASK_TOOL.name, summary: `${nameOf(agent)} wants ${target.name} (more access than ${nameOf(agent)}) to work on a task`, args: task, cwd: null }))
         if (outcome === "denied" || outcome === "expired") {
@@ -311,8 +311,8 @@ export const makeRuntime = Effect.gen(function* () {
       const all = await run(store.agents())
       const visible = visibleTo(all, chat.projectId)
       // The Builder (Zorel's own) does no work itself: what it proposes is capped at workspace, not at its own "ask";
-      // full access is only ever the person's choice on the agent's page.
-      const caller = { model: agent?.model ?? chat.model, effort: agent?.effort ?? chat.effort, access: agent?.builtin === "builder" ? ("workspace" as const) : (agent?.access ?? ("workspace" as const)) }
+      // full access is only ever the person's choice on the agent's page (a chat's level only narrows it).
+      const caller = { model: agent?.model ?? chat.model, effort: agent?.effort ?? chat.effort, access: agent?.builtin === "builder" ? ("workspace" as const) : narrower(effectiveAccess(chat, agent), agent?.access ?? "workspace") }
       const working = (id: string) => [...statuses.values()].some((st) => st.agentId === id && st.state !== "idle")
       if (name === "zorel_list_agents") return textResult(listText(visible, working))
       const target = name === "zorel_create_agent" ? undefined : findAgent(visible, args.agent)
@@ -658,7 +658,7 @@ export const makeRuntime = Effect.gen(function* () {
       // Workspace (§9.1): the project folder is the agents' cwd; a checkpoint before the turn and one after
       // give its diff and its undo.
       const project = projectFor(chat, chat.projectId ? yield* store.project(chat.projectId) : undefined) // a worktree, when the chat has one
-      const access: Access = agent?.access ?? "workspace"
+      const access: Access = effectiveAccess(chat, agent)
       const cwd = workspace.cwdOf(chatId, project)
       const treeBefore = yield* workspace.snapshot(project)
       let markSeen: (at: number) => void = () => {}
@@ -1082,12 +1082,17 @@ export const makeRuntime = Effect.gen(function* () {
       Effect.gen(function* () {
         const chat = yield* store.chat(chatId)
         if (!chat) return yield* new ChatNotFound({ chatId })
-        yield* addUserMessage(chatId, text, attachmentIds)
-        // Images can't join a running turn: with attachments the correction waits for the next turn.
+        // Images can't join a running turn: with attachments the message goes as a turn of its own.
         const steer = attachmentIds?.length ? undefined : steering.get(chatId)
         const taken = steer ? yield* Effect.promise(() => steer(text)) : false
-        // Not taken mid-turn: it becomes the next turn in the queue (the message is already saved).
-        if (!taken) yield* enqueueFor(chat, text, null)
+        if (taken) return yield* addUserMessage(chatId, text, attachmentIds) // it joins the running turn
+        // Not taken mid-turn ("send now" on an engine that can't steer, or with images): the running turn is stopped
+        // first and waited for, so its partial reply is saved before this message (the history stays in order); then
+        // the message is saved and becomes the next turn, behind any turns already queued (hand-offs, mentions).
+        const fiber = running.get(chatId)
+        if (fiber) yield* Fiber.interrupt(fiber)
+        yield* addUserMessage(chatId, text, attachmentIds)
+        yield* enqueueFor(chat, text, null)
       }),
 
     interrupt: (chatId) =>

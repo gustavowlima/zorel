@@ -17,6 +17,7 @@ export const Actions = {
   agentCreated: action("agent.created", "agent"),
   agentUpdated: action("agent.updated", "agent"),
   agentDeleted: action("agent.deleted", "agent"),
+  chatAccessChanged: action("chat.access_changed", "chat"),
   accountAdded: action("account.added", "account"),
   accountRenamed: action("account.renamed", "account"),
   accountRemoved: action("account.removed", "account"),
@@ -67,7 +68,7 @@ export interface AuditFilter {
 // A kind of change, as the action prefixes it covers.
 const KIND_PREFIXES: Record<Exclude<AuditKind, "all">, ReadonlyArray<string>> = {
   providers: ["account", "api_key", "failover_terms"],
-  projects: ["project", "agent", "git"],
+  projects: ["project", "agent", "chat", "git"],
   tools: ["mcp_server"],
   approvals: ["approval", "turn"]
 }
