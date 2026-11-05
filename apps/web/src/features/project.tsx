@@ -8,10 +8,7 @@ import { chatTitle, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
 import { AgentRow, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
-import {
-  ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, Select, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, Screen, Section, Tab,
-  TabList, TabPanel, Tabs, Textarea, Trash2
-} from "@/ui"
+import { ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, Rows, Screen, Section, Select, Tab, TabList, TabPanel, Tabs, Textarea, Trash2 } from "@/ui"
 
 // The reason a folder was refused (WorkspaceInvalid), in words.
 const REASONS = ["relative", "missing", "not_directory", "forbidden"] as const
@@ -338,7 +335,7 @@ function Overview({ project }: { project: Project }) {
         {chats.length === 0 ? (
           <p className="text-muted">{t("project.noChats")}</p>
         ) : (
-          <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
+          <Rows>
             {[...chats]
               .sort((a, b) => b.createdAt - a.createdAt)
               .map((c) => {
@@ -352,7 +349,7 @@ function Overview({ project }: { project: Project }) {
                   </Button>
                 )
               })}
-          </div>
+          </Rows>
         )}
       </Section>
     </div>
@@ -386,11 +383,11 @@ function Agents({ projectId }: { projectId: string }) {
       {mine.length === 0 ? (
         <EmptyState icon={<Bot />} title={t("project.noAgents")} hint={t("project.noAgentsHint")} />
       ) : (
-        <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
+        <Rows>
           {mine.map((a) => (
             <AgentRow key={a.id} agent={a} agents={agents} working={working.has(a.id)} onDelete={del.ask} />
           ))}
-        </div>
+        </Rows>
       )}
       {del.dialog}
     </Section>
