@@ -6,7 +6,7 @@
 import type { Access, AgentPermissions, Grant, McpServer } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import type { ReactNode } from "react"
-import { cx, Globe, IconButton, MousePointerClick, Plug, Rows, Segmented, SquareTerminal, X } from "@/ui"
+import { Globe, IconButton, MousePointerClick, Plug, Rows, Segmented, SettingRow, SquareTerminal, X } from "@/ui"
 
 // A server the agent was given nothing for follows the server's own mode (as on the server).
 export const grantOf = (p: AgentPermissions, s: McpServer): Grant => p.grants[s.id] ?? (s.mode === "read" ? "read" : "write")
@@ -121,13 +121,8 @@ export function PermissionsEditor({
 
 function Power({ icon, title, hint, warning, control }: { icon: ReactNode; title: string; hint: string; warning?: boolean; control: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3.5">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-card bg-surface text-secondary [&_svg]:size-4.5">{icon}</span>
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="font-medium">{title}</span>
-        <span className={cx("text-sm", warning ? "text-warning" : "text-muted")}>{hint}</span>
-      </span>
+    <SettingRow icon={icon} title={title} hint={warning ? <span className="text-warning">{hint}</span> : hint}>
       {control}
-    </div>
+    </SettingRow>
   )
 }

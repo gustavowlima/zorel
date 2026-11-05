@@ -1,6 +1,6 @@
 // Needs you (prototype "Inbox"): every open approval across chats and every memory a summary proposed,
 // in one list. Agents wait here instead of guessing; deciding here is the same as deciding in the chat.
-import type { Agent, Memory } from "@zorel/contracts"
+import type { Agent, Chat, Memory } from "@zorel/contracts"
 import type { Approval } from "@zorel/contracts/events"
 import { formatAge, t } from "@zorel/i18n"
 import { type ReactNode, useState } from "react"
@@ -8,7 +8,7 @@ import { agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projects
 import { agentName, chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { AuthorAvatar } from "./people.tsx"
-import { Button, Check, Code, EmptyState, IconTile, Screen, Tab, TabList, Tabs, User } from "@/ui"
+import { Button, Check, Code, Column, EmptyState, IconTile, Rows, Screen, Tab, TabList, Tabs, User } from "@/ui"
 import { QuestionAnswer } from "./question.tsx"
 
 type Filter = "all" | "approvals" | "memories"
@@ -29,30 +29,35 @@ export function InboxView() {
       actions={
         <Tabs selectedKey={filter} onSelectionChange={(k) => setFilter(k as Filter)}>
           <TabList label={t("inbox.title")}>
-            <Tab id="all" count={approvals.length + memories.length}>
+            <Tab id="all" count={approvals.length + memories.length || undefined}>
               {t("inbox.all")}
             </Tab>
-            <Tab id="approvals" count={approvals.length}>
+            <Tab id="approvals" count={approvals.length || undefined}>
               {t("inbox.approvals")}
             </Tab>
-            <Tab id="memories" count={memories.length}>
+            <Tab id="memories" count={memories.length || undefined}>
               {t("inbox.memories")}
             </Tab>
           </TabList>
         </Tabs>
       }
     >
-      <div className="mx-auto flex w-full max-w-3xl flex-col px-7 pt-2 pb-8">
-        {items.length === 0 && <EmptyState icon={<Check />} title={t("inbox.empty")} hint={t("inbox.emptyHint")} />}
-        {items.map((item) => ("approval" in item ? <ApprovalItem key={item.approval.id} approval={item.approval} /> : <MemoryItem key={item.memory.id} memory={item.memory} />))}
-      </div>
+      <Column>
+        {items.length === 0 ? (
+          <EmptyState icon={<Check />} title={t("inbox.empty")} hint={t("inbox.emptyHint")} />
+        ) : (
+          <Rows>
+            {items.map((item) => ("approval" in item ? <ApprovalItem key={item.approval.id} approval={item.approval} /> : <MemoryItem key={item.memory.id} memory={item.memory} />))}
+          </Rows>
+        )}
+      </Column>
     </Screen>
   )
 }
 
 function Item({ avatar, who, context, at, children, actions }: { avatar: ReactNode; who: string; context: ReactNode; at: number; children: ReactNode; actions: ReactNode }) {
   return (
-    <article className="flex gap-3.5 border-b border-subtle py-5 last:border-0">
+    <article className="flex gap-3.5 py-4">
       {avatar}
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
         <div className="flex flex-wrap items-baseline gap-x-2">
@@ -65,6 +70,19 @@ function Item({ avatar, who, context, at, children, actions }: { avatar: ReactNo
         <div className="flex flex-wrap gap-2">{actions}</div>
       </div>
     </article>
+  )
+}
+
+// "in <chat>", where the chat's name opens it.
+function InChat({ chat }: { chat: Chat | undefined }) {
+  if (!chat) return null
+  return (
+    <>
+      {t("inbox.in")}{" "}
+      <Button variant="ghost" className="h-auto rounded-inline px-0.5 py-0 align-baseline text-sm font-normal text-secondary data-hovered:bg-transparent data-hovered:text-fg" onPress={() => go({ view: "chat", id: chat.id })}>
+        {chatTitle(chat)}
+      </Button>
+    </>
   )
 }
 
@@ -82,7 +100,7 @@ function ApprovalItem({ approval: a }: { approval: Approval }) {
   }
   if (a.kind === "question")
     return (
-      <Item avatar={<AuthorAvatar agent={agent} model={chat?.model ?? null} />} who={agentName(a.agentId, agents)} context={chat ? t("inbox.inChat", { chat: chatTitle(chat) }) : ""} at={a.createdAt} actions={null}>
+      <Item avatar={<AuthorAvatar agent={agent} model={chat?.model ?? null} />} who={agentName(a.agentId, agents)} context={<InChat chat={chat} />} at={a.createdAt} actions={null}>
         <p className="font-medium">{a.summary}</p>
         <QuestionAnswer approval={a} />
       </Item>
@@ -91,7 +109,7 @@ function ApprovalItem({ approval: a }: { approval: Approval }) {
     <Item
       avatar={<AuthorAvatar agent={agent} model={chat?.model ?? null} />}
       who={agentName(a.agentId, agents)}
-      context={chat ? t("inbox.inChat", { chat: chatTitle(chat) }) : ""}
+      context={<InChat chat={chat} />}
       at={a.createdAt}
       actions={
         <>
@@ -106,11 +124,6 @@ function ApprovalItem({ approval: a }: { approval: Approval }) {
           <Button size="sm" variant="ghost" isDisabled={!!pending} onPress={() => choose("denied")}>
             {t("approval.deny")}
           </Button>
-          {chat && (
-            <Button size="sm" variant="ghost" onPress={() => go({ view: "chat", id: chat.id })}>
-              {t("inbox.openChat")}
-            </Button>
-          )}
         </>
       }
     >

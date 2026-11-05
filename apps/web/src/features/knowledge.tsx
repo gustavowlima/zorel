@@ -1,40 +1,58 @@
 // Knowledge (prototype "Knowledge"): what the chats learned and what you wrote, as a list and a reader.
 // Facts are durable sentences; skills are procedures. Nothing reaches the model until it is approved.
-import type { Memory } from "@zorel/contracts"
+import type { Agent, Memory } from "@zorel/contracts"
 import { formatAge, formatDate, t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, memoriesAtom, memoryVersionsAtom, mutations, pagesAtom, projectsAtom, useList, useMutation, useReading } from "../client.ts"
 import { NewPage, PageView } from "./pages.tsx"
-import { chatTitle, scopeLabel } from "../labels.ts"
+import { agentTone, chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { BookOpen, Button, cx, EmptyState, Field, Input, LineDiff, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Tab, TabList, Tabs, Textarea, Tooltip, Undo2 } from "@/ui"
+import { AgentAvatar, BookOpen, Button, cx, EmptyState, Field, Folder, Input, LineDiff, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Tab, TabList, Tabs, Textarea, Tooltip, Undo2, User } from "@/ui"
 
-type Filter = "all" | "fact" | "skill" | "page" | "pending" | "forgotten"
+// What is shown: a kind (the tabs) and a state (the "Show" select): active, waiting for review, or forgotten.
+type Kind = "all" | "fact" | "skill" | "page"
+type State = "active" | "pending" | "forgotten"
 
-const matches = (m: Memory, f: Filter) =>
-  f === "pending" ? m.state === "pending" : f === "forgotten" ? m.state === "forgotten" : m.state !== "forgotten" && (f === "all" || m.kind === f)
+const matches = (m: Memory, kind: Kind, state: State) =>
+  (state === "active" ? m.state !== "forgotten" : m.state === state) && (kind === "all" || m.kind === kind)
 
-export function KnowledgeView({ selected }: { selected: string | undefined }) {
+// A scope's mark in a list: the agent's face, a folder for a project, a person for "about you".
+function ScopeIcon({ scope, agents }: { scope: string; agents: ReadonlyArray<Agent> }) {
+  const agent = scope.startsWith("agent:") ? agents.find((a) => `agent:${a.id}` === scope) : undefined
+  if (agent) return <AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={16} />
+  return scope.startsWith("project:") ? <Folder className="size-4 text-muted" /> : <User className="size-4 text-muted" />
+}
+
+export function KnowledgeView({ selected, scope: openScope, kind: openKind }: { selected: string | undefined; scope?: string | undefined; kind?: "fact" | "skill" | undefined }) {
   const memories = useList(memoriesAtom)
   const pages = useList(pagesAtom)
   const projects = useList(projectsAtom)
   const agents = useList(agentsAtom)
-  const [filter, setFilter] = useState<Filter>("all")
-  const [scope, setScope] = useState("")
+  const [kind, setKind] = useState<Kind>(openKind ?? "all")
+  const [state, setState] = useState<State>("active")
+  const [scope, setScope] = useState(openScope ?? "")
+  // Opened filtered (an agent's memories, from its page): the route sets the scope and the kind.
+  useEffect(() => {
+    if (openScope) setScope(openScope)
+    if (openKind) setKind(openKind)
+  }, [openScope, openKind])
   const [query, setQuery] = useState("")
   const [creating, setCreating] = useState<Memory["kind"]>()
   const [creatingPage, setCreatingPage] = useState(false)
 
   const q = query.trim().toLowerCase()
   const list = memories
-    .filter((m) => matches(m, filter) && (!scope || m.scope === scope) && (!q || `${m.title} ${m.text}`.toLowerCase().includes(q)))
+    .filter((m) => matches(m, kind, state) && (!scope || m.scope === scope) && (!q || `${m.title} ${m.text}`.toLowerCase().includes(q)))
     .sort((a, b) => Math.max(b.createdAt, b.confirmedAt) - Math.max(a.createdAt, a.confirmedAt))
   const current = memories.find((m) => m.id === selected)
   const page = pages.find((p) => p.id === selected)
   const pageList = pages.filter((p) => (!scope || p.scope === scope) && (!q || `${p.title} ${p.body}`.toLowerCase().includes(q)))
-  const showPages = filter === "page"
+  const showPages = kind === "page"
   const scopes = [...new Set(memories.map((m) => m.scope))]
   const count = memories.filter((m) => m.state !== "forgotten").length
+  const pendingCount = memories.filter((m) => m.state === "pending").length
+  // Nothing learned or written yet: one empty state for the whole screen, not one per pane.
+  const nothing = memories.length === 0 && pages.length === 0 && !creating && !creatingPage && !selected
 
   useEffect(() => {
     if (selected) {
@@ -44,7 +62,7 @@ export function KnowledgeView({ selected }: { selected: string | undefined }) {
   }, [selected])
   // A page opened by link shows in the Pages list.
   useEffect(() => {
-    if (page) setFilter("page")
+    if (page) setKind("page")
   }, [page])
 
   return (
@@ -62,28 +80,56 @@ export function KnowledgeView({ selected }: { selected: string | undefined }) {
         </>
       }
     >
+      {nothing ? (
+        <div className="flex flex-1 items-center justify-center">
+          <EmptyState
+            icon={<BookOpen />}
+            title={t("knowledge.empty")}
+            hint={t("knowledge.emptyHint")}
+            action={
+              <Button size="sm" variant="default" onPress={() => setCreating("fact")}>
+                <Plus />
+                {t("knowledge.new")}
+              </Button>
+            }
+          />
+        </div>
+      ) : (
+      <>
       <nav aria-label={t("knowledge.title")} className="flex w-96 shrink-0 flex-col gap-3 overflow-y-auto border-r border-subtle py-4 pr-3 pl-4">
-        <Tabs selectedKey={filter} onSelectionChange={(k) => setFilter(k as Filter)}>
+        <Tabs selectedKey={kind} onSelectionChange={(k) => setKind(k as Kind)}>
           <TabList label={t("knowledge.title")}>
             <Tab id="all">{t("knowledge.all")}</Tab>
             <Tab id="fact">{t("knowledge.facts")}</Tab>
             <Tab id="skill">{t("knowledge.skills")}</Tab>
             <Tab id="page">{t("pages.pages")}</Tab>
-            <Tab id="pending" count={memories.filter((m) => m.state === "pending").length || undefined}>
-              {t("knowledge.pending")}
-            </Tab>
-            <Tab id="forgotten">{t("knowledge.forgotten")}</Tab>
           </TabList>
         </Tabs>
-        {scopes.length > 1 && (
-          <Select
-            size="sm"
-            aria-label={t("knowledge.scope")}
-            value={scope}
-            onChange={setScope}
-            options={[{ value: "", label: t("knowledge.allScopes") }, ...scopes.map((s) => ({ value: s, label: scopeLabel(s, projects, agents) }))]}
-          />
-        )}
+        <div className="grid grid-cols-2 gap-2">
+          {!showPages && (
+            <Select
+              size="sm"
+              aria-label={t("knowledge.show")}
+              value={state}
+              onChange={(v) => setState(v as State)}
+              options={[
+                { value: "active", label: t("knowledge.active") },
+                { value: "pending", label: pendingCount ? `${t("knowledge.pending")} · ${pendingCount}` : t("knowledge.pending") },
+                { value: "forgotten", label: t("knowledge.forgotten") }
+              ]}
+            />
+          )}
+          {scopes.length > 1 && (
+            <Select
+              size="sm"
+              aria-label={t("knowledge.scope")}
+              value={scope}
+              onChange={setScope}
+              searchLabel={t("knowledge.searchScopes")}
+              options={[{ value: "", label: t("knowledge.allScopes") }, ...scopes.map((s) => ({ value: s, label: scopeLabel(s, projects, agents), icon: <ScopeIcon scope={s} agents={agents} /> }))]}
+            />
+          )}
+        </div>
         {showPages && (
           <ul className="flex flex-col gap-0.5">
             {pageList.map((p) => (
@@ -138,9 +184,11 @@ export function KnowledgeView({ selected }: { selected: string | undefined }) {
         ) : current ? (
           <Reader key={current.id} memory={current} />
         ) : (
-          <EmptyState icon={<BookOpen />} title={memories.length ? t("knowledge.select") : t("knowledge.empty")} hint={memories.length ? undefined : t("knowledge.emptyHint")} />
+          <EmptyState icon={<BookOpen />} title={t("knowledge.select")} />
         )}
       </div>
+      </>
+      )}
     </Screen>
   )
 }
@@ -325,7 +373,7 @@ function NewMemory({ kind, onKind, onDone }: { kind: Memory["kind"]; onKind: (k:
             options={[
               { value: "user", label: t("scope.user") },
               ...projects.map((p) => ({ value: `project:${p.id}`, label: t("scope.project", { name: p.name }) })),
-              ...agents.map((a) => ({ value: `agent:${a.id}`, label: t("scope.agent", { name: a.name }) }))
+              ...agents.filter((a) => !a.builtin).map((a) => ({ value: `agent:${a.id}`, label: t("scope.agent", { name: a.name }), icon: <ScopeIcon scope={`agent:${a.id}`} agents={agents} /> }))
             ]}
           />
         </Field>

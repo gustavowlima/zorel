@@ -3,40 +3,91 @@
 // reach, as plain choices (no access / read / read and write), prefilled with the least the Builder proposed;
 // Create makes it with those powers and opens its page. A team is created as proposed from step 1. Each visit
 // starts fresh; "Build it myself" opens the form.
-import { type Access, type Agent, type AgentPermissions, type Chat, DEFAULT_PERMISSIONS, type Grant, type McpServer } from "@zorel/contracts"
+import { type Access, type AgentPermissions, type Chat, DEFAULT_PERMISSIONS, type Grant, type McpServer, type ModelInfo } from "@zorel/contracts"
 import type { Approval } from "@zorel/contracts/events"
 import { t } from "@zorel/i18n"
 import { type ReactNode, useEffect, useRef, useState } from "react"
-import { agentsAtom, mutations, projectsAtom, serversAtom, uploadAttachment, useChat, useInvalidate, useList, useMutation } from "../client.ts"
+import { useAtomValue } from "@effect/atom-react"
+import { AsyncResult } from "effect/reactivity"
+import { agentsAtom, modelsAtom, mutations, projectsAtom, serversAtom, uploadAttachment, useChat, useInvalidate, useList, useMutation } from "../client.ts"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { PendingTray, Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
-import { AgentAvatar, Button, Check, ChevronRight, cx, Dialog, Folder, PageHeader, Pencil, Section, Select, Sparkles, Spinner, Tag } from "@/ui"
+import { AgentAvatar, Button, Check, ChevronRight, cx, Dialog, EmptyState, Folder, IconTile, ListRow, PageHeader, Pencil, Rows, Section, Select, Sparkles, Spinner, Tag } from "@/ui"
 
 const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builder.suggest.docs", "builder.suggest.team"] as const
 type Step = "describe" | "powers"
 type Edit = { name: string; patch: Partial<ModelChoice> & { access?: Access; permissions?: AgentPermissions } }
 const STEPS: ReadonlyArray<Step> = ["describe", "powers"]
 
+// The model the Builder starts on: Claude Code's Sonnet when it is there, else the first subscription model that
+// is, else any available one. None: the Builder can't start (the screen says so and points to Providers).
+const PREFERRED = ["claude-cli/sonnet", "codex-cli/"]
+function builderModel(models: ReadonlyArray<ModelInfo>): string | undefined {
+  const ready = models.filter((m) => m.available && !m.id.endsWith("…"))
+  for (const p of PREFERRED) {
+    const hit = ready.find((m) => (p.endsWith("/") ? m.id.startsWith(p) : m.id === p))
+    if (hit) return hit.id
+  }
+  return (ready.find((m) => m.kind === "subscription") ?? ready[0])?.id
+}
+
 export function BuilderView({ projectId }: { projectId: string | null }) {
   const builder = useMutation(mutations.builder)
+  const modelsResult = useAtomValue(modelsAtom)
   const [chat, setChat] = useState<Chat>()
-  const [error, setError] = useState(false)
+  const [error, setError] = useState<"failed" | "noModel">()
+  const [attempt, setAttempt] = useState(0)
   const opened = useRef(0)
-  // One fresh conversation per visit (StrictMode mounts twice: the ref keeps it to one).
+  const started = useRef(-1)
+  // One fresh conversation per visit (StrictMode mounts twice: the ref keeps it to one); "Try again" starts another.
   useEffect(() => {
-    if (opened.current) return
+    if (started.current === attempt || !AsyncResult.isSuccess(modelsResult)) return
+    started.current = attempt
+    const model = builderModel(modelsResult.value)
+    if (!model) return setError("noModel")
     opened.current = Date.now()
-    builder({ payload: { projectId, model: "claude-cli/sonnet" } }).then(setChat, () => setError(true))
-  }, [builder, projectId])
+    builder({ payload: { projectId, model } }).then(setChat, () => setError("failed"))
+  }, [builder, projectId, modelsResult, attempt])
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <BuilderHeader projectId={projectId} />
-      {chat ? <Wizard chat={chat} since={opened.current} /> : <div className="flex flex-1 items-center justify-center text-muted">{error ? t("builder.failed") : <Spinner />}</div>}
+      {chat ? (
+        <Wizard chat={chat} since={opened.current} />
+      ) : error ? (
+        <div className="flex flex-1 items-center justify-center">
+          <EmptyState
+            icon={<Sparkles />}
+            title={t(error === "noModel" ? "builder.noModelTitle" : "builder.failedTitle")}
+            hint={t(error === "noModel" ? "builder.noModel" : "builder.failed")}
+            action={
+              <div className="flex gap-2">
+                <Button size="sm" variant="default" onPress={() => go({ view: "settings", tab: "providers" })}>
+                  {t("builder.openProviders")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onPress={() => {
+                    setError(undefined)
+                    setAttempt((n) => n + 1)
+                  }}
+                >
+                  {t("common.retry")}
+                </Button>
+              </div>
+            }
+          />
+        </div>
+      ) : (
+        <div className="flex flex-1 items-center justify-center text-muted">
+          <Spinner />
+        </div>
+      )}
     </div>
   )
 }
@@ -84,9 +135,9 @@ function Conversation({ chat, reviewing }: { chat: Chat; reviewing: boolean }) {
       {empty ? (
         // Before the first message: what to say, and a few starting points.
         <div className="flex flex-1 flex-col items-center justify-center gap-5 px-8 text-center">
-          <span className="flex size-10 items-center justify-center rounded-card bg-accent-soft text-accent-text">
-            <Sparkles className="size-5" />
-          </span>
+          <IconTile size="lg" className="text-muted">
+            <Sparkles />
+          </IconTile>
           <div className="flex max-w-md flex-col gap-1.5">
             <h2 className="text-lg font-semibold">{t("builder.introTitle")}</h2>
             <p className="text-muted">{t("builder.introBody")}</p>
@@ -293,11 +344,18 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
             )}
             {created.length > 0 && (
               <Section title={t("builder.created")} description={t("builder.createdHint")}>
-                <div className="flex flex-col gap-1">
+                <Rows>
                   {created.map((a) => (
-                    <CreatedRow key={a.id} agent={a} agents={agents} />
+                    <ListRow
+                      key={a.id}
+                      label={`${t("agents.open")}: ${a.name}`}
+                      onPress={() => go({ view: "agent", id: a.id })}
+                      icon={<AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={28} />}
+                      title={a.name}
+                      hint={a.title || modelLabel(a.model)}
+                    />
                   ))}
-                </div>
+                </Rows>
               </Section>
             )}
             </div>
@@ -447,7 +505,7 @@ function AgentReview({ draft, tone, choice, onChoice }: { draft: Draft; tone: nu
       {f.description && <p className="line-clamp-3 text-secondary">{f.description}</p>}
       {/* The primary model can be changed here, before the agent exists; the rest is on its page afterwards. */}
       {f.model && (
-        <span className="flex items-center gap-2 text-sm text-muted" title={t("builder.runsOnHint")}>
+        <span className="flex items-center gap-2 text-sm text-muted">
           {t("builder.primaryModel")}
           <ModelPicker variant="field" className="min-w-0 flex-1" value={choice ?? { model: f.model, accountId: null, effort: null }} onChange={onChoice} />
         </span>
@@ -485,18 +543,5 @@ function AgentReview({ draft, tone, choice, onChoice }: { draft: Draft; tone: nu
         )}
       </Dialog>
     </article>
-  )
-}
-
-function CreatedRow({ agent, agents }: { agent: Agent; agents: ReadonlyArray<Agent> }) {
-  return (
-    <Button variant="ghost" className="h-auto justify-start gap-2.5 px-2 py-2 font-normal text-fg" onPress={() => go({ view: "agent", id: agent.id })}>
-      <AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={28} />
-      <span className="flex min-w-0 flex-1 flex-col text-left">
-        <span className="truncate">{agent.name}</span>
-        <span className="truncate text-sm text-muted">{agent.title || modelLabel(agent.model)}</span>
-      </span>
-      <ChevronRight className="text-muted" />
-    </Button>
   )
 }

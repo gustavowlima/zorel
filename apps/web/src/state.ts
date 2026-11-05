@@ -1,5 +1,5 @@
 // Route in the URL hash, and the theme preference. Data lives in atoms (client.ts), not here.
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 export const SETTINGS_TABS = ["general", "providers", "mcp", "skills", "processes", "storage", "audit"] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]
@@ -11,7 +11,7 @@ export type Route =
   | { view: "inbox" }
   | { view: "agents" }
   | { view: "routines" }
-  | { view: "knowledge"; id?: string }
+  | { view: "knowledge"; id?: string; scope?: string; kind?: "fact" | "skill" } // scope/kind: opened filtered (an agent's memories)
   | { view: "usage"; agentId?: string } // agentId: Usage filtered to one agent (from its page)
   | { view: "settings"; tab: SettingsTab; provider?: string } // provider: one provider's page under Providers
   | { view: "project"; id: string; tab: ProjectTab }
@@ -32,6 +32,8 @@ export function parseRoute(hash: string): Route {
     case "usage":
       return a ? { view, agentId: a } : { view }
     case "knowledge":
+      // #/knowledge/in:<scope>[/fact|skill] opens it filtered; #/knowledge/<id> opens one item.
+      if (a?.startsWith("in:")) return { view, scope: decodeURIComponent(a.slice(3)), ...((b === "fact" || b === "skill") && { kind: b }) }
       return a ? { view, id: a } : { view }
     case "settings":
       // Old links: #/settings/accounts and #/settings/keys land on Providers, #/settings/appearance on General.
@@ -46,7 +48,7 @@ export function parseRoute(hash: string): Route {
     case "new":
       return a ? { view: "home", projectId: a } : { view: "home" }
     case "build":
-      return { view: "builder", projectId: a ?? null }
+      return { view: "builder", projectId: a && a !== "global" ? a : null } // "global": the same as no project, as for a new agent
     default:
       return { view: "home" }
   }
@@ -57,6 +59,7 @@ export const hrefOf = (r: Route): string => {
     case "home":
       return r.projectId ? `#/new/${r.projectId}` : "#/"
     case "knowledge":
+      if (r.scope) return `#/knowledge/in:${encodeURIComponent(r.scope)}${r.kind ? `/${r.kind}` : ""}`
       return r.id ? `#/knowledge/${r.id}` : "#/knowledge"
     case "settings":
       return r.provider ? `#/settings/${r.tab}/${r.provider}` : `#/settings/${r.tab}`
@@ -156,6 +159,10 @@ export function writeSet(key: string, set: ReadonlySet<string>) {
 
 const SIDEBAR_KEY = "zorel.sidebar.hidden"
 
+// A narrow window (under 900px) folds the sidebar away so the content keeps its room; opening it there is for the
+// moment and never overwrites the choice made on a wide window.
+const NARROW = "(max-width: 899px)"
+
 export function useSidebar(): { hidden: boolean; toggle: () => void; show: () => void } {
   const [hidden, setHidden] = useState(() => {
     try {
@@ -164,6 +171,17 @@ export function useSidebar(): { hidden: boolean; toggle: () => void; show: () =>
       return false
     }
   })
+  const [narrow, setNarrow] = useState(() => matchMedia(NARROW).matches)
+  const [peek, setPeek] = useState(false) // opened while narrow
+  useEffect(() => {
+    const mq = matchMedia(NARROW)
+    const on = () => {
+      setNarrow(mq.matches)
+      setPeek(false)
+    }
+    mq.addEventListener("change", on)
+    return () => mq.removeEventListener("change", on)
+  }, [])
   const save = (next: boolean) => {
     setHidden(next)
     try {
@@ -172,20 +190,20 @@ export function useSidebar(): { hidden: boolean; toggle: () => void; show: () =>
       // storage blocked: it resets on reload
     }
   }
+  const shown = narrow ? peek : !hidden
+  const set = (open: boolean) => (narrow ? setPeek(open) : save(!open))
+  // The shortcut reads the latest state through a ref (the listener is added once).
+  const toggleRef = useRef(() => {})
+  toggleRef.current = () => set(!shown)
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "b") {
         e.preventDefault()
-        setHidden((h) => {
-          try {
-            localStorage.setItem(SIDEBAR_KEY, h ? "0" : "1")
-          } catch {}
-          return !h
-        })
+        toggleRef.current()
       }
     }
     addEventListener("keydown", on)
     return () => removeEventListener("keydown", on)
   }, [])
-  return { hidden, toggle: () => save(!hidden), show: () => save(false) }
+  return { hidden: !shown, toggle: () => set(!shown), show: () => set(true) }
 }

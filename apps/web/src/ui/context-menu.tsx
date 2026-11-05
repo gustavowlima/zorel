@@ -27,7 +27,7 @@ export function ContextMenu({ label, menuFor, children, className }: { label: st
         onOpenChange={(o) => !o && setOpen(undefined)}
         placement="bottom start"
         offset={2}
-        className="z-50 min-w-48 rounded-card border border-strong bg-raised p-1 outline-none data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-95 data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none"
+        className="z-50 min-w-48 rounded-card border border-strong bg-float p-1 shadow-float backdrop-blur-xl backdrop-saturate-150 outline-none data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.98] data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none"
       >
         <MenuPrimitive aria-label={label} autoFocus="first" onAction={() => setOpen(undefined)} className="outline-none">
           {open?.items}
