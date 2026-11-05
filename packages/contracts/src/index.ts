@@ -420,7 +420,8 @@ export const FileSkill = Schema.Struct({
 export type FileSkill = typeof FileSkill.Type
 // The memory's map in some scopes: its points (what facts are about; facts: how many living facts mention it,
 // pending: how many of those wait for review) and its links (a relation a fact states, or two points one fact names).
-export const MapPoint = Schema.Struct({ id: Id, scope: Schema.String, name: Schema.String, type: Schema.Literals(["project", "agent", "concept", "subject"]), weight: Schema.Number, facts: Schema.Number, pending: Schema.Number })
+export const MapPoint = Schema.Struct({ id: Id, scope: Schema.String, name: Schema.String, type: Schema.Literals(["project", "agent", "concept", "subject"]), weight: Schema.Number, facts: Schema.Number, pending: Schema.Number, memoryIds: Schema.Array(Id) })
+export type MapPoint = typeof MapPoint.Type
 export const MapLink = Schema.Struct({ a: Id, b: Id, rel: Schema.String }) // rel "": named together in a fact
 export const MemoryMap = Schema.Struct({ points: Schema.Array(MapPoint), links: Schema.Array(MapLink) })
 export type MemoryMap = typeof MemoryMap.Type

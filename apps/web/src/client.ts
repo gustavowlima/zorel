@@ -45,6 +45,7 @@ export const fileSkillsAtom = Zorel.query("settings", "fileSkills", { reactivity
 export const commandsAtom = (id: string) => Zorel.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
 export const terminalsAtom = (id: string) => Zorel.query("chats", "terminals", { params: { id }, reactivityKeys: ["terminals"] })
 export const pagesAtom = Zorel.query("pages", "list", { reactivityKeys: ["pages"] })
+export const memoryMapAtom = (scope: string) => Zorel.query("memories", "map", { query: scope ? { scope } : {}, reactivityKeys: ["memories"] })
 export const memoryVersionsAtom = (id: string) => Zorel.query("memories", "versions", { params: { id }, reactivityKeys: ["memories"] })
 export const pageVersionsAtom = (id: string) => Zorel.query("pages", "versions", { params: { id }, reactivityKeys: ["pages"] })
 export const routinesAtom = Zorel.query("routines", "list", { reactivityKeys: ["routines"] })
