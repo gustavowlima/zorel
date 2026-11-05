@@ -524,8 +524,13 @@ const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
       .handle("map", ({ query }) =>
         Effect.gen(function* () {
           const scopes = query.scope ? [...new Set(["user", query.scope])] : [...new Set((yield* store.memories()).map((m) => m.scope))]
-          const points = (yield* store.entitiesIn(scopes)).map(({ memory_ids, ...p }) => ({ ...p, type: p.type as "project" | "agent" | "concept" | "subject", facts: Number(p.facts), pending: Number(p.pending ?? 0), memoryIds: memory_ids ? memory_ids.split(",") : [] }))
-          return { points, links: yield* store.linksAmong(points.map((p) => p.id)) }
+          const shape = ({ memory_ids, ...p }: { id: string; scope: string; name: string; type: string; weight: number; facts: number; pending: number; memory_ids: string }) => ({ ...p, type: p.type as "project" | "agent" | "concept" | "subject", facts: Number(p.facts), pending: Number(p.pending ?? 0), memoryIds: memory_ids ? memory_ids.split(",") : [] })
+          const own = (yield* store.entitiesIn(scopes)).map(shape)
+          // A bridge brings its other end onto this map (drawn as another project's point).
+          const bridges = yield* store.bridgesOf(own.map((p) => p.id))
+          const across = bridges.others.length ? (yield* store.entitiesIn([...new Set(bridges.others.map((o) => o.scope))])).filter((p) => bridges.others.some((o) => o.id === p.id)).map(shape) : []
+          const points = [...own, ...across.filter((p) => !own.some((o) => o.id === p.id))]
+          return { points, links: [...(yield* store.linksAmong(own.map((p) => p.id))), ...bridges.links.map((l) => ({ ...l, rel: "", bridge: true }))] }
         })
       )
       // Written by the user: starts active. Duplicate: returns the existing one.
@@ -567,6 +572,15 @@ const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
           yield* store.removeMemory(m.id)
         })
       )
+      .handle("connect", ({ payload }) =>
+        Effect.gen(function* () {
+          const [a, b] = [yield* store.entity(payload.a), yield* store.entity(payload.b)]
+          if (!a || !b) return yield* notFound()
+          if (a.scope === b.scope || a.scope === "user" || b.scope === "user") return yield* badRequest() // a bridge is between projects (yours is on every map)
+          yield* store.connectEntities(a.id, b.id)
+        })
+      )
+      .handle("disconnect", ({ payload }) => store.disconnectEntities(payload.a, payload.b))
       .handle("versions", ({ params }) => Effect.flatMap(store.memory(params.id), (m) => (m ? store.memoryVersions(m.id) : notFound())))
       // An earlier text comes back (the current one is kept as a version too).
       .handle("restore", ({ params, payload }) =>

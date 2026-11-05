@@ -110,6 +110,8 @@ export const mutations = {
   createMemory: Zorel.mutation("memories", "create"),
   updateMemory: Zorel.mutation("memories", "update"),
   removeMemory: Zorel.mutation("memories", "remove"),
+  connectPoints: Zorel.mutation("memories", "connect"),
+  disconnectPoints: Zorel.mutation("memories", "disconnect"),
   createServer: Zorel.mutation("tools", "create"),
   updateServer: Zorel.mutation("tools", "update"),
   removeServer: Zorel.mutation("tools", "remove"),

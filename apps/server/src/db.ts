@@ -269,6 +269,7 @@ export const repository = (db: Db, pagesDir?: string) => {
                 const scopes = [`project:${id}`, ...own.map((a) => `agent:${a.id}`)]
                 const files = yield* tx.select({ file: pages.file }).from(pages).where(inArray(pages.scope, scopes))
                 yield* tx.delete(memories).where(inArray(memories.scope, scopes))
+                yield* tx.delete(entities).where(inArray(entities.scope, scopes)) // its map: links and bridges cascade
                 yield* tx.delete(pages).where(inArray(pages.scope, scopes)) // versions cascade
                 yield* tx.delete(projects).where(eq(projects.id, id)) // agents, chats and MCP servers cascade
                 return files
@@ -713,6 +714,23 @@ export const repository = (db: Db, pagesDir?: string) => {
             )
           )
         : Effect.succeed([]),
+    entity: (id: string) => orDie(db.select().from(entities).where(eq(entities.id, id)).pipe(Effect.map(first))),
+    // Bridges are stored once, the smaller id first.
+    connectEntities: (a: string, b: string) => orDie(db.insert(entityLinks).values({ a: a < b ? a : b, b: a < b ? b : a, createdAt: now() }).onConflictDoNothing().pipe(Effect.asVoid)),
+    disconnectEntities: (a: string, b: string) => orDie(db.delete(entityLinks).where(and(eq(entityLinks.a, a < b ? a : b), eq(entityLinks.b, a < b ? b : a))).pipe(Effect.asVoid)),
+    // The bridges touching these entities, with the point on the other side.
+    bridgesOf: (ids: ReadonlyArray<string>) =>
+      ids.length
+        ? orDie(
+            Effect.gen(function* () {
+              const rows = yield* db.select().from(entityLinks).where(or(inArray(entityLinks.a, [...ids]), inArray(entityLinks.b, [...ids])))
+              const mine = new Set(ids)
+              const others = [...new Set(rows.flatMap((r) => [r.a, r.b]).filter((x) => !mine.has(x)))]
+              const info = others.length ? yield* db.select({ id: entities.id, scope: entities.scope, name: entities.name, type: entities.type, weight: entities.weight }).from(entities).where(inArray(entities.id, others)) : []
+              return { links: rows.map((r) => ({ a: r.a, b: r.b })), others: info }
+            })
+          )
+        : Effect.succeed({ links: [] as Array<{ a: string; b: string }>, others: [] as Array<{ id: string; scope: string; name: string; type: string; weight: number }> }),
     // Every entity of these scopes, for finding the ones a message names (recall's seeds).
     entityNames: (scopes: ReadonlyArray<string>) =>
       scopes.length

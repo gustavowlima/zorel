@@ -2,22 +2,26 @@
 // GET /api/memories/map. A small force simulation on a canvas, seeded on a spiral so the same map lands the same way;
 // drag the background to pan, a point to pull its neighbours, wheel or the buttons to zoom; hovering lights a
 // point's links and names them. A point opens a panel with the facts that prove it and what it's linked to. A point
-// whose facts all wait for review pulses.
+// whose facts all wait for review pulses. A bridge the person made to another project's point is dashed, and that
+// point is hollow, named with its project.
 import { useAtomValue } from "@effect/atom-react"
 import type { MapPoint, Memory, MemoryMap as MapData } from "@zorel/contracts"
 import { AsyncResult } from "effect/reactivity"
 import { formatAge, t } from "@zorel/i18n"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { chatsAtom, memoriesAtom, memoryMapAtom, useList } from "../client.ts"
-import { chatTitle } from "../labels.ts"
+import { agentsAtom, chatsAtom, memoriesAtom, memoryMapAtom, mutations, projectsAtom, useList, useMutation } from "../client.ts"
+import { chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { Brain, Button, cx, EmptyState, Maximize2, Minus, Plus, Rows, X } from "@/ui"
+import { Brain, Button, cx, EmptyState, Link2, Maximize2, Menu, MenuItem, Minus, Plus, Rows, Unlink, X } from "@/ui"
 
 type Kind = MapPoint["type"]
 const NO_MAP: MapData = { points: [], links: [] }
 const KINDS: ReadonlyArray<Kind> = ["project", "agent", "concept", "subject"]
 // Identity colours (the agents' palette, never a state colour); the project is the accent text.
 const COLOR: Record<Kind, string> = { project: "--z-accent-text", agent: "--z-agent-1", concept: "--z-agent-2", subject: "--z-agent-4" }
+
+// A bridge's far end: a point of a project this map doesn't show (all maps: none is far).
+const far = (p: { scope: string }, scope: string) => !!scope && p.scope !== scope && p.scope !== "user"
 
 interface Node extends MapPoint {
   x: number
@@ -35,6 +39,9 @@ export function MemoryMap({ scope }: { scope: string }) {
   const view = useRef({ x: 0, y: 0, k: 1 })
   const hover = useRef<Node | undefined>(undefined)
   const { points, links } = map
+  const projects = useList(projectsAtom)
+  const agents = useList(agentsAtom)
+  const labels = useMemo(() => Object.fromEntries([...new Set(points.map((p) => p.scope))].map((s) => [s, scopeLabel(s, projects, agents)])), [points, projects, agents])
 
   // Keep each point's place across refreshes; a new one starts on the spiral (deterministic).
   useMemo(() => {
@@ -131,13 +138,15 @@ export function MemoryMap({ scope }: { scope: string }) {
         const [x1, y1] = toScreen(byId(l.a)!)
         const [x2, y2] = toScreen(byId(l.b)!)
         const lit = near?.has(l.a) && near.has(l.b)
-        ctx.strokeStyle = text
-        ctx.globalAlpha = lit ? 0.5 : near ? 0.06 : 0.18
-        ctx.lineWidth = 1
+        ctx.strokeStyle = l.bridge ? colour("project") : text
+        ctx.globalAlpha = lit ? 0.6 : near ? 0.06 : l.bridge ? 0.45 : 0.18
+        ctx.lineWidth = l.bridge ? 1.5 : 1
+        ctx.setLineDash(l.bridge ? [5, 4] : [])
         ctx.beginPath()
         ctx.moveTo(x1, y1)
         ctx.lineTo(x2, y2)
         ctx.stroke()
+        ctx.setLineDash([])
         if (lit && l.rel && view.current.k > 0.8) {
           ctx.globalAlpha = 0.6
           ctx.fillStyle = text
@@ -160,10 +169,16 @@ export function MemoryMap({ scope }: { scope: string }) {
           ctx.stroke()
           ctx.globalAlpha = near && !near.has(n.id) ? 0.25 : 1
         }
-        ctx.fillStyle = colour(n.type)
         ctx.beginPath()
         ctx.arc(x, y, r, 0, 7)
-        ctx.fill()
+        if (far(n, scope)) {
+          ctx.strokeStyle = colour(n.type)
+          ctx.lineWidth = 2
+          ctx.stroke()
+        } else {
+          ctx.fillStyle = colour(n.type)
+          ctx.fill()
+        }
         if (selected === n.id) {
           ctx.strokeStyle = text
           ctx.lineWidth = 2
@@ -175,6 +190,11 @@ export function MemoryMap({ scope }: { scope: string }) {
         ctx.font = `${n.type === "project" ? 600 : 400} 12px Inter Variable, sans-serif`
         ctx.textAlign = "center"
         ctx.fillText(n.name, x, y + r + 15)
+        if (far(n, scope) && labels[n.scope]) {
+          ctx.fillStyle = dim
+          ctx.font = "11px Inter Variable, sans-serif"
+          ctx.fillText(labels[n.scope]!, x, y + r + 29)
+        }
       }
       ctx.globalAlpha = 1
       frame = requestAnimationFrame(draw)
@@ -232,7 +252,7 @@ export function MemoryMap({ scope }: { scope: string }) {
       window.removeEventListener("mouseup", up)
       c.removeEventListener("wheel", wheel)
     }
-  }, [hidden, selected, links])
+  }, [hidden, selected, links, labels, scope])
 
   const point = points.find((p) => p.id === selected)
   const zoom = (f: number) => {
@@ -276,15 +296,17 @@ export function MemoryMap({ scope }: { scope: string }) {
         </div>
         <p className="absolute bottom-4 left-4 text-xs text-dim">{t("memory.mapCount", { points: points.length, links: links.length })}</p>
       </div>
-      {point && <PointPanel point={point} points={points} links={links} onOpen={setSelected} onClose={() => setSelected(undefined)} />}
+      {point && <PointPanel point={point} points={points} links={links} labels={labels} onOpen={setSelected} onClose={() => setSelected(undefined)} />}
     </div>
   )
 }
 
-// A point's panel: the facts that prove it (where each came from) and what it's linked to.
-function PointPanel({ point, points, links, onOpen, onClose }: { point: MapPoint; points: ReadonlyArray<MapPoint>; links: ReadonlyArray<{ a: string; b: string; rel: string }>; onOpen: (id: string) => void; onClose: () => void }) {
+// A point's panel: the facts that prove it (where each came from), what it's linked to, and the bridges to other
+// projects' points (connect / disconnect).
+function PointPanel({ point, points, links, labels, onOpen, onClose }: { point: MapPoint; points: ReadonlyArray<MapPoint>; links: ReadonlyArray<MapData["links"][number]>; labels: Record<string, string>; onOpen: (id: string) => void; onClose: () => void }) {
   const memories = useList(memoriesAtom)
   const chats = useList(chatsAtom)
+  const disconnect = useMutation(mutations.disconnectPoints)
   const facts = point.memoryIds.flatMap((id) => memories.filter((m) => m.id === id)) as Memory[]
   const mine = links.filter((l) => l.a === point.id || l.b === point.id)
   return (
@@ -331,12 +353,70 @@ function PointPanel({ point, points, links, onOpen, onClose }: { point: MapPoint
               <Button key={`${l.a}-${l.b}-${l.rel}`} variant="ghost" onPress={() => onOpen(other.id)} className="h-auto w-full justify-start gap-2 px-0 py-2.5 font-normal">
                 <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ background: `var(${COLOR[other.type]})` }} />
                 <span className="min-w-0 flex-1 truncate text-left text-fg">{other.name}</span>
-                {l.rel && <span className="shrink-0 text-sm text-dim">{l.a === point.id ? l.rel : `← ${l.rel}`}</span>}
+                {l.bridge ? (
+                  <span className="shrink-0 text-sm text-dim">{labels[other.scope] ?? t("memory.bridge")}</span>
+                ) : (
+                  l.rel && <span className="shrink-0 text-sm text-dim">{l.a === point.id ? l.rel : `← ${l.rel}`}</span>
+                )}
               </Button>
             )
           })}
         </Rows>
+        {mine.some((l) => l.bridge) && (
+          <div className="flex flex-wrap gap-1">
+            {mine
+              .filter((l) => l.bridge)
+              .map((l) => {
+                const other = points.find((p) => p.id === (l.a === point.id ? l.b : l.a))
+                return (
+                  other && (
+                    <Button key={`x-${other.id}`} size="sm" variant="ghost" onPress={() => void disconnect({ payload: { a: l.a, b: l.b }, reactivityKeys: ["memories"] })}>
+                      <Unlink />
+                      {t("memory.disconnect", { name: other.name })}
+                    </Button>
+                  )
+                )
+              })}
+          </div>
+        )}
+        {point.scope !== "user" && <ConnectMenu point={point} linked={mine.map((l) => (l.a === point.id ? l.b : l.a))} />}
       </section>
     </aside>
+  )
+}
+
+// "Connect to another project": the points of other projects' maps, the ones sharing a word with this one first.
+function ConnectMenu({ point, linked }: { point: MapPoint; linked: ReadonlyArray<string> }) {
+  const all = AsyncResult.getOrElse(useAtomValue(memoryMapAtom("")), () => NO_MAP).points
+  const projects = useList(projectsAtom)
+  const agents = useList(agentsAtom)
+  const connect = useMutation(mutations.connectPoints)
+  const words = new Set(point.name.toLowerCase().split(/\W+/).filter((w) => w.length >= 3))
+  const shares = (p: MapPoint) => p.name.toLowerCase().split(/\W+/).some((w) => words.has(w))
+  const others = all
+    .filter((p) => p.scope !== point.scope && p.scope !== "user" && !linked.includes(p.id))
+    .sort((a, b) => Number(shares(b)) - Number(shares(a)) || b.weight - a.weight)
+    .slice(0, 30)
+  if (!others.length) return null
+  return (
+    <div>
+      <Menu
+        label={t("memory.connect")}
+        trigger={
+          <Button size="sm" variant="ghost">
+            <Link2 />
+            {t("memory.connect")}
+          </Button>
+        }
+      >
+        {others.map((p) => (
+          <MenuItem key={p.id} onAction={() => void connect({ payload: { a: point.id, b: p.id }, reactivityKeys: ["memories"] })}>
+            <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ background: `var(${COLOR[p.type]})` }} />
+            <span className="min-w-0 flex-1 truncate">{p.name}</span>
+            <span className="shrink-0 text-sm text-dim">{scopeLabel(p.scope, projects, agents)}</span>
+          </MenuItem>
+        ))}
+      </Menu>
+    </div>
   )
 }

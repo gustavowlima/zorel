@@ -422,7 +422,8 @@ export type FileSkill = typeof FileSkill.Type
 // pending: how many of those wait for review) and its links (a relation a fact states, or two points one fact names).
 export const MapPoint = Schema.Struct({ id: Id, scope: Schema.String, name: Schema.String, type: Schema.Literals(["project", "agent", "concept", "subject"]), weight: Schema.Number, facts: Schema.Number, pending: Schema.Number, memoryIds: Schema.Array(Id) })
 export type MapPoint = typeof MapPoint.Type
-export const MapLink = Schema.Struct({ a: Id, b: Id, rel: Schema.String }) // rel "": named together in a fact
+// rel "": named together in a fact. bridge: a link the person made between two projects' maps.
+export const MapLink = Schema.Struct({ a: Id, b: Id, rel: Schema.String, bridge: Schema.optionalKey(Schema.Boolean) })
 export const MemoryMap = Schema.Struct({ points: Schema.Array(MapPoint), links: Schema.Array(MapLink) })
 export type MemoryMap = typeof MemoryMap.Type
 export const MemoryVersion = Schema.Struct({ id: Id, title: Schema.String, text: Schema.String, by: Schema.String, at: Schema.Number })
@@ -733,6 +734,9 @@ export const Api = HttpApi.make("zorel")
     HttpApiGroup.make("memories")
       .add(HttpApiEndpoint.get("list", "/api/memories", { success: Schema.Array(Memory) }))
       .add(HttpApiEndpoint.get("map", "/api/memories/map", { query: Schema.Struct({ scope: Schema.optional(Schema.String) }), success: MemoryMap }))
+      // A bridge between two maps ("related to"): recall in either crosses it, to that point and its own facts only.
+      .add(HttpApiEndpoint.post("connect", "/api/memories/map/links", { payload: Schema.Struct({ a: Id, b: Id }), error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
+      .add(HttpApiEndpoint.post("disconnect", "/api/memories/map/links/remove", { payload: Schema.Struct({ a: Id, b: Id }) }))
       .add(HttpApiEndpoint.post("create", "/api/memories", { payload: NewMemory, success: Memory, error: HttpApiError.BadRequest }))
       .add(HttpApiEndpoint.patch("update", "/api/memories/:id", { params: idParam, payload: MemoryPatch, success: Memory, error: [HttpApiError.NotFound, HttpApiError.BadRequest, HttpApiError.Conflict] }))
       // Delete for good: only a forgotten one (the record that kept it from being learned again goes too).

@@ -50,11 +50,18 @@ export const recall = (store: Repository, scopes: ReadonlyArray<string>, query: 
     const seeds = namedPoints(query, points)
     let byAssociation: Memory[] = []
     if (seeds.length) {
-      const ids = points.map((p) => p.id)
-      const activation = spread(ids, yield* store.linksAmong(ids), seeds)
+      const own = points.map((p) => p.id)
+      // A bridge the person made carries activation to the other project's point, and to its own facts only.
+      const bridges = yield* store.bridgesOf(own)
+      const activation = spread([...own, ...bridges.others.map((o) => o.id)], [...(yield* store.linksAmong(own)), ...bridges.links], seeds)
       const near = [...activation].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([id]) => id)
+      const across = bridges.others.filter((o) => near.includes(o.id))
       const score = new Map<string, { memory: Memory; score: number }>()
-      for (const { memory, entityId } of yield* store.factsAbout(near, scopes)) {
+      const found = [
+        ...(yield* store.factsAbout(near.filter((id) => !across.some((o) => o.id === id)), scopes)),
+        ...(across.length ? yield* store.factsAbout(across.map((o) => o.id), [...new Set(across.map((o) => o.scope))]) : [])
+      ]
+      for (const { memory, entityId } of found) {
         if (exclude.includes(memory.id)) continue
         const s = score.get(memory.id) ?? { memory, score: 0 }
         s.score += activation.get(entityId) ?? 0
