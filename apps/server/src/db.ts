@@ -704,8 +704,8 @@ export const repository = (db: Db, pagesDir?: string) => {
     entitiesIn: (scopes: ReadonlyArray<string>) =>
       scopes.length
         ? orDie(
-            db.all<{ id: string; scope: string; name: string; type: string; weight: number; facts: number; pending: number }>(
-              sql`SELECT e.id, e.scope, e.name, e.type, e.weight, count(m.id) AS facts, sum(m.state = 'pending') AS pending
+            db.all<{ id: string; scope: string; name: string; type: string; weight: number; facts: number; pending: number; memory_ids: string }>(
+              sql`SELECT e.id, e.scope, e.name, e.type, e.weight, count(m.id) AS facts, sum(m.state = 'pending') AS pending, group_concat(m.id) AS memory_ids
                   FROM entities e JOIN memory_entities me ON me.entity_id = e.id JOIN memories m ON m.id = me.memory_id
                   WHERE e.scope IN (${sql.join(scopes.map((x) => sql`${x}`), sql`, `)}) AND m.state IN ('active', 'pending')
                   GROUP BY e.id`

@@ -7,14 +7,16 @@ import { useAtomValue } from "@effect/atom-react"
 import { isTeammate, type Memory, type MemoryApproval } from "@zorel/contracts"
 import { AsyncResult } from "effect/reactivity"
 import { formatAge, formatDate, t } from "@zorel/i18n"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, memoriesAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
 import { ScopeIcon } from "./knowledge.tsx"
+import { MemoryMap } from "./memory-map.tsx"
 import { ReadingState } from "./reading.tsx"
-import { Brain, Button, ConfirmDialog, cx, EmptyState, Input, LineDiff, Menu, MenuItem, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Tab, TabList, Tabs, Textarea, Tooltip } from "@/ui"
+import { Brain, Button, ConfirmDialog, cx, EmptyState, Input, LineDiff, Menu, MenuItem, Pin, PinOff, Plus, Rows, Screen, SearchInput, Segmented, Select, Tab, TabList, Tabs, Textarea, Tooltip } from "@/ui"
 
+const MAP_KEY = "zorel.memory.map" // List or Map, remembered on this computer
 const STALE_DAYS = 60 // an active memory not confirmed for this long asks "Still true?" (it stays in the prompt meanwhile)
 const DAY = 86_400_000
 const isStale = (m: Memory, now: number) => m.state === "active" && now - m.confirmedAt > STALE_DAYS * DAY
@@ -25,6 +27,8 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
   const agents = useList(agentsAtom)
   const invalidate = useInvalidate()
   const [query, setQuery] = useState("")
+  const [asMap, setAsMap] = useState(() => localStorage.getItem(MAP_KEY) === "1")
+  useEffect(() => localStorage.setItem(MAP_KEY, asMap ? "1" : "0"), [asMap])
   const now = Date.now()
   const facts = reading.items.filter((m) => m.kind === "fact")
   const q = query.trim().toLowerCase()
@@ -43,13 +47,46 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
     <Screen
       title={t("memory.title")}
       subtitle={t("memory.subtitle", { count: facts.filter((m) => m.state === "active").length })}
+      {...(asMap && !review && { bodyClassName: "flex flex-col" })}
       actions={
         <>
+          {!review && (
+            <Segmented
+              label={t("memory.view")}
+              value={asMap ? "map" : "list"}
+              onChange={(v) => setAsMap(v === "map")}
+              options={[
+                { id: "list", label: t("memory.list") },
+                { id: "map", label: t("memory.map") }
+              ]}
+            />
+          )}
           <Approval />
           <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("memory.search")} />
         </>
       }
     >
+      {asMap && !review ? (
+        <>
+          <div className="px-8 pt-4">
+            <Tabs selectedKey={tab === "forgotten" ? "all" : tab} onSelectionChange={(k) => go(k === "all" ? { view: "memory" } : { view: "memory", tab: String(k) })}>
+              <TabList label={t("memory.title")}>
+                <Tab id="all">{t("memory.all")}</Tab>
+                <Tab id="user">{t("memory.aboutYou")}</Tab>
+                {owners.map((s) => (
+                  <Tab key={s} id={s}>
+                    <span className="flex items-center gap-1.5">
+                      <ScopeIcon scope={s} agents={agents} />
+                      {ownerName(s, projects, agents)}
+                    </span>
+                  </Tab>
+                ))}
+              </TabList>
+            </Tabs>
+          </div>
+          <MemoryMap key={tab} scope={tab === "all" || tab === "forgotten" ? "" : tab} />
+        </>
+      ) : (
       <div className="flex w-full max-w-3xl flex-col gap-5 px-8 py-6">
         <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["memories"])} />
         {review ? (
@@ -121,6 +158,7 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
           </>
         )}
       </div>
+      )}
     </Screen>
   )
 }

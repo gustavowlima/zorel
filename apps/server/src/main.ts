@@ -524,7 +524,7 @@ const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
       .handle("map", ({ query }) =>
         Effect.gen(function* () {
           const scopes = query.scope ? [...new Set(["user", query.scope])] : [...new Set((yield* store.memories()).map((m) => m.scope))]
-          const points = (yield* store.entitiesIn(scopes)).map((p) => ({ ...p, type: p.type as "project" | "agent" | "concept" | "subject", facts: Number(p.facts), pending: Number(p.pending ?? 0) }))
+          const points = (yield* store.entitiesIn(scopes)).map(({ memory_ids, ...p }) => ({ ...p, type: p.type as "project" | "agent" | "concept" | "subject", facts: Number(p.facts), pending: Number(p.pending ?? 0), memoryIds: memory_ids ? memory_ids.split(",") : [] }))
           return { points, links: yield* store.linksAmong(points.map((p) => p.id)) }
         })
       )
