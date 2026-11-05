@@ -655,6 +655,12 @@ export const en = {
     audit: "Audit log",
     processes: "Processes",
     general: "General",
+    memoryHint: "What learns from your chats: the summary, the memories and the map. It runs in the background, after a chat goes quiet or its window fills.",
+    memoryModel: "Memory model",
+    memoryModelAuto: "Automatic: the small model of each chat's provider (Haiku for Claude, Flash for Gemini), falling back to the chat's own.",
+    memoryModelChosen: "Every chat learns with this model. If it fails, the chat's own model takes over.",
+    memoryModelChoose: "Choose a model",
+    memoryModelUseAuto: "Use automatic",
     hint: {
       general: "Theme and other preferences",
       providers: "Subscriptions, API keys and local servers",

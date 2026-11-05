@@ -32,6 +32,11 @@ const consolidating = new Set<string>()
 export const members = (store: Repository, chat: Chat) =>
   Effect.forEach(chat.agentIds, store.agent).pipe(Effect.map((xs) => xs.filter((a): a is NonNullable<typeof a> => !!a && !a.archivedAt)))
 
+// The model that learns from a chat: the one chosen in Settings, else ZOREL_MEMORY_MODEL, else the chat's provider's
+// small model (consolidate falls back to the chat's own model when that one fails).
+export const memoryModelFor = (store: Repository, chatModel: string) =>
+  Effect.map(store.preference("memoryModel"), (chosen) => chosen || process.env.ZOREL_MEMORY_MODEL || cheapModel(chatModel))
+
 const ASSOCIATED = 5 // facts recalled by association each turn, besides the RETRIEVED found by their words
 const RECALL_CHARS = 2_000 // the most the recalled facts take in a turn
 
@@ -193,7 +198,7 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, h
       hasProject: !!chat.projectId, hasAgent: !!lead, names: (id) => agents.find((a) => a.id === id)?.name ?? "assistant"
     })
     const call = (model: string) => collect(engines.run({ model, system: CONSOLIDATION_SYSTEM, messages: [{ role: "user", text }], cwd: join(dataDir, "runs", "_memory") }))
-    const small = process.env.ZOREL_MEMORY_MODEL || cheapModel(chat.model)
+    const small = (yield* memoryModelFor(store, chat.model))
     const first = yield* call(small)
     const result = first.error && small !== chat.model ? yield* call(chat.model) : first
     const allowed = ["user", ...(chat.projectId ? ["project"] : []), ...(lead ? ["agent"] : [])]
@@ -296,7 +301,7 @@ export const mapEarlierFacts = Effect.fn("mapEarlierFacts")(function* () {
     yield* store.setPreference(MAP_SINCE, String(since))
   }
   const latest = (yield* store.chats())[0]
-  const model = process.env.ZOREL_MEMORY_MODEL || (latest ? cheapModel(latest.model) : "")
+  const model = latest ? yield* memoryModelFor(store, latest.model) : (yield* store.preference("memoryModel")) || process.env.ZOREL_MEMORY_MODEL || ""
   if (!model) return 0
   const projects = yield* store.projects()
   const agents = (yield* store.agents()).filter((a) => !a.builtin)

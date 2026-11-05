@@ -128,6 +128,7 @@ export const mutations = {
   pickFileSkill: Zorel.mutation("settings", "pickFileSkill"),
   nativeSkills: Zorel.mutation("settings", "nativeSkills"),
   memoryApproval: Zorel.mutation("settings", "memoryApproval"),
+  memoryModel: Zorel.mutation("settings", "memoryModel"),
   maxRunning: Zorel.mutation("settings", "maxRunning"),
   acceptFailoverTerms: Zorel.mutation("settings", "acceptFailoverTerms"),
   send: Live.mutation("send"),
