@@ -122,6 +122,8 @@ Architecture, decisions and roadmap: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md
 
 CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every push and pull request. A `v*` tag builds the desktop app for each system and publishes a GitHub release, which installed apps update from. macOS signing and notarization turn on when `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` are set; without them the macOS build is signed ad hoc and installs with `install.sh`.
 
+To sign on your Mac instead (the Developer ID stays in its keychain): create a *Developer ID Application* certificate (Xcode › Settings › Accounts › Manage Certificates), save the notarization credentials once with `xcrun notarytool store-credentials zorel --apple-id <email> --team-id <team id>`, and set the repository variable `MAC_LOCAL_SIGNING=true` so CI stops publishing the ad hoc build. For each release: push the tag (CI publishes Windows and Linux), then run `bun run release:mac`, which builds, signs, notarizes, verifies and uploads the Mac files to that release.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks and conventions, [SECURITY.md](SECURITY.md) to report a vulnerability privately, and [CHANGELOG.md](CHANGELOG.md) for what changed in each version.

@@ -19,7 +19,8 @@ const programs = (dir) =>
   })
 
 exports.default = async (context) => {
-  if (context.electronPlatformName !== "darwin" || process.env.CSC_LINK) return
+  // A Developer ID build (CSC_LINK in CI, or release-mac.sh's keychain identity) keeps electron-builder's signature.
+  if (context.electronPlatformName !== "darwin" || process.env.CSC_LINK || process.env.ZOREL_SIGN_IDENTITY) return
   const app = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
   for (const file of programs(join(app, "Contents", "Resources", "browsers"))) execFileSync("codesign", ["--force", "--sign", "-", file])
   execFileSync("codesign", ["--force", "--deep", "--sign", "-", app], { stdio: "inherit" })
