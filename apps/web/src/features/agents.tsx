@@ -8,7 +8,7 @@ import { agentsAtom, mutations, projectsAtom, useList, useMutation, useStatuses 
 import { exportAgent, importedAgent } from "./agent.tsx"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { AgentAvatar, Bot, Button, ChevronDown, ChevronRight, Column, ConfirmDialog, Dot, Download, EmptyState, IconButton, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Screen, Section, Sparkles, Trash2, Upload } from "@/ui"
+import { AgentAvatar, Bot, Button, ChevronDown, ChevronRight, Column, ConfirmDialog, Dot, Download, EmptyState, IconButton, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, Section, Sparkles, Trash2, Upload } from "@/ui"
 
 // The agents working now (a chat of theirs is running or waiting).
 export function useWorking() {
@@ -164,11 +164,11 @@ export function AgentsView() {
             .filter((g) => g.list.length > 0)
             .map((g) => (
               <Section key={g.id ?? "global"} title={g.name} description={g.hint} action={g.id ? <NewAgentMenu projectId={g.id} projectName={g.name} compact /> : undefined}>
-                <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
+                <Rows>
                   {g.list.map((a) => (
                     <AgentRow key={a.id} agent={a} agents={agents} working={working.has(a.id)} onDelete={del.ask} />
                   ))}
-                </div>
+                </Rows>
               </Section>
             ))
         )}

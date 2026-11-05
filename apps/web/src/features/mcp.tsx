@@ -10,7 +10,7 @@ import { AsyncResult } from "effect/reactivity"
 import { useAtomValue } from "@effect/atom-react"
 import { mutations, serversAtom, signedInAtom, useInvalidate, useMutation, useReading } from "../client.ts"
 import { ReadingState } from "./reading.tsx"
-import { Badge, Button, Check, Code, ConfirmButton, Dialog, Field, IconButton, Input, Menu, MenuItem, MenuSeparator, MoreHorizontal, RefreshCw, Plus, Section, Select, Spinner, Switch, Textarea, EmptyState, Plug, Trash2 } from "@/ui"
+import { Badge, Button, Check, Code, ConfirmButton, Dialog, EmptyState, Field, IconButton, IconTile, Input, Menu, MenuItem, MenuSeparator, MoreHorizontal, Plug, Plus, RefreshCw, Rows, Section, Select, Spinner, Switch, Textarea, Trash2 } from "@/ui"
 
 const MODES = ["read", "approve", "auto"] as const
 const modeOptions = () => MODES.map((m) => ({ value: m, label: t(`mcp.modes.${m}`) }))
@@ -56,11 +56,11 @@ export function McpSection({ projectId }: { projectId: string | null }) {
           />
         )}
         {servers.length > 0 && (
-          <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
+          <Rows>
             {servers.map((s) => (
               <ServerRow key={s.id} server={s} />
             ))}
-          </div>
+          </Rows>
         )}
       </Section>
       {/* Reference, quieter than the list. */}
@@ -231,7 +231,7 @@ const FAILED = () => ({ ok: false, text: t("connectors.failed") })
 // A brand's mark (simple-icons, CC0) in one color on a neutral tile, like the rest of the UI; a plug when there's none.
 function ConnectorLogo({ icon }: { icon: SimpleIcon | undefined }) {
   return (
-    <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-md bg-control text-secondary [&_svg]:size-4">
+    <IconTile>
       {icon ? (
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
           <path d={icon.path} />
@@ -239,7 +239,7 @@ function ConnectorLogo({ icon }: { icon: SimpleIcon | undefined }) {
       ) : (
         <Plug />
       )}
-    </span>
+    </IconTile>
   )
 }
 

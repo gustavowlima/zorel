@@ -6,7 +6,7 @@
 import type { Access, AgentPermissions, Grant, McpServer } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import type { ReactNode } from "react"
-import { cx, Globe, IconButton, MousePointerClick, Plug, Segmented, SquareTerminal, X } from "@/ui"
+import { cx, Globe, IconButton, MousePointerClick, Plug, Rows, Segmented, SquareTerminal, X } from "@/ui"
 
 // A server the agent was given nothing for follows the server's own mode (as on the server).
 export const grantOf = (p: AgentPermissions, s: McpServer): Grant => p.grants[s.id] ?? (s.mode === "read" ? "read" : "write")
@@ -41,7 +41,7 @@ export function PermissionsEditor({
   }
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
+      <Rows>
         <Power
           icon={<SquareTerminal />}
           title={t("agent.perm.files")}
@@ -97,7 +97,7 @@ export function PermissionsEditor({
             }
           />
         ))}
-      </div>
+      </Rows>
       {servers.length === 0 && <p className="text-sm text-muted">{t("agent.perm.noConnectors")}</p>}
       {showAlways && value.always.length > 0 && (
         <section className="flex flex-col gap-2">

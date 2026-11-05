@@ -8,7 +8,7 @@ import { agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projects
 import { agentName, chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { AuthorAvatar } from "./people.tsx"
-import { Button, Check, Code, EmptyState, Screen, Tab, TabList, Tabs, User } from "@/ui"
+import { Button, Check, Code, EmptyState, IconTile, Screen, Tab, TabList, Tabs, User } from "@/ui"
 import { QuestionAnswer } from "./question.tsx"
 
 type Filter = "all" | "approvals" | "memories"
@@ -129,9 +129,9 @@ function MemoryItem({ memory: m }: { memory: Memory }) {
   return (
     <Item
       avatar={
-        <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-card bg-surface text-secondary">
-          <User className="size-4" />
-        </span>
+        <IconTile>
+          <User />
+        </IconTile>
       }
       who={about ? t("inbox.aboutYou") : scopeLabel(m.scope, projects, agents)}
       context={t("inbox.proposed")}

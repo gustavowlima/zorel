@@ -9,7 +9,7 @@ import { useAtomValue } from "@effect/atom-react"
 import { accountsAtom, modelsAtom, mutations, preferencesAtom, useList, useMutation } from "../client.ts"
 import { ACCOUNT_OF_MODEL, splitModel } from "../labels.ts"
 import { ModelPicker } from "./model-picker.tsx"
-import { Button, CircleAlert, IconButton, Plus, SortableList, X } from "@/ui"
+import { Button, CircleAlert, IconButton, Notice, Plus, SortableList, X } from "@/ui"
 
 
 // True while the list mixes two subscription accounts of one provider and the warning isn't accepted yet.
@@ -72,16 +72,17 @@ export function FailoverEditor({ primary, value, onChange }: { primary: Failover
         {value.length >= MAX_FAILOVER && <span className="text-sm text-dim">{t("failover.max", { max: MAX_FAILOVER })}</span>}
       </div>
       {pending && (
-        <div role="alert" className="flex flex-col gap-2 rounded-card border border-subtle bg-surface px-4 py-3">
-          <span className="inline-flex items-center gap-2 font-medium text-warning">
-            <CircleAlert className="size-4" />
-            {t("failover.termsTitle")}
-          </span>
-          <p className="text-secondary">{t("failover.termsBody")}</p>
-          <Button size="sm" variant="secondary" className="self-start" onPress={() => void accept({ reactivityKeys: ["preferences"] })}>
-            {t("failover.termsAccept")}
-          </Button>
-        </div>
+        <Notice
+          icon={<CircleAlert />}
+          title={t("failover.termsTitle")}
+          action={
+            <Button size="sm" variant="secondary" onPress={() => void accept({ reactivityKeys: ["preferences"] })}>
+              {t("failover.termsAccept")}
+            </Button>
+          }
+        >
+          {t("failover.termsBody")}
+        </Notice>
       )}
     </div>
   )

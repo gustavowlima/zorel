@@ -299,6 +299,9 @@ Compact and direct, with a physical squeeze on press.
 - **Field:** 12px muted label above, 11px dim hint below.
 - **Input sizes:** `Input` takes `size` — `md` (32px, forms, the default) or `sm` (28px with 13px text: toolbars, filters, side panels). Screens never set a height class on a field.
 - **SearchInput:** the search field everywhere (settings skills, knowledge, audit, the model picker, the file explorer): the magnifier inside on the left, 14px at `sm` and 16px at `md`, never drawn by a screen.
+- **Rows / ListRow:** every list between hairlines on a page is `Rows` (a row that opens something is `ListRow`); screens don't write `divide-y` themselves.
+- **IconTile:** the square that holds an icon beside a row or a heading (connectors, git, inbox, processes, empty states): sm 28px, md 32px, lg 40px, on the translucent control tone.
+- **Notice:** an alert card on a page (a usage limit reached, failover terms): the icon in the state color, the text in the page's own, an optional action under it. The app-wide offline strip is its own thing.
 - **OptionList / OptionRow:** options whose keyboard lives in a text field beside them (the composer's / @ $ # list, the folder browser): the field keeps the focus, a press selects a row without taking it, a double click opens a row that has something to open; selected = accent-soft with the icon in accent-text. A choice without a text field is a `Select` or a `Menu`.
 
 ### Select
