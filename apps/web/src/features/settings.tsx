@@ -3,6 +3,7 @@
 // (audit.tsx), what runs in the background (processes.tsx), General (the theme and the preferences to come).
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
+import { MAX_RUNNING_CHOICES, MAX_RUNNING_DEFAULT } from "@zorel/contracts"
 import { formatAge, t } from "@zorel/i18n"
 import { type ReactNode, useEffect, useState } from "react"
 import { agentsAtom, fileSkillsAtom, memoriesAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
@@ -15,7 +16,7 @@ import { ProvidersSection } from "./providers.tsx"
 import { ReadingState } from "./reading.tsx"
 import { ProcessesSection } from "./processes.tsx"
 import { StorageSection } from "./storage.tsx"
-import { Activity, ArrowRight, BookOpen, Button, EmptyState, FolderOpen, HardDrive, History, NavItem, Plug, Rows, Screen, SearchInput, Section, Segmented, SettingRow, Settings, Sparkles, Switch } from "@/ui"
+import { Activity, ArrowRight, BookOpen, Button, EmptyState, FolderOpen, HardDrive, History, NavItem, Plug, Rows, Screen, SearchInput, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch } from "@/ui"
 
 const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, skills: <BookOpen />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
 
@@ -268,6 +269,29 @@ function AboutSetting() {
   )
 }
 
+// How many chats may have an agent working at once (the server's limit): over it a chat waits for a free slot. Each
+// agent is a CLI process and spends from the subscription, so a few at a time keeps the limits and the computer in check.
+function AgentsSetting() {
+  const prefs = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)
+  const set = useMutation(mutations.maxRunning)
+  return (
+    <Section title={t("agentsLimit.title")}>
+      <Rows>
+        <SettingRow title={t("agentsLimit.atOnce")} hint={t("agentsLimit.atOnceHint")}>
+          <Select
+            size="sm"
+            className="w-36"
+            aria-label={t("agentsLimit.atOnce")}
+            value={String(prefs?.maxRunning ?? MAX_RUNNING_DEFAULT)}
+            onChange={(v) => void set({ payload: { value: Number(v) }, reactivityKeys: ["preferences"] })}
+            options={MAX_RUNNING_CHOICES.map((n) => ({ value: String(n), label: n === 0 ? t("agentsLimit.noLimit") : String(n) }))}
+          />
+        </SettingRow>
+      </Rows>
+    </Section>
+  )
+}
+
 // Preferences of this computer, one section per topic: Appearance (the theme), then Notifications.
 
 function General() {
@@ -295,6 +319,7 @@ function General() {
         <SoundSetting />
       </Rows>
     </Section>
+    <AgentsSetting />
     <StartupSetting />
     <AboutSetting />
     </>

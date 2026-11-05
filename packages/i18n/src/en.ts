@@ -1140,6 +1140,12 @@ export const en = {
     resume: "Resume",
     banner: "All agents are paused: running work stopped, new messages and routines wait."
   },
+  agentsLimit: {
+    title: "Agents",
+    atOnce: "Agents working at once",
+    atOnceHint: "When more want to work, they wait in line and start as soon as one finishes. Each agent is a process on this computer and spends from your subscription.",
+    noLimit: "No limit"
+  },
   routines: {
     title: "Routines",
     hint: "Work it does by itself: on a schedule, on demand, or when a local script calls its webhook. Each runs in its own chat.",

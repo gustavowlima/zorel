@@ -641,3 +641,31 @@ test("router: a message naming no one goes to the teammate the router picks", ()
     expect(note?._tag === "handoff" && [note.via, note.to, note.reason]).toEqual(["route", [helper.id], "its remit"])
     expect((yield* store.messages(chat.id)).at(-1)!.text).toBe("Helper: on it")
   })))
+
+// Settings › General › "Agents working at once": over the limit a chat keeps its turn queued and waits in line; when a
+// chat at work ends (here: stopped), the one waiting starts on its own.
+test("a limit on chats at work: over it a chat waits for a free slot, then starts by itself", () =>
+  runWith(":memory:", Hanging, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const stateOf = (chatId: string) => store.activeTurns(chatId).pipe(Effect.map((ts) => ts.map((t) => t.state)))
+    const until = (chatId: string, state: string) =>
+      Effect.gen(function* () {
+        for (let i = 0; i < 100; i++) {
+          if ((yield* stateOf(chatId)).includes(state as never)) return
+          yield* Effect.sleep("20 millis")
+        }
+        throw new Error(`${chatId} never reached ${state}`)
+      })
+    yield* runtime.setMaxRunning(1)
+    const a = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const b = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    yield* runtime.send({ chatId: a.id, clientId: crypto.randomUUID(), text: "first" })
+    yield* until(a.id, "running")
+    yield* runtime.send({ chatId: b.id, clientId: crypto.randomUUID(), text: "second" })
+    yield* Effect.sleep("150 millis")
+    expect(yield* stateOf(b.id)).toEqual(["queued"]) // the one slot is taken: it waits
+    yield* runtime.interrupt(a.id)
+    yield* until(b.id, "running") // the slot freed: it started without being sent again
+    yield* runtime.interrupt(b.id)
+  })))

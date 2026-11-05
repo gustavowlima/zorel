@@ -2,7 +2,7 @@
 // The turn doesn't depend on the client: closing the tab stops nothing; reconnect = subscribe again (snapshot + events).
 // Chaining: a reply that mentions another member queues that member's turn (up to MAX_DEPTH without a message from you).
 import { APPROVAL_MS } from "./engines/session.ts"
-import type { Access, Agent, Chat, Effort, FailoverTarget, FailureReason, FileChange, Step, Switch } from "@zorel/contracts"
+import { type Access, type Agent, type Chat, type Effort, type FailoverTarget, type FailureReason, type FileChange, MAX_RUNNING_DEFAULT, type Step, type Switch } from "@zorel/contracts"
 import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
@@ -26,6 +26,13 @@ import { asMemory, picked, readSkill } from "./file-skills.ts"
 import { accessChange, browserRoute, mcpRoute, permissionsOf, REQUEST_ACCESS_TOOL, withAlways } from "./permissions.ts"
 
 const MAX_MENTIONS = 3
+export const MAX_RUNNING_KEY = "maxRunning"
+// The preference as stored ("" or absent: the default); never negative.
+export const parseMaxRunning = (stored: string | undefined | null): number => {
+  const n = stored === undefined || stored === null || stored === "" ? MAX_RUNNING_DEFAULT : Number(stored)
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : MAX_RUNNING_DEFAULT
+}
+const WAITING_SLOT = "Waiting for a free slot"
 const MAX_SESSIONS = 8 // live engine processes; the least recently used one closes first
 // APPROVAL_MS (engines/session.ts): a card expires in 30 min and counts as denial
 const SKIP_MS = 10 * 60_000 // §6.1: a route that failed (not a limit) is skipped this long
@@ -74,6 +81,7 @@ export interface RuntimeService {
   readonly forget: (chatId: string) => Effect.Effect<void>
   readonly paused: () => boolean
   readonly setPaused: (paused: boolean) => Effect.Effect<void>
+  readonly setMaxRunning: (max: number) => Effect.Effect<void>
   readonly decide: (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">, reason?: string) => Effect.Effect<void, ApprovalNotFound>
   readonly subscribeChat: (chatId: string) => Stream.Stream<ChatEvent, ChatNotFound>
   readonly subscribeStatus: Stream.Stream<ChatStatus>
@@ -988,11 +996,20 @@ export const makeRuntime = Effect.gen(function* () {
       workers.delete(chatId)
       yield* setStatus(chatId, "idle", null, "")
       yield* Effect.forkDetach(consolidate(chatId).pipe(Effect.provide(services), Effect.ignore))
-    }).pipe(Effect.ensuring(Effect.sync(() => workers.delete(chatId))))
+    }).pipe(Effect.ensuring(Effect.suspend(() => {
+      workers.delete(chatId)
+      return freeSlots
+    })))
 
   const PAUSED_KEY = "paused"
   let paused = (yield* store.preference(PAUSED_KEY)) === "1"
-  const ensureWorker = (chatId: string) =>
+  // How many chats may have an agent working at once (Settings › General; 0 = no limit). A chat over the limit keeps its
+  // turn queued and waits in line, oldest first, until a worker ends (each agent is a CLI process and spends from the
+  // subscription). A worker is one chat's queue, run one turn at a time, so a slot is a chat at work.
+  let maxRunning = parseMaxRunning(yield* store.preference(MAX_RUNNING_KEY))
+  const waitingSlot: string[] = []
+  const full = () => maxRunning > 0 && workers.size >= maxRunning
+  const ensureWorker = (chatId: string): Effect.Effect<void> =>
     Effect.suspend(() => {
       if (paused) return Effect.void // the turn stays queued until resume
       const w = workers.get(chatId)
@@ -1000,9 +1017,20 @@ export const makeRuntime = Effect.gen(function* () {
         w.kicked = true
         return Effect.void
       }
+      if (full()) {
+        if (waitingSlot.includes(chatId)) return Effect.void
+        waitingSlot.push(chatId)
+        return setStatus(chatId, "running", null, WAITING_SLOT)
+      }
       workers.set(chatId, { kicked: false })
       return Effect.forkDetach(worker(chatId)).pipe(Effect.asVoid)
     })
+  // A slot freed (a worker ended, or the limit went up): the chats waiting in line start, oldest first.
+  const freeSlots: Effect.Effect<void> = Effect.suspend(() => {
+    const next: string[] = []
+    while (waitingSlot.length && (maxRunning === 0 || workers.size + next.length < maxRunning)) next.push(waitingSlot.shift()!)
+    return Effect.forEach(next, ensureWorker, { discard: true })
+  })
 
   // ---------- boot recovery ----------
   // A `running` turn with no process becomes `interrupted` with the partial text; never repeats an uncertain side effect.
@@ -1097,6 +1125,12 @@ export const makeRuntime = Effect.gen(function* () {
 
     interrupt: (chatId) =>
       Effect.gen(function* () {
+        // Stopped while waiting for a free slot: it leaves the line (nothing of it ran).
+        const inLine = waitingSlot.indexOf(chatId)
+        if (inLine >= 0) {
+          waitingSlot.splice(inLine, 1)
+          yield* setStatus(chatId, "idle", null, "")
+        }
         for (const t of (yield* store.activeTurns(chatId)).filter((t) => t.state === "queued")) {
           const turn = yield* store.finishTurn(t.id, { state: "interrupted", error: ErrorCode.cancelled, messageId: null })
           yield* publish(chatId, ev("interrupted", { turn, message: null }))
@@ -1107,6 +1141,12 @@ export const makeRuntime = Effect.gen(function* () {
 
     forget: (chatId) => Effect.forEach([...sessions.keys()].filter((k) => k.startsWith(`${chatId}:`)), closeSession, { discard: true }),
     paused: () => paused,
+    setMaxRunning: (max) =>
+      Effect.gen(function* () {
+        maxRunning = Math.max(0, Math.floor(max))
+        yield* store.setPreference(MAX_RUNNING_KEY, String(maxRunning))
+        yield* freeSlots // a higher limit lets the ones in line start now
+      }),
     setPaused: (next) =>
       Effect.gen(function* () {
         paused = next

@@ -26,7 +26,7 @@ import { Accounts } from "./accounts.ts"
 import { Actor } from "./access.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { LoggerLive } from "./observability.ts"
-import { Runtime, type RuntimeService } from "./runtime.ts"
+import { MAX_RUNNING_KEY, parseMaxRunning, Runtime, type RuntimeService } from "./runtime.ts"
 import { RoutineScheduler, runRoutine } from "./routines.ts"
 import { createRoutineFor, newToken, nextRun } from "./schedule.ts"
 import { BUILDER } from "./team.ts"
@@ -631,10 +631,11 @@ const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
 // The failover terms warning (§6.1) is accepted once and remembered here.
 const FAILOVER_TERMS = "failover_terms_accepted_at"
 const preferencesOf = (store: Repository) =>
-  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills")]), ([v, p, n]) => ({
+  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills"), store.preference(MAX_RUNNING_KEY)]), ([v, p, n, m]) => ({
     failoverTermsAcceptedAt: v ? Number(v) : null,
     paused: p === "1",
-    nativeSkills: n === "1"
+    nativeSkills: n === "1",
+    maxRunning: parseMaxRunning(m)
   }))
 
 // The processes a chat started (its shells, its agent sessions) → the chat's folder, to place the servers they run.
@@ -764,6 +765,7 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       .handle("pause", ({ payload }) => runtime.setPaused(payload.paused))
       // The harnesses' own skills on or off (the next session of each chat picks it up).
       .handle("nativeSkills", ({ payload }) => Effect.andThen(store.setPreference("nativeSkills", payload.enabled ? "1" : "0"), preferencesOf(store)))
+      .handle("maxRunning", ({ payload }) => Effect.andThen(runtime.setMaxRunning(payload.value), preferencesOf(store)))
       .handle("acceptFailoverTerms", () =>
         Effect.andThen(
           store.setPreference(FAILOVER_TERMS, String(Date.now())).pipe(Effect.tap(() => audit.record(Actions.failoverTermsAccepted, { target: { id: FAILOVER_TERMS, name: "Failover" } }))),

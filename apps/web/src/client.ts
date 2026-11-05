@@ -123,6 +123,7 @@ export const mutations = {
   closeConnection: Zorel.mutation("settings", "closeConnection"),
   pickFileSkill: Zorel.mutation("settings", "pickFileSkill"),
   nativeSkills: Zorel.mutation("settings", "nativeSkills"),
+  maxRunning: Zorel.mutation("settings", "maxRunning"),
   acceptFailoverTerms: Zorel.mutation("settings", "acceptFailoverTerms"),
   send: Live.mutation("send"),
   steer: Live.mutation("steer"),
