@@ -1186,6 +1186,7 @@ export const en = {
     },
     details: "Details of {name}",
     instructions: "Instructions",
+    why: "Why this agent",
     seeDetails: "See details",
     creating: "Creating…",
     web: "web",
