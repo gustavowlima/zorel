@@ -9,13 +9,13 @@ import { agentsAtom, fileSkillsAtom, memoriesAtom, mutations, preferencesAtom, p
 import { scopeLabel } from "../labels.ts"
 import { go, SETTINGS_TABS, type SettingsTab, setThemePref, themePref, type ThemePref } from "../state.ts"
 import { AuditSection } from "./audit.tsx"
-import { NotifySetting } from "./notify.tsx"
+import { NotifySetting, SoundSetting } from "./notify.tsx"
 import { McpSection } from "./mcp.tsx"
 import { ProvidersSection } from "./providers.tsx"
 import { ReadingState } from "./reading.tsx"
 import { ProcessesSection } from "./processes.tsx"
 import { StorageSection } from "./storage.tsx"
-import { Activity, ArrowRight, BookOpen, Button, EmptyState, FolderOpen, HardDrive, History, Input, NavItem, Plug, Settings, Rows, Screen, Search, Section, Segmented, Sparkles, Switch } from "@/ui"
+import { Activity, ArrowRight, BookOpen, Button, EmptyState, FolderOpen, HardDrive, History, NavItem, Plug, Rows, Screen, SearchInput, Section, Segmented, Settings, Sparkles, Switch } from "@/ui"
 
 const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, skills: <BookOpen />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
 
@@ -169,10 +169,7 @@ function FileSkills() {
       {!reading.loading && !reading.failed && all.length === 0 && <EmptyState icon={<FolderOpen />} title={t("skills.noFiles")} hint={t("skills.noFilesHint")} />}
       {all.length > 0 && (
         <div className="flex items-center gap-2">
-          <label className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted" aria-hidden="true" />
-            <Input className="h-control-sm pl-8 text-sm" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("skills.search", { count: all.length })} aria-label={t("common.search")} />
-          </label>
+          <SearchInput size="sm" className="flex-1" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("skills.search", { count: all.length })} aria-label={t("common.search")} />
           <Segmented
             label={t("skills.show")}
             value={only}
@@ -221,21 +218,62 @@ function FileSkills() {
 // Desktop only: open Zorel when you log in, without a window, so routines run after a restart.
 type LoginItem = { get: () => Promise<boolean>; set: (on: boolean) => Promise<boolean> }
 const loginItem = (window as { zorelDesktop?: { openAtLogin?: LoginItem } }).zorelDesktop?.openAtLogin
-function StartupSetting() {
+const keepAwake = (window as { zorelDesktop?: { keepAwake?: LoginItem } }).zorelDesktop?.keepAwake
+// A desktop switch kept by the main process: its value, then what the main process confirms.
+function DesktopSwitch({ item, title, hint }: { item: LoginItem; title: string; hint: string }) {
   const [on, setOn] = useState<boolean>()
   useEffect(() => {
-    void loginItem?.get().then(setOn)
-  }, [])
+    void item.get().then(setOn)
+  }, [item])
+  return (
+    <div className="flex items-center gap-3 py-3.5">
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="font-medium">{title}</span>
+        <span className="text-sm text-muted">{hint}</span>
+      </span>
+      <Switch aria-label={title} isSelected={!!on} isDisabled={on === undefined} onChange={(v) => void item.set(v).then(setOn)} />
+    </div>
+  )
+}
+function StartupSetting() {
   if (!loginItem) return null
   return (
     <Section title={t("appearance.startup")}>
       <Rows>
-        <div className="flex items-center gap-3 py-3.5">
+        <DesktopSwitch item={loginItem} title={t("appearance.openAtLogin")} hint={t("appearance.openAtLoginHint")} />
+        {keepAwake && <DesktopSwitch item={keepAwake} title={t("appearance.keepAwake")} hint={t("appearance.keepAwakeHint")} />}
+      </Rows>
+    </Section>
+  )
+}
+
+// The app's version and, in the desktop app, a check for a new one right now.
+type Check = "checking" | "latest" | "available" | "failed" | "unsupported"
+const updates = (window as { zorelDesktop?: { update?: { check: () => Promise<Exclude<Check, "checking">> } } }).zorelDesktop?.update
+const CHECK_TEXT = { checking: "appearance.checking", latest: "appearance.upToDate", available: "appearance.updateFound", failed: "appearance.checkFailed", unsupported: "appearance.checkUnsupported" } as const
+function AboutSetting() {
+  const [check, setCheck] = useState<Check>()
+  return (
+    <Section title={t("appearance.about")}>
+      <Rows>
+        <div className="flex flex-wrap items-center gap-3 py-3.5">
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="font-medium">{t("appearance.openAtLogin")}</span>
-            <span className="text-sm text-muted">{t("appearance.openAtLoginHint")}</span>
+            <span className="font-medium tabular-nums">{t("appearance.version", { version: __ZOREL_VERSION__ })}</span>
+            <span className="text-sm text-muted">{check ? t(CHECK_TEXT[check]) : t("appearance.versionHint")}</span>
           </span>
-          <Switch aria-label={t("appearance.openAtLogin")} isSelected={!!on} isDisabled={on === undefined} onChange={(v) => void loginItem.set(v).then(setOn)} />
+          {updates && (
+            <Button
+              size="sm"
+              variant="secondary"
+              isDisabled={check === "checking"}
+              onPress={() => {
+                setCheck("checking")
+                void updates.check().then(setCheck, () => setCheck("failed"))
+              }}
+            >
+              {t("appearance.checkUpdates")}
+            </Button>
+          )}
         </div>
       </Rows>
     </Section>
@@ -270,9 +308,11 @@ function General() {
     <Section title={t("appearance.notifications")}>
       <Rows>
         <NotifySetting />
+        <SoundSetting />
       </Rows>
     </Section>
     <StartupSetting />
+    <AboutSetting />
     </>
   )
 }

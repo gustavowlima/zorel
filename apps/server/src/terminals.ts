@@ -245,6 +245,9 @@ export async function serversUnder(roots: ReadonlyArray<string>, owned: Readonly
   const cwds = cwdsOf([...ports.keys()])
   const out: Array<LocalServer & { root: string }> = []
   for (const [pid, list] of ports) {
+    // An agent's CLI or a terminal's shell listening itself (Claude Code keeps a local port of its own) is that
+    // session, not a server someone started: only what runs under it counts.
+    if (owned.has(pid)) continue
     const cwd = cwds.get(pid)
     const root = byOwner.get(pid) ?? (cwd ? roots.find((r) => cwd === r || cwd.startsWith(`${r}/`) || cwd.startsWith(`${r}\\`)) : undefined)
     if (root) out.push({ pid, command: procs.find((p) => p.pid === pid)?.name ?? "?", ports: list, root })

@@ -1,4 +1,4 @@
-// Usage (ARCHITECTURE §10.2; layout inspired by a reference app's Usage): one headline number (estimated cost, or tokens),
+// Usage (ARCHITECTURE §10.2): one headline number (estimated cost, or tokens),
 // the harnesses that make it up (the chart's legend, with their share), a stacked area of the same metric per
 // day, the token totals, the subscriptions' limit windows, a breakdown table (model, agent, project, account,
 // day: the day view is the chart as a table) and the most expensive turns. Filters (agent, metric, range) sit

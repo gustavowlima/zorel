@@ -1,115 +1,131 @@
 # Zorel
 
-Workspace open source de agentes de IA com **projetos**, **agentes de projeto**, **canais com vários agentes** e **chats**. O contexto é otimizado e o aprendizado é contínuo (memórias e skills). Os agentes usam **ferramentas MCP** com a sua aprovação. Você troca de modelo a qualquer mensagem, usando sua **assinatura** (Claude Code, Codex) ou um **token de API** (Anthropic, OpenAI, OpenRouter, Ollama, LM Studio). Roda como app web ou desktop.
+Zorel is an open source workspace for AI coding agents. You organize work into **projects**, give each project a **team of agents**, and talk to them in **chats** and **multi-agent channels**. Zorel owns the context and the knowledge, so you can switch model, provider or account on any message without losing anything. It runs as a desktop app (macOS, Windows, Linux) or as a local web app.
 
-## Por que
+## Why Zorel
 
-Ferramentas como o a reference app mantêm uma sessão longa por agente, e o contexto acumula ali dentro. No Zorel, nenhuma sessão de CLI guarda estado. Cada turno é montado do zero, em camadas e com orçamento:
+- **The context belongs to Zorel, not to a CLI session.** Every turn is assembled in layers (base, agent, channel, your memories, project brief and knowledge, agent memories, chat summary, knowledge retrieved for the current message, recent messages) under a budget. That assembly is the resume point for any engine, so switching model or provider needs no handoff.
+- **It learns while it works.** Work becomes project knowledge: facts, decisions, how-tos, pitfalls and session notes, versioned with restore. What is about *you* (preferences, ways of working) only enters the context after you approve it.
+- **A team of agents, not one chat.** Agents delegate to each other with `@mentions`, every handoff is visible in the chat, and every action that changes something goes through the approval level you chose.
+- **Uses what you already pay for.** Subscriptions run through the official CLI you are already logged into (Claude Code, Codex, other ACP agents). API keys from any provider work too. Several accounts per provider, optional automatic failover when a limit runs out, and usage you can see.
+- **Light.** One process, one SQLite file, no required external service.
 
-```
-base → agente → canal → memórias do usuário → projeto (brief + memórias) → memórias do agente
-     → skills → resumo do chat → memórias recuperadas pela mensagem atual → últimas mensagens
-```
+## Features
 
-- **Janela curta:** quando passam de 50 mensagens desde o último resumo, as antigas são resumidas e as 30 últimas seguem literais. O botão **Compactar** faz isso na hora.
-- **Aprendizado:** a cada consolidação, o modelo propõe **memórias** (fatos duráveis) e **skills** (procedimentos que valem repetir), com escopo de usuário, projeto ou agente. Elas **só entram no contexto depois que você aprova**.
-- **Orçamento:** as memórias mais recentes ocupam até 8k caracteres. O resto e o passo a passo das skills ficam pesquisáveis (FTS5/BM25) e voltam quando a mensagem atual é relevante.
-- **Troca de modelo:** como o contexto é nosso, trocar de modelo não exige handoff. O próximo turno só usa outro engine.
+### Projects, agents and chats
+- Projects with a folder on disk, a brief, a default agent, their own agents, chats and knowledge.
+- Standalone chats and **channels** with several agents. The lead (★) answers when nobody is mentioned; `@handle` picks who answers; agents pass the turn by mentioning each other (up to 3 replies in a row without a message from you).
+- Create and edit agents and teams from the conversation (a proposal card you accept), or in the Builder. Agent versions with restore, export and import without secrets.
 
-## Canais
+### Turn runtime
+- Turns run in the background, queued per chat, and survive closing the window. A running turn interrupted by a restart is kept as partial, never replayed.
+- Steer a running turn, interrupt it, or **edit from here**: rewind the conversation and, optionally, the file changes made since.
+- Runaway guards: a stalled turn, a repeated step loop or a streak of failing steps ends the turn and says why.
+- **Pause all** stops running turns and holds the queue and routines until you resume.
+- When every route of a chat hits its usage limit, the chat resumes on its own when the limit resets.
 
-Um chat pode ter vários agentes membros. O primeiro (★) é o líder e responde quando ninguém é mencionado. `@handle` escolhe quem responde. Um agente passa a vez mencionando outro, até 3 respostas seguidas sem mensagem sua. O líder usa o modelo do chat, e os outros membros usam o modelo de cada um. Assim um canal pode ter Claude escrevendo e Codex revisando.
+### Coding workspace
+- Per-turn **diffs** (Changes) and a file browser with tabs, name search and a virtualized tree.
+- **Git** panel, integrated **terminal** (PowerShell on Windows, your login shell elsewhere), `package.json` scripts as terminal tabs, running servers with open-in-browser and stop.
+- A built-in **browser** agents can drive.
+- **Processes**: servers listening inside a chat's folder, live terminals, engine sessions and MCP connections, with live CPU and memory.
 
-## Ferramentas (MCP)
+### Approvals and tools
+- Three access levels per agent: **Workspace** (default), **Ask before** and **Full access**, mapped onto each engine.
+- One approval card for native tools and MCP tools: approve once, always allow (revocable rule) or deny with a reason. Pending approvals are persisted and expire. **Needs you** collects everything waiting on you.
+- MCP servers, local (command) or remote (URL), global or per project, with a catalog of connectors and OAuth sign-in. Each server has a mode:
 
-Cadastre servidores MCP locais (comando) ou remotos (URL), globais ou por projeto. Cada servidor tem um modo:
-
-| Modo | O agente vê | Pede aprovação |
+| Mode | The agent sees | Asks for approval |
 |---|---|---|
-| Só leitura | só as ferramentas de leitura | — |
-| Tudo, escrita com aprovação | todas | ferramentas que escrevem ou são sensíveis |
-| Tudo, sem perguntar | todas | nada |
+| Read only | read tools only | — |
+| All, writes with approval | every tool | tools that write or are sensitive |
+| All, without asking | every tool | nothing |
 
-Ferramenta é classificada pelas anotações MCP e, sem elas, pelo nome (`delete`, `send`, `deploy`… são sensíveis).
+Tools are classified by their MCP annotations and, without them, by name (`delete`, `send`, `deploy`… are sensitive). Every turn gets its own session on a **local MCP gateway** with a secret URL: it is the only tool source for any engine, and a call outside the list never runs. Server tokens and headers live in the **system keychain**, never in the database.
 
-Cada turno abre uma sessão própria num **gateway MCP local** com URL secreta. Essa é a única fonte de ferramentas de qualquer engine, e uma chamada fora da lista nunca roda. Os pedidos de aprovação aparecem no chat. Uma recusa volta ao modelo como resultado, e o modelo não tenta de novo.
+### Knowledge
+- Knowledge pages scoped to you, a project or an agent: Markdown, full-text search (SQLite FTS5), every edit versioned with restore, pin to keep a page in context.
+- Agents search and write knowledge through Zorel tools; a feed shows what Zorel learned.
+- Context meter and **Compact** to summarize older messages on demand.
 
-As variáveis e cabeçalhos dos servidores (tokens) ficam no **chaveiro do sistema**, nunca no banco.
+### Models, accounts and usage
+- Pick the model on any message. Model ids are `<provider>/<model>`, and models are listed by each engine.
+- Multiple accounts per provider, each with isolated credentials (its own CLI login folder for subscriptions, its own keychain entry for API keys).
+- Optional **failover**: an ordered list of alternatives per agent or chat, used only when the turn has not acted yet, so no side effect is ever repeated.
+- **Usage**: tokens, estimated cost and time per turn, aggregated by agent, project, account and model, plus each subscription's limit windows, reset times and alerts.
 
-## Rodar
+### Automation
+- **Routines**: scheduled runs of an agent, each in its own chat.
+- System notifications when a chat needs you, fails or finishes while you are elsewhere.
+- **Move to another computer**: export the whole workspace (database and attachments, no secrets) as one archive and import it elsewhere.
 
-Requer [Bun](https://bun.sh) 1.4+.
+## Engines
+
+| Credential | Engine | How it signs in |
+|---|---|---|
+| Claude subscription | Claude Agent SDK, running your installed `claude` CLI | `claude auth login` |
+| ChatGPT subscription | Codex App Server | `codex login` |
+| Other agent CLIs (Gemini CLI, Cursor, Kimi…) | ACP | each CLI's own login |
+| API key: Anthropic, OpenAI, OpenRouter, Gemini, or a local server (Ollama, LM Studio) | OpenCode via ACP | key saved in Settings (stored in the system keychain) |
+
+Zorel never reads or stores a CLI's OAuth login. CLIs run without saved sessions, without your user config, hooks or plugins, and only with the gateway's tools. Each provider has its own terms for third-party apps; sharing one subscription among several people through one Zorel is risky.
+
+## Install
+
+The desktop app (macOS and Linux):
+
+```bash
+curl -fsSL https://github.com/gustavowlima/zorel/releases/latest/download/install.sh | sh
+```
+
+On Windows, use the installer from the latest release. Running the script again updates the app; the app's update button does the same.
+
+## Run from source
+
+Requires [Bun](https://bun.sh) 1.4+.
 
 ```bash
 bun install
-bun run dev            # server em :4317 e web em http://localhost:5173
-bun run start          # build do web + um processo só em http://127.0.0.1:4317
-bun run desktop        # app desktop (Electron) em modo dev
-bun run desktop:build  # gera .app e .dmg em apps/desktop/artifacts
-bun run lint            # Biome
+bun run dev            # server on :4317 and web on :5173; open the login link the server prints
+bun run start          # builds the web app and serves everything from one process; open the login link it prints
+bun run desktop        # desktop app (Electron) in dev mode
+bun run desktop:build  # packages the desktop app into apps/desktop/artifacts
+bun run lint           # Biome
 bun run test
 bun run typecheck
+bun run check:ui       # design system rules
+bun run check:i18n     # translation catalog
 ```
 
-Os dados ficam em `~/.zorel` (mude com `ZOREL_HOME`). O server escuta só em `127.0.0.1`.
+Data lives in `~/.zorel` (change it with `ZOREL_HOME`). The server only listens on `127.0.0.1`.
 
-## Modelos
-
-O id é `<provider>/<modelo>`, e qualquer modelo pode ser digitado no seletor.
-
-| Provider | Tipo | Como habilitar |
-|---|---|---|
-| `claude-cli/sonnet` | assinatura | `claude auth login` |
-| `codex-cli/default` | assinatura | `codex login` (`default` usa o modelo padrão do Codex) |
-| `anthropic/claude-sonnet-5-5` | API | chave em Configurações ou `ANTHROPIC_API_KEY` |
-| `openai/<modelo>` | API | chave em Configurações ou `OPENAI_API_KEY` (`OPENAI_BASE_URL` opcional) |
-| `openrouter/<modelo>` | API | chave em Configurações ou `OPENROUTER_API_KEY` |
-| `ollama/<modelo>` | local | Ollama rodando (`OLLAMA_URL`). Os modelos são listados dele |
-| `lmstudio/<modelo>` | local | LM Studio rodando (`LMSTUDIO_URL`) |
-
-As chaves salvas pela interface vão para o chaveiro do sistema (`Bun.secrets`). Uma variável de ambiente tem precedência.
-
-As assinaturas sempre rodam a **CLI oficial** que você já tem logada. O Zorel nunca lê nem guarda o login OAuth dela. A CLI roda sem sessão salva, sem shell nem arquivos, sem seus hooks ou plugins, e só com as ferramentas do gateway. Cada provider tem termos próprios para uso por apps de terceiros. Usar uma assinatura de várias pessoas por um único Zorel é arriscado.
-
-`ZOREL_MEMORY_MODEL` define o modelo da consolidação. Sem ela, usa o modelo do chat.
-
-## Estrutura
+## Structure
 
 ```
-packages/contracts   API e entidades (Effect Schema): fonte única de tipos do server e do web
-apps/server          Bun + Effect HttpApi + Drizzle sobre SQLite (@effect/sql-sqlite-bun)
-  schema.ts          tabelas (Drizzle); `bun run --cwd apps/server db:generate` gera a migration em drizzle/
-  migrate.ts         adoção do banco do MVP e backup em ~/.zorel/backups antes de migrar
-  db.ts              repositório (Effect), índice FTS5 de memórias e skills
-  engines.ts         engines de CLI (Claude Code, Codex) e de API (effect/ai, com loop de ferramentas)
-  context.ts         montagem do turno em camadas, menções, prompt e parser da consolidação
-  chat.ts            turno com streaming, canal (encadeamento), ferramentas com aprovação, consolidação
-  tools.ts           hub de servidores MCP, política e gateway MCP por turno
-  secrets.ts         chaves e variáveis no chaveiro do sistema
-  main.ts            rotas (HttpApi + SSE em POST /api/chats/:id/send) e serviço do build web
-apps/web             Vite + React 19 + Tailwind v4
-  styles.css, ui/     design system (tokens --z-*, primitivas sobre React Aria via shadcn)
-  state.ts           dados, rota (hash) e contexto
-  features/          chat/canal, projeto e agentes, memórias e skills, ferramentas e configurações, seletor de modelo
-apps/desktop         Electron: janela; o server roda como processo filho (binário Bun compilado no pacote)
+packages/contracts   API and entities (Effect Schema): the single source of types for server and web
+packages/i18n        typed UI message catalog (English is the source)
+apps/server          Bun + Effect HttpApi/RPC + Drizzle over SQLite
+  runtime.ts         per-chat turn queue, recovery, guards
+  context.ts         layered turn assembly
+  engines/           Claude Agent SDK, Codex App Server, ACP
+  tools.ts           MCP hub, policy and per-turn gateway
+  secrets.ts         keys and variables in the system keychain
+  main.ts            routes and the web build
+apps/web             Vite + React 19 + Tailwind v4, design system in src/ui
+apps/desktop         Electron window; the server runs as a separate compiled Bun process
+apps/site            zorel.dev landing page
 ```
 
-## Distribuição
+Architecture, decisions and roadmap: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-O CI (`.github/workflows/ci.yml`) roda typecheck, testes e build em todo push e PR. Num push na `main`, ele também gera o app macOS como artefato. A assinatura (Developer ID) e a notarização ligam quando estes segredos existem no repositório: `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` e `APPLE_TEAM_ID`. Sem eles o pacote sai sem assinatura, e o macOS atual não o executa; para uso local rode `bun run desktop`. O ícone tem como fonte `apps/desktop/assets/icon.svg`, e `bun run --cwd apps/desktop icons` gera o `icon.png` (o electron-builder faz os tamanhos).
+## Releases
 
-## Arquitetura
+CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every push and pull request. A `v*` tag builds the desktop app for each system and publishes a GitHub release, which installed apps update from. macOS signing and notarization turn on when `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` are set; without them the macOS build is signed ad hoc and installs with `install.sh`.
 
-Decisões, estado atual, alvo e fases: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+## Contributing
 
-## Referências
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks and conventions, [SECURITY.md](SECURITY.md) to report a vulnerability privately, and [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
-O que foi aproveitado do a reference app, do T3 Code e do a reference app, onde está e como é verificado: [docs/references.md](docs/references.md).
+## License
 
-## Licença
-
-[Apache-2.0](LICENSE).
-
-## Créditos
-
-Partes derivam do [a reference app](https://github.com/eduwxyz/a reference app) (Apache-2.0) e do [T3 Code](https://github.com/pingdotgg/t3code) (MIT). Detalhes em [NOTICE](NOTICE).
+[Apache-2.0](LICENSE). Third-party attributions are in [NOTICE](NOTICE).

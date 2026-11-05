@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 import { ChevronRight } from "./icons"
 
 // A page's header bar. In the desktop app it moves up into the window's title bar (the #titlebar-slot the shell
-// renders), as in a reference app: the card starts with the page itself. Elsewhere it is the card's top bar.
+// renders): the card starts with the page itself. Elsewhere it is the card's top bar.
 export function PageHeader({ className, children }: { className?: string; children: ReactNode }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null)
   useLayoutEffect(() => setSlot(document.getElementById("titlebar-slot")), [])
@@ -66,11 +66,13 @@ export function EmptyState({ icon, title, hint, action }: { icon?: ReactNode; ti
 }
 
 // value in 0..1. With warnAt (e.g. 0.8 for a subscription limit, ARCHITECTURE §10.2) it turns warning past it.
-export function Meter({ value, label, warnAt, className }: { value: number; label: string; warnAt?: number; className?: string }) {
+// role "progressbar" for work under way (a download), "meter" for a level (usage).
+export function Meter({ value, label, warnAt, className, role = "meter" }: { value: number; label: string; warnAt?: number; className?: string; role?: "meter" | "progressbar" }) {
   const v = Math.min(1, Math.max(0, value))
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a native <meter> can't take the tokens' look in every engine
-    <span role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(v * 100)} className={cn("block h-1 overflow-hidden rounded-full bg-control", className)}>
+    // A span, not a native <meter>/<progress>: those can't take the tokens' look in every engine.
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: role is "meter" or "progressbar", both take aria-label (Biome can't read a dynamic role)
+    <span role={role} aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(v * 100)} className={cn("block h-1 overflow-hidden rounded-full bg-control", className)}>
       <span className={cn("block h-full rounded-full transition-[width] duration-300 ease-out motion-reduce:transition-none", warnAt !== undefined && v > warnAt ? "bg-warning" : "bg-accent")} style={{ width: `${v * 100}%` }} />
     </span>
   )

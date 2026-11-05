@@ -1,26 +1,31 @@
-// The agents' browser (see docs: the chat's Browser panel). One headless Chrome for the whole server, opened on
-// first use with Playwright over the installed Google Chrome (falls back to Playwright's Chromium), in one
-// persistent profile under the data folder, so a site signed into once stays signed in. Each chat has its own
-// tabs; the agents drive them through the tools below (read the page as an accessibility snapshot with
-// [ref=eN] handles, act on a ref), and the Browser panel watches the chat's active tab live (CDP screencast)
-// and can take over: while a person holds the browser, every agent tool on that chat is refused.
-// In the desktop app (ZOREL_DESKTOP_* set by Electron) there is no headless Chrome: each tab is a native
-// WebContentsView the Electron main process creates (Electron refuses Target.createTarget), in a persistent
-// partition per agent (own cookies and logins), and the server drives it over CDP like any page. The panel shows
-// the view itself instead of frames.
-import { join } from "node:path"
+// The agents' browser (see docs: the chat's Browser panel). One headless Chromium for the whole server, opened on
+// first use by Playwright over a pipe only the server holds (never a debugging port another process here could
+// reach): the installed Google Chrome, else Microsoft Edge, else the Chromium bundled with the desktop app (or
+// Playwright's own). Each agent browses in a context of its own (cookies, storage, logins apart from the others; the
+// person's tabs in one more), saved encrypted under the data folder so a site signed into once stays signed in.
+// Each chat has its own tabs; the agents drive them through the tools below (read the page as an accessibility
+// snapshot with [ref=eN] handles, act on a ref), and the Browser panel watches the chat's active tab live (CDP
+// screencast) and can take over: while a person holds the browser, every agent tool on that chat is refused.
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { join, resolve, sep } from "node:path"
 import { Context, Effect, Layer } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { existsSync } from "node:fs"
-import { resolve, sep } from "node:path"
-import { type BrowserContext, type CDPSession, chromium, type Dialog, type Page } from "playwright-core"
+import { type Browser, type BrowserContext, type CDPSession, chromium, type Dialog, type Page } from "playwright-core"
 import { DataDir } from "./chat.ts"
 import { Store } from "./db.ts"
+import { BROWSER_KEY, Secrets } from "./secrets.ts"
 
 export const MAX_SNAPSHOT_CHARS = 30_000
+// Where to find a browser, in order: Google Chrome, Microsoft Edge (on every Windows), then Playwright's Chromium
+// (bundled with the desktop app: PLAYWRIGHT_BROWSERS_PATH).
+const CHANNELS = ["chrome", "msedge", undefined] as const
 const ACTION_MS = 15_000
 const NAV_MS = 30_000
 const VIEWPORT = { width: 1280, height: 800 }
+export const YOU = "you" // the profile of the tabs a person opens from the panel
+const IV_BYTES = 12 // AES-GCM nonce
+const TAG_BYTES = 16 // AES-GCM tag
 
 export interface TabInfo {
   readonly id: string
@@ -31,6 +36,7 @@ export interface TabInfo {
 
 interface ChatBrowser {
   readonly tabs: Map<string, Page>
+  readonly profiles: Map<string, string> // tab → whose context it lives in
   active: string | undefined
   userControl: boolean // a person holds the browser: agent tools are refused
   readonly watchers: Set<Watcher>
@@ -47,62 +53,94 @@ export interface Watcher {
 
 export class BrowserError extends Error {}
 
-// The desktop app's browser host: its CDP endpoint and the control endpoint that creates and closes views.
-export interface NativeHost {
-  readonly cdp: string
-  readonly control: string
-  readonly token: string
-}
-export const nativeHostFromEnv = (env = process.env): NativeHost | undefined =>
-  env.ZOREL_DESKTOP_CDP && env.ZOREL_DESKTOP_CONTROL && env.ZOREL_DESKTOP_TOKEN ? { cdp: env.ZOREL_DESKTOP_CDP, control: env.ZOREL_DESKTOP_CONTROL, token: env.ZOREL_DESKTOP_TOKEN } : undefined
-// A partition name from an agent id ("you" for tabs a person opens, "assistant" without an agent).
+// A context's name from an agent id (YOU for the person, "assistant" without an agent): also its file name.
 export const profileOf = (agentId: string | undefined) => (agentId ?? "assistant").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 64) || "assistant"
 
+type State = Awaited<ReturnType<BrowserContext["storageState"]>>
+
+// Saved logins: AES-256-GCM with a key from the system keychain, so the file alone (readable by anything that can
+// read the data folder, agents included) gives nothing away.
+export const seal = (key: Buffer, state: State) => {
+  const iv = randomBytes(IV_BYTES)
+  const c = createCipheriv("aes-256-gcm", key, iv)
+  const body = Buffer.concat([c.update(JSON.stringify(state), "utf8"), c.final()])
+  return Buffer.concat([iv, c.getAuthTag(), body])
+}
+export const unseal = (key: Buffer, bytes: Buffer): State => {
+  const d = createDecipheriv("aes-256-gcm", key, bytes.subarray(0, IV_BYTES))
+  d.setAuthTag(bytes.subarray(IV_BYTES, IV_BYTES + TAG_BYTES))
+  return JSON.parse(Buffer.concat([d.update(bytes.subarray(IV_BYTES + TAG_BYTES)), d.final()]).toString("utf8")) as State
+}
+
+// The first browser that starts, in CHANNELS order.
+async function launch(): Promise<Browser> {
+  let last: unknown
+  for (const channel of CHANNELS) {
+    try {
+      return await chromium.launch({ headless: true, ...(channel && { channel }) })
+    } catch (e) {
+      last = e
+    }
+  }
+  throw new BrowserError(`No browser to run: install Google Chrome, or run \`bunx playwright install chromium-headless-shell\`. (${last instanceof Error ? last.message.split("\n")[0] : last})`)
+}
+
 export class Browsers {
-  private context: Promise<BrowserContext> | undefined
+  private browser: Promise<Browser> | undefined
+  private contexts = new Map<string, Promise<BrowserContext>>()
   private chats = new Map<string, ChatBrowser>()
   private screencast: { page: Page; cdp: CDPSession } | undefined
 
   constructor(
-    private readonly profileDir: string,
-    private readonly native?: NativeHost
+    private readonly stateDir: string,
+    private readonly key: Buffer
   ) {}
 
-  private async host(method: string, path: string, body?: unknown) {
-    const r = await fetch(`${this.native!.control}${path}`, { method, headers: { authorization: `Bearer ${this.native!.token}`, "content-type": "application/json" }, body: body ? JSON.stringify(body) : null })
-    if (!r.ok) throw new BrowserError(`The desktop browser refused: ${await r.text()}`)
+  // Opened on first use and shared by every context.
+  private open(): Promise<Browser> {
+    this.browser ??= launch().catch((e) => {
+      this.browser = undefined
+      throw e
+    })
+    return this.browser
   }
 
-  // Opened on first use; the installed Chrome when there is one, else Playwright's Chromium.
-  private open(): Promise<BrowserContext> {
-    this.context ??= (async () => {
-      if (this.native) {
+  private file = (profile: string) => join(this.stateDir, `${profile}.bin`)
+
+  // A profile's context, with its saved logins (a file that no longer decrypts starts empty).
+  private context(profile: string): Promise<BrowserContext> {
+    let ctx = this.contexts.get(profile)
+    if (!ctx) {
+      ctx = (async () => {
+        const browser = await this.open()
+        let storageState: State | undefined
         try {
-          return (await chromium.connectOverCDP(this.native.cdp)).contexts()[0]!
+          if (existsSync(this.file(profile))) storageState = unseal(this.key, readFileSync(this.file(profile)))
         } catch (e) {
-          this.context = undefined
-          throw new BrowserError(`The desktop browser is not reachable (${e instanceof Error ? e.message.split("\n")[0] : e}).`)
+          console.warn(`browser: saved logins of ${profile} not readable, starting empty`, e instanceof Error ? e.message : e)
         }
-      }
-      const options = { headless: true, viewport: VIEWPORT, acceptDownloads: false }
-      try {
-        return await chromium.launchPersistentContext(this.profileDir, { ...options, channel: "chrome" })
-      } catch {
-        try {
-          return await chromium.launchPersistentContext(this.profileDir, options)
-        } catch (e) {
-          this.context = undefined
-          throw new BrowserError(`No browser to run: install Google Chrome, or run \`bunx playwright install chromium\`. (${e instanceof Error ? e.message.split("\n")[0] : e})`)
-        }
-      }
-    })()
-    return this.context
+        return browser.newContext({ viewport: VIEWPORT, acceptDownloads: false, ...(storageState && { storageState }) })
+      })()
+      ctx.catch(() => this.contexts.delete(profile))
+      this.contexts.set(profile, ctx)
+    }
+    return ctx
+  }
+
+  // Writes a profile's logins (after the agent acted, after a person, at exit).
+  async save(profile: string) {
+    const ctx = await this.contexts.get(profile)?.catch(() => undefined)
+    if (!ctx) return
+    const state = await ctx.storageState({ indexedDB: true }).catch(() => undefined)
+    if (!state) return
+    mkdirSync(this.stateDir, { recursive: true })
+    writeFileSync(this.file(profile), seal(this.key, state), { mode: 0o600 })
   }
 
   private chat(chatId: string): ChatBrowser {
     let c = this.chats.get(chatId)
     if (!c) {
-      c = { tabs: new Map(), active: undefined, userControl: false, watchers: new Set(), dialogs: [] }
+      c = { tabs: new Map(), profiles: new Map(), active: undefined, userControl: false, watchers: new Set(), dialogs: [] }
       this.chats.set(chatId, c)
     }
     return c
@@ -123,41 +161,36 @@ export class Browsers {
     for (const w of c.watchers) w.state(state)
   }
 
-  async newTab(chatId: string, url?: string, profile = "assistant"): Promise<string> {
-    const context = await this.open()
+  async newTab(chatId: string, url?: string, profile = profileOf(undefined)): Promise<string> {
+    const to = url && webUrl(url) // before any tab opens
+    const page = await (await this.context(profile)).newPage()
+    const id = await this.adopt(chatId, page, profile)
+    if (to) await page.goto(to, { timeout: NAV_MS, waitUntil: "domcontentloaded" }).catch(() => undefined)
+    return id
+  }
+
+  // A page joins the chat as its active tab (a new one, or a popup a page opened: same profile).
+  private async adopt(chatId: string, page: Page, profile: string): Promise<string> {
     const id = crypto.randomUUID()
-    const page = this.native ? await this.nativePage(context, id, profile) : await context.newPage()
     const c = this.chat(chatId)
     c.tabs.set(id, page)
+    c.profiles.set(id, profile)
     c.active = id
     const changed = () => void this.notify(chatId)
     page.on("framenavigated", (f) => f === page.mainFrame() && changed())
     page.on("load", changed)
+    page.on("popup", (popup) => void this.adopt(chatId, popup, profile))
+    page.on("dialog", (d) => void this.dialog(chatId, d))
     page.on("close", () => {
       c.tabs.delete(id)
+      c.profiles.delete(id)
       if (c.active === id) c.active = [...c.tabs.keys()].at(-1)
       void this.watch(chatId)
       changed()
     })
-    // A page that opens a popup: the popup becomes a tab of the same chat.
-    page.on("popup", (popup) => void this.adopt(chatId, popup))
-    page.on("dialog", (d) => void this.dialog(chatId, d))
-    if (url) await page.goto(normalizeUrl(url), { timeout: NAV_MS, waitUntil: "domcontentloaded" }).catch(() => undefined)
     await this.watch(chatId)
     changed()
     return id
-  }
-
-  // The desktop app opens a view on about:blank#zorel-tab-<id>; its page shows up in the CDP context shortly after.
-  private async nativePage(context: BrowserContext, id: string, profile: string): Promise<Page> {
-    await this.host("POST", "/tabs", { id, profile })
-    const mark = `#zorel-tab-${id}`
-    for (let i = 0; i < 200; i++) {
-      const page = context.pages().find((p) => p.url().endsWith(mark))
-      if (page) return page
-      await Bun.sleep(25)
-    }
-    throw new BrowserError("The desktop browser didn't open the tab.")
   }
 
   // A page's alert/confirm/prompt never blocks the agent: it is answered (dismissed unless the agent asked to
@@ -178,23 +211,7 @@ export class Browsers {
     return c.dialogs.splice(0)
   }
 
-  private async adopt(chatId: string, page: Page) {
-    const id = crypto.randomUUID()
-    const c = this.chat(chatId)
-    page.on("dialog", (d) => void this.dialog(chatId, d))
-    c.tabs.set(id, page)
-    c.active = id
-    page.on("close", () => {
-      c.tabs.delete(id)
-      if (c.active === id) c.active = [...c.tabs.keys()].at(-1)
-      void this.watch(chatId)
-      void this.notify(chatId)
-    })
-    await this.watch(chatId)
-    await this.notify(chatId)
-  }
-
-  // The active tab, opening one when the chat has none.
+  // The active tab, opening one in this profile when the chat has none.
   async page(chatId: string, tabId?: string, profile?: string): Promise<Page> {
     const c = this.chat(chatId)
     if (tabId) {
@@ -206,6 +223,12 @@ export class Browsers {
     return c.tabs.get(c.active!)!
   }
 
+  // Whose context the chat's active tab lives in.
+  activeProfile(chatId: string): string | undefined {
+    const c = this.chat(chatId)
+    return c.active ? c.profiles.get(c.active) : undefined
+  }
+
   async select(chatId: string, tabId: string) {
     const c = this.chat(chatId)
     if (!c.tabs.has(tabId)) throw new BrowserError(`No tab ${tabId} in this chat.`)
@@ -215,14 +238,7 @@ export class Browsers {
   }
 
   async closeTab(chatId: string, tabId: string) {
-    const page = this.chat(chatId).tabs.get(tabId)
-    if (!page) return
-    if (this.native) await this.host("DELETE", `/tabs/${tabId}`)
-    else await page.close()
-  }
-
-  get isNative() {
-    return !!this.native
+    await this.chat(chatId).tabs.get(tabId)?.close()
   }
 
   // Agent tools pass here first: a person holding the browser blocks them.
@@ -231,7 +247,9 @@ export class Browsers {
   }
 
   setControl(chatId: string, user: boolean) {
-    this.chat(chatId).userControl = user
+    const c = this.chat(chatId)
+    if (c.userControl && !user) void this.save(this.activeProfile(chatId) ?? YOU) // what they signed into stays
+    c.userControl = user
     void this.notify(chatId)
   }
 
@@ -252,7 +270,6 @@ export class Browsers {
   // Screencasts the active tab of a chat that a panel watches (one screencast at a time: the last watched chat).
   private async watch(chatId: string) {
     const c = this.chat(chatId)
-    if (this.native) return // the panel shows the native view itself
     const page = c.watchers.size && c.active ? c.tabs.get(c.active) : undefined
     if (this.screencast?.page === page) return
     if (this.screencast) {
@@ -274,13 +291,20 @@ export class Browsers {
   }
 
   async close() {
-    if (this.native) return // Electron's own context: disconnecting is enough, and the process is ending
-    const context = await this.context?.catch(() => undefined)
-    await context?.close().catch(() => undefined)
+    for (const profile of this.contexts.keys()) await this.save(profile)
+    const browser = await this.browser?.catch(() => undefined)
+    await browser?.close().catch(() => undefined)
   }
 }
 
 export const normalizeUrl = (url: string) => (/^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`)
+// Agents browse the web only: file:, chrome:, view-source: and the like would read this computer without asking.
+const WEB = /^https?:\/\//i
+export const webUrl = (url: string) => {
+  const u = normalizeUrl(url)
+  if (!WEB.test(u)) throw new BrowserError("Only http and https addresses.")
+  return u
+}
 
 // ---------- the agents' tools ----------
 
@@ -379,11 +403,11 @@ const str = (v: unknown) => (typeof v === "string" ? v : "")
 const pageLine = async (page: Page) => `${(await page.title().catch(() => "")) || "(untitled)"} — ${page.url()}`
 
 // One tool call on the chat's browser; the text the model gets back (with any dialog the page opened meanwhile).
-// root: the chat's folder (uploads come only from inside it).
-// profile: whose cookies a tab the agent opens uses (profileOf(agentId)).
+// root: the chat's folder (uploads come only from inside it). profile: whose context a tab the agent opens uses.
 export async function runBrowserTool(b: Browsers, chatId: string, name: BrowserToolName, args: Record<string, unknown>, root?: string, profile?: string): Promise<string> {
   b.guard(chatId)
   const text = await browserStep(b, chatId, name, args, root, profile)
+  if (BROWSER_TOOLS.find((t) => t.name === name)?.writes) void b.save(b.activeProfile(chatId) ?? profileOf(undefined)) // a sign-in it just did stays
   const dialogs = b.takeDialogs(chatId)
   return dialogs.length ? `${text}\nDialogs: ${dialogs.join("; ")}` : text
 }
@@ -407,8 +431,7 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
   switch (name) {
     case "browser_navigate": {
       const page = await page_()
-      const url = normalizeUrl(str(args.url))
-      if (!/^https?:\/\//i.test(url)) throw new BrowserError("Only http and https addresses.")
+      const url = webUrl(str(args.url))
       await page.goto(url, { timeout: NAV_MS, waitUntil: "domcontentloaded" })
       return `Opened ${await pageLine(page)}`
     }
@@ -420,13 +443,13 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
     }
     case "browser_click": {
       const page = await page_()
-      await page.locator(`aria-ref=${str(args.ref)}`).click({ timeout: ACTION_MS })
+      await page.getByRef(str(args.ref)).click({ timeout: ACTION_MS })
       await page.waitForLoadState("domcontentloaded", { timeout: ACTION_MS }).catch(() => undefined)
       return `Clicked. Now: ${await pageLine(page)}`
     }
     case "browser_type": {
       const page = await page_()
-      const field = page.locator(`aria-ref=${str(args.ref)}`)
+      const field = page.getByRef(str(args.ref))
       await field.fill(str(args.text), { timeout: ACTION_MS })
       if (args.submit === true) await field.press("Enter", { timeout: ACTION_MS })
       return args.submit === true ? `Typed and submitted. Now: ${await pageLine(page)}` : "Typed."
@@ -461,13 +484,13 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
     }
     case "browser_hover": {
       const page = await page_()
-      await page.locator(`aria-ref=${str(args.ref)}`).hover({ timeout: ACTION_MS })
+      await page.getByRef(str(args.ref)).hover({ timeout: ACTION_MS })
       return "Hovered."
     }
     case "browser_select": {
       const page = await page_()
       const values = Array.isArray(args.values) ? args.values.map(String) : [str(args.values)]
-      const chosen = await page.locator(`aria-ref=${str(args.ref)}`).selectOption(values, { timeout: ACTION_MS })
+      const chosen = await page.getByRef(str(args.ref)).selectOption(values, { timeout: ACTION_MS })
       return `Selected ${chosen.join(", ") || "nothing"}.`
     }
     case "browser_scroll": {
@@ -481,7 +504,7 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
       const outside = paths.find((p) => !(p === root || p.startsWith(root + sep)) || !existsSync(p))
       if (!paths.length || outside) throw new BrowserError(`Only existing files inside the chat's folder${outside ? ` (not ${outside})` : ""}.`)
       const page = await page_()
-      const target = page.locator(`aria-ref=${str(args.ref)}`)
+      const target = page.getByRef(str(args.ref))
       // A file input takes the files directly; a button that opens a picker gets them through the chooser.
       await target.setInputFiles(paths, { timeout: ACTION_MS }).catch(async () => {
         const [chooser] = await Promise.all([page.waitForEvent("filechooser", { timeout: ACTION_MS }), target.click({ timeout: ACTION_MS })])
@@ -514,8 +537,12 @@ export class BrowserService extends Context.Service<BrowserService, Browsers>()(
     BrowserService,
     Effect.gen(function* () {
       const dataDir = yield* DataDir
+      const secrets = yield* Secrets
+      // The key the saved logins are sealed with: made once, kept in the keychain.
+      if (!secrets.get(BROWSER_KEY)) yield* Effect.promise(() => secrets.set(BROWSER_KEY, randomBytes(32).toString("hex")))
+      const key = Buffer.from(secrets.get(BROWSER_KEY)!, "hex")
       return yield* Effect.acquireRelease(
-        Effect.sync(() => new Browsers(join(dataDir, "browser", "profile"), nativeHostFromEnv())),
+        Effect.sync(() => new Browsers(join(dataDir, "browser", "state"), key)),
         (b) => Effect.promise(() => b.close())
       )
     })
@@ -531,7 +558,7 @@ export type PanelFrame =
   | { t: "key"; key: string }
   | { t: "text"; text: string }
   | { t: "nav"; url: string }
-  | { t: "back" | "forward" | "reload" | "newtab" | "release" | "take" }
+  | { t: "back" | "forward" | "reload" | "newtab" | "release" }
   | { t: "tab" | "close"; id: string }
 
 const frac = (n: unknown) => (typeof n === "number" && n >= 0 && n <= 1 ? n : undefined)
@@ -557,7 +584,6 @@ export function parsePanelFrame(raw: string): PanelFrame | undefined {
       case "reload":
       case "newtab":
       case "release":
-      case "take":
         return { t: f.t }
       case "tab":
       case "close":
@@ -571,11 +597,10 @@ export function parsePanelFrame(raw: string): PanelFrame | undefined {
 async function applyPanelFrame(b: Browsers, chatId: string, f: PanelFrame) {
   if (f.t === "release") return b.setControl(chatId, false)
   b.setControl(chatId, true)
-  if (f.t === "take") return // the desktop app: a person clicked the native view
-  if (f.t === "newtab") return void (await b.newTab(chatId, undefined, "you"))
+  if (f.t === "newtab") return void (await b.newTab(chatId, undefined, YOU))
   if (f.t === "tab") return b.select(chatId, f.id)
   if (f.t === "close") return b.closeTab(chatId, f.id)
-  const page = await b.page(chatId, undefined, "you")
+  const page = await b.page(chatId, undefined, YOU)
   const at = (x: number, y: number) => ({ x: x * VIEWPORT.width, y: y * VIEWPORT.height })
   switch (f.t) {
     case "click": {
@@ -593,7 +618,7 @@ async function applyPanelFrame(b: Browsers, chatId: string, f: PanelFrame) {
       return page.keyboard.insertText(f.text)
     case "nav": {
       const url = normalizeUrl(f.url.trim())
-      if (/^https?:\/\//i.test(url)) await page.goto(url, { timeout: NAV_MS, waitUntil: "domcontentloaded" })
+      if (WEB.test(url)) await page.goto(url, { timeout: NAV_MS, waitUntil: "domcontentloaded" })
       return
     }
     case "back":

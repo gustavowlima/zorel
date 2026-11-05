@@ -53,7 +53,7 @@ export function Select({
         <SelectValue className="truncate data-placeholder:text-dim" />
         <ChevronDownIcon className={cn("size-4 shrink-0", variant === "ghost" ? "size-3.5 opacity-70" : "text-muted")} />
       </Button>
-      <Popover offset={6} className="z-50 w-(--trigger-width) min-w-40 overflow-hidden rounded-card border border-strong bg-raised p-1 text-fg data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.98] data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none">
+      <Popover offset={6} className="z-50 w-(--trigger-width) min-w-40 overflow-hidden rounded-card border border-strong bg-float shadow-float backdrop-blur-xl backdrop-saturate-150 p-1 text-fg data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.98] data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none">
         <ListBox className="max-h-72 overflow-y-auto outline-none" items={options.map((o) => ({ ...o, id: key(o.value) }))}>
           {(o) => (
             <ListBoxItem

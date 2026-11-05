@@ -3,9 +3,10 @@ import { expect, test } from "bun:test"
 process.env.ZOREL_API_ENGINE = "direct" // these tests drive the direct API engine against a mock server
 import { type Agent, DEFAULT_PERMISSIONS, type Memory, type Message, namedSkills, skillHandle } from "@zorel/contracts"
 import { Effect, Stream } from "effect"
-import { buildTurn, mentioned, parseConsolidation, pinned } from "./context.ts"
+import { buildTurn, grounded, mentioned, parseConsolidation, pinned, similar } from "./context.ts"
 import { claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, Engines, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
 import { codexFailure, windowsOf } from "./engines/codex.ts"
+import { hasCredential, redact } from "./observability.ts"
 import { Secrets } from "./secrets.ts"
 import { classify, exposedName, needsApproval } from "./tools.ts"
 
@@ -69,7 +70,7 @@ test("context: the memory budget favors the recent ones; layers in stable → vo
 test("mentions: by handle without accents, in order, ignoring code", () => {
   const a = [agentOf("1", "Léo"), agentOf("2", "Ana Paula"), agentOf("3", "Nico")]
   expect(mentioned("@ana-paula and @leo, take a look; `@nico` not", a).map((x) => x.id)).toEqual(["2", "1"])
-  expect(mentioned("email@nico.com", a).map((x) => x.id)).toEqual(["3"]) // ponytail: simple heuristic, same as a reference app
+  expect(mentioned("email@nico.com", a).map((x) => x.id)).toEqual(["3"]) // ponytail: simple heuristic
 })
 
 test("tool policy: annotation > name; sensitive beats read", () => {
@@ -84,15 +85,46 @@ test("tool policy: annotation > name; sensitive beats read", () => {
 
 test("consolidation: takes JSON with text around it, drops scopes not allowed", () => {
   const r = parseConsolidation('ok:\n{"summary":"S","memories":[{"scope":"user","text":"A","evidence":[1]},{"scope":"project","text":"B","evidence":[1]}],"confirm":["m2","x"],"skills":[{"scope":"user","title":"T","text":"steps"},{"scope":"user","text":"no title"}]}', ["user"])
-  expect(r).toEqual({ summary: "S", memories: [{ scope: "user", text: "A" }], confirm: [1], skills: [{ scope: "user", title: "T", text: "steps" }] })
+  expect(r).toEqual({ summary: "S", memories: [{ scope: "user", text: "A", keywords: "" }], confirm: [1], skills: [{ scope: "user", title: "T", text: "steps" }] })
   expect(parseConsolidation("nothing", ["user"])).toBeUndefined()
   expect(parseConsolidation('{"summary":""}', ["user"])).toBeUndefined()
 })
 
 test("consolidation: only what the person said becomes a memory (evidence from their message)", () => {
   const json = '{"summary":"S","memories":[{"scope":"user","text":"Likes Bun","evidence":[1]},{"scope":"user","text":"Uses Postgres","evidence":[2]},{"scope":"user","text":"No proof"}]}'
-  const fromUser = (n: number) => n === 1 // #1 is the person's, #2 an agent's
-  expect(parseConsolidation(json, ["user"], fromUser)?.memories.map((m) => m.text)).toEqual(["Likes Bun"])
+  const said = (n: number) => (n === 1 ? "I like Bun" : undefined) // #1 is the person's, #2 an agent's
+  expect(parseConsolidation(json, ["user"], said)?.memories.map((m) => m.text)).toEqual(["Likes Bun"])
+})
+
+test("consolidation: an agent's details don't become the person's; credentials and corrections", () => {
+  // The person said "my cat"; the name came from the agent's poem.
+  const cat = '{"summary":"S","memories":[{"scope":"user","text":"Has a cat named Whiskers","evidence":[1]},{"scope":"user","text":"Has a cat.","evidence":[1]}]}'
+  expect(parseConsolidation(cat, ["user"], (n) => (n === 1 ? "write a poem about my cat" : undefined), "Whiskers the orange tabby naps")?.memories.map((m) => m.text)).toEqual(["Has a cat."])
+  expect(grounded("Lives in Berlin, Germany.", "I moved to Berlin", "Congrats on the move!")).toBe(true) // Germany: general knowledge, not the agent's
+  expect(grounded("Doesn't want emojis in replies.", "never use emojis", "Got it.")).toBe(true) // punctuation is no name
+  expect(grounded("Runs Postgres 17", "we use postgres", "Postgres 17 is out")).toBe(false) // the agent's number
+  // A correction points at the memory it replaces; keywords come along, capped.
+  const moved = '{"summary":"S","memories":[{"scope":"user","text":"Lives in Berlin","keywords":"city home address","evidence":[1],"replaces":"m2"}]}'
+  expect(parseConsolidation(moved, ["user"], () => "I moved to Berlin")?.memories).toEqual([{ scope: "user", text: "Lives in Berlin", keywords: "city home address", replaces: 1 }])
+})
+
+test("credentials: secretlint's rules, the stored secrets and a password said in words; the rest stays", async () => {
+  const key = `sk-ant-api03-${"a".repeat(93)}AA`
+  expect(await redact(`my key is ${key} thanks`)).toBe("my key is [redacted] thanks")
+  expect(await redact("db: postgres://admin:Hunter2Prod@db.acme.dev/app")).not.toContain("Hunter2Prod")
+  expect(await redact("The prod DB password is Hunter2!Prod and the database is Postgres 16 on RDS.")).toBe("The prod DB password is [redacted] and the database is Postgres 16 on RDS.")
+  expect(await hasCredential("We deploy on Fridays after 4pm")).toBe(false)
+})
+
+test("memory: rewordings are the same idea; the prompt holds essential ones first and every scope a share", () => {
+  expect(similar("Prefers small pull requests", "prefers small pull requests always")).toBe(true)
+  expect(similar("Prefers small pull requests", "Deploys on Fridays")).toBe(false)
+  const many = Array.from({ length: 30 }, (_, i) => mem(`user note ${i}`, 100 + i))
+  const essential = { ...mem("ESSENTIAL", 1), essential: true }
+  const out = pinned([...many, mem("PROJECT", 2, "project:p"), mem("AGENT", 3, "agent:a"), essential], 60)
+  expect(out[0]!.text).toBe("ESSENTIAL") // the oldest, but marked
+  expect(out.map((m) => m.text)).toContain("PROJECT") // not crowded out by thirty newer user notes
+  expect(out.map((m) => m.text)).toContain("AGENT")
 })
 
 // OpenAI-compatible mock: answers each request with the next chunk script.

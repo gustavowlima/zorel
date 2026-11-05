@@ -54,4 +54,5 @@ test("open and reveal use each system's command", () => {
   expect(osCommand("reveal", "/p/a.ts", "darwin")).toEqual(["open", "-R", "/p/a.ts"])
   expect(osCommand("reveal", "C:\\p\\a.ts", "win32")).toEqual(["explorer", "/select,C:\\p\\a.ts"])
   expect(osCommand("open", "/p/a.ts", "linux")).toEqual(["xdg-open", "/p/a.ts"])
+  expect(osCommand("open", "C:\\p\\a&calc", "win32")[0]).not.toBe("cmd") // & in a name is a command separator for cmd
 })

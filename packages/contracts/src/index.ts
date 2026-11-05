@@ -88,7 +88,7 @@ export const Project = Schema.Struct({
 })
 export type Project = typeof Project.Type
 
-// Per-agent permissions (ideas from a reference app): what an agent may reach besides its folder (`access` covers files and
+// Per-agent permissions: what an agent may reach besides its folder (`access` covers files and
 // the shell). web: search and read pages with the engine's own tools; browser: Zorel's browser tools; grants: per
 // MCP server, "none" hides it, "read" exposes only reading tools, "write" all (a server not listed follows the
 // server's own mode); always: calls the person allowed for good ("<serverId>:<tool>" or "browser"), skipping the
@@ -344,6 +344,7 @@ export const Memory = Schema.Struct({
   chatId: Schema.NullOr(Id),
   replaces: Schema.optionalKey(Schema.NullOr(Id)), // a proposed improvement of this active skill
   reason: Schema.optionalKey(Schema.NullOr(Schema.String)), // why it was proposed
+  essential: Schema.optionalKey(Schema.Boolean), // always in the prompt (the person marks it)
   createdAt: Schema.Number,
   confirmedAt: Schema.Number
 })
@@ -472,7 +473,7 @@ export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Sc
 export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)) })
 export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000) })
-export const MemoryPatch = Schema.Struct({ state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)) })
+export const MemoryPatch = Schema.Struct({ state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)), essential: Schema.optional(Schema.Boolean) })
 // stdio: environment variables; http: headers. Values go to the system keychain.
 const McpEnv = Schema.Record(Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_-]*$/)), LongText(4000))
 export const NewMcpServer = Schema.Struct({
@@ -502,6 +503,19 @@ export class WorkspaceInvalid extends Schema.Error<WorkspaceInvalid>("zorel/Work
   { _tag: Schema.tag("WorkspaceInvalid"), reason: Schema.Literals(["relative", "missing", "not_directory", "forbidden"]) },
   { httpApiStatus: 400 }
 ) {}
+
+// Picking a project's folder (the New project dialog): the subfolders of one folder, absolute paths, and which of
+// them are git repositories. `~` and nothing both mean the home folder.
+export const MAX_FOLDERS = 500
+export const Folder = Schema.Struct({ name: Schema.String, path: Schema.String, git: Schema.Boolean })
+export type Folder = typeof Folder.Type
+export const FolderListing = Schema.Struct({
+  dir: Schema.String, // the folder listed, absolute and real
+  home: Schema.String, // shown as ~
+  parent: Schema.NullOr(Schema.String),
+  folders: Schema.Array(Folder)
+})
+export type FolderListing = typeof FolderListing.Type
 
 export const FileDiff = Schema.Struct({
   path: Schema.String,
@@ -552,6 +566,7 @@ export const Api = HttpApi.make("zorel")
     HttpApiGroup.make("projects")
       .add(HttpApiEndpoint.get("list", "/api/projects", { success: Schema.Array(Project) }))
       .add(HttpApiEndpoint.post("create", "/api/projects", { payload: NewProject, success: Project, error: WorkspaceInvalid }))
+      .add(HttpApiEndpoint.get("folders", "/api/folders", { query: { dir: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1024))) }, success: FolderListing, error: WorkspaceInvalid }))
       .add(HttpApiEndpoint.patch("update", "/api/projects/:id", { params: idParam, payload: ProjectPatch, success: Project, error: [HttpApiError.NotFound, WorkspaceInvalid] }))
       // Files of the workspace (up to MAX_WORKSPACE_FILES), marked with what changed since the project's first checkpoint in this chat.
       .add(HttpApiEndpoint.get("files", "/api/projects/:id/files", { params: idParam, query: { chatId: Schema.optionalKey(Id) }, success: Schema.Array(WorkspaceFile), error: HttpApiError.NotFound }))

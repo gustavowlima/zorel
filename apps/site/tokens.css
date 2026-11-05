@@ -1,0 +1,66 @@
+/* Hallmark · route: studied-DNA (reference products) · axes: dark / grotesk-sans / cool */
+:root {
+  --color-paper: oklch(14.5% 0.004 260);
+  --color-card: oklch(19% 0.005 260);
+  --color-raised: oklch(23.5% 0.006 260);
+  --color-rim: oklch(100% 0 0 / 0.08);
+  --color-rim-strong: oklch(100% 0 0 / 0.14);
+  --color-ink: oklch(97% 0.003 260);
+  --color-ink-2: oklch(72% 0.008 260);
+  --color-ink-3: oklch(62% 0.01 260); /* 4.6:1 on the app surface, for small text */
+  --color-accent: oklch(60.5% 0.2 255); /* the brand blue, #007cf7 */
+  --color-accent-text: oklch(74% 0.13 252); /* the app's accent text on dark */
+  --color-accent-btn: oklch(45% 0.15 255); /* the app's filled button */
+  --color-app: oklch(21% 0.005 260); /* the app's canvas */
+  --color-side: oklch(17.5% 0.005 260);
+  --color-rail: oklch(15.5% 0.005 260);
+  --color-glow: oklch(60.5% 0.2 255 / 0.34);
+  --color-glow-soft: oklch(60.5% 0.2 255 / 0.14);
+  --color-sheen: oklch(100% 0 0 / 0.05); /* neutral light on neutral surfaces (cards): blue stays for what needs you */
+  /* the install command sits in the blue light: a dark blue glass, not a grey slab */
+  --color-glass: oklch(22% 0.03 255 / 0.55);
+  --color-glass-rim: oklch(75% 0.08 252 / 0.22);
+  --color-edge: oklch(82% 0.1 250 / 0.9);
+  --color-accent-soft: oklch(60.5% 0.2 255 / 0.16);
+  --color-on-accent: oklch(99% 0 0);
+  --color-button: oklch(97% 0.003 260);
+  --color-on-button: oklch(16% 0.004 260);
+  --color-button-hover: oklch(88% 0.004 260);
+  --color-secondary: oklch(100% 0 0 / 0.08);
+  --color-secondary-hover: oklch(100% 0 0 / 0.13);
+  --color-secondary-rim: oklch(100% 0 0 / 0.12);
+  --color-bar: oklch(14.5% 0.004 260 / 0.86); /* the sticky top bar, over the page */
+  --color-focus: oklch(75% 0.14 252);
+  --color-add: oklch(76% 0.13 155);
+  --color-add-bg: oklch(76% 0.13 155 / 0.1);
+  --color-del: oklch(74% 0.14 25);
+  --color-del-bg: oklch(74% 0.14 25 / 0.1);
+  --color-wait: oklch(78% 0.12 80);
+  --color-wait-bg: oklch(78% 0.12 80 / 0.12);
+  /* agent identity: one lightness and chroma, four hues clear of the status colors (no red, no green) */
+  --color-agent-1: #918ddf; /* the app's agent palette (apps/web/src/styles.css) */
+  --color-agent-2: #00afa9;
+  --color-agent-3: #d47795;
+  --color-agent-4: #aa9935;
+  --color-on-agent: #141414;
+  /* the cards' layers: card → stage (darker) → row (lighter) */
+  --color-stage: oklch(16.5% 0.005 260);
+  --color-row: oklch(21% 0.005 260);
+
+  --font-display: "Inter", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  --font-body: "Inter", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  --font-outlier: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --space-3xs: 0.25rem; --space-2xs: 0.5rem; --space-xs: 0.75rem;
+  --space-sm: 1rem; --space-md: 1.5rem; --space-lg: 2rem;
+  --space-xl: 3rem; --space-2xl: 5rem; --space-3xl: 8rem;
+
+  --text-2xs: 0.75rem; --text-xs: 0.8125rem; --text-sm: 0.875rem; --text-md: 1rem;
+  --text-lg: 1.1875rem; --text-xl: 1.375rem; --text-2xl: clamp(1.875rem, 2.4vw + 1rem, 2.75rem);
+  --text-display: clamp(2.5rem, 4.6vw + 1rem, 4.5rem);
+
+  --radius-sm: 8px; --radius-md: 12px; --radius-lg: 20px; --radius-pill: 999px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-short: 160ms;
+}

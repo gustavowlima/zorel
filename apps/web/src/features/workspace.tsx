@@ -15,10 +15,7 @@ const FileView = lazy(() => import("./file-view.tsx"))
 // The text a line comment puts in the message box (kept out of the lazy chunk's default export).
 const commentText = (c: LineComment) =>
   t("diff.commentRef", { path: c.path, lines: c.start === c.end ? t("diff.line", { n: c.start }) : t("diff.lines", { from: c.start, to: c.end }), side: c.side === "deletions" ? t("diff.old") : t("diff.new"), text: c.text.trim() })
-import {
-  Button, ChevronDown, ChevronRight, ChevronsDownUp, ConfirmButton, Copy, cx, Dialog, EmptyState, ExternalLink, Field, File, FileIcon, FilePlus, FileTree, Folder, FolderOpen, IconButton, Input, MenuSeparator, Pencil, Search, Spinner, StatusMark, Tab, TabList, Trash2, Undo2,
-  Columns2, ConfirmDialog, ContextMenu, GitBranch, Globe, Menu, MenuItem, PanelRight, Pin, PinOff, Play, Plus, Popover, Rows2, Server, Square, SquareTerminal, TabPanel, Tabs, Tooltip, X
-} from "@/ui"
+import { Button, ChevronDown, ChevronRight, ChevronsDownUp, Columns2, ConfirmButton, ConfirmDialog, ContextMenu, Copy, cx, Dialog, EmptyState, ExternalLink, Field, File, FileIcon, FilePlus, FileTree, Folder, FolderOpen, GitBranch, Globe, IconButton, Input, Menu, MenuItem, MenuSeparator, PanelRight, Pencil, Pin, PinOff, Play, Plus, Popover, Rows2, SearchInput, Server, Spinner, Square, SquareTerminal, StatusMark, Tab, TabList, TabPanel, Tabs, Tooltip, Trash2, Undo2, X } from "@/ui"
 import { Shell } from "./shell.tsx"
 import { BrowserPanel } from "./browser.tsx"
 import { GitPanel, useIsRepo } from "./git.tsx"
@@ -85,7 +82,7 @@ export function TurnChanges({ message, onView }: { message: Message; onView: (f:
   )
 }
 
-// ---------- side panel (T3 Code's pattern: one panel, its surfaces as tabs) ----------
+// ---------- side panel ----------
 
 export type SideTab = "changes" | "git" | "files" | "browser" | "terminal"
 
@@ -573,15 +570,14 @@ function FilesTab({ project, chat, messages, onFocus, onAddToChat }: { project: 
           )}
         </div>
         <TabPanel id="files" className="flex min-h-0 flex-1 flex-col">
-          <div className="relative shrink-0 px-3 pb-1.5">
-            <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-5 size-3.5 -translate-y-1/2 text-dim" />
-            <Input
+          <div className="shrink-0 px-3 pb-1.5">
+            <SearchInput
+              size="sm"
               aria-label={t("explorer.search")}
               placeholder={t("explorer.search")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Escape" && setQuery("")}
-              className="h-control-sm pl-7 text-sm"
             />
           </div>
           {q && !shown.length && <p className="px-3 py-6 text-center text-sm text-muted">{t("explorer.noMatch")}</p>}

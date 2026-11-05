@@ -28,17 +28,18 @@ electronFuses:
   enableCookieEncryption: true
   grantFileProtocolExtraPrivileges: false
 extraResources:
-  - { from: build, to: ., filter: ["zorel-server", "zorel-server.exe"] } # bun --compile adds .exe on Windows
+  - { from: build, to: ., filter: ["zorel-server", "zorel-server.exe", "THIRD_PARTY_LICENSES.md"] } # bun --compile adds .exe on Windows; the licenses of what ships
   - { from: build/web, to: web }
   - { from: build/drizzle, to: drizzle }
+  # The agents' browser (Playwright's headless Chromium, the server's Playwright version): the app needs no Chrome.
+  - { from: build/browsers, to: browsers }
 # Only the app's languages: drops ~40 MB of Chromium locales.
 electronLanguages: [en, pt-BR]
-# Updates: a GitHub release per version (electron-updater reads it). Owner and repo come from the build's
-# environment; without them the app is built the same and just never finds an update.
+# Updates: a GitHub release per version (electron-updater reads it), from the same repository install.sh uses.
 publish:
   provider: github
-  owner: ${env.ZOREL_RELEASE_OWNER}
-  repo: ${env.ZOREL_RELEASE_REPO}
+  owner: gustavowlima
+  repo: zorel
   releaseType: release # published at once: install.sh and the updaters read the latest release, never a draft
 mac:
   target: [dmg, zip] # zip: what install.sh (and, with a Developer ID, the updater) downloads
@@ -47,7 +48,9 @@ mac:
   category: public.app-category.developer-tools
 win:
   icon: assets/icon.png
+  artifactName: zorel-windows-setup.${ext} # one name every version: zorel.dev links releases/latest/download/ to it
 linux:
   icon: assets/icon.png
+  executableName: zorel # the default comes from the package name, @zorel/desktop, which AppImage refuses
   target: [AppImage]
   artifactName: zorel-linux-${arch}.${ext}

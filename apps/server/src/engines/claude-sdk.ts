@@ -56,7 +56,7 @@ function stepTracker(cwd: string) {
 }
 
 // canUseTool: the access level decides; what needs the person goes to Zorel's approval card.
-export function permissions(access: Access, cwd: string, approve: Approver, web = false, skills = false): CanUseTool {
+export function permissions(access: Access, cwd: string, approve: Approver, web = false, skills = false, confined = false): CanUseTool {
   return async (tool, input, { blockedPath }) => {
     const allow = { behavior: "allow" as const, updatedInput: input }
     const deny = { behavior: "deny" as const, message: DENIED }
@@ -68,7 +68,7 @@ export function permissions(access: Access, cwd: string, approve: Approver, web 
     let request: NativeApproval
     if (tool === "Bash") {
       const command = String(input.command ?? "")
-      decision = decideCommand(access, command)
+      decision = decideCommand(access, command, cwd, confined)
       request = approvalFor("command", "Bash", `Run ${command.slice(0, 200)}`, command, cwd)
     } else if (tool === "Edit" || tool === "Write") {
       decision = decideEdit(access, cwd, path ?? "")
@@ -114,7 +114,19 @@ function inbox() {
   }
 }
 
-// Claude Code's own settings (as in T3 Code): the user's, the project's and the local ones load, so the
+// Below full access the shell runs in Claude Code's OS sandbox where there is one (Seatbelt on macOS; bubblewrap and
+// socat on Linux): writes only inside the folder (and temp), no network, and no way for the model to step out of it.
+// Without one (Windows) the shell is held by decideCommand's read-only rule instead.
+export const canSandbox = (platform = process.platform, which = Bun.which) => platform === "darwin" || (platform === "linux" && !!which("bwrap") && !!which("socat"))
+const SANDBOX = {
+  enabled: true,
+  failIfUnavailable: true, // never run unconfined while the rules assume a sandbox
+  autoAllowBashIfSandboxed: false, // canUseTool still decides (RISKY asks)
+  allowUnsandboxedCommands: false,
+  network: { strictAllowlist: true, allowedDomains: [] as string[], allowLocalBinding: true } // dev servers on localhost
+}
+
+// Claude Code's own settings: the user's, the project's and the local ones load, so the
 // CLI's slash commands, skills and CLAUDE.md files are there. Two locks keep Zorel in charge: only the policy
 // tier's permission rules count (none: every tool call goes through Zorel's canUseTool and access level, a
 // file's allow list or a bypass default mode never applies) and no hook runs. MCP stays strict (the gateway).
@@ -165,6 +177,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
   if (!bin) return "claude isn't installed or isn't on the PATH."
   mkdirSync(o.cwd, { recursive: true })
   const box = inbox()
+  const confined = o.access !== "full" && canSandbox()
   let model = splitModel(o.model).model
   let effort: string | null = null // the session starts at the model's default
   let listener: ((m: SDKMessage | undefined) => void) | undefined // undefined message: process ended
@@ -180,8 +193,10 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
       // The Skill tool only when the person lets Claude Code use its own skills (Settings › Skills).
       tools: [...NATIVE_TOOLS, ...(o.web ? WEB_TOOLS : []), ...(o.nativeSkills ? ["Skill"] : [])],
       allowedTools: [`mcp__${GATEWAY}`], // the gateway applies policy and approvals
-      canUseTool: permissions(o.access, o.cwd, o.approve, o.web, o.nativeSkills),
+      canUseTool: permissions(o.access, o.cwd, o.approve, o.web, o.nativeSkills, confined),
       ...SETTINGS,
+      // Managed tier: the user's own settings can't loosen it (strictAllowlist is honored only there).
+      managedSettings: { ...SETTINGS.managedSettings, ...(confined && { sandbox: SANDBOX }) },
       mcpServers: { [GATEWAY]: { type: "http", url: o.gatewayUrl } },
       strictMcpConfig: true,
       persistSession: false, // Zorel's context is the source of truth; resuming uses the checkpoint

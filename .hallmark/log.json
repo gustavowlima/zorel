@@ -1,0 +1,33 @@
+[
+  {
+    "date": "2026-11-04",
+    "macrostructure": "Workbench",
+    "theme": "studied-DNA",
+    "source": "reference products",
+    "enrichment": "the product in HTML from Zorel's own parts",
+    "nav": "N1b",
+    "footer": "Ft2",
+    "brief": "Zorel \u00b7 landing, after a reference app and Grok Bot"
+  },
+  {
+    "date": "2026-11-04",
+    "macrostructure": "Long Document",
+    "theme": "custom",
+    "theme_axes": "dark / roman-serif / cool",
+    "vibe": "a technical memo, set at night",
+    "enrichment": "E5 hand-built SVG (Fig. 1)",
+    "nav": "N9",
+    "footer": "Ft1",
+    "brief": "Zorel \u00b7 landing, editorial redesign"
+  },
+  {
+    "date": "2026-11-04",
+    "macrostructure": "Feature Stack",
+    "theme": "custom",
+    "theme_axes": "dark / grotesk-sans / cool",
+    "enrichment": "Tier B SVG (drawn Z + live team map)",
+    "nav": "N5",
+    "footer": "Ft5",
+    "brief": "Zorel \u00b7 landing (first version)"
+  }
+]

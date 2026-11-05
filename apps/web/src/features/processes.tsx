@@ -1,4 +1,4 @@
-// What runs in the background (as a reference app's Settings › Background processes, wider): agents working now, programs
+// What runs in the background: agents working now, programs
 // an agent left listening on a port in a chat's folder, open shells, engine sessions kept between turns (a
 // Claude Code or Codex process each) and MCP connections. Settings › Processes lists them all by kind; a chat's
 // header shows how many belong to it, and opens the same rows for that chat. Everything here can be stopped.

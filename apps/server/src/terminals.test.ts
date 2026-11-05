@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { mkdtempSync, realpathSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { parseLsof } from "./procs.ts"
-import { parseFrame, Ring, runLine, scriptsOf, shellCommand } from "./terminals.ts"
+import { parseFrame, Ring, runLine, scriptsOf, serversUnder, shellCommand } from "./terminals.ts"
 
 test("parseFrame takes input and sane sizes, nothing else", () => {
   expect(parseFrame(`{"t":"i","d":"ls\\r"}`)).toEqual({ t: "i", d: "ls\r" })
@@ -60,3 +60,21 @@ describe("shellCommand", () => {
     expect(shellCommand("darwin", {})[1]).toBe("-l")
   })
 })
+
+// A process listening in a chat's folder is a server, unless it is the chat's session itself (an agent CLI that keeps
+// a port of its own): that one shows once, as the session.
+test.skipIf(process.platform === "win32")("servers: a listener in the folder counts, the session's own process doesn't", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "zorel-srv-")))
+  const child = Bun.spawn(["bun", "-e", "Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('ok') }); setInterval(() => {}, 1000)"], { cwd: root, stdout: "ignore", stderr: "ignore" })
+  try {
+    let found: Awaited<ReturnType<typeof serversUnder>> = []
+    for (let i = 0; i < 50 && !found.length; i++) {
+      await Bun.sleep(100)
+      found = (await serversUnder([root])).filter((s) => s.pid === child.pid)
+    }
+    expect(found.length).toBe(1)
+    expect((await serversUnder([root], new Map([[child.pid, root]]))).filter((s) => s.pid === child.pid)).toEqual([])
+  } finally {
+    child.kill()
+  }
+}, 20_000)

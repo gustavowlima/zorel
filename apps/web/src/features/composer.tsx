@@ -16,7 +16,7 @@ import { EditorContent, useEditor } from "@tiptap/react"
 import type { SuggestionKeyDownProps, SuggestionOptions, SuggestionProps } from "@tiptap/suggestion"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { attachmentUrl } from "../client.ts"
-import { ArrowUp, cx, File, IconButton, pickFiles, Plus, Spinner, Square, Tooltip, X } from "@/ui"
+import { ArrowUp, cx, File, IconButton, OptionList, OptionRow, pickFiles, Plus, Spinner, Square, Tooltip, X } from "@/ui"
 
 // Something "@", "$" or "/" can pick. `id` is what the text carries after the trigger (an agent's handle, a
 // skill's handle); commands run `run` instead of leaving a chip, and a command without `run` (the engine's own)
@@ -207,7 +207,7 @@ export function Composer({
         dragging ? "border-accent-line bg-accent-faint" : "border-strong"
       )}
     >
-      {menu && <OptionList menu={menu} onHover={(i) => setMenu({ ...menu, selected: i })} />}
+      {menu && <MenuOptions menu={menu} onHover={(i) => setMenu({ ...menu, selected: i })} />}
       {(files.length > 0 || uploading > 0) && (
         <div className="flex flex-wrap gap-1.5 px-1">
           {files.map((f) => (
@@ -313,32 +313,16 @@ function suggestion(
 }
 
 // The options of the open trigger, above the bar. The editor keeps the focus: arrows move, Enter picks.
-function OptionList({ menu, onHover }: { menu: Menu; onHover: (i: number) => void }) {
+function MenuOptions({ menu, onHover }: { menu: Menu; onHover: (i: number) => void }) {
   return (
-    <div
-      role="listbox"
-      aria-label={t(LIST_LABELS[menu.trigger])}
-      className="absolute right-0 bottom-full left-0 z-20 mb-2 flex max-h-72 flex-col gap-px overflow-y-auto rounded-card border border-subtle bg-raised p-1 shadow-chip"
-    >
+    <OptionList label={t(LIST_LABELS[menu.trigger])} className="absolute right-0 bottom-full left-0 z-20 mb-2 max-h-72 rounded-card border border-strong bg-float shadow-float backdrop-blur-xl backdrop-saturate-150">
       {menu.items.map((o, i) => (
-        <div
-          key={o.id}
-          role="option"
-          aria-selected={i === menu.selected}
-          tabIndex={-1}
-          onMouseEnter={() => onHover(i)}
-          onMouseDown={(e) => {
-            e.preventDefault() // keep the editor's focus
-            menu.pick(o)
-          }}
-          className={cx("flex h-control cursor-default items-center gap-2.5 rounded-control px-2.5", i === menu.selected ? "bg-hover text-fg" : "text-secondary")}
-        >
-          {o.icon && <span className="flex size-5 shrink-0 items-center justify-center text-muted">{o.icon}</span>}
+        <OptionRow key={o.id} selected={i === menu.selected} icon={o.icon} onHover={() => onHover(i)} onPick={() => menu.pick(o)} className="h-control">
           <span className="max-w-1/2 shrink-0 truncate">{o.label}</span>
           <span className="min-w-0 truncate text-sm text-muted">{o.hint ?? `${menu.trigger}${o.id}`}</span>
-        </div>
+        </OptionRow>
       ))}
-    </div>
+    </OptionList>
   )
 }
 

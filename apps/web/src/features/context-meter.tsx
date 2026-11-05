@@ -1,4 +1,4 @@
-// The context meter in the message box (like a reference app's): a ring with how full the next turn's context is, and a
+// The context meter in the message box: a ring with how full the next turn's context is, and a
 // popover with the parts Zorel puts in it (instructions, memories, skills, summary, messages) against the model's
 // window, when Zorel compacts on its own, and two ways out: compact now or start a new chat. The numbers are an
 // estimate made by the server from the turn it would send (~4 characters a token).

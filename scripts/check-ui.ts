@@ -22,7 +22,10 @@ const RULES: ReadonlyArray<Rule> = [
   { id: "arbitrary-value", hint: "use the Tailwind scale or a token, not [..]", pattern: /\b[a-z][\w-]*-\[[^\]\s]+\]/g },
   { id: "raw-control", hint: "use Button/IconButton/Input/Select/Textarea/Switch from @/ui", pattern: /<(?:button|input|select|textarea)\b/g },
   { id: "direct-import", hint: "import icons and controls from @/ui", pattern: /from\s+["'](?:lucide-react|react-aria-components)["']/g },
-  { id: "glyph-icon", hint: "use an icon from @/ui, not a unicode glyph", pattern: /[×✕✓✔▸▾▶◀►▼●○]/g }
+  { id: "glyph-icon", hint: "use an icon from @/ui, not a unicode glyph", pattern: /[×✕✓✔▸▾▶◀►▼●○]/g },
+  { id: "hand-search", hint: "use SearchInput from @/ui (the magnifier in one place and size)", pattern: /<Search\b[^>]*\babsolute\b/g },
+  { id: "hand-listbox", hint: "use OptionList/OptionRow (or Select, Menu) from @/ui", pattern: /role="(?:listbox|option)"/g },
+  { id: "input-height", hint: "use the Input size prop (size=\"sm\"), not a height class", pattern: /<(?:Input|SearchInput)\b[^>]*className="[^"]*\bh-control/g }
 ]
 
 type Counts = Record<string, Record<string, number>> // file → rule → count

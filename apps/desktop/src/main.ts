@@ -3,12 +3,13 @@
 // but keeps the app and the server alive, so turns and routines go on (Dock on macOS, tray elsewhere); Quit stops
 // the server. One instance per user: opening the app again focuses the window.
 import { type ChildProcess, execFile, spawn } from "node:child_process"
-import { openSync, readFileSync } from "node:fs"
+import { randomBytes } from "node:crypto"
+import { openSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { join } from "node:path"
-import { app, BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, session, shell, Tray } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, powerMonitor, powerSaveBlocker, session, shell, Tray } from "electron"
+import { SESSION_BYTES, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
 import { autoUpdater } from "electron-updater"
-import { type BrowserHost, startBrowserHost } from "./browser-host.ts"
 
 const dev = !app.isPackaged
 // app.getAppPath(): apps/desktop in dev, the app.asar when packaged (the bundler bakes __dirname at build time).
@@ -16,31 +17,17 @@ const appDir = app.getAppPath()
 const root = dev ? join(appDir, "..", "..") : process.resourcesPath
 let server: ChildProcess | undefined
 let url = ""
+// The server's per-launch secret: only this process and the server know it. Every request the app window makes to the
+// server gets it as a header (auth()), so the page never holds it and nothing the server spawns inherits it.
+const secret = randomBytes(SESSION_BYTES).toString("hex")
 let win: BrowserWindow | undefined
 let tray: Tray | undefined
 let quitting = false
-let browser: BrowserHost | undefined
-let update: { version: string; ready: boolean } | null = null // the newest release: downloading, then ready
+let update: { version: string; ready: boolean; percent?: number } | null = null // the newest release: downloading (percent), then ready
 const icon = () => nativeImage.createFromPath(join(appDir, "assets", "icon.png"))
 
 // Fewer idle processes: no spare renderer kept warm, no media-key or cast services the app never uses.
 app.commandLine.appendSwitch("disable-features", "SpareRendererForSitePerProcess,HardwareMediaKeyHandling,MediaRouter")
-// CDP for the server to drive the agents' tabs: a free port on 127.0.0.1 only, read back from DevToolsActivePort.
-app.commandLine.appendSwitch("remote-debugging-port", "0")
-
-const cdpUrl = async () => {
-  for (let i = 0; i < 100; i++) {
-    try {
-      const port = readFileSync(join(app.getPath("userData"), "DevToolsActivePort"), "utf8").split("\n")[0]?.trim()
-      if (port) return `http://127.0.0.1:${port}`
-    } catch {
-      // not written yet
-    }
-    await new Promise((r) => setTimeout(r, 50))
-  }
-  throw new Error("The browser debugging port didn't open.")
-}
-
 // Apps opened from Finder/Dock don't inherit the shell PATH; without it `claude`, `codex` and `opencode` aren't found.
 const loginShellPath = () =>
   new Promise<void>((resolve) => {
@@ -52,6 +39,8 @@ const loginShellPath = () =>
     })
   })
 
+const READY_EVERY_MS = 100
+const READY_TRIES = 1200 // 2 minutes: room for the keychain prompt on a new build's first launch
 const freePort = () =>
   new Promise<number>((resolve, reject) => {
     const probe = createServer().once("error", reject)
@@ -69,10 +58,10 @@ async function startServer() {
     env: {
       ...process.env,
       PORT: String(port),
+      [SESSION_ENV]: secret, // the server reads it and drops it from its env at once
       ZOREL_PARENT_PID: String(process.pid), // the server exits if this process dies without stopping it
-      ...(browser ? { ZOREL_DESKTOP_CDP: await cdpUrl(), ZOREL_DESKTOP_CONTROL: browser.control, ZOREL_DESKTOP_TOKEN: browser.token } : {}),
       ZOREL_WEB_DIR: dev ? join(root, "apps/web/dist") : join(root, "web"),
-      ...(dev ? {} : { ZOREL_MIGRATIONS: join(root, "drizzle") })
+      ...(dev ? {} : { ZOREL_MIGRATIONS: join(root, "drizzle"), PLAYWRIGHT_BROWSERS_PATH: join(root, "browsers") }) // the bundled Chromium
     },
     stdio: ["ignore", dev ? "inherit" : log, dev ? "inherit" : log]
   })
@@ -82,11 +71,14 @@ async function startServer() {
     app.quit()
   })
   url = `http://127.0.0.1:${port}`
-  for (let i = 0; i < 200; i++) {
-    if (await fetch(`${url}/`).then((r) => r.ok, () => false)) return
-    await new Promise((r) => setTimeout(r, 50))
+  // Ready once its routes answer: it listens before its services are up, and reading the keychain at start can wait
+  // on macOS's password prompt (the first launch of a new build), so until then every path is a 404. Up to 2 minutes.
+  const ready = (r: Response) => r.status !== 404 // the page answers 401 without the secret: that's ready too
+  for (let i = 0; i < READY_TRIES; i++) {
+    if (await fetch(`${url}/`).then(ready, () => false)) return
+    await new Promise((r) => setTimeout(r, READY_EVERY_MS))
   }
-  throw new Error("The Zorel server didn't start in 10 s.")
+  throw new Error("The Zorel server didn't start in 2 minutes.")
 }
 
 function openWindow() {
@@ -118,20 +110,23 @@ function openWindow() {
     if (items.length) Menu.buildFromTemplate(items).popup()
   })
   win.once("ready-to-show", () => win?.show())
-  win.on("close", () => browser?.release())
   win.on("closed", () => {
     win = undefined
   })
-  // The app's own pages stay in the window; every other link opens in the default browser.
+  // The app's own pages stay in the window; every other link opens in the default browser. Compared by origin, not
+  // by prefix: "http://127.0.0.1:<port>@elsewhere/" starts like the app's address but is another site. A link to
+  // the app's own files (an attachment) downloads here, where the request carries the secret.
+  const ours = (to: string) => URL.canParse(to) && new URL(to).origin === new URL(url).origin
   const external = (to: string) => {
     if (/^https?:\/\//.test(to)) void shell.openExternal(to)
   }
   win.webContents.setWindowOpenHandler(({ url: to }) => {
-    external(to)
+    if (ours(to)) win?.webContents.downloadURL(to)
+    else external(to)
     return { action: "deny" }
   })
   win.webContents.on("will-navigate", (e, to) => {
-    if (to.startsWith(url)) return
+    if (ours(to)) return
     e.preventDefault()
     external(to)
   })
@@ -164,6 +159,17 @@ function updates() {
     win?.webContents.send("update", update)
   }
   ipcMain.handle("update:get", (e) => (win && e.sender === win.webContents ? update : null))
+  // "Check for updates" (Settings › General › About): now, not at the next 6-hour check. A new version then shows
+  // as usual (the card under the chats).
+  ipcMain.handle("update:check", async (e) => {
+    if (!win || e.sender !== win.webContents) return "failed"
+    if (dev) return "unsupported" // an unpackaged app can't update itself
+    const r = await autoUpdater.checkForUpdates().catch((err: unknown) => {
+      console.error("update check failed", err)
+      return null
+    })
+    return !r ? "failed" : r.isUpdateAvailable ? "available" : "latest"
+  })
   ipcMain.handle("update:install", (e) => {
     if (!win || e.sender !== win.webContents || !update?.ready) return false
     if (manual) return runInstaller()
@@ -174,6 +180,11 @@ function updates() {
   })
   if (dev) return
   autoUpdater.on("update-available", (i) => tell({ version: i.version, ready: manual }))
+  // Progress in whole percents: one message per step, not per chunk.
+  autoUpdater.on("download-progress", (p) => {
+    const percent = Math.floor(p.percent)
+    if (update && !update.ready && update.percent !== percent) tell({ ...update, percent })
+  })
   autoUpdater.on("update-downloaded", (i) => tell({ version: i.version, ready: true }))
   autoUpdater.on("error", (e) => {
     console.error("update failed", e) // the button goes away rather than wait forever
@@ -231,11 +242,74 @@ function appMenu() {
   app.setAboutPanelOptions({ applicationName: "Zorel", applicationVersion: app.getVersion(), website: "https://zorel.dev" })
 }
 
-// The page may show notifications and write to the clipboard; camera, microphone, location and the rest are refused.
+// The page may show notifications and write to the clipboard (Copy buttons); reading it, the camera, microphone,
+// location and the rest are refused: nothing in the app needs them.
 function permissions() {
-  const allowed = new Set(["notifications", "clipboard-sanitized-write", "clipboard-read", "fullscreen"])
+  const allowed = new Set(["notifications", "clipboard-sanitized-write", "fullscreen"])
   session.defaultSession.setPermissionRequestHandler((wc, permission, done) => done(wc === win?.webContents && allowed.has(permission)))
   session.defaultSession.setPermissionCheckHandler((wc, permission) => wc === win?.webContents && allowed.has(permission))
+}
+
+// The server's secret on every request to it from the app's own session (the agents' tabs live in other partitions).
+function auth() {
+  const host = new URL(url).host
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ["http://127.0.0.1/*", "ws://127.0.0.1/*"] }, (d, done) =>
+    done({ requestHeaders: URL.canParse(d.url) && new URL(d.url).host === host ? { ...d.requestHeaders, [SESSION_HEADER]: secret } : d.requestHeaders })
+  )
+}
+
+// Where the system's own notification switch for Zorel lives (Settings › General › Notifications links there).
+const NOTIFICATION_SETTINGS: Partial<Record<NodeJS.Platform, string>> = {
+  darwin: "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
+  win32: "ms-settings:notifications"
+}
+
+// Preferences of this app that live outside the page (the main process acts on them before any window opens).
+const prefsFile = () => join(app.getPath("userData"), "desktop.json")
+const readPrefs = (): { keepAwake?: boolean } => {
+  try {
+    return JSON.parse(readFileSync(prefsFile(), "utf8"))
+  } catch {
+    return {}
+  }
+}
+
+// "Keep this computer awake" (Settings › General): while on power, the computer doesn't sleep when idle, so routines
+// run on time; the display can still turn off, and closing the lid still sleeps. On battery it sleeps as usual.
+let awake: number | undefined
+function keepAwake() {
+  const want = !!readPrefs().keepAwake && !powerMonitor.isOnBatteryPower()
+  if (want && awake === undefined) awake = powerSaveBlocker.start("prevent-app-suspension")
+  if (!want && awake !== undefined) {
+    powerSaveBlocker.stop(awake)
+    awake = undefined
+  }
+}
+
+function systemIpc() {
+  const fromApp = (e: Electron.IpcMainInvokeEvent) => !!win && e.sender === win.webContents
+  ipcMain.handle("notifications:settings", (e) => {
+    const target = NOTIFICATION_SETTINGS[process.platform]
+    if (!fromApp(e) || !target) return false
+    void shell.openExternal(target)
+    return true
+  })
+  ipcMain.handle("awake:get", (e) => (fromApp(e) ? !!readPrefs().keepAwake : false))
+  ipcMain.handle("awake:set", (e, on: unknown) => {
+    if (!fromApp(e) || typeof on !== "boolean") return false
+    writeFileSync(prefsFile(), JSON.stringify({ ...readPrefs(), keepAwake: on }))
+    keepAwake()
+    return on
+  })
+  // The system's folder picker, for a project's folder: the chosen absolute path, or null when cancelled.
+  ipcMain.handle("folder:pick", async (e, start: unknown) => {
+    if (!fromApp(e) || !win) return null
+    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory", "createDirectory"], ...(typeof start === "string" && { defaultPath: start }) })
+    return r.canceled ? null : (r.filePaths[0] ?? null)
+  })
+  powerMonitor.on("on-ac", keepAwake)
+  powerMonitor.on("on-battery", keepAwake)
+  keepAwake()
 }
 
 // Off macOS there's no Dock to reopen a closed window: a tray icon does it (and quits).
@@ -259,12 +333,11 @@ else {
   void app
     .whenReady()
     .then(loginShellPath)
-    .then(async () => {
-      browser = await startBrowserHost(() => win)
-    })
     .then(startServer)
     .then(() => {
+      auth()
       loginItemIpc()
+      systemIpc()
       appMenu()
       permissions()
       if (dev) app.dock?.setIcon(icon()) // a packaged app shows the bundle's icon; dev would show Electron's
