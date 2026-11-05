@@ -7,13 +7,13 @@
   --color-rim-strong: oklch(100% 0 0 / 0.14);
   --color-ink: oklch(97% 0.003 260);
   --color-ink-2: oklch(72% 0.008 260);
-  --color-ink-3: oklch(56% 0.01 260);
+  --color-ink-3: oklch(62% 0.01 260); /* 4.6:1 on the app surface, for small text */
   --color-accent: oklch(60.5% 0.2 255); /* the brand blue, #007cf7 */
-  --color-accent-text: oklch(68% 0.16 252); /* the app's accent text on dark */
+  --color-accent-text: oklch(74% 0.13 252); /* the app's accent text on dark */
   --color-accent-btn: oklch(45% 0.15 255); /* the app's filled button */
-  --color-app: oklch(21% 0 0); /* the app's canvas */
-  --color-side: oklch(17.5% 0 0);
-  --color-rail: oklch(15.5% 0 0);
+  --color-app: oklch(21% 0.005 260); /* the app's canvas */
+  --color-side: oklch(17.5% 0.005 260);
+  --color-rail: oklch(15.5% 0.005 260);
   --color-glow: oklch(60.5% 0.2 255 / 0.34);
   --color-glow-soft: oklch(60.5% 0.2 255 / 0.14);
   --color-edge: oklch(82% 0.1 250 / 0.9);
@@ -22,17 +22,21 @@
   --color-button: oklch(97% 0.003 260);
   --color-on-button: oklch(16% 0.004 260);
   --color-focus: oklch(75% 0.14 252);
-  --color-add: oklch(76% 0.15 150);
-  --color-add-bg: oklch(76% 0.15 150 / 0.1);
-  --color-del: oklch(70% 0.17 25);
-  --color-del-bg: oklch(70% 0.17 25 / 0.1);
-  --color-wait: oklch(80% 0.13 75);
-  --color-wait-bg: oklch(80% 0.13 75 / 0.12);
-  /* agent identity colors, as in the app */
-  --color-agent-1: #6d5df6;
-  --color-agent-2: #12a594;
-  --color-agent-3: #e5484d;
-  --color-agent-4: #d6851e;
+  --color-add: oklch(76% 0.13 155);
+  --color-add-bg: oklch(76% 0.13 155 / 0.1);
+  --color-del: oklch(74% 0.14 25);
+  --color-del-bg: oklch(74% 0.14 25 / 0.1);
+  --color-wait: oklch(78% 0.12 80);
+  --color-wait-bg: oklch(78% 0.12 80 / 0.12);
+  /* agent identity: one lightness and chroma, four hues clear of the status colors (no red, no green) */
+  --color-agent-1: oklch(68% 0.13 285);
+  --color-agent-2: oklch(68% 0.13 180);
+  --color-agent-3: oklch(68% 0.13 345);
+  --color-agent-4: oklch(68% 0.13 60);
+  --color-on-agent: oklch(18% 0.01 260);
+  /* the cards' layers: card → stage (darker) → row (lighter) */
+  --color-stage: oklch(16.5% 0.005 260);
+  --color-row: oklch(21% 0.005 260);
 
   --font-display: "Inter", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
   --font-body: "Inter", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
