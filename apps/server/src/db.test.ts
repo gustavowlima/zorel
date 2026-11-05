@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSy
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
-import { Store } from "./db.ts"
+import { sameName, Store } from "./db.ts"
 import { LEGACY_MIGRATIONS } from "./migrate.ts"
 
 const run = <A>(path: string, f: (r: typeof Store.Service) => Effect.Effect<A>) =>
@@ -297,4 +297,38 @@ test("pages as files: written, renamed, pinned and removed through Zorel; edits,
       expect(existsSync(at("projects/zorel-app/ops/Release.md"))).toBe(false)
     })
   ).finally(() => rmSync(dir, { recursive: true, force: true }))
+})
+
+test("memory map: a fact's entities are found by name, alias or close spelling; a project's facts hang off its point; forgotten facts leave the map", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const p = yield* r.createProject({ name: "Zorel", brief: "" })
+      const scope = `project:${p.id}`
+      const known = [{ id: p.id, name: "Zorel", type: "project" as const }]
+      const add = (text: string, state: "active" | "pending" = "active") => Effect.map(r.addMemory({ scope, text, state, origin: "auto", chatId: null }), (m) => m!)
+      const a = yield* add("Deploys go to Vercel on Fridays")
+      yield* r.linkMemory(a.id, scope, { entities: [{ name: "Deploy", type: "subject" }, { name: "Vercel", type: "concept" }], relations: [["Deploy", "goes to", "Vercel"]] }, known)
+      const b = yield* add("Previews run on vercel.com for every PR", "pending")
+      yield* r.linkMemory(b.id, scope, { entities: [{ name: "vercel.com", type: "concept" }, { name: "Previews", type: "subject" }], relations: [] }, known)
+      const c = yield* add("The landing copy is short")
+      yield* r.linkMemory(c.id, "user", { entities: [{ name: "Vercel", type: "concept" }], relations: [] }) // another scope: its own Vercel
+
+      const map = yield* r.entitiesIn([scope])
+      const byName = (n: string) => map.find((e) => e.name === n)!
+      expect(map.map((e) => e.name).sort()).toEqual(["Deploy", "Previews", "Vercel", "Zorel"])
+      expect(byName("Zorel")).toMatchObject({ type: "project", facts: 2 }) // the project's point holds both facts
+      expect(byName("Vercel")).toMatchObject({ type: "concept", facts: 2, weight: 2 }) // "vercel.com" is the same Vercel
+      expect(byName("Previews").pending).toBe(1) // only a pending fact mentions it
+      expect((yield* r.entitiesIn(["user"])).map((e) => e.name)).toEqual(["Vercel"]) // maps don't mix
+
+      yield* r.updateMemory(b.id, { state: "forgotten" })
+      expect((yield* r.entitiesIn([scope])).map((e) => e.name).sort()).toEqual(["Deploy", "Vercel", "Zorel"])
+    })
+  ))
+
+test("same name: one spelling holds the other whole, or most letter pairs match; short names must be equal", () => {
+  expect(sameName("vercel", "vercel com")).toBe(true)
+  expect(sameName("postgres", "postgresql")).toBe(true) // Dice on letter pairs
+  expect(sameName("deploy", "deployment")).toBe(false) // not a whole word inside, too few shared pairs
+  expect(sameName("ai", "ai sdk")).toBe(false) // short: exact only
 })

@@ -178,6 +178,60 @@ export const memories = sqliteTable(
   (t) => [unique("memories_scope_normalized").on(t.scope, t.normalized)]
 )
 
+// The memory's map (2026-11-05): the things the facts are about (entities) and how they relate, so an agent recalls
+// by association. Each project has its own map; an entity's scope follows the facts that mention it (user,
+// project:<id>, agent:<id>). Facts are the proof: an entity lives while a fact mentions it.
+export const entities = sqliteTable(
+  "entities",
+  {
+    id: text().primaryKey(),
+    scope: text().notNull(),
+    name: text().notNull(),
+    normalized: text().notNull(),
+    type: text({ enum: ["project", "agent", "concept", "subject"] }).notNull(),
+    aliases: text({ mode: "json" }).$type<ReadonlyArray<string>>().notNull().default([]), // other names it was given ("vercel.com")
+    summary: text().notNull().default(""),
+    weight: integer().notNull().default(1), // how often facts mentioned it
+    createdAt: integer("created_at").notNull(),
+    usedAt: integer("used_at").notNull() // last mentioned or recalled
+  },
+  (t) => [unique("entities_scope_normalized").on(t.scope, t.normalized)]
+)
+// Which fact mentions which entity (its proof). Goes with the fact.
+export const memoryEntities = sqliteTable(
+  "memory_entities",
+  {
+    memoryId: text("memory_id").notNull().references(() => memories.id, { onDelete: "cascade" }),
+    entityId: text("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" })
+  },
+  (t) => [primaryKey({ columns: [t.memoryId, t.entityId] }), index("memory_entities_entity").on(t.entityId)]
+)
+// A named relation a fact states ("Deploy" goes to "Vercel"). invalidAt: a later correction made it untrue (kept, not deleted).
+export const relations = sqliteTable(
+  "relations",
+  {
+    id: text().primaryKey(),
+    scope: text().notNull(),
+    src: text().notNull().references(() => entities.id, { onDelete: "cascade" }),
+    dst: text().notNull().references(() => entities.id, { onDelete: "cascade" }),
+    rel: text().notNull(),
+    memoryId: text("memory_id").references(() => memories.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull(),
+    invalidAt: integer("invalid_at")
+  },
+  (t) => [unique("relations_src_dst_rel").on(t.src, t.dst, t.rel), index("relations_dst").on(t.dst)]
+)
+// A link the person made between two maps ("related to"): recall crosses it, and only it.
+export const entityLinks = sqliteTable(
+  "entity_links",
+  {
+    a: text().notNull().references(() => entities.id, { onDelete: "cascade" }),
+    b: text().notNull().references(() => entities.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at").notNull()
+  },
+  (t) => [primaryKey({ columns: [t.a, t.b] })]
+)
+
 export const mcpServers = sqliteTable("mcp_servers", {
   id: text().primaryKey(),
   projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),

@@ -3,7 +3,7 @@ import { expect, test } from "bun:test"
 process.env.ZOREL_API_ENGINE = "direct" // these tests drive the direct API engine against a mock server
 import { type Agent, DEFAULT_PERMISSIONS, type Memory, type Message, namedSkills, skillHandle } from "@zorel/contracts"
 import { Effect, Stream } from "effect"
-import { buildTurn, grounded, memoryNote, mentioned, parseConsolidation, pinned, readPage, reviewed, sectionOf, similar, withinBudget } from "./context.ts"
+import { buildTurn, grounded, mappedOf, memoryNote, mentioned, parseConsolidation, pinned, readPage, reviewed, sectionOf, similar, withinBudget } from "./context.ts"
 import { cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
 import { codexFailure, codexStep, windowsOf } from "./engines/codex.ts"
 import { hasCredential, redact } from "./observability.ts"
@@ -88,7 +88,7 @@ test("tool policy: annotation > name; sensitive beats read", () => {
 
 test("consolidation: takes JSON with text around it, drops scopes not allowed", () => {
   const r = parseConsolidation('ok:\n{"summary":"S","memories":[{"scope":"user","text":"A","evidence":[1]},{"scope":"project","text":"B","evidence":[1]}],"confirm":["m2","x"],"skills":[{"scope":"user","title":"T","text":"steps"},{"scope":"user","text":"no title"}]}', ["user"])
-  expect(r).toEqual({ summary: "S", memories: [{ scope: "user", text: "A", keywords: "", evidence: [1] }], confirm: [1], skills: [{ scope: "user", title: "T", text: "steps" }] })
+  expect(r).toEqual({ summary: "S", memories: [{ scope: "user", text: "A", keywords: "", evidence: [1], entities: [], relations: [] }], confirm: [1], skills: [{ scope: "user", title: "T", text: "steps" }] })
   expect(parseConsolidation("nothing", ["user"])).toBeUndefined()
   expect(parseConsolidation('{"summary":""}', ["user"])).toBeUndefined()
 })
@@ -108,7 +108,7 @@ test("consolidation: an agent's details don't become the person's; credentials a
   expect(grounded("Runs Postgres 17", "we use postgres", "Postgres 17 is out")).toBe(false) // the agent's number
   // A correction points at the memory it replaces; keywords come along, capped.
   const moved = '{"summary":"S","memories":[{"scope":"user","text":"Lives in Berlin","keywords":"city home address","evidence":[1],"replaces":"m2"}]}'
-  expect(parseConsolidation(moved, ["user"], () => "I moved to Berlin")?.memories).toEqual([{ scope: "user", text: "Lives in Berlin", keywords: "city home address", evidence: [1], replaces: 1 }])
+  expect(parseConsolidation(moved, ["user"], () => "I moved to Berlin")?.memories).toEqual([{ scope: "user", text: "Lives in Berlin", keywords: "city home address", evidence: [1], entities: [], relations: [], replaces: 1 }])
 })
 
 test("credentials: secretlint's rules, the stored secrets and a password said in words; the rest stays", async () => {
@@ -365,4 +365,10 @@ test("pages are read by section, and a search hit names the section it's in", ()
   expect(readPage("Runbook", body, "nope")).toMatchObject({ error: true })
   expect(readPage("Big", `## A\n${"x".repeat(30_000)}`).text).toContain("read a part with section")
   expect(sectionOf(body, ["revert"])).toBe("Rollback")
+})
+
+test("what a fact is about: entities and relations read leniently, a relation's ends become entities, capped", () => {
+  const m = mappedOf([{ name: " Vercel ", type: "concept" }, { name: "Deploy" }, "Fridays", { type: "concept" }, 42], [["Deploy", "Goes To", "Vercel"], ["Deploy", "x"], ["Deploy", "happens on", "deploy"], ["Deploy", "owned by", "Leo"]])
+  expect(m.entities).toEqual([{ name: "Vercel", type: "concept" }, { name: "Deploy", type: "subject" }, { name: "Fridays", type: "subject" }, { name: "Leo", type: "subject" }])
+  expect(m.relations).toEqual([["Deploy", "goes to", "Vercel"], ["Deploy", "owned by", "Leo"]])
 })

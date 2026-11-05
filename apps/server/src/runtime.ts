@@ -6,9 +6,9 @@ import { type Access, type Agent, type Chat, type Effort, type FailoverTarget, t
 import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
-import { ask, consolidate, DataDir, members, prepare } from "./chat.ts"
+import { ask, consolidate, DataDir, knownNames, mapEarlierFacts, members, prepare } from "./chat.ts"
 import { parseRoute, ROUTER_MESSAGES, routerModel, routerPrompt } from "./router.ts"
-import { grounded, handleOf, MAX_DEPTH, memoryNote, mentioned, pinned, readPage, scopesOf, sectionOf, similar, snippet } from "./context.ts"
+import { grounded, handleOf, mappedOf, MAX_DEPTH, memoryNote, mentioned, pinned, readPage, scopesOf, sectionOf, similar, snippet } from "./context.ts"
 import { type AccountRow, normalize, Store, type Repository, type TurnRow } from "./db.ts"
 import { hasCredential } from "./observability.ts"
 import { engineLabel, type EngineFailure, Engines, isImage, type NativeStep, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
@@ -623,6 +623,8 @@ export const makeRuntime = Effect.gen(function* () {
       const m = await run(store.addMemory({ scope: target?.scope ?? scope, kind: "fact", text, state: kept ? "active" : "pending", origin: "auto", chatId: chat.id, agentId: agent?.id ?? null, replaces: target?.id ?? null }))
       await finish(s, m ? "ok" : "refused", text)
       if (!m) return textResult("The user already has this, or asked to forget it: don't keep it again or mention it.")
+      const topics = Array.isArray(args.topics) ? args.topics.slice(0, 5) : []
+      await run(store.linkMemory(m.id, m.scope, mappedOf(topics), await run(knownNames(store, chat))))
       if (kept) await run(remembered(chat.id, [m]))
       return textResult(kept ? "Kept. Go on without mentioning it." : "Proposed: the user reviews it. Go on without mentioning it.")
     }
@@ -1561,6 +1563,8 @@ export const makeRuntime = Effect.gen(function* () {
       })
     )
   }
+  // Facts kept before the memory's map existed are filed on it in the background, a little after start.
+  yield* Effect.forkDetach(Effect.sleep("20 seconds").pipe(Effect.andThen(mapEarlierFacts()), Effect.provide(services), Effect.ignore))
   return service
 })
 

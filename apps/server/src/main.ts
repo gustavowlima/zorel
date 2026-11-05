@@ -495,6 +495,15 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
   })
 )
 
+// The point a scope's facts hang off on the map: its project or its agent (none for what's about you).
+const ownerPoint = (store: Repository, scope: string) =>
+  Effect.gen(function* () {
+    const [kind, id = ""] = scope.split(":")
+    const project = kind === "project" ? yield* store.project(id) : undefined
+    const agent = kind === "agent" ? yield* store.agent(id) : undefined
+    return project ? [{ id: project.id, name: project.name, type: "project" as const }] : agent ? [{ id: agent.id, name: agent.name, type: "agent" as const }] : []
+  })
+
 // A scope a memory can move to: you, a project that exists, or an agent that is a teammate.
 const scopeExists = (store: Repository, scope: string) =>
   Effect.gen(function* () {
@@ -511,6 +520,14 @@ const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
     const actor = yield* Actor
     return h
       .handle("list", () => store.memories())
+      // The map of one scope (and what's about you), or of every scope.
+      .handle("map", ({ query }) =>
+        Effect.gen(function* () {
+          const scopes = query.scope ? [...new Set(["user", query.scope])] : [...new Set((yield* store.memories()).map((m) => m.scope))]
+          const points = (yield* store.entitiesIn(scopes)).map((p) => ({ ...p, type: p.type as "project" | "agent" | "concept" | "subject", facts: Number(p.facts), pending: Number(p.pending ?? 0) }))
+          return { points, links: yield* store.linksAmong(points.map((p) => p.id)) }
+        })
+      )
       // Written by the user: starts active. Duplicate: returns the existing one.
       .handle("create", ({ payload }) =>
         Effect.gen(function* () {
@@ -518,6 +535,8 @@ const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
           const only = yield* skillAgents(store, payload.agents)
           if (!only) return yield* badRequest()
           const added = yield* store.addMemory({ ...payload, agents: only, state: "active", origin: "manual", chatId: null, owner: actor.id })
+          // A fact written by hand hangs off its project's or agent's point on the map (what it's about: the next sleep).
+          if (added && added.kind === "fact") yield* store.linkMemory(added.id, added.scope, { entities: [], relations: [] }, yield* ownerPoint(store, added.scope))
           return added ?? (yield* store.memories()).find((m) => m.scope === payload.scope && m.text === payload.text)!
         })
       )

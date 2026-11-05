@@ -229,7 +229,7 @@ export const CONSOLIDATION_SYSTEM = [
   "You keep the memory of a chat between a person and AI agents.",
   "You get the current summary, a stretch of messages about to leave the window, and the memories and skills that already exist.",
   "Answer ONLY with JSON, no text around it, in this shape:",
-  '{"summary": "...", "memories": [{"scope": "user" | "project" | "agent", "text": "...", "keywords": "...", "evidence": [3], "replaces": "m4"}], "confirm": ["m2"], "skills": [{"scope": "user" | "project" | "agent", "title": "...", "text": "..."}]}',
+  '{"summary": "...", "memories": [{"scope": "user" | "project" | "agent", "text": "...", "keywords": "...", "evidence": [3], "replaces": "m4", "entities": [{"name": "Vercel", "type": "concept"}], "relations": [["Deploy", "goes to", "Vercel"]]}], "confirm": ["m2"], "skills": [{"scope": "user" | "project" | "agent", "title": "...", "text": "..."}]}',
   '- "summary": the new summary, merging the previous one and the stretch. Up to 400 words. Keep decisions, open items, numbers, names and the state of the work.',
   '- "memories": only durable facts that hold outside this conversation. An empty list is the norm.',
   '  - "user": the person\'s preferences and way of working (holds everywhere).',
@@ -238,6 +238,8 @@ export const CONSOLIDATION_SYSTEM = [
   "  - One idea per memory, a short self-contained sentence in the third person. Don't repeat existing memories.",
   '  - "evidence": the numbers (#) of the messages in the stretch that prove the fact. Only the person\'s messages ([user]) count: an agent\'s guess, plan or assumption never becomes a memory, and neither do details only an agent added (a name, a number).',
   '  - "keywords": 5 to 10 other words someone might use when this would help (synonyms, related terms, the other language), separated by spaces. They are only for search.',
+  '  - "entities": the things the memory is about, 1 to 5, each named as it would be anywhere ("Vercel", not "vercel deploys"): "concept" for a concrete thing (a tool, a service, a file, a day), "subject" for a theme or a decision ("Deploy", "Authentication"). Use the project\'s and the agents\' own names when the memory is about them.',
+  '  - "relations": how its entities relate, as [from, relation, to] with a short relation in a few words ("goes to", "uses", "decided"). Only what the memory says.',
   '  - "replaces": when the person corrects or updates an existing memory (they moved, changed a preference), the id (m1, m2…) of the one it replaces. Never leave two memories that contradict each other.',
   '  - Not a memory: anything temporary or time-boxed ("this week", "for now", "today"), and never a password, key, token or other credential, not even in the summary. A message that holds a credential can still hold facts: keep those.',
   '- "confirm": the ids (m1, m2…) of existing memories the stretch confirms again. An empty list is the norm.',
@@ -275,7 +277,7 @@ type Scope = typeof Scope.Type
 export interface Consolidation {
   readonly summary: string
   // replaces: index into the existing memories given to the prompt
-  readonly memories: ReadonlyArray<{ scope: Scope; text: string; keywords: string; evidence: ReadonlyArray<number>; replaces?: number }>
+  readonly memories: ReadonlyArray<{ scope: Scope; text: string; keywords: string; evidence: ReadonlyArray<number>; replaces?: number } & Mapped>
   readonly confirm: ReadonlyArray<number> // indexes into the existing memories given to the prompt
   readonly skills: ReadonlyArray<{ scope: Scope; title: string; text: string }>
 }
@@ -294,8 +296,41 @@ const ProposedMemory = Schema.Struct({
   text: Text(500),
   keywords: Schema.optional(Schema.String),
   evidence: Schema.optional(Schema.Array(Schema.Unknown)),
-  replaces: Schema.optional(Schema.NullOr(Schema.String))
+  replaces: Schema.optional(Schema.NullOr(Schema.String)),
+  entities: Schema.optional(Schema.Array(Schema.Unknown)),
+  relations: Schema.optional(Schema.Array(Schema.Unknown))
 })
+
+// What a fact is about, for the memory's map: its entities and the relations it states, read leniently (a bad item
+// goes, the rest stays) and capped. A relation's ends become entities too.
+export type EntityType = "concept" | "subject"
+export interface Mapped {
+  readonly entities: ReadonlyArray<{ name: string; type: EntityType }>
+  readonly relations: ReadonlyArray<readonly [string, string, string]>
+}
+const MAX_ENTITIES = 6
+const NAME_MAX = 60
+export function mappedOf(entities: ReadonlyArray<unknown> = [], relations: ReadonlyArray<unknown> = []): Mapped {
+  const clean = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, NAME_MAX) : "")
+  const es = entities.flatMap((e) => {
+    const o = (e ?? {}) as { name?: unknown; type?: unknown }
+    const name = clean(typeof e === "string" ? e : o.name)
+    return name ? [{ name, type: (o.type === "concept" ? "concept" : "subject") as EntityType }] : []
+  })
+  const rs = relations.flatMap((r) => {
+    if (!Array.isArray(r) || r.length !== 3) return []
+    const [a, rel, b] = r.map(clean)
+    return a && rel && b && normalize(a) !== normalize(b) ? [[a, rel.toLowerCase().slice(0, 40), b] as const] : []
+  })
+  const seen = new Set<string>()
+  const all = [...es, ...rs.flatMap(([a, , b]) => [{ name: a!, type: "subject" as EntityType }, { name: b!, type: "subject" as EntityType }])].filter((e) => {
+    const k = normalize(e.name)
+    if (!k || seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+  return { entities: all.slice(0, MAX_ENTITIES), relations: rs.slice(0, MAX_ENTITIES) }
+}
 const ProposedSkill = Schema.Struct({ scope: Scope, title: Text(80), text: Text(4000) })
 const decodeReply = Schema.decodeUnknownOption(Reply)
 const decodeMemory = Schema.decodeUnknownOption(ProposedMemory)
@@ -332,7 +367,7 @@ export function parseConsolidation(text: string, allowed: ReadonlyArray<string>,
       if (!inScope(m) || !proof.length || !grounded(m.text, proof.join("\n"), agents)) return []
       const replaces = ref(m.replaces)
       const evidence = (m.evidence ?? []).filter((n): n is number => typeof n === "number" && said(n) !== undefined)
-      return [{ scope: m.scope, text: m.text.trim(), keywords: (m.keywords ?? "").trim().slice(0, KEYWORDS_MAX), evidence, ...(replaces !== undefined && { replaces }) }]
+      return [{ scope: m.scope, text: m.text.trim(), keywords: (m.keywords ?? "").trim().slice(0, KEYWORDS_MAX), evidence, ...mappedOf(m.entities, m.relations), ...(replaces !== undefined && { replaces }) }]
     }),
     confirm: (reply.confirm ?? []).flatMap((id) => [ref(id)].filter((n) => n !== undefined)),
     skills: (reply.skills ?? [])

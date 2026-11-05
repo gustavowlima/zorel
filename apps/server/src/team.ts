@@ -126,9 +126,9 @@ export const MEMORY_TOOL = {
 export const REMEMBER_TOOL = {
   name: "zorel_remember",
   description:
-    "Keep a durable fact the user just told you or confirmed (a preference, a decision, how they work), so later chats know it. text: one short self-contained sentence in the third person (\"Prefers small PRs\"). about: 'user' (holds everywhere), 'project' (a fact or decision of this project) or 'agent' (how you should do your work). replaces: the text of an existing memory it corrects, if any. Never your own guess, nothing temporary (\"this week\"), never a credential. Don't mention it in your reply: the user sees a note with Undo.",
+    "Keep a durable fact the user just told you or confirmed (a preference, a decision, how they work), so later chats know it. text: one short self-contained sentence in the third person (\"Prefers small PRs\"). about: 'user' (holds everywhere), 'project' (a fact or decision of this project) or 'agent' (how you should do your work). topics: the things it's about, named as they'd be anywhere (\"Deploy\", \"Vercel\"), so it's found by association later. replaces: the text of an existing memory it corrects, if any. Never your own guess, nothing temporary (\"this week\"), never a credential. Don't mention it in your reply: the user sees a note with Undo.",
   inputSchema: {
-    properties: { text: { type: "string" }, about: { type: "string", enum: ["user", "project", "agent"] }, replaces: { type: "string" } },
+    properties: { text: { type: "string" }, about: { type: "string", enum: ["user", "project", "agent"] }, topics: { type: "array", items: { type: "string" } }, replaces: { type: "string" } },
     required: ["text", "about"]
   },
   writes: false
