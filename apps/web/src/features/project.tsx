@@ -9,7 +9,7 @@ import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
 import { AgentRow, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
 import {
-  ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, Select, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, Plus, Screen, Section, Tab,
+  ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, Select, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, Screen, Section, Tab,
   TabList, TabPanel, Tabs, Textarea, Trash2
 } from "@/ui"
 
@@ -162,7 +162,8 @@ function AddProject({ onDone }: { onDone: () => void }) {
           placeholder={t("project.pathPlaceholder")}
           spellCheck={false}
           autoFocus
-          className="ml-1 h-control-sm min-w-0 flex-1 font-mono text-sm"
+          size="sm"
+          className="ml-1 min-w-0 flex-1 font-mono"
         />
         {desktop?.pickFolder && (
           <IconButton label={t("project.browse")} size="sm" onPress={() => void browse()}>
@@ -170,36 +171,33 @@ function AddProject({ onDone }: { onDone: () => void }) {
           </IconButton>
         )}
       </div>
-      <div role="listbox" aria-label={t("project.pathLabel")} className="mt-2 flex h-64 flex-col gap-px overflow-y-auto rounded-card border border-subtle p-1">
+      <OptionList label={t("project.pathLabel")} className="mt-2 h-64 rounded-card border border-subtle">
         {shown.length === 0 && <p className="px-2.5 py-2 text-sm text-dim">{t("project.noFolders")}</p>}
         {shown.map((f, i) => (
-          <div
+          <OptionRow
             key={f.path}
-            role="option"
-            aria-selected={f === pick}
-            tabIndex={-1}
-            onMouseDown={(e) => {
-              e.preventDefault() // keep the path field's focus: the keyboard works from there
-              setSelected(i)
-            }}
-            onDoubleClick={() => open(f.path)}
-            className={cx("group flex h-control-sm shrink-0 cursor-default items-center gap-2.5 rounded-control pr-1 pl-2.5", f === pick ? "bg-accent-soft text-fg" : "text-secondary hover:bg-hover")}
+            selected={f === pick}
+            icon={f.git ? <GitBranch /> : <Folder />}
+            onPick={() => setSelected(i)}
+            onOpen={() => open(f.path)}
+            className="h-control-sm pr-1"
+            trailing={
+              // Opening is a double click away; the arrow shows on the selected or hovered row.
+              <IconButton
+                label={t("project.open", { name: f.name })}
+                size="xs"
+                onPress={() => open(f.path)}
+                className={cx("text-muted", f === pick ? "opacity-100" : "opacity-0 group-hover:opacity-100 data-focus-visible:opacity-100")}
+              >
+                <ChevronRight />
+              </IconButton>
+            }
           >
-            <span className={cx("flex size-4 shrink-0 items-center justify-center [&_svg]:size-4", f === pick ? "text-accent-text" : "text-muted")}>{f.git ? <GitBranch /> : <Folder />}</span>
             <span className="min-w-0 flex-1 truncate">{f.name}</span>
             {f.git && <span className="text-xs text-dim">{t("project.gitRepo")}</span>}
-            {/* Opening is always one double click away; the arrow shows where the pointer or the selection is. */}
-            <IconButton
-              label={t("project.open", { name: f.name })}
-              size="xs"
-              onPress={() => open(f.path)}
-              className={cx("text-muted", f === pick ? "opacity-100" : "opacity-0 group-hover:opacity-100 data-focus-visible:opacity-100")}
-            >
-              <ChevronRight />
-            </IconButton>
-          </div>
+          </OptionRow>
         ))}
-      </div>
+      </OptionList>
       <p className="mt-1.5 text-xs text-dim">{t("project.pathHint")}</p>
 
       <div className="mt-5">

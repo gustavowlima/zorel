@@ -7,9 +7,7 @@ import { agentsAtom, chatsAtom, memoriesAtom, memoryVersionsAtom, mutations, pag
 import { NewPage, PageView } from "./pages.tsx"
 import { chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import {
-  BookOpen, Button, cx, EmptyState, Field, Input, Pin, PinOff, Plus, Screen, Search, Select, Tab, TabList, Tabs, Textarea, LineDiff, Rows, Tooltip, Undo2
-} from "@/ui"
+import { BookOpen, Button, cx, EmptyState, Field, Input, LineDiff, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Tab, TabList, Tabs, Textarea, Tooltip, Undo2 } from "@/ui"
 
 type Filter = "all" | "fact" | "skill" | "page" | "pending" | "forgotten"
 
@@ -56,10 +54,7 @@ export function KnowledgeView({ selected }: { selected: string | undefined }) {
       bodyClassName="flex"
       actions={
         <>
-          <div className="relative w-56">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted" aria-hidden="true" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("knowledge.search")} className="h-control-sm pl-8 text-sm" />
-          </div>
+          <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("knowledge.search")} />
           <Button size="sm" variant="secondary" onPress={() => (showPages ? setCreatingPage(true) : setCreating("fact"))}>
             <Plus />
             {t("knowledge.new")}

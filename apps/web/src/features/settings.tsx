@@ -15,7 +15,7 @@ import { ProvidersSection } from "./providers.tsx"
 import { ReadingState } from "./reading.tsx"
 import { ProcessesSection } from "./processes.tsx"
 import { StorageSection } from "./storage.tsx"
-import { Activity, ArrowRight, BookOpen, Button, EmptyState, FolderOpen, HardDrive, History, Input, NavItem, Plug, Settings, Rows, Screen, Search, Section, Segmented, Sparkles, Switch } from "@/ui"
+import { Activity, ArrowRight, BookOpen, Button, EmptyState, FolderOpen, HardDrive, History, NavItem, Plug, Rows, Screen, SearchInput, Section, Segmented, Settings, Sparkles, Switch } from "@/ui"
 
 const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, skills: <BookOpen />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
 
@@ -169,10 +169,7 @@ function FileSkills() {
       {!reading.loading && !reading.failed && all.length === 0 && <EmptyState icon={<FolderOpen />} title={t("skills.noFiles")} hint={t("skills.noFilesHint")} />}
       {all.length > 0 && (
         <div className="flex items-center gap-2">
-          <label className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted" aria-hidden="true" />
-            <Input className="h-control-sm pl-8 text-sm" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("skills.search", { count: all.length })} aria-label={t("common.search")} />
-          </label>
+          <SearchInput size="sm" className="flex-1" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("skills.search", { count: all.length })} aria-label={t("common.search")} />
           <Segmented
             label={t("skills.show")}
             value={only}
