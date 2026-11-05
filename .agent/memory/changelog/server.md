@@ -67,3 +67,4 @@
 2026-11-05 | claude sandbox split in policy tier + flag layer; agent env without app ZOREL_*; macOS shell zsh; chats.access + effectiveAccess + audit | SDK dropped allowLocalBinding/autoAllowBash from managedSettings; per-chat access was asked by the user
 2026-11-05 | chat access only narrows; Stop closes the Claude session when a steer is pending; send-now fallback saves the message after the interrupted turn | review of the agents' changes: elevation path, unseen work after Stop, out-of-order history
 2026-11-05 | agents working at once: global configurable limit, chats over it wait in line | user asked for a limit set in Settings
+2026-11-05 | zorel_preview: any project's dev server on a free port, shown in the chat's Browser panel | user wants previews for any project (as Tucano/OpenBot), without containers or portless

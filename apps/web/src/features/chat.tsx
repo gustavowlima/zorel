@@ -89,6 +89,15 @@ export function ChatView({ chat }: { chat: Chat }) {
     setBrowserUrl({ url })
     setPanel("browser")
   }
+  // An agent started a preview (zorel_preview): its page is the chat's active tab, so the Browser panel opens on it.
+  // Once per preview: the person may close the panel afterwards.
+  const shownPreviews = useRef(new Set<string>())
+  const previewDone = state.live?.steps.find((st) => st.tool === "zorel_preview" && st.status === "ok" && !shownPreviews.current.has(st.id))
+  useEffect(() => {
+    if (!previewDone) return
+    shownPreviews.current.add(previewDone.id)
+    setPanel("browser")
+  }, [previewDone])
   const [focus, setFocus] = useState<Focus>()
   const view = (f: Focus) => {
     setFocus(f)
