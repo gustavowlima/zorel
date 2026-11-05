@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { sameName, Store } from "./db.ts"
 import { LEGACY_MIGRATIONS } from "./migrate.ts"
+import { recall } from "./chat.ts"
 
 const run = <A>(path: string, f: (r: typeof Store.Service) => Effect.Effect<A>) =>
   Effect.runPromise(Effect.scoped(Effect.gen(function* () { return yield* f(yield* Store) }).pipe(Effect.provide(Store.layer(path)))))
@@ -332,3 +333,27 @@ test("same name: one spelling holds the other whole, or most letter pairs match;
   expect(sameName("deploy", "deployment")).toBe(false) // not a whole word inside, too few shared pairs
   expect(sameName("ai", "ai sdk")).toBe(false) // short: exact only
 })
+
+test("recall by association finds a fact its words don't (the measure for A2): deploy → Vercel → its build rule", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const p = yield* r.createProject({ name: "Shop", brief: "" })
+      const scope = `project:${p.id}`
+      const fact = (text: string, entities: string[], relations: Array<[string, string, string]> = []) =>
+        Effect.gen(function* () {
+          const m = (yield* r.addMemory({ scope, text, state: "active", origin: "manual", chatId: null }))!
+          yield* r.linkMemory(m.id, scope, { entities: entities.map((name) => ({ name, type: "concept" as const })), relations }, [])
+          return m
+        })
+      const deploy = yield* fact("Deploys go to Vercel on Fridays", ["Deploy", "Vercel"], [["Deploy", "goes to", "Vercel"]])
+      const build = yield* fact("Builds need NODE_VERSION 22 set in the dashboard", ["Vercel", "Node"]) // never says "deploy"
+      yield* fact("Lunch is at noon", ["Lunch"])
+      const query = "how do we deploy?"
+      const byWords = (yield* r.searchMemories([scope], query, [], 5)).map((m) => m.id)
+      expect(byWords).toContain(deploy.id)
+      expect(byWords).not.toContain(build.id) // its words don't match
+      const recalled = (yield* recall(r, [scope], query, [])).map((m) => m.text)
+      expect(recalled).toContain("Builds need NODE_VERSION 22 set in the dashboard") // association does
+      expect(recalled).not.toContain("Lunch is at noon")
+    })
+  ))

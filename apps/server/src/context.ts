@@ -69,6 +69,38 @@ export function reviewed(active: ReadonlyArray<Memory>, stretch: string, budget 
   })
 }
 
+// Recall by association (HippoRAG's idea): activation starts at the seeds (the points the message names) and spreads
+// along the map's links; each step keeps `restart` of it at the seeds, so what's close counts most and what's a few
+// links away still counts. Personalized PageRank by power iteration over an undirected graph; milliseconds for a
+// project's map. Returns each point's activation (they sum to 1).
+export function spread(points: ReadonlyArray<string>, links: ReadonlyArray<{ a: string; b: string }>, seeds: ReadonlyArray<string>, restart = 0.5, steps = 20): Map<string, number> {
+  const around = new Map<string, string[]>(points.map((p) => [p, []]))
+  for (const { a, b } of links) {
+    around.get(a)?.push(b)
+    around.get(b)?.push(a)
+  }
+  const start = new Map(seeds.filter((s) => around.has(s)).map((s, _i, all) => [s, 1 / all.length]))
+  if (!start.size) return new Map()
+  let now = new Map(start)
+  for (let i = 0; i < steps; i++) {
+    const next = new Map<string, number>()
+    for (const [p, w] of start) next.set(p, restart * w)
+    for (const [p, w] of now) {
+      const out = around.get(p) ?? []
+      if (!out.length) next.set(p, (next.get(p) ?? 0) + (1 - restart) * w) // a dead end keeps its share
+      else for (const q of out) next.set(q, (next.get(q) ?? 0) + ((1 - restart) * w) / out.length)
+    }
+    now = next
+  }
+  return now
+}
+
+// The points a text names: their name or an alias as whole words in it ("deploy to vercel" names Deploy and Vercel).
+export function namedPoints(text: string, points: ReadonlyArray<{ id: string; normalized: string; aliases: ReadonlyArray<string> }>): string[] {
+  const t = ` ${normalize(text)} `
+  return points.filter((p) => [p.normalized, ...p.aliases].some((n) => n.length >= 3 && t.includes(` ${n} `))).map((p) => p.id)
+}
+
 // Two wordings of the same idea: most of their words shared (Jaccard over words of 3+ letters). Consolidation
 // treats a new proposal this close to an existing memory as that memory said again.
 export const SAME_IDEA = 0.6
