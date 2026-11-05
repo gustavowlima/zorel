@@ -1,13 +1,13 @@
 {
   "name": "@zorel/desktop",
   "productName": "Zorel",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Zorel desktop app",
   "private": true,
   "main": "dist/main.cjs",
   "scripts": {
     "main": "bun build src/main.ts src/preload.ts --target=node --format=cjs --external electron --outdir dist --entry-naming [name].cjs",
-    "server": "bun build --compile --minify --external 'chromium-bidi' --external 'chromium-bidi/*' ../server/src/main.ts --outfile build/zorel-server",
+    "server": "bun build --compile --minify --external 'chromium-bidi' --external 'chromium-bidi/*' --external playwright-core ../server/src/main.ts --outfile build/zorel-server && bun scripts/playwright.ts",
     "start": "bun run --cwd ../web build && bun run main && electron .",
     "prebuild": "bun run --cwd ../web build && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run browser && bun run licenses && bun run main",
     "build": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --publish never",

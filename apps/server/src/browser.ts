@@ -11,7 +11,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
 import { Context, Effect, Layer } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { type Browser, type BrowserContext, type CDPSession, chromium, type Dialog, type Page } from "playwright-core"
+import type * as Playwright from "playwright-core"
+import type { Browser, BrowserContext, CDPSession, Dialog, Page } from "playwright-core"
+
+// playwright-core isn't compiled into the server binary: at run time it reads its own files (package.json,
+// browsers.json) through __dirname, which `bun build --compile` freezes at the build machine's path, so the
+// installed app crashed on the first browser use. The desktop app ships the package next to the server and
+// names it in ZOREL_PLAYWRIGHT; in development it's the ordinary dependency.
+const playwright = (): typeof Playwright => require(process.env.ZOREL_PLAYWRIGHT || "playwright-core")
 import { DataDir } from "./chat.ts"
 import { Store } from "./db.ts"
 import { BROWSER_KEY, Secrets } from "./secrets.ts"
@@ -77,7 +84,7 @@ async function launch(): Promise<Browser> {
   let last: unknown
   for (const channel of CHANNELS) {
     try {
-      return await chromium.launch({ headless: true, ...(channel && { channel }) })
+      return await playwright().chromium.launch({ headless: true, ...(channel && { channel }) })
     } catch (e) {
       last = e
     }
