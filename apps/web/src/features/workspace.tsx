@@ -938,14 +938,7 @@ export function TerminalPanel({
                 </IconButton>
               }
             >
-              {scripts.map((x) => (
-                <MenuItem key={x.name} onAction={() => add(x.name)}>
-                  <span className="flex min-w-0 items-baseline gap-3">
-                    <span className="shrink-0 text-fg">{x.name}</span>
-                    <span className="max-w-64 truncate font-mono text-sm text-muted">{x.command}</span>
-                  </span>
-                </MenuItem>
-              ))}
+              {scripts.map((x) => scriptItem(x, () => add(x.name)))}
             </Menu>
           )}
           <LocalServers chatId={chatId} onOpenUrl={onOpenUrl} />
@@ -1096,14 +1089,7 @@ export function RunControl({ chatId, onOpen }: { chatId: string; onOpen: (url: s
           </Button>
         }
       >
-        {scripts.map((x) => (
-          <MenuItem key={x.name} onAction={() => runIt({ script: x.name })}>
-            <span className="flex min-w-0 items-baseline gap-3">
-              <span className="shrink-0 text-fg">{x.name}</span>
-              <span className="max-w-64 truncate font-mono text-sm text-muted">{x.command}</span>
-            </span>
-          </MenuItem>
-        ))}
+        {scripts.map((x) => scriptItem(x, () => runIt({ script: x.name })))}
         {scripts.length > 0 && <MenuSeparator />}
         <MenuItem icon={<SquareTerminal />} onAction={() => setAsking(true)}>
           {t("workspace.runCommand")}
@@ -1141,3 +1127,13 @@ export function RunControl({ chatId, onOpen }: { chatId: string; onOpen: (url: s
     </>
   )
 }
+
+// A package.json script in a menu (Terminal's "Run a script", the chat's Run): its name, then its command.
+const scriptItem = (x: { name: string; command: string }, onAction: () => void) => (
+  <MenuItem key={x.name} onAction={onAction}>
+    <span className="flex min-w-0 items-baseline gap-3">
+      <span className="shrink-0 text-fg">{x.name}</span>
+      <span className="max-w-64 truncate font-mono text-sm text-muted">{x.command}</span>
+    </span>
+  </MenuItem>
+)

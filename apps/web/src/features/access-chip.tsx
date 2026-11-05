@@ -5,24 +5,13 @@ import type { Access, Chat } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { useState } from "react"
 import { mutations, useMutation } from "../client.ts"
+import { readSet, writeSet } from "../state.ts"
 import { Button, ChoiceCards, ConfirmDialog, cx, Popover, Shield, ShieldAlert } from "@/ui"
 
 const LEVELS = ["own", "ask", "workspace", "full"] as const
-const CONFIRMED = "zorel.fullAccessConfirmed"
-const confirmed = () => {
-  try {
-    return localStorage.getItem(CONFIRMED) === "1"
-  } catch {
-    return false
-  }
-}
-const remember = () => {
-  try {
-    localStorage.setItem(CONFIRMED, "1")
-  } catch {
-    // private window: it asks again next time
-  }
-}
+const CONFIRMED = "zorel.fullAccessConfirmed" // per browser; blocked storage: it asks again next time
+const confirmed = () => readSet(CONFIRMED).has("full")
+const remember = () => writeSet(CONFIRMED, new Set(["full"]))
 
 type Level = (typeof LEVELS)[number]
 const labelOf = (v: Level) => (v === "own" ? t("chatAccess.own") : t(`access.${v}`))

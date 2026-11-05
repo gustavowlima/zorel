@@ -3,7 +3,7 @@ import type { Approval } from "@zorel/contracts/events"
 
 type Named = Pick<Approval, "tool" | "args">
 
-const parse = (args: string): Record<string, unknown> | undefined => {
+export const parse = (args: string): Record<string, unknown> | undefined => {
   try {
     const v = JSON.parse(args) as unknown
     return typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined

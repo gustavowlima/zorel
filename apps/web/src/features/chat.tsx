@@ -864,26 +864,19 @@ function StoredActivity({ steps, durationMs }: { steps: Message["steps"]; durati
       </DisclosurePill>
       {open && (
         <div className="basis-full">
-          <StepList id={id} steps={steps} />
+          <ol id={id} className="flex max-w-130 flex-col gap-2.5 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
+            {steps.map((s, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: stored steps are immutable and may repeat a tool
+              <StoredStep key={i} step={s} />
+            ))}
+          </ol>
         </div>
       )}
     </>
   )
 }
 
-// A finished turn's steps, each with its icon, what it ran or touched and the start of its output (all of it on
-// "Show all"). The chat's reply and the agent's Work tab show the same list.
-export function StepList({ id, steps }: { id?: string; steps: Message["steps"] }) {
-  return (
-    <ol id={id} className="flex max-w-130 flex-col gap-2.5 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
-      {steps.map((s, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: stored steps are immutable and may repeat a tool
-        <StoredStep key={i} step={s} />
-      ))}
-    </ol>
-  )
-}
-
+// One finished step: its icon, what it ran or touched and the start of its output (all of it on "Show all").
 const NATIVE_LABEL: Record<string, string> = { run: "$", read: "read", search: "search" }
 function StoredStep({ step: s }: { step: Message["steps"][number] }) {
   const [all, setAll] = useState(false)

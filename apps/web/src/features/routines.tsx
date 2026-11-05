@@ -10,6 +10,7 @@ import { useEffect, useState } from "react"
 import { agentsAtom, mutations, routinesAtom, serversAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { agentTone } from "../labels.ts"
 import { go } from "../state.ts"
+import { parse } from "./receipt-args.ts"
 import { AgentAvatar, AlarmClock, Button, Column, ConfirmDialog, Copy, Dialog, EmptyState, Field, IconButton, Input, Menu, MenuItem, MenuSeparator, MessageCircle, MoreHorizontal, Play, Plus, Rows, Screen, Section, Select, Switch, Textarea, Tooltip, Trash2 } from "@/ui"
 
 const PRESETS = [
@@ -243,15 +244,7 @@ function NewRoutine({ agent, onDone }: { agent?: Agent; onDone: () => void }) {
 }
 
 // The tool's arguments as JSON (empty: none); undefined when it isn't a JSON object.
-const parseArgs = (text: string): Record<string, unknown> | undefined => {
-  if (!text.trim()) return {}
-  try {
-    const v: unknown = JSON.parse(text)
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined
-  } catch {
-    return undefined
-  }
-}
+const parseArgs = (text: string) => (text.trim() ? parse(text) : {})
 
 // What a watching routine polls: a connector, one of its read-only tools (polling must change nothing), and the
 // tool's arguments. The tools load when the connector is picked.
