@@ -484,7 +484,21 @@ export const en = {
       access: "access",
       permissions: "tools and access"
     },
-    tabs: { profile: "Profile", tools: "Tools and access", activity: "Knowledge and activity" },
+    tabs: { work: "Work", profile: "Profile", tools: "Tools and access", activity: "Knowledge and activity" },
+    work: {
+      now: "Now",
+      nowHint: "What it's doing this moment.",
+      idle: "Not working on anything right now.",
+      chats: "Its chats",
+      chatsHint: "Where it's a member, the most recent first.",
+      none: "It isn't in any chat yet.",
+      general: "General",
+      running: "Working",
+      waiting: "Waits for you",
+      failed: "Stopped with an error",
+      task: "Task",
+      settings: "Settings of {name}"
+    },
     perm: {
       files: "Files and commands",
       filesHint: {

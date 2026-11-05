@@ -7,7 +7,8 @@ import { formatAge, formatCompact, t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
 import { agentsAtom, agentVersionsAtom, memoriesAtom, mutations, projectsAtom, serversAtom, useList, useMutation, useReading } from "../client.ts"
 import { agentTone } from "../labels.ts"
-import { go } from "../state.ts"
+import { type AgentTab, go } from "../state.ts"
+import { AgentWork } from "./agent-work.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { AgentRoutines } from "./routines.tsx"
 import { useArchive } from "./agents.tsx"
@@ -60,7 +61,7 @@ function writeDraft(key: string, draft: Draft | undefined) {
   }
 }
 
-export function AgentView({ agent, projectId }: { agent?: Agent; projectId: string | null }) {
+export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; projectId: string | null; tab?: AgentTab | undefined }) {
   const agents = useList(agentsAtom)
   const projects = useList(projectsAtom)
   const servers = useList(serversAtom)
@@ -71,7 +72,10 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
   const [form, setForm] = useState<Draft>(() => readDraft(key) ?? fromAgent(agent))
   const set = (patch: Partial<Draft>) => setForm((f) => ({ ...f, ...patch }))
   const { name, title, description, instructions, choice, failover, access, permissions } = form
-  const [tab, setTab] = useState<"profile" | "tools" | "activity">("profile")
+  const [tab, setTab] = useState<AgentTab>(opened ?? "profile")
+  useEffect(() => {
+    if (opened) setTab(opened) // opened again on another tab (the Agents screen's row: Work; its gear: Profile)
+  }, [opened])
   const termsPending = useTermsPending({ model: choice.model, accountId: choice.accountId }, failover)
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -160,11 +164,17 @@ export function AgentView({ agent, projectId }: { agent?: Agent; projectId: stri
         )}
         <Tabs selectedKey={tab} onSelectionChange={(k) => setTab(k as typeof tab)} className="gap-7">
           <TabList label={agent ? t("agent.tabsLabel", { name: agent.name }) : t("agent.newTitle")}>
+            {agent && <Tab id="work">{t("agent.tabs.work")}</Tab>}
             <Tab id="profile">{t("agent.tabs.profile")}</Tab>
             <Tab id="tools">{t("agent.tabs.tools")}</Tab>
             {agent && <Tab id="activity">{t("agent.tabs.activity")}</Tab>}
           </TabList>
 
+          {agent && (
+            <TabPanel id="work" className="flex flex-col gap-10">
+              <AgentWork agent={agent} />
+            </TabPanel>
+          )}
           <TabPanel id="profile" className="flex flex-col gap-10">
             {/* Who it is: other agents read the title and description to know whom to hand work to. */}
             <Section title={t("agent.who")}>
