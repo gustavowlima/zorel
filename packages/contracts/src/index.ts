@@ -574,6 +574,10 @@ export const GitStatus = Schema.Struct({
 })
 export type GitStatus = typeof GitStatus.Type
 // git or gh refused (its message, shown as is).
+// What the chat's Run starts: a package.json script, or a command for any stack, in the project or a folder of it.
+export const PreviewRequest = Schema.Struct({ script: Schema.optional(LongText(100)), command: Schema.optional(LongText(1000)), folder: Schema.optional(LongText(500)) })
+// Why it didn't come up (the problem, or the server's last output).
+export class PreviewFailed extends Schema.Error<PreviewFailed>("zorel/PreviewFailed")({ _tag: Schema.tag("PreviewFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
 export class GitFailed extends Schema.Error<GitFailed>("zorel/GitFailed")({ _tag: Schema.tag("GitFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
 const GitText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(20_000))
 export const GitDraft = Schema.Struct({ title: Schema.String, body: Schema.String })
@@ -653,6 +657,8 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.post("rewind", "/api/chats/:id/rewind", { params: idParam, payload: Schema.Struct({ messageId: Id, files: Schema.Boolean }), success: Schema.Struct({ text: Schema.String }), error: [HttpApiError.NotFound, HttpApiError.Conflict, UndoConflict] }))
       .add(HttpApiEndpoint.get("search", "/api/search", { query: Schema.Struct({ q: Schema.String.check(Schema.isMinLength(2), Schema.isMaxLength(200)) }), success: Schema.Array(SearchHit) }))
       .add(HttpApiEndpoint.get("scripts", "/api/chats/:id/scripts", { params: idParam, success: Schema.Array(ProjectScript), error: HttpApiError.NotFound }))
+      // Run: the person starts the project's server on a free port (a script, or a command with {port}); the URL to open.
+      .add(HttpApiEndpoint.post("preview", "/api/chats/:id/preview", { params: idParam, payload: PreviewRequest, success: Schema.Struct({ url: Schema.String }), error: [HttpApiError.NotFound, PreviewFailed] }))
       .add(HttpApiEndpoint.get("servers", "/api/chats/:id/servers", { params: idParam, success: Schema.Array(LocalServer), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("stopServer", "/api/chats/:id/servers/:pid", { params: Schema.Struct({ id: Schema.String, pid: Schema.NumberFromString }), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("openFile", "/api/chats/:id/open", { params: idParam, payload: OpenFile, error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))

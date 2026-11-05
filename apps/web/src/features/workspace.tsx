@@ -1062,3 +1062,82 @@ function ServerList({ chatId, onOpenUrl }: { chatId: string; onOpenUrl: (url: st
     </div>
   )
 }
+
+// Run (chat header): the person starts the project's server, as an agent does with zorel_preview: a free port, a
+// shell of the chat (the Terminal panel shows its output), and its page in the Browser panel once it listens. A
+// package.json script, or any command (with {port} where the port goes) for other stacks.
+export function RunControl({ chatId, onOpen }: { chatId: string; onOpen: (url: string) => void }) {
+  const scripts = useReading(scriptsAtom(chatId)).items
+  const start = useMutation(mutations.startPreview)
+  const invalidate = useInvalidate()
+  const [busy, setBusy] = useState(false)
+  const [asking, setAsking] = useState(false)
+  const [command, setCommand] = useState("")
+  const [failed, setFailed] = useState<string>()
+  const runIt = (payload: { script?: string; command?: string }) => {
+    setBusy(true)
+    setFailed(undefined)
+    start({ params: { id: chatId }, payload })
+      .then((r) => onOpen(r.url))
+      .catch((e: unknown) => setFailed((e as { message?: string })?.message || t("workspace.runFailed")))
+      .finally(() => {
+        setBusy(false)
+        invalidate(["terminals", "localServers"])
+      })
+  }
+  return (
+    <>
+      <Menu
+        label={t("workspace.run")}
+        trigger={
+          <Button size="sm" variant="ghost" shape="pill" isPending={busy}>
+            <Play />
+            {busy ? t("workspace.starting") : t("workspace.run")}
+          </Button>
+        }
+      >
+        {scripts.map((x) => (
+          <MenuItem key={x.name} onAction={() => runIt({ script: x.name })}>
+            <span className="flex min-w-0 items-baseline gap-3">
+              <span className="shrink-0 text-fg">{x.name}</span>
+              <span className="max-w-64 truncate font-mono text-sm text-muted">{x.command}</span>
+            </span>
+          </MenuItem>
+        ))}
+        {scripts.length > 0 && <MenuSeparator />}
+        <MenuItem icon={<SquareTerminal />} onAction={() => setAsking(true)}>
+          {t("workspace.runCommand")}
+        </MenuItem>
+      </Menu>
+      <Dialog title={t("workspace.runCommand")} isOpen={asking} onOpenChange={setAsking}>
+        {(close) => (
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              if (!command.trim()) return
+              runIt({ command: command.trim() })
+              close()
+            }}
+          >
+            <Field label={t("workspace.command")} hint={t("workspace.commandHint")}>
+              <Input autoFocus value={command} onChange={(e) => setCommand(e.target.value)} maxLength={1000} className="font-mono" placeholder={t("workspace.commandPlaceholder")} />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="ghost" onPress={close}>
+                {t("common.cancel")}
+              </Button>
+              <Button size="sm" type="submit" isDisabled={!command.trim()}>
+                {t("workspace.run")}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Dialog>
+      <Dialog title={t("workspace.runFailedTitle")} isOpen={!!failed} onOpenChange={(o) => !o && setFailed(undefined)}>
+        {() => <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-control bg-subtle p-3 font-mono text-sm">{failed}</pre>}
+      </Dialog>
+    </>
+  )
+}

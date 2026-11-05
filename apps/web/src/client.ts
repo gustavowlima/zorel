@@ -96,6 +96,7 @@ export const mutations = {
   openFile: Zorel.mutation("chats", "openFile"),
   fs: Zorel.mutation("chats", "fs"),
   stopServer: Zorel.mutation("chats", "stopServer"),
+  startPreview: Zorel.mutation("chats", "preview"),
   gitDraft: Zorel.mutation("chats", "gitDraft"),
   gitCommit: Zorel.mutation("chats", "gitCommit"),
   gitPush: Zorel.mutation("chats", "gitPush"),

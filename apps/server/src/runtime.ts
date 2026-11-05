@@ -79,6 +79,8 @@ export interface RuntimeService {
   readonly steer: (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) => Effect.Effect<void, ChatNotFound>
   readonly interrupt: (chatId: string) => Effect.Effect<void>
   readonly retry: (chatId: string, messageId: string) => Effect.Effect<void, ChatNotFound>
+  // The chat's Run: the person starts the project's server (as zorel_preview does, with no approval: it's theirs).
+  readonly preview: (chatId: string, input: { script?: string | undefined; command?: string | undefined; folder?: string | undefined }) => Effect.Effect<{ url: string } | { error: string }, ChatNotFound>
   // Pause everything: running turns stop, new ones wait queued, routines don't fire.
   // "Edit from here": the chat's engine sessions close, so the next turn starts from what the chat keeps.
   readonly forget: (chatId: string) => Effect.Effect<void>
@@ -237,6 +239,33 @@ export const makeRuntime = Effect.gen(function* () {
   const nameOf = (agent: Agent | undefined) => agent?.name ?? "Assistant"
   const run = <A>(e: Effect.Effect<A>) => Effect.runPromise(e)
 
+  // ---------- previews: shared by zorel_preview (an agent) and the chat's Run (the person) ----------
+  // Where it runs, the line and a free port; a string is what's wrong.
+  const planPreview = async (chat: Chat, args: { script?: unknown; command?: unknown; folder?: unknown }) => {
+    const root = workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined))
+    const where = previewFolder(root, args.folder)
+    if (typeof where === "string") return where
+    const port = await freePort()
+    const built = previewLine(args, scriptsOf(where.dir), managerOf(where.dir), port)
+    if (typeof built === "string") return built
+    return { dir: where.dir, port, ...built, key: `${chat.id}|${previewKey(chat.projectId ?? chat.id, root, where.dir, built.label)}` }
+  }
+  type PreviewPlan = Exclude<Awaited<ReturnType<typeof planPreview>>, string>
+  // The port of the same server still running in this chat (reused, not started twice).
+  const runningPreview = (plan: PreviewPlan) => {
+    const known = previews.get(plan.key)
+    return known && shellAlive(known.shellId) ? known.port : undefined
+  }
+  // Starts it in a shell of the chat (the Terminal panel shows it) and waits until it listens.
+  const launchPreview = async (chat: Chat, plan: PreviewPlan): Promise<{ port: number } | { error: string; tail: string }> => {
+    const shell = startShell(chat.id, plan.dir, plan.label, plan.line, { PORT: String(plan.port) })
+    if (!shell) return { error: "Too many terminals are open", tail: "" }
+    const at = await waitForPort(shell.pid, plan.port, shell.ended)
+    if (at === undefined) return { error: "The server didn't start listening", tail: outputTail(shell.output()) }
+    previews.set(plan.key, { shellId: shell.id, port: at })
+    return { port: at }
+  }
+
   // ---------- turn tools: steps and approvals persisted and published ----------
   // `fixed`: a native session's gateway (one URL for the whole session); without it, one URL per turn.
   // `onWrite`: a tool that writes (or is sensitive) is about to run; the turn has acted, so failover won't repeat it.
@@ -293,13 +322,8 @@ export const makeRuntime = Effect.gen(function* () {
     // zorel_preview (preview.ts): the project's dev server on a free port, in a shell of the chat, its page in the chat's
     // browser. It runs outside the agent's sandbox, so below full access the person approves the exact command.
     const previewCall = async (args: Record<string, unknown>) => {
-      const root = workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined))
-      const where = previewFolder(root, args.folder)
-      if (typeof where === "string") return textResult(where, true)
-      const port = await freePort()
-      const built = previewLine(args, scriptsOf(where.dir), managerOf(where.dir), port)
-      if (typeof built === "string") return textResult(built, true)
-      const key = previewKey(chat.projectId ?? chat.id, root, where.dir, built.label)
+      const plan = await planPreview(chat, args)
+      if (typeof plan === "string") return textResult(plan, true)
       const show = async (at: number) => {
         const url = previewUrl(at, args.path)
         const opened = await browsers
@@ -307,34 +331,27 @@ export const makeRuntime = Effect.gen(function* () {
           .then((tab) => browsers.select(chat.id, tab).then(() => true))
           .catch(() => false) // no browser on this computer: the URL still works in the person's own
         const look = opened ? ` It's open in this chat's Browser panel${perms.browser ? "; read it with your browser tools" : ""}.` : ""
-        return textResult(`Running at ${url} (port ${at}).${look} Its output is in the Terminal panel, tab "${built.label}".`)
+        return textResult(`Running at ${url} (port ${at}).${look} Its output is in the Terminal panel, tab "${plan.label}".`)
       }
-      const known = previews.get(`${chat.id}|${key}`)
-      if (known && shellAlive(known.shellId)) return show(known.port)
-      const s = await step(`Preview ${built.label}`, PREVIEW_TOOL.name)
+      const known = runningPreview(plan)
+      if (known) return show(known)
+      const s = await step(`Preview ${plan.label}`, PREVIEW_TOOL.name)
       if (effectiveAccess(chat, agent) !== "full") {
-        const card = { kind: "tool" as const, tool: PREVIEW_TOOL.name, summary: `${nameOf(agent)} wants to run the dev server: ${built.line}`, args: built.line, cwd: where.dir }
-        const outcome = await run(askApproval(chat, row, agent, s, card, key))
+        const card = { kind: "tool" as const, tool: PREVIEW_TOOL.name, summary: `${nameOf(agent)} wants to run the dev server: ${plan.line}`, args: plan.line, cwd: plan.dir }
+        const outcome = await run(askApproval(chat, row, agent, s, card, plan.key.slice(plan.key.indexOf("|") + 1)))
         if (outcome === "denied" || outcome === "expired") {
           await finish(s, "refused")
           return textResult("The user declined to run it. Ask them to start the server, or go on without the preview.", true)
         }
       }
       onWrite()
-      const shell = startShell(chat.id, where.dir, built.label, built.line, { PORT: String(port) })
-      if (!shell) {
-        await finish(s, "error", "Too many terminals open")
-        return textResult("Too many terminals are open; ask the user to close one in the Terminal panel.", true)
+      const r = await launchPreview(chat, plan)
+      if ("error" in r) {
+        await finish(s, "error", r.tail.split("\n").at(-1) || r.error)
+        return textResult(r.tail ? `${r.error}. Its last output:\n${r.tail}` : `${r.error}; ask the user to close one in the Terminal panel.`, true)
       }
-      const at = await waitForPort(shell.pid, port, shell.ended)
-      if (at === undefined) {
-        const tail = outputTail(shell.output())
-        await finish(s, "error", tail.split("\n").at(-1) ?? "")
-        return textResult(`The server didn't start listening.${tail ? ` Its last output:\n${tail}` : ""}`, true)
-      }
-      previews.set(`${chat.id}|${key}`, { shellId: shell.id, port: at })
-      await finish(s, "ok", previewUrl(at, args.path))
-      return show(at)
+      await finish(s, "ok", previewUrl(r.port, args.path))
+      return show(r.port)
     }
 
     // zorel_start_task: checks, then the teammate's own chat. A teammate with wider access than the caller only
@@ -1207,6 +1224,19 @@ export const makeRuntime = Effect.gen(function* () {
     forget: (chatId) => Effect.forEach([...sessions.keys()].filter((k) => k.startsWith(`${chatId}:`)), closeSession, { discard: true }),
     // A reply that failed, was stopped or passed its limit: the same agent answers again (the chat's lead if it left
     // the chat or was archived), as a turn of its own after what's queued. The conversation is its context.
+    preview: (chatId, input) =>
+      Effect.gen(function* () {
+        const chat = yield* store.chat(chatId)
+        if (!chat) return yield* new ChatNotFound({ chatId })
+        return yield* Effect.promise(async () => {
+          const plan = await planPreview(chat, input)
+          if (typeof plan === "string") return { error: plan }
+          const known = runningPreview(plan)
+          const r = known ? { port: known } : await launchPreview(chat, plan)
+          if ("error" in r) return { error: r.tail ? `${r.error}:\n${r.tail}` : r.error }
+          return { url: previewUrl(r.port, undefined) }
+        })
+      }),
     retry: (chatId, messageId) =>
       Effect.gen(function* () {
         const chat = yield* store.chat(chatId)
