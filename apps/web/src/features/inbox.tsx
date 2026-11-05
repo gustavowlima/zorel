@@ -7,6 +7,7 @@ import { type ReactNode, useState } from "react"
 import { agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation } from "../client.ts"
 import { agentName, chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
+import { openMemory } from "./knowledge.tsx"
 import { AuthorAvatar } from "./people.tsx"
 import { Button, Check, Code, Column, EmptyState, IconTile, Rows, Screen, Tab, TabList, Tabs, User } from "@/ui"
 import { QuestionAnswer } from "./question.tsx"
@@ -153,7 +154,7 @@ function MemoryItem({ memory: m }: { memory: Memory }) {
         <>
           {/* An improvement is reviewed where its change shows (Knowledge), not kept blind from here. */}
           {m.replaces ? (
-            <Button size="sm" variant="default" onPress={() => go({ view: "knowledge", id: m.id })}>
+            <Button size="sm" variant="default" onPress={() => openMemory(m)}>
               {t("inbox.reviewChange")}
             </Button>
           ) : (
@@ -161,7 +162,7 @@ function MemoryItem({ memory: m }: { memory: Memory }) {
               <Button size="sm" variant="default" onPress={() => set("active")}>
                 {t("inbox.keep")}
               </Button>
-              <Button size="sm" variant="secondary" onPress={() => go({ view: "knowledge", id: m.id })}>
+              <Button size="sm" variant="secondary" onPress={() => openMemory(m)}>
                 {t("common.edit")}
               </Button>
             </>

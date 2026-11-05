@@ -106,7 +106,7 @@ export function AgentMemory({ agent }: { agent: Agent }) {
             hint={t("agent.mem.notesHint", { name: agent.name })}
             aside={t("agent.mem.notesCount", { count: facts.length })}
             label={t("agent.mem.notesLink")}
-            onPress={() => go({ view: "knowledge", scope: `agent:${agent.id}`, kind: "fact" })}
+            onPress={() => go({ view: "memory", tab: `agent:${agent.id}` })}
           />
         </Rows>
       </Section>
@@ -122,7 +122,7 @@ export function AgentMemory({ agent }: { agent: Agent }) {
           ]}
         />
         <div>
-          <Button size="sm" variant="ghost" onPress={() => go({ view: "knowledge" })}>
+          <Button size="sm" variant="ghost" onPress={() => go({ view: "pages" })}>
             {t("agent.know.open")}
           </Button>
         </div>
@@ -204,9 +204,9 @@ function AgentSkills({ agent, team }: { agent: Agent; team: ReadonlyArray<Agent>
     </SettingRow>
   )
   const sharedRow = (m: Memory) =>
-    row(m.id, m.title, firstLine(m.text), m.agents, action(m.id, m.agents, (agents) => update({ params: { id: m.id }, payload: { agents }, reactivityKeys: ["memories"] }), () => go({ view: "knowledge", id: m.id }), m.scope), !sees(m.agents, agent.id))
+    row(m.id, m.title, firstLine(m.text), m.agents, action(m.id, m.agents, (agents) => update({ params: { id: m.id }, payload: { agents }, reactivityKeys: ["memories"] }), () => go({ view: "skills", id: m.id }), m.scope), !sees(m.agents, agent.id))
   const machineRow = (s: FileSkill) =>
-    row(s.path, s.name, s.description, s.agents, action(s.path, s.agents, (agents) => pick({ payload: { path: s.path, enabled: true, agents }, reactivityKeys: ["fileSkills"] }), () => go({ view: "settings", tab: "skills" })), !sees(s.agents, agent.id))
+    row(s.path, s.name, s.description, s.agents, action(s.path, s.agents, (agents) => pick({ payload: { path: s.path, enabled: true, agents }, reactivityKeys: ["fileSkills"] }), () => go({ view: "skills", computer: true })), !sees(s.agents, agent.id))
 
   return (
     <Section title={t("agent.skillsTab.title")} description={<span className="block max-w-prose">{t("agent.skillsTab.hint", { name: agent.name })}</span>}>
@@ -219,7 +219,7 @@ function AgentSkills({ agent, team }: { agent: Agent; team: ReadonlyArray<Agent>
       {none && (
         <Rows>
           <SettingRow title={t("agent.skillsTab.empty", { name: agent.name })} hint={t("agent.skillsTab.emptyHint", { name: agent.name })}>
-            <Button size="sm" variant="secondary" onPress={() => go({ view: "knowledge", kind: "skill" })}>
+            <Button size="sm" variant="secondary" onPress={() => go({ view: "skills" })}>
               {t("agent.skillsTab.openKnowledge")}
             </Button>
           </SettingRow>

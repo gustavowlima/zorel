@@ -828,3 +828,17 @@ test("memory edits that collide are refused (409), and a removed project takes i
   expect(titles).not.toContain("Cleanup runbook")
   expect(titles).not.toContain("Keeper notes")
 })
+
+test("memory moves to another owner that exists; only a forgotten one is deleted for good", async () => {
+  const project = await api((c) => c.projects.create({ payload: { name: "Mover", brief: "" } }))
+  const m = await api((c) => c.memories.create({ payload: { scope: "user", kind: "fact", title: "", text: "Ships on Thursdays" } }))
+  const moved = await api((c) => c.memories.update({ params: { id: m.id }, payload: { scope: `project:${project.id}` } }))
+  expect(moved.scope).toBe(`project:${project.id}`)
+  const nowhere = await api((c) => c.memories.update({ params: { id: m.id }, payload: { scope: "project:missing" } })).catch((e: unknown) => e)
+  expect((nowhere as { _tag?: string })._tag).toBe("BadRequest")
+  const active = await api((c) => c.memories.remove({ params: { id: m.id } })).catch((e: unknown) => e)
+  expect((active as { _tag?: string })._tag).toBe("Conflict") // forget it first
+  await api((c) => c.memories.update({ params: { id: m.id }, payload: { state: "forgotten" } }))
+  await api((c) => c.memories.remove({ params: { id: m.id } }))
+  expect((await api((c) => c.memories.list())).some((x) => x.id === m.id)).toBe(false)
+})
