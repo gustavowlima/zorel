@@ -17,6 +17,9 @@
   --color-glow: oklch(60.5% 0.2 255 / 0.34);
   --color-glow-soft: oklch(60.5% 0.2 255 / 0.14);
   --color-sheen: oklch(100% 0 0 / 0.05); /* neutral light on neutral surfaces (cards): blue stays for what needs you */
+  /* the install command sits in the blue light: a dark blue glass, not a grey slab */
+  --color-glass: oklch(22% 0.03 255 / 0.55);
+  --color-glass-rim: oklch(75% 0.08 252 / 0.22);
   --color-edge: oklch(82% 0.1 250 / 0.9);
   --color-accent-soft: oklch(60.5% 0.2 255 / 0.16);
   --color-on-accent: oklch(99% 0 0);
