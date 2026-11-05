@@ -1,6 +1,7 @@
 // Knowledge (prototype "Knowledge"): what the chats learned and what you wrote, as a list and a reader.
 // Facts are durable sentences; skills are procedures. Nothing reaches the model until it is approved.
 import type { Agent, Memory } from "@zorel/contracts"
+import { isTeammate } from "@zorel/contracts"
 import { formatAge, formatDate, t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, memoriesAtom, memoryVersionsAtom, mutations, pagesAtom, projectsAtom, useList, useMutation, useReading } from "../client.ts"
@@ -373,7 +374,7 @@ function NewMemory({ kind, onKind, onDone }: { kind: Memory["kind"]; onKind: (k:
             options={[
               { value: "user", label: t("scope.user") },
               ...projects.map((p) => ({ value: `project:${p.id}`, label: t("scope.project", { name: p.name }) })),
-              ...agents.filter((a) => !a.builtin).map((a) => ({ value: `agent:${a.id}`, label: t("scope.agent", { name: a.name }), icon: <ScopeIcon scope={`agent:${a.id}`} agents={agents} /> }))
+              ...agents.filter((a) => isTeammate(a)).map((a) => ({ value: `agent:${a.id}`, label: t("scope.agent", { name: a.name }), icon: <ScopeIcon scope={`agent:${a.id}`} agents={agents} /> }))
             ]}
           />
         </Field>

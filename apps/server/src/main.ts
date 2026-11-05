@@ -110,7 +110,7 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
   })
 )
 
-const AGENT_FIELDS = ["name", "title", "description", "instructions", "model", "accountId", "effort", "failover", "access", "permissions"] as const
+const AGENT_FIELDS = ["name", "title", "description", "instructions", "model", "accountId", "effort", "failover", "access", "permissions", "archivedAt", "monthlyTokens", "replyTokens"] as const
 
 const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
   Effect.gen(function* () {
@@ -126,7 +126,10 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
       .handle("update", ({ params, payload }) =>
         Effect.gen(function* () {
           const before = yield* store.agent(params.id)
-          const after = yield* found(store.updateAgent(params.id, payload))
+          // "archived" is a switch; the row keeps when (null: not archived). Archiving again keeps the first time.
+          const { archived, ...rest } = payload
+          const archivedAt = archived === undefined ? undefined : archived ? (before?.archivedAt ?? Date.now()) : null
+          const after = yield* found(store.updateAgent(params.id, { ...rest, ...(archivedAt !== undefined && { archivedAt }) }))
           if (before) yield* audit.record(Actions.agentUpdated, { target: after, ...changed(before, after, AGENT_FIELDS) })
           return after
         })
@@ -793,6 +796,7 @@ const RpcHandlers = ZorelRpc.toLayer(
       send: (p) => runtime.send(p),
       steer: (p) => runtime.steer(p.chatId, p.text, p.attachmentIds),
       interrupt: (p) => runtime.interrupt(p.chatId),
+      retry: (p) => runtime.retry(p.chatId, p.messageId),
       decide: (p) => runtime.decide(p.approvalId, p.outcome, p.reason),
       subscribeChat: (p) => runtime.subscribeChat(p.chatId),
       subscribeStatus: () => runtime.subscribeStatus,

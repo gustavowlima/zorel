@@ -28,7 +28,7 @@ import { ChatProcesses } from "./processes.tsx"
 import { QuestionAnswer } from "./question.tsx"
 import {
   Button, Check, ChevronDown, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
-  MenuSeparator, MessageCircle, MessageCircleQuestion, ShieldAlert, Minimize2, MoreHorizontal, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
+  MenuSeparator, MessageCircle, MessageCircleQuestion, ShieldAlert, Minimize2, MoreHorizontal, PanelRight, Pencil, RefreshCw, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
 } from "@/ui"
 
 export function ChatView({ chat }: { chat: Chat }) {
@@ -519,7 +519,7 @@ export function Timeline({ chat, state, agents, onView, onEdit }: { chat: Chat; 
               {item.message.role === "user" ? (
                 <UserMessage message={item.message} onEdit={state.live ? undefined : () => onEdit(item.message)} />
               ) : (
-                <AgentMessage message={item.message} agents={agents} onView={onView} continued={solo || continues(items[i - 1], item.message)} bare={solo} />
+                <AgentMessage message={item.message} agents={agents} onView={onView} continued={solo || continues(items[i - 1], item.message)} bare={solo} last={i === items.length - 1 && !state.live && state.pending === 0} />
               )}
             </div>
           ) : (
@@ -732,11 +732,13 @@ function endingOf(error: string | null): { tone: "warning" | "danger"; text: str
   if (!error) return undefined
   if (error === ErrorCode.cancelled) return { tone: "warning", text: t("chat.cancelled") }
   if (error === ErrorCode.serverRestarted) return { tone: "warning", text: t("chat.serverRestarted") }
+  if (error === ErrorCode.replyLimit) return { tone: "warning", text: t("chat.replyLimit") }
+  if (error === ErrorCode.monthlyLimit) return { tone: "warning", text: t("chat.monthlyLimit") }
   if (isInterruption(error)) return { tone: "warning", text: t("chat.interrupted") }
   return { tone: "danger", text: error }
 }
 
-function AgentMessage({ message: m, agents, onView, continued, bare }: { message: Message; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; continued: boolean; bare: boolean }) {
+function AgentMessage({ message: m, agents, onView, continued, bare, last }: { message: Message; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; continued: boolean; bare: boolean; last: boolean }) {
   const accounts = useList(accountsAtom)
   return (
     <div className="flex flex-col gap-6">
@@ -744,7 +746,7 @@ function AgentMessage({ message: m, agents, onView, continued, bare }: { message
         // biome-ignore lint/suspicious/noArrayIndexKey: a saved message's switches never change
         <Separator key={i}>{switchText(sw, accounts)}</Separator>
       ))}
-      <AgentReply message={m} agents={agents} accounts={accounts} onView={onView} continued={continued} bare={bare} />
+      <AgentReply message={m} agents={agents} accounts={accounts} onView={onView} continued={continued} bare={bare} last={last} />
     </div>
   )
 }
@@ -755,9 +757,11 @@ function AgentReply({
   accounts,
   onView,
   continued,
-  bare
-}: { message: Message; agents: ReadonlyArray<Agent>; accounts: ReadonlyArray<ProviderAccount>; onView: (f: Focus) => void; continued: boolean; bare: boolean }) {
+  bare,
+  last
+}: { message: Message; agents: ReadonlyArray<Agent>; accounts: ReadonlyArray<ProviderAccount>; onView: (f: Focus) => void; continued: boolean; bare: boolean; last: boolean }) {
   const ending = endingOf(m.error)
+  const retry = useMutation(mutations.retry)
   const tokens = m.inputTokens || m.outputTokens ? t("chat.tokens", { input: formatCompact(m.inputTokens), output: formatCompact(m.outputTokens) }) : null
   // Which account answered and what it cost; a subscription shows the API equivalent, not a charge.
   const account = accounts.find((a) => a.id === m.accountId)
@@ -777,6 +781,21 @@ function AgentReply({
               <CircleAlert className="size-3.5" />
               {ending.tone === "danger" ? t("chat.failed") : ending.text}
             </span>
+          )}
+          {/* The last reply ended early: answer again (Continue after its reply limit), or raise the month's limit. */}
+          {ending && last && m.error !== ErrorCode.cancelled && (
+            m.error === ErrorCode.monthlyLimit ? (
+              m.agentId && (
+                <Button size="sm" variant="ghost" onPress={() => go({ view: "agent", id: m.agentId! })}>
+                  {t("chat.raiseLimit")}
+                </Button>
+              )
+            ) : (
+              <Button size="sm" variant="ghost" onPress={() => void retry({ payload: { chatId: m.chatId, messageId: m.id } })}>
+                <RefreshCw />
+                {m.error === ErrorCode.replyLimit ? t("chat.continue") : t("chat.retry")}
+              </Button>
+            )
           )}
           <MessageActions
             text={m.text}

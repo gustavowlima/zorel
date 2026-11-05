@@ -4,7 +4,7 @@ import { createInput, createInputs, effectiveAccess, findAgent, narrower, update
 
 const agent = (over: Partial<Agent>): Agent => ({
   id: "a1", projectId: null, name: "Code Reviewer", title: "", description: "", instructions: "x", model: "claude-cli/claude-sonnet-5-5",
-  accountId: null, effort: null, failover: [], access: "workspace", permissions: DEFAULT_PERMISSIONS, createdAt: 0, ...over
+  accountId: null, effort: null, failover: [], access: "workspace", permissions: DEFAULT_PERMISSIONS, archivedAt: null, monthlyTokens: null, replyTokens: null, createdAt: 0, ...over
 })
 const caller = { model: "codex-cli/default", effort: "high" as const, access: "workspace" as const }
 

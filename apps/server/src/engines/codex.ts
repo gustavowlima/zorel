@@ -313,6 +313,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
           } else if (method === "thread/tokenUsage/updated" && p.tokenUsage?.last) {
             const last = p.tokenUsage.last
             usage = { inputTokens: last.inputTokens ?? 0, outputTokens: last.outputTokens ?? 0, cachedTokens: last.cachedInputTokens ?? 0 }
+            emit({ type: "usage", usage }) // so far in this turn (a reply's token limit)
           } else if (method === "turn/completed") {
             const t = p.turn ?? {}
             if (t.status === "completed") emit({ type: "done", usage })

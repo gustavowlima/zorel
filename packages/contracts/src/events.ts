@@ -17,7 +17,9 @@ export const ErrorCode = {
   interrupted: "interrupted", // you stopped
   cancelled: "cancelled", // was queued when you stopped
   serverRestarted: "server_restarted", // the server went down midway; the partial was saved
-  chatRemoved: "chat_removed"
+  chatRemoved: "chat_removed",
+  replyLimit: "reply_limit", // the reply passed its agent's token limit: it stopped (Continue goes on)
+  monthlyLimit: "monthly_limit" // the agent used its month's tokens: it didn't start
 } as const
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode]
 // Old messages stored "interrompido" as text.
@@ -168,6 +170,8 @@ export const ZorelRpc = RpcGroup.make(
     error: ChatNotFound
   }),
   Rpc.make("interrupt", { payload: { chatId: Id } }),
+  // A reply that failed, was stopped or hit its limit: the same agent (or the lead) answers again.
+  Rpc.make("retry", { payload: { chatId: Id, messageId: Id }, error: ChatNotFound }),
   Rpc.make("decide", { payload: { approvalId: Id, outcome: Schema.Literals(["approved", "always", "denied"]), reason: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))) }, error: ApprovalNotFound }),
   Rpc.make("subscribeChat", { payload: { chatId: Id }, success: ChatEvent, error: ChatNotFound, stream: true }),
   Rpc.make("subscribeStatus", { success: ChatStatus, stream: true }), // all chats: sidebar and "Needs you"

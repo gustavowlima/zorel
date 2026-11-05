@@ -118,9 +118,18 @@ export const Agent = Schema.Struct({
   access: Access,
   permissions: AgentPermissions,
   builtin: Schema.optionalKey(Schema.NullOr(Schema.Literal("builder"))), // Zorel's own agent: kept out of lists and pickers
+  // Archived: out of the lists and pickers, answers no one and runs no routine; its history stays. Restorable.
+  archivedAt: Schema.NullOr(Schema.Number),
+  // Token limits (input + output): a month's (UTC) total, and one reply's. null: none. Over the month's, it doesn't
+  // start; past a reply's, the reply stops and can go on (Continue).
+  monthlyTokens: Schema.NullOr(Schema.Number),
+  replyTokens: Schema.NullOr(Schema.Number),
   createdAt: Schema.Number
 })
 export type Agent = typeof Agent.Type
+// The agents that are teammates: not Zorel's own (the Builder), not archived.
+export const isTeammate = (a: Pick<Agent, "builtin" | "archivedAt">) => !a.builtin && !a.archivedAt
+export const TOKEN_LIMIT = Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 1000, maximum: 1_000_000_000 })))
 
 // A saved state of an agent's profile (newest first in lists). by: "you" or the agent that proposed it.
 export const AgentVersion = Schema.Struct({
@@ -476,7 +485,7 @@ export const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: 
 const AgentTitle = Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(60))
 const AgentDescription = LongText(300)
 export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions) })
-export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions) })
+export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions), archived: Schema.optional(Schema.Boolean), monthlyTokens: Schema.optional(TOKEN_LIMIT), replyTokens: Schema.optional(TOKEN_LIMIT) })
 export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)) })
 export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000) })

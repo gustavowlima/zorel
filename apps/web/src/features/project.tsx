@@ -1,6 +1,7 @@
 // Project: overview (name, brief: the stable context of every turn, and its chats), its agents, and the
 // MCP servers only its chats see. The chats themselves live in the sidebar tree.
 import type { FolderListing, Project } from "@zorel/contracts"
+import { isTeammate } from "@zorel/contracts"
 import { formatAge, t } from "@zorel/i18n"
 import { type KeyboardEvent, useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
@@ -315,7 +316,7 @@ function Overview({ project }: { project: Project }) {
   const dirty = name !== project.name || brief !== project.brief || path.trim() !== (project.path ?? "")
   // Who answers first leads the row.
   const team = agents
-    .filter((a) => !a.builtin && (a.projectId === project.id || a.projectId === null))
+    .filter((a) => isTeammate(a) && (a.projectId === project.id || a.projectId === null))
     .sort((a, b) => Number(b.id === project.defaultAgentId) - Number(a.id === project.defaultAgentId))
   return (
     <div className="flex flex-col gap-10">
@@ -407,7 +408,7 @@ function Agents({ projectId }: { projectId: string }) {
   const mine = agents.filter((a) => a.projectId === projectId)
   const project = useList(projectsAtom).find((p) => p.id === projectId)
   const update = useMutation(mutations.updateProject)
-  const choices = agents.filter((a) => !a.builtin && (a.projectId === projectId || a.projectId === null))
+  const choices = agents.filter((a) => isTeammate(a) && (a.projectId === projectId || a.projectId === null))
   const working = useWorking()
   const del = useDeleteAgent()
   return (

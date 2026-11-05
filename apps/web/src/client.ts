@@ -128,6 +128,7 @@ export const mutations = {
   send: Live.mutation("send"),
   steer: Live.mutation("steer"),
   interrupt: Live.mutation("interrupt"),
+  retry: Live.mutation("retry"),
   decide: Live.mutation("decide")
 }
 
