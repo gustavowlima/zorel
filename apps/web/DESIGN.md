@@ -562,3 +562,4 @@ No static prototype: the app screen is the reference (a hand-written HTML mock d
 
 - **Show filter:** "Active" lists active items only; pending ones live under "To review · N" (and in Needs you). The scope select also filters Pages, built from the pages' own scopes.
 - **Edit collisions:** saving a memory with the words of another memory of the same scope is refused by the server (409); the form stays open with a `role="alert"` line in danger ("Another memory here already says this. Change the words, or forget one of them."), and any other failure says "Couldn't save. Try again."
+- **Page file:** under a page's scope and age, its file in mono `dim` ("knowledge/projects/zorel/Deploy.md", truncated; the tooltip says it can be edited in any editor and the changes come back).

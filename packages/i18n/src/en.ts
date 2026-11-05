@@ -1232,6 +1232,7 @@ export const en = {
     body: "Page (Markdown)",
     bodyHint: "Decisions and why, how-tos that worked, references. Agents read it when it matters.",
     updated: "updated {age}",
+    fileHint: "Its Markdown file, in Zorel's data folder. Edit it in any editor (Obsidian, VS Code): the changes come back here.",
     pin: "Pin",
     unpin: "Unpin",
     versions: "Versions",

@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite"
 import { expect, test } from "bun:test"
-import { existsSync, readdirSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
@@ -239,3 +239,62 @@ test("skills by agent: search and lists hide what's limited to other agents; an 
       expect(titles(yield* r.activeMemories([scope], "skill", undefined, "dev"))).toEqual(["Rev deploy", "Shared deploy"])
     })
   ))
+
+// Pages as Markdown files: the folder is the truth, the rows index it.
+const runWithPages = <A>(dir: string, f: (r: typeof Store.Service) => Effect.Effect<A>) =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function* () { return yield* f(yield* Store) }).pipe(Effect.provide(Store.layer(":memory:", dir)))))
+
+test("pages as files: written, renamed, pinned and removed through Zorel; edits, new files and deletes from outside come back", () => {
+  const dir = mkdtempSync(join(tmpdir(), "zorel-pages-"))
+  const at = (f: string) => join(dir, ...f.split("/"))
+  return runWithPages(dir, (r) =>
+    Effect.gen(function* () {
+      const p = yield* r.createProject({ name: "Zorel App", brief: "" })
+      const scope = `project:${p.id}`
+      const a = yield* r.savePage({ scope, title: "Deploy runbook", body: "1. bun test" })
+      expect(a.file).toBe("projects/zorel-app/Deploy runbook.md")
+      expect(readFileSync(at(a.file!), "utf8")).toBe(`---\nid: ${a.id}\nscope: ${scope}\npinned: false\n---\n1. bun test\n`)
+
+      // Renamed: the file follows; a name that can't be a file name keeps the title in the front matter.
+      const b = yield* r.savePage({ id: a.id, scope, title: "Deploy: prod/staging", body: "1. bun test" })
+      expect(b.file).toBe("projects/zorel-app/Deploy prod staging.md")
+      expect(existsSync(at(a.file!))).toBe(false)
+      expect(readFileSync(at(b.file!), "utf8")).toContain('title: "Deploy: prod/staging"')
+      yield* r.pinPage(a.id, true)
+      expect(readFileSync(at(b.file!), "utf8")).toContain("pinned: true")
+      expect(yield* r.syncPages(true)).toEqual({ imported: 0, updated: 0, written: 0, removed: 0 }) // our own writes: nothing to do
+
+      // Edited in an editor: the page takes it, as a version by "outside".
+      writeFileSync(at(b.file!), readFileSync(at(b.file!), "utf8").replace("1. bun test", "1. bun test\n2. tag"))
+      expect((yield* r.syncPages(true)).updated).toBe(1)
+      expect((yield* r.page(a.id))!.body).toBe("1. bun test\n2. tag")
+      expect((yield* r.pageVersions(a.id))[0]!.by).toBe("outside")
+
+      // A new file in you/: a page about the user, with an id and scope written into it.
+      mkdirSync(at("you"), { recursive: true })
+      writeFileSync(at("you/Writing style.md"), "Short sentences.")
+      expect((yield* r.syncPages(true)).imported).toBe(1)
+      const style = (yield* r.pages()).find((x) => x.title === "Writing style")!
+      expect(style).toMatchObject({ scope: "user", body: "Short sentences." })
+      expect(readFileSync(at("you/Writing style.md"), "utf8")).toContain(`id: ${style.id}`)
+
+      // Moved and renamed outside: still the same page (its id), at its new place.
+      mkdirSync(at("projects/zorel-app/ops"), { recursive: true })
+      renameSync(at(b.file!), at("projects/zorel-app/ops/Release.md"))
+      yield* r.syncPages(true)
+      expect((yield* r.page(a.id))).toMatchObject({ title: "Deploy: prod/staging", file: "projects/zorel-app/ops/Release.md" })
+
+      // Deleted while watched: the page goes. At start, a missing file is written again instead.
+      rmSync(at("you/Writing style.md"))
+      expect((yield* r.syncPages(false)).written).toBe(1)
+      expect(existsSync(at("you/Writing style.md"))).toBe(true)
+      rmSync(at("you/Writing style.md"))
+      expect((yield* r.syncPages(true)).removed).toBe(1)
+      expect(yield* r.page(style.id)).toBeUndefined()
+
+      // Removing the project removes its pages' files.
+      yield* r.removeProject(p.id)
+      expect(existsSync(at("projects/zorel-app/ops/Release.md"))).toBe(false)
+    })
+  ).finally(() => rmSync(dir, { recursive: true, force: true }))
+})
