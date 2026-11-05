@@ -125,7 +125,8 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
           <RefreshCw className="size-3.5" />
         </IconButton>
         <Input
-          className="h-control-sm flex-1 text-sm"
+          size="sm"
+          className="flex-1"
           aria-label={t("browser.address")}
           placeholder={t("browser.addressHint")}
           value={address}

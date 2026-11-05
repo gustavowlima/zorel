@@ -297,6 +297,9 @@ Compact and direct, with a physical squeeze on press.
 - **Focus:** strong border and a 2px translucent blue ring.
 - **Disabled:** 50% opacity.
 - **Field:** 12px muted label above, 11px dim hint below.
+- **Input sizes:** `Input` takes `size` — `md` (32px, forms, the default) or `sm` (28px with 13px text: toolbars, filters, side panels). Screens never set a height class on a field.
+- **SearchInput:** the search field everywhere (settings skills, knowledge, audit, the model picker, the file explorer): the magnifier inside on the left, 14px at `sm` and 16px at `md`, never drawn by a screen.
+- **OptionList / OptionRow:** options whose keyboard lives in a text field beside them (the composer's / @ $ # list, the folder browser): the field keeps the focus, a press selects a row without taking it, a double click opens a row that has something to open; selected = accent-soft with the icon in accent-text. A choice without a text field is a `Select` or a `Menu`.
 
 ### Select
 - **Trigger:** same body as the field (32px, or 28px at size sm) with a muted chevron. `ghost` variant (28px, no border, muted text, optional icon on the left, 14px chevron) for choices next to a message box, the same as the model picker trigger — it is the one on the home screen (project and agent above the box).
