@@ -29,7 +29,7 @@ export function ChoiceCards<T extends string>({
             "group relative flex cursor-default gap-3 rounded-card border outline-none",
             o.icon ? "items-center p-4 pr-10" : "items-start px-3.5 py-3",
             "transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none",
-            "border-subtle data-hovered:bg-control-hover data-selected:border-accent-line data-selected:bg-accent-faint"
+            "border-subtle data-hovered:not-data-selected:border-strong data-hovered:not-data-selected:bg-control data-selected:border-accent-line data-selected:bg-accent-faint"
           )}
         >
           {o.icon ? (
