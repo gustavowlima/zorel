@@ -44,3 +44,11 @@
 2026-11-05 | sidebar: section icons, search button, project folder + ⋯, chat avatar and 'Agent · model' line, empty states (reverts earlier no-icon rows) | user asked for a more intuitive chats list (designer spec)
 2026-11-05 | '#' in the composer calls an agent (@handle chip, outside agents join the chat) instead of changing the lead | user could not call an agent from the box; lead stays in the header team picker
 2026-11-05 | Work tab and live status on Agents screen; row opens Work, gear opens Profile | user asked for agents' activity on the Agents screen
+2026-11-05 | live work pill moved below the streaming text; label held between steps | it flickered on every new step and sat above the text
+2026-11-05 | live steps list opens by default and shows title + detail per step | the user should see the steps without opening "Working"; contract got `detail`
+2026-11-05 | live steps open/folded is a per-browser switch in Settings > General (default open) | the user wanted it open but customizable
+2026-11-05 | StoredStep with a title is a collapsed summary row that opens to command and output | stored Step now carries title/detail; old steps keep the previous layout
+2026-11-05 | finished steps: "Done ·" prefix, per-step duration, Thought/Replied rows without chevron; Stop button beside the live pill | match the tucano summary; timing now saved by the server (Step.ms, thought/reply steps)
+2026-11-05 | Stop beside the live pill is wired (chat and builder) and only shown when one turn is running; "Done" only on replies without error | review: Stop was dead code, and Done showed on stopped/failed replies
+2026-11-05 | Send now says what happened (joined or stopped) and the queue shows replies ahead | the server now returns { joined } and the wait looked like a hang
+2026-11-05 | agent page tab "Memory & skills" (memory mode, knowledge access, skills by agent), "Used by" field in Knowledge and Settings, "Remembered N things" line with Undo; the "Knows" section left Activity | the server now gates memory, knowledge and skills per agent; the prototype HTML did not follow the design system, so the screen was built with the real components
