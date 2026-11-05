@@ -3,15 +3,17 @@
 // teach it something about you, and each memory with where it came from. Review shows the new ones (Keep, Edit,
 // Move, Discard) and the ones not confirmed in STALE_DAYS (Still true, Forget). The server enforces the rules
 // (evidence, duplicates, who may write where); this screen shows and changes them.
-import { isTeammate, type Memory } from "@zorel/contracts"
+import { useAtomValue } from "@effect/atom-react"
+import { isTeammate, type Memory, type MemoryApproval } from "@zorel/contracts"
+import { AsyncResult } from "effect/reactivity"
 import { formatAge, formatDate, t } from "@zorel/i18n"
 import { useState } from "react"
-import { agentsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
+import { agentsAtom, chatsAtom, memoriesAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
 import { ScopeIcon } from "./knowledge.tsx"
 import { ReadingState } from "./reading.tsx"
-import { Brain, Button, ConfirmDialog, cx, EmptyState, Input, LineDiff, Menu, MenuItem, Pin, PinOff, Plus, Rows, Screen, SearchInput, Tab, TabList, Tabs, Textarea, Tooltip } from "@/ui"
+import { Brain, Button, ConfirmDialog, cx, EmptyState, Input, LineDiff, Menu, MenuItem, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Tab, TabList, Tabs, Textarea, Tooltip } from "@/ui"
 
 const STALE_DAYS = 60 // an active memory not confirmed for this long asks "Still true?" (it stays in the prompt meanwhile)
 const DAY = 86_400_000
@@ -41,7 +43,12 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
     <Screen
       title={t("memory.title")}
       subtitle={t("memory.subtitle", { count: facts.filter((m) => m.state === "active").length })}
-      actions={<SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("memory.search")} />}
+      actions={
+        <>
+          <Approval />
+          <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("memory.search")} />
+        </>
+      }
     >
       <div className="flex w-full max-w-3xl flex-col gap-5 px-8 py-6">
         <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["memories"])} />
@@ -115,6 +122,28 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
         )}
       </div>
     </Screen>
+  )
+}
+
+// One setting for every agent: what a new fact learned from a chat becomes (corrections and skills always wait).
+function Approval() {
+  const prefs = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)
+  const set = useMutation(mutations.memoryApproval)
+  return (
+    <Tooltip content={t("memory.approvalHint")}>
+      <span>
+        <Select
+          size="sm"
+          aria-label={t("memory.approval")}
+          value={prefs?.memoryApproval ?? "review"}
+          onChange={(v) => void set({ payload: { approval: v as MemoryApproval }, reactivityKeys: ["preferences"] })}
+          options={[
+            { value: "review", label: t("memory.approvalReview") },
+            { value: "undo", label: t("memory.approvalUndo") }
+          ]}
+        />
+      </span>
+    </Tooltip>
   )
 }
 

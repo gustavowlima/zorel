@@ -672,18 +672,21 @@ const compactListening = (chatId: string) =>
     })
   )
 
-test("memory mode: ask proposes, auto saves facts (skills still wait, with a notice), read learns nothing", async () => {
+const approval = (a: "review" | "undo") => api((c) => c.settings.memoryApproval({ payload: { approval: a } }))
+
+test("memory approval: review proposes, undo saves facts (skills still wait, with a notice); an agent that doesn't learn keeps its chats from learning", async () => {
   // The user's pending memories from earlier tests fill the review cap (20): the person clears them.
   for (const m of (await api((c) => c.memories.list())).filter((x) => x.state === "pending" && x.scope === "user")) await api((c) => c.memories.update({ params: { id: m.id }, payload: { state: "forgotten" } }))
   // A project each: a proposal that repeats a pending one in the same scope is dropped.
-  const learned = async (memory: "auto" | "ask" | "read", extra: Array<"auto" | "ask" | "read"> = []) => {
-    const project = await api((c) => c.projects.create({ payload: { name: `Modes ${memory}${extra.join("")}`, brief: "" } }))
-    const mk = async (m: "auto" | "ask" | "read") => {
-      const a = await api((c) => c.agents.create({ payload: { projectId: project.id, name: `A ${m}`, instructions: "x", model: "claude-cli/sonnet" } }))
-      expect(a).toMatchObject({ memory: "ask", knowledge: "write" }) // the defaults keep what agents could do before
-      return api((c) => c.agents.update({ params: { id: a.id }, payload: { memory: m } }))
+  let n = 0
+  const learned = async (learns: boolean[]) => {
+    const project = await api((c) => c.projects.create({ payload: { name: `Learning ${++n}`, brief: "" } }))
+    const mk = async (on: boolean, i: number) => {
+      const a = await api((c) => c.agents.create({ payload: { projectId: project.id, name: `A${i}`, instructions: "x", model: "claude-cli/sonnet" } }))
+      expect(a).toMatchObject({ memory: "ask", knowledge: "write" }) // the defaults: it learns, and reads and writes pages
+      return on ? a : api((c) => c.agents.update({ params: { id: a.id }, payload: { memory: "read" } }))
     }
-    const agents = [await mk(memory), ...(await Promise.all(extra.map(mk)))]
+    const agents = await Promise.all(learns.map(mk))
     const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: agents.map((a) => a.id), model: "claude-cli/sonnet" } }))
     await send(chat.id, { text: "hi" })
     const events = await compactListening(chat.id)
@@ -692,32 +695,32 @@ test("memory mode: ask proposes, auto saves facts (skills still wait, with a not
     return { events, mine, summary }
   }
 
-  const ask = await learned("ask")
-  expect(ask.mine.map((m) => [m.kind, m.state]).sort()).toEqual([["fact", "pending"], ["skill", "pending"]])
-  expect(ask.events.some((e) => e._tag === "remembered")).toBe(false)
+  expect((await api((c) => c.settings.preferences())).memoryApproval).toBe("review") // the default
+  const review = await learned([true])
+  expect(review.mine.map((m) => [m.kind, m.state]).sort()).toEqual([["fact", "pending"], ["skill", "pending"]])
+  expect(review.events.some((e) => e._tag === "remembered")).toBe(false)
 
-  const auto = await learned("auto")
-  const fact = auto.mine.find((m) => m.kind === "fact")!
+  await approval("undo")
+  const undo = await learned([true])
+  const fact = undo.mine.find((m) => m.kind === "fact")!
   expect(fact).toMatchObject({ state: "active", origin: "auto", text: "Deploys go out on fridays" })
-  expect(auto.mine.find((m) => m.kind === "skill")!.state).toBe("pending") // a skill is instructions: it never turns on by itself
-  const note = auto.events.find((e) => e._tag === "remembered")
+  expect(undo.mine.find((m) => m.kind === "skill")!.state).toBe("pending") // a skill is instructions: it never turns on by itself
+  const note = undo.events.find((e) => e._tag === "remembered")
   expect(note && note._tag === "remembered" && note.memories.map((m) => m.id)).toEqual([fact.id])
   // Undo: forgetting it is the existing PATCH.
   expect((await api((c) => c.memories.update({ params: { id: fact.id }, payload: { state: "forgotten" } }))).state).toBe("forgotten")
 
-  const read = await learned("read")
+  const read = await learned([false])
   expect(read.mine).toEqual([]) // proposes nothing, saves nothing
   expect(read.summary).toBe("They talked about deploying.") // the chat's own summary still folds
-
-  // A chat learns by its strictest member: one agent that only reads keeps a shared chat from learning.
-  expect((await learned("auto", ["read"])).mine).toEqual([])
-  // ...and facts are saved on their own only when every agent in the chat allows it.
-  expect((await learned("auto", ["ask"])).mine.find((m) => m.kind === "fact")!.state).toBe("pending")
+  // One agent that doesn't learn keeps a shared chat from learning.
+  expect((await learned([true, false])).mine).toEqual([])
+  await approval("review")
 })
 
-test("memory mode auto: at most 20 facts on their own per consolidation", async () => {
+test("memory approval undo: at most 20 facts on their own per consolidation", async () => {
+  await approval("undo")
   const agent = await api((c) => c.agents.create({ payload: { projectId: null, name: "Eager", instructions: "x", model: "claude-cli/sonnet" } }))
-  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { memory: "auto" } }))
   const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [agent.id], model: "claude-cli/sonnet" } }))
   await send(chat.id, { text: "hi" })
   manyMemories = 25
@@ -725,6 +728,7 @@ test("memory mode auto: at most 20 facts on their own per consolidation", async 
   const events = await compactListening(chat.id)
   manyMemories = 0
   manyWord = "subject"
+  await approval("review")
   const mine = (await api((c) => c.memories.list())).filter((m) => m.chatId === chat.id)
   expect(mine.filter((m) => m.state === "active").length).toBe(20)
   const note = events.find((e) => e._tag === "remembered")
@@ -849,9 +853,9 @@ test("memory moves to another owner that exists; only a forgotten one is deleted
   expect((await api((c) => c.memories.list())).some((x) => x.id === m.id)).toBe(false)
 })
 
-test("zorel_remember: the agent's memory mode decides (auto keeps, ask proposes, read lacks the tool); credentials and repeats aren't kept", async () => {
+test("zorel_remember: the approval setting decides (undo keeps, review proposes); an agent that doesn't learn lacks the tool; credentials and repeats aren't kept", async () => {
   const agent = await api((c) => c.agents.create({ payload: { projectId: null, name: "Keeper", instructions: "x", model: "claude-cli/sonnet" } }))
-  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { memory: "auto" } }))
+  await approval("undo")
   const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [agent.id], model: "claude-cli/sonnet" } }))
   const remember = (text: string, about = "user") => send(chat.id, { text: `tool:zorel_remember ${JSON.stringify({ text, about })}` })
   const mine = async () => (await api((c) => c.memories.list())).filter((m) => m.chatId === chat.id)
@@ -862,7 +866,7 @@ test("zorel_remember: the agent's memory mode decides (auto keeps, ask proposes,
   expect(dones((await remember("Plays chess", "project")).events)[0]!.text).toContain("no project")
   expect(dones((await remember("The api key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH")).events)[0]!.text).toContain("credential")
 
-  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { memory: "ask" } }))
+  await approval("review")
   await remember("Works from Lisbon")
   expect((await mine()).find((m) => m.text === "Works from Lisbon")?.state).toBe("pending")
 

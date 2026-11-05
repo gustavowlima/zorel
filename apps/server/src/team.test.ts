@@ -66,13 +66,11 @@ test("a proposal carries its powers: web, browser, connectors by name (others no
   expect(createInput({ name: "Rev", instructions: "x" }, caller, null, servers).permissions.grants).toEqual({})
 })
 
-test("learning: the strictest agent decides for the chat; no agent keeps the default", () => {
+test("learning: a chat learns unless one of its agents doesn't; no agent learns", () => {
   const m = (memory: "auto" | "ask" | "read") => ({ memory })
-  expect(learningOf([])).toBe("ask")
-  expect(learningOf([m("auto")])).toBe("auto")
-  expect(learningOf([m("auto"), m("auto")])).toBe("auto")
-  expect(learningOf([m("auto"), m("ask")])).toBe("ask")
-  expect(learningOf([m("auto"), m("read")])).toBe("read")
+  expect(learningOf([])).toBe("learn")
+  expect(learningOf([m("auto"), m("ask")])).toBe("learn")
+  expect(learningOf([m("ask"), m("read")])).toBe("read")
 })
 
 test("withheld tools: memory read keeps remembering and skill proposals away; pages read keeps writing away; none keeps every page tool away", () => {

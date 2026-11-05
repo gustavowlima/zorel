@@ -124,8 +124,8 @@ export const Agent = Schema.Struct({
   // start; past a reply's, the reply stops and can go on (Continue).
   monthlyTokens: Schema.NullOr(Schema.Number),
   replyTokens: Schema.NullOr(Schema.Number),
-  // What the agent learns from its chats: "auto" saves facts straight away (with a notice and Undo; skills still wait
-  // for you), "ask" proposes them for review (the default), "read" learns nothing and can't write knowledge or propose skills.
+  // Whether the agent learns from its chats: "read" learns nothing (it only uses what's kept); "ask" (and the older
+  // "auto") learns. Whether what it learns waits for review is one setting for all agents (Preferences.memoryApproval).
   memory: Schema.Literals(["auto", "ask", "read"]),
   // Pages: "write" reads them and writes new ones (a change to an existing page waits for you), "read" only
   // consults them, "none": no pinned pages in its context and no page tools.
@@ -558,7 +558,11 @@ export const KeyInput = Schema.Struct({ value: LongText(500) }) // empty deletes
 // maxRunning: how many chats may have an agent working at once (the rest wait for a free slot); 0 = no limit.
 export const MAX_RUNNING_DEFAULT = 4
 export const MAX_RUNNING_CHOICES = [0, 1, 2, 3, 4, 6, 8, 12] as const
-export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number })
+// memoryApproval: what a new fact learned from a chat becomes. "review" (the default): it waits for the person;
+// "undo": it's kept at once, with a note in the chat and Undo. Corrections and skills always wait.
+export const MemoryApproval = Schema.Literals(["review", "undo"])
+export type MemoryApproval = typeof MemoryApproval.Type
+export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number, memoryApproval: MemoryApproval })
 
 // Turns (send, events, interrupt, approve): see events.ts (RPC over WebSocket at /rpc).
 export const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
@@ -769,6 +773,7 @@ export const Api = HttpApi.make("zorel")
       // Pause everything: running turns stop, new ones wait queued, routines wait; false resumes.
       .add(HttpApiEndpoint.put("pause", "/api/pause", { payload: Schema.Struct({ paused: Schema.Boolean }) }))
       .add(HttpApiEndpoint.put("nativeSkills", "/api/preferences/native-skills", { payload: Schema.Struct({ enabled: Schema.Boolean }), success: Preferences }))
+      .add(HttpApiEndpoint.put("memoryApproval", "/api/preferences/memory-approval", { payload: Schema.Struct({ approval: MemoryApproval }), success: Preferences }))
       .add(HttpApiEndpoint.put("maxRunning", "/api/preferences/max-running", { payload: Schema.Struct({ value: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 32 })) }), success: Preferences }))
       .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))
