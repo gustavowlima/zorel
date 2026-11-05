@@ -850,25 +850,48 @@ function StoredActivity({ steps, durationMs }: { steps: Message["steps"]; durati
       </DisclosurePill>
       {open && (
         <div className="basis-full">
-        <ol id={id} className="flex max-w-130 flex-col gap-2.5 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
-          {steps.map((s, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: stored steps are immutable and may repeat a tool
-            <li key={i} className="flex gap-2.5">
-              <StepIcon status={s.status} />
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
-                {/* Native steps: "run" keeps the command, "edit" the files; MCP tools keep name and arguments. */}
-                <Code className="self-start break-all">{s.tool === "run" ? `$ ${s.args}` : s.tool === "edit" ? s.args : s.tool}</Code>
-                {s.tool !== "run" && s.tool !== "edit" && s.args && s.args !== "{}" && (
-                  <pre className="overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{s.args}</pre>
-                )}
-                {s.result && <p className="line-clamp-3 text-sm text-muted">{s.result}</p>}
-              </div>
-            </li>
-          ))}
-        </ol>
+          <StepList id={id} steps={steps} />
         </div>
       )}
     </>
+  )
+}
+
+// A finished turn's steps, each with its icon, what it ran or touched and the start of its output (all of it on
+// "Show all"). The chat's reply and the agent's Work tab show the same list.
+export function StepList({ id, steps }: { id?: string; steps: Message["steps"] }) {
+  return (
+    <ol id={id} className="flex max-w-130 flex-col gap-2.5 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
+      {steps.map((s, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: stored steps are immutable and may repeat a tool
+        <StoredStep key={i} step={s} />
+      ))}
+    </ol>
+  )
+}
+
+const NATIVE_LABEL: Record<string, string> = { run: "$", read: "read", search: "search" }
+function StoredStep({ step: s }: { step: Message["steps"][number] }) {
+  const [all, setAll] = useState(false)
+  const long = s.result.length > 240 || s.result.split("\n").length > 3
+  return (
+    <li className="flex gap-2.5">
+      <StepIcon status={s.status} />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        {/* Native steps: "run" keeps the command, "read"/"search" the path or pattern, "edit" the files; MCP tools
+            keep name and arguments. */}
+        <Code className="self-start break-all">{NATIVE_LABEL[s.tool] ? `${NATIVE_LABEL[s.tool]} ${s.args}` : s.tool === "edit" ? s.args : s.tool}</Code>
+        {!NATIVE_LABEL[s.tool] && s.tool !== "edit" && s.args && s.args !== "{}" && (
+          <pre className="overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{s.args}</pre>
+        )}
+        {s.result && (all ? <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{s.result}</pre> : <p className="line-clamp-3 text-sm text-muted">{s.result}</p>)}
+        {s.result && long && (
+          <Button size="sm" variant="ghost" className="-ml-2 self-start" onPress={() => setAll(!all)}>
+            {all ? t("activity.showLess") : t("activity.showAll")}
+          </Button>
+        )}
+      </div>
+    </li>
   )
 }
 

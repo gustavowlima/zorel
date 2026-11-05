@@ -73,3 +73,4 @@
 2026-11-05 | Run button: the person starts the project server like zorel_preview | user: "rodar localmente" = Zorel runs the project in the chat folder
 2026-11-05 | task chats inherit the asking chat's access level | the chat's level must cover every agent working for it
 2026-11-05 | chat access level overrides agents both ways, including Full access | user chose option B
+2026-11-05 | runs endpoint; steps keep reads/searches and 4000 chars of output | user wants each agent session reviewable after it ends

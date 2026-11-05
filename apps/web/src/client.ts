@@ -26,7 +26,7 @@ export class Live extends AtomRpc.Service<Live>()("Live", {
 
 // ---------- CRUD queries (one key per resource) ----------
 
-export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "processes" | "context" | "terminals" | "scripts" | "localServers" | "git" | "routines" | "pages" | "fileSkills"
+export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "processes" | "context" | "terminals" | "scripts" | "localServers" | "git" | "routines" | "pages" | "fileSkills" | "runs"
 
 export const projectsAtom = Zorel.query("projects", "list", { reactivityKeys: ["projects"] })
 export const agentsAtom = Zorel.query("agents", "list", { reactivityKeys: ["agents"] })
@@ -48,6 +48,7 @@ export const pagesAtom = Zorel.query("pages", "list", { reactivityKeys: ["pages"
 export const memoryVersionsAtom = (id: string) => Zorel.query("memories", "versions", { params: { id }, reactivityKeys: ["memories"] })
 export const pageVersionsAtom = (id: string) => Zorel.query("pages", "versions", { params: { id }, reactivityKeys: ["pages"] })
 export const routinesAtom = Zorel.query("routines", "list", { reactivityKeys: ["routines"] })
+export const agentRunsAtom = (id: string) => Zorel.query("agents", "runs", { params: { id }, reactivityKeys: ["runs"] })
 export const agentVersionsAtom = (id: string) => Zorel.query("agents", "versions", { params: { id }, reactivityKeys: ["agents"] })
 export const gitAtom = (id: string) => Zorel.query("chats", "git", { params: { id }, reactivityKeys: ["git"] })
 export const scriptsAtom = (id: string) => Zorel.query("chats", "scripts", { params: { id }, reactivityKeys: ["scripts"] })

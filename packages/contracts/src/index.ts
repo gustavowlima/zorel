@@ -313,6 +313,22 @@ export const Step = Schema.Struct({
   result: Schema.String // start of the result
 })
 export type Step = typeof Step.Type
+// One run of an agent (a turn): the chat it was in (so its project), when, how it ended, its tokens and steps.
+// messageId: its reply in the chat (null when it wrote none, e.g. stopped before any text).
+export const AgentRun = Schema.Struct({
+  turnId: Id,
+  chatId: Id,
+  messageId: Schema.NullOr(Id),
+  state: Schema.Literals(["queued", "running", "completed", "failed", "interrupted"]),
+  startedAt: Schema.NullOr(Schema.Number),
+  endedAt: Schema.NullOr(Schema.Number),
+  error: Schema.NullOr(Schema.String),
+  inputTokens: Schema.Number,
+  outputTokens: Schema.Number,
+  preview: Schema.String, // its reply's first words
+  steps: Schema.Array(Step)
+})
+export type AgentRun = typeof AgentRun.Type
 
 // A file sent with a message (ARCHITECTURE §12). Images go to the engine as images; other files as text
 // (small text files) or by name until the workspace phase gives agents file tools.
@@ -610,6 +626,8 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.delete("remove", "/api/agents/:id", { params: idParam }))
       // A chat with the Builder (created the first time), in a project or General.
       .add(HttpApiEndpoint.post("builder", "/api/agents/builder", { payload: Schema.Struct({ projectId: Schema.NullOr(Id), model: ModelId }), success: Chat, error: HttpApiError.NotFound }))
+      // Its sessions' runs, newest first: each time it worked, in which chat, how long, its steps and tokens.
+      .add(HttpApiEndpoint.get("runs", "/api/agents/:id/runs", { params: idParam, success: Schema.Array(AgentRun), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.get("versions", "/api/agents/:id/versions", { params: idParam, success: Schema.Array(AgentVersion), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("restore", "/api/agents/:id/versions/:n/restore", { params: Schema.Struct({ id: Schema.String, n: Schema.NumberFromString }), success: Agent, error: HttpApiError.NotFound }))
   )

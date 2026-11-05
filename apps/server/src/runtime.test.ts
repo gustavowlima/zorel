@@ -518,6 +518,8 @@ test("start_task: the teammate's answer comes back to the asking chat and the as
     expect(msgs[2]!.text).toContain("[Open the task](#/chat/")
     expect(yield* store.openTasks()).toEqual([]) // reported once
     expect((yield* store.chats()).find((c) => c.id !== chat.id)?.access).toBe("workspace") // the chat's level carries over
+    const runs = yield* store.agentRuns(lead.id) // its sessions' runs, newest first: the wrap-up, then the delegation
+    expect(runs.map((r) => [r.chatId, r.state, r.preview])).toEqual([[chat.id, "completed", "thanks, got it"], [chat.id, "completed", "started"]])
   })))
 
 // zorel_ask_user: the agent waits on a question card; the person's answer comes back as the tool's result.

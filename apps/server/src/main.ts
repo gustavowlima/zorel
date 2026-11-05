@@ -150,6 +150,7 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
           return (yield* store.updateChat(chat.id, { title: "Build agents" }))!
         })
       )
+      .handle("runs", ({ params }) => Effect.flatMap(store.agent(params.id), (a) => (a ? store.agentRuns(a.id) : notFound())))
       .handle("versions", ({ params }) =>
         Effect.flatMap(store.agent(params.id), (a) => (a ? Effect.map(store.agentVersions(a.id), (vs) => vs.map(({ agentId: _, ...v }) => v)) : notFound()))
       )
