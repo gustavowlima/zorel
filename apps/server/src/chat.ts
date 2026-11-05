@@ -111,7 +111,7 @@ export function stretchOf<M extends { role: string; at: number; text: string }>(
 }
 
 // Folds what leaves the window into the summary and proposes memories and skills (pending until the user approves).
-// The "agent" scope goes to the chat leader. A message already learned from is read for context only: it can't be
+// The "agent" scope goes to the agent that replied after the proof (the lead when none did). A message already learned from is read for context only: it can't be
 // the evidence of a memory twice. It runs on the provider's small model (ZOREL_MEMORY_MODEL overrides), falling
 // back to the chat's own when that one fails.
 // What the agents' memory modes allow (learningOf): "ask" proposes facts and skills for review; "auto" saves the new
@@ -171,6 +171,15 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, h
       return chat
     }
     const scopeOf = { user: "user", project: `project:${chat.projectId}`, agent: `agent:${lead}` }
+    // An agent's note goes to the agent the person was talking to: the first one that replied after the message that
+    // proves it (in a chat with several agents, not always the lead).
+    const creditedAgent = (evidence: ReadonlyArray<number>) => {
+      for (const n of evidence) {
+        const reply = chunk.slice(n).find((m) => m.role === "assistant" && m.agentId && agents.some((a) => a.id === m.agentId))
+        if (reply?.agentId) return reply.agentId
+      }
+      return lead
+    }
     if (how === "quiet") yield* store.setLearned(chat.id, chunk.at(-1)!.at)
     else yield* store.setSummary(chat.id, parsed.summary, chunk.at(-1)!.at)
     if (mode === "read") return (yield* store.chat(chat.id))!
@@ -178,9 +187,10 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, h
     // A proposal that only rewords an active memory confirms it; one that rewords a pending one is dropped. A
     // correction (replaces) waits for review as an update of the memory it replaces.
     const pending = yield* store.pendingMemories(scopes)
-    const facts: Array<{ scope: string; kind: "fact"; title: string; text: string; keywords: string; replaces: string | null; reason: string | null }> = []
+    const facts: Array<{ scope: string; kind: "fact"; title: string; text: string; keywords: string; replaces: string | null; reason: string | null; agentId: string | null }> = []
     for (const m of parsed.memories) {
-      const scope = scopeOf[m.scope]
+      const credited = m.scope === "agent" ? creditedAgent(m.evidence) : null
+      const scope = m.scope === "agent" ? `agent:${credited}` : scopeOf[m.scope]
       const target = m.replaces !== undefined ? shown[m.replaces] : undefined
       if (!target) {
         const same = existing.find((e) => e.scope === scope && similar(e.text, m.text))
@@ -190,7 +200,7 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, h
         }
         if (pending.some((p) => p.scope === scope && similar(p.text, m.text))) continue
       }
-      facts.push({ scope: target?.scope ?? scope, kind: "fact", title: "", text: m.text, keywords: m.keywords, replaces: target?.id ?? null, reason: null })
+      facts.push({ scope: target?.scope ?? scope, kind: "fact", title: "", text: m.text, keywords: m.keywords, replaces: target?.id ?? null, reason: null, agentId: credited })
     }
     const onItsOwn = mode === "auto" ? facts.filter((f) => !f.replaces) : []
     const saved: Memory[] = []

@@ -396,6 +396,7 @@ export const Memory = Schema.Struct({
   state: MemoryState,
   origin: Schema.Literals(["auto", "manual"]),
   chatId: Schema.NullOr(Id),
+  agentId: Schema.optionalKey(Schema.NullOr(Id)), // the agent that kept it; null or absent: learned from the chat
   replaces: Schema.optionalKey(Schema.NullOr(Id)), // a proposed improvement of this active skill
   reason: Schema.optionalKey(Schema.NullOr(Schema.String)), // why it was proposed
   essential: Schema.optionalKey(Schema.Boolean), // always in the prompt (the person marks it)

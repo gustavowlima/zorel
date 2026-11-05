@@ -88,7 +88,7 @@ test("tool policy: annotation > name; sensitive beats read", () => {
 
 test("consolidation: takes JSON with text around it, drops scopes not allowed", () => {
   const r = parseConsolidation('ok:\n{"summary":"S","memories":[{"scope":"user","text":"A","evidence":[1]},{"scope":"project","text":"B","evidence":[1]}],"confirm":["m2","x"],"skills":[{"scope":"user","title":"T","text":"steps"},{"scope":"user","text":"no title"}]}', ["user"])
-  expect(r).toEqual({ summary: "S", memories: [{ scope: "user", text: "A", keywords: "" }], confirm: [1], skills: [{ scope: "user", title: "T", text: "steps" }] })
+  expect(r).toEqual({ summary: "S", memories: [{ scope: "user", text: "A", keywords: "", evidence: [1] }], confirm: [1], skills: [{ scope: "user", title: "T", text: "steps" }] })
   expect(parseConsolidation("nothing", ["user"])).toBeUndefined()
   expect(parseConsolidation('{"summary":""}', ["user"])).toBeUndefined()
 })
@@ -108,7 +108,7 @@ test("consolidation: an agent's details don't become the person's; credentials a
   expect(grounded("Runs Postgres 17", "we use postgres", "Postgres 17 is out")).toBe(false) // the agent's number
   // A correction points at the memory it replaces; keywords come along, capped.
   const moved = '{"summary":"S","memories":[{"scope":"user","text":"Lives in Berlin","keywords":"city home address","evidence":[1],"replaces":"m2"}]}'
-  expect(parseConsolidation(moved, ["user"], () => "I moved to Berlin")?.memories).toEqual([{ scope: "user", text: "Lives in Berlin", keywords: "city home address", replaces: 1 }])
+  expect(parseConsolidation(moved, ["user"], () => "I moved to Berlin")?.memories).toEqual([{ scope: "user", text: "Lives in Berlin", keywords: "city home address", evidence: [1], replaces: 1 }])
 })
 
 test("credentials: secretlint's rules, the stored secrets and a password said in words; the rest stays", async () => {

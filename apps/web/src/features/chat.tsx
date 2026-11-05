@@ -2,7 +2,7 @@
 // right, each agent's reply with its activity pill, approvals waiting for you, handoffs between agents),
 // and the message box. State is the chat atom: snapshot + live events, so a turn keeps going if the tab
 // closes and the screen catches up when it reopens.
-import { type Agent, type Chat, type FailoverTarget, type Message, type ProviderAccount, skillHandle, type WorkspaceFile, workSteps } from "@zorel/contracts"
+import { type Agent, type Chat, type FailoverTarget, type Memory, type Message, type ProviderAccount, skillHandle, type WorkspaceFile, workSteps } from "@zorel/contracts"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zorel/contracts/events"
@@ -11,6 +11,7 @@ import { memo, type ReactNode, useCallback, useEffect, useId, useLayoutEffect, u
 import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
 import { agentName, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText, waitLabel } from "../labels.ts"
 import { ChatMarkdown } from "./chat-markdown.tsx"
+import { MemoryChip } from "./memory.tsx"
 import { MentionText } from "./mention.tsx"
 import { commandOf, extraArgs } from "./receipt-args.ts"
 import { go, liveStepsOpen } from "../state.ts"
@@ -510,12 +511,25 @@ export function RenameDialog({ isOpen, onClose, title, onSave }: { isOpen: boole
 
 // ---------- timeline ----------
 
-type Item = { at: number; message: Message } | { at: number; note: Note }
+type Item = { at: number; message: Message } | { at: number; note: Note } | { at: number; memory: Memory }
 
 export function Timeline({ chat, state, agents, onView, onEdit, onStop, at }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void; onStop?: (() => void) | undefined; at?: string | undefined }) {
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true) // follow new content only while the reader is at the bottom
-  const items: Item[] = [...state.messages.map((m) => ({ at: m.at, message: m })), ...state.notes.map((n) => ({ at: n.at, note: n }))].sort((a, b) => a.at - b.at)
+  // What was kept from this chat shows where it happened, from the memories themselves (a reload keeps it). The
+  // live "remembered" event only says the list changed.
+  const kept = useList(memoriesAtom).filter((m) => m.kind === "fact" && m.chatId === chat.id && m.origin === "auto" && m.state !== "forgotten")
+  const invalidate = useInvalidate()
+  const rememberedCount = state.notes.filter((n) => n.kind === "remembered").length
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new remembered event is the trigger
+  useEffect(() => {
+    if (rememberedCount) invalidate(["memories"])
+  }, [rememberedCount])
+  const items: Item[] = [
+    ...state.messages.map((m) => ({ at: m.at, message: m })),
+    ...state.notes.filter((n) => n.kind !== "remembered").map((n) => ({ at: n.at, note: n })),
+    ...kept.map((m) => ({ at: m.createdAt, memory: m }))
+  ].sort((a, b) => a.at - b.at)
   const multi = chat.agentIds.length > 1
   // One agent (or none): the header already says who answers, so replies show no face and no name.
   const solo = !multi
@@ -572,6 +586,8 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at }: { 
                 <AgentMessage message={item.message} agents={agents} onView={onView} continued={solo || continues(items[i - 1], item.message)} bare={solo} last={i === items.length - 1 && !state.live && state.pending === 0} />
               )}
             </div>
+          ) : "memory" in item ? (
+            <MemoryChip key={item.memory.id} memory={item.memory} />
           ) : (
             <TimelineNote key={`${item.note.kind}-${item.note.at}`} note={item.note} agents={agents} />
           )
@@ -1288,42 +1304,13 @@ function ReceiptCard({ receipt: r }: { receipt: Receipt }) {
 function TimelineNote({ note, agents }: { note: Note; agents: ReadonlyArray<Agent> }) {
   const accounts = useList(accountsAtom)
   if (note.kind === "failover") return <Separator>{switchText(note.switch, accounts)}</Separator>
-  if (note.kind === "remembered") return <RememberedNote memories={note.memories} />
+  if (note.kind === "remembered") return null // shown from the memories themselves (MemoryChip)
   const to = note.to.map((id) => agentName(id, agents)).join(", ")
   const from = agentName(note.from, agents)
   if (note.via === "limit") return <Separator>{t("chat.chainStopped")}</Separator>
   if (note.via === "reply") return <Separator>{t("chat.handedBack", { from, to })}</Separator>
   if (note.via === "route") return <Separator>{note.reason ? t("chat.routedWhy", { to, reason: note.reason }) : t("chat.routed", { to })}</Separator>
   return <Separator>{t("chat.handoff", { from, to })}</Separator>
-}
-
-// What an agent kept on its own after the chat: the texts (as plain text, the model wrote them) and one Undo that
-// forgets them all (the memories' own "forgotten" state, restorable in Knowledge).
-function RememberedNote({ memories }: { memories: Extract<Note, { kind: "remembered" }>["memories"] }) {
-  const update = useMutation(mutations.updateMemory)
-  const [state, setState] = useState<"idle" | "busy" | "done">("idle")
-  const undo = () => {
-    setState("busy")
-    void Promise.all(memories.map((m) => update({ params: { id: m.id }, payload: { state: "forgotten" }, reactivityKeys: ["memories"] }))).then(
-      () => setState("done"),
-      () => setState("idle") // some failed: the button comes back to try again
-    )
-  }
-  return (
-    <div className="flex flex-col items-center gap-1.5 text-sm text-muted">
-      <Separator>{t("chat.remembered", { count: memories.length })}</Separator>
-      <ul className="flex max-w-xl flex-col gap-0.5 text-center">
-        {memories.map((m) => (
-          <li key={m.id} className="line-clamp-2">
-            {m.text}
-          </li>
-        ))}
-      </ul>
-      <Button size="sm" variant="ghost" isDisabled={state !== "idle"} onPress={undo}>
-        {state === "done" ? t("chat.rememberedUndone") : t("chat.rememberedUndo")}
-      </Button>
-    </div>
-  )
 }
 
 // A centered line in the timeline (handoffs, failover moves).

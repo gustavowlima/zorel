@@ -848,3 +848,25 @@ test("memory moves to another owner that exists; only a forgotten one is deleted
   await api((c) => c.memories.remove({ params: { id: m.id } }))
   expect((await api((c) => c.memories.list())).some((x) => x.id === m.id)).toBe(false)
 })
+
+test("zorel_remember: the agent's memory mode decides (auto keeps, ask proposes, read lacks the tool); credentials and repeats aren't kept", async () => {
+  const agent = await api((c) => c.agents.create({ payload: { projectId: null, name: "Keeper", instructions: "x", model: "claude-cli/sonnet" } }))
+  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { memory: "auto" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [agent.id], model: "claude-cli/sonnet" } }))
+  const remember = (text: string, about = "user") => send(chat.id, { text: `tool:zorel_remember ${JSON.stringify({ text, about })}` })
+  const mine = async () => (await api((c) => c.memories.list())).filter((m) => m.chatId === chat.id)
+
+  expect(dones((await remember("Drinks green tea")).events)[0]!.text).toContain("Kept")
+  expect((await mine()).find((m) => m.text === "Drinks green tea")).toMatchObject({ state: "active", agentId: agent.id, scope: "user" })
+  expect(dones((await remember("Drinks green tea")).events)[0]!.text).toContain("Already kept") // a repeat confirms it
+  expect(dones((await remember("Plays chess", "project")).events)[0]!.text).toContain("no project")
+  expect(dones((await remember("The api key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH")).events)[0]!.text).toContain("credential")
+
+  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { memory: "ask" } }))
+  await remember("Works from Lisbon")
+  expect((await mine()).find((m) => m.text === "Works from Lisbon")?.state).toBe("pending")
+
+  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { memory: "read" } }))
+  await send(chat.id, { text: "hi" })
+  expect(turns.at(-1)!.tools!.defs.map((d) => d.name)).not.toContain("zorel_remember")
+})

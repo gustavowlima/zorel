@@ -158,6 +158,7 @@ export const memories = sqliteTable(
     state: text({ enum: ["pending", "active", "forgotten"] }).notNull(),
     origin: text({ enum: ["auto", "manual"] }).notNull(),
     chatId: text("chat_id"),
+    agentId: text("agent_id"), // the agent that kept it (zorel_remember, or the one a chat's learning credits); null: learned from the chat
     replaces: text(), // a proposed improvement: the active skill it would replace when approved
     reason: text(), // why it was proposed (an agent's words), shown on review
     createdAt: integer("created_at").notNull(),

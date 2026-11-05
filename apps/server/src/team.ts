@@ -120,6 +120,20 @@ export const MEMORY_TOOL = {
   writes: false
 } as const
 
+// Remember: the agent keeps a fact the person just said or confirmed (their words, not its guess), during the turn.
+// Its memory mode decides: "auto" keeps it (a note under the reply, with Undo), "ask" proposes it for review; "read"
+// doesn't get the tool. A correction of an existing memory always waits for review.
+export const REMEMBER_TOOL = {
+  name: "zorel_remember",
+  description:
+    "Keep a durable fact the user just told you or confirmed (a preference, a decision, how they work), so later chats know it. text: one short self-contained sentence in the third person (\"Prefers small PRs\"). about: 'user' (holds everywhere), 'project' (a fact or decision of this project) or 'agent' (how you should do your work). replaces: the text of an existing memory it corrects, if any. Never your own guess, nothing temporary (\"this week\"), never a credential. Don't mention it in your reply: the user sees a note with Undo.",
+  inputSchema: {
+    properties: { text: { type: "string" }, about: { type: "string", enum: ["user", "project", "agent"] }, replaces: { type: "string" } },
+    required: ["text", "about"]
+  },
+  writes: false
+} as const
+
 // Skills: read a recipe when the task matches; propose a new one or a better version of one, with
 // the reason. Proposals wait for the person in Knowledge, who sees what changes before approving.
 export const SKILL_TOOLS = [
@@ -154,7 +168,7 @@ export const learningOf = (members: ReadonlyArray<Learner>): Agent["memory"] => 
 // The tools the agent doesn't get. The server refuses them even if the model names one anyway.
 export const withheldTools = (a: Learner | undefined): ReadonlySet<string> =>
   new Set([
-    ...(memoryModeOf(a) === "read" ? ["zorel_propose_skill"] : []),
+    ...(memoryModeOf(a) === "read" ? ["zorel_propose_skill", REMEMBER_TOOL.name] : []),
     ...(knowledgeOf(a) === "none" ? KNOWLEDGE_TOOLS.map((t) => t.name) : knowledgeOf(a) === "read" ? ["zorel_knowledge_write"] : [])
   ])
 
