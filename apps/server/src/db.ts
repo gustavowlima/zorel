@@ -37,11 +37,21 @@ export function sameName(a: string, b: string): boolean {
   const [short, long] = a.length <= b.length ? [a, b] : [b, a]
   if (short.length < 4) return false
   if (` ${long} `.includes(` ${short} `)) return true
+  return dice(a, b) >= 0.8
+}
+const dice = (a: string, b: string) => {
   const pairs = (t: string) => new Set(Array.from({ length: t.length - 1 }, (_, i) => t.slice(i, i + 2)))
   const x = pairs(a)
   const y = pairs(b)
-  const shared = [...x].filter((p) => y.has(p)).length
-  return (2 * shared) / (x.size + y.size) >= 0.8
+  return (2 * [...x].filter((p) => y.has(p)).length) / (x.size + y.size || 1)
+}
+// Two points of one map that are the same thing, for the sleep to merge: one was given the other's name, a plural
+// ("deploys" / "deploy"), or a close spelling ("versel"). Stricter than sameName: "memory" and "memory map" stay two.
+export function twins(a: { normalized: string; aliases: ReadonlyArray<string> }, b: { normalized: string; aliases: ReadonlyArray<string> }): boolean {
+  const [x, y] = [a.normalized, b.normalized]
+  if (a.aliases.includes(y) || b.aliases.includes(x)) return true
+  if (x.replace(/s$/, "") === y.replace(/s$/, "")) return Math.min(x.length, y.length) >= 4
+  return Math.min(x.length, y.length) >= 5 && dice(x, y) >= 0.8
 }
 
 // An FTS5 query from free text: each word of 3+ letters that isn't a stopword, as a prefix, any of them.
@@ -715,6 +725,40 @@ export const repository = (db: Db, pagesDir?: string) => {
           )
         : Effect.succeed([]),
     entity: (id: string) => orDie(db.select().from(entities).where(eq(entities.id, id)).pipe(Effect.map(first))),
+    // The map's sleep (daily, rules only): points no fact mentions any more go, and twins of one map merge into the
+    // heavier one (its facts, relations, bridges, names and weight).
+    sleepMap: () =>
+      orDie(
+        Effect.gen(function* () {
+          const all = yield* db.select().from(entities)
+          const linked = new Set((yield* db.selectDistinct({ id: memoryEntities.entityId }).from(memoryEntities)).map((r) => r.id))
+          const orphans = all.filter((e) => !linked.has(e.id)).map((e) => e.id)
+          if (orphans.length) yield* db.delete(entities).where(inArray(entities.id, orphans))
+          const live = all.filter((e) => linked.has(e.id) && e.type !== "project" && e.type !== "agent").sort((a, b) => b.weight - a.weight)
+          const gone = new Set<string>()
+          for (const keep of live) {
+            if (gone.has(keep.id)) continue
+            for (const dupe of live) {
+              if (dupe === keep || gone.has(dupe.id) || dupe.scope !== keep.scope || !twins(keep, dupe)) continue
+              gone.add(dupe.id)
+              yield* db.transaction((tx) =>
+                Effect.gen(function* () {
+                  yield* tx.run(sql`INSERT OR IGNORE INTO memory_entities (memory_id, entity_id) SELECT memory_id, ${keep.id} FROM memory_entities WHERE entity_id = ${dupe.id}`)
+                  yield* tx.run(sql`UPDATE OR IGNORE relations SET src = ${keep.id} WHERE src = ${dupe.id}`)
+                  yield* tx.run(sql`UPDATE OR IGNORE relations SET dst = ${keep.id} WHERE dst = ${dupe.id}`)
+                  yield* tx.run(sql`DELETE FROM relations WHERE src = dst`)
+                  yield* tx.run(sql`INSERT OR IGNORE INTO entity_links (a, b, created_at) SELECT min(${keep.id}, o), max(${keep.id}, o), created_at FROM (SELECT CASE WHEN a = ${dupe.id} THEN b ELSE a END AS o, created_at FROM entity_links WHERE a = ${dupe.id} OR b = ${dupe.id})`)
+                  const aliases = [...new Set([...keep.aliases, dupe.normalized, ...dupe.aliases])].filter((a) => a !== keep.normalized).slice(-10)
+                  Object.assign(keep, { aliases, weight: keep.weight + dupe.weight, usedAt: Math.max(keep.usedAt, dupe.usedAt) }) // a next twin adds to this
+                  yield* tx.update(entities).set({ aliases: keep.aliases, weight: keep.weight, usedAt: keep.usedAt }).where(eq(entities.id, keep.id))
+                  yield* tx.delete(entities).where(eq(entities.id, dupe.id)) // the rest cascades
+                })
+              )
+            }
+          }
+          return { removed: orphans.length, merged: gone.size }
+        })
+      ),
     // Bridges are stored once, the smaller id first.
     connectEntities: (a: string, b: string) => orDie(db.insert(entityLinks).values({ a: a < b ? a : b, b: a < b ? b : a, createdAt: now() }).onConflictDoNothing().pipe(Effect.asVoid)),
     disconnectEntities: (a: string, b: string) => orDie(db.delete(entityLinks).where(and(eq(entityLinks.a, a < b ? a : b), eq(entityLinks.b, a < b ? b : a))).pipe(Effect.asVoid)),

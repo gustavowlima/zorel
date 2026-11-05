@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSy
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
-import { sameName, Store } from "./db.ts"
+import { sameName, Store, twins } from "./db.ts"
 import { LEGACY_MIGRATIONS } from "./migrate.ts"
 import { recall } from "./chat.ts"
 import { mappedOf } from "./context.ts"
@@ -401,3 +401,45 @@ test("a bridge between two projects' points: on both maps, and recall crosses it
       expect((yield* r.entitiesIn([`project:${project.id}`])).length).toBe(0) // a removed project takes its map along
     })
   ))
+
+test("the map's sleep: orphan points go, twins of one map merge (facts, relations, bridges)", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const add = (scope: string, text: string, ents: Array<{ name: string; type: "concept" | "subject"; aliases?: string[] }>, rels: Array<[string, string, string]> = []) =>
+        Effect.gen(function* () {
+          const m = (yield* r.addMemory({ scope, text, state: "active", origin: "auto", chatId: null }))!
+          yield* r.linkMemory(m.id, scope, mappedOf(ents, rels))
+          return m
+        })
+      const names = (scope: string) => Effect.map(r.entitiesIn([scope]), (es) => es.map((e) => e.name).sort())
+      // "PG" is its own point until a later fact calls Postgres "pg": then they're twins.
+      const first = yield* add("project:a", "PG needs the token", [{ name: "PG", type: "concept" }, { name: "Token", type: "concept" }], [["PG", "needs", "Token"]])
+      yield* add("project:a", "Data lives in Postgres", [{ name: "Postgres", type: "concept", aliases: ["pg"] }, { name: "Data", type: "subject" }], [["Data", "lives in", "Postgres"]])
+      yield* add("project:a", "Postgres runs on Fridays backups", [{ name: "Postgres", type: "concept" }])
+      const other = yield* add("project:b", "Releases go out on deploy day", [{ name: "Release", type: "concept" }])
+      const pg = (yield* r.entitiesIn(["project:a"])).find((e) => e.name === "PG")!.id
+      yield* r.connectEntities(pg, (yield* r.entitiesIn(["project:b"]))[0]!.id)
+      yield* add("project:c", "Stays", [{ name: "Kept", type: "concept" }])
+      const kept = (yield* r.entitiesIn(["project:c"]))[0]!.id
+      yield* r.connectEntities(pg, kept)
+      yield* r.removeMemory(other.id) // its point is left with no fact
+      expect(yield* r.sleepMap()).toEqual({ removed: 1, merged: 1 })
+      expect(yield* names("project:a")).toEqual(["Data", "Postgres", "Token"])
+      expect(yield* names("project:b")).toEqual([])
+      const map = yield* r.entitiesIn(["project:a"])
+      const postgres = map.find((e) => e.name === "Postgres")!
+      expect(postgres.memory_ids.split(",")).toContain(first.id) // the twin's fact moved over
+      expect((yield* r.linksAmong(map.map((e) => e.id))).map((l) => l.rel)).toContain("needs") // and its relation
+      expect((yield* r.bridgesOf([postgres.id])).others.map((o) => o.id)).toEqual([kept]) // and its bridge
+      expect(yield* r.sleepMap()).toEqual({ removed: 0, merged: 0 })
+    })
+  ))
+
+test("twins: another name or a plural or a close spelling, not a longer name holding it", () => {
+  const p = (normalized: string, aliases: string[] = []) => ({ normalized, aliases })
+  expect(twins(p("postgres", ["pg"]), p("pg"))).toBe(true)
+  expect(twins(p("deploys"), p("deploy"))).toBe(true)
+  expect(twins(p("kubernetes"), p("kubernets"))).toBe(true)
+  expect(twins(p("memory"), p("memory map"))).toBe(false)
+  expect(twins(p("bus"), p("bu"))).toBe(false)
+})
