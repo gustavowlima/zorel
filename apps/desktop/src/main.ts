@@ -4,7 +4,7 @@
 // the server. One instance per user: opening the app again focuses the window.
 import { type ChildProcess, execFile, spawn } from "node:child_process"
 import { randomBytes } from "node:crypto"
-import { openSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, openSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { join } from "node:path"
 import { app, BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, powerMonitor, powerSaveBlocker, session, shell, Tray } from "electron"
@@ -23,6 +23,10 @@ const secret = randomBytes(SESSION_BYTES).toString("hex")
 let win: BrowserWindow | undefined
 let tray: Tray | undefined
 let quitting = false
+// Quitting asks first (agents and routines stop), unless the person said not to, an update or the system is closing
+// the app, or it is quitting on an error. One question at a time, however many times Quit is pressed.
+let confirmQuit = true
+let asking = false
 let update: { version: string; ready: boolean; percent?: number } | null = null // the newest release: downloading (percent), then ready
 const icon = () => nativeImage.createFromPath(join(appDir, "assets", "icon.png"))
 
@@ -68,6 +72,7 @@ async function startServer() {
   server.once("exit", (code) => {
     if (quitting) return
     dialog.showErrorBox("Zorel", `The Zorel server stopped (code ${code}). See ${join(app.getPath("logs"), "server.log")}.`)
+    confirmQuit = false // already told why: no second question
     app.quit()
   })
   url = `http://127.0.0.1:${port}`
@@ -172,6 +177,9 @@ function updates() {
   })
   ipcMain.handle("update:install", (e) => {
     if (!win || e.sender !== win.webContents || !update?.ready) return false
+    // The installer (or the updater) closes Zorel to swap it: no question in its way.
+    // ponytail: stays off for this run if the install then fails; reset it from the installer's exit if that matters.
+    confirmQuit = false
     if (manual) return runInstaller()
     quitting = true
     server?.kill("SIGTERM")
@@ -206,6 +214,30 @@ const developerId = () =>
     if (process.platform !== "darwin") return resolve(true)
     execFile("codesign", ["-dv", "--verbose=2", join(process.execPath, "..", "..", "..")], (_e, out, err) => resolve(/Authority=Developer ID Application/.test(`${out}${err}`)))
   })
+
+// "Quit Zorel?" (the native dialog): Quit, or Cancel to keep it running; "Don't ask again" is kept on this computer.
+const NO_ASK = () => join(app.getPath("userData"), "quit-without-asking")
+const askedNotTo = () => existsSync(NO_ASK())
+async function askToQuit() {
+  if (asking) return
+  asking = true
+  const options = {
+    type: "question" as const,
+    message: "Quit Zorel?",
+    detail: "Agents stop working and routines don't run until you open Zorel again. Closing the window keeps them running.",
+    buttons: ["Quit", "Cancel"],
+    defaultId: 0,
+    cancelId: 1,
+    checkboxLabel: "Don't ask again"
+  }
+  const shown = win && !win.isDestroyed() && win.isVisible() ? win : undefined
+  const { response, checkboxChecked } = await (shown ? dialog.showMessageBox(shown, options) : dialog.showMessageBox(options))
+  asking = false
+  if (response !== 0) return
+  if (checkboxChecked) writeFileSync(NO_ASK(), "")
+  confirmQuit = false
+  app.quit()
+}
 
 // The release's install.sh, in its own process group so it outlives Zorel (it quits the app, then reopens it). The
 // repository comes from the build's update settings (app-update.yml, written by electron-builder).
@@ -326,9 +358,18 @@ else {
   app.on("second-instance", openWindow)
   app.on("activate", openWindow)
   app.on("window-all-closed", () => undefined) // stay running: the server keeps working with no window
-  app.on("before-quit", () => {
+  app.on("before-quit", (e) => {
+    if (!quitting && confirmQuit && !askedNotTo()) {
+      e.preventDefault()
+      void askToQuit()
+      return
+    }
     quitting = true
     server?.kill("SIGTERM")
+  })
+  // Logging out or shutting down: the system is closing every app, nothing to ask.
+  powerMonitor.on("shutdown", () => {
+    confirmQuit = false
   })
   void app
     .whenReady()
