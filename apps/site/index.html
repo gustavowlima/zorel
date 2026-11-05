@@ -109,11 +109,12 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 .composer .ph { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .composer .model { display: inline-flex; align-items: center; gap: 6px; color: var(--color-ink-2); }
 .composer .send { width: 34px; height: 34px; border-radius: 50%; background: var(--color-accent-btn); color: var(--color-on-accent); display: grid; place-items: center; }
-.av.l { background: var(--color-agent-2); } .av.c { background: var(--color-agent-1); } .av.t { background: var(--color-agent-3); } .av.d { background: var(--color-agent-4); color: var(--color-on-accent); }
+.av.l { background: var(--color-agent-2); } .av.c { background: var(--color-agent-1); } .av.t { background: var(--color-agent-3); } .av.d { background: var(--color-agent-4); }
+.av.l, .av.c, .av.t, .av.d { color: var(--color-on-agent); } /* above .d (the diff red), which would paint the letter */
 
-.av { width: 20px; height: 20px; border-radius: 6px; display: inline-grid; place-items: center; flex: none; font: 600 11px/1 var(--font-body); color: var(--color-on-accent); }
+.av { width: 20px; height: 20px; border-radius: 6px; display: inline-grid; place-items: center; flex: none; font: 600 11px/1 var(--font-body); color: var(--color-on-agent); } /* dark letters: ≥5:1 on every agent color */
 .tasks { display: flex; flex-direction: column; gap: 6px; }
-.task { display: flex; align-items: center; gap: var(--space-2xs); padding: 8px 10px; border-radius: var(--radius-sm); background: var(--color-paper); box-shadow: inset 0 0 0 1px var(--color-rim); min-width: 0; }
+.task { display: flex; align-items: center; gap: var(--space-2xs); padding: 8px 10px; border-radius: var(--radius-sm); background: var(--color-row); box-shadow: inset 0 0 0 1px var(--color-rim); min-width: 0; }
 .task span:not(.av):not(.st) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task code { font-size: var(--text-xs); color: var(--color-ink); }
 .st { margin-left: auto; flex: none; font-size: var(--text-2xs); padding: 3px 8px; border-radius: var(--radius-pill); background: var(--color-raised); color: var(--color-ink-2); }
@@ -148,23 +149,22 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 .card .txt { padding: var(--space-lg) var(--space-lg) var(--space-md); }
 .card h3 { font-size: var(--text-xl); letter-spacing: -0.02em; line-height: 1.25; }
 .card h3 + p { margin-top: var(--space-2xs); color: var(--color-ink-2); max-width: 34rem; }
-.stage { position: relative; margin: auto var(--space-md) var(--space-md); min-height: 15.5rem; padding: var(--space-md); border-radius: 14px; background: var(--color-app); box-shadow: inset 0 0 0 1px var(--color-rim); display: flex; flex-direction: column; justify-content: center; gap: var(--space-2xs); font-size: var(--text-sm); overflow: hidden; }
-.stage::before { content: ""; position: absolute; inset: -40% 10% auto; height: 70%; pointer-events: none; background: radial-gradient(closest-side, var(--color-glow-soft), transparent); }
+.stage { position: relative; margin: auto var(--space-md) var(--space-md); min-height: 15.5rem; padding: var(--space-md); border-radius: 14px; background: var(--color-stage); box-shadow: inset 0 0 0 1px var(--color-rim); display: flex; flex-direction: column; justify-content: center; gap: var(--space-2xs); font-size: var(--text-sm); overflow: hidden; }
 .stage > * { position: relative; }
 .card.wide { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: center; }
 .card.wide .stage { margin: var(--space-md); min-height: 0; }
 
 /* scene 1: a harness at its limit, the next one picks up */
 .meter { width: 3.5rem; height: 4px; border-radius: 4px; background: var(--color-raised); overflow: hidden; flex: none; }
-.meter i { display: block; height: 100%; width: var(--fill, 72%); border-radius: inherit; background: var(--color-add); transition: width 1.2s var(--ease-out), background-color 300ms; }
-.s1 .meter i { --fill: 100%; }
-.s2 .meter i { background: var(--color-del); }
+.meter i { display: block; height: 100%; border-radius: inherit; background: var(--color-ink-2); transform-origin: left; scale: var(--fill, 0.72) 1; transition: scale 1.2s var(--ease-out), background-color 300ms; }
+.s1 .meter i { --fill: 1; }
+.s2 .meter i { background: var(--color-wait); } /* a limit is a throttle the app handles, not an error */
 .swap { display: inline-grid; margin-left: auto; flex: none; }
 .swap > * { grid-area: 1 / 1; justify-self: end; transition: opacity 300ms var(--ease-out), translate 300ms var(--ease-out); }
 .swap > :last-child { opacity: 0; translate: 0 6px; }
 .s2 .swap.at2 > :first-child, .s3 .swap.at3 > :first-child { opacity: 0; translate: 0 -6px; }
 .s2 .swap.at2 > :last-child, .s3 .swap.at3 > :last-child { opacity: 1; translate: 0 0; }
-.st.limit { background: var(--color-del-bg); color: var(--color-del); }
+.st.limit { background: var(--color-wait-bg); color: var(--color-wait); }
 .task .st { margin-left: 0; }
 .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; margin-right: 5px; vertical-align: 1px; animation: blink 1.4s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: 0.3; } }
@@ -213,9 +213,12 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 
 /* ---------- install + Ft2 ---------- */
 .install { text-align: center; padding-block: var(--space-3xl) var(--space-2xl); }
-.cmd { margin: var(--space-lg) auto 0; max-width: 56rem; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-sm); padding: 8px 8px 8px 18px; border-radius: var(--radius-md); background: var(--color-card); box-shadow: inset 0 0 0 1px var(--color-rim); text-align: left; }
+.cmd { margin: var(--space-lg) auto 0; width: fit-content; max-width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-sm); padding: 8px 8px 8px 18px; border-radius: var(--radius-md); background: var(--color-card); box-shadow: inset 0 0 0 1px var(--color-rim); text-align: left; }
 .cmd code { font-size: var(--text-sm); overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
 .cmd code::before { content: "$ "; color: var(--color-ink-3); }
+/* Shown short, like a path you recognise; Copy takes the whole command (data-full). */
+.cmd .k { font-weight: 500; color: var(--color-accent-text); }
+.cmd .dim { color: var(--color-ink-3); }
 .note { margin-top: var(--space-sm); font-size: var(--text-sm); color: var(--color-ink-3); }
 .note a { color: var(--color-ink-2); text-underline-offset: 3px; }
 .foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-lg); padding-block: var(--space-md) var(--space-xl); border-top: 1px solid var(--color-rim); font-size: var(--text-sm); color: var(--color-ink-3); }
@@ -225,10 +228,11 @@ svg.l { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 
 /* ---------- life: a light behind the app, its top edge lit, the scenes play once as they come into view ---------- */
 body { background: radial-gradient(70rem 36rem at 50% -14rem, var(--color-glow-soft), transparent 70%) no-repeat, var(--color-paper); }
-.app-wrap { position: relative; margin-top: var(--space-xl); isolation: isolate; }
+.app-wrap { position: relative; margin-top: var(--space-xl); } /* no isolation: the bloom (z-index -1) sits behind the whole hero, not over its buttons */
 .app-wrap .app { margin-top: 0; }
 .app-wrap::before { content: ""; position: absolute; z-index: -1; left: 50%; top: -9rem; width: min(64rem, 92%); height: 22rem; translate: -50% 0; background: radial-gradient(closest-side, var(--color-glow), transparent); filter: blur(24px); animation: breathe 8s ease-in-out infinite alternate; }
-.app-wrap::after { content: ""; position: absolute; z-index: 2; top: 0; left: 8%; right: 8%; height: 1px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--color-edge), transparent) no-repeat; background-size: 35% 100%; animation: sweep 7s var(--ease-in-out) infinite; }
+/* The light runs on the straight part of the top edge (between the rounded corners) and fades out at both ends. */
+.app-wrap::after { content: ""; position: absolute; z-index: 2; top: 0; left: var(--radius-lg); right: var(--radius-lg); height: 1px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--color-edge), transparent) no-repeat; background-size: 30% 100%; -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); animation: sweep 7s var(--ease-in-out) infinite; }
 @keyframes breathe { to { opacity: 0.65; scale: 1.06 1.1; } }
 @keyframes sweep { from { background-position: -50% 0; } to { background-position: 150% 0; } }
 .feed { justify-content: flex-end; }
@@ -247,6 +251,11 @@ html.anim .app [data-at]:not(.on).after-allow { display: none; }
 html.anim .reveal { opacity: 0; translate: 0 18px; transition: opacity 700ms var(--ease-out), translate 700ms var(--ease-out); }
 html.anim .reveal.in { opacity: 1; translate: 0 0; }
 html:not(.anim) .later { opacity: 1; translate: 0 0; }
+/* Colour strategy: a cool neutral canvas; the brand blue owns two things only, the light where the page opens and
+   closes and whatever needs you (the waiting card, Allow, focus); agents are four calm hues at one lightness;
+   green, amber and red are states. The install section gets the hero's light: where you act mirrors where you begin. */
+.install { position: relative; }
+.install::before { content: ""; position: absolute; z-index: -1; left: 50%; top: 18%; width: min(56rem, 92%); height: 20rem; translate: -50% 0; background: radial-gradient(closest-side, var(--color-glow), transparent); filter: blur(28px); opacity: 0.7; pointer-events: none; }
 /* after every `font:` shorthand, which resets them: code reads as typed, "=>" stays two characters */
 code, pre, .lines, .n { font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
 
@@ -372,7 +381,7 @@ code, pre, .lines, .n { font-variant-ligatures: none; font-feature-settings: "li
       <article class="card reveal" data-steps="600,1900,2700"><div class="txt"><h3>Every harness, one team</h3><p>Claude Code, Codex and OpenCode in the same chat, each on your own sign-in. When one hits its limit, the next in the fallback list picks up.</p></div>
         <div class="stage">
           <div class="task"><span class="av c">C</span><span>Coder</span><span class="meter" aria-hidden="true"><i></i></span><span class="swap at2"><span class="st"><svg class="i"><use href="#claude"/></svg> Claude Code</span><span class="st limit">at its limit</span></span></div>
-          <div class="task later at3"><span class="av c">C</span><span>Coder</span><span class="st ok" style="margin-left:auto"><svg class="i"><use href="#codex"/></svg> on Codex</span></div>
+          <div class="task later at3"><span class="av c">C</span><span>Coder</span><span class="st" style="margin-left:auto"><svg class="i"><use href="#codex"/></svg> continues on Codex</span></div>
           <div class="task"><span class="av t">T</span><span>Tester</span><span class="st" style="margin-left:auto"><svg class="i"><use href="#codex"/></svg> Codex</span></div>
           <div class="task"><span class="av d">D</span><span>Docsync</span><span class="st" style="margin-left:auto"><span class="dot"></span>OpenCode</span></div>
         </div></article>
@@ -421,7 +430,7 @@ code, pre, .lines, .n { font-variant-ligatures: none; font-feature-settings: "li
   <section class="install wrap" id="install" aria-labelledby="install-title">
     <div class="head"><h2 id="install-title">Ask once. The team does the rest.</h2></div>
     <div class="cmd" role="group" aria-label="Install command">
-      <code id="cmd">curl -fsSL https://github.com/gustavowlima/zorel/releases/latest/download/install.sh | sh</code>
+      <code id="cmd" data-full="curl -fsSL https://github.com/gustavowlima/zorel/releases/latest/download/install.sh | sh"><b class="k">curl</b> -fsSL <span class="dim">…/releases/latest/download/</span>install.sh | sh</code>
       <button class="btn sm" type="button" data-copy="cmd">Copy</button>
     </div>
     <p class="note">macOS and Linux. On Windows, <a href="https://github.com/gustavowlima/zorel/releases/latest/download/zorel-windows-setup.exe">download the installer</a>.</p>
@@ -439,9 +448,11 @@ code, pre, .lines, .n { font-variant-ligatures: none; font-feature-settings: "li
 document.querySelectorAll("[data-copy]").forEach((btn) => {
   btn.addEventListener("click", () => {
     const code = document.getElementById(btn.dataset.copy)
-    const select = () => { const r = document.createRange(); r.selectNodeContents(code); const s = getSelection(); s.removeAllRanges(); s.addRange(r) }
+    const text = code.dataset.full || code.textContent
+    // Where the clipboard is refused, the whole command is shown and selected, to copy by hand.
+    const select = () => { code.textContent = text; const r = document.createRange(); r.selectNodeContents(code); const s = getSelection(); s.removeAllRanges(); s.addRange(r) }
     const done = () => { btn.textContent = "Copied"; setTimeout(() => (btn.textContent = "Copy"), 1600) }
-    try { navigator.clipboard.writeText(code.textContent).then(done, select) } catch { select() }
+    try { navigator.clipboard.writeText(text).then(done, select) } catch { select() }
   })
 })
 // Life, only with motion allowed: sections rise into view, each card plays its scene once, and the app plays the
