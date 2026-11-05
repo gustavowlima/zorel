@@ -955,7 +955,7 @@ function LiveText({ text }: { text: string }) {
 
 // What waits for you in this chat (approvals, questions), right above the message box until you decide, so it
 // never scrolls out of sight with the conversation.
-function PendingTray({ approvals }: { approvals: ReadonlyArray<Approval> }) {
+export function PendingTray({ approvals }: { approvals: ReadonlyArray<Approval> }) {
   if (!approvals.length) return null
   return (
     <section className="mb-2 flex flex-col gap-2" aria-label={t("approval.waiting")}>
