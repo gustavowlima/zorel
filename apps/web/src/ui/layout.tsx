@@ -54,10 +54,40 @@ export const Rows = ({ children, className }: { children: ReactNode; className?:
   <div className={cn("flex flex-col divide-y divide-subtle border-y border-subtle", className)}>{children}</div>
 )
 
+// The square that holds an icon beside a row or a heading: sm 28px, md 32px, lg 40px (empty states). A translucent
+// control tone, so it reads on the canvas and on a surface alike.
+const TILE = { sm: "size-7 rounded-control [&_svg]:size-4", md: "size-8 rounded-control [&_svg]:size-4", lg: "size-10 rounded-card [&_svg]:size-5" } as const
+export function IconTile({ size = "md", className, children }: { size?: keyof typeof TILE; className?: string; children: ReactNode }) {
+  return (
+    <span aria-hidden="true" className={cn("flex shrink-0 items-center justify-center bg-control text-secondary", TILE[size], className)}>
+      {children}
+    </span>
+  )
+}
+
+// A notice that needs attention on a page (a limit reached, a failover): the icon in the state color, the text in
+// the page's own, an optional action under it.
+export function Notice({ tone = "warning", icon, title, children, action, className }: { tone?: "warning" | "danger"; icon: ReactNode; title?: ReactNode; children?: ReactNode; action?: ReactNode; className?: string }) {
+  return (
+    <div role="alert" className={cn("flex gap-3 rounded-card border border-subtle bg-surface px-4 py-3", className)}>
+      <span className={cn("mt-0.5 shrink-0 [&_svg]:size-4", tone === "warning" ? "text-warning" : "text-danger")}>{icon}</span>
+      <div className="flex min-w-0 flex-1 flex-col items-start gap-2 text-sm">
+        {title && <p className="font-medium text-fg">{title}</p>}
+        {children && <div className="text-secondary">{children}</div>}
+        {action}
+      </div>
+    </div>
+  )
+}
+
 export function EmptyState({ icon, title, hint, action }: { icon?: ReactNode; title: ReactNode; hint?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-      {icon && <span className="mb-1 flex size-10 items-center justify-center rounded-card bg-surface text-muted [&_svg]:size-5">{icon}</span>}
+      {icon && (
+        <IconTile size="lg" className="mb-1 text-muted">
+          {icon}
+        </IconTile>
+      )}
       <p className="font-medium text-fg">{title}</p>
       {hint && <p className="max-w-sm text-muted">{hint}</p>}
       {action && <div className="mt-2">{action}</div>}

@@ -90,7 +90,7 @@ function Skills() {
           />
         )}
         {skills.length > 0 && (
-          <div className="flex flex-col divide-y divide-subtle border-y border-subtle">
+          <Rows>
             {skills.map((s) => (
               <div key={s.id} className="flex items-center gap-3 py-3">
                 <span className="flex min-w-0 flex-1 flex-col">
@@ -116,7 +116,7 @@ function Skills() {
                 )}
               </div>
             ))}
-          </div>
+          </Rows>
         )}
       </Section>
   )

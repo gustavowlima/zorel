@@ -12,7 +12,7 @@ import { accountsAtom, agentsAtom, keysAtom, modelsAtom, mutations, useInvalidat
 import { LimitWindows } from "./limits.tsx"
 import { modelName, modelNote, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
-import { Badge, Button, ChevronRight, ConfirmButton, Dot, Input, ListRow, Plus, ProviderIcon, cx } from "@/ui"
+import { Badge, Button, ChevronRight, ConfirmButton, cx, Dot, Input, ListRow, Plus, ProviderIcon, Rows } from "@/ui"
 
 type KeyInfo = typeof KeyInfoSchema.Type
 
@@ -211,7 +211,7 @@ const Group = ({ title, hint, action, children }: { title: string; hint?: string
       </span>
       {action}
     </div>
-    <div className="flex flex-col divide-y divide-subtle border-y border-subtle">{children}</div>
+    <Rows>{children}</Rows>
   </section>
 )
 
