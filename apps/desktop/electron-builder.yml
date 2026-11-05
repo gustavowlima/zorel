@@ -33,6 +33,8 @@ extraResources:
   - { from: build/drizzle, to: drizzle }
   # The agents' browser (Playwright's headless Chromium, the server's Playwright version): the app needs no Chrome.
   - { from: build/browsers, to: browsers }
+  # playwright-core as files (the server loads it from here, ZOREL_PLAYWRIGHT): it can't live inside the binary.
+  - { from: build/playwright-core, to: playwright-core }
 # Only the app's languages: drops ~40 MB of Chromium locales.
 electronLanguages: [en, pt-BR]
 # Updates: a GitHub release per version (electron-updater reads it), from the same repository install.sh uses.
