@@ -91,6 +91,7 @@ function AgentCard({ agent, agents, working, onDelete }: { agent: Agent; agents:
       {agent.description && <p className="pointer-events-none relative line-clamp-2 text-secondary">{agent.description}</p>}
       <div className="pointer-events-none relative mt-auto flex flex-wrap gap-1.5">
         <Tag hint={t("builder.runsOnHint")}>{t("builder.runsOn", { model: modelLabel(agent.model) })}</Tag>
+        {agent.failover.length > 0 && <Tag hint={t("builder.fallbacksHint")}>{t("builder.fallbacks", { count: agent.failover.length })}</Tag>}
         <Tag hint={t(`access.${agent.access}Hint`)}>{t("builder.accessIs", { access: t(`access.${agent.access}`) })}</Tag>
       </div>
       <span className="absolute top-3 right-3">
