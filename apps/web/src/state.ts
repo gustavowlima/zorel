@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 export const SETTINGS_TABS = ["general", "providers", "mcp", "skills", "processes", "storage", "audit"] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]
 export const PROJECT_TABS = ["overview", "agents", "tools"] as const
-export const AGENT_TABS = ["work", "profile", "tools", "activity"] as const
+export const AGENT_TABS = ["work", "profile", "tools", "memory", "activity"] as const
 export type AgentTab = (typeof AGENT_TABS)[number]
 export type ProjectTab = (typeof PROJECT_TABS)[number]
 
@@ -139,6 +139,26 @@ export function useResolvedTheme(): "dark" | "light" {
     return () => observer.disconnect()
   }, [])
   return theme
+}
+
+// ---------- the steps of a reply in progress: open (default) or folded into one line; per browser ----------
+
+const STEPS_OPEN_KEY = "zorel.steps.open"
+
+export function liveStepsOpen(): boolean {
+  try {
+    return localStorage.getItem(STEPS_OPEN_KEY) !== "0"
+  } catch {
+    return true // storage blocked: the default
+  }
+}
+
+export function setLiveStepsOpen(open: boolean) {
+  try {
+    localStorage.setItem(STEPS_OPEN_KEY, open ? "1" : "0")
+  } catch {
+    // storage blocked: the choice lasts until the page reloads
+  }
 }
 
 // ---------- small per-browser UI memory (expanded projects) ----------

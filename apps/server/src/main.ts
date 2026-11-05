@@ -1,8 +1,8 @@
-import { discovered, pickedPaths } from "./file-skills.ts"
+import { discovered, pickedEntries, serializePicks } from "./file-skills.ts"
 import { listFolders } from "./folders.ts"
 import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
+import { Api, CronInvalid, GitFailed, isTeammate, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
 import { ZorelRpc } from "@zorel/contracts/events"
 import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
 import { Effect, Layer, Schema } from "effect"
@@ -45,6 +45,14 @@ import { BrowserService, BrowserSocket } from "./browser.ts"
 const BUILDER_KEEP_MS = 60 * 60 * 1000 // a Builder conversation younger than this is someone's, not litter
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
+const badRequest = () => Effect.fail(new HttpApiError.BadRequest())
+// The agents a skill is limited to: each must exist and be a teammate (not archived, not the Builder). Deduplicated.
+const skillAgents = (store: Repository, ids: ReadonlyArray<string> | undefined) =>
+  Effect.gen(function* () {
+    const wanted = [...new Set(ids ?? [])]
+    const all = yield* store.agents()
+    return wanted.every((id) => all.some((a) => a.id === id && isTeammate(a))) ? wanted : undefined
+  })
 const found = <A, E, R>(e: Effect.Effect<A | undefined, E, R>) => Effect.flatMap(e, (a) => (a === undefined ? notFound() : Effect.succeed(a)))
 const exists = <A>(e: Effect.Effect<A | undefined>) => Effect.map(e, (a) => a !== undefined)
 
@@ -110,7 +118,7 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
   })
 )
 
-const AGENT_FIELDS = ["name", "title", "description", "instructions", "model", "accountId", "effort", "failover", "access", "permissions", "archivedAt", "monthlyTokens", "replyTokens"] as const
+const AGENT_FIELDS = ["name", "title", "description", "instructions", "model", "accountId", "effort", "failover", "access", "permissions", "archivedAt", "monthlyTokens", "replyTokens", "memory", "knowledge"] as const
 
 const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
   Effect.gen(function* () {
@@ -455,7 +463,7 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         })
       )
       .handle("consolidate", ({ params }) =>
-        consolidate(params.id, true).pipe(
+        consolidate(params.id, "all", (saved) => runtime.remembered(params.id, saved)).pipe(
           Effect.provide(services),
           Effect.catchTags({ NotFound: () => notFound(), Busy: () => Effect.fail(new HttpApiError.Conflict()) })
         )
@@ -494,7 +502,10 @@ const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
       // Written by the user: starts active. Duplicate: returns the existing one.
       .handle("create", ({ payload }) =>
         Effect.gen(function* () {
-          const added = yield* store.addMemory({ ...payload, state: "active", origin: "manual", chatId: null, owner: actor.id })
+          if (payload.agents?.length && payload.kind !== "skill") return yield* badRequest() // only a skill is limited to agents
+          const only = yield* skillAgents(store, payload.agents)
+          if (!only) return yield* badRequest()
+          const added = yield* store.addMemory({ ...payload, agents: only, state: "active", origin: "manual", chatId: null, owner: actor.id })
           return added ?? (yield* store.memories()).find((m) => m.scope === payload.scope && m.text === payload.text)!
         })
       )
@@ -502,11 +513,17 @@ const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
       .handle("update", ({ params, payload }) =>
         Effect.gen(function* () {
           const before = yield* store.memory(params.id)
+          if (payload.agents !== undefined && before && before.kind !== "skill") return yield* badRequest()
+          const only = payload.agents === undefined ? undefined : yield* skillAgents(store, payload.agents)
+          if (payload.agents !== undefined && !only) return yield* badRequest()
           if (before?.state === "pending" && before.replaces && payload.state === "active") {
             const applied = yield* store.applyImprovement(before.id, "you")
             if (applied) return applied
           }
-          return yield* found(store.updateMemory(params.id, payload))
+          // Edited into the words of another memory of the scope: refused, not a crash on the unique key.
+          if (before && payload.text !== undefined && (yield* store.textTaken(before.id, before.scope, payload.text))) return yield* new HttpApiError.Conflict()
+          const { agents: _, ...rest } = payload
+          return yield* found(store.updateMemory(params.id, { ...rest, agents: only }))
         })
       )
       .handle("versions", ({ params }) => Effect.flatMap(store.memory(params.id), (m) => (m ? store.memoryVersions(m.id) : notFound())))
@@ -515,6 +532,8 @@ const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
         Effect.gen(function* () {
           const v = yield* store.memoryVersion(payload.versionId)
           if (!v || v.memoryId !== params.id) return yield* notFound()
+          const m = yield* store.memory(params.id)
+          if (m && (yield* store.textTaken(m.id, m.scope, v.text))) return yield* new HttpApiError.Conflict()
           return yield* found(store.updateMemory(params.id, { title: v.title, text: v.text }))
         })
       )
@@ -764,10 +783,13 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       .handle("pickFileSkill", ({ payload }) =>
         Effect.gen(function* () {
           if (!discovered().some((s) => s.path === payload.path)) return yield* notFound()
-          const now = new Set(pickedPaths(yield* store.preference("fileSkills")))
-          if (payload.enabled) now.add(payload.path)
+          const now = new Map(pickedEntries(yield* store.preference("fileSkills")).map((e) => [e.path, e.agents]))
+          const only = payload.agents === undefined ? undefined : yield* skillAgents(store, payload.agents)
+          if (payload.agents !== undefined && !only) return yield* badRequest()
+          // Picking again keeps the agents it already had unless new ones come with it.
+          if (payload.enabled) now.set(payload.path, only ?? now.get(payload.path) ?? [])
           else now.delete(payload.path)
-          const pref = JSON.stringify([...now])
+          const pref = serializePicks([...now].map(([path, agents]) => ({ path, agents })))
           yield* store.setPreference("fileSkills", pref)
           return fileSkillsWith(pref)
         })
@@ -1148,6 +1170,6 @@ if (import.meta.main) await start()
 
 // Every skill found on this computer, with whether the agents use it.
 const fileSkillsWith = (pref: string | undefined) => {
-  const on = new Set(pickedPaths(pref))
-  return discovered().map((s) => ({ path: s.path, name: s.name, description: s.description, source: s.source, ...(s.plugin && { plugin: s.plugin }), enabled: on.has(s.path) }))
+  const on = new Map(pickedEntries(pref).map((e) => [e.path, e.agents]))
+  return discovered().map((s) => ({ path: s.path, name: s.name, description: s.description, source: s.source, ...(s.plugin && { plugin: s.plugin }), enabled: on.has(s.path), agents: on.get(s.path) ?? [] }))
 }

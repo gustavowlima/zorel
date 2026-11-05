@@ -523,7 +523,7 @@ function ChatItem({ chat, status, active, agents, menu, nested = false }: { chat
   const live = status && status.state !== "idle" ? status : undefined
   const members = chat.agentIds.flatMap((id) => agents.filter((a) => a.id === id))
   const at = Math.max(chat.lastAt ?? chat.createdAt, status?.updatedAt ?? 0)
-  const said = live ? statusLabel(live, agents) : undefined
+  const said = status ? statusLabel(status, agents) || undefined : undefined // idle shows only who waits on a teammate
   const model = modelName(chat.model)
   const who = members.length > 1 ? `${members[0]!.name} +${members.length - 1}` : members[0]?.name
   const detail = who ? t("nav.withModel", { agent: who, model }) : model

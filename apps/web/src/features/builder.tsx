@@ -153,7 +153,7 @@ function Conversation({ chat, reviewing }: { chat: Chat; reviewing: boolean }) {
       ) : (
         // The proposal is reviewed on the right: no second card for it inside the conversation.
         <>
-          <Timeline chat={chat} state={{ ...state, approvals: state.approvals.filter((a) => a.tool !== "zorel_create_agent") }} agents={agents} onView={() => {}} onEdit={() => {}} />
+          <Timeline chat={chat} state={{ ...state, approvals: state.approvals.filter((a) => a.tool !== "zorel_create_agent") }} agents={agents} onView={() => {}} onEdit={() => {}} onStop={() => void interrupt({ payload: { chatId: chat.id } })} />
           {/* While a proposal waits, the turn only shows "waiting": say where it is and what this box is for now. */}
           {reviewing && (
             <p className="mx-6 mb-2 flex items-start gap-2 rounded-card border border-subtle px-3 py-2.5 text-sm text-secondary">

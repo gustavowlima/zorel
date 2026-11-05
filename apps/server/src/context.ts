@@ -12,10 +12,13 @@ import type { Turn, TurnMessage, TurnTools } from "./engines.ts"
 
 export const WINDOW = 30 // messages kept verbatim after a consolidation
 export const MAX_AFTER = 50 // more than this since the summary triggers a consolidation
+// Characters of verbatim history a turn carries (~20k tokens). Past it the oldest messages leave the turn and the
+// next consolidation folds them into the summary, keeping the newest KEEP_CHARS (one huge pasted log can't ride along).
+export const HISTORY_CHARS = 80_000
+export const KEEP_CHARS = 40_000
 export const MEMORY_BUDGET = 8_000 // characters of pinned memories in the prompt
 export const RETRIEVED = 5 // memories retrieved by search each turn
 export const SKILL_TITLES = 30 // skills listed by title
-export const SKILL_BODIES = 2 // skills with the full step-by-step, the most relevant to the message
 export const MAX_DEPTH = 3 // consecutive agent-to-agent replies with no human message in between
 
 export const scopesOf = (chat: Pick<Chat, "projectId">, agentId: string | null): string[] => [
@@ -53,6 +56,19 @@ export function pinned(active: ReadonlyArray<Memory>, budget = MEMORY_BUDGET): M
   return out
 }
 
+// The memories a consolidation reads, within the budget: the essential ones, then the ones sharing the most words
+// with the stretch, then the most recently confirmed. Its prompt stays the same size however many there are.
+export function reviewed(active: ReadonlyArray<Memory>, stretch: string, budget = MEMORY_BUDGET): Memory[] {
+  const there = words(stretch)
+  const score = (m: Memory) => [...words(m.text)].filter((w) => there.has(w)).length
+  const order = [...active].sort((a, b) => Number(!!b.essential) - Number(!!a.essential) || score(b) - score(a) || b.confirmedAt - a.confirmedAt)
+  let used = 0
+  return order.filter((m) => {
+    used += m.text.length + 3
+    return used <= budget
+  })
+}
+
 // Two wordings of the same idea: most of their words shared (Jaccard over words of 3+ letters). Consolidation
 // treats a new proposal this close to an existing memory as that memory said again.
 export const SAME_IDEA = 0.6
@@ -87,9 +103,11 @@ export interface TurnInput {
   readonly agent: Agent | undefined // who replies now
   readonly members: ReadonlyArray<Agent> // all agents in the chat
   readonly pinned: ReadonlyArray<Memory>
+  readonly activeIds?: ReadonlyArray<string> | undefined // every active memory in scope (pinned or not): what's still true
   readonly retrieved: ReadonlyArray<Memory>
   readonly skills: { readonly all: ReadonlyArray<Memory>; readonly relevant: ReadonlyArray<Memory> }
   readonly pages?: ReadonlyArray<{ readonly id: string; readonly title: string }> | undefined // pinned knowledge pages (titles only)
+  readonly canPropose?: boolean | undefined // false: the agent only reads (no zorel_propose_skill)
   readonly messages: ReadonlyArray<Message> // since the summary, in order; the last is from the user or another agent
   readonly cwd: string
   readonly filesDir?: string | undefined // where this chat's attachments live (<dataDir>/attachments/<chat>)
@@ -139,10 +157,18 @@ export function buildTurn(i: TurnInput): Turn {
       )
   ]
   const workMemories = [i.project && section("Project memories", bullets(of(`project:${i.project.id}`))), i.agent && section("Your work memories", bullets(of(`agent:${i.agent.id}`)))]
-  const skillList = section("Available skills (approved procedures; follow one when the task matches: read its steps with zorel_read_skill; if you find a better way, propose it with zorel_propose_skill and improves)", i.skills.all.slice(0, SKILL_TITLES).map((s) => `- ${s.title}`).join("\n"))
+  // Titles only (a file skill's own description too): the steps come with zorel_read_skill when the task matches.
+  const skillList = section(
+    `Available skills (approved procedures; when the task matches one, read its steps with zorel_read_skill before starting${i.canPropose === false ? "" : "; if you find a better way, propose it with zorel_propose_skill and improves"})`,
+    i.skills.all.slice(0, SKILL_TITLES).map((s) => `- ${s.title}${s.id.startsWith("file:") && s.text ? `: ${s.text.replace(/\s+/g, " ").slice(0, 120)}` : ""}`).join("\n")
+  )
   // Pinned pages: titles only (stable, cheap); the body comes with zorel_knowledge_read when needed.
   const pageList = section("Pinned knowledge pages (read with zorel_knowledge_read; search others with zorel_knowledge_search)", (i.pages ?? []).map((p) => `- ${p.title} [${p.id}]`).join("\n"))
   const stable = [...instructions, userMemories, ...projectParts, ...workMemories, skillList, pageList].filter(Boolean).join("\n\n")
+  // What a native session is tied to: the stable part without the memories. They go in when it opens and stay as
+  // they were; what changes later reaches the session as a note with the turn (memoryNote), so approving,
+  // confirming or forgetting a memory doesn't reopen it and resend the whole history.
+  const frame = [...instructions, ...projectParts, skillList, pageList].filter(Boolean).join("\n\n")
   // Dynamic: depends on the current message; in a native session it goes with the turn's message.
   const skillBodies = i.skills.relevant.map((s) => section(`Skill: ${s.title}`, s.text))
   const summary = section("Summary of what came before in this conversation", i.chat.summary)
@@ -162,16 +188,38 @@ export function buildTurn(i: TurnInput): Turn {
   // as "user" with the name, so they don't look like its own.
   // Replies carry what their turn did in the workspace, so whoever answers next (another agent, or the
   // same agent after a provider switch) knows the files and commands without reading the old session.
-  const messages: TurnMessage[] = i.messages
-    .slice(-MAX_AFTER)
-    .filter((m) => m.text.trim() || m.changes.length)
-    .map((m) => {
-      const text = `${m.text}${workNote(m)}`
-      return m.role === "assistant" && m.agentId !== (i.agent?.id ?? null)
-        ? { role: "user", text: `[${name(m.agentId)}]\n${text}`, at: m.at }
-        : { role: m.role, text, at: m.at, files: filesOf(m) }
-    })
-  return { model: i.model, system, stable, dynamic, messages, cwd: i.cwd, tools: i.tools, parts }
+  const messages: TurnMessage[] = withinBudget(
+    i.messages
+      .slice(-MAX_AFTER)
+      .filter((m) => m.text.trim() || m.changes.length)
+      .map((m) => {
+        const text = `${m.text}${workNote(m)}`
+        return m.role === "assistant" && m.agentId !== (i.agent?.id ?? null)
+          ? { role: "user", text: `[${name(m.agentId)}]\n${text}`, at: m.at }
+          : { role: m.role, text, at: m.at, files: filesOf(m) }
+      }),
+    HISTORY_CHARS
+  )
+  const memories = i.pinned.map((m) => ({ id: m.id, text: m.text }))
+  return { model: i.model, system, stable, frame, dynamic, messages, cwd: i.cwd, tools: i.tools, parts, memories, activeMemoryIds: i.activeIds ?? memories.map((m) => m.id) }
+}
+
+// The newest messages whose text fits the budget (the last one always goes, whatever its size).
+export function withinBudget<M extends { readonly text: string }>(messages: ReadonlyArray<M>, budget: number): M[] {
+  let used = 0
+  let from = messages.length
+  while (from > 0 && (from === messages.length || used + messages[from - 1]!.text.length <= budget)) used += messages[--from]!.text.length
+  return messages.slice(from)
+}
+
+// What changed in the memories since a native session opened with `seen` (id → text): new or reworded ones in
+// full, and the ones no longer true (forgotten or gone, not merely past the budget). Undefined when nothing did.
+export function memoryNote(seen: ReadonlyMap<string, string>, now: ReadonlyArray<{ id: string; text: string }>, active: ReadonlyArray<string>): string | undefined {
+  const still = new Set(active)
+  const added = now.filter((m) => seen.get(m.id) !== m.text)
+  const gone = [...seen].filter(([id, text]) => !still.has(id) || now.some((m) => m.id === id && m.text !== text)).map(([, text]) => text)
+  if (!added.length && !gone.length) return undefined
+  return section("Memory changes since this conversation started (they override what you were told before)", [...added.map((m) => `- New: ${m.text}`), ...gone.map((t) => `- No longer true: ${t}`)].join("\n"))
 }
 
 // ---------- consolidation (continuous learning) ----------
@@ -193,26 +241,32 @@ export const CONSOLIDATION_SYSTEM = [
   '  - Not a memory: anything temporary or time-boxed ("this week", "for now", "today"), and never a password, key, token or other credential, not even in the summary. A message that holds a credential can still hold facts: keep those.',
   '- "confirm": the ids (m1, m2…) of existing memories the stretch confirms again. An empty list is the norm.',
   '- "skills": procedures worth repeating — something solved in several steps, a way out of a dead end, or the user correcting how to do something. An empty list is the norm.',
-  '  - "title": a short name for the procedure. "text": concise steps, up to 15 lines. Don\'t repeat existing skills.'
+  '  - "title": a short name for the procedure. "text": concise steps, up to 15 lines. Don\'t repeat existing skills.',
+  "Messages marked (learned) were already learned from: use them for the summary only, never as evidence.",
+  'When the prompt says no summary is needed, answer "summary": "" and only look for memories, confirmations and skills.'
 ].join("\n")
 
 export function consolidationPrompt(o: {
   summary: string
   chunk: ReadonlyArray<Message>
   existing: ReadonlyArray<Memory>
+  hidden?: number // active memories left out of `existing` by the budget
   skills: ReadonlyArray<Memory>
   forgotten: ReadonlyArray<Memory>
   hasProject: boolean
   hasAgent: boolean
   names: (agentId: string | null) => string
+  learnedUntil?: number // messages up to this `at` were learned from already
+  summarize?: boolean // false: a quiet chat learning before its window fills; the summary stays as it is
 }): string {
+  const learned = (m: Message) => (m.at <= (o.learnedUntil ?? 0) ? " (learned)" : "")
   return [
     `Allowed scopes: user${o.hasProject ? ", project" : ""}${o.hasAgent ? ", agent" : ""}.`,
-    `Current summary:\n${o.summary || "(empty)"}`,
-    `Existing memories:\n${o.existing.map((m, i) => `- [m${i + 1}] ${m.text}`).join("\n") || "(none)"}`,
+    o.summarize === false ? "No summary is needed this time." : `Current summary:\n${o.summary || "(empty)"}`,
+    `Existing memories:\n${o.existing.map((m, i) => `- [m${i + 1}] ${m.text}`).join("\n") || "(none)"}${o.hidden ? `\n(${o.hidden} more, less related to this stretch, aren't shown: a fact that seems new may already be kept, and that's fine)` : ""}`,
     `Existing skills:\n${o.skills.map((s) => `- ${s.title}`).join("\n") || "(none)"}`,
     `What the person asked to forget (don't propose it again, not even in other words):\n${o.forgotten.map((m) => `- ${m.title || m.text}`).join("\n") || "(nothing)"}`,
-    `Stretch leaving the window:\n${o.chunk.map((m, i) => `#${i + 1} [${m.role === "user" ? "user" : o.names(m.agentId)}] ${m.text}`).join("\n\n")}`
+    `Stretch leaving the window:\n${o.chunk.map((m, i) => `#${i + 1} [${m.role === "user" ? "user" : o.names(m.agentId)}]${learned(m)} ${m.text}`).join("\n\n")}`
   ].join("\n\n")
 }
 
@@ -229,7 +283,7 @@ export interface Consolidation {
 const Scope = Schema.Literals(["user", "project", "agent"])
 const Text = (max: number) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max))
 const Reply = Schema.Struct({
-  summary: Text(20_000),
+  summary: Schema.String.check(Schema.isMaxLength(20_000)), // empty only when no summary was asked for
   memories: Schema.optional(Schema.Array(Schema.Unknown)),
   confirm: Schema.optional(Schema.Array(Schema.Unknown)),
   skills: Schema.optional(Schema.Array(Schema.Unknown))
@@ -256,7 +310,7 @@ const ref = (id: unknown) => {
 // person: `said(n)` is message #n of the chunk when it was theirs (an agent's guess never becomes a
 // memory), and `agents` is what the agents said (their names and numbers can't slip into a memory). Credentials are
 // dropped by the caller (redact is async).
-export function parseConsolidation(text: string, allowed: ReadonlyArray<string>, said: (n: number) => string | undefined = () => "", agents = ""): Consolidation | undefined {
+export function parseConsolidation(text: string, allowed: ReadonlyArray<string>, said: (n: number) => string | undefined = () => "", agents = "", needSummary = true): Consolidation | undefined {
   const start = text.indexOf("{")
   const end = text.lastIndexOf("}")
   if (start < 0 || end <= start) return undefined
@@ -267,7 +321,7 @@ export function parseConsolidation(text: string, allowed: ReadonlyArray<string>,
     return undefined
   }
   const reply = Option.getOrUndefined(decodeReply(json))
-  if (!reply?.summary.trim()) return undefined
+  if (!reply || (needSummary && !reply.summary.trim())) return undefined
   const inScope = <T extends { scope: Scope; text: string }>(x: T) => allowed.includes(x.scope) && x.text.trim() !== ""
   const quoted = (evidence: ReadonlyArray<unknown> = []) => evidence.flatMap((n) => (typeof n === "number" ? [said(n)].filter((t) => t !== undefined) : []))
   return {
@@ -284,6 +338,39 @@ export function parseConsolidation(text: string, allowed: ReadonlyArray<string>,
       .filter((k) => inScope(k) && k.title.trim() !== "")
       .map((k) => ({ scope: k.scope, title: k.title.trim(), text: k.text.trim() }))
   }
+}
+
+// Pages are read in parts: past this, a read gets the start and the page's headings, to read one by its section.
+export const PAGE_READ_CHARS = 24_000
+const HEADING = /^(#{1,6})\s+(.*)$/
+const headings = (lines: ReadonlyArray<string>) => lines.flatMap((l, i) => { const h = HEADING.exec(l); return h ? [{ i, level: h[1]!.length, title: h[2]!.trim() }] : [] })
+
+// What zorel_knowledge_read returns: the section asked for (with its subsections), else the page, cut at
+// PAGE_READ_CHARS with its headings listed so the agent reads only the part it needs.
+export function readPage(title: string, body: string, section?: string): { text: string; error?: true } {
+  const lines = body.split("\n")
+  const hs = headings(lines)
+  const toc = hs.map((h) => `${"  ".repeat(h.level - 1)}- ${h.title}`).join("\n")
+  const want = section?.trim().replace(/^#+\s*/, "").toLowerCase()
+  if (want) {
+    const h = hs.find((x) => x.title.toLowerCase() === want) ?? hs.find((x) => x.title.toLowerCase().includes(want))
+    if (!h) return { text: `No section "${section}" in "${title}". Its sections:\n${toc || "(none)"}`, error: true }
+    const end = hs.find((x) => x.i > h.i && x.level <= h.level)?.i
+    const part = lines.slice(h.i, end).join("\n")
+    return { text: `# ${title} › ${h.title}\n\n${cut(part)}` }
+  }
+  if (body.length <= PAGE_READ_CHARS) return { text: `# ${title}\n\n${body}` }
+  return { text: `# ${title} (first ${PAGE_READ_CHARS} of ${body.length} characters; read a part with section)\n\nSections:\n${toc || "(none)"}\n\n${body.slice(0, PAGE_READ_CHARS)}…` }
+}
+const cut = (t: string) => (t.length > PAGE_READ_CHARS ? `${t.slice(0, PAGE_READ_CHARS)}… (cut: read a smaller section)` : t)
+
+// The heading above the first place any of the words appears ("Deploy › Rollback"), for a search hit.
+export function sectionOf(body: string, words: ReadonlyArray<string>): string | undefined {
+  const lines = body.split("\n")
+  const lower = lines.map((l) => normalize(l))
+  const at = lower.findIndex((l) => words.some((w) => l.includes(w)))
+  if (at < 0) return undefined
+  return headings(lines).filter((h) => h.i <= at).at(-1)?.title
 }
 
 // The words around the first match, on one line.

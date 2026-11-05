@@ -212,3 +212,30 @@ test("pages: every edit a version; search by words in scopes; pinned titles", ()
       expect((yield* r.pinnedPages(["project:p1"])).map((p) => p.title)).toEqual(["Deploy"])
     })
   ))
+
+test("skills by agent: search and lists hide what's limited to other agents; an agent's own scope and the unlimited ones stay", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const p = yield* r.createProject({ name: "Site", brief: "" })
+      const scope = `project:${p.id}`
+      const some = (title: string, agents: string[], s = scope) => r.addMemory({ scope: s, kind: "skill", title, text: `${title} steps for deploy`, state: "active", origin: "manual", chatId: null, agents })
+      yield* some("Rev deploy", ["rev"])
+      yield* some("Shared deploy", [])
+      yield* some("Own deploy", ["other"], "agent:dev") // the agent scope isn't limited by the list
+      const titles = (xs: ReadonlyArray<{ title: string }>) => xs.map((m) => m.title).sort()
+      const scopes = [scope, "agent:dev"]
+      expect(titles(yield* r.activeMemories(scopes, "skill", undefined, "rev"))).toEqual(["Own deploy", "Rev deploy", "Shared deploy"])
+      expect(titles(yield* r.activeMemories(scopes, "skill", undefined, "dev"))).toEqual(["Own deploy", "Shared deploy"])
+      expect(titles(yield* r.activeMemories(scopes, "skill", undefined, null))).toEqual(["Own deploy", "Shared deploy"])
+      expect(titles(yield* r.activeMemories(scopes, "skill"))).toEqual(["Own deploy", "Rev deploy", "Shared deploy"]) // no agent given: unfiltered
+      expect(titles(yield* r.searchMemories(scopes, "deploy", [], 10, "skill", undefined, "dev"))).toEqual(["Own deploy", "Shared deploy"])
+      expect(titles(yield* r.searchMemories(scopes, "deploy", [], 10, "skill", undefined, "rev"))).toEqual(["Own deploy", "Rev deploy", "Shared deploy"])
+      // only a skill can be limited
+      const fact = (yield* r.addMemory({ scope, text: "A fact", state: "active", origin: "manual", chatId: null, agents: ["rev"] }))!
+      expect(fact.agents).toEqual([])
+      // editing the list
+      const rev = (yield* r.activeMemories([scope], "skill")).find((m) => m.title === "Rev deploy")!
+      yield* r.updateMemory(rev.id, { agents: [] })
+      expect(titles(yield* r.activeMemories([scope], "skill", undefined, "dev"))).toEqual(["Rev deploy", "Shared deploy"])
+    })
+  ))
