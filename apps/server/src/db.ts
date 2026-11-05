@@ -3,7 +3,7 @@
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { type Access, type Agent, type AgentPermissions, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type Switch } from "@zorel/contracts"
 import type { Approval, ApprovalOutcome, Turn, WorkStep } from "@zorel/contracts/events"
-import { and, asc, desc, eq, gt, inArray, isNull, ne, notInArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { LOCAL_ACTOR } from "./access.ts"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
@@ -237,8 +237,9 @@ export const repository = (db: Db) => {
     // ---------- chats and messages ----------
     chats: () => orDie(db.select().from(chats).where(eq(chats.hidden, false)).orderBy(desc(chats.createdAt)).pipe(Effect.flatMap(withMembers))),
     // A screen's own conversations (the Builder's) in a project or General: replaced each time the screen opens.
-    hiddenChats: (projectId: string | null) =>
-      orDie(db.select({ id: chats.id }).from(chats).where(and(eq(chats.hidden, true), projectId ? eq(chats.projectId, projectId) : isNull(chats.projectId)))),
+    // Hidden chats (the Builder's) of a project, created before `before` (ms).
+    hiddenChats: (projectId: string | null, before: number) =>
+      orDie(db.select({ id: chats.id }).from(chats).where(and(eq(chats.hidden, true), lt(chats.createdAt, before), projectId ? eq(chats.projectId, projectId) : isNull(chats.projectId)))),
     // Only chats already in that group move: a chat never changes project by reordering.
     reorderChats: (projectId: string | null, ids: ReadonlyArray<string>) =>
       orDie(

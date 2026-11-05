@@ -42,6 +42,8 @@ import { listProcs, type Proc, sample, subtree } from "./procs.ts"
 import { closeTerminal, liveTerminals, scriptsOf, serversUnder, TerminalSocket, terminalsOf } from "./terminals.ts"
 import { BrowserService, BrowserSocket } from "./browser.ts"
 
+const BUILDER_KEEP_MS = 60 * 60 * 1000 // a Builder conversation younger than this is someone's, not litter
+
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
 const found = <A, E, R>(e: Effect.Effect<A | undefined, E, R>) => Effect.flatMap(e, (a) => (a === undefined ? notFound() : Effect.succeed(a)))
 const exists = <A>(e: Effect.Effect<A | undefined>) => Effect.map(e, (a) => a !== undefined)
@@ -138,8 +140,9 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
           const existing = found && found.instructions !== BUILDER.instructions ? yield* store.updateAgent(found.id, { instructions: BUILDER.instructions, description: BUILDER.description }, "Zorel") : found
           const builder = existing ?? (yield* store.createAgent({ projectId: null, name: BUILDER.name, title: BUILDER.title, description: BUILDER.description, instructions: BUILDER.instructions, model: payload.model, access: BUILDER.access, builtin: "builder" }))
           if (!existing) yield* audit.record(Actions.agentCreated, { target: builder, after: { name: builder.name, model: builder.model, access: builder.access } })
-          // Each visit starts fresh: the screen's previous conversation here goes away.
-          for (const old of yield* store.hiddenChats(payload.projectId)) yield* store.removeChat(old.id)
+          // Each visit starts fresh. Old Builder conversations are tidied away, but never one opened in the last
+          // hour: another tab, window or the desktop app may be in the middle of it (deleting it broke their send).
+          for (const old of yield* store.hiddenChats(payload.projectId, Date.now() - BUILDER_KEEP_MS)) yield* store.removeChat(old.id)
           const chat = yield* store.createChat({ projectId: payload.projectId, agentIds: [builder.id], model: payload.model, hidden: true })
           return (yield* store.updateChat(chat.id, { title: "Build agents" }))!
         })
