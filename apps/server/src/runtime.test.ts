@@ -1,7 +1,7 @@
 // Phase 1 criteria (ARCHITECTURE §13): resend doesn't duplicate, interrupt keeps the partial,
 // kill -9 mid-turn becomes `interrupted` with the partial text on the next boot.
 import { expect, test } from "bun:test"
-import type { ChatEvent } from "@zorel/contracts/events"
+import { type ChatEvent, ErrorCode } from "@zorel/contracts/events"
 import { Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -260,6 +260,46 @@ test("steering: joins the running turn when the session can; otherwise it become
     expect((yield* store.messages(chat.id)).at(-1)).toMatchObject({ role: "assistant", text: "ok" })
   })))
 
+// No steering in the engine: the first call hangs after "part"; later ones answer.
+const hangs = { calls: 0 }
+const HangThenEcho = Layer.succeed(Engines, {
+  run: (t) =>
+    hangs.calls++ === 0
+      ? Stream.concat(Stream.make<EngineEvent[]>({ type: "text", delta: "part" }), Stream.never)
+      : Stream.make<EngineEvent[]>({ type: "text", delta: `echo: ${t.messages.at(-1)!.text}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+})
+
+test("steering without engine support: stops the running turn and sends the message as the next one", () =>
+  runWith(":memory:", HangThenEcho, Effect.gen(function* () {
+    hangs.calls = 0
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "long job" })
+    while (!c.events.some((e) => e._tag === "text")) yield* Effect.sleep("10 millis")
+    yield* runtime.steer(chat.id, "do this now")
+    yield* c.done
+    const msgs = yield* store.messages(chat.id)
+    expect(msgs.map((m) => [m.role, m.text])).toEqual([["user", "long job"], ["assistant", "part"], ["user", "do this now"], ["assistant", "echo: do this now"]])
+    expect(c.events.some((e) => e._tag === "interrupted")).toBe(true) // the first turn was stopped, not left running
+    expect(yield* store.activeTurns(chat.id)).toEqual([])
+  })))
+
+test("steering with images: the running turn is stopped too, the message is not lost", () =>
+  runWith(":memory:", Steerable, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "codex-cli/default" })
+    const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "slow" })
+    while (!c.events.some((e) => e._tag === "text")) yield* Effect.sleep("10 millis")
+    yield* runtime.steer(chat.id, "look at this", ["no-such-attachment"])
+    yield* c.done
+    expect(c.events.some((e) => e._tag === "interrupted")).toBe(true)
+    expect((yield* store.messages(chat.id)).at(-1)).toMatchObject({ role: "assistant", text: "ok" })
+  })))
+
 test("effort: the chat's level reaches the session on every turn", () =>
   runWith(":memory:", Sessions, Effect.gen(function* () {
     const store = yield* Store
@@ -467,7 +507,7 @@ test("start_task: the teammate's answer comes back to the asking chat and the as
     const runtime = yield* Runtime
     const lead = yield* store.createAgent({ projectId: null, name: "Lead", instructions: "", model: "x/y" })
     yield* store.createAgent({ projectId: null, name: "Helper", instructions: "", model: "x/y" })
-    const chat = yield* store.createChat({ projectId: null, agentIds: [lead.id], model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [lead.id], model: "x/y", access: "workspace" })
     yield* runtime.send({ chatId: chat.id, clientId: "task-1", text: "delegate" })
     let msgs = yield* store.messages(chat.id)
     for (let i = 0; i < 300 && msgs.length < 4; i++) {
@@ -477,6 +517,9 @@ test("start_task: the teammate's answer comes back to the asking chat and the as
     expect(msgs.map((m) => m.text.split("\n")[0])).toEqual(["delegate", "started", "the answer is 42", "thanks, got it"])
     expect(msgs[2]!.text).toContain("[Open the task](#/chat/")
     expect(yield* store.openTasks()).toEqual([]) // reported once
+    expect((yield* store.chats()).find((c) => c.id !== chat.id)?.access).toBe("workspace") // the chat's level carries over
+    const runs = yield* store.agentRuns(lead.id) // its sessions' runs, newest first: the wrap-up, then the delegation
+    expect(runs.map((r) => [r.chatId, r.state, r.preview])).toEqual([[chat.id, "completed", "thanks, got it"], [chat.id, "completed", "started"]])
   })))
 
 // zorel_ask_user: the agent waits on a question card; the person's answer comes back as the tool's result.
@@ -600,4 +643,109 @@ test("router: a message naming no one goes to the teammate the router picks", ()
     const note = c.events.find((e) => e._tag === "handoff")
     expect(note?._tag === "handoff" && [note.via, note.to, note.reason]).toEqual(["route", [helper.id], "its remit"])
     expect((yield* store.messages(chat.id)).at(-1)!.text).toBe("Helper: on it")
+  })))
+
+// Settings › General › "Agents working at once": over the limit a chat keeps its turn queued and waits in line; when a
+// chat at work ends (here: stopped), the one waiting starts on its own.
+test("a limit on chats at work: over it a chat waits for a free slot, then starts by itself", () =>
+  runWith(":memory:", Hanging, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const stateOf = (chatId: string) => store.activeTurns(chatId).pipe(Effect.map((ts) => ts.map((t) => t.state)))
+    const until = (chatId: string, state: string) =>
+      Effect.gen(function* () {
+        for (let i = 0; i < 100; i++) {
+          if ((yield* stateOf(chatId)).includes(state as never)) return
+          yield* Effect.sleep("20 millis")
+        }
+        throw new Error(`${chatId} never reached ${state}`)
+      })
+    yield* runtime.setMaxRunning(1)
+    const a = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const b = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    yield* runtime.send({ chatId: a.id, clientId: crypto.randomUUID(), text: "first" })
+    yield* until(a.id, "running")
+    yield* runtime.send({ chatId: b.id, clientId: crypto.randomUUID(), text: "second" })
+    yield* Effect.sleep("150 millis")
+    expect(yield* stateOf(b.id)).toEqual(["queued"]) // the one slot is taken: it waits
+    yield* runtime.interrupt(a.id)
+    yield* until(b.id, "running") // the slot freed: it started without being sent again
+    yield* runtime.interrupt(b.id)
+  })))
+
+// Per-agent token limits, Retry and archive. The engine reports a big reply the first time it runs, then echoes.
+const BigThenEcho = () => {
+  let calls = 0
+  return Layer.succeed(Engines, {
+    run: (t) => {
+      calls++
+      if (calls === 1) return Stream.concat(Stream.make<EngineEvent[]>({ type: "text", delta: "long" }, { type: "usage", usage: { inputTokens: 5000, outputTokens: 10, cachedTokens: 0 } }), Stream.never)
+      return Stream.make<EngineEvent[]>({ type: "text", delta: `again: ${t.messages.at(-1)!.text}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+    }
+  })
+}
+const Spends = Layer.succeed(Engines, {
+  run: () => Stream.make<EngineEvent[]>({ type: "text", delta: "ok" }, { type: "done", usage: { inputTokens: 1500, outputTokens: 0 } })
+})
+const replies = (chatId: string) =>
+  Effect.gen(function* () {
+    const store = yield* Store
+    for (let i = 0; i < 100; i++) {
+      const ms = (yield* store.messages(chatId)).filter((m) => m.role === "assistant")
+      if (ms.length) return ms
+      yield* Effect.sleep("20 millis")
+    }
+    return []
+  })
+const nthReply = (chatId: string, n: number) =>
+  Effect.gen(function* () {
+    const store = yield* Store
+    for (let i = 0; i < 100; i++) {
+      const ms = (yield* store.messages(chatId)).filter((m) => m.role === "assistant")
+      if (ms.length >= n) return ms
+      yield* Effect.sleep("20 millis")
+    }
+    return (yield* store.messages(chatId)).filter((m) => m.role === "assistant")
+  })
+
+test("a reply past its agent's token limit stops there; Retry has the agent answer again", () =>
+  runWith(":memory:", BigThenEcho(), Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const a = yield* store.createAgent({ projectId: null, name: "Writer", instructions: "", model: "x/y" })
+    yield* store.updateAgent(a.id, { replyTokens: 1000 })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [a.id], model: "x/y" })
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "write it all" })
+    const [first] = yield* replies(chat.id)
+    expect(first).toMatchObject({ error: ErrorCode.replyLimit, text: "long", agentId: a.id }) // stopped with what it had
+    yield* runtime.retry(chat.id, first!.id)
+    const all = yield* nthReply(chat.id, 2)
+    // The same agent answers again, seeing what it already wrote (its partial reply is in the conversation).
+    expect(all.at(-1)).toMatchObject({ error: null, agentId: a.id, text: "again: long" })
+  })))
+
+test("an agent over its month's tokens doesn't start, and says so", () =>
+  runWith(":memory:", Spends, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const a = yield* store.createAgent({ projectId: null, name: "Spender", instructions: "", model: "x/y" })
+    yield* store.updateAgent(a.id, { monthlyTokens: 1000 })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [a.id], model: "x/y" })
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "one" }) // spends 1500: over the month's 1000
+    yield* nthReply(chat.id, 1)
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "two" })
+    const all = yield* nthReply(chat.id, 2)
+    expect(all.at(-1)).toMatchObject({ error: ErrorCode.monthlyLimit, text: "" })
+  })))
+
+test("an archived agent answers no one in its chats", () =>
+  runWith(":memory:", Echo, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const a = yield* store.createAgent({ projectId: null, name: "Gone", instructions: "", model: "x/y" })
+    yield* store.updateAgent(a.id, { archivedAt: Date.now() })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [a.id], model: "x/y" })
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "hello" })
+    const [reply] = yield* replies(chat.id)
+    expect(reply?.agentId).toBeNull() // the chat's model answers, not the archived agent
   })))

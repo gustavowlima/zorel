@@ -1,12 +1,21 @@
 import { expect, test } from "bun:test"
 import { type Agent, DEFAULT_PERMISSIONS } from "@zorel/contracts"
-import { createInput, createInputs, findAgent, narrower, updateInput, visibleTo } from "./team.ts"
+import { createInput, createInputs, effectiveAccess, findAgent, narrower, updateInput, visibleTo } from "./team.ts"
 
 const agent = (over: Partial<Agent>): Agent => ({
   id: "a1", projectId: null, name: "Code Reviewer", title: "", description: "", instructions: "x", model: "claude-cli/claude-sonnet-5-5",
-  accountId: null, effort: null, failover: [], access: "workspace", permissions: DEFAULT_PERMISSIONS, createdAt: 0, ...over
+  accountId: null, effort: null, failover: [], access: "workspace", permissions: DEFAULT_PERMISSIONS, archivedAt: null, monthlyTokens: null, replyTokens: null, createdAt: 0, ...over
 })
 const caller = { model: "codex-cli/default", effort: "high" as const, access: "workspace" as const }
+
+test("effectiveAccess: the chat's level for every agent in it when set, else the agent's own; the Builder keeps its own", () => {
+  expect(effectiveAccess({ access: null }, agent({ access: "ask" }))).toBe("ask")
+  expect(effectiveAccess({ access: "full" }, agent({ access: "ask" }))).toBe("full") // the person widened this chat
+  expect(effectiveAccess({ access: "ask" }, agent({ access: "full" }))).toBe("ask") // or narrowed it
+  expect(effectiveAccess({ access: null }, undefined)).toBe("workspace") // a chat with no agent
+  expect(effectiveAccess({ access: "full" }, undefined)).toBe("full")
+  expect(effectiveAccess({ access: "full" }, agent({ access: "workspace", builtin: "builder" }))).toBe("workspace")
+})
 
 test("narrower keeps the smaller access", () => {
   expect(narrower("full", "workspace")).toBe("workspace")

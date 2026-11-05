@@ -9,11 +9,11 @@ import { type CanUseTool, type Query, query, type SDKMessage, type SDKUserMessag
 import type { Access, AccountWindow } from "@zorel/contracts"
 import { Effect, Queue, Stream } from "effect"
 import { spawn } from "node:child_process"
-import { mkdirSync } from "node:fs"
+import { existsSync, mkdirSync } from "node:fs"
 import { relative } from "node:path"
 import { type CliModel, claudeParser, classifyMessage, type EngineEvent, type NativeStep, splitModel, type TurnFile } from "#server/engines.ts"
 import { approvalFor, decideCommand, decideEdit, decideRead } from "#server/engines/policy.ts"
-import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type NativeApproval } from "#server/engines/session.ts"
+import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type NativeApproval, withoutAppEnv } from "#server/engines/session.ts"
 
 const GATEWAY = "zorel"
 // Claude Code's own tools Zorel turns on: files and shell, plus web search and fetch when the agent may use the web.
@@ -118,12 +118,154 @@ function inbox() {
 // socat on Linux): writes only inside the folder (and temp), no network, and no way for the model to step out of it.
 // Without one (Windows) the shell is held by decideCommand's read-only rule instead.
 export const canSandbox = (platform = process.platform, which = Bun.which) => platform === "darwin" || (platform === "linux" && !!which("bwrap") && !!which("socat"))
-const SANDBOX = {
+// Two layers, because the SDK filters `managedSettings` to restrictions only (what would widen is dropped without a
+// word): the policy tier holds what the user's own settings must never loosen; the flag layer (`sandbox` option)
+// carries what is a choice of Zorel's. `allowLocalBinding` (dev servers on localhost, tests that open a port) and
+// `autoAllowBashIfSandboxed: false` (every command still goes through canUseTool) are not restrictions the policy tier
+// keeps, so they go there. The flag layer outranks the user's, project's and local settings.
+export const SANDBOX_POLICY = {
   enabled: true,
   failIfUnavailable: true, // never run unconfined while the rules assume a sandbox
-  autoAllowBashIfSandboxed: false, // canUseTool still decides (RISKY asks)
   allowUnsandboxedCommands: false,
-  network: { strictAllowlist: true, allowedDomains: [] as string[], allowLocalBinding: true } // dev servers on localhost
+  network: { strictAllowlist: true, allowedDomains: [] as string[] }
+}
+export const SANDBOX_FLAG = {
+  autoAllowBashIfSandboxed: false,
+  network: { allowLocalBinding: true }
+}
+// The settings layers a session opens with. Without a sandbox (full access, or Windows) only the policy lock remains.
+export const settingsLayers = (confined: boolean) => ({
+  managedSettings: { ...SETTINGS.managedSettings, ...(confined && { sandbox: SANDBOX_POLICY }) },
+  ...(confined && { sandbox: SANDBOX_FLAG })
+})
+
+// If a steered turn stays silent this long after a `result` that was held back, it is closed with what it has. The
+// uuid rule decides everything on the normal path; this only keeps a message the CLI dropped from freezing the turn.
+const STEER_LIMIT_MS = 30_000
+
+// Mid-turn steering: a message pushed to the CLI while it answers. Claude Code folds it into the running turn at the
+// next tool boundary, or, when that boundary has passed, answers it in a turn of its own right after this one's
+// `result`. Every message carries a uuid, and the CLI stamps the frames of a turn with the uuids it has consumed
+// (`user_message_uuids`), so what a frame or a `result` belongs to is read, not timed:
+// - a `result` while a steer is still unconsumed is only a segment; the turn ends at the first `result` with none;
+// - a steer left unconsumed by a stop or by the limit would still run in the CLI, out of sight: the session is then
+//   closed (the next turn opens a new one), so Stop really stops and nothing an agent does goes unseen. What a closing
+//   CLI still sends is an orphan's: skipped until a frame shows the next turn's own uuid;
+// - steering is only accepted once the CLI has been seen stamping a uuid of ours, so a CLI that ignores uuids
+//   never gets a steer it could not account for (the runtime stops the turn and sends the message instead).
+export function steerGate(opts: { limitMs?: number; onLimit?: () => void } = {}) {
+  const limitMs = opts.limitMs ?? STEER_LIMIT_MS
+  let live = false
+  let own = ""
+  let stamps = false
+  let orphanTurn = false // frames of an orphan's turn are coming; its `result` ends the skipping
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const pending = new Set<string>()
+  const orphans = new Set<string>()
+  const skipping = () => orphans.size > 0 || orphanTurn
+  const stop = () => {
+    clearTimeout(timer)
+    timer = undefined
+  }
+  const arm = () => {
+    stop()
+    timer = setTimeout(() => {
+      timer = undefined
+      if (skipping()) {
+        console.warn("[claude] a stopped steer never showed up: no longer skipping its frames")
+        orphans.clear()
+        orphanTurn = false
+        // A turn that has seen nothing but skipped frames never got its own stamp: its `result` may be among the
+        // skipped, so it is closed here instead of waiting for the runtime's stall guard.
+        if (live) opts.onLimit?.()
+      } else if (pending.size) {
+        console.warn("[claude] a steer was never consumed: closing the turn with what it has")
+        for (const id of pending) orphans.add(id)
+        pending.clear()
+        opts.onLimit?.()
+      }
+    }, limitMs)
+  }
+  return {
+    begin(ownId: string) {
+      live = true
+      own = ownId
+      pending.clear()
+      if (skipping()) arm()
+    },
+    end() {
+      stop()
+      live = false
+      pending.clear()
+    },
+    // False when no turn is running or the CLI has not shown it stamps our uuids (the caller sends it another way).
+    accept(id: string) {
+      if (!live || !stamps) return false
+      pending.add(id)
+      return true
+    },
+    // The steers the CLI has not taken yet become orphans (a stop or the limit); how many, so the caller can close the
+    // session before the CLI runs them as turns of their own.
+    abandon() {
+      const left = pending.size
+      for (const id of pending) orphans.add(id)
+      pending.clear()
+      return left
+    },
+    // A frame names the sends the CLI has taken into its turn.
+    consumed(ids: ReadonlyArray<string> | undefined) {
+      for (const id of ids ?? []) pending.delete(id)
+    },
+    // What to do with a message: "skip" (an orphan's), "pass", "segment" (a `result` that is not the last) or "finish".
+    see(type: string, ids: ReadonlyArray<string> = []): "pass" | "skip" | "segment" | "finish" {
+      let theirs = false
+      for (const id of ids) {
+        if (id === own || pending.has(id)) stamps = true
+        pending.delete(id)
+        if (orphans.delete(id)) theirs = true
+      }
+      if (ids.includes(own)) {
+        orphans.clear() // an orphan batched with this turn's message is answered here
+        orphanTurn = false
+      } else if (theirs) orphanTurn = true
+      if (skipping()) {
+        if (type === "result") orphanTurn = false
+        arm()
+        return "skip"
+      }
+      if (type !== "result") {
+        if (timer) arm() // still waiting on a steer: any sign of life restarts the clock
+        return "pass"
+      }
+      if (!pending.size) {
+        stop()
+        return "finish"
+      }
+      arm()
+      return "segment"
+    }
+  }
+}
+
+// One `done` for the whole turn: the last result with the usage of every segment added up.
+const USAGE_KEYS = ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"] as const
+export function mergeResults(segments: ReadonlyArray<SDKMessage>, last: SDKMessage): SDKMessage {
+  if (!segments.length || last.type !== "result") return last
+  const usage: Record<string, number> = {}
+  for (const r of [...segments, last]) {
+    const u = r.type === "result" ? (r.usage as unknown as Record<string, unknown> | undefined) : undefined
+    for (const k of USAGE_KEYS) usage[k] = (usage[k] ?? 0) + (typeof u?.[k] === "number" ? (u[k] as number) : 0)
+  }
+  return { ...last, usage: { ...(last.usage as object), ...usage } } as unknown as SDKMessage
+}
+
+// The cost is not summed: `total_cost_usd` is cumulative for the session (each result carries the running total), and
+// Zorel prices a turn from its tokens anyway. `usage` is per turn, so the segments' usage is added.
+// A segment that failed is not folded into the usage: it goes to the turn as the error it is.
+const failedResult = (m: SDKMessage) => m.type === "result" && (m.is_error === true || m.subtype !== "success")
+const consumedBy = (m: SDKMessage): string[] => {
+  const f = m as { user_message_uuids?: string[]; user_message_uuid?: string }
+  return f.user_message_uuids ?? (f.user_message_uuid ? [f.user_message_uuid] : [])
 }
 
 // Claude Code's own settings: the user's, the project's and the local ones load, so the
@@ -151,9 +293,12 @@ async function userMessage(text: string, images: ReadonlyArray<TurnFile> = [], c
 }
 
 // The SDK replaces the child env entirely: copy ours, minus undefined values.
-const childEnv = (configDir: string | undefined) => {
+// macOS ships bash 3.2 as /bin/bash (it refuses a heredoc inside `$(...)` and more), and the app may start with that
+// as $SHELL: Claude Code's commands run in zsh there, unless the person set a shell of their own.
+export function childEnv(configDir: string | undefined, platform: NodeJS.Platform = process.platform, base: NodeJS.ProcessEnv = process.env, exists: (path: string) => boolean = existsSync) {
   const env: Record<string, string> = {}
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
+  for (const [k, v] of Object.entries(withoutAppEnv(base))) if (v !== undefined) env[k] = v
+  if (platform === "darwin" && !env.CLAUDE_CODE_SHELL && exists("/bin/zsh")) env.CLAUDE_CODE_SHELL = "/bin/zsh"
   if (configDir) env.CLAUDE_CONFIG_DIR = configDir
   // A gateway call may wait on an approval card (up to 30 min): Claude Code's MCP timeout must outlast it.
   env.MCP_TOOL_TIMEOUT = String(GATEWAY_TOOL_TIMEOUT_MS)
@@ -183,6 +328,16 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
   let listener: ((m: SDKMessage | undefined) => void) | undefined // undefined message: process ended
   let ended: string | undefined
   let pid: number | undefined
+  let limit: (() => void) | undefined // closes the running turn when a steer was never consumed (see steerGate)
+  // A steer the CLI holds but never answered in this turn: after the turn the session closes, so the CLI can't run it
+  // unseen (the runtime opens a new session for the next turn).
+  let retire = false
+  const closeCli = (why: string) => {
+    ended ??= why
+    box.close()
+    q.close()
+  }
+  const gate = steerGate({ onLimit: () => limit?.() })
   const q = query({
     prompt: box,
     options: {
@@ -195,8 +350,8 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
       allowedTools: [`mcp__${GATEWAY}`], // the gateway applies policy and approvals
       canUseTool: permissions(o.access, o.cwd, o.approve, o.web, o.nativeSkills, confined),
       ...SETTINGS,
-      // Managed tier: the user's own settings can't loosen it (strictAllowlist is honored only there).
-      managedSettings: { ...SETTINGS.managedSettings, ...(confined && { sandbox: SANDBOX }) },
+      // Policy tier (the user's own settings can't loosen it) plus the flag layer for what the tier would drop.
+      ...settingsLayers(confined),
       mcpServers: { [GATEWAY]: { type: "http", url: o.gatewayUrl } },
       strictMcpConfig: true,
       persistSession: false, // Zorel's context is the source of truth; resuming uses the checkpoint
@@ -249,35 +404,93 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
         }
         const parser = claudeParser()
         const steps = stepTracker(o.cwd)
+        // Tokens so far in this turn: each assistant message carries its model call's usage, summed as they come (a
+        // reply's token limit reads it; the turn's `done` still reports the CLI's own total).
+        const sofar = { inputTokens: 0, outputTokens: 0, cachedTokens: 0 }
+        const usageOf = (m: SDKMessage): EngineEvent[] => {
+          const u = m.type === "assistant" ? (m.message.usage as unknown as Record<string, unknown> | undefined) : undefined
+          if (!u) return []
+          const n = (k: string) => (typeof u[k] === "number" ? (u[k] as number) : 0)
+          sofar.inputTokens += n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens")
+          sofar.outputTokens += n("output_tokens")
+          sofar.cachedTokens += n("cache_read_input_tokens")
+          return [{ type: "usage", usage: { ...sofar } }]
+        }
+        const line = (m: SDKMessage) => emit([...steps(m), ...parser.line(JSON.stringify(m)), ...usageOf(m)]) // SDK messages are the CLI's stream-json lines
+        const segments: SDKMessage[] = [] // results of the steered turn's earlier segments (see steerGate)
+        // After a segment fails its error is already the turn's: the rest is drained, not shown. Text from the steered
+        // message arriving after the error would land on a turn the person already sees as failed, and the CLI's
+        // remaining `result`s still have to be read so they don't end the next turn early.
+        let failed = false
+        limit = () => {
+          retire = true
+          const last = segments.pop()
+          if (last && !failed) line(mergeResults(segments, last))
+          else if (!failed) emit([{ type: "error", message: "Claude Code stopped answering.", failure: { reason: "unavailable" } }]) // nothing of this turn came through
+          finish()
+        }
         listener = (m) => {
           if (!m) {
+            gate.end()
             emit(parser.end(null, ended ?? ""))
             return finish()
           }
-          emit([...steps(m), ...parser.line(JSON.stringify(m))]) // SDK messages are the CLI's stream-json lines
-          if (m.type === "result") finish()
+          const next = gate.see(m.type, consumedBy(m))
+          if (next === "skip") return
+          if (failed) return next === "finish" ? finish() : undefined
+          if (m.type !== "result") return line(m)
+          if (failedResult(m)) {
+            failed = true
+            line(m)
+          } else if (next === "segment") {
+            segments.push(m)
+            return
+          } else line(mergeResults(segments, m))
+          if (next === "finish") finish()
         }
-        box.push(yield* Effect.promise(() => userMessage(input.prompt, input.images, input.command)))
+        const own = crypto.randomUUID() // the CLI stamps this turn's frames with it
+        gate.begin(own)
+        box.push({ ...(yield* Effect.promise(() => userMessage(input.prompt, input.images, input.command))), uuid: own })
         yield* Effect.promise(() => finished)
+        gate.end()
+        limit = undefined
         listener = undefined
+        if (retire) closeCli("a steer was never answered")
         yield* Queue.end(out)
       }).pipe(
         // Stopping mid-turn: interrupt Claude and wait for that turn's `result`, so it can't leak into the next one.
         Effect.onInterrupt(() =>
           Effect.promise(async () => {
+            // A steer the CLI hasn't taken yet survives the interrupt and would run as a turn of its own, unseen: the
+            // session is closed instead (Stop stops everything); the next turn opens a new one.
+            limit = undefined
             listener = (m) => {
+              if (m) gate.consumed(consumedBy(m)) // one folded in before the stop is not an orphan
               if (!m || m.type === "result") finish()
             }
             await q.interrupt().catch(() => undefined)
             await Promise.race([finished, Bun.sleep(INTERRUPT_GRACE_MS)])
+            const left = gate.abandon()
+            gate.end()
             listener = undefined
+            if (left) closeCli("stopped with a message still waiting")
           })
         )
       )
     })
 
+  // Real steering: the message goes into the running turn (priority "next": at the next tool boundary), so the
+  // CLI answers it as part of that turn. False when no turn is running.
+  const steer: NonNullable<EngineSession["steer"]> = async (text) => {
+    const uuid = crypto.randomUUID()
+    if (ended || !gate.accept(uuid)) return false
+    box.push({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null, priority: "next", uuid })
+    return true
+  }
+
   return {
     turn,
+    steer,
     alive: () => !ended,
     pid: () => pid,
     close: Effect.sync(() => {

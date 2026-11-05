@@ -2,7 +2,7 @@
 // The turn doesn't depend on the client: closing the tab stops nothing; reconnect = subscribe again (snapshot + events).
 // Chaining: a reply that mentions another member queues that member's turn (up to MAX_DEPTH without a message from you).
 import { APPROVAL_MS } from "./engines/session.ts"
-import type { Access, Agent, Chat, Effort, FailoverTarget, FailureReason, FileChange, Step, Switch } from "@zorel/contracts"
+import { type Access, type Agent, type Chat, type Effort, type FailoverTarget, type FailureReason, type FileChange, MAX_RUNNING_DEFAULT, type Step, type Switch } from "@zorel/contracts"
 import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
@@ -16,16 +16,25 @@ import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
 import { cardText, TOO_LARGE } from "./engines/policy.ts"
-import { ASK_TOOL, createInputs, findAgent, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
+import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
+import { freePort, outputTail, PREVIEW_TOOL, previewFolder, previewKey, previewLine, previewUrl, waitForPort } from "./preview.ts"
+import { managerOf, scriptsOf, shellAlive, startShell } from "./terminals.ts"
 import { exposedName, type GatewayHandle, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
 import { asMemory, picked, readSkill } from "./file-skills.ts"
 import { accessChange, browserRoute, mcpRoute, permissionsOf, REQUEST_ACCESS_TOOL, withAlways } from "./permissions.ts"
 
 const MAX_MENTIONS = 3
+export const MAX_RUNNING_KEY = "maxRunning"
+// The preference as stored ("" or absent: the default); never negative.
+export const parseMaxRunning = (stored: string | undefined | null): number => {
+  const n = stored === undefined || stored === null || stored === "" ? MAX_RUNNING_DEFAULT : Number(stored)
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : MAX_RUNNING_DEFAULT
+}
+const WAITING_SLOT = "Waiting for a free slot"
 const MAX_SESSIONS = 8 // live engine processes; the least recently used one closes first
 // APPROVAL_MS (engines/session.ts): a card expires in 30 min and counts as denial
 const SKIP_MS = 10 * 60_000 // §6.1: a route that failed (not a limit) is skipped this long
@@ -69,11 +78,15 @@ export interface RuntimeService {
   // Corrects the agent mid-turn when the engine supports it (Codex); otherwise queues it like `send`.
   readonly steer: (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) => Effect.Effect<void, ChatNotFound>
   readonly interrupt: (chatId: string) => Effect.Effect<void>
+  readonly retry: (chatId: string, messageId: string) => Effect.Effect<void, ChatNotFound>
+  // The chat's Run: the person starts the project's server (as zorel_preview does, with no approval: it's theirs).
+  readonly preview: (chatId: string, input: { script?: string | undefined; command?: string | undefined; folder?: string | undefined }) => Effect.Effect<{ url: string } | { error: string }, ChatNotFound>
   // Pause everything: running turns stop, new ones wait queued, routines don't fire.
   // "Edit from here": the chat's engine sessions close, so the next turn starts from what the chat keeps.
   readonly forget: (chatId: string) => Effect.Effect<void>
   readonly paused: () => boolean
   readonly setPaused: (paused: boolean) => Effect.Effect<void>
+  readonly setMaxRunning: (max: number) => Effect.Effect<void>
   readonly decide: (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">, reason?: string) => Effect.Effect<void, ApprovalNotFound>
   readonly subscribeChat: (chatId: string) => Stream.Stream<ChatEvent, ChatNotFound>
   readonly subscribeStatus: Stream.Stream<ChatStatus>
@@ -84,6 +97,7 @@ export interface RuntimeService {
   readonly closeSession: (key: string) => Effect.Effect<void>
 }
 
+const STEP_RESULT_CHARS = 4000 // of each step's output kept with the reply (its review after the turn)
 const ev = <T extends ChatEvent["_tag"]>(_tag: T, body: Omit<Extract<ChatEvent, { _tag: T }>, "_tag">) => ({ _tag, ...body }) as unknown as ChatEvent
 
 export const makeRuntime = Effect.gen(function* () {
@@ -219,11 +233,39 @@ export const makeRuntime = Effect.gen(function* () {
   const running = new Map<string, Fiber.Fiber<unknown, unknown>>()
   const waiting = new Map<string, Deferred.Deferred<ApprovalOutcome>>()
   const answers = new Map<string, string>() // question id → the person's answer (zorel_ask_user)
+  const previews = new Map<string, { shellId: string; port: number }>() // chat + preview key → its running server
   const tasked = new Map<string, Set<string>>() // turn id → teammates it gave a task to (not chained again by mention)
   // chat id → a hand-off by mention waiting for its teammates' answers, to give the asker a wrap-up turn.
   const wraps = new Map<string, { askerId: string; waiting: Set<string>; covered: boolean; depth: number }>()
   const nameOf = (agent: Agent | undefined) => agent?.name ?? "Assistant"
   const run = <A>(e: Effect.Effect<A>) => Effect.runPromise(e)
+
+  // ---------- previews: shared by zorel_preview (an agent) and the chat's Run (the person) ----------
+  // Where it runs, the line and a free port; a string is what's wrong.
+  const planPreview = async (chat: Chat, args: { script?: unknown; command?: unknown; folder?: unknown }) => {
+    const root = workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined))
+    const where = previewFolder(root, args.folder)
+    if (typeof where === "string") return where
+    const port = await freePort()
+    const built = previewLine(args, scriptsOf(where.dir), managerOf(where.dir), port)
+    if (typeof built === "string") return built
+    return { dir: where.dir, port, ...built, key: `${chat.id}|${previewKey(chat.projectId ?? chat.id, root, where.dir, built.label)}` }
+  }
+  type PreviewPlan = Exclude<Awaited<ReturnType<typeof planPreview>>, string>
+  // The port of the same server still running in this chat (reused, not started twice).
+  const runningPreview = (plan: PreviewPlan) => {
+    const known = previews.get(plan.key)
+    return known && shellAlive(known.shellId) ? known.port : undefined
+  }
+  // Starts it in a shell of the chat (the Terminal panel shows it) and waits until it listens.
+  const launchPreview = async (chat: Chat, plan: PreviewPlan): Promise<{ port: number } | { error: string; tail: string }> => {
+    const shell = startShell(chat.id, plan.dir, plan.label, plan.line, { PORT: String(plan.port) })
+    if (!shell) return { error: "Too many terminals are open", tail: "" }
+    const at = await waitForPort(shell.pid, plan.port, shell.ended)
+    if (at === undefined) return { error: "The server didn't start listening", tail: outputTail(shell.output()) }
+    previews.set(plan.key, { shellId: shell.id, port: at })
+    return { port: at }
+  }
 
   // ---------- turn tools: steps and approvals persisted and published ----------
   // `fixed`: a native session's gateway (one URL for the whole session); without it, one URL per turn.
@@ -231,7 +273,7 @@ export const makeRuntime = Effect.gen(function* () {
   const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, legacy: Step[], onWrite: () => void, fixed?: GatewayHandle, onFinished: (s: WorkStep) => void = () => {}) => {
     const routes = new Map<string, { server: string; tool: string; approve: boolean; writes: boolean; alwaysKey: string }>()
     const perms = permissionsOf(agent)
-    const askFirst = (agent?.access ?? "workspace") === "ask"
+    const askFirst = effectiveAccess(chat, agent) === "ask"
     const defs: ToolDef[] = []
     const step = (title: string, tool: string) => run(store.addStep({ turnId: row.id, kind: "tool", title, tool, files: [], status: "running" }).pipe(Effect.tap((s) => publish(chat.id, ev("step-started", { step: s })))))
     const finish = (s: WorkStep, status: WorkStep["status"], output = "") =>
@@ -255,7 +297,7 @@ export const makeRuntime = Effect.gen(function* () {
     // access is "ask", like any tool that writes.
     if (perms.browser) for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
-    for (const t of [...TEAM_TOOLS, TASK_TOOL, ASK_TOOL, MEMORY_TOOL, ROUTINES_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    for (const t of [...TEAM_TOOLS, TASK_TOOL, ASK_TOOL, MEMORY_TOOL, ROUTINES_TOOL, PREVIEW_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
       return { tools: undefined as TurnTools | undefined, close: () => {} }
@@ -278,6 +320,41 @@ export const makeRuntime = Effect.gen(function* () {
       return textResult(`The user answered: ${answer}`)
     }
 
+    // zorel_preview (preview.ts): the project's dev server on a free port, in a shell of the chat, its page in the chat's
+    // browser. It runs outside the agent's sandbox, so below full access the person approves the exact command.
+    const previewCall = async (args: Record<string, unknown>) => {
+      const plan = await planPreview(chat, args)
+      if (typeof plan === "string") return textResult(plan, true)
+      const show = async (at: number) => {
+        const url = previewUrl(at, args.path)
+        const opened = await browsers
+          .newTab(chat.id, url, profileOf(agent?.id))
+          .then((tab) => browsers.select(chat.id, tab).then(() => true))
+          .catch(() => false) // no browser on this computer: the URL still works in the person's own
+        const look = opened ? ` It's open in this chat's Browser panel${perms.browser ? "; read it with your browser tools" : ""}.` : ""
+        return textResult(`Running at ${url} (port ${at}).${look} Its output is in the Terminal panel, tab "${plan.label}".`)
+      }
+      const known = runningPreview(plan)
+      if (known) return show(known)
+      const s = await step(`Preview ${plan.label}`, PREVIEW_TOOL.name)
+      if (effectiveAccess(chat, agent) !== "full") {
+        const card = { kind: "tool" as const, tool: PREVIEW_TOOL.name, summary: `${nameOf(agent)} wants to run the dev server: ${plan.line}`, args: plan.line, cwd: plan.dir }
+        const outcome = await run(askApproval(chat, row, agent, s, card, plan.key.slice(plan.key.indexOf("|") + 1)))
+        if (outcome === "denied" || outcome === "expired") {
+          await finish(s, "refused")
+          return textResult("The user declined to run it. Ask them to start the server, or go on without the preview.", true)
+        }
+      }
+      onWrite()
+      const r = await launchPreview(chat, plan)
+      if ("error" in r) {
+        await finish(s, "error", r.tail.split("\n").at(-1) || r.error)
+        return textResult(r.tail ? `${r.error}. Its last output:\n${r.tail}` : `${r.error}; ask the user to close one in the Terminal panel.`, true)
+      }
+      await finish(s, "ok", previewUrl(r.port, args.path))
+      return show(r.port)
+    }
+
     // zorel_start_task: checks, then the teammate's own chat. A teammate with wider access than the caller only
     // works on the person's OK (delegating is not a way around one's own access).
     const taskCall = async (args: Record<string, unknown>) => {
@@ -292,8 +369,10 @@ export const makeRuntime = Effect.gen(function* () {
       for (let up = open.find((t) => t.id === chat.id); up?.taskOf; up = open.find((t) => t.id === up!.taskOf)) depth++
       if (depth >= MAX_TASK_DEPTH) return textResult("This is already a task inside a task: do it here, or answer with what you have.", true)
       const s = await step(`Task for ${target.name}`, TASK_TOOL.name)
-      const mine = agent?.access ?? "workspace"
-      if (narrower(target.access, mine) !== target.access) {
+      const mine = effectiveAccess(chat, agent) // the level this chat gives the caller
+      // The level the teammate works at in its task chat (it inherits this chat's): more than the caller's asks first.
+      const theirs = effectiveAccess({ access: chat.access }, target)
+      if (narrower(theirs, mine) !== theirs) {
         const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: TASK_TOOL.name, summary: `${nameOf(agent)} wants ${target.name} (more access than ${nameOf(agent)}) to work on a task`, args: task, cwd: null }))
         if (outcome === "denied" || outcome === "expired") {
           await finish(s, "refused")
@@ -311,8 +390,8 @@ export const makeRuntime = Effect.gen(function* () {
       const all = await run(store.agents())
       const visible = visibleTo(all, chat.projectId)
       // The Builder (Zorel's own) does no work itself: what it proposes is capped at workspace, not at its own "ask";
-      // full access is only ever the person's choice on the agent's page.
-      const caller = { model: agent?.model ?? chat.model, effort: agent?.effort ?? chat.effort, access: agent?.builtin === "builder" ? ("workspace" as const) : (agent?.access ?? ("workspace" as const)) }
+      // and never above its own: a chat set wider lets it work there, not hand that level to the agents it creates.
+      const caller = { model: agent?.model ?? chat.model, effort: agent?.effort ?? chat.effort, access: agent?.builtin === "builder" ? ("workspace" as const) : narrower(effectiveAccess(chat, agent), agent?.access ?? "workspace") }
       const working = (id: string) => [...statuses.values()].some((st) => st.agentId === id && st.state !== "idle")
       if (name === "zorel_list_agents") return textResult(listText(visible, working))
       const target = name === "zorel_create_agent" ? undefined : findAgent(visible, args.agent)
@@ -526,6 +605,7 @@ export const makeRuntime = Effect.gen(function* () {
       }
       if (name === MEMORY_TOOL.name) return memoryCall(args)
       if (name === TASK_TOOL.name) return taskCall(args)
+      if (name === PREVIEW_TOOL.name) return previewCall(args)
       if (name === ASK_TOOL.name) return askCall(args)
       if (TEAM_TOOLS.some((t) => t.name === name)) return teamCall(name, args)
       const builtin = BROWSER_TOOLS.find((t) => t.name === name)
@@ -550,7 +630,7 @@ export const makeRuntime = Effect.gen(function* () {
           (e: unknown) => textResult(e instanceof Error ? e.message.split("\n")[0]! : String(e), true)
         )
         const out = resultText(r)
-        legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, 300) })
+        legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
         await finish(s, r.isError ? "error" : "ok", out)
         return r
       }
@@ -576,7 +656,7 @@ export const makeRuntime = Effect.gen(function* () {
         )
       )
       const out = resultText(r)
-      legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, 300) })
+      legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
       await finish(s, r.isError ? "error" : "ok", out)
       return r
     }
@@ -658,7 +738,7 @@ export const makeRuntime = Effect.gen(function* () {
       // Workspace (§9.1): the project folder is the agents' cwd; a checkpoint before the turn and one after
       // give its diff and its undo.
       const project = projectFor(chat, chat.projectId ? yield* store.project(chat.projectId) : undefined) // a worktree, when the chat has one
-      const access: Access = agent?.access ?? "workspace"
+      const access: Access = effectiveAccess(chat, agent)
       const cwd = workspace.cwdOf(chatId, project)
       const treeBefore = yield* workspace.snapshot(project)
       let markSeen: (at: number) => void = () => {}
@@ -682,6 +762,15 @@ export const makeRuntime = Effect.gen(function* () {
         })
       const started = yield* store.startTurn(row.id)
       yield* publish(chatId, ev("turn-started", { turn: store.toTurn(started) }))
+      // Over its month's tokens (UTC month): the agent doesn't start; the reply says so (raise it on its page).
+      if (agent?.monthlyTokens) {
+        const month = new Date()
+        const since = Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1)
+        if ((yield* store.agentTokensSince(agent.id, since)) >= agent.monthlyTokens) {
+          yield* save("failed", ErrorCode.monthlyLimit)
+          return undefined
+        }
+      }
       yield* setStatus(chatId, "running", agent?.id ?? null, `${nameOf(agent)} is working`)
 
       // One attempt on one route: tools, context, engine stream. Returns the failure, if any.
@@ -737,7 +826,8 @@ export const makeRuntime = Effect.gen(function* () {
               const done = yield* store.finishStep(s, { status: n.status, output: n.output })
               yield* publish(chatId, ev("step-finished", { step: done }))
               watch({ kind: n.kind, title: n.title, status: n.status, output: n.output })
-              if (n.kind !== "read" && n.kind !== "search") acc.steps.push({ tool: n.kind, args: n.kind === "run" ? n.title : n.files.join(", "), status: n.status, result: n.output.slice(0, 300) })
+              // Every step stays with the reply (reads and searches too), with enough of its output to review later.
+              acc.steps.push({ tool: n.kind, args: n.kind === "edit" && n.files.length ? n.files.join(", ") : n.title, status: n.status, result: n.output.slice(0, STEP_RESULT_CHARS) })
             })
           const opened = yield* Effect.promise(() =>
             openTools(chat, attemptRow, agent, acc.steps, () => {
@@ -772,6 +862,10 @@ export const makeRuntime = Effect.gen(function* () {
                 for (const e of batch) {
                   if (e.type === "text") delta += e.delta
                   else if (e.type === "done") acc.usage = { cachedTokens: 0, ...e.usage }
+                  else if (e.type === "usage") {
+                    // Past the agent's limit for one reply: it stops here, with what it has (Continue goes on).
+                    if (agent?.replyTokens && e.usage.inputTokens + e.usage.outputTokens > agent.replyTokens) yield* Deferred.succeed(runaway, ErrorCode.replyLimit)
+                  }
                   else if (e.type === "limits") {
                     if (account) yield* accounts.observe(account.id, e.windows)
                   } else if (e.type === "step") yield* onStep(e.step)
@@ -904,7 +998,8 @@ export const makeRuntime = Effect.gen(function* () {
   const startTask = (origin: Chat, by: Agent | undefined, target: Agent, task: string, reply: boolean) =>
     Effect.gen(function* () {
       const c = yield* store.createChat({
-        projectId: origin.projectId, agentIds: [target.id], model: target.model, accountId: target.accountId, effort: target.effort,
+        // The asking chat's access level comes along: a chat's level covers the work it hands off, too.
+        projectId: origin.projectId, agentIds: [target.id], model: target.model, accountId: target.accountId, effort: target.effort, access: origin.access,
         title: `${target.name}: ${task.replace(/\s+/g, " ").slice(0, 60)}`, taskOf: reply ? origin.id : null, taskBy: by?.id ?? null
       })
       const back = reply
@@ -988,11 +1083,20 @@ export const makeRuntime = Effect.gen(function* () {
       workers.delete(chatId)
       yield* setStatus(chatId, "idle", null, "")
       yield* Effect.forkDetach(consolidate(chatId).pipe(Effect.provide(services), Effect.ignore))
-    }).pipe(Effect.ensuring(Effect.sync(() => workers.delete(chatId))))
+    }).pipe(Effect.ensuring(Effect.suspend(() => {
+      workers.delete(chatId)
+      return freeSlots
+    })))
 
   const PAUSED_KEY = "paused"
   let paused = (yield* store.preference(PAUSED_KEY)) === "1"
-  const ensureWorker = (chatId: string) =>
+  // How many chats may have an agent working at once (Settings › General; 0 = no limit). A chat over the limit keeps its
+  // turn queued and waits in line, oldest first, until a worker ends (each agent is a CLI process and spends from the
+  // subscription). A worker is one chat's queue, run one turn at a time, so a slot is a chat at work.
+  let maxRunning = parseMaxRunning(yield* store.preference(MAX_RUNNING_KEY))
+  const waitingSlot: string[] = []
+  const full = () => maxRunning > 0 && workers.size >= maxRunning
+  const ensureWorker = (chatId: string): Effect.Effect<void> =>
     Effect.suspend(() => {
       if (paused) return Effect.void // the turn stays queued until resume
       const w = workers.get(chatId)
@@ -1000,9 +1104,20 @@ export const makeRuntime = Effect.gen(function* () {
         w.kicked = true
         return Effect.void
       }
+      if (full()) {
+        if (waitingSlot.includes(chatId)) return Effect.void
+        waitingSlot.push(chatId)
+        return setStatus(chatId, "running", null, WAITING_SLOT)
+      }
       workers.set(chatId, { kicked: false })
       return Effect.forkDetach(worker(chatId)).pipe(Effect.asVoid)
     })
+  // A slot freed (a worker ended, or the limit went up): the chats waiting in line start, oldest first.
+  const freeSlots: Effect.Effect<void> = Effect.suspend(() => {
+    const next: string[] = []
+    while (waitingSlot.length && (maxRunning === 0 || workers.size + next.length < maxRunning)) next.push(waitingSlot.shift()!)
+    return Effect.forEach(next, ensureWorker, { discard: true })
+  })
 
   // ---------- boot recovery ----------
   // A `running` turn with no process becomes `interrupted` with the partial text; never repeats an uncertain side effect.
@@ -1082,16 +1197,27 @@ export const makeRuntime = Effect.gen(function* () {
       Effect.gen(function* () {
         const chat = yield* store.chat(chatId)
         if (!chat) return yield* new ChatNotFound({ chatId })
-        yield* addUserMessage(chatId, text, attachmentIds)
-        // Images can't join a running turn: with attachments the correction waits for the next turn.
+        // Images can't join a running turn: with attachments the message goes as a turn of its own.
         const steer = attachmentIds?.length ? undefined : steering.get(chatId)
         const taken = steer ? yield* Effect.promise(() => steer(text)) : false
-        // Not taken mid-turn: it becomes the next turn in the queue (the message is already saved).
-        if (!taken) yield* enqueueFor(chat, text, null)
+        if (taken) return yield* addUserMessage(chatId, text, attachmentIds) // it joins the running turn
+        // Not taken mid-turn ("send now" on an engine that can't steer, or with images): the running turn is stopped
+        // first and waited for, so its partial reply is saved before this message (the history stays in order); then
+        // the message is saved and becomes the next turn, behind any turns already queued (hand-offs, mentions).
+        const fiber = running.get(chatId)
+        if (fiber) yield* Fiber.interrupt(fiber)
+        yield* addUserMessage(chatId, text, attachmentIds)
+        yield* enqueueFor(chat, text, null)
       }),
 
     interrupt: (chatId) =>
       Effect.gen(function* () {
+        // Stopped while waiting for a free slot: it leaves the line (nothing of it ran).
+        const inLine = waitingSlot.indexOf(chatId)
+        if (inLine >= 0) {
+          waitingSlot.splice(inLine, 1)
+          yield* setStatus(chatId, "idle", null, "")
+        }
         for (const t of (yield* store.activeTurns(chatId)).filter((t) => t.state === "queued")) {
           const turn = yield* store.finishTurn(t.id, { state: "interrupted", error: ErrorCode.cancelled, messageId: null })
           yield* publish(chatId, ev("interrupted", { turn, message: null }))
@@ -1101,7 +1227,42 @@ export const makeRuntime = Effect.gen(function* () {
       }),
 
     forget: (chatId) => Effect.forEach([...sessions.keys()].filter((k) => k.startsWith(`${chatId}:`)), closeSession, { discard: true }),
+    // A reply that failed, was stopped or passed its limit: the same agent answers again (the chat's lead if it left
+    // the chat or was archived), as a turn of its own after what's queued. The conversation is its context.
+    preview: (chatId, input) =>
+      Effect.gen(function* () {
+        const chat = yield* store.chat(chatId)
+        if (!chat) return yield* new ChatNotFound({ chatId })
+        return yield* Effect.promise(async () => {
+          const plan = await planPreview(chat, input)
+          if (typeof plan === "string") return { error: plan }
+          const known = runningPreview(plan)
+          const r = known ? { port: known } : await launchPreview(chat, plan)
+          if ("error" in r) return { error: r.tail ? `${r.error}:\n${r.tail}` : r.error }
+          return { url: previewUrl(r.port, undefined) }
+        })
+      }),
+    retry: (chatId, messageId) =>
+      Effect.gen(function* () {
+        const chat = yield* store.chat(chatId)
+        if (!chat) return yield* new ChatNotFound({ chatId })
+        const m = (yield* store.messages(chatId)).find((x) => x.id === messageId)
+        if (!m || m.role !== "assistant" || !m.error) return
+        const team = yield* members(store, chat)
+        const lead = team[0]
+        const who = team.find((a) => a.id === m.agentId) ?? lead
+        const isLead = !who || who.id === lead?.id
+        const t = yield* store.enqueueTurn({ chatId, agentId: who?.id ?? null, model: isLead ? chat.model : who.model, accountId: isLead ? chat.accountId : who.accountId, clientId: null, depth: 0 })
+        yield* publish(chatId, ev("queued", { turn: store.toTurn(t) }))
+        yield* ensureWorker(chatId)
+      }),
     paused: () => paused,
+    setMaxRunning: (max) =>
+      Effect.gen(function* () {
+        maxRunning = Math.max(0, Math.floor(max))
+        yield* store.setPreference(MAX_RUNNING_KEY, String(maxRunning))
+        yield* freeSlots // a higher limit lets the ones in line start now
+      }),
     setPaused: (next) =>
       Effect.gen(function* () {
         paused = next

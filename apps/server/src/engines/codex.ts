@@ -11,7 +11,7 @@ import type { Access, AccountWindow, FailureReason } from "@zorel/contracts"
 import { relative } from "node:path"
 import { type CliModel, classifyMessage, CODEX_DISABLED, type EngineEvent, type EngineFailure, type NativeStep, splitModel, toMillis, type Usage } from "#server/engines.ts"
 import { approvalFor } from "#server/engines/policy.ts"
-import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type SessionTurnInput } from "#server/engines/session.ts"
+import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type SessionTurnInput, withoutAppEnv } from "#server/engines/session.ts"
 
 // Access level → Codex sandbox and approval policy (ARCHITECTURE §9.2). The shell is on in the app-server:
 // commands run in Codex's sandbox and what leaves it asks through Zorel.
@@ -172,7 +172,7 @@ export function codexFailure(error: Json | undefined, windows: ReadonlyArray<Acc
 
 const childEnv = (home: string) => {
   const env: Record<string, string> = {}
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
+  for (const [k, v] of Object.entries(withoutAppEnv(process.env))) if (v !== undefined) env[k] = v
   env.CODEX_HOME = home
   return env
 }
@@ -313,6 +313,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
           } else if (method === "thread/tokenUsage/updated" && p.tokenUsage?.last) {
             const last = p.tokenUsage.last
             usage = { inputTokens: last.inputTokens ?? 0, outputTokens: last.outputTokens ?? 0, cachedTokens: last.cachedInputTokens ?? 0 }
+            emit({ type: "usage", usage }) // so far in this turn (a reply's token limit)
           } else if (method === "turn/completed") {
             const t = p.turn ?? {}
             if (t.status === "completed") emit({ type: "done", usage })

@@ -52,6 +52,12 @@ export const en = {
     projects: "Projects",
     chats: "Chats",
     noChats: "No chats yet",
+    chatsHint: "Conversations outside any project",
+    emptyProjects: "Projects hold chats, files and a team",
+    addProject: "Add project",
+    emptyProjectStart: "No chats in this project · Start one",
+    withModel: "{agent} · {model}",
+    moreFor: "More actions for {name}",
     reorder: "Reorder {name}",
     newProject: "New project",
     newChatIn: "New chat in {name}",
@@ -79,17 +85,22 @@ export const en = {
   },
   home: {
     title: "What are we working on?",
-    subtitle: "Pick a project, type # for who answers, or just start typing.",
+    subtitle: "Pick a project, type # to call an agent, or just start typing.",
     project: "Project",
     noProject: "No project",
     answers: "{name} answers",
     clearAgent: "Stop {name} answering: a plain chat",
     searchProjects: "Search projects",
-    placeholder: "Message · # who answers",
+    placeholder: "Message · # call an agent",
     placeholderPlain: "Message"
   },
   chat: {
     editFromHere: "Edit from here",
+    replyLimit: "Stopped at its reply limit",
+    monthlyLimit: "Over its monthly token limit: it didn't start",
+    continue: "Continue",
+    retry: "Try again",
+    raiseLimit: "Raise the limit",
     rewindTitle: "Edit from here?",
     rewindBody: "This message and everything after it leave the conversation; the message comes back to the box so you can change it and send again.",
     rewindFiles: "Also undo the file changes made after it",
@@ -130,9 +141,12 @@ export const en = {
     cached: "{cached} cached",
     disconnected: "Connection lost. Reconnecting…",
     sendFailed: "The message wasn't sent. It's back in the box.",
+    addFailed: "Couldn't add the agent to the chat, so the message wasn't sent. It's back in the box.",
     approvalGone: "That request was already decided or expired."
   },
   activity: {
+    showAll: "Show all",
+    showLess: "Show less",
     working: "Working",
     waitingFor: "Waiting for {provider}",
     usedTools: { one: "Used 1 tool", other: "Used {count} tools" },
@@ -172,14 +186,14 @@ export const en = {
   },
   composer: {
     label: "Message",
-    placeholder: "Message · # who answers, @ mention, $ skill, / command",
+    placeholder: "Message · # call an agent, @ mention, $ skill, / command",
     queue: "Add to the queue",
     agents: "Agents",
     skills: "Skills",
     commands: "Commands",
-    leads: "Who answers",
+    leads: "Call an agent",
+    addToChat: "Add to chat",
     file: "file",
-    answering: "answers now",
     command: {
       compact: "Compact",
       compactHint: "Fold the older messages into the summary",
@@ -441,6 +455,16 @@ export const en = {
     unsaved: "Unsaved changes"
   },
   agent: {
+    archive: "Archive",
+    restoreArchived: "Restore",
+    archivedTitle: "This agent is archived",
+    archivedBody: "It answers no one and runs no routine; its chats and history stay. Restore it to bring it back to the team.",
+    monthlyLimit: "Monthly token limit",
+    monthlyLimitHint: "Input and output tokens this month (UTC). Over it, the agent doesn't start until next month or a higher limit.",
+    replyLimit: "Per-reply token limit",
+    replyLimitHint: "One reply stops when it passes this, with what it has; Continue goes on. Read while it runs on Claude Code and Codex, at the end elsewhere.",
+    noLimit: "No limit",
+    tokens: "{n} tokens",
     history: "History",
     historyHint: "Every saved version of this agent. Restoring one keeps the current as a version too.",
     current: "Current",
@@ -462,7 +486,26 @@ export const en = {
       access: "access",
       permissions: "tools and access"
     },
-    tabs: { profile: "Profile", tools: "Tools and access", activity: "Knowledge and activity" },
+    tabs: { work: "Work", profile: "Profile", tools: "Tools and access", activity: "Knowledge and activity" },
+    work: {
+      now: "Now",
+      nowHint: "What it's doing this moment.",
+      idle: "Not working on anything right now.",
+      general: "General",
+      running: "Working",
+      waiting: "Waits for you",
+      failed: "Stopped with an error",
+      task: "Task",
+      settings: "Settings of {name}",
+      sessions: "Sessions",
+      sessionsHint: "Each time it worked, the newest first. Each chat is one session of it; a run opens it there.",
+      noSessions: "It hasn't worked yet.",
+      stopped: "Stopped",
+      deletedChat: "Deleted chat",
+      openChat: "Open the chat",
+      watch: "Watch",
+      talk: "Chat with {name}"
+    },
     perm: {
       files: "Files and commands",
       filesHint: {
@@ -728,9 +771,14 @@ export const en = {
       provider: "Provider"
     }
   },
+  mention: {
+    open: "Open {name}"
+  },
   queue: {
     label: "Waiting to send",
-    steer: "Steer",
+    sendNow: "Send now",
+    sendNowJoin: "Adds it to the reply in progress",
+    sendNowStop: "Stops the reply and sends this now",
     edit: "Edit",
     remove: "Remove"
   },
@@ -1055,6 +1103,14 @@ export const en = {
     openPanel: "Open the side panel",
     resizePanel: "Side panel width",
     runScript: "Run a script",
+    run: "Run",
+    starting: "Starting…",
+    runCommand: "Other command…",
+    command: "Command",
+    commandPlaceholder: "python manage.py runserver {port}",
+    commandHint: "Runs in the project's folder on a free port: {port} is replaced by it (and PORT is set).",
+    runFailed: "Couldn't start it.",
+    runFailedTitle: "It didn't start",
     servers: "Servers",
     noServers: "No servers running from this folder.",
     stopServer: "Stop server",
@@ -1128,10 +1184,16 @@ export const en = {
     resume: "Resume",
     banner: "All agents are paused: running work stopped, new messages and routines wait."
   },
+  agentsLimit: {
+    title: "Agents",
+    atOnce: "Agents working at once",
+    atOnceHint: "When more want to work, they wait in line and start as soon as one finishes. Each agent is a process on this computer and spends from your subscription.",
+    noLimit: "No limit"
+  },
   routines: {
     title: "Routines",
-    hint: "Work it does by itself: on a schedule, on demand, or when a local script calls its webhook. Each runs in its own chat.",
-    pageHint: "What your agents do by themselves, on a schedule or when called.",
+    hint: "Work it does by itself: on a schedule, on demand, when a connector has something new, or when a local script calls its webhook. Each runs in its own chat.",
+    pageHint: "What your agents do by themselves: on a schedule, when called, or when something new arrives.",
     emptyTitle: "No routines yet",
     emptyHint: "Pick an agent and what it should do on its own, or ask an agent in a chat to propose one.",
     new: "New routine",
@@ -1147,7 +1209,17 @@ export const en = {
     when: "When",
     cron: "Cron pattern",
     cronHint: "minute hour day month weekday",
-    presets: { hourly: "Every hour", daily: "Every day at 9:00", weekdays: "Weekdays at 9:00", weekly: "Mondays at 9:00", onDemand: "Only on demand", custom: "Custom…" },
+    presets: { hourly: "Every hour", daily: "Every day at 9:00", weekdays: "Weekdays at 9:00", weekly: "Mondays at 9:00", onDemand: "Only on demand", watch: "When something new arrives", custom: "Custom…" },
+    watching: "Watches {server} › {tool}",
+    connector: "Connector",
+    tool: "Tool to check",
+    toolHint: "Checked every 5 minutes; it runs on what's new. Only read-only tools.",
+    noReadTools: "This connector has no read-only tool.",
+    noConnectors: "No connector to watch yet.",
+    addConnector: "Add a connector",
+    args: "Arguments (JSON)",
+    argsHint: "Optional. What the tool is asked, e.g. a repository or a filter.",
+    argsInvalid: "Not a JSON object.",
     webhook: "Also run when a local script calls its webhook",
     create: "Create routine",
     createFailed: "Couldn't create the routine.",
@@ -1231,6 +1303,10 @@ export const en = {
     createdHint: "Open one to set its tools and access."
   },
   agents: {
+    archived: "Archived",
+    archivedHint: "Out of the team: they answer no one and run no routine. Their history stays.",
+    showArchived: "Show",
+    hideArchived: "Hide",
     search: "Search agents",
     noMatch: "No agent matches",
     title: "Agents",
@@ -1247,6 +1323,15 @@ export const en = {
     build: "Build with AI",
     empty: "No agents yet",
     emptyHint: "Describe the work and the Builder proposes the agents, or start from a blank one."
+  },
+  chatAccess: {
+    title: "Access in this chat",
+    hint: "What every agent here may do without asking. The chat's choice is everyone's here, above or below their own.",
+    own: "Agents' own access",
+    ownHint: "Each agent works at the level set on its page.",
+    fullTitle: "Give every agent here full access?",
+    fullBody: "They won't ask before anything: editing or deleting files anywhere, running any command, going online. Use it for sandboxes and work you trust. It stays for this chat until you change it.",
+    fullConfirm: "Give full access"
   },
   access: {
     title: "What it can do without asking",

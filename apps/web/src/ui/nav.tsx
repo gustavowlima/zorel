@@ -20,12 +20,19 @@ import {
 } from "react-aria-components"
 import { cn } from "@/lib/utils"
 import { ChevronRight, GripVertical } from "./icons"
+import { Tooltip } from "./tooltip"
 
 const row =
   "flex w-full min-w-0 shrink-0 cursor-default items-center gap-2.5 rounded-control border text-left text-base outline-none transition-colors duration-120 ease-out motion-reduce:transition-none"
 const state = (active: boolean | undefined) => (active ? "border-subtle bg-canvas font-medium text-fg" : "border-transparent text-secondary")
 // The open chat: a raised chip on the frame, apart from the card.
 const chip = "border-transparent bg-surface text-fg shadow-chip"
+// A row's actions (the ⋯, +) sit over what the row shows on the right (the time, the count): they appear on hover,
+// focus or touch, and stay while a menu opened from them is open (its popover lives outside the row, so the row
+// loses hover and focus). The `peer` class lets that spot hide while they show.
+const ACTIONS =
+  "peer pointer-events-none absolute inset-y-0 flex items-center opacity-0 transition-opacity duration-120 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100 has-aria-expanded:pointer-events-auto has-aria-expanded:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 motion-reduce:transition-none"
+const HIDE_FOR_ACTIONS = "group-focus-within/row:invisible group-hover/row:invisible peer-has-aria-expanded:invisible pointer-coarse:invisible"
 const glyphBox = "flex size-5 shrink-0 items-center justify-center text-muted [&_svg]:size-4"
 
 export function NavItem({
@@ -65,26 +72,43 @@ export function NavItem({
   )
 }
 
-// Section title in sentence case with an optional action (e.g. "+" next to Projects). With `onToggle`, the
-// title is a button that collapses and expands the section; its arrow points down while open.
-export function NavLabel({ children, icon, action, expanded, onToggle }: { children: ReactNode; icon?: ReactNode; action?: ReactNode; expanded?: boolean; onToggle?: () => void }) {
+// Section title in sentence case with an optional icon in the icon column, a `hint` tooltip on the title and an
+// action (e.g. "+"). With `onToggle`, the title is a button that collapses and expands the section; its arrow
+// follows the name. While collapsed, `summary` (a count of what needs you) shows before the action.
+export function NavLabel({
+  children,
+  icon,
+  hint,
+  summary,
+  action,
+  expanded,
+  onToggle
+}: {
+  children: ReactNode
+  icon?: ReactNode
+  hint?: string
+  summary?: ReactNode
+  action?: ReactNode
+  expanded?: boolean
+  onToggle?: () => void
+}) {
+  const title = onToggle ? (
+    <Button
+      onPress={onToggle}
+      aria-expanded={!!expanded}
+      className="-ml-1 flex h-control-xs min-w-0 cursor-default items-center gap-1 rounded-control px-1 outline-none transition-colors duration-120 ease-out data-hovered:text-fg data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none"
+    >
+      <span className="truncate">{children}</span>
+      <ChevronRight aria-hidden="true" className={cn("size-3 shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none", expanded && "rotate-90")} />
+    </Button>
+  ) : (
+    <span className="min-w-0 truncate">{children}</span>
+  )
   return (
-    <div className="flex h-control-sm shrink-0 items-center gap-2.5 pr-0.5 pl-2.5 text-sm font-medium text-muted">
+    <div className="flex h-control-sm shrink-0 items-center gap-2.5 pr-0.5 pl-2.5 text-sm font-medium text-secondary">
       {icon && <span className={cn(glyphBox, "[&_svg]:size-3.5")}>{icon}</span>}
-      {onToggle ? (
-        <span className="flex min-w-0 flex-1">
-          <Button
-            onPress={onToggle}
-            aria-expanded={!!expanded}
-            className="-ml-1 flex h-control-xs min-w-0 cursor-default items-center gap-1 rounded-control px-1 outline-none transition-colors duration-120 ease-out data-hovered:text-fg data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none"
-          >
-            <span className="truncate">{children}</span>
-            <ChevronRight aria-hidden="true" className={cn("size-3 shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none", expanded && "rotate-90")} />
-          </Button>
-        </span>
-      ) : (
-        <span className="min-w-0 flex-1 truncate">{children}</span>
-      )}
+      <span className="flex min-w-0 flex-1">{hint && onToggle ? <Tooltip content={hint}>{title}</Tooltip> : title}</span>
+      {!expanded && summary}
       {action}
     </div>
   )
@@ -125,16 +149,20 @@ const navDropIndicator = (target: DropTarget) => (
   <DropIndicator target={target} className="relative z-10 -my-px h-0.5 rounded-full outline-none data-drop-target:bg-accent" />
 )
 
-// One row of the tree. A group (project) opens with the leading arrow and keeps its state on the right (a dot or
-// a spinner), with its actions (settings, new chat) over that spot on hover or focus, taking no clicks while
-// hidden. A leaf (chat) takes the sidebar's full width: an avatar, then its title and time over a second line
-// (`detail`); the open one is a raised chip.
+// One row of the tree. A group (project) shows its icon in the icon column (a folder that turns into the opening
+// arrow on hover or focus) and keeps its state on the right (a count, a dot or a spinner); its actions (+, ⋯) take
+// that spot on hover or focus, and stay shown on touch. A leaf (chat) takes the sidebar's full width: `leading`
+// (an avatar) in the icon column, then its title and time over a second line (`detail`); the actions replace the
+// time on hover, focus or touch, so the line never jumps. The open one is a raised chip. `quiet` is the "show more"
+// row: 28px, muted, its text aligned with the titles above it.
 export function NavTreeItem({
   id,
   textValue,
   active,
   leading,
+  groupIcon,
   strong,
+  quiet,
   title,
   detail,
   trailing,
@@ -148,7 +176,9 @@ export function NavTreeItem({
   textValue: string
   active?: boolean
   leading?: ReactNode // a leaf's avatar
-  strong?: boolean // waiting, unread or open: the title reads in full ink
+  groupIcon?: (open: boolean) => ReactNode // a group's icon (the folder)
+  strong?: boolean // waiting, unread or open: the title is medium weight
+  quiet?: boolean // a "show more" row
   title: ReactNode
   detail?: ReactNode
   trailing?: ReactNode
@@ -172,8 +202,16 @@ export function NavTreeItem({
             className={cn(
               row,
               "relative",
-              hasChildItems ? "h-control gap-1.5 px-2.5" : detail ? cn("h-13 gap-3 rounded-card", nested ? "pr-2.5 pl-6" : "px-2.5") : nested ? "h-control pr-2.5 pl-6" : "h-control px-2.5",
-              hasChildItems ? "border-transparent font-medium text-secondary" : active ? chip : "border-transparent",
+              hasChildItems
+                ? "h-control px-2.5"
+                : quiet
+                  ? cn("h-control-sm", nested ? "pr-2.5 pl-14" : "pr-2.5 pl-10.5")
+                  : detail
+                    ? cn("h-13 gap-3 rounded-card", nested ? "pr-2.5 pl-6" : "px-2.5")
+                    : nested
+                      ? "h-control pr-2.5 pl-6"
+                      : "h-control px-2.5",
+              hasChildItems ? "border-transparent font-medium text-fg" : active ? chip : "border-transparent",
               !active && (isHovered || isFocusVisible) && "bg-hover text-fg",
               !active && isPressed && "bg-control-active",
               isFocusVisible && "ring-2 ring-accent"
@@ -186,36 +224,33 @@ export function NavTreeItem({
             )}
             {/* A group's rows hang, slightly indented, from a hairline under the start of the group's name. */}
             {nested && <span aria-hidden="true" className="pointer-events-none absolute inset-y-1 left-3 w-px bg-subtle" />}
+            {hasChildItems && (
+              // The icon column: the folder, which gives way to the arrow (it opens and closes the group) on hover or focus.
+              <Button slot="chevron" className={cn(glyphBox, "relative rounded-control outline-none data-hovered:text-fg")}>
+                <span className="group-focus-within/row:hidden group-hover/row:hidden">{groupIcon?.(!!isExpanded)}</span>
+                <ChevronRight className={cn("hidden transition-transform duration-150 ease-out group-focus-within/row:block group-hover/row:block motion-reduce:transition-none", isExpanded && "rotate-90")} />
+              </Button>
+            )}
             {leading}
             {detail ? (
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="flex min-w-0 items-center gap-2">
-                  <span className={cn("min-w-0 flex-1 truncate", strong || active ? "font-medium text-fg" : "text-secondary")}>{title}</span>
-                  {trailing && <span className="shrink-0 text-sm font-normal text-muted tabular-nums">{trailing}</span>}
+                  <span className={cn("min-w-0 flex-1 truncate text-fg", (strong || active) && "font-medium")}>{title}</span>
+                  {(trailing || actions) && (
+                    <span className={cn("relative flex h-5 shrink-0 items-center justify-end", actions && "min-w-6")}>
+                      {actions && <span className={cn(ACTIONS, "right-0")}>{actions}</span>}
+                      {trailing && <span className={cn("text-sm font-normal text-muted tabular-nums", actions && HIDE_FOR_ACTIONS)}>{trailing}</span>}
+                    </span>
+                  )}
                 </span>
                 <span className="flex min-w-0 items-center gap-2 text-sm font-normal text-muted">{detail}</span>
               </span>
-            ) : hasChildItems ? (
-              // A group (a project): its name, aligned with the chats, then a small arrow that opens or closes it.
-              <>
-                <span className="min-w-0 truncate">{title}</span>
-                <Button slot="chevron" className="flex size-5 shrink-0 items-center justify-center rounded-control text-muted outline-none data-hovered:text-fg">
-                  <ChevronRight className={cn("size-3 transition-transform duration-150 ease-out motion-reduce:transition-none", isExpanded && "rotate-90")} />
-                </Button>
-                <span className="flex-1" />
-              </>
             ) : (
-              <span className={cn("min-w-0 flex-1 truncate", strong || active ? "font-medium text-fg" : "text-secondary")}>{title}</span>
+              <span className={cn("min-w-0 flex-1 truncate", quiet ? "text-sm text-muted" : strong || active ? "font-medium text-fg" : hasChildItems ? undefined : "text-secondary")}>{title}</span>
             )}
+            {actions && !detail && <span className={cn(ACTIONS, "right-1.5")}>{actions}</span>}
             {trailing && !detail && (
-              <span className={cn("flex shrink-0 items-center text-sm font-normal text-muted tabular-nums", actions && "group-focus-within/row:invisible group-hover/row:invisible")}>
-                {trailing}
-              </span>
-            )}
-            {actions && (
-              <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center bg-inherit opacity-0 transition-opacity duration-120 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100 motion-reduce:transition-none">
-                {actions}
-              </span>
+              <span className={cn("flex shrink-0 items-center text-sm font-normal text-muted tabular-nums", actions && HIDE_FOR_ACTIONS)}>{trailing}</span>
             )}
           </div>
         )}

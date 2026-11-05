@@ -11,24 +11,28 @@ import { memo, type ReactNode, useCallback, useEffect, useId, useLayoutEffect, u
 import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
 import { agentName, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText } from "../labels.ts"
 import { ChatMarkdown } from "./chat-markdown.tsx"
+import { MentionText } from "./mention.tsx"
+import { commandOf, extraArgs } from "./receipt-args.ts"
 import { go } from "../state.ts"
-import { Composer, type ComposerSources } from "./composer.tsx"
+import { agentOptions, callable, toJoin } from "./agent-options.ts"
+import { Composer, type ComposerOption, type ComposerSources, SendError } from "./composer.tsx"
 import { ContextMeter } from "./context-meter.tsx"
 import { QueuePanel, useQueue } from "./queue.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
-import { chatDelta, Delta, type Focus, PinItem, type Pins, type ShellPin, SIDE_ICON, SidePanel, type SideTab, sideLabel, TurnChanges, usePins } from "./workspace.tsx"
+import { chatDelta, Delta, type Focus, PinItem, type Pins, RunControl, type ShellPin, SIDE_ICON, SidePanel, type SideTab, sideLabel, TurnChanges, usePins } from "./workspace.tsx"
 import { ModelPicker } from "./model-picker.tsx"
+import { AccessChip } from "./access-chip.tsx"
 import { GitControl } from "./git.tsx"
 import { ContextMenu, PageHeader, ShimmerText } from "@/ui"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import { ChatProcesses } from "./processes.tsx"
 import { QuestionAnswer } from "./question.tsx"
 import {
-  Button, Check, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
-  MenuSeparator, MessageCircle, MessageCircleQuestion, ShieldAlert, Minimize2, MoreHorizontal, PanelRight, Pencil, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
+  Button, Check, ChevronDown, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
+  MenuSeparator, MessageCircle, MessageCircleQuestion, ShieldAlert, Minimize2, MoreHorizontal, PanelRight, Pencil, RefreshCw, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
 } from "@/ui"
 
-export function ChatView({ chat }: { chat: Chat }) {
+export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) {
   const state = useChat(chat.id)
   const agents = useList(agentsAtom)
   const send = useMutation(mutations.send)
@@ -45,10 +49,21 @@ export function ChatView({ chat }: { chat: Chat }) {
   )
   // While a turn runs, a new message waits in the queue (above the box) and goes out when the chat is free.
   const queue = useQueue(chat.id, busy, state.ready, sendNow)
-  const submit = (text: string, attachmentIds: ReadonlyArray<string>) => {
+  // The agents "#" and "@" offer: everyone this chat can use. One that is not in the chat yet joins it when a
+  // message naming it is sent (not when picked, so a chip taken back leaves no stray member): the server only calls
+  // members, so the send waits for that. The lead and the model stay.
+  const available = callable(agents, chat.projectId)
+  const submit = async (text: string, attachmentIds: ReadonlyArray<string>) => {
+    const joining = toJoin(text, chat.agentIds, available)
+    if (joining.length) {
+      try {
+        await updateChat({ params: { id: chat.id }, payload: { agentIds: [...chat.agentIds, ...joining.map((a) => a.id)] }, reactivityKeys: ["chats", "context"] })
+      } catch {
+        throw new SendError(t("chat.addFailed"))
+      }
+    }
     if (!busy && !queue.items.length) return sendNow(text, attachmentIds)
     queue.add(text, attachmentIds)
-    return Promise.resolve()
   }
   // A queued message brought back to the box remounts it with that text.
   const [draft, setDraft] = useState<{ key: number; text: string }>({ key: 0, text: "" })
@@ -75,6 +90,15 @@ export function ChatView({ chat }: { chat: Chat }) {
     setBrowserUrl({ url })
     setPanel("browser")
   }
+  // An agent started a preview (zorel_preview): its page is the chat's active tab, so the Browser panel opens on it.
+  // Once per preview: the person may close the panel afterwards.
+  const shownPreviews = useRef(new Set<string>())
+  const previewDone = state.live?.steps.find((st) => st.tool === "zorel_preview" && st.status === "ok" && !shownPreviews.current.has(st.id))
+  useEffect(() => {
+    if (!previewDone) return
+    shownPreviews.current.add(previewDone.id)
+    setPanel("browser")
+  }, [previewDone])
   const [focus, setFocus] = useState<Focus>()
   const view = (f: Focus) => {
     setFocus(f)
@@ -87,23 +111,17 @@ export function ChatView({ chat }: { chat: Chat }) {
   const engineCommands = AsyncResult.getOrElse(useAtomValue(commandsAtom(chat.id)), () => [])
   // What "@", "$" and "/" offer in this chat: its agents, the skills it can use, Zorel's commands.
   const scopes = new Set(["user", ...(chat.projectId ? [`project:${chat.projectId}`] : []), ...chat.agentIds.map((id) => `agent:${id}`)])
-  // "#": every agent this chat can use; the one picked answers from now on (joins the chat if it wasn't in it).
-  const available = agents.filter((a) => !a.builtin && (a.projectId === null || a.projectId === chat.projectId))
-  const makeLead = (a: Agent) =>
-    void updateChat({ params: { id: chat.id }, payload: { agentIds: [a.id, ...chat.agentIds.filter((id) => id !== a.id)], model: a.model }, reactivityKeys: ["chats", "context"] })
+  // "#" and "@" call an agent: every one this chat can use (its members first; the rest join it when the message is sent).
+  const people: ComposerOption[] = agentOptions(available, chat.agentIds, { member: (a) => a.title || modelLabel(a.model), outside: t("composer.addToChat") }).map((o) => ({
+    id: o.id,
+    label: o.label,
+    hint: o.hint,
+    icon: <AuthorAvatar agent={o.agent} model={null} size={16} />
+  }))
   const sourcesWith = (files: ReadonlyArray<WorkspaceFile>): ComposerSources => ({
-    leads: available.map((a) => ({
-      id: handleOf(a),
-      label: a.name,
-      hint: a.id === chat.agentIds[0] ? t("composer.answering") : a.title || modelLabel(a.model),
-      icon: <AuthorAvatar agent={a} model={null} size={16} />,
-      run: () => makeLead(a)
-    })),
-    // "@": the members first, then the project's files (the agent reads them with its tools).
-    agents: [
-      ...team.map((a) => ({ id: handleOf(a), label: a.name, icon: <AuthorAvatar agent={a} model={null} size={16} /> })),
-      ...files.filter((f) => f.status !== "deleted").map((f) => ({ id: f.path, label: f.path, hint: t("composer.file"), icon: <File className="size-4" /> }))
-    ],
+    leads: people,
+    // "@": the agents, then the project's files (the agent reads them with its tools).
+    agents: [...people, ...files.filter((f) => f.status !== "deleted").map((f) => ({ id: f.path, label: f.path, hint: t("composer.file"), icon: <File className="size-4" /> }))],
     skills: memories.filter((m) => m.kind === "skill" && m.state === "active" && scopes.has(m.scope)).map((m) => ({ id: skillHandle(m.title), label: m.title, icon: <Sparkles className="size-4" /> })),
     commands: [
       { id: "compact", label: t("composer.command.compact"), hint: t("composer.command.compactHint"), icon: <Minimize2 className="size-4" />, run: compact },
@@ -131,10 +149,11 @@ export function ChatView({ chat }: { chat: Chat }) {
           setShellFocus({ session: pin.session })
           setPanel("terminal")
         }}
+        onRun={openInBrowser}
       />
       <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
-      <Timeline chat={chat} state={state} agents={agents} onView={view} onEdit={setRewind} />
+      <Timeline chat={chat} state={state} agents={agents} onView={view} onEdit={setRewind} at={at} />
       <RewindDialog
         chatId={chat.id}
         message={rewind}
@@ -160,10 +179,13 @@ export function ChatView({ chat }: { chat: Chat }) {
         )}
         <QueuePanel
           items={queue.items}
-          canSteer={busy && splitModel(state.live?.model ?? chat.model).provider === "codex-cli"} // only Codex takes a correction mid-turn
-          onSteer={(item) => {
+          busy={busy}
+          // Claude and Codex take a message into the reply in progress (not with attachments); any other engine stops it.
+          joinsTurn={(item) => !item.attachmentIds.length && ["claude-cli", "codex-cli"].includes(splitModel(state.live?.model ?? chat.model).provider)}
+          onSendNow={(item) => {
             queue.remove(item.id)
-            void steer({ payload: { chatId: chat.id, text: item.text, ...(item.attachmentIds.length && { attachmentIds: item.attachmentIds }) } })
+            // If the server refuses it, it goes back to the queue instead of vanishing.
+            steer({ payload: { chatId: chat.id, text: item.text, ...(item.attachmentIds.length && { attachmentIds: item.attachmentIds }) } }).catch(() => queue.add(item.text, item.attachmentIds))
           }}
           onEdit={(item) => {
             queue.remove(item.id)
@@ -190,7 +212,10 @@ export function ChatView({ chat }: { chat: Chat }) {
                     value={{ model: chat.model, accountId: chat.accountId, effort: chat.effort }}
                     onChange={(v) => void updateChat({ params: { id: chat.id }, payload: v, reactivityKeys: ["chats", "context"] })}
                   />
-                  <ContextMeter chatId={chat.id} onCompact={compact} onNewChat={newChat} />
+                  <AccessChip chat={chat} />
+                  <span className="ml-auto flex">
+                    <ContextMeter chatId={chat.id} onCompact={compact} onNewChat={newChat} />
+                  </span>
                 </>
               }
             />
@@ -254,7 +279,8 @@ function ChatHeader({
   pins,
   panel,
   onSide,
-  onShell
+  onShell,
+  onRun
 }: {
   chat: Chat
   team: ReadonlyArray<Agent>
@@ -266,6 +292,7 @@ function ChatHeader({
   panel: SideTab | undefined
   onSide: (tab: SideTab) => void
   onShell: (pin: ShellPin) => void
+  onRun: (url: string) => void
 }) {
   const projects = useList(projectsAtom)
   const project = projects.find((p) => p.id === chat.projectId)
@@ -326,6 +353,7 @@ function ChatHeader({
               ))}
           </ContextMenu>
         )}
+        {workspace && <RunControl chatId={chat.id} onOpen={onRun} />}
         <ChatProcesses chatId={chat.id} />
         {/* One control for the side panel (Changes, Files, Browser, Terminal live in its tabs); what this chat
             changed shows on it. */}
@@ -456,7 +484,7 @@ export function RenameDialog({ isOpen, onClose, title, onSave }: { isOpen: boole
 
 type Item = { at: number; message: Message } | { at: number; note: Note }
 
-export function Timeline({ chat, state, agents, onView, onEdit }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void }) {
+export function Timeline({ chat, state, agents, onView, onEdit, at }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void; at?: string | undefined }) {
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true) // follow new content only while the reader is at the bottom
   const items: Item[] = [...state.messages.map((m) => ({ at: m.at, message: m })), ...state.notes.map((n) => ({ at: n.at, note: n }))].sort((a, b) => a.at - b.at)
@@ -469,6 +497,19 @@ export function Timeline({ chat, state, agents, onView, onEdit }: { chat: Chat; 
     const el = scroller.current
     if (el && pinned.current) el.scrollTop = el.scrollHeight
   }, [items.length, state.live?.text, state.live?.steps.length, state.approvals.length])
+  // Opened on one reply (an agent's session in its Work tab): that reply in view, marked for a moment.
+  const [marked, setMarked] = useState<string>()
+  const ready = state.ready
+  useLayoutEffect(() => {
+    if (!ready || !at) return
+    const node = scroller.current?.querySelector(`[data-message="${CSS.escape(at)}"]`)
+    if (!node) return
+    pinned.current = false
+    node.scrollIntoView({ block: "start" })
+    setMarked(at)
+    const id = setTimeout(() => setMarked(undefined), 1800)
+    return () => clearTimeout(id)
+  }, [ready, at])
 
   return (
     <div
@@ -493,13 +534,14 @@ export function Timeline({ chat, state, agents, onView, onEdit }: { chat: Chat; 
           "message" in item ? (
             <div
               key={item.message.id}
-              className={cx(item.message.at <= chat.summaryUntil && "opacity-55")}
+              data-message={item.message.id}
+              className={cx("scroll-mt-6 rounded-card transition-colors duration-700", item.message.at <= chat.summaryUntil && "opacity-55", marked === item.message.id && "bg-accent-faint")}
               title={item.message.at <= chat.summaryUntil ? t("chat.coveredBySummary") : undefined}
             >
               {item.message.role === "user" ? (
                 <UserMessage message={item.message} onEdit={state.live ? undefined : () => onEdit(item.message)} />
               ) : (
-                <AgentMessage message={item.message} agents={agents} onView={onView} continued={solo || continues(items[i - 1], item.message)} bare={solo} />
+                <AgentMessage message={item.message} agents={agents} onView={onView} continued={solo || continues(items[i - 1], item.message)} bare={solo} last={i === items.length - 1 && !state.live && state.pending === 0} />
               )}
             </div>
           ) : (
@@ -569,7 +611,9 @@ function UserMessage({ message: m, onEdit }: { message: Message; onEdit?: (() =>
           )}
         </div>
       )}
-      <div className="rounded-sheet bg-surface px-4 py-2.5 text-chat whitespace-pre-wrap">{m.text}</div>
+      <div className="rounded-sheet bg-surface px-4 py-2.5 text-chat whitespace-pre-wrap">
+        <MentionText text={m.text} />
+      </div>
       <MessageActions text={m.text} at={m.at} align="end" onEdit={onEdit} />
     </div>
   )
@@ -710,11 +754,13 @@ function endingOf(error: string | null): { tone: "warning" | "danger"; text: str
   if (!error) return undefined
   if (error === ErrorCode.cancelled) return { tone: "warning", text: t("chat.cancelled") }
   if (error === ErrorCode.serverRestarted) return { tone: "warning", text: t("chat.serverRestarted") }
+  if (error === ErrorCode.replyLimit) return { tone: "warning", text: t("chat.replyLimit") }
+  if (error === ErrorCode.monthlyLimit) return { tone: "warning", text: t("chat.monthlyLimit") }
   if (isInterruption(error)) return { tone: "warning", text: t("chat.interrupted") }
   return { tone: "danger", text: error }
 }
 
-function AgentMessage({ message: m, agents, onView, continued, bare }: { message: Message; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; continued: boolean; bare: boolean }) {
+function AgentMessage({ message: m, agents, onView, continued, bare, last }: { message: Message; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; continued: boolean; bare: boolean; last: boolean }) {
   const accounts = useList(accountsAtom)
   return (
     <div className="flex flex-col gap-6">
@@ -722,7 +768,7 @@ function AgentMessage({ message: m, agents, onView, continued, bare }: { message
         // biome-ignore lint/suspicious/noArrayIndexKey: a saved message's switches never change
         <Separator key={i}>{switchText(sw, accounts)}</Separator>
       ))}
-      <AgentReply message={m} agents={agents} accounts={accounts} onView={onView} continued={continued} bare={bare} />
+      <AgentReply message={m} agents={agents} accounts={accounts} onView={onView} continued={continued} bare={bare} last={last} />
     </div>
   )
 }
@@ -733,9 +779,11 @@ function AgentReply({
   accounts,
   onView,
   continued,
-  bare
-}: { message: Message; agents: ReadonlyArray<Agent>; accounts: ReadonlyArray<ProviderAccount>; onView: (f: Focus) => void; continued: boolean; bare: boolean }) {
+  bare,
+  last
+}: { message: Message; agents: ReadonlyArray<Agent>; accounts: ReadonlyArray<ProviderAccount>; onView: (f: Focus) => void; continued: boolean; bare: boolean; last: boolean }) {
   const ending = endingOf(m.error)
+  const retry = useMutation(mutations.retry)
   const tokens = m.inputTokens || m.outputTokens ? t("chat.tokens", { input: formatCompact(m.inputTokens), output: formatCompact(m.outputTokens) }) : null
   // Which account answered and what it cost; a subscription shows the API equivalent, not a charge.
   const account = accounts.find((a) => a.id === m.accountId)
@@ -755,6 +803,21 @@ function AgentReply({
               <CircleAlert className="size-3.5" />
               {ending.tone === "danger" ? t("chat.failed") : ending.text}
             </span>
+          )}
+          {/* The last reply ended early: answer again (Continue after its reply limit), or raise the month's limit. */}
+          {ending && last && m.error !== ErrorCode.cancelled && (
+            m.error === ErrorCode.monthlyLimit ? (
+              m.agentId && (
+                <Button size="sm" variant="ghost" onPress={() => go({ view: "agent", id: m.agentId! })}>
+                  {t("chat.raiseLimit")}
+                </Button>
+              )
+            ) : (
+              <Button size="sm" variant="ghost" onPress={() => void retry({ payload: { chatId: m.chatId, messageId: m.id } })}>
+                <RefreshCw />
+                {m.error === ErrorCode.replyLimit ? t("chat.continue") : t("chat.retry")}
+              </Button>
+            )
           )}
           <MessageActions
             text={m.text}
@@ -801,25 +864,48 @@ function StoredActivity({ steps, durationMs }: { steps: Message["steps"]; durati
       </DisclosurePill>
       {open && (
         <div className="basis-full">
-        <ol id={id} className="flex max-w-130 flex-col gap-2.5 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
-          {steps.map((s, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: stored steps are immutable and may repeat a tool
-            <li key={i} className="flex gap-2.5">
-              <StepIcon status={s.status} />
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
-                {/* Native steps: "run" keeps the command, "edit" the files; MCP tools keep name and arguments. */}
-                <Code className="self-start break-all">{s.tool === "run" ? `$ ${s.args}` : s.tool === "edit" ? s.args : s.tool}</Code>
-                {s.tool !== "run" && s.tool !== "edit" && s.args && s.args !== "{}" && (
-                  <pre className="overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{s.args}</pre>
-                )}
-                {s.result && <p className="line-clamp-3 text-sm text-muted">{s.result}</p>}
-              </div>
-            </li>
-          ))}
-        </ol>
+          <StepList id={id} steps={steps} />
         </div>
       )}
     </>
+  )
+}
+
+// A finished turn's steps, each with its icon, what it ran or touched and the start of its output (all of it on
+// "Show all"). The chat's reply and the agent's Work tab show the same list.
+export function StepList({ id, steps }: { id?: string; steps: Message["steps"] }) {
+  return (
+    <ol id={id} className="flex max-w-130 flex-col gap-2.5 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
+      {steps.map((s, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: stored steps are immutable and may repeat a tool
+        <StoredStep key={i} step={s} />
+      ))}
+    </ol>
+  )
+}
+
+const NATIVE_LABEL: Record<string, string> = { run: "$", read: "read", search: "search" }
+function StoredStep({ step: s }: { step: Message["steps"][number] }) {
+  const [all, setAll] = useState(false)
+  const long = s.result.length > 240 || s.result.split("\n").length > 3
+  return (
+    <li className="flex gap-2.5">
+      <StepIcon status={s.status} />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        {/* Native steps: "run" keeps the command, "read"/"search" the path or pattern, "edit" the files; MCP tools
+            keep name and arguments. */}
+        <Code className="self-start break-all">{NATIVE_LABEL[s.tool] ? `${NATIVE_LABEL[s.tool]} ${s.args}` : s.tool === "edit" ? s.args : s.tool}</Code>
+        {!NATIVE_LABEL[s.tool] && s.tool !== "edit" && s.args && s.args !== "{}" && (
+          <pre className="overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{s.args}</pre>
+        )}
+        {s.result && (all ? <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{s.result}</pre> : <p className="line-clamp-3 text-sm text-muted">{s.result}</p>)}
+        {s.result && long && (
+          <Button size="sm" variant="ghost" className="-ml-2 self-start" onPress={() => setAll(!all)}>
+            {all ? t("activity.showLess") : t("activity.showAll")}
+          </Button>
+        )}
+      </div>
+    </li>
   )
 }
 
@@ -1043,29 +1129,57 @@ function TrayCard({ icon, label, children }: { icon: ReactNode; label: string; c
   )
 }
 
-// What an approval would run, in one line: the shell command or file it names, else the tool.
-function commandOf(a: Approval): string {
-  try {
-    const args = JSON.parse(a.args) as Record<string, unknown>
-    const first = [args.command, args.cmd, args.file_path, args.path].find((v) => typeof v === "string")
-    if (typeof first === "string") return first
-  } catch {
-    // not JSON: fall back to the tool's name
-  }
-  return a.tool
-}
-
-// A decision already taken: one quiet line ("Allowed · …").
+// A decision already taken: one quiet 28px row (the outcome's icon, "Allowed" or "Denied", what it was, cut to one
+// line) that opens to the whole command, the folder it ran in and every argument, with Copy.
 function ReceiptCard({ receipt: r }: { receipt: Receipt }) {
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const id = useId()
+  const a = r.approval
   const ok = r.outcome === "approved" || r.outcome === "always"
-  const question = r.approval.kind === "question"
+  const question = a.kind === "question"
+  const word = r.outcome === "expired" ? t("approval.expired") : question ? (ok ? t("question.answered") : t("question.skipped")) : ok ? t("approval.approved") : t("approval.denied")
+  const summary = a.summary || a.tool
+  const command = question ? "" : commandOf(a)
+  const extra = question ? undefined : extraArgs(a, command)
+  const copy = () =>
+    void navigator.clipboard.writeText(command === a.tool && extra ? extra : command).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    })
   return (
-    <p className="text-sm text-muted">
-      <span className={ok ? "text-success" : "text-secondary"}>
-        {r.outcome === "expired" ? t("approval.expired") : question ? (ok ? t("question.answered") : t("question.skipped")) : ok ? t("approval.approved") : t("approval.denied")}
-      </span>
-      {` · ${r.approval.summary || r.approval.tool}`}
-    </p>
+    <div className="flex w-full max-w-130 flex-col gap-1">
+      <Button variant="ghost" size="sm" aria-expanded={open} aria-controls={id} onPress={() => setOpen(!open)} className="w-full justify-start gap-2 px-2 font-normal text-muted">
+        {r.outcome === "expired" ? <Clock className="size-3.5 shrink-0" /> : ok ? <CircleCheck className="size-3.5 shrink-0 text-success" /> : <CircleX className="size-3.5 shrink-0" />}
+        <span className="shrink-0 text-secondary">{word}</span>
+        <span className="min-w-0 flex-1 truncate text-left" title={summary}>
+          {summary}
+        </span>
+        <ChevronDown aria-hidden="true" className={cx("size-3.5 shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none", open && "rotate-180")} />
+      </Button>
+      {open && (
+        <div id={id} className="flex flex-col gap-2 rounded-card border border-subtle bg-code px-3 py-2.5 text-sm">
+          {question || !summary.includes(command) ? <p className="text-secondary">{summary}</p> : null}
+          {command && (
+            <div className="flex items-start gap-2">
+              <pre className="min-w-0 flex-1 overflow-auto font-mono whitespace-pre-wrap break-all text-secondary">{command}</pre>
+              <Tooltip content={copied ? t("common.copied") : t("common.copy")}>
+                <IconButton label={t("common.copy")} size="xs" onPress={copy}>
+                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                </IconButton>
+              </Tooltip>
+            </div>
+          )}
+          {a.cwd && <p className="text-muted">{t("approval.folder", { path: a.cwd })}</p>}
+          {extra && (
+            <div className="flex flex-col gap-1">
+              <span className="text-muted">{t("approval.details")}</span>
+              <pre className="max-h-48 overflow-auto font-mono text-muted">{extra}</pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

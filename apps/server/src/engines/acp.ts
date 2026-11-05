@@ -18,7 +18,7 @@ import type { Access } from "@zorel/contracts"
 import { Stream } from "effect"
 import type { EngineEvent, NativeStep } from "../engines.ts"
 import { approvalFor } from "./policy.ts"
-import type { Approver, NativeApproval } from "./session.ts"
+import { type Approver, type NativeApproval, withoutAppEnv } from "./session.ts"
 
 export interface AcpTurn {
   readonly bin: string
@@ -156,7 +156,7 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
     yield { type: "error", message: process.platform === "linux" ? `${t.bin} runs confined in bubblewrap, which isn't installed (install the bubblewrap package), or give this agent Full access.` : `${t.bin} can't be confined on this system yet. Give this agent Full access to run it here.`, failure: { reason: "unavailable" } }
     return
   }
-  const proc = Bun.spawn(cmd, { cwd: t.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, ...t.env } })
+  const proc = Bun.spawn(cmd, { cwd: t.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...withoutAppEnv(process.env), ...t.env } })
   const queue: EngineEvent[] = []
   let wake: (() => void) | undefined
   const push = (e: EngineEvent) => {

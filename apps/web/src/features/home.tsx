@@ -5,7 +5,8 @@ import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
 import { agentsAtom, mutations, projectsAtom, uploadAttachment, useList, useMutation } from "../client.ts"
 import { go } from "../state.ts"
-import { Composer, type ComposerSources } from "./composer.tsx"
+import { agentOptions, callable, toJoin } from "./agent-options.ts"
+import { Composer, type ComposerSources, SendError } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import { agentTone, handleOf, modelLabel } from "../labels.ts"
 import { AgentAvatar, Folder, IconButton, Select, X } from "@/ui"
@@ -17,26 +18,27 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
   const agents = useList(agentsAtom)
   const createChat = useMutation(mutations.createChat)
   const send = useMutation(mutations.send)
+  const updateChat = useMutation(mutations.updateChat)
   const [projectId, setProjectId] = useState<string | null>(initialProject ?? null)
   const [agentId, setAgentId] = useState<string | null>(null)
   const [choice, setChoice] = useState<ModelChoice>(DEFAULT_MODEL)
   const chat = useRef<Promise<string> | null>(null)
 
-  const available = agents.filter((a) => !a.builtin && (a.projectId === null || a.projectId === projectId))
+  const available = callable(agents, projectId)
   const pickAgent = (id: string | null) => {
     setAgentId(id)
     const a = agents.find((x) => x.id === id)
     if (a) setChoice({ model: a.model, accountId: a.accountId, effort: a.effort })
   }
   const lead = available.find((a) => a.id === agentId)
-  // "#" in the box picks who answers (the same as in a chat); typing filters, so a long team stays usable.
+  // "#" in the box calls an agent (a chip, "@handle" in the text, as in a chat; typing filters, so a long team stays
+  // usable). Who is named joins the new chat when the message is sent (see `callWith`).
   const sources: ComposerSources = {
-    leads: available.map((a) => ({
-      id: handleOf(a),
-      label: a.name,
-      hint: a.id === agentId ? t("composer.answering") : a.title || modelLabel(a.model),
-      icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} />,
-      run: () => pickAgent(a.id)
+    leads: agentOptions(available, available.map((a) => a.id), { member: (a) => a.title || modelLabel(a.model), outside: "" }).map((o) => ({
+      id: o.id,
+      label: o.label,
+      hint: o.hint,
+      icon: <AgentAvatar id={o.agent.id} name={o.agent.name} tone={agentTone(o.agent, agents)} size={16} />
     }))
   }
   // A project's chat starts with its default agent (Agents tab of the project), if it has one.
@@ -50,9 +52,15 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
     pickAgent(agents.some((a) => a.id === defaultAgent) ? defaultAgent : null)
   }, [projectId, defaultAgent, agents.length])
 
+  // Who is in the chat a message starts: the chosen lead (or the project's default), then everyone the text names.
+  // With no lead chosen, the first one named leads (and the chat takes its model).
+  const callWith = (text: string) => {
+    const named = toJoin(text, agentId ? [agentId] : [], available)
+    return { agentIds: [...(agentId ? [agentId] : []), ...named.map((a) => a.id)], ...(!agentId && named[0] && { model: named[0].model }) }
+  }
   // One chat per draft, however many files are attached before sending.
-  const ensureChat = () =>
-    (chat.current ??= createChat({ payload: { projectId, agentIds: agentId ? [agentId] : [], ...choice }, reactivityKeys: ["chats"] }).then(
+  const ensureChat = (call: { agentIds: string[]; model?: string } = { agentIds: agentId ? [agentId] : [] }) =>
+    (chat.current ??= createChat({ payload: { projectId, ...choice, ...call }, reactivityKeys: ["chats"] }).then(
       (c) => c.id,
       (e: unknown) => {
         chat.current = null // a failed create can be retried
@@ -61,7 +69,16 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
     ))
 
   const submit = async (text: string, attachmentIds: ReadonlyArray<string>) => {
-    const chatId = await ensureChat()
+    const call = callWith(text)
+    const created = chat.current !== null // a file was attached first: the chat exists with only its lead
+    const chatId = await ensureChat(call)
+    if (created && call.agentIds.length > (agentId ? 1 : 0)) {
+      try {
+        await updateChat({ params: { id: chatId }, payload: call, reactivityKeys: ["chats", "context"] })
+      } catch {
+        throw new SendError(t("chat.addFailed"))
+      }
+    }
     await send({ payload: { chatId, clientId: crypto.randomUUID(), text, ...(attachmentIds.length && { attachmentIds }) } })
     go({ view: "chat", id: chatId })
   }

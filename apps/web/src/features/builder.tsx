@@ -3,7 +3,7 @@
 // reach, as plain choices (no access / read / read and write), prefilled with the least the Builder proposed;
 // Create makes it with those powers and opens its page. A team is created as proposed from step 1. Each visit
 // starts fresh; "Build it myself" opens the form.
-import { type Access, type AgentPermissions, type Chat, DEFAULT_PERMISSIONS, type Grant, type McpServer, type ModelInfo } from "@zorel/contracts"
+import { type Access, type AgentPermissions, type Chat, DEFAULT_PERMISSIONS, type Grant, type McpServer, type ModelInfo, isTeammate } from "@zorel/contracts"
 import type { Approval } from "@zorel/contracts/events"
 import { t } from "@zorel/i18n"
 import { type ReactNode, useEffect, useRef, useState } from "react"
@@ -248,7 +248,7 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
   const open: Approval | undefined = state.approvals.findLast((a) => a.tool === "zorel_create_agent")
   const drafts = open ? draftsOf(open.args) : []
   const single = drafts.length === 1 ? drafts[0] : undefined
-  const created = agents.filter((a) => !a.builtin && a.createdAt >= since)
+  const created = agents.filter((a) => isTeammate(a) && a.createdAt >= since)
   const [step, setStep] = useState<Step>("describe")
   const [access, setAccess] = useState<Access>("workspace")
   const [perms, setPerms] = useState<AgentPermissions>(DEFAULT_PERMISSIONS)

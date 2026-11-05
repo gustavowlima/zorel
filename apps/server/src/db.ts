@@ -1,9 +1,9 @@
 // Local database: SQLite via Drizzle over Effect's SqliteClient (D9). Every method returns an Effect;
 // a database error is a defect (orDie): the caller can do nothing but fail the request.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import { type Access, type Agent, type AgentPermissions, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type Switch } from "@zorel/contracts"
+import { type Access, type Agent, type AgentPermissions, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type RoutineWatch, type Step, type Switch } from "@zorel/contracts"
 import type { Approval, ApprovalOutcome, Turn, WorkStep } from "@zorel/contracts/events"
-import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { LOCAL_ACTOR } from "./access.ts"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
@@ -149,12 +149,12 @@ export const repository = (db: Db) => {
     agent,
     createAgent: (input: { projectId: string | null; name: string; title?: string | undefined; description?: string | undefined; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined; builtin?: "builder" | undefined }, by = "you") =>
       Effect.gen(function* () {
-        const a: Agent = { id: crypto.randomUUID(), ...input, title: input.title ?? "", description: input.description ?? "", accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], access: input.access ?? "workspace", permissions: input.permissions ?? DEFAULT_PERMISSIONS, builtin: input.builtin ?? null, createdAt: now() }
+        const a: Agent = { id: crypto.randomUUID(), archivedAt: null, monthlyTokens: null, replyTokens: null, ...input, title: input.title ?? "", description: input.description ?? "", accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], access: input.access ?? "workspace", permissions: input.permissions ?? DEFAULT_PERMISSIONS, builtin: input.builtin ?? null, createdAt: now() }
         yield* db.insert(agents).values(a)
         yield* addVersion(a, by)
         return a
       }).pipe(orDie),
-    updateAgent: (id: string, input: { name?: string | undefined; title?: string | undefined; description?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined }, by = "you") =>
+    updateAgent: (id: string, input: { name?: string | undefined; title?: string | undefined; description?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined; archivedAt?: number | null | undefined; monthlyTokens?: number | null | undefined; replyTokens?: number | null | undefined }, by = "you") =>
       Effect.gen(function* () {
         const before = yield* agent(id)
         const set = defined(input)
@@ -167,7 +167,37 @@ export const repository = (db: Db) => {
         if (JSON.stringify(profileOf(after)) !== JSON.stringify(profileOf(before))) yield* addVersion(after, by)
         return after
       }).pipe(orDie),
+    // The tokens (input + output) an agent's turns used since a time (its month, for its monthly limit).
+    agentTokensSince: (agentId: string, since: number) =>
+      orDie(
+        db
+          .select({ n: sql<number>`coalesce(sum(${turns.inputTokens} + ${turns.outputTokens}), 0)` })
+          .from(turns)
+          .where(and(eq(turns.agentId, agentId), gte(turns.createdAt, since)))
+          .pipe(Effect.map((r) => Number(r[0]?.n ?? 0)))
+      ),
     // Newest first.
+    // An agent's runs, newest first (the last `limit`): the turn, and its reply's steps and first words.
+    agentRuns: (agentId: string, limit = 200) =>
+      orDie(
+        db
+          .select({ t: turns, steps: messages.steps, text: messages.text })
+          .from(turns)
+          .leftJoin(messages, eq(messages.id, turns.messageId))
+          .where(and(eq(turns.agentId, agentId), ne(turns.state, "queued")))
+          .orderBy(desc(turns.createdAt))
+          .limit(limit)
+          .pipe(
+            Effect.map((rows) =>
+              rows.map(({ t, steps, text }) => ({
+                turnId: t.id, chatId: t.chatId, messageId: t.messageId, state: t.state, startedAt: t.startedAt, endedAt: t.endedAt, error: t.error,
+                inputTokens: t.inputTokens, outputTokens: t.outputTokens,
+                preview: (text ?? t.partialText).replace(/\s+/g, " ").trim().slice(0, PREVIEW_CHARS),
+                steps: steps ? (JSON.parse(steps) as Step[]) : []
+              }))
+            )
+          )
+      ),
     agentVersions: (agentId: string) => orDie(db.select().from(agentVersions).where(eq(agentVersions.agentId, agentId)).orderBy(desc(agentVersions.n))),
     removeAgent: (id: string) =>
       orDie(
@@ -218,13 +248,13 @@ export const repository = (db: Db) => {
     routines: () => orDie(db.select().from(routines).orderBy(asc(routines.createdAt))),
     routine: (id: string) => orDie(db.select().from(routines).where(eq(routines.id, id)).pipe(Effect.map(first))),
     routineByToken: (token: string) => orDie(db.select().from(routines).where(eq(routines.token, token)).pipe(Effect.map(first))),
-    createRoutine: (input: { agentId: string; chatId: string; name: string; prompt: string; cron: string | null; token: string | null; nextRunAt: number | null }) =>
+    createRoutine: (input: { agentId: string; chatId: string; name: string; prompt: string; cron: string | null; token: string | null; nextRunAt: number | null; watch: RoutineWatch | null }) =>
       Effect.gen(function* () {
-        const r = { id: crypto.randomUUID(), ...input, enabled: true, lastRunAt: null, lastStatus: null, createdAt: now() } as const
+        const r = { id: crypto.randomUUID(), ...input, watchSeen: null, watchAt: null, enabled: true, lastRunAt: null, lastStatus: null, createdAt: now() } as const
         yield* db.insert(routines).values(r)
         return r
       }).pipe(orDie),
-    updateRoutine: (id: string, input: { [K in "name" | "prompt" | "cron" | "token" | "enabled" | "nextRunAt" | "lastRunAt" | "lastStatus"]?: (typeof routines.$inferInsert)[K] | undefined }) =>
+    updateRoutine: (id: string, input: { [K in "name" | "prompt" | "cron" | "token" | "watch" | "watchSeen" | "watchAt" | "enabled" | "nextRunAt" | "lastRunAt" | "lastStatus"]?: (typeof routines.$inferInsert)[K] | undefined }) =>
       Effect.gen(function* () {
         const set = defined(input)
         if (Object.keys(set).length) yield* db.update(routines).set(set).where(eq(routines.id, id))
@@ -232,6 +262,8 @@ export const repository = (db: Db) => {
       }).pipe(orDie),
     removeRoutine: (id: string) => orDie(db.delete(routines).where(eq(routines.id, id)).pipe(Effect.asVoid)),
     // Enabled, scheduled and due by `at`.
+    // Enabled and watching a connector.
+    watchingRoutines: () => orDie(db.select().from(routines).where(and(eq(routines.enabled, true), isNotNull(routines.watch)))),
     dueRoutines: (at: number) => orDie(db.select().from(routines).where(and(eq(routines.enabled, true), sql`${routines.nextRunAt} <= ${at}`))),
 
     // ---------- chats and messages ----------
@@ -252,12 +284,12 @@ export const repository = (db: Db) => {
         )
       ),
     chat,
-    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; hidden?: boolean | undefined; title?: string | undefined; taskOf?: string | null | undefined; taskBy?: string | null | undefined }) =>
+    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; access?: Access | null | undefined; hidden?: boolean | undefined; title?: string | undefined; taskOf?: string | null | undefined; taskBy?: string | null | undefined }) =>
       Effect.gen(function* () {
         const id = crypto.randomUUID()
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: input.title ?? "New chat", model: input.model, accountId: input.accountId ?? null, effort: input.effort ?? null, hidden: input.hidden ?? false, taskOf: input.taskOf ?? null, taskBy: input.taskBy ?? null, createdAt: now() })
+            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: input.title ?? "New chat", model: input.model, accountId: input.accountId ?? null, effort: input.effort ?? null, access: input.access ?? null, hidden: input.hidden ?? false, taskOf: input.taskOf ?? null, taskBy: input.taskBy ?? null, createdAt: now() })
             yield* setMembers(tx, id, input.agentIds)
           })
         )
@@ -266,11 +298,11 @@ export const repository = (db: Db) => {
     // Tasks still owing a result (zorel_start_task), and closing one once its result went back.
     openTasks: () => orDie(db.select({ id: chats.id, taskOf: chats.taskOf, taskBy: chats.taskBy }).from(chats).where(sql`${chats.taskOf} is not null`)),
     closeTask: (id: string) => orDie(db.update(chats).set({ taskOf: null }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
-    updateChat: (id: string, input: { resumeAt?: null | undefined; title?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | null | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
+    updateChat: (id: string, input: { resumeAt?: null | undefined; title?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; access?: Access | null | undefined; failover?: ReadonlyArray<FailoverTarget> | null | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
       Effect.gen(function* () {
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            const set = defined({ title: input.title, model: input.model, accountId: input.accountId, effort: input.effort, failover: input.failover, resumeAt: input.resumeAt })
+            const set = defined({ title: input.title, model: input.model, accountId: input.accountId, effort: input.effort, access: input.access, failover: input.failover, resumeAt: input.resumeAt })
             if (Object.keys(set).length) yield* tx.update(chats).set(set).where(eq(chats.id, id))
             if (input.agentIds) yield* setMembers(tx, id, input.agentIds)
           })

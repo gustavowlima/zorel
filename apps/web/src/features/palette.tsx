@@ -10,6 +10,10 @@ import { AlarmClock, BookOpen, Bot, ChartColumn, type CommandItem, CommandPalett
 
 const has = (text: string, q: string) => text.toLowerCase().includes(q.toLowerCase())
 
+// The sidebar's Search button opens the palette the same way ⌘K does.
+const OPEN = "zorel:palette"
+export const openPalette = () => dispatchEvent(new Event(OPEN))
+
 export function Palette({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -25,8 +29,13 @@ export function Palette({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         setOpen((o) => !o)
       }
     }
+    const show = () => setOpen(true)
     addEventListener("keydown", on)
-    return () => removeEventListener("keydown", on)
+    addEventListener(OPEN, show)
+    return () => {
+      removeEventListener("keydown", on)
+      removeEventListener(OPEN, show)
+    }
   }, [])
   useEffect(() => {
     if (!open) setQuery("")
