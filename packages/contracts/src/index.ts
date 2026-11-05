@@ -497,7 +497,10 @@ export const McpServerPatch = Schema.Struct({ mode: Schema.optional(ToolMode), e
 export const KeyInput = Schema.Struct({ value: LongText(500) }) // empty deletes
 // One-time choices recorded on the server (the failover terms warning is shown once).
 // nativeSkills: Claude Code and Codex may use their own skills (the person's ~/.claude/skills, plugins, Codex's).
-export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean })
+// maxRunning: how many chats may have an agent working at once (the rest wait for a free slot); 0 = no limit.
+export const MAX_RUNNING_DEFAULT = 4
+export const MAX_RUNNING_CHOICES = [0, 1, 2, 3, 4, 6, 8, 12] as const
+export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number })
 
 // Turns (send, events, interrupt, approve): see events.ts (RPC over WebSocket at /rpc).
 export const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
@@ -698,6 +701,7 @@ export const Api = HttpApi.make("zorel")
       // Pause everything: running turns stop, new ones wait queued, routines wait; false resumes.
       .add(HttpApiEndpoint.put("pause", "/api/pause", { payload: Schema.Struct({ paused: Schema.Boolean }) }))
       .add(HttpApiEndpoint.put("nativeSkills", "/api/preferences/native-skills", { payload: Schema.Struct({ enabled: Schema.Boolean }), success: Preferences }))
+      .add(HttpApiEndpoint.put("maxRunning", "/api/preferences/max-running", { payload: Schema.Struct({ value: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 32 })) }), success: Preferences }))
       .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))
   )
