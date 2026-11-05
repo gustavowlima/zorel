@@ -144,6 +144,7 @@ export function buildTurn(i: TurnInput): Turn {
     i.tools?.defs.length && "You have tools. Use them when the task calls for it; actions that change something may wait for the user's approval.",
     i.tools?.defs.some((d) => d.name === "zorel_start_task") &&
       "Work that belongs to a teammate (see zorel_list_agents) or can run in parallel: hand it over with zorel_start_task. Their answer comes back to this chat by itself and you continue from there; don't wait or ask about it. When it arrives the user already sees it: don't repeat it, add only what follows from it (or nothing, if it was the whole answer).",
+    i.tools?.defs.some((d) => d.name === "zorel_remember") && "When the user tells you a lasting preference, decision or correction, keep it with zorel_remember, quietly (no announcement in your reply).",
     i.agent && section(`You are ${[i.agent.name, i.agent.title].filter(Boolean).join(", ")}`, [i.agent.description, i.agent.instructions].filter(Boolean).join("\n\n")),
     channel && section("Channel", channel)
   ]
@@ -274,7 +275,7 @@ type Scope = typeof Scope.Type
 export interface Consolidation {
   readonly summary: string
   // replaces: index into the existing memories given to the prompt
-  readonly memories: ReadonlyArray<{ scope: Scope; text: string; keywords: string; replaces?: number }>
+  readonly memories: ReadonlyArray<{ scope: Scope; text: string; keywords: string; evidence: ReadonlyArray<number>; replaces?: number }>
   readonly confirm: ReadonlyArray<number> // indexes into the existing memories given to the prompt
   readonly skills: ReadonlyArray<{ scope: Scope; title: string; text: string }>
 }
@@ -330,7 +331,8 @@ export function parseConsolidation(text: string, allowed: ReadonlyArray<string>,
       const proof = quoted(m.evidence)
       if (!inScope(m) || !proof.length || !grounded(m.text, proof.join("\n"), agents)) return []
       const replaces = ref(m.replaces)
-      return [{ scope: m.scope, text: m.text.trim(), keywords: (m.keywords ?? "").trim().slice(0, KEYWORDS_MAX), ...(replaces !== undefined && { replaces }) }]
+      const evidence = (m.evidence ?? []).filter((n): n is number => typeof n === "number" && said(n) !== undefined)
+      return [{ scope: m.scope, text: m.text.trim(), keywords: (m.keywords ?? "").trim().slice(0, KEYWORDS_MAX), evidence, ...(replaces !== undefined && { replaces }) }]
     }),
     confirm: (reply.confirm ?? []).flatMap((id) => [ref(id)].filter((n) => n !== undefined)),
     skills: (reply.skills ?? [])

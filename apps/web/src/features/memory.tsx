@@ -173,6 +173,75 @@ function Teach() {
   )
 }
 
+// Move ▾: to you, a project or a teammate's notes (not where it is).
+export function MoveMenu({ memory: m, onMove }: { memory: Memory; onMove: (scope: string) => void }) {
+  const projects = useList(projectsAtom)
+  const agents = useList(agentsAtom)
+  const destinations = ["user", ...projects.map((p) => `project:${p.id}`), ...agents.filter((a) => isTeammate(a)).map((a) => `agent:${a.id}`)].filter((s) => s !== m.scope)
+  return (
+    <Menu
+      label={t("memory.moveTo")}
+      trigger={
+        <Button size="sm" variant="ghost">
+          {t("memory.move")}
+        </Button>
+      }
+    >
+      {destinations.map((s) => (
+        <MenuItem key={s} icon={<ScopeIcon scope={s} agents={agents} />} onAction={() => onMove(s)}>
+          {ownerName(s, projects, agents)}
+        </MenuItem>
+      ))}
+    </Menu>
+  )
+}
+
+// Under a reply: what an agent kept or wants to keep from this chat (or what the chat's learning proposed), with
+// where it went. Built from the memory itself (chatId, agentId), so it's still there after a reload.
+export function MemoryChip({ memory: m }: { memory: Memory }) {
+  const projects = useList(projectsAtom)
+  const agents = useList(agentsAtom)
+  const update = useMutation(mutations.updateMemory)
+  const [failed, setFailed] = useState(false)
+  const agent = agents.find((a) => a.id === m.agentId)
+  const patch = (payload: { state?: Memory["state"]; scope?: string }) =>
+    void update({ params: { id: m.id }, payload, reactivityKeys: ["memories"] }).then(
+      () => setFailed(false),
+      () => setFailed(true)
+    )
+  const pending = m.state === "pending"
+  const lead = pending ? (agent ? t("memory.chipWants", { name: agent.name }) : t("memory.chipProposed")) : agent ? t("memory.chipKept", { name: agent.name }) : t("memory.chipLearned")
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="flex w-full items-center gap-2 rounded-card border border-subtle bg-surface py-1 pr-1 pl-3 text-sm">
+        <Brain className="size-3.5 shrink-0 text-muted" />
+        <span className="line-clamp-2 min-w-0 flex-1" title={m.text}>
+          <span className="text-muted">{`${lead} `}</span>
+          <span className="text-secondary">{m.text}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1 rounded-full bg-control px-2 py-0.5 text-xs text-muted">
+          <ScopeIcon scope={m.scope} agents={agents} />
+          {ownerName(m.scope, projects, agents)}
+        </span>
+        {pending && (
+          <Button size="sm" variant="default" onPress={() => patch({ state: "active" })}>
+            {t("memory.keep")}
+          </Button>
+        )}
+        <MoveMenu memory={m} onMove={(scope) => patch({ scope })} />
+        <Button size="sm" variant="ghost" onPress={() => patch({ state: "forgotten" })}>
+          {pending ? t("inbox.discard") : t("memory.undo")}
+        </Button>
+      </div>
+      {failed && (
+        <p role="alert" className="text-sm text-danger">
+          {t("knowledge.saveFailed")}
+        </p>
+      )}
+    </div>
+  )
+}
+
 // One memory: its sentence, who and where it came from, and what can be done with it here.
 function FactRow({ memory: m, showScope = false, stale = false }: { memory: Memory; showScope?: boolean; stale?: boolean }) {
   const projects = useList(projectsAtom)
@@ -197,27 +266,7 @@ function FactRow({ memory: m, showScope = false, stale = false }: { memory: Memo
         throw e
       }
     )
-  const destinations = [
-    "user",
-    ...projects.map((p) => `project:${p.id}`),
-    ...agents.filter((a) => isTeammate(a)).map((a) => `agent:${a.id}`)
-  ].filter((s) => s !== m.scope)
-  const move = (
-    <Menu
-      label={t("memory.moveTo")}
-      trigger={
-        <Button size="sm" variant="ghost">
-          {t("memory.move")}
-        </Button>
-      }
-    >
-      {destinations.map((s) => (
-        <MenuItem key={s} icon={<ScopeIcon scope={s} agents={agents} />} onAction={() => void patch({ scope: s }).catch(() => {})}>
-          {ownerName(s, projects, agents)}
-        </MenuItem>
-      ))}
-    </Menu>
-  )
+  const move = <MoveMenu memory={m} onMove={(scope) => void patch({ scope }).catch(() => {})} />
   return (
     <div className="flex flex-col gap-1.5 py-3">
       <div className="flex items-start gap-3">

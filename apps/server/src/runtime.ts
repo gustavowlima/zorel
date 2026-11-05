@@ -8,15 +8,16 @@ import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, St
 import { Accounts } from "./accounts.ts"
 import { ask, consolidate, DataDir, members, prepare } from "./chat.ts"
 import { parseRoute, ROUTER_MESSAGES, routerModel, routerPrompt } from "./router.ts"
-import { handleOf, MAX_DEPTH, memoryNote, mentioned, pinned, readPage, scopesOf, sectionOf, snippet } from "./context.ts"
+import { grounded, handleOf, MAX_DEPTH, memoryNote, mentioned, pinned, readPage, scopesOf, sectionOf, similar, snippet } from "./context.ts"
 import { type AccountRow, normalize, Store, type Repository, type TurnRow } from "./db.ts"
+import { hasCredential } from "./observability.ts"
 import { engineLabel, type EngineFailure, Engines, isImage, type NativeStep, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
 import { cardText, TOO_LARGE } from "./engines/policy.ts"
-import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo } from "./team.ts"
+import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, memoryModeOf, narrower, proposalText, readText, REMEMBER_TOOL, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
@@ -41,6 +42,7 @@ const SKIP_MS = 10 * 60_000 // §6.1: a route that failed (not a limit) is skipp
 // An engine that sends nothing for this long, with no approval waiting, is treated as dead (its process may
 // have died without the SDK noticing): the turn fails as "unavailable", so failover can take over.
 const STALL_MS = 10 * 60_000
+const MAX_PENDING_MEMORIES = 20 // as a chat's learning: past it, nothing more waits for review
 const QUIET_AFTER = Duration.minutes(10) // a chat this long without a turn learns from its latest messages
 const SESSION_IDLE_MS = 55 * 60_000 // the provider's prompt cache lasts an hour: past it, going on costs what starting over does
 const SESSION_MAX_CONTEXT = 60_000 // input tokens; past it, the next turn starts a fresh session from the summary
@@ -417,7 +419,7 @@ export const makeRuntime = Effect.gen(function* () {
     // Each tool's description costs tokens in every session: the ones that only read something are offered once
     // there is something to read (memories past the prompt's budget, a page, a skill); writing ones stay.
     const useless = await run(idleTools(chat, agent))
-    for (const t of [...TEAM_TOOLS, TASK_TOOL, ASK_TOOL, MEMORY_TOOL, ROUTINES_TOOL, PREVIEW_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])])
+    for (const t of [...TEAM_TOOLS, TASK_TOOL, ASK_TOOL, MEMORY_TOOL, REMEMBER_TOOL, ROUTINES_TOOL, PREVIEW_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])])
       if (!withheld.has(t.name) && !useless.has(t.name)) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
@@ -590,6 +592,41 @@ export const makeRuntime = Effect.gen(function* () {
       return textResult(found.length ? found.map((m) => `- ${m.text}`).join("\n") : "Nothing found. Try other words.")
     }
 
+    // zorel_remember: a fact the person said, kept now (auto) or proposed (ask), with the same rules as a chat's
+    // learning: the person's words (no name or number only an agent said), no credential, no repeat of one kept or
+    // forgotten, a correction waits for review. The chat's note comes from the memory itself (agentId, chatId).
+    const rememberCall = async (args: Record<string, unknown>) => {
+      const text = typeof args.text === "string" ? args.text.trim().replace(/\s+/g, " ") : ""
+      if (!text || text.length > 500) return textResult("text: one short sentence, up to 500 characters.", true)
+      const about = args.about === "project" || args.about === "agent" ? args.about : "user"
+      const scope = about === "user" ? "user" : about === "project" ? (chat.projectId ? `project:${chat.projectId}` : "") : agent ? `agent:${agent.id}` : ""
+      if (!scope) return textResult(about === "project" ? "This chat has no project: use about 'user' or 'agent'." : "Only an agent has its own notes: use about 'user'.", true)
+      if (await hasCredential(text)) return textResult("That holds a credential: it can't be kept. Don't try again.", true)
+      const recent = (await run(store.messages(chat.id))).slice(-20)
+      const person = recent.filter((m) => m.role === "user").slice(-3).map((m) => m.text).join("\n")
+      const agentsSaid = recent.filter((m) => m.role === "assistant").map((m) => m.text).join("\n")
+      if (!person || !grounded(text, person, agentsSaid)) return textResult("Only what the user said or confirmed can be kept, not details you added.", true)
+      const scopes = scopesOf(chat, agent?.id ?? null)
+      const active = await run(store.activeMemories(scopes))
+      const wanted = typeof args.replaces === "string" ? normalize(args.replaces) : ""
+      const target = wanted ? active.find((m) => normalize(m.text) === wanted) : undefined
+      if (!target) {
+        const same = active.find((m) => m.scope === scope && similar(m.text, text))
+        if (same) {
+          await run(store.confirmMemories([same.id]))
+          return textResult("Already kept. Go on without mentioning it.")
+        }
+      }
+      if ((await run(store.pendingCount(scopes))) >= MAX_PENDING_MEMORIES) return textResult("Too many memories already wait for the user's review. Go on without it.", true)
+      const kept = memoryModeOf(agent) === "auto" && !target
+      const s = await step(`${kept ? "Remember" : "Propose to remember"}: ${text.slice(0, 60)}`, REMEMBER_TOOL.name)
+      const m = await run(store.addMemory({ scope: target?.scope ?? scope, kind: "fact", text, state: kept ? "active" : "pending", origin: "auto", chatId: chat.id, agentId: agent?.id ?? null, replaces: target?.id ?? null }))
+      await finish(s, m ? "ok" : "refused", text)
+      if (!m) return textResult("The user already has this, or asked to forget it: don't keep it again or mention it.")
+      if (kept) await run(remembered(chat.id, [m]))
+      return textResult(kept ? "Kept. Go on without mentioning it." : "Proposed: the user reviews it. Go on without mentioning it.")
+    }
+
     // Skills: read one by title; propose a new one or an improvement (pending until the person approves it in
     // Knowledge, where an improvement shows what changes). At most 5 of one chat's proposals wait at a time.
     const skillCall = async (name: string, args: Record<string, unknown>) => {
@@ -739,6 +776,7 @@ export const makeRuntime = Effect.gen(function* () {
         return textResult(`Granted: ${change.label}. It works from your next turn.`)
       }
       if (name === MEMORY_TOOL.name) return memoryCall(args)
+      if (name === REMEMBER_TOOL.name) return rememberCall(args)
       if (name === TASK_TOOL.name) return taskCall(args)
       if (name === PREVIEW_TOOL.name) return previewCall(args)
       if (name === ASK_TOOL.name) return askCall(args)

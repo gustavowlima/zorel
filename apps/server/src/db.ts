@@ -57,7 +57,7 @@ const seenBy = (forAgent: string | null) =>
     : sql`(${memories.scope} LIKE 'agent:%' OR ${memories.agents} = '[]')`
 // Raw row (hand-written SQL, snake_case columns) from the FTS search.
 const memoryRow = (r: Row): Memory => ({
-  id: r.id, scope: r.scope, kind: r.kind, title: r.title, text: r.text, state: r.state, origin: r.origin, chatId: r.chat_id,
+  id: r.id, scope: r.scope, kind: r.kind, title: r.title, text: r.text, state: r.state, origin: r.origin, chatId: r.chat_id, agentId: r.agent_id ?? null,
   essential: !!r.essential, agents: JSON.parse(r.agents ?? "[]"), createdAt: r.created_at, confirmedAt: r.confirmed_at
 })
 // Memories in these scopes that this owner may hear: about the person (user scope), only their own.
@@ -593,12 +593,12 @@ export const repository = (db: Db, pagesDir?: string) => {
     // Already exists (same normalized text in scope): returns undefined and doesn't duplicate or revive a forgotten one.
     // owner: the Actor who created it (or the chat owner, in consolidation). About the person (user scope): only the owner hears.
     // keywords: other words for the same idea, indexed for search only.
-    addMemory: (input: { scope: string; kind?: Memory["kind"]; title?: string; text: string; state: Memory["state"]; origin: Memory["origin"]; chatId: string | null; owner?: string; replaces?: string | null; reason?: string | null; keywords?: string; agents?: ReadonlyArray<string> | undefined }) =>
+    addMemory: (input: { scope: string; kind?: Memory["kind"]; title?: string; text: string; state: Memory["state"]; origin: Memory["origin"]; chatId: string | null; agentId?: string | null; owner?: string; replaces?: string | null; reason?: string | null; keywords?: string; agents?: ReadonlyArray<string> | undefined }) =>
       Effect.gen(function* () {
         const at = now()
         const { owner = LOCAL_ACTOR.id, keywords = "", agents: only = [], ...rest } = input
         // Only a skill can be limited to some agents.
-        const m: Memory = { id: crypto.randomUUID(), kind: "fact", title: "", replaces: null, reason: null, ...rest, agents: rest.kind === "skill" ? only : [], createdAt: at, confirmedAt: at }
+        const m: Memory = { id: crypto.randomUUID(), kind: "fact", title: "", replaces: null, reason: null, agentId: null, ...rest, agents: rest.kind === "skill" ? only : [], createdAt: at, confirmedAt: at }
         const audience = m.scope === "user" ? "owner" : "project"
         const inserted = yield* db.insert(memories).values({ ...m, owner, audience, keywords, normalized: normalize(m.text) }).onConflictDoNothing().returning({ id: memories.id })
         // Said again: the existing active one is confirmed (it ranks first for the prompt's budget).
