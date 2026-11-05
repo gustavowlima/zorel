@@ -8,6 +8,7 @@ import { cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codex
 import { codexFailure, codexStep, windowsOf } from "./engines/codex.ts"
 import { hasCredential, redact } from "./observability.ts"
 import { stretchOf } from "./chat.ts"
+import { routerModel } from "./router.ts"
 import { ftsQuery } from "./db.ts"
 import { Secrets } from "./secrets.ts"
 import { classify, exposedName, needsApproval } from "./tools.ts"
@@ -385,4 +386,9 @@ test("named points: a name or an alias as whole words in the text", () => {
   const points = [{ id: "1", normalized: "deploy", aliases: [] }, { id: "2", normalized: "vercel", aliases: ["vercel com"] }, { id: "3", normalized: "ui", aliases: [] }]
   expect(namedPoints("How do we Deploy to vercel.com?", points)).toEqual(["1", "2"])
   expect(namedPoints("deployment", points)).toEqual([]) // not a whole word; short names never match by themselves
+})
+
+test("the routing model: the one chosen in Settings, else the provider's small one", () => {
+  expect(routerModel("claude-cli/opus")).toBe("claude-cli/haiku")
+  expect(routerModel("claude-cli/opus", "anthropic/claude-haiku-5-5")).toBe("anthropic/claude-haiku-5-5")
 })

@@ -50,29 +50,26 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
 // The model that learns from chats (automatic: each chat's provider's small model) and what a new fact becomes.
 function MemorySettings() {
   const prefs = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)
-  const setModel = useMutation(mutations.memoryModel)
+  const setMemory = useMutation(mutations.memoryModel)
+  const setRouter = useMutation(mutations.routerModel)
   const setApproval = useMutation(mutations.memoryApproval)
-  const model = prefs?.memoryModel ?? ""
-  const save = (m: string) => void setModel({ payload: { model: m }, reactivityKeys: ["preferences"] })
   return (
-    <Section title={t("memory.title")} description={<span className="block max-w-prose">{t("settings.memoryHint")}</span>}>
+    <Section title={t("settings.modelsTitle")} description={<span className="block max-w-prose">{t("settings.memoryHint")}</span>}>
       <Rows>
-        <SettingRow title={t("settings.memoryModel")} hint={model ? t("settings.memoryModelChosen") : t("settings.memoryModelAuto")}>
-          <div className="flex items-center gap-2">
-            {model ? (
-              <>
-                <ModelPicker variant="field" value={{ model, accountId: null, effort: null }} onChange={(v) => save(v.model)} />
-                <Button size="sm" variant="ghost" onPress={() => save("")}>
-                  {t("settings.memoryModelUseAuto")}
-                </Button>
-              </>
-            ) : (
-              <Button size="sm" variant="secondary" onPress={() => save("claude-cli/haiku")}>
-                {t("settings.memoryModelChoose")}
-              </Button>
-            )}
-          </div>
-        </SettingRow>
+        <BackgroundModel
+          title={t("settings.memoryModel")}
+          model={prefs?.memoryModel ?? ""}
+          auto={t("settings.memoryModelAuto")}
+          chosen={t("settings.memoryModelChosen")}
+          onChange={(model) => void setMemory({ payload: { model }, reactivityKeys: ["preferences"] })}
+        />
+        <BackgroundModel
+          title={t("settings.routerModel")}
+          model={prefs?.routerModel ?? ""}
+          auto={t("settings.routerModelAuto")}
+          chosen={t("settings.routerModelChosen")}
+          onChange={(model) => void setRouter({ payload: { model }, reactivityKeys: ["preferences"] })}
+        />
         <SettingRow title={t("memory.approval")} hint={t("memory.approvalHint")}>
           <Select
             size="sm"
@@ -87,6 +84,28 @@ function MemorySettings() {
         </SettingRow>
       </Rows>
     </Section>
+  )
+}
+
+// A model that works in the background: automatic (each chat's provider's small model) or one chosen for all chats.
+function BackgroundModel({ title, model, auto, chosen, onChange }: { title: string; model: string; auto: string; chosen: string; onChange: (model: string) => void }) {
+  return (
+    <SettingRow title={title} hint={model ? chosen : auto}>
+      <div className="flex items-center gap-2">
+        {model ? (
+          <>
+            <ModelPicker variant="field" value={{ model, accountId: null, effort: null }} onChange={(v) => onChange(v.model)} />
+            <Button size="sm" variant="ghost" onPress={() => onChange("")}>
+              {t("settings.memoryModelUseAuto")}
+            </Button>
+          </>
+        ) : (
+          <Button size="sm" variant="secondary" aria-label={`${t("settings.memoryModelChoose")}: ${title}`} onPress={() => onChange("claude-cli/haiku")}>
+            {t("settings.memoryModelChoose")}
+          </Button>
+        )}
+      </div>
+    </SettingRow>
   )
 }
 

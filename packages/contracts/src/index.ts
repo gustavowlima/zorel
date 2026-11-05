@@ -571,7 +571,8 @@ export const MemoryApproval = Schema.Literals(["review", "undo"])
 export type MemoryApproval = typeof MemoryApproval.Type
 // memoryModel: the model that learns from chats (summary, memories, the map); "": automatic, each chat's provider's
 // small model (ZOREL_MEMORY_MODEL overrides the automatic one).
-export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number, memoryApproval: MemoryApproval, memoryModel: Schema.String })
+// routerModel: the model that picks who answers in a team chat with no mention; "": automatic, the same way.
+export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number, memoryApproval: MemoryApproval, memoryModel: Schema.String, routerModel: Schema.String })
 
 // Turns (send, events, interrupt, approve): see events.ts (RPC over WebSocket at /rpc).
 export const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
@@ -785,6 +786,7 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.put("nativeSkills", "/api/preferences/native-skills", { payload: Schema.Struct({ enabled: Schema.Boolean }), success: Preferences }))
       .add(HttpApiEndpoint.put("memoryApproval", "/api/preferences/memory-approval", { payload: Schema.Struct({ approval: MemoryApproval }), success: Preferences }))
       .add(HttpApiEndpoint.put("memoryModel", "/api/preferences/memory-model", { payload: Schema.Struct({ model: Schema.Union([ModelId, Schema.Literal("")]) }), success: Preferences }))
+      .add(HttpApiEndpoint.put("routerModel", "/api/preferences/router-model", { payload: Schema.Struct({ model: Schema.Union([ModelId, Schema.Literal("")]) }), success: Preferences }))
       .add(HttpApiEndpoint.put("maxRunning", "/api/preferences/max-running", { payload: Schema.Struct({ value: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 32 })) }), success: Preferences }))
       .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))
