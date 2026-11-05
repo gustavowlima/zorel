@@ -152,12 +152,12 @@ function RailItem({ label, active, onPress, count, children }: { label: string; 
   return (
     <span className="relative">
       {/* The current place's wash slides from the previous one. */}
-      {active && <Marker id="rail-current" className="absolute inset-0 rounded-card bg-hover" />}
+      {active && <Marker id="rail-current" className="absolute inset-0 rounded-card bg-accent-faint" />}
       <Tooltip content={label} placement="right">
         <IconButton
           label={count ? `${label} (${count})` : label}
           onPress={onPress}
-          className={cx("relative size-10 rounded-card [&_svg]:size-5", active ? "text-fg data-hovered:bg-transparent" : "text-muted")}
+          className={cx("relative size-10 rounded-card [&_svg]:size-5", active ? "text-accent-text data-hovered:bg-transparent" : "text-muted")}
           {...(active && { "aria-current": "page" as const })}
         >
           {children}
