@@ -1,7 +1,7 @@
 // Local database: SQLite via Drizzle over Effect's SqliteClient (D9). Every method returns an Effect;
 // a database error is a defect (orDie): the caller can do nothing but fail the request.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import { type Access, type Agent, type AgentPermissions, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type RoutineWatch, type Switch } from "@zorel/contracts"
+import { type Access, type Agent, type AgentPermissions, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type RoutineWatch, type Step, type Switch } from "@zorel/contracts"
 import type { Approval, ApprovalOutcome, Turn, WorkStep } from "@zorel/contracts/events"
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
@@ -177,6 +177,27 @@ export const repository = (db: Db) => {
           .pipe(Effect.map((r) => Number(r[0]?.n ?? 0)))
       ),
     // Newest first.
+    // An agent's runs, newest first (the last `limit`): the turn, and its reply's steps and first words.
+    agentRuns: (agentId: string, limit = 200) =>
+      orDie(
+        db
+          .select({ t: turns, steps: messages.steps, text: messages.text })
+          .from(turns)
+          .leftJoin(messages, eq(messages.id, turns.messageId))
+          .where(and(eq(turns.agentId, agentId), ne(turns.state, "queued")))
+          .orderBy(desc(turns.createdAt))
+          .limit(limit)
+          .pipe(
+            Effect.map((rows) =>
+              rows.map(({ t, steps, text }) => ({
+                turnId: t.id, chatId: t.chatId, messageId: t.messageId, state: t.state, startedAt: t.startedAt, endedAt: t.endedAt, error: t.error,
+                inputTokens: t.inputTokens, outputTokens: t.outputTokens,
+                preview: (text ?? t.partialText).replace(/\s+/g, " ").trim().slice(0, PREVIEW_CHARS),
+                steps: steps ? (JSON.parse(steps) as Step[]) : []
+              }))
+            )
+          )
+      ),
     agentVersions: (agentId: string) => orDie(db.select().from(agentVersions).where(eq(agentVersions.agentId, agentId)).orderBy(desc(agentVersions.n))),
     removeAgent: (id: string) =>
       orDie(

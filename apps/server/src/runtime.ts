@@ -97,6 +97,7 @@ export interface RuntimeService {
   readonly closeSession: (key: string) => Effect.Effect<void>
 }
 
+const STEP_RESULT_CHARS = 4000 // of each step's output kept with the reply (its review after the turn)
 const ev = <T extends ChatEvent["_tag"]>(_tag: T, body: Omit<Extract<ChatEvent, { _tag: T }>, "_tag">) => ({ _tag, ...body }) as unknown as ChatEvent
 
 export const makeRuntime = Effect.gen(function* () {
@@ -629,7 +630,7 @@ export const makeRuntime = Effect.gen(function* () {
           (e: unknown) => textResult(e instanceof Error ? e.message.split("\n")[0]! : String(e), true)
         )
         const out = resultText(r)
-        legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, 300) })
+        legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
         await finish(s, r.isError ? "error" : "ok", out)
         return r
       }
@@ -655,7 +656,7 @@ export const makeRuntime = Effect.gen(function* () {
         )
       )
       const out = resultText(r)
-      legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, 300) })
+      legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
       await finish(s, r.isError ? "error" : "ok", out)
       return r
     }
@@ -825,7 +826,8 @@ export const makeRuntime = Effect.gen(function* () {
               const done = yield* store.finishStep(s, { status: n.status, output: n.output })
               yield* publish(chatId, ev("step-finished", { step: done }))
               watch({ kind: n.kind, title: n.title, status: n.status, output: n.output })
-              if (n.kind !== "read" && n.kind !== "search") acc.steps.push({ tool: n.kind, args: n.kind === "run" ? n.title : n.files.join(", "), status: n.status, result: n.output.slice(0, 300) })
+              // Every step stays with the reply (reads and searches too), with enough of its output to review later.
+              acc.steps.push({ tool: n.kind, args: n.kind === "edit" && n.files.length ? n.files.join(", ") : n.title, status: n.status, result: n.output.slice(0, STEP_RESULT_CHARS) })
             })
           const opened = yield* Effect.promise(() =>
             openTools(chat, attemptRow, agent, acc.steps, () => {

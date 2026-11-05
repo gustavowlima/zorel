@@ -82,3 +82,4 @@ updated: 2026-11-05
 - web tests now run in the root bun test (apps/web included)
 - vite dev proxy (2026-11-05): "/api" must be the object form without changeOrigin; Vite's string shorthand sets changeOrigin:true, rewrites Host to localhost:4317 and the server's Origin≠Host check made every POST in dev a 403 (GETs send no Origin, so reads worked). Open dev at the same host the login link uses (127.0.0.1:5173)
 - agents work view (2026-11-05): web only, from useStatuses (ChatStatus per chat) + chatsAtom; route #/agent/:id/:tab (AGENT_TABS work|profile|tools|activity); useWorking now Map agentId → ChatStatus (waiting wins); AgentItem prop status; task chats tagged by title prefix (no taskOf on Chat)
+- Work tab sessions (2026-11-05): AgentWork lists agentRunsAtom (key "runs", invalidated when the agent’s live statuses change); StepList/StoredStep exported from chat.tsx (Show all for long output)
