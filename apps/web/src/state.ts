@@ -17,7 +17,7 @@ export type Route =
   | { view: "usage"; agentId?: string } // agentId: Usage filtered to one agent (from its page)
   | { view: "settings"; tab: SettingsTab; provider?: string } // provider: one provider's page under Providers
   | { view: "project"; id: string; tab: ProjectTab }
-  | { view: "chat"; id: string }
+  | { view: "chat"; id: string; at?: string } // at: open on that message (a session's reply)
   | { view: "agent"; id: string; tab?: AgentTab } // tab: which one opens (Profile when absent)
   | { view: "new-agent"; projectId: string | null }
   | { view: "builder"; projectId: string | null } // Build with AI: a screen of its own, not a chat
@@ -43,7 +43,7 @@ export function parseRoute(hash: string): Route {
     case "project":
       return a ? { view, id: a, tab: oneOf(PROJECT_TABS, b, "overview") } : { view: "home" }
     case "chat":
-      return a ? { view, id: a } : { view: "home" }
+      return a ? { view, id: a, ...(b && { at: b }) } : { view: "home" }
     case "agent":
       if (a === "new") return { view: "new-agent", projectId: b && b !== "global" ? b : null }
       return a ? { view, id: a, ...(b && { tab: oneOf(AGENT_TABS, b, "profile") }) } : { view: "home" }
@@ -68,7 +68,7 @@ export const hrefOf = (r: Route): string => {
     case "project":
       return r.tab === "overview" ? `#/project/${r.id}` : `#/project/${r.id}/${r.tab}`
     case "chat":
-      return `#/${r.view}/${r.id}`
+      return r.at ? `#/chat/${r.id}/${r.at}` : `#/chat/${r.id}`
     case "agent":
       return r.tab ? `#/agent/${r.id}/${r.tab}` : `#/agent/${r.id}`
     case "new-agent":

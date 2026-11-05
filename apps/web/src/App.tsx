@@ -120,7 +120,7 @@ function Screen({ route }: { route: Route }) {
     }
     case "chat": {
       const chat = chats.find((c) => c.id === route.id)
-      return chat ? <ChatView key={chat.id} chat={chat} /> : <NotFound />
+      return chat ? <ChatView key={chat.id} chat={chat} at={route.at} /> : <NotFound />
     }
   }
 }

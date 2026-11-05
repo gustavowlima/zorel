@@ -32,7 +32,7 @@ import {
   MenuSeparator, MessageCircle, MessageCircleQuestion, ShieldAlert, Minimize2, MoreHorizontal, PanelRight, Pencil, RefreshCw, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
 } from "@/ui"
 
-export function ChatView({ chat }: { chat: Chat }) {
+export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) {
   const state = useChat(chat.id)
   const agents = useList(agentsAtom)
   const send = useMutation(mutations.send)
@@ -153,7 +153,7 @@ export function ChatView({ chat }: { chat: Chat }) {
       />
       <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
-      <Timeline chat={chat} state={state} agents={agents} onView={view} onEdit={setRewind} />
+      <Timeline chat={chat} state={state} agents={agents} onView={view} onEdit={setRewind} at={at} />
       <RewindDialog
         chatId={chat.id}
         message={rewind}
@@ -484,7 +484,7 @@ export function RenameDialog({ isOpen, onClose, title, onSave }: { isOpen: boole
 
 type Item = { at: number; message: Message } | { at: number; note: Note }
 
-export function Timeline({ chat, state, agents, onView, onEdit }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void }) {
+export function Timeline({ chat, state, agents, onView, onEdit, at }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void; at?: string | undefined }) {
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true) // follow new content only while the reader is at the bottom
   const items: Item[] = [...state.messages.map((m) => ({ at: m.at, message: m })), ...state.notes.map((n) => ({ at: n.at, note: n }))].sort((a, b) => a.at - b.at)
@@ -497,6 +497,19 @@ export function Timeline({ chat, state, agents, onView, onEdit }: { chat: Chat; 
     const el = scroller.current
     if (el && pinned.current) el.scrollTop = el.scrollHeight
   }, [items.length, state.live?.text, state.live?.steps.length, state.approvals.length])
+  // Opened on one reply (an agent's session in its Work tab): that reply in view, marked for a moment.
+  const [marked, setMarked] = useState<string>()
+  const ready = state.ready
+  useLayoutEffect(() => {
+    if (!ready || !at) return
+    const node = scroller.current?.querySelector(`[data-message="${CSS.escape(at)}"]`)
+    if (!node) return
+    pinned.current = false
+    node.scrollIntoView({ block: "start" })
+    setMarked(at)
+    const id = setTimeout(() => setMarked(undefined), 1800)
+    return () => clearTimeout(id)
+  }, [ready, at])
 
   return (
     <div
@@ -521,7 +534,8 @@ export function Timeline({ chat, state, agents, onView, onEdit }: { chat: Chat; 
           "message" in item ? (
             <div
               key={item.message.id}
-              className={cx(item.message.at <= chat.summaryUntil && "opacity-55")}
+              data-message={item.message.id}
+              className={cx("scroll-mt-6 rounded-card transition-colors duration-700", item.message.at <= chat.summaryUntil && "opacity-55", marked === item.message.id && "bg-accent-faint")}
               title={item.message.at <= chat.summaryUntil ? t("chat.coveredBySummary") : undefined}
             >
               {item.message.role === "user" ? (
