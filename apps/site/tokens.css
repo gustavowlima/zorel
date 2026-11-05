@@ -25,6 +25,11 @@
   --color-on-accent: oklch(99% 0 0);
   --color-button: oklch(97% 0.003 260);
   --color-on-button: oklch(16% 0.004 260);
+  --color-button-hover: oklch(88% 0.004 260);
+  --color-secondary: oklch(100% 0 0 / 0.08);
+  --color-secondary-hover: oklch(100% 0 0 / 0.13);
+  --color-secondary-rim: oklch(100% 0 0 / 0.12);
+  --color-bar: oklch(14.5% 0.004 260 / 0.86); /* the sticky top bar, over the page */
   --color-focus: oklch(75% 0.14 252);
   --color-add: oklch(76% 0.13 155);
   --color-add-bg: oklch(76% 0.13 155 / 0.1);
