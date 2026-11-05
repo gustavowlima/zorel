@@ -1029,6 +1029,7 @@ const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
         Effect.gen(function* () {
           const agent = yield* store.agent(payload.agentId)
           if (!agent) return yield* notFound()
+          if (payload.watch && !(yield* store.mcpServer(payload.watch.serverId))) return yield* notFound()
           return yield* createRoutineFor(store, agent, payload).pipe(Effect.mapError((message) => new CronInvalid({ message })))
         })
       )
