@@ -19,7 +19,7 @@ import { Composer, type ComposerOption, type ComposerSources, SendError } from "
 import { ContextMeter } from "./context-meter.tsx"
 import { QueuePanel, useQueue } from "./queue.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
-import { chatDelta, Delta, type Focus, PinItem, type Pins, type ShellPin, SIDE_ICON, SidePanel, type SideTab, sideLabel, TurnChanges, usePins } from "./workspace.tsx"
+import { chatDelta, Delta, type Focus, PinItem, type Pins, RunControl, type ShellPin, SIDE_ICON, SidePanel, type SideTab, sideLabel, TurnChanges, usePins } from "./workspace.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { GitControl } from "./git.tsx"
 import { ContextMenu, PageHeader, ShimmerText } from "@/ui"
@@ -148,6 +148,7 @@ export function ChatView({ chat }: { chat: Chat }) {
           setShellFocus({ session: pin.session })
           setPanel("terminal")
         }}
+        onRun={openInBrowser}
       />
       <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -274,7 +275,8 @@ function ChatHeader({
   pins,
   panel,
   onSide,
-  onShell
+  onShell,
+  onRun
 }: {
   chat: Chat
   team: ReadonlyArray<Agent>
@@ -286,6 +288,7 @@ function ChatHeader({
   panel: SideTab | undefined
   onSide: (tab: SideTab) => void
   onShell: (pin: ShellPin) => void
+  onRun: (url: string) => void
 }) {
   const projects = useList(projectsAtom)
   const project = projects.find((p) => p.id === chat.projectId)
@@ -346,6 +349,7 @@ function ChatHeader({
               ))}
           </ContextMenu>
         )}
+        {workspace && <RunControl chatId={chat.id} onOpen={onRun} />}
         <ChatProcesses chatId={chat.id} />
         {/* One control for the side panel (Changes, Files, Browser, Terminal live in its tabs); what this chat
             changed shows on it. */}

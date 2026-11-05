@@ -2,7 +2,7 @@ import { discovered, pickedPaths } from "./file-skills.ts"
 import { listFolders } from "./folders.ts"
 import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
+import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
 import { ZorelRpc } from "@zorel/contracts/events"
 import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
 import { Effect, Layer, Schema } from "effect"
@@ -360,6 +360,12 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         Effect.map(store.searchMessages(query.q.trim()), (rows) => rows.map((m) => ({ chatId: m.chatId, messageId: m.id, at: m.at, snippet: snippet(m.text, query.q.trim()) })))
       )
       .handle("scripts", ({ params }) => Effect.map(chatRoot(params.id), scriptsOf))
+      .handle("preview", ({ params, payload }) =>
+        runtime.preview(params.id, payload).pipe(
+          Effect.mapError(() => new HttpApiError.NotFound()),
+          Effect.flatMap((r) => ("error" in r ? Effect.fail(new PreviewFailed({ message: r.error })) : Effect.succeed(r)))
+        )
+      )
       .handle("servers", ({ params }) => Effect.flatMap(chatRoot(params.id), (root) => chatServers(params.id, root)))
       // Stops a server of that list (SIGTERM); a pid outside it is not found.
       .handle("stopServer", ({ params }) =>

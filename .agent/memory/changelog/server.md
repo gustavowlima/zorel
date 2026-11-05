@@ -70,3 +70,4 @@
 2026-11-05 | zorel_preview: any project's dev server on a free port, shown in the chat's Browser panel | user wants previews for any project (as Tucano/OpenBot), without containers or portless
 2026-11-05 | per-agent monthly and per-reply token limits, archive, retry | user asked for items 1-3 of the Tucano comparison
 2026-11-05 | routines triggered by connector events (poll a read-only MCP tool, run on new items) | item 4 of the Tucano comparison
+2026-11-05 | Run button: the person starts the project server like zorel_preview | user: "rodar localmente" = Zorel runs the project in the chat folder
