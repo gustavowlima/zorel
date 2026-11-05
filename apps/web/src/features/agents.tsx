@@ -69,7 +69,7 @@ export function AgentRow({ agent, agents, working, onDelete }: { agent: Agent; a
 
 // One agent as a card (the Agents screen, like the Builder's review): face, name (and "working"), role, what it does,
 // how it runs. The whole card opens its page; the ⋯ menu sits on top of it.
-function AgentCard({ agent, agents, working, onDelete }: { agent: Agent; agents: ReadonlyArray<Agent>; working: boolean; onDelete: (a: Agent) => void }) {
+export function AgentCard({ agent, agents, working, onDelete }: { agent: Agent; agents: ReadonlyArray<Agent>; working: boolean; onDelete: (a: Agent) => void }) {
   return (
     <article className="relative flex flex-col gap-3 rounded-card border border-subtle p-4 transition-colors duration-120 hover:border-strong motion-reduce:transition-none">
       <RowHit label={t("agents.open") + ": " + agent.name} onPress={() => go({ view: "agent", id: agent.id })} className="inset-0 rounded-card data-hovered:bg-transparent" />

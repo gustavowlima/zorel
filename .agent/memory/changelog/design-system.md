@@ -21,3 +21,4 @@
 2026-11-05 | Input size prop, SearchInput, OptionList/OptionRow; check:ui rules hand-search, hand-listbox, input-height | five hand-built search fields with different icon offsets and sizes; two hand-rolled listboxes; height classes on fields
 2026-11-05 | IconTile, Notice; hairline lists through Rows; check:ui hand-list, hand-notice | ideas from the old design-system-pass worktree, rewritten on current main
 2026-11-05 | agent avatars from open-bot-avatar in a tinted tile; Builder review takes the middle | user asked for friendlier avatars and a clearer proposal panel
+2026-11-05 | project agent picker as avatar tiles, Builder chat fixed right, model per card | user: too compact, Assistant label, customize before create
