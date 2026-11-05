@@ -1,7 +1,7 @@
 # web
 keywords: web, files, explorer, file tree, react, ui, chat, sidebar, route, knowledge, inbox, needs you, usage, model picker, settings, i18n, atoms, atom, client
 status: active
-updated: 2026-11-03
+updated: 2026-11-05
 
 ## current
 - Git panel (2026-11-04): GitStatus.files is now {path, status} (parsePorcelain); StatusMark lives in @/ui (status-mark.tsx); Settings uses one centered max-w-5xl column for all pages
@@ -65,11 +65,15 @@ updated: 2026-11-03
 - agents.tsx: route #/agents (AgentsView, AgentRow, useWorking); chat invalidates "agents" when the message count changes (agent may have created a colleague)
 - routines.tsx: AgentRoutines on the agent page, OUTSIDE the profile <form> (nested form broke submit)
 - icon rail (user request): Rail in sidebar.tsx (places + vertical UsageFoot + Settings), Sidebar only with Chats/Projects; App.tsx renders Rail + Sidebar; route #/routines (RoutinesView); Tooltip gained placement
-- ChatItem in the sidebar: 2 lines without icon (NavTreeItem detail; nested uses pl-10): title + age/spinner; below 16px avatars + member names, or model, or live state. Section NavLabel without icon (user request: less cluttered)
-- project in the sidebar: aligned subtitle (no folder/bold), chevron slot="chevron" after the name, dim count on the right; nested chats pl-6 with hairline at left-3
+- ChatItem in the sidebar (2026-11-05, replaces the no-icon version): 2 lines (h-13); 20px avatar in the icon column (ModelAvatar with no agent, Users with several) + status dot on its corner; line 1 title + age/spinner (⋯ RowMenu replaces it on hover/focus/touch); line 2 `Agent · model` or the status in words. Section NavLabel has icon (MessageCircle/Folder), hint tooltip and a waiting count when collapsed
+- project in the sidebar (2026-11-05): folder (FolderOpen when open) in the icon column that becomes the chevron (slot=chevron) on hover; name font-medium text-fg; dim count on the right; hover shows + and ⋯ (RowMenu; settings live in the menu); empty project has one quiet child row (key e:<id>) "No chats in this project · Start one"; nested chats pl-6 with hairline at left-3
 - collapsible sidebar: useSidebar in state.ts (localStorage zorel.sidebar.hidden, ⌘B); Rail has a PanelLeftClose/Open button and active Chats toggles; rail with border-r
 - motion 12.43.0 (user request: animate the sidebar): ui/motion.tsx exports spring, Fold (auto height with AnimatePresence), SlideWidth (width, stays mounted, inert when closed), Marker (layoutId) and MotionConfig (reducedMotion user in main.tsx). Do not mix transition-* classes on motion elements
 - notify.tsx: useNotifications(route) in App (Notification API, transitions via noteworthy() in labels.ts), NotifySetting in Settings › General (localStorage zorel.notify). Pause: button on the rail + strip in App
+- sidebar Search button (2026-11-05): openPalette() in palette.tsx dispatches window event "zorel:palette"; chatMenu/projectMenu in Sidebar feed both right-click (ContextMenu) and the row ⋯; no Archive (server has no such state), project rename not in the menu (name is edited in the overview)
+- chat receipts (2026-11-05): ReceiptCard in chat.tsx is a 28px ghost Button row (aria-expanded) that opens the full command (commandOf), cwd, extra args (extraArgs) and Copy; replaced the wrapping "Allowed · …" paragraph
+- mentions (2026-11-05): features/mentions.ts (pure: splitMentions uses MENTION_RE from contracts, the same regex as the server's `mentioned` (context.ts): `@` not glued to a letter/digit/_/./- (so "(@tester)" counts, an e-mail does not) + token of letters/digits/_/-, accents and case ignored, code skipped by the plugin, linkMentions remark plugin) + mention.tsx (MentionChip, MentionText for user bubbles); ChatMarkdown maps links `#/agent/<id>` to chips; `.prose-chat a:not([data-mention])` keeps the chip out of the link style. Queue: QueuePanel shows "Send now" on every item while busy (tooltip join vs stop); no more Codex-only Steer
+- calling agents (2026-11-05): "#" no longer makes a lead; "#" and "@" share agent-options.ts (callable, agentOptions: members first, rest = "Add to chat") and both insert an `@handle` chip (suggestion() maps # to the "@" mention char). Joining happens at SEND, not on pick: toJoin(text, memberIds, callable) reads the text like the server (MENTION_RE, backtick code skipped) and chat.tsx submit does one updateChat(agentIds) before send/queue (SendError chat.addFailed keeps the text); home: callWith() = lead + named, first named leads and sets the model when no lead was chosen, updateChat only if a file already created the chat
 - Cmd+K: ui/command.tsx (CommandPalette with RAC Autocomplete+Menu, no internal filter) and features/palette.tsx (places, chats/projects/agents filtered on the client, messages via GET /api/search with 180ms debounce)
 - edit from here: MessageActions onEdit (user msg only, no live turn) → RewindDialog → mutations.rewind → useAtomRefresh(chatAtom) + setDraft with the text
 - mcp.tsx CATALOG (presets that fill NewServer; no OAuth). project.tsx Agents: default agent Select
