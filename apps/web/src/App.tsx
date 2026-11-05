@@ -101,7 +101,7 @@ function Screen({ route }: { route: Route }) {
     case "routines":
       return <RoutinesView />
     case "knowledge":
-      return <KnowledgeView selected={route.id} />
+      return <KnowledgeView selected={route.id} scope={route.scope} kind={route.kind} />
     case "usage":
       return <UsageView key={route.agentId ?? "all"} agentId={route.agentId} />
     case "settings":

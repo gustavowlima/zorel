@@ -25,8 +25,9 @@ export function MenuItem({ children, onAction, tone = "default", icon }: { child
     <MenuItemPrimitive
       onAction={onAction}
       className={cn(
-        "flex h-control-sm cursor-default items-center gap-2 rounded-md px-2 text-base outline-none data-focused:bg-accent-soft data-focused:[&_svg]:text-accent-text data-disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
-        tone === "danger" ? "text-danger" : "text-secondary data-focused:text-fg"
+        "flex h-control-sm cursor-default items-center gap-2 rounded-md px-2 text-base outline-none data-disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+        // Focus speaks the item's own voice: blue for an ordinary item, red for a destructive one (never blue on red).
+        tone === "danger" ? "text-danger data-focused:bg-danger-soft" : "text-secondary data-focused:bg-accent-soft data-focused:text-fg data-focused:[&_svg]:text-accent-text"
       )}
     >
       {icon}

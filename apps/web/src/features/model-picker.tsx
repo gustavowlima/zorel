@@ -1,15 +1,15 @@
 // Model picker (prototype: "Choose model"): a rail with one button per subscription account and per API
-// provider, the models of the selected one on the right, a search across all of them, and the reasoning
-// level for engines that have one. Switching keeps the whole context (the runtime resends only the delta).
+// provider, the models of the selected one on the right, a search across all of them, and the reasoning level
+// (a stepped slider) for engines that have one. Switching keeps the whole context (the runtime resends only the delta).
 import type { Effort, ModelInfo, ProviderAccount } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { type ReactNode, useMemo, useState } from "react"
 import { accountsAtom, modelsAtom, useList } from "../client.ts"
-import { ACCOUNT_OF_MODEL, modelName, modelNote, providerHint, providerLabel, splitModel } from "../labels.ts"
+import { ACCOUNT_OF_MODEL, modelName, modelNote, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
 import { LimitWindows } from "./limits.tsx"
 import { providerPageOf } from "./providers.tsx"
-import { Button, cx, FieldButton, Input, OptionButton, Popover, ProviderIcon, RailButton, SearchInput, Tab, TabList, Tabs } from "@/ui"
+import { Button, cx, FieldButton, IconButton, Input, OptionButton, Popover, ProviderIcon, RailButton, SearchInput, Settings, StepSlider } from "@/ui"
 
 export interface ModelChoice {
   readonly model: string
@@ -124,17 +124,18 @@ export function ModelPicker({ value, onChange, variant = "chip", className }: { 
     )
 
   return (
-    <Popover trigger={trigger} label={t("model.choose")} placement={variant === "field" ? "bottom start" : "top start"} className="w-md">
+    <Popover trigger={trigger} label={t("model.choose")} placement={variant === "field" ? "bottom start" : "top start"}>
       {(close) => <PickerBody entries={entries} value={value} current={current} onChange={onChange} close={close} />}
     </Popover>
   )
 }
 
+// One view: accounts on the rail, a search across all of them, the selected one's limits and models; below, for an
+// engine with a reasoning level, that level as a stepped slider with its name.
 function PickerBody({ entries, value, current, onChange, close }: { entries: ReadonlyArray<Entry>; value: ModelChoice; current: Entry | undefined; onChange: (v: ModelChoice) => void; close: () => void }) {
   const [railKey, setRailKey] = useState(current?.key ?? entries[0]?.key)
   const [query, setQuery] = useState("")
   const entry = entries.find((e) => e.key === railKey) ?? entries[0]
-  const provider = splitModel(value.model).provider
 
   const pick = (e: Entry, model: string) => {
     onChange({ model: `${e.provider}/${model}`, accountId: e.account && !e.account.isDefault ? e.account.id : null, effort: EFFORT_PROVIDERS.has(e.provider) ? value.effort : null })
@@ -145,10 +146,14 @@ function PickerBody({ entries, value, current, onChange, close }: { entries: Rea
   const q = query.trim().toLowerCase()
   const matches = q ? entries.flatMap((e) => e.models.filter((m) => `${e.label} ${m}`.toLowerCase().includes(q)).map((m) => ({ e, m }))) : []
 
+  const level = value.effort ?? "default"
   return (
-    <div className="flex flex-col">
-      <div className="flex min-h-0">
-        <fieldset aria-label={t("model.accounts")} className="m-0 flex w-15 min-w-0 shrink-0 flex-col items-center gap-1.5 border-0 border-r border-subtle px-0 py-2.5">
+    <div className="flex min-h-0 w-md flex-1 flex-col">
+    {/* One height for every provider (it still shrinks to the window): the rail always fits and the popover does
+        not jump in size when another account is picked; the model list takes the room left. */}
+    <div className="flex h-100 min-h-0 shrink">
+      <div className="flex w-15 shrink-0 flex-col items-center border-r border-subtle py-2.5">
+        <fieldset aria-label={t("model.accounts")} className="scroll-quiet m-0 flex min-h-0 min-w-0 flex-1 flex-col items-center gap-1.5 overflow-y-auto border-0 p-0">
           {entries.map((e) => (
             <RailButton key={e.key} selected={!q && e.key === entry?.key} label={e.label} dimmed={!e.available} onPress={() => {
                 setQuery("")
@@ -158,47 +163,46 @@ function PickerBody({ entries, value, current, onChange, close }: { entries: Rea
             </RailButton>
           ))}
         </fieldset>
-        <div className="flex min-w-0 flex-1 flex-col gap-2 p-2.5">
-          <SearchField value={query} onChange={setQuery} />
-          {q ? (
-            <div className="flex max-h-80 flex-col gap-0.5 overflow-auto">
-              {matches.map(({ e, m }) => (
-                <OptionButton key={`${e.key}/${m}`} selected={isSelected(e, m)} title={modelName(`${e.provider}/${m}`)} note={e.label} onPress={() => pick(e, m)} />
-              ))}
-              {VALID_ID.test(query.trim()) && <OptionButton selected={false} title={query.trim()} note={t("model.customHint")} onPress={() => {
-                    onChange({ model: query.trim(), accountId: null, effort: null })
-                    close()
-                  }} />}
-              {!matches.length && !VALID_ID.test(query.trim()) && <p className="px-2.5 py-3 text-muted">{t("model.noMatch")}</p>}
-            </div>
-          ) : (
-            entry && <EntryPane entry={entry} isSelected={isSelected} pick={pick} close={close} />
-          )}
-        </div>
-      </div>
-      {EFFORT_PROVIDERS.has(provider) && (
-        <div className="flex items-center gap-3 border-t border-subtle px-4 py-2.5">
-          <span className="text-sm text-muted">{t("model.effort")}</span>
-          <Tabs selectedKey={value.effort ?? "default"} onSelectionChange={(k) => onChange({ ...value, effort: k === "default" ? null : (k as Effort) })}>
-            <TabList label={t("model.effort")}>
-              {EFFORTS.map((e) => (
-                <Tab key={e} id={e}>
-                  {t(`model.effortLevel.${e}`)}
-                </Tab>
-              ))}
-            </TabList>
-          </Tabs>
-        </div>
-      )}
-      <div className="flex items-center gap-2 border-t border-subtle px-4 py-2.5 text-sm text-muted">
-        <span className="flex-1">{t("model.switchKeeps")}</span>
-        <Button size="sm" variant="ghost" className="text-accent-text" onPress={() => {
+        {/* Adding or managing an account lives in Settings › Providers. */}
+        <IconButton className="mt-1.5 shrink-0" label={t("settings.providers")} onPress={() => {
             close()
             go({ view: "settings", tab: "providers" })
           }}>
-          {t("settings.providers")}
-        </Button>
+          <Settings />
+        </IconButton>
       </div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 p-2.5">
+        <SearchField value={query} onChange={setQuery} />
+        {q ? (
+          <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-auto">
+            {matches.map(({ e, m }) => (
+              <OptionButton key={`${e.key}/${m}`} selected={isSelected(e, m)} title={modelName(`${e.provider}/${m}`)} note={e.label} onPress={() => pick(e, m)} />
+            ))}
+            {VALID_ID.test(query.trim()) && <OptionButton selected={false} title={query.trim()} note={t("model.customHint")} onPress={() => {
+                  onChange({ model: query.trim(), accountId: null, effort: null })
+                  close()
+                }} />}
+            {!matches.length && !VALID_ID.test(query.trim()) && <p className="px-2.5 py-3 text-muted">{t("model.noMatch")}</p>}
+          </div>
+        ) : (
+          entry && <EntryPane entry={entry} isSelected={isSelected} pick={pick} close={close} />
+        )}
+      </div>
+    </div>
+      {EFFORT_PROVIDERS.has(splitModel(value.model).provider) && (
+        <div className="flex shrink-0 flex-col gap-2 border-t border-subtle px-4 pt-3 pb-3.5">
+          <div className="flex items-baseline justify-between text-sm">
+            <span className="text-muted">{t("model.effort")}</span>
+            <span className="font-medium text-fg">{t(`model.effortLevel.${level}`)}</span>
+          </div>
+          <StepSlider
+            label={t("model.effort")}
+            value={level}
+            steps={EFFORTS.map((e) => ({ id: e, label: t(`model.effortLevel.${e}`) }))}
+            onChange={(e) => onChange({ ...value, effort: e === "default" ? null : e })}
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -208,7 +212,7 @@ function EntryPane({ entry, isSelected, pick, close }: { entry: Entry; isSelecte
   const kind =
     entry.kind === "subscription" ? (entry.account?.identity ?? t("model.subscription")) : entry.kind === "local" ? t("model.local") : entry.kind === "agent" ? t("model.agentCli") : t("model.apiKey")
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex min-h-0 flex-1 flex-col gap-1.5">
       <div className="flex items-center gap-2 px-2.5 pt-1">
         <ProviderIcon provider={entry.provider} size={14} />
         <span className="truncate font-semibold">{entry.label}</span>
@@ -219,30 +223,30 @@ function EntryPane({ entry, isSelected, pick, close }: { entry: Entry; isSelecte
           <LimitWindows account={entry.account} compact />
         </div>
       )}
+      {/* Not set up (signed out, no key, server not running): it just says so and opens that provider's page in
+          Settings, where it is set up. No setup instructions here, and no models to pick until it works. */}
       {!entry.available && !entry.account?.limitedUntil && (
-        <div className="flex items-center gap-2 px-2.5 text-sm text-warning">
-          <span className="flex-1">{entry.kind === "subscription" ? t("model.signedOut") : providerHint(entry.provider) || t("model.unavailable")}</span>
-          {entry.kind === "subscription" && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onPress={() => {
-                close()
-                const page = providerPageOf(entry.provider)
-                go({ view: "settings", tab: "providers", ...(page && { provider: page }) })
-              }}
-            >
-              {t("model.signIn")}
-            </Button>
-          )}
+        <div className="flex items-center gap-2 px-2.5 py-1 text-sm">
+          <span className="flex-1 text-muted">{entry.kind === "subscription" ? t("model.signedOut") : t("model.unavailable")}</span>
+          <Button
+            size="sm"
+            variant="secondary"
+            onPress={() => {
+              close()
+              const page = providerPageOf(entry.provider)
+              go({ view: "settings", tab: "providers", ...(page && { provider: page }) })
+            }}
+          >
+            {entry.kind === "subscription" ? t("model.signIn") : t("model.setUp")}
+          </Button>
         </div>
       )}
-      <div className="flex max-h-72 flex-col gap-0.5 overflow-auto">
-        {entry.models.map((m) => (
+      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-auto">
+        {(entry.available || entry.account?.limitedUntil ? entry.models : []).map((m) => (
           <OptionButton key={m} selected={isSelected(entry, m)} title={modelName(`${entry.provider}/${m}`)} note={modelNote(`${entry.provider}/${m}`)} onPress={() => pick(entry, m)} />
         ))}
       </div>
-      {entry.kind !== "subscription" && (
+      {entry.available && entry.kind !== "subscription" && (
         <form
           className="flex items-center gap-1.5 px-1 pt-1"
           onSubmit={(e) => {

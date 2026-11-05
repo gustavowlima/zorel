@@ -28,6 +28,16 @@ document.addEventListener("contextmenu", (e) => {
   if (!el?.closest("input, textarea, [contenteditable='true'], .xterm")) e.preventDefault()
 })
 
+// Focus rings only for keyboard navigation (styles.css): on with Tab, off with the next pointer press.
+addEventListener(
+  "keydown",
+  (e) => {
+    if (e.key === "Tab") document.documentElement.dataset.keyboard = ""
+  },
+  true
+)
+addEventListener("pointerdown", () => delete document.documentElement.dataset.keyboard, true)
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RegistryProvider>

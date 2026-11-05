@@ -12,7 +12,7 @@ import { accountsAtom, agentsAtom, keysAtom, modelsAtom, mutations, useInvalidat
 import { LimitWindows } from "./limits.tsx"
 import { modelName, modelNote, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
-import { Badge, Button, ChevronRight, ConfirmButton, cx, Dot, Input, ListRow, Plus, ProviderIcon, Rows } from "@/ui"
+import { Badge, Button, ChevronRight, ConfirmButton, cx, Dot, Input, ListRow, Plus, ProviderIcon, Rows, Section, SettingRow } from "@/ui"
 
 type KeyInfo = typeof KeyInfoSchema.Type
 
@@ -202,27 +202,17 @@ function ProviderPage({ provider: p }: { provider: Provider }) {
   )
 }
 
+// A provider page's section: the shared group (Section over Rows).
 const Group = ({ title, hint, action, children }: { title: string; hint?: string; action?: ReactNode; children: ReactNode }) => (
-  <section className="flex flex-col gap-3">
-    <div className="flex items-start justify-between gap-4">
-      <span className="flex min-w-0 flex-col gap-1">
-        <h2 className="text-sm font-medium text-muted">{title}</h2>
-        {hint && <p className="text-sm text-dim">{hint}</p>}
-      </span>
-      {action}
-    </div>
+  <Section title={title} description={hint} action={action}>
     <Rows>{children}</Rows>
-  </section>
+  </Section>
 )
 
 const Row = ({ title, hint, tone, children }: { title: ReactNode; hint?: ReactNode; tone?: "warning"; children?: ReactNode }) => (
-  <div className="flex flex-wrap items-center gap-3 py-3.5">
-    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-      <span className="truncate font-medium">{title}</span>
-      {hint && <span className={cx("text-sm", tone === "warning" ? "text-warning" : "text-muted")}>{hint}</span>}
-    </span>
+  <SettingRow title={<span className="block truncate">{title}</span>} hint={tone === "warning" && hint ? <span className="text-warning">{hint}</span> : hint}>
     {children}
-  </div>
+  </SettingRow>
 )
 
 // Subscription sign-ins through the official CLI; each extra account gets its own folder.

@@ -42,7 +42,7 @@ export function OptionRow({
         onPick()
       }}
       onDoubleClick={onOpen}
-      className={cn("group flex shrink-0 cursor-default items-center gap-2.5 rounded-control px-2.5", selected ? "bg-accent-soft text-fg" : "text-secondary hover:bg-hover", className)}
+      className={cn("group flex shrink-0 cursor-default items-center gap-2.5 rounded-md px-2.5", selected ? "bg-accent-soft text-fg" : "text-secondary hover:bg-control-hover", className)}
     >
       {icon && <span className={cn("flex size-5 shrink-0 items-center justify-center [&_svg]:size-4", selected ? "text-accent-text" : "text-muted")}>{icon}</span>}
       {children}

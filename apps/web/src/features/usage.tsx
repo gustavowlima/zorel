@@ -12,7 +12,7 @@ import { accountsAtom, agentsAtom, mutations, projectsAtom, topTurnsAtom, usageA
 import { chatTitle, formatCost, fullest, modelLabel, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
 import { LimitWindows } from "./limits.tsx"
-import { Button, ChartColumn, CircleAlert, EmptyState, IconButton, Notice, ProviderIcon, Rows, Screen, Section, Select, Tab, TabList, Tabs } from "@/ui"
+import { Button, ChartColumn, CircleAlert, EmptyState, IconButton, Notice, ProviderIcon, RowHit, Rows, Screen, Section, Select, Tab, TabList, Tabs } from "@/ui"
 
 type Range = "month" | "7" | "30"
 type Metric = "cost" | "tokens"
@@ -153,11 +153,11 @@ export function UsageView({ agentId }: { agentId?: string | undefined }) {
               </Button>
             }
           >
-            <div className="flex flex-col">
+            <Rows>
               {subscriptions.map((a) => (
                 <SubscriptionRow key={a.id} account={a} />
               ))}
-            </div>
+            </Rows>
           </Section>
         )}
 
@@ -428,7 +428,7 @@ function SubscriptionRow({ account: a }: { account: ProviderAccount }) {
       .finally(() => setReading(false))
   }
   return (
-    <div className="flex flex-col gap-3 border-t border-subtle py-4">
+    <div className="flex flex-col gap-3 py-4">
       <div className="flex items-center gap-3">
         <ProviderIcon provider={a.provider} size={18} />
         <span className="flex min-w-0 flex-1 flex-col">
@@ -454,17 +454,18 @@ function TopTurns({ since }: { since: number }) {
       ) : (
         <Rows>
           {top.map((turn) => (
-            <Button key={turn.turnId} variant="ghost" className="h-auto justify-start gap-3 rounded-none px-1 py-2.5 font-normal text-fg" onPress={() => go({ view: "chat", id: turn.chatId })}>
-              <ProviderIcon provider={splitModel(turn.model).provider} size={16} />
-              <span className="flex min-w-0 flex-1 flex-col text-left">
+            <div key={turn.turnId} className="relative flex items-center gap-3 py-2.5">
+              <RowHit label={chatTitle({ title: turn.chatTitle })} onPress={() => go({ view: "chat", id: turn.chatId })} />
+              <ProviderIcon provider={splitModel(turn.model).provider} size={16} className="pointer-events-none relative" />
+              <span className="pointer-events-none relative flex min-w-0 flex-1 flex-col text-left">
                 <span className="truncate">{chatTitle({ title: turn.chatTitle })}</span>
                 <span className="truncate text-sm text-muted">{`${modelLabel(turn.model)} · ${formatCompact(turn.inputTokens + turn.outputTokens)} · ${formatAge(turn.at)}`}</span>
               </span>
-              <span className="shrink-0 text-right tabular-nums">
+              <span className="pointer-events-none relative shrink-0 text-right tabular-nums">
                 {formatCost(turn.cost)}
                 {turn.billing === "subscription" && <span className="block text-sm text-dim">{t("usage.apiEquivalent")}</span>}
               </span>
-            </Button>
+            </div>
           ))}
         </Rows>
       )}

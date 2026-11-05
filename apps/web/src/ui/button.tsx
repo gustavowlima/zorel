@@ -10,8 +10,9 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-accent text-on-accent data-hovered:bg-accent-hover",
-        secondary: "bg-control text-fg data-hovered:bg-control-hover data-pressed:bg-control-active",
-        ghost: "text-muted data-hovered:bg-control-hover data-hovered:text-fg",
+        secondary: "bg-control text-fg data-hovered:bg-control-hover data-pressed:bg-control-active popup-open:bg-control-active",
+        // While its menu or popover is open, a trigger stays lit (it reads as the origin of the floating layer).
+        ghost: "text-muted data-hovered:bg-control-hover data-hovered:text-fg popup-open:bg-control-hover popup-open:text-fg",
         destructive: "bg-danger-soft text-danger data-hovered:bg-danger data-hovered:text-on-accent"
       },
       size: {
