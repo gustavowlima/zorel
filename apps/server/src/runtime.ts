@@ -2,21 +2,21 @@
 // The turn doesn't depend on the client: closing the tab stops nothing; reconnect = subscribe again (snapshot + events).
 // Chaining: a reply that mentions another member queues that member's turn (up to MAX_DEPTH without a message from you).
 import { APPROVAL_MS } from "./engines/session.ts"
-import { type Access, type Agent, type Chat, type Effort, type FailoverTarget, type FailureReason, type FileChange, MAX_RUNNING_DEFAULT, type Step, type Switch } from "@zorel/contracts"
+import { type Access, type Agent, type Chat, type Effort, type FailoverTarget, type FailureReason, type FileChange, MAX_RUNNING_DEFAULT, type Memory, type Step, type Switch } from "@zorel/contracts"
 import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
 import { ask, consolidate, DataDir, members, prepare } from "./chat.ts"
 import { parseRoute, ROUTER_MESSAGES, routerModel, routerPrompt } from "./router.ts"
-import { handleOf, MAX_DEPTH, mentioned, scopesOf, snippet } from "./context.ts"
-import { type AccountRow, Store, type Repository, type TurnRow } from "./db.ts"
-import { type EngineFailure, Engines, isImage, type NativeStep, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
+import { handleOf, MAX_DEPTH, memoryNote, mentioned, pinned, readPage, scopesOf, sectionOf, snippet } from "./context.ts"
+import { type AccountRow, normalize, Store, type Repository, type TurnRow } from "./db.ts"
+import { engineLabel, type EngineFailure, Engines, isImage, type NativeStep, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
 import { cardText, TOO_LARGE } from "./engines/policy.ts"
-import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, updateInput, visibleTo } from "./team.ts"
+import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
@@ -41,6 +41,10 @@ const SKIP_MS = 10 * 60_000 // §6.1: a route that failed (not a limit) is skipp
 // An engine that sends nothing for this long, with no approval waiting, is treated as dead (its process may
 // have died without the SDK noticing): the turn fails as "unavailable", so failover can take over.
 const STALL_MS = 10 * 60_000
+const QUIET_AFTER = Duration.minutes(10) // a chat this long without a turn learns from its latest messages
+const SESSION_IDLE_MS = 55 * 60_000 // the provider's prompt cache lasts an hour: past it, going on costs what starting over does
+const SESSION_MAX_CONTEXT = 60_000 // input tokens; past it, the next turn starts a fresh session from the summary
+const MEMORY_NOTE_MAX = 2_000 // characters of memory changes carried as a note before the session starts over with them
 const SAME_STEP_MAX = 4 // the same step with the same result this many times in a row: a loop
 const ERRORS_MAX = 6 // this many failed steps in a row: stuck
 
@@ -53,14 +57,78 @@ export function runawayGuard() {
   let last = ""
   let same = 0
   let errors = 0
-  return (step: { kind: string; title: string; status: string; output: string }): string | undefined => {
-    const sig = `${step.kind}\u0000${step.title}\u0000${step.output.slice(0, 500)}`
+  return (step: { kind: string; title: string; detail?: string; status: string; output: string }): string | undefined => {
+    errors = step.status === "error" ? errors + 1 : 0
+    // A successful edit (not a refused or failed one) changes the file, and its output is always the same "updated successfully": repeating it
+    // is progress, not a loop (four edits to one file in a row stopped a real turn). It also breaks a streak.
+    if (step.kind === "edit" && step.status === "ok") {
+      last = ""
+      same = 0
+      return undefined
+    }
+    // The detail (the command) is part of the identity: two different commands can share one summary.
+    const sig = `${step.kind}\u0000${step.title}\u0000${step.detail ?? ""}\u0000${step.output.slice(0, 500)}`
     same = sig === last ? same + 1 : 1
     last = sig
-    errors = step.status === "error" ? errors + 1 : 0
     if (same >= SAME_STEP_MAX) return `Stopped: the agent ran "${step.title}" ${same} times in a row with the same result.`
     if (errors >= ERRORS_MAX) return `Stopped: ${errors} steps in a row failed.`
     return undefined
+  }
+}
+
+// Times the two things an engine does between its tools: reasoning and writing the answer. They are saved as two
+// steps ("thought" first, "reply" last) so a finished reply shows where its time went. For the reader only: they
+// are not in the runaway guard (it never sees them) and not in the transcript (only `run` steps go there).
+// Neither has an end event: reasoning runs from its first sign to the next text or step; writing, from its first
+// text to its last before the next step or reasoning (so a tool's time in between is not the reply's).
+export function replyTiming() {
+  let thinking = false
+  let thoughtMs = 0
+  let thinkSince: number | undefined
+  let wrote = false
+  let writtenMs = 0
+  let writeSince: number | undefined
+  let lastText = 0
+  const closeThought = (now: number) => {
+    if (thinkSince !== undefined) thoughtMs += Math.max(0, now - thinkSince)
+    thinkSince = undefined
+  }
+  const closeWriting = () => {
+    if (writeSince !== undefined) writtenMs += Math.max(0, lastText - writeSince)
+    writeSince = undefined
+  }
+  return {
+    thinking(now: number) {
+      closeWriting()
+      thinking = true
+      thinkSince ??= now
+    },
+    step(now: number) {
+      closeThought(now)
+      closeWriting()
+    },
+    text(now: number) {
+      closeThought(now)
+      wrote = true
+      writeSince ??= now
+      lastText = now
+    },
+    reset() {
+      thinking = false
+      thoughtMs = 0
+      thinkSince = undefined
+      wrote = false
+      writtenMs = 0
+      writeSince = undefined
+      lastText = 0
+    },
+    // The steps as saved: the thought before the tools, the reply after. `engine` is the label both carry.
+    steps(native: ReadonlyArray<Step>, engine: string, now: number): Step[] {
+      closeThought(now)
+      closeWriting()
+      const timing = (tool: "thought" | "reply", title: string, ms: number): Step => ({ tool, args: "", status: "ok", result: "", title, detail: engine, ms })
+      return [...(thinking ? [timing("thought", "Thought", thoughtMs)] : []), ...native, ...(wrote ? [timing("reply", "Replied", writtenMs)] : [])]
+    }
   }
 }
 const TEXT_BATCH = Duration.millis(100) // batched deltas
@@ -76,7 +144,7 @@ export interface SendInput {
 export interface RuntimeService {
   readonly send: (input: SendInput) => Effect.Effect<{ turnId: string }, ChatNotFound>
   // Corrects the agent mid-turn when the engine supports it (Codex); otherwise queues it like `send`.
-  readonly steer: (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) => Effect.Effect<void, ChatNotFound>
+  readonly steer: (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) => Effect.Effect<{ readonly joined: boolean }, ChatNotFound>
   readonly interrupt: (chatId: string) => Effect.Effect<void>
   readonly retry: (chatId: string, messageId: string) => Effect.Effect<void, ChatNotFound>
   // The chat's Run: the person starts the project's server (as zorel_preview does, with no approval: it's theirs).
@@ -84,6 +152,8 @@ export interface RuntimeService {
   // Pause everything: running turns stop, new ones wait queued, routines don't fire.
   // "Edit from here": the chat's engine sessions close, so the next turn starts from what the chat keeps.
   readonly forget: (chatId: string) => Effect.Effect<void>
+  // Tells the chat what an agent in "auto" memory mode saved on its own (the "remembered" event).
+  readonly remembered: (chatId: string, saved: ReadonlyArray<Memory>) => Effect.Effect<void>
   readonly paused: () => boolean
   readonly setPaused: (paused: boolean) => Effect.Effect<void>
   readonly setMaxRunning: (max: number) => Effect.Effect<void>
@@ -123,12 +193,25 @@ export const makeRuntime = Effect.gen(function* () {
     return h
   }
   const publish = (chatId: string, e: ChatEvent) => PubSub.publish(hubOf(chatId), e).pipe(Effect.asVoid)
+  // An agent in "auto" memory mode saved facts: the chat says what (and Undo forgets one).
+  const remembered = (chatId: string, saved: ReadonlyArray<Memory>) =>
+    publish(chatId, ev("remembered", { memories: saved.map((m) => ({ id: m.id, scope: m.scope, text: m.text })) }))
   const statusHub = yield* PubSub.unbounded<ChatStatus>()
   const statuses = new Map<string, ChatStatus>()
   const idle = (chatId: string): ChatStatus => ({ chatId, state: "idle", agentId: null, label: "", unread: false, updatedAt: Date.now() })
+  // Who in the chat waits on a teammate: the @mention hand-off still collecting answers here, and the tasks it gave
+  // that will report back. Read on every status change, which every hand-off and report goes through.
+  // ponytail: a task chat deleted mid-task leaves the wait shown until the chat's next status change.
+  const waitsOf = (chatId: string) =>
+    Effect.gen(function* () {
+      const wrap = wraps.get(chatId)
+      const tasks = (yield* store.openTasks()).filter((t) => t.taskOf === chatId && t.taskBy)
+      const given = yield* Effect.forEach(tasks, (t) => Effect.map(store.chat(t.id), (c) => ({ agentId: t.taskBy!, on: c?.agentIds.slice(0, 1) ?? [], taskChatId: t.id })))
+      return [...(wrap?.waiting.size ? [{ agentId: wrap.askerId, on: [...wrap.waiting], taskChatId: null }] : []), ...given.filter((w) => w.on.length)]
+    })
   const setStatus = (chatId: string, state: ChatStatus["state"], agentId: string | null, label: string) =>
     Effect.gen(function* () {
-      const status: ChatStatus = { chatId, state, agentId, label, unread: false, updatedAt: Date.now() }
+      const status: ChatStatus = { chatId, state, agentId, label, unread: false, updatedAt: Date.now(), waits: yield* waitsOf(chatId) }
       statuses.set(chatId, status)
       yield* PubSub.publish(statusHub, status)
       yield* publish(chatId, ev("status", { status }))
@@ -143,8 +226,10 @@ export const makeRuntime = Effect.gen(function* () {
     readonly session: EngineSession
     readonly provider: string
     readonly stable: string
+    readonly memories: ReadonlyMap<string, string> // id → text of the memories it opened with
     seen: number
     used: number
+    context: number // input tokens of its last turn: how big it has grown
   }
   const sessions = new Map<string, Live>()
   // ponytail: one gateway URL per (chat, agent), closed only when the server stops; drop on chat delete if it grows.
@@ -177,7 +262,10 @@ export const makeRuntime = Effect.gen(function* () {
   // Picks the engine for this turn. With a native session, only the dynamic context and the messages
   // after the watermark are sent; a new session gets the whole checkpoint (summary + recent messages).
   // Running turns whose session can take a correction mid-turn (only while the turn streams).
-  const steering = new Map<string, (text: string) => Promise<boolean>>()
+  // The running turn's way to take a message mid-reply, and whose turn it is (a message goes in only for its own agent).
+  const steering = new Map<string, { agentId: string | null; steer: (text: string) => Promise<boolean> }>()
+  // Chats whose running turn a "send now" is stopping: the worker waits for the message to be queued before it picks the next turn.
+  const holding = new Map<string, Deferred.Deferred<void>>()
 
   // The approver of the turn each session is running now (a session outlives turns; approvals go to the current one).
   const approvers = new Map<string, Approver>()
@@ -188,9 +276,15 @@ export const makeRuntime = Effect.gen(function* () {
       // Tool names are part of the stable context: a session lists tools once, so a new set means a new session.
       // The account too: switching accounts opens a new session with the checkpoint (§6.1, no shared native session).
       // So are the folder and the access level: the engine's sandbox is set when the session opens.
-      const stable = `${turn.stable ?? turn.system}\n#tools:${(turn.tools?.defs ?? []).map((d) => d.name).sort().join(",")}\n#account:${account?.id ?? "-"}\n#cwd:${turn.cwd}\n#access:${access}\n#web:${web}\n#skills:${nativeSkills}`
+      // The memories aren't part of it (turn.frame): they reach a live session as a note (memoryNote).
+      const stable = `${turn.frame ?? turn.stable ?? turn.system}\n#tools:${(turn.tools?.defs ?? []).map((d) => d.name).sort().join(",")}\n#account:${account?.id ?? "-"}\n#cwd:${turn.cwd}\n#access:${access}\n#web:${web}\n#skills:${nativeSkills}`
       let live = sessions.get(key)
-      if (live && (!live.session.alive() || live.stable !== stable)) {
+      const note = live && turn.memories ? memoryNote(live.memories, turn.memories, turn.activeMemoryIds ?? []) : undefined
+      // Starting over beats going on when: the prompt cache expired (idle past SESSION_IDLE: resuming costs what a
+      // fresh start does), it grew past SESSION_MAX_CONTEXT (tool outputs pile up in it; a fresh start carries the
+      // summary and the history within HISTORY_CHARS), or the memory changes outgrew a note.
+      const stale = live && (Date.now() - live.used > SESSION_IDLE_MS || live.context > SESSION_MAX_CONTEXT || (note?.length ?? 0) > MEMORY_NOTE_MAX)
+      if (live && (!live.session.alive() || live.stable !== stable || stale)) {
         yield* closeSession(key)
         live = undefined
       }
@@ -205,7 +299,7 @@ export const makeRuntime = Effect.gen(function* () {
           const oldest = [...sessions.entries()].sort((a, b) => a[1].used - b[1].used)[0]
           if (oldest) yield* closeSession(oldest[0])
         }
-        live = { session: opened, provider, stable, seen: 0, used: Date.now() }
+        live = { session: opened, provider, stable, memories: new Map((turn.memories ?? []).map((m) => [m.id, m.text])), seen: 0, used: Date.now(), context: 0 }
         sessions.set(key, live)
       }
       const current = live
@@ -219,14 +313,22 @@ export const makeRuntime = Effect.gen(function* () {
           ? last.text.trim()
           : undefined
       const told = command ? fresh.slice(0, -1) : fresh
-      const prompt = [turn.dynamic && `<context>\n${turn.dynamic}\n</context>`, told.length ? transcript(told) : command ? "" : "Continue."].filter(Boolean).join("\n\n")
+      // A session opened just now has the memories in its system prompt; one going on gets what changed since.
+      const changes = current.seen > 0 ? note : undefined
+      const context = [changes, turn.dynamic].filter(Boolean).join("\n\n")
+      const prompt = [context && `<context>\n${context}\n</context>`, told.length ? transcript(told) : command ? "" : "Continue."].filter(Boolean).join("\n\n")
       onSeen((at) => {
         current.seen = at
       })
       const steer = current.session.steer
       const images = fresh.flatMap((m) => (m.files ?? []).filter(isImage))
       return current.session.turn({ model: row.model, prompt, tools: turn.tools, effort, images, command }).pipe(
-        Stream.onStart(Effect.sync(() => steer && steering.set(row.chatId, steer))),
+        Stream.tap((e) =>
+          Effect.sync(() => {
+            if (e.type === "done") current.context = e.usage.inputTokens
+          })
+        ),
+        Stream.onStart(Effect.sync(() => steer && steering.set(row.chatId, { agentId: row.agentId, steer }))),
         Stream.ensuring(Effect.sync(() => steering.delete(row.chatId)))
       )
     })
@@ -267,6 +369,20 @@ export const makeRuntime = Effect.gen(function* () {
     return { port: at }
   }
 
+  // The reading tools with nothing to read in this chat, for this agent (they come back once there is).
+  const idleTools = (chat: Chat, agent: Agent | undefined) =>
+    Effect.gen(function* () {
+      const scopes = scopesOf(chat, agent?.id ?? null)
+      const who = agent?.id ?? null
+      const active = yield* store.activeMemories(scopes)
+      const skills = (yield* store.activeMemories(scopes, "skill", undefined, who)).length + picked(yield* store.preference("fileSkills"), who).length
+      const idle = new Set<string>()
+      if (active.length <= pinned(active).length) idle.add(MEMORY_TOOL.name) // every memory is in the prompt already
+      if (!(yield* store.hasPages(scopes))) for (const t of ["zorel_knowledge_search", "zorel_knowledge_read"]) idle.add(t)
+      if (!skills) idle.add("zorel_read_skill")
+      return idle
+    })
+
   // ---------- turn tools: steps and approvals persisted and published ----------
   // `fixed`: a native session's gateway (one URL for the whole session); without it, one URL per turn.
   // `onWrite`: a tool that writes (or is sensitive) is about to run; the turn has acted, so failover won't repeat it.
@@ -275,6 +391,7 @@ export const makeRuntime = Effect.gen(function* () {
     const perms = permissionsOf(agent)
     const askFirst = effectiveAccess(chat, agent) === "ask"
     const defs: ToolDef[] = []
+    const withheld = withheldTools(agent) // by the agent's memory mode and knowledge access
     const step = (title: string, tool: string) => run(store.addStep({ turnId: row.id, kind: "tool", title, tool, files: [], status: "running" }).pipe(Effect.tap((s) => publish(chat.id, ev("step-started", { step: s })))))
     const finish = (s: WorkStep, status: WorkStep["status"], output = "") =>
       run(store.finishStep(s, { status, output: output.slice(0, 300) }).pipe(Effect.tap((done) => publish(chat.id, ev("step-finished", { step: done }))), Effect.tap((done) => Effect.sync(() => onFinished(done)))))
@@ -297,7 +414,11 @@ export const makeRuntime = Effect.gen(function* () {
     // access is "ask", like any tool that writes.
     if (perms.browser) for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
-    for (const t of [...TEAM_TOOLS, TASK_TOOL, ASK_TOOL, MEMORY_TOOL, ROUTINES_TOOL, PREVIEW_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    // Each tool's description costs tokens in every session: the ones that only read something are offered once
+    // there is something to read (memories past the prompt's budget, a page, a skill); writing ones stay.
+    const useless = await run(idleTools(chat, agent))
+    for (const t of [...TEAM_TOOLS, TASK_TOOL, ASK_TOOL, MEMORY_TOOL, ROUTINES_TOOL, PREVIEW_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])])
+      if (!withheld.has(t.name) && !useless.has(t.name)) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
       return { tools: undefined as TurnTools | undefined, close: () => {} }
@@ -474,8 +595,10 @@ export const makeRuntime = Effect.gen(function* () {
     const skillCall = async (name: string, args: Record<string, unknown>) => {
       const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "")
       const scopes = scopesOf(chat, agent?.id ?? null)
-      const files = picked(await run(store.preference("fileSkills")))
-      const skills = [...(await run(store.activeMemories(scopes, "skill"))), ...files.map(asMemory)]
+      // Only the skills this agent sees: one limited to other agents isn't found, nor can it be improved from here.
+      const who = agent?.id ?? null
+      const files = picked(await run(store.preference("fileSkills")), who)
+      const skills = [...(await run(store.activeMemories(scopes, "skill", undefined, who))), ...files.map(asMemory)]
       const byTitle = (v: unknown) => {
         const want = String(v ?? "").trim().toLowerCase()
         return skills.find((m) => m.title.toLowerCase() === want) ?? skills.find((m) => m.title.toLowerCase().includes(want) && want.length > 2)
@@ -550,20 +673,28 @@ export const makeRuntime = Effect.gen(function* () {
       const scopes = scopesOf(chat, agent?.id ?? null)
       const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "")
       if (name === "zorel_knowledge_search") {
-        const found = await run(store.searchPages(scopes, str(args.query, 500), 8))
-        const q = str(args.query, 500).split(/\s+/)[0] ?? ""
-        return textResult(found.length ? found.map((p) => `- ${p.title} [${p.id}] (${p.scope}): ${snippet(p.body, q, 80)}`).join("\n") : "No page matches. Try other words.")
+        const query = str(args.query, 500)
+        const found = await run(store.searchPages(scopes, query, 8))
+        // Each hit with the section it's in, so the agent can read just that part.
+        const terms = normalize(query).split(" ").filter((w) => w.length > 2)
+        const hit = (body: string) => terms.find((w) => normalize(body).includes(w)) ?? terms[0] ?? ""
+        return textResult(
+          found.length
+            ? found.map((p) => { const where = sectionOf(p.body, terms); return `- ${p.title} [${p.id}] (${p.scope})${where ? ` › ${where}` : ""}: ${snippet(p.body, hit(p.body), 80)}` }).join("\n")
+            : "No page matches. Try other words."
+        )
       }
-      const all = (await run(store.pages())).filter((p) => scopes.includes(p.scope))
       if (name === "zorel_knowledge_read") {
         const ref = str(args.page, 200)
-        const p = all.find((x) => x.id === ref) ?? all.find((x) => x.title.toLowerCase() === ref.toLowerCase())
-        return p ? textResult(`# ${p.title}\n\n${p.body}`) : textResult(`No page "${ref}" here. Search with zorel_knowledge_search.`, true)
+        const p = await run(store.pageIn(scopes, ref))
+        if (!p) return textResult(`No page "${ref}" here. Search with zorel_knowledge_search.`, true)
+        const r = readPage(p.title, p.body, str(args.section, 200) || undefined)
+        return textResult(r.text, r.error)
       }
       const title = str(args.title, 120)
       const body = typeof args.body === "string" ? args.body.slice(0, 100_000) : ""
       if (!title || !body.trim()) return textResult("title and body are required.", true)
-      const existing = args.page ? all.find((p) => p.id === args.page) : undefined
+      const existing = args.page ? await run(store.pageIn(scopes, str(args.page, 200))) : undefined
       if (args.page && !existing) return textResult("No such page here.", true)
       const want = str(args.scope, 10) || "project"
       const scope = existing?.scope ?? (want === "user" ? "user" : want === "agent" ? (agent ? `agent:${agent.id}` : "") : chat.projectId ? `project:${chat.projectId}` : "")
@@ -583,6 +714,7 @@ export const makeRuntime = Effect.gen(function* () {
     }
 
     const call: Session["call"] = async (name, args) => {
+      if (withheld.has(name)) return textResult(`You don't have ${name}: the user turned it off for you.`, true)
       if (KNOWLEDGE_TOOLS.some((t) => t.name === name)) return knowledgeCall(name, args)
       if (name === ROUTINES_TOOL.name) return routinesCall(args)
       if (SKILL_TOOLS.some((t) => t.name === name)) return skillCall(name, args)
@@ -735,6 +867,7 @@ export const makeRuntime = Effect.gen(function* () {
       const acc = { text: "", error: undefined as string | undefined, usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0 }, steps: [] as Step[], saved: false }
       const route = { model: row.model, accountId: row.accountId }
       const switches: Switch[] = []
+      const timing = replyTiming()
       // Workspace (§9.1): the project folder is the agents' cwd; a checkpoint before the turn and one after
       // give its diff and its undo.
       const project = projectFor(chat, chat.projectId ? yield* store.project(chat.projectId) : undefined) // a worktree, when the chat has one
@@ -750,7 +883,7 @@ export const makeRuntime = Effect.gen(function* () {
           const changes: FileChange[] = treeBefore && treeAfter && chat.projectId ? yield* workspace.changes(chat.projectId, treeBefore, treeAfter) : []
           const cost = pricing.cost(route.model, acc.usage)
           const message = yield* store.addMessage({
-            chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model: route.model, error, steps: acc.steps, switches,
+            chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model: route.model, error, steps: timing.steps(acc.steps, engineLabel(route.model), Date.now()), switches,
             turnId: row.id, changes, accountId: route.accountId, cost, inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens,
             durationMs: started.startedAt ? Date.now() - started.startedAt : null
           })
@@ -786,7 +919,7 @@ export const makeRuntime = Effect.gen(function* () {
           const stalled = yield* Deferred.make<void>()
           const runaway = yield* Deferred.make<string>()
           const guard = runawayGuard()
-          const watch = (s: { kind: string; title: string; status: string; output: string }) => {
+          const watch = (s: { kind: string; title: string; detail?: string; status: string; output: string }) => {
             const why = guard(s)
             if (why) Effect.runSync(Deferred.succeed(runaway, why))
           }
@@ -816,7 +949,7 @@ export const makeRuntime = Effect.gen(function* () {
               const started = stepsById.get(n.id)
               if (!started) {
                 if (n.kind === "edit" || n.kind === "run") acted = true // failover won't repeat a turn that may have changed something
-                const s = yield* store.addStep({ turnId: row.id, kind: n.kind, title: n.title, tool: null, files: n.files, status: "running" })
+                const s = yield* store.addStep({ turnId: row.id, kind: n.kind, title: n.title, detail: n.detail, tool: null, files: n.files, status: "running" })
                 stepsById.set(n.id, s)
                 yield* publish(chatId, ev("step-started", { step: s }))
                 if (n.status === "running") return
@@ -825,14 +958,15 @@ export const makeRuntime = Effect.gen(function* () {
               if (n.status === "running") return
               const done = yield* store.finishStep(s, { status: n.status, output: n.output })
               yield* publish(chatId, ev("step-finished", { step: done }))
-              watch({ kind: n.kind, title: n.title, status: n.status, output: n.output })
+              watch({ kind: n.kind, title: n.title, detail: n.detail, status: n.status, output: n.output })
               // Every step stays with the reply (reads and searches too), with enough of its output to review later.
-              acc.steps.push({ tool: n.kind, args: n.kind === "edit" && n.files.length ? n.files.join(", ") : n.title, status: n.status, result: n.output.slice(0, STEP_RESULT_CHARS) })
+              // The transcript keeps the command, not its summary.
+              acc.steps.push({ tool: n.kind, args: n.kind === "edit" && n.files.length ? n.files.join(", ") : n.detail || n.title, status: n.status, result: n.output.slice(0, STEP_RESULT_CHARS), title: n.title, detail: n.detail, ...(done.durationMs != null && { ms: done.durationMs }) })
             })
           const opened = yield* Effect.promise(() =>
             openTools(chat, attemptRow, agent, acc.steps, () => {
               acted = true
-            }, native ? gatewayOf(sessionKey(attemptRow)) : undefined, (done) => watch({ kind: done.kind, title: done.title, status: done.status, output: done.output ?? "" }))
+            }, native ? gatewayOf(sessionKey(attemptRow)) : undefined, (done) => watch({ kind: done.kind, title: done.title, detail: done.detail, status: done.status, output: done.output ?? "" }))
           )
           yield* Effect.addFinalizer(() =>
             Effect.gen(function* () {
@@ -860,7 +994,10 @@ export const makeRuntime = Effect.gen(function* () {
               Effect.gen(function* () {
                 let delta = ""
                 for (const e of batch) {
-                  if (e.type === "text") delta += e.delta
+                  if (e.type === "text") {
+                    delta += e.delta
+                    if (e.delta) timing.text(Date.now())
+                  } else if (e.type === "thinking") timing.thinking(Date.now())
                   else if (e.type === "done") acc.usage = { cachedTokens: 0, ...e.usage }
                   else if (e.type === "usage") {
                     // Past the agent's limit for one reply: it stops here, with what it has (Continue goes on).
@@ -868,7 +1005,10 @@ export const makeRuntime = Effect.gen(function* () {
                   }
                   else if (e.type === "limits") {
                     if (account) yield* accounts.observe(account.id, e.windows)
-                  } else if (e.type === "step") yield* onStep(e.step)
+                  } else if (e.type === "step") {
+                    timing.step(Date.now())
+                    yield* onStep(e.step)
+                  }
                   else {
                     acc.error = e.message
                     failure = e.failure
@@ -933,6 +1073,7 @@ export const makeRuntime = Effect.gen(function* () {
           yield* Effect.logInfo("failover", { from: r.model, to: next.model, reason: f.reason })
           acc.text = "" // nothing was acted on: the next route starts the reply over
           acc.steps.length = 0
+          timing.reset()
           yield* store.savePartial(row.id, "")
         }
         // Several routes tried and all failed: say what happened on each.
@@ -1078,15 +1219,35 @@ export const makeRuntime = Effect.gen(function* () {
         running.delete(chatId)
         last = done
         yield* chain(row, done) // also when it failed: a hand-off waiting on it must not wait forever
+        const hold = holding.get(chatId)
+        if (hold) yield* Deferred.await(hold) // a "send now" is queueing its message: it goes before whatever is queued
       }
       yield* reportTask(chatId, last)
       workers.delete(chatId)
       yield* setStatus(chatId, "idle", null, "")
-      yield* Effect.forkDetach(consolidate(chatId).pipe(Effect.provide(services), Effect.ignore))
+      yield* Effect.forkDetach(consolidate(chatId, "window", (saved) => remembered(chatId, saved)).pipe(Effect.provide(services), Effect.ignore))
+      yield* learnWhenQuiet(chatId)
     }).pipe(Effect.ensuring(Effect.suspend(() => {
       workers.delete(chatId)
       return freeSlots
     })))
+
+  // A chat that stays quiet for QUIET_AFTER learns from its latest messages (consolidate "quiet"), so a short chat
+  // learns without waiting for its window to fill. Any new turn calls it off; the next idle schedules it again.
+  // ponytail: in memory, so a restart drops what was scheduled; the next quiet spell covers those messages.
+  const quietTimers = new Map<string, Fiber.Fiber<void>>()
+  const calmOff = (chatId: string) =>
+    Effect.suspend(() => {
+      const f = quietTimers.get(chatId)
+      quietTimers.delete(chatId)
+      return f ? Fiber.interrupt(f).pipe(Effect.asVoid) : Effect.void
+    })
+  const learnWhenQuiet = (chatId: string) =>
+    Effect.gen(function* () {
+      yield* calmOff(chatId)
+      // A finished one stays in the map until the chat's next turn: interrupting it then is a no-op.
+      quietTimers.set(chatId, yield* Effect.forkDetach(Effect.sleep(QUIET_AFTER).pipe(Effect.andThen(consolidate(chatId, "quiet", (saved) => remembered(chatId, saved)).pipe(Effect.provide(services), Effect.ignore)))))
+    })
 
   const PAUSED_KEY = "paused"
   let paused = (yield* store.preference(PAUSED_KEY)) === "1"
@@ -1110,7 +1271,7 @@ export const makeRuntime = Effect.gen(function* () {
         return setStatus(chatId, "running", null, WAITING_SLOT)
       }
       workers.set(chatId, { kicked: false })
-      return Effect.forkDetach(worker(chatId)).pipe(Effect.asVoid)
+      return calmOff(chatId).pipe(Effect.andThen(Effect.forkDetach(worker(chatId))), Effect.asVoid)
     })
   // A slot freed (a worker ended, or the limit went up): the chats waiting in line start, oldest first.
   const freeSlots: Effect.Effect<void> = Effect.suspend(() => {
@@ -1147,30 +1308,39 @@ export const makeRuntime = Effect.gen(function* () {
       const who = named.find((a) => a.id === answered?.agentId)
       return who && who.id !== team[0]?.id ? who : undefined
     })
-  // Queues who answers this text: the mentioned members, or the lead.
-  const enqueueFor = (chat: Chat, text: string, clientId: string | null) =>
+  // Who answers this text: the mentioned members, else the one a follow-up goes to, else the lead (the router picks
+  // when a team has no one named: `route`).
+  const recipientsOf = (chat: Chat, text: string) =>
     Effect.gen(function* () {
       const team = yield* members(store, chat)
       const lead = team[0]
       const targets: Array<Agent | undefined> = mentioned(text, team).slice(0, MAX_MENTIONS)
       const follow = targets.length ? undefined : yield* followUp(chat, team)
-      // No one named and no follow-up in a team: the router picks who answers when the turn starts (lead meanwhile).
       const route = !targets.length && !follow && team.length > 1
       if (!targets.length) targets.push(follow ?? lead)
+      return { lead, targets, route }
+    })
+  // Queues a turn for each recipient, except `joined`: the agent whose running turn already took the message.
+  const enqueueRecipients = (chat: Chat, plan: { lead: Agent | undefined; targets: ReadonlyArray<Agent | undefined>; route: boolean }, clientId: string | null, joined?: string | null) =>
+    Effect.gen(function* () {
       let first: string | undefined
-      for (const [i, a] of targets.entries()) {
+      for (const a of plan.targets) {
+        if (joined !== undefined && (a?.id ?? null) === joined) continue
         // The leader uses the chat model (the one you picked); other members use their own.
-        const isLead = !a || a.id === lead?.id
+        const isLead = !a || a.id === plan.lead?.id
         const t = yield* store.enqueueTurn({
           chatId: chat.id, agentId: a?.id ?? null, model: isLead ? chat.model : a.model, accountId: isLead ? chat.accountId : a.accountId,
-          clientId: i === 0 ? clientId : null, depth: 0, route
+          clientId: first === undefined ? clientId : null, depth: 0, route: plan.route
         })
         first ??= t.id
         yield* publish(chat.id, ev("queued", { turn: store.toTurn(t) }))
       }
       yield* ensureWorker(chat.id)
-      return first!
+      return first
     })
+  // Queues who answers this text: the mentioned members, or the lead.
+  const enqueueFor = (chat: Chat, text: string, clientId: string | null) =>
+    recipientsOf(chat, text).pipe(Effect.flatMap((plan) => enqueueRecipients(chat, plan, clientId)), Effect.map((id) => id!))
 
   // ---------- API ----------
   const service: RuntimeService = {
@@ -1193,21 +1363,43 @@ export const makeRuntime = Effect.gen(function* () {
         return { turnId: yield* enqueueFor(chat, input.text, input.clientId) }
       }),
 
+    // "Send now". The message goes into the running reply only if that reply is the recipient's own (the one named, or
+    // the lead when no one is) and the engine takes it; the others named in it are queued. Otherwise the running reply
+    // is stopped and the message becomes the recipient's turn, ahead of the queued hand-offs (your messages go first).
     steer: (chatId, text, attachmentIds) =>
       Effect.gen(function* () {
         const chat = yield* store.chat(chatId)
         if (!chat) return yield* new ChatNotFound({ chatId })
+        const plan = yield* recipientsOf(chat, text)
+        const live = steering.get(chatId)
         // Images can't join a running turn: with attachments the message goes as a turn of its own.
-        const steer = attachmentIds?.length ? undefined : steering.get(chatId)
-        const taken = steer ? yield* Effect.promise(() => steer(text)) : false
-        if (taken) return yield* addUserMessage(chatId, text, attachmentIds) // it joins the running turn
-        // Not taken mid-turn ("send now" on an engine that can't steer, or with images): the running turn is stopped
-        // first and waited for, so its partial reply is saved before this message (the history stays in order); then
-        // the message is saved and becomes the next turn, behind any turns already queued (hand-offs, mentions).
+        const own = !attachmentIds?.length && live && plan.targets.some((a) => (a?.id ?? null) === live.agentId) ? live : undefined
+        const taken = own ? yield* Effect.promise(() => own.steer(text)) : false
+        if (own && taken) {
+          yield* addUserMessage(chatId, text, attachmentIds) // it joins the running turn
+          yield* enqueueRecipients(chat, plan, null, own.agentId)
+          return { joined: true }
+        }
+        // Not taken mid-turn: the running turn is stopped first and waited for, so its partial reply is saved before
+        // this message (the history stays in order). The worker is held meanwhile, or it would start the next queued
+        // hand-off before this message is queued. A stopped turn's partial text calls no one by mention.
         const fiber = running.get(chatId)
-        if (fiber) yield* Fiber.interrupt(fiber)
-        yield* addUserMessage(chatId, text, attachmentIds)
-        yield* enqueueFor(chat, text, null)
+        const hold = fiber ? yield* Deferred.make<void>() : undefined
+        if (hold) holding.set(chatId, hold)
+        yield* Effect.gen(function* () {
+          if (fiber) yield* Fiber.interrupt(fiber)
+          yield* addUserMessage(chatId, text, attachmentIds)
+          yield* enqueueRecipients(chat, plan, null)
+        }).pipe(
+          Effect.ensuring(
+            Effect.suspend(() => {
+              if (!hold) return Effect.void
+              holding.delete(chatId)
+              return Deferred.succeed(hold, undefined)
+            })
+          )
+        )
+        return { joined: false }
       }),
 
     interrupt: (chatId) =>
@@ -1226,6 +1418,7 @@ export const makeRuntime = Effect.gen(function* () {
         if (fiber) yield* Fiber.interrupt(fiber)
       }),
 
+    remembered,
     forget: (chatId) => Effect.forEach([...sessions.keys()].filter((k) => k.startsWith(`${chatId}:`)), closeSession, { discard: true }),
     // A reply that failed, was stopped or passed its limit: the same agent answers again (the chat's lead if it left
     // the chat or was archived), as a turn of its own after what's queued. The conversation is its context.
@@ -1312,7 +1505,7 @@ export const makeRuntime = Effect.gen(function* () {
             partial,
             steps: yield* store.stepsOf(runningIds),
             approvals: yield* store.openApprovals(chatId),
-            status: statuses.get(chatId) ?? idle(chatId)
+            status: { ...(statuses.get(chatId) ?? idle(chatId)), waits: yield* waitsOf(chatId) } // tasks outlive a restart
           }
           return Stream.concat(Stream.make(ev("snapshot", { snapshot })), Stream.fromSubscription(sub))
         })

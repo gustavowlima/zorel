@@ -141,6 +141,23 @@ export const SKILL_TOOLS = [
   }
 ] as const
 
+// What an agent learns and sees (Agent.memory / Agent.knowledge; no agent: the defaults, "ask" and "read").
+type Learner = { readonly memory?: Agent["memory"] | undefined; readonly knowledge?: Agent["knowledge"] | undefined }
+export const memoryModeOf = (a: Learner | undefined): Agent["memory"] => a?.memory ?? "ask"
+export const knowledgeOf = (a: Learner | undefined): Agent["knowledge"] => a?.knowledge ?? "read"
+// What a chat's consolidation does is for the whole chat, so the strictest member decides: one that only reads keeps
+// the chat from learning at all, and facts are saved on their own only when every agent in it allows it.
+export const learningOf = (members: ReadonlyArray<Learner>): Agent["memory"] => {
+  const modes = members.map(memoryModeOf)
+  return modes.includes("read") ? "read" : modes.length && modes.every((m) => m === "auto") ? "auto" : "ask"
+}
+// The tools the agent doesn't get. The server refuses them even if the model names one anyway.
+export const withheldTools = (a: Learner | undefined): ReadonlySet<string> =>
+  new Set([
+    ...(memoryModeOf(a) === "read" ? ["zorel_knowledge_write", "zorel_propose_skill"] : []),
+    ...(knowledgeOf(a) === "none" ? KNOWLEDGE_TOOLS.map((t) => t.name) : [])
+  ])
+
 const RANK: Record<Access, number> = { ask: 0, workspace: 1, full: 2 }
 export const narrower = (a: Access, b: Access): Access => (RANK[a] <= RANK[b] ? a : b)
 // The level an agent works at in a chat: the chat's when the person set one there (for every agent in it, wider or
@@ -366,8 +383,8 @@ export const KNOWLEDGE_TOOLS = [
   },
   {
     name: "zorel_knowledge_read",
-    description: "Read a whole knowledge page. page: its id (from the search or the pinned list) or its exact title.",
-    inputSchema: { properties: { page: { type: "string" } }, required: ["page"] },
+    description: "Read a knowledge page. page: its id (from the search or the pinned list) or its exact title. section: a heading, to read only that part (search results name the section of each match); a long page comes back cut, with its headings.",
+    inputSchema: { properties: { page: { type: "string" }, section: { type: "string" } }, required: ["page"] },
     writes: false
   },
   {

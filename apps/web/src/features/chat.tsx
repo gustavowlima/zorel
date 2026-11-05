@@ -2,18 +2,18 @@
 // right, each agent's reply with its activity pill, approvals waiting for you, handoffs between agents),
 // and the message box. State is the chat atom: snapshot + live events, so a turn keeps going if the tab
 // closes and the screen catches up when it reopens.
-import { type Agent, type Chat, type FailoverTarget, type Message, type ProviderAccount, skillHandle, type WorkspaceFile } from "@zorel/contracts"
+import { type Agent, type Chat, type FailoverTarget, type Message, type ProviderAccount, skillHandle, type WorkspaceFile, workSteps } from "@zorel/contracts"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zorel/contracts/events"
 import { formatCompact, formatDuration, formatTime, t } from "@zorel/i18n"
 import { memo, type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
-import { agentName, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText } from "../labels.ts"
+import { agentName, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText, waitLabel } from "../labels.ts"
 import { ChatMarkdown } from "./chat-markdown.tsx"
 import { MentionText } from "./mention.tsx"
 import { commandOf, extraArgs } from "./receipt-args.ts"
-import { go } from "../state.ts"
+import { go, liveStepsOpen } from "../state.ts"
 import { agentOptions, callable, toJoin } from "./agent-options.ts"
 import { Composer, type ComposerOption, type ComposerSources, SendError } from "./composer.tsx"
 import { ContextMeter } from "./context-meter.tsx"
@@ -23,13 +23,13 @@ import { chatDelta, Delta, type Focus, PinItem, type Pins, RunControl, type Shel
 import { ModelPicker } from "./model-picker.tsx"
 import { AccessChip } from "./access-chip.tsx"
 import { GitControl } from "./git.tsx"
-import { ContextMenu, PageHeader, ShimmerText } from "@/ui"
+import { ContextMenu, PageHeader } from "@/ui"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import { ChatProcesses } from "./processes.tsx"
 import { QuestionAnswer } from "./question.tsx"
 import {
   Button, Check, ChevronDown, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
-  MenuSeparator, MessageCircle, MessageCircleQuestion, ShieldAlert, Minimize2, MoreHorizontal, PanelRight, Pencil, RefreshCw, Shield, Shuffle, Sparkles, Spinner, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
+  MenuSeparator, MessageCircle, MessageCircleQuestion, ShieldAlert, Minimize2, MoreHorizontal, PanelRight, Pencil, RefreshCw, Shield, Shuffle, Sparkles, Spinner, Square, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
 } from "@/ui"
 
 export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) {
@@ -49,6 +49,13 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
   )
   // While a turn runs, a new message waits in the queue (above the box) and goes out when the chat is free.
   const queue = useQueue(chat.id, busy, state.ready, sendNow)
+  // What "Send now" did, said once for a few seconds above the queue.
+  const [sent, setSent] = useState<"queue.sentJoined" | "queue.sentStopped" | null>(null)
+  useEffect(() => {
+    if (!sent) return
+    const timer = setTimeout(() => setSent(null), 6000)
+    return () => clearTimeout(timer)
+  }, [sent])
   // The agents "#" and "@" offer: everyone this chat can use. One that is not in the chat yet joins it when a
   // message naming it is sent (not when picked, so a chip taken back leaves no stray member): the server only calls
   // members, so the send waits for that. The lead and the model stay.
@@ -153,7 +160,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
       />
       <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
-      <Timeline chat={chat} state={state} agents={agents} onView={view} onEdit={setRewind} at={at} />
+      <Timeline chat={chat} state={state} agents={agents} onView={view} onEdit={setRewind} onStop={() => void interrupt({ payload: { chatId: chat.id } })} at={at} />
       <RewindDialog
         chatId={chat.id}
         message={rewind}
@@ -177,15 +184,36 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
             </Button>
           </div>
         )}
+        {/* An agent here waiting on teammates: their answers to its @mention, or a task it gave (opens that chat). */}
+        {state.status?.waits?.map((w) => (
+          <div key={w.taskChatId ?? `${w.agentId}:mention`} role="status" className="mb-2 flex items-center gap-3 rounded-card border border-subtle px-3.5 py-2 text-sm">
+            <Clock className="size-4 shrink-0 text-muted" />
+            <span className="flex-1 text-secondary">{waitLabel(w, agents)}</span>
+            {w.taskChatId && (
+              <Button size="sm" variant="ghost" onPress={() => go({ view: "chat", id: w.taskChatId! })}>
+                {t("status.openTask")}
+              </Button>
+            )}
+          </div>
+        ))}
+        {sent && (
+          <p role="status" className="mx-3 mb-1 text-xs text-dim">
+            {t(sent)}
+          </p>
+        )}
         <QueuePanel
           items={queue.items}
           busy={busy}
+          ahead={state.pending}
           // Claude and Codex take a message into the reply in progress (not with attachments); any other engine stops it.
           joinsTurn={(item) => !item.attachmentIds.length && ["claude-cli", "codex-cli"].includes(splitModel(state.live?.model ?? chat.model).provider)}
           onSendNow={(item) => {
             queue.remove(item.id)
             // If the server refuses it, it goes back to the queue instead of vanishing.
-            steer({ payload: { chatId: chat.id, text: item.text, ...(item.attachmentIds.length && { attachmentIds: item.attachmentIds }) } }).catch(() => queue.add(item.text, item.attachmentIds))
+            steer({ payload: { chatId: chat.id, text: item.text, ...(item.attachmentIds.length && { attachmentIds: item.attachmentIds }) } }).then(
+              (r) => setSent(r.joined ? "queue.sentJoined" : "queue.sentStopped"),
+              () => queue.add(item.text, item.attachmentIds)
+            )
           }}
           onEdit={(item) => {
             queue.remove(item.id)
@@ -484,7 +512,7 @@ export function RenameDialog({ isOpen, onClose, title, onSave }: { isOpen: boole
 
 type Item = { at: number; message: Message } | { at: number; note: Note }
 
-export function Timeline({ chat, state, agents, onView, onEdit, at }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void; at?: string | undefined }) {
+export function Timeline({ chat, state, agents, onView, onEdit, onStop, at }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void; onStop?: (() => void) | undefined; at?: string | undefined }) {
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true) // follow new content only while the reader is at the bottom
   const items: Item[] = [...state.messages.map((m) => ({ at: m.at, message: m })), ...state.notes.map((n) => ({ at: n.at, note: n }))].sort((a, b) => a.at - b.at)
@@ -548,7 +576,7 @@ export function Timeline({ chat, state, agents, onView, onEdit, at }: { chat: Ch
             <TimelineNote key={`${item.note.kind}-${item.note.at}`} note={item.note} agents={agents} />
           )
         )}
-        {state.live && <LiveMessage live={state.live} agents={agents} receipts={state.receipts} bare={solo} />}
+        {state.live && <LiveMessage live={state.live} agents={agents} receipts={state.receipts} bare={solo} onStop={state.pending <= 1 ? onStop : undefined} />}
         {multi && state.ready && items.length === 0 && <p className="text-center text-sm text-dim">{t("team.mentionHint")}</p>}
       </div>
       </div>
@@ -788,6 +816,7 @@ function AgentReply({
   // Which account answered and what it cost; a subscription shows the API equivalent, not a charge.
   const account = accounts.find((a) => a.id === m.accountId)
   const cost = m.cost === null ? null : account?.kind === "subscription" ? `${t("usage.apiEquivalent")} ${formatCost(m.cost)}` : formatCost(m.cost)
+  const took = m.durationMs !== null && m.durationMs >= 1000 ? formatDuration(m.durationMs) : null // the receipt keeps the time a plain answer took
   return (
     <Reply
       agentId={m.agentId}
@@ -795,7 +824,7 @@ function AgentReply({
       agents={agents}
       continued={continued}
       bare={bare}
-      pill={m.steps.length > 0 && <StoredActivity steps={m.steps} durationMs={m.durationMs} />}
+      pill={workSteps(m.steps).length > 0 && <StoredActivity steps={m.steps} durationMs={m.durationMs} ended={!m.error} />}
       footer={
         <>
           {ending && (
@@ -823,10 +852,11 @@ function AgentReply({
             text={m.text}
             at={m.at}
             details={
-              (m.model || tokens || account || cost) && (
+              (m.model || tokens || account || cost || took) && (
                 <span className="flex flex-col gap-0.5">
                   {m.model && <span className="text-fg">{modelLabel(m.model)}</span>}
                   {tokens && <span>{tokens}</span>}
+                  {took && <span>{took}</span>}
                   {account && <span>{account.label}</span>}
                   {cost && <span>{cost}</span>}
                 </span>
@@ -846,13 +876,14 @@ function AgentReply({
 // ---------- activity ----------
 
 // A finished turn in one line: its steps, what was refused or failed and how long it took; opens the steps.
-function StoredActivity({ steps, durationMs }: { steps: Message["steps"]; durationMs: number | null }) {
+function StoredActivity({ steps, durationMs, ended }: { steps: Message["steps"]; durationMs: number | null; ended: boolean }) {
   const [open, setOpen] = useState(false)
   const id = useId()
   const refused = steps.filter((s) => s.status === "refused").length
   const failed = steps.filter((s) => s.status === "error").length
   const parts = [
-    t("activity.steps", { count: steps.length }),
+    ended && !refused && !failed && t("activity.done"),
+    t("activity.steps", { count: workSteps(steps).length }),
     refused && t("activity.refused", { count: refused }),
     failed && t("activity.errors", { count: failed }),
     durationMs !== null && durationMs >= 1000 && formatDuration(durationMs)
@@ -879,8 +910,46 @@ function StoredActivity({ steps, durationMs }: { steps: Message["steps"]; durati
 // One finished step: its icon, what it ran or touched and the start of its output (all of it on "Show all").
 const NATIVE_LABEL: Record<string, string> = { run: "$", read: "read", search: "search" }
 function StoredStep({ step: s }: { step: Message["steps"][number] }) {
-  const [all, setAll] = useState(false)
-  const long = s.result.length > 240 || s.result.split("\n").length > 3
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  const took = s.ms !== undefined && s.ms >= 1000 && <span className="shrink-0 text-sm text-dim tabular-nums">{formatDuration(s.ms)}</span>
+  // Thought and Replied: timing rows with nothing to open.
+  if (s.tool === "thought" || s.tool === "reply") {
+    return (
+      <li className="flex min-h-7 items-center gap-2 px-1 py-1">
+        <StepIcon status={s.status} />
+        <span className="shrink-0 text-fg">{s.title}</span>
+        {s.detail && <span className="min-w-0 flex-1 truncate font-mono text-xs text-dim" title={s.detail}>{s.detail}</span>}
+        <span className="ml-auto flex shrink-0 items-center">{took}</span>
+      </li>
+    )
+  }
+  // A step saved with a summary: one quiet line (the summary, then the command, path or URL in mono) that opens to the
+  // whole command and the output. The summary is absent on steps saved before it existed and on MCP tools.
+  if (s.title) {
+    const command = s.tool === "run" ? s.args : s.detail || s.args
+    return (
+      <li className="flex flex-col gap-1.5">
+        <Button variant="ghost" size="sm" aria-expanded={open} aria-controls={id} onPress={() => setOpen(!open)} className="h-auto min-h-7 w-full justify-start gap-2 px-1 py-1 font-normal">
+          <StepIcon status={s.status} />
+          <span className={cx("truncate text-left text-fg", s.detail && "max-w-3/5 shrink-0")} title={s.detail ? `${s.title}\n${s.detail}` : s.title}>
+            {s.title}
+          </span>
+          {s.detail && <span className="min-w-0 flex-1 truncate text-left font-mono text-xs text-dim">{s.detail}</span>}
+          <span className="ml-auto flex shrink-0 items-center gap-2">
+            {took}
+            <ChevronDown aria-hidden="true" className={cx("size-3.5 shrink-0 text-muted transition-transform duration-150 ease-out motion-reduce:transition-none", open && "rotate-180")} />
+          </span>
+        </Button>
+        {open && (
+          <div id={id} className="flex min-w-0 flex-col gap-1 pl-7">
+            {command && <pre className="max-h-48 overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm whitespace-pre-wrap break-all text-secondary">{command}</pre>}
+            <StepOutput result={s.result} />
+          </div>
+        )}
+      </li>
+    )
+  }
   return (
     <li className="flex gap-2.5">
       <StepIcon status={s.status} />
@@ -891,14 +960,26 @@ function StoredStep({ step: s }: { step: Message["steps"][number] }) {
         {!NATIVE_LABEL[s.tool] && s.tool !== "edit" && s.args && s.args !== "{}" && (
           <pre className="overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{s.args}</pre>
         )}
-        {s.result && (all ? <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{s.result}</pre> : <p className="line-clamp-3 text-sm text-muted">{s.result}</p>)}
-        {s.result && long && (
-          <Button size="sm" variant="ghost" className="-ml-2 self-start" onPress={() => setAll(!all)}>
-            {all ? t("activity.showLess") : t("activity.showAll")}
-          </Button>
-        )}
+        <StepOutput result={s.result} />
       </div>
     </li>
+  )
+}
+
+// The start of a step's output (all of it on "Show all").
+function StepOutput({ result }: { result: string }) {
+  const [all, setAll] = useState(false)
+  if (!result) return null
+  const long = result.length > 240 || result.split("\n").length > 3
+  return (
+    <>
+      {all ? <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{result}</pre> : <p className="line-clamp-3 text-sm text-muted">{result}</p>}
+      {long && (
+        <Button size="sm" variant="ghost" className="-ml-2 self-start" onPress={() => setAll(!all)}>
+          {all ? t("activity.showLess") : t("activity.showAll")}
+        </Button>
+      )}
+    </>
   )
 }
 
@@ -922,20 +1003,37 @@ function useNow(active: boolean) {
   return now
 }
 
+// The label of the live pill. A step's title shows at once; the generic text that fills the gap between two steps
+// waits a moment, so the pill doesn't flip back and forth each time the next step starts right after the last.
+const GAP_LABEL_AFTER_MS = 700
+function useHeldLabel(wanted: string, specific: boolean) {
+  const [shown, setShown] = useState(wanted)
+  useEffect(() => {
+    if (specific) return setShown(wanted)
+    const id = setTimeout(() => setShown(wanted), GAP_LABEL_AFTER_MS)
+    return () => clearTimeout(id)
+  }, [wanted, specific])
+  return specific ? wanted : shown
+}
+
 // The turn running now: what it does (a light sweeps across it), or plainly that it waits for the provider before
 // anything came back; the time only after 5 s. Questions and approvals wait above the message box (PendingTray).
 const SHOW_TIME_AFTER_MS = 5000
-function LiveMessage({ live, agents, receipts, bare }: { live: LiveTurn; agents: ReadonlyArray<Agent>; receipts: ReadonlyArray<Receipt>; bare: boolean }) {
-  const [open, setOpen] = useState(false)
+function LiveMessage({ live, agents, receipts, bare, onStop }: { live: LiveTurn; agents: ReadonlyArray<Agent>; receipts: ReadonlyArray<Receipt>; bare: boolean; onStop?: (() => void) | undefined }) {
+  // Open while it works (the default) so the steps are seen without a click, or folded into the pill when the person
+  // turned that off in Settings; the finished message folds them into StoredActivity either way.
+  const [open, setOpen] = useState(liveStepsOpen)
   const id = useId()
   const now = useNow(true)
   const current = [...live.steps].reverse().find((s) => s.status === "running" || s.status === "waiting")
   const idle = !live.text && !live.steps.length
   const elapsed = now - live.startedAt
-  const what = current?.title ?? (idle ? t("activity.waitingFor", { provider: providerLabel(splitModel(live.model).provider) }) : t("activity.working"))
+  const wanted = current?.title ?? (idle ? t("activity.waitingFor", { provider: providerLabel(splitModel(live.model).provider) }) : t("activity.working"))
+  const what = useHeldLabel(wanted, !!current)
   const label = (
     <>
-      {idle || current?.status === "waiting" ? what : <ShimmerText>{what}</ShimmerText>}
+      {/* One element for every state, so the sweep doesn't restart each time the label changes. */}
+      <span className={idle || current?.status === "waiting" ? undefined : "shimmer-text"}>{what}</span>
       {elapsed >= SHOW_TIME_AFTER_MS && <span className="text-muted tabular-nums">{` · ${formatDuration(elapsed)}`}</span>}
     </>
   )
@@ -946,30 +1044,41 @@ function LiveMessage({ live, agents, receipts, bare }: { live: LiveTurn; agents:
       agents={agents}
       bare={bare}
       continued={bare}
-      pill={
-        <>
-          <DisclosurePill expanded={open} onToggle={() => setOpen(!open)} controls={id} leading={current?.status === "waiting" ? <Clock className="size-3.5 text-accent-text" /> : <Spinner size={12} className="text-success" />}>
-            {label}
-          </DisclosurePill>
+      footer={
+        // Below what the agent has written so far: the text grows above it and the status stays at the end.
+        <div className="flex min-w-0 flex-col items-start gap-2">
+          {/* The pill and Stop are siblings (a button inside a button isn't valid); Stop is the composer's action. */}
+          <div className="flex items-center gap-1">
+            <DisclosurePill expanded={open} onToggle={() => setOpen(!open)} controls={id} leading={current?.status === "waiting" ? <Clock className="size-3.5 text-accent-text" /> : <Spinner size={12} className="text-success" />}>
+              {label}
+            </DisclosurePill>
+            {onStop && (
+              <Tooltip content={t("composer.stop")}>
+                <IconButton label={t("composer.stop")} variant="ghost" shape="pill" size="xs" onPress={onStop}>
+                  <Square className="size-3 fill-current" />
+                </IconButton>
+              </Tooltip>
+            )}
+          </div>
           {open && live.steps.length > 0 && (
-            // A full-width line of its own: with max-w on the list itself, flex measured it at 520px and set it
-            // beside the pill whenever the column had room.
-            <div className="basis-full">
-            <ol id={id} className="flex max-w-130 flex-col gap-2 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
+            <ol id={id} className="flex w-full max-w-130 flex-col gap-2 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
               {live.steps.map((s) => (
                 <li key={s.id} className="flex items-start gap-2.5">
                   <StepIcon status={s.status} />
-                  <span className="min-w-0 flex-1 text-secondary">
-                    {s.title}
-                    {s.status === "waiting" && <span className="text-accent-text">{` · ${t("activity.waiting")}`}</span>}
+                  {/* One line per step: the summary, then what it stands for (command, path, URL) in quiet mono. Both
+                      truncate and the full text is on hover. Steps from before `detail` existed carry the whole command in
+                      the title and just truncate. */}
+                  <span className="flex min-w-0 flex-1 items-baseline gap-2" title={s.detail ? `${s.title}\n${s.detail}` : s.title}>
+                    <span className={cx("truncate text-fg", s.detail && "max-w-3/5 shrink-0")}>{s.title}</span>
+                    {s.detail && <span className="min-w-0 truncate font-mono text-xs text-dim">{s.detail}</span>}
+                    {s.status === "waiting" && <span className="shrink-0 whitespace-pre text-accent-text">{` · ${t("activity.waiting")}`}</span>}
                   </span>
-                  {s.durationMs !== null && <span className="shrink-0 text-sm text-muted">{formatDuration(s.durationMs)}</span>}
+                  {s.durationMs !== null && s.durationMs >= 1000 && <span className="shrink-0 text-sm text-muted tabular-nums">{formatDuration(s.durationMs)}</span>}
                 </li>
               ))}
             </ol>
-            </div>
           )}
-        </>
+        </div>
       }
     >
       {live.text && <LiveText text={live.text} />}
@@ -1179,12 +1288,42 @@ function ReceiptCard({ receipt: r }: { receipt: Receipt }) {
 function TimelineNote({ note, agents }: { note: Note; agents: ReadonlyArray<Agent> }) {
   const accounts = useList(accountsAtom)
   if (note.kind === "failover") return <Separator>{switchText(note.switch, accounts)}</Separator>
+  if (note.kind === "remembered") return <RememberedNote memories={note.memories} />
   const to = note.to.map((id) => agentName(id, agents)).join(", ")
   const from = agentName(note.from, agents)
   if (note.via === "limit") return <Separator>{t("chat.chainStopped")}</Separator>
   if (note.via === "reply") return <Separator>{t("chat.handedBack", { from, to })}</Separator>
   if (note.via === "route") return <Separator>{note.reason ? t("chat.routedWhy", { to, reason: note.reason }) : t("chat.routed", { to })}</Separator>
   return <Separator>{t("chat.handoff", { from, to })}</Separator>
+}
+
+// What an agent kept on its own after the chat: the texts (as plain text, the model wrote them) and one Undo that
+// forgets them all (the memories' own "forgotten" state, restorable in Knowledge).
+function RememberedNote({ memories }: { memories: Extract<Note, { kind: "remembered" }>["memories"] }) {
+  const update = useMutation(mutations.updateMemory)
+  const [state, setState] = useState<"idle" | "busy" | "done">("idle")
+  const undo = () => {
+    setState("busy")
+    void Promise.all(memories.map((m) => update({ params: { id: m.id }, payload: { state: "forgotten" }, reactivityKeys: ["memories"] }))).then(
+      () => setState("done"),
+      () => setState("idle") // some failed: the button comes back to try again
+    )
+  }
+  return (
+    <div className="flex flex-col items-center gap-1.5 text-sm text-muted">
+      <Separator>{t("chat.remembered", { count: memories.length })}</Separator>
+      <ul className="flex max-w-xl flex-col gap-0.5 text-center">
+        {memories.map((m) => (
+          <li key={m.id} className="line-clamp-2">
+            {m.text}
+          </li>
+        ))}
+      </ul>
+      <Button size="sm" variant="ghost" isDisabled={state !== "idle"} onPress={undo}>
+        {state === "done" ? t("chat.rememberedUndone") : t("chat.rememberedUndo")}
+      </Button>
+    </div>
+  )
 }
 
 // A centered line in the timeline (handoffs, failover moves).

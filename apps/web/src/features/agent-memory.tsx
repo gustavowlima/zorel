@@ -1,0 +1,271 @@
+// Agent page, "Memory & skills" tab: what the agent keeps from its chats (Agent.memory), whether it can use Knowledge
+// (Agent.knowledge) and which skills it sees (Memory.agents, FileSkill.agents). Memory and Knowledge apply at once
+// (a guard, not a draft): the control shows "Saving…", then "Saved" only after the server answered, and goes back
+// if it refused. The server enforces all of it; this screen only shows and changes it.
+import type { Agent, AgentPatch, FileSkill, Memory } from "@zorel/contracts"
+import { t } from "@zorel/i18n"
+import { useEffect, useState } from "react"
+import { agentsAtom, chatsAtom, fileSkillsAtom, memoriesAtom, mutations, useInvalidate, useList, useMutation, useReading } from "../client.ts"
+import { go } from "../state.ts"
+import { ReadingState } from "./reading.tsx"
+import { sees, teamOf, withAgent, withoutAgent } from "./skill-agents.ts"
+import { UsedByBadge } from "./used-by.tsx"
+import { BookOpen, Button, cx, Info, ListRow, Notice, Rows, Section, Segmented, SettingRow, ShieldAlert } from "@/ui"
+
+type Field = "memory" | "knowledge"
+type Status = "idle" | "saving" | "saved" | "error"
+
+// A setting that applies on press: the shown value is the one asked for until the server answers, and falls back
+// to the saved one if it fails.
+function useInstant<F extends Field>(agent: Agent, field: F) {
+  const update = useMutation(mutations.updateAgent)
+  const [asked, setAsked] = useState<Agent[F]>()
+  const [status, setStatus] = useState<Status>("idle")
+  useEffect(() => {
+    if (asked !== undefined && status === "saved" && agent[field] === asked) setAsked(undefined) // the list caught up
+  }, [agent, field, asked, status])
+  const set = (value: Agent[F]) => {
+    setAsked(value)
+    setStatus("saving")
+    update({ params: { id: agent.id }, payload: { [field]: value } as typeof AgentPatch.Type, reactivityKeys: ["agents"] }).then(
+      () => setStatus("saved"),
+      () => {
+        setAsked(undefined)
+        setStatus("error")
+      }
+    )
+  }
+  return { value: asked ?? agent[field], status, set, retry: () => asked !== undefined && set(asked) }
+}
+
+// "Saving… / Saved / Not saved. Try again", announced politely. Always in the page so the change is read out.
+function SaveStatus({ status, onRetry }: { status: Status; onRetry: () => void }) {
+  return (
+    <span role="status" className={cx("flex items-center gap-1 text-sm", status === "error" ? "text-danger" : "text-muted")}>
+      {status === "saving" && t("agent.mem.saving")}
+      {status === "saved" && t("agent.mem.saved")}
+      {status === "error" && (
+        <>
+          {t("agent.mem.failed")}
+          <Button size="sm" variant="ghost" onPress={onRetry}>
+            {t("common.retry")}
+          </Button>
+        </>
+      )}
+    </span>
+  )
+}
+
+// The strictest mode in a chat wins (the server's rule): what the agent's shared chats can do, given the others in them.
+function sharedRule(agent: Agent, mode: Agent["memory"], chats: ReadonlyArray<{ agentIds: ReadonlyArray<string> }>, team: ReadonlyArray<Agent>) {
+  const others = team.filter((a) => a.id !== agent.id && chats.some((c) => c.agentIds.includes(agent.id) && c.agentIds.includes(a.id)))
+  const reader = others.find((a) => a.memory === "read")
+  if (reader && mode !== "read") return t("agent.mem.sharedRead", { other: reader.name, name: agent.name })
+  const asker = others.find((a) => a.memory === "ask")
+  return asker && mode === "auto" ? t("agent.mem.sharedAsk", { other: asker.name, name: agent.name }) : undefined
+}
+
+const MEMORY_HINT = { auto: "agent.mem.autoHint", ask: "agent.mem.askHint", read: "agent.mem.readHint" } as const
+
+export function AgentMemory({ agent }: { agent: Agent }) {
+  const team = teamOf(useList(agentsAtom))
+  const chats = useList(chatsAtom)
+  const facts = useList(memoriesAtom).filter((m) => m.scope === `agent:${agent.id}` && m.kind === "fact" && m.state !== "forgotten")
+  const memory = useInstant(agent, "memory")
+  const knowledge = useInstant(agent, "knowledge")
+  const shared = sharedRule(agent, memory.value, chats, team)
+  return (
+    <>
+      <Section title={t("agent.mem.title")} description={<span className="block max-w-prose">{t("agent.mem.hint", { name: agent.name })}</span>} action={<SaveStatus status={memory.status} onRetry={memory.retry} />}>
+        <Segmented
+          fill
+          label={t("agent.mem.label")}
+          value={memory.value}
+          onChange={memory.set}
+          options={[
+            { id: "auto", label: t("agent.mem.auto") },
+            { id: "ask", label: t("agent.mem.ask") },
+            { id: "read", label: t("agent.mem.read") }
+          ]}
+        />
+        <p className="text-sm text-muted">{t(MEMORY_HINT[memory.value])}</p>
+        {memory.value === "auto" && (
+          <Notice icon={<ShieldAlert />} title={t("agent.mem.autoTitle")}>
+            {t("agent.mem.autoBody")}
+          </Notice>
+        )}
+        {shared && (
+          <Notice tone="neutral" icon={<Info />} title={t("agent.mem.sharedTitle")}>
+            {shared}
+          </Notice>
+        )}
+        <Rows>
+          <ListRow
+            icon={<BookOpen className="size-4 text-muted" />}
+            title={t("agent.mem.notes", { name: agent.name })}
+            hint={t("agent.mem.notesHint", { name: agent.name })}
+            aside={t("agent.mem.notesCount", { count: facts.length })}
+            label={t("agent.mem.notesLink")}
+            onPress={() => go({ view: "knowledge", scope: `agent:${agent.id}`, kind: "fact" })}
+          />
+        </Rows>
+      </Section>
+      <Section title={t("agent.know.title")} description={<span className="block max-w-prose">{t("agent.know.hint", { name: agent.name })}</span>} action={<SaveStatus status={knowledge.status} onRetry={knowledge.retry} />}>
+        <Segmented
+          fill
+          label={t("agent.know.label")}
+          value={knowledge.value}
+          onChange={knowledge.set}
+          options={[
+            { id: "read", label: t("agent.know.read") },
+            { id: "none", label: t("agent.know.none") }
+          ]}
+        />
+        <div>
+          <Button size="sm" variant="ghost" onPress={() => go({ view: "knowledge" })}>
+            {t("agent.know.open")}
+          </Button>
+        </div>
+      </Section>
+      <AgentSkills agent={agent} team={team} />
+    </>
+  )
+}
+
+// The team as it is now (not the list on screen): "Stop using" writes the other agents out, so one created a
+// moment ago must be in it. A failed read stops the action; nothing is written.
+async function freshTeam(): Promise<Agent[]> {
+  const r = await fetch("/api/agents")
+  if (!r.ok) throw new Error(String(r.status))
+  return teamOf((await r.json()) as Agent[])
+}
+
+const firstLine = (text: string) => text.split("\n").find((l) => l.trim()) ?? ""
+
+function AgentSkills({ agent, team }: { agent: Agent; team: ReadonlyArray<Agent> }) {
+  const memories = useReading(memoriesAtom)
+  const files = useReading(fileSkillsAtom)
+  const update = useMutation(mutations.updateMemory)
+  const pick = useMutation(mutations.pickFileSkill)
+  const invalidate = useInvalidate()
+  const [busy, setBusy] = useState<string>()
+  const [retry, setRetry] = useState<{ run: () => void }>()
+  // One change at a time; a failure keeps what was there and offers to run it again.
+  const run = (key: string, change: () => Promise<unknown>) => {
+    setBusy(key)
+    void change().then(
+      () => setRetry(undefined),
+      () => setRetry({ run: () => run(key, change) })
+    ).finally(() => setBusy(undefined))
+  }
+
+  const skills = memories.items.filter((m) => m.kind === "skill" && m.state === "active")
+  const own = skills.filter((m) => m.scope === `agent:${agent.id}`)
+  const common = skills.filter((m) => m.scope === "user" || (agent.projectId !== null && m.scope === `project:${agent.projectId}`))
+  const machine = files.items.filter((s) => s.enabled)
+  const loading = memories.loading || files.loading
+  const failed = memories.failed || files.failed
+  const none = !loading && !failed && own.length + common.length + machine.length === 0
+
+  // The row's action: put the agent in or out of the skill's agents, or open the skill when it is the only one using it.
+  const action = (key: string, ids: ReadonlyArray<string> | undefined, write: (agents: string[]) => Promise<unknown>, edit: () => void, scope?: string) => {
+    const on = sees(ids, agent.id)
+    if (!on) return { label: t("agent.skillsTab.use"), onPress: () => run(key, async () => write(withAgent(ids, agent.id, await freshTeam()))) }
+    if (withoutAgent(ids, agent.id, team, scope) === null) return { label: t("agent.skillsTab.edit"), onPress: edit, only: true }
+    return {
+      label: t("agent.skillsTab.stop"),
+      onPress: () =>
+        run(key, async () => {
+          const next = withoutAgent(ids, agent.id, await freshTeam(), scope)
+          if (next) await write(next)
+        })
+    }
+  }
+
+  const row = (key: string, title: string, hint: string, ids: ReadonlyArray<string> | undefined, act: { label: string; onPress: () => void; only?: boolean }, dim: boolean) => (
+    <SettingRow
+      key={key}
+      title={
+        <span className={cx("flex min-w-0 items-center gap-2", dim && "text-muted")}>
+          <span className="truncate">{title}</span>
+          <UsedByBadge ids={ids} />
+        </span>
+      }
+      hint={
+        <>
+          <span className="line-clamp-1">{hint}</span>
+          {act.only && <span className="text-dim">{t("agent.skillsTab.onlyOne", { name: agent.name })}</span>}
+        </>
+      }
+    >
+      <Button size="sm" variant="secondary" isPending={busy === key} isDisabled={busy !== undefined} aria-label={t("agent.skillsTab.action", { action: act.label, skill: title })} onPress={act.onPress}>
+        {act.label}
+      </Button>
+    </SettingRow>
+  )
+  const sharedRow = (m: Memory) =>
+    row(m.id, m.title, firstLine(m.text), m.agents, action(m.id, m.agents, (agents) => update({ params: { id: m.id }, payload: { agents }, reactivityKeys: ["memories"] }), () => go({ view: "knowledge", id: m.id }), m.scope), !sees(m.agents, agent.id))
+  const machineRow = (s: FileSkill) =>
+    row(s.path, s.name, s.description, s.agents, action(s.path, s.agents, (agents) => pick({ payload: { path: s.path, enabled: true, agents }, reactivityKeys: ["fileSkills"] }), () => go({ view: "settings", tab: "skills" })), !sees(s.agents, agent.id))
+
+  return (
+    <Section title={t("agent.skillsTab.title")} description={<span className="block max-w-prose">{t("agent.skillsTab.hint", { name: agent.name })}</span>}>
+      <ReadingState loading={loading} failed={failed} onRetry={() => invalidate(["memories", "fileSkills"])} />
+      {retry && (
+        <Notice tone="danger" icon={<ShieldAlert />} title={t("agent.skillsTab.errorTitle")} action={<Button size="sm" variant="secondary" onPress={retry.run}>{t("common.retry")}</Button>}>
+          {t("agent.skillsTab.errorBody")}
+        </Notice>
+      )}
+      {none && (
+        <Rows>
+          <SettingRow title={t("agent.skillsTab.empty", { name: agent.name })} hint={t("agent.skillsTab.emptyHint", { name: agent.name })}>
+            <Button size="sm" variant="secondary" onPress={() => go({ view: "knowledge", kind: "skill" })}>
+              {t("agent.skillsTab.openKnowledge")}
+            </Button>
+          </SettingRow>
+        </Rows>
+      )}
+      {own.length > 0 && (
+        <SkillGroup title={t("agent.skillsTab.own", { name: agent.name })} hint={t("agent.skillsTab.ownHint", { name: agent.name })}>
+          {own.map((m) => (
+            <SettingRow
+              key={m.id}
+              title={<span className="truncate">{m.title}</span>}
+              hint={<span className="line-clamp-1">{firstLine(m.text)}</span>}
+            >
+              <Button size="sm" variant="ghost" isDisabled={busy !== undefined} aria-label={t("agent.skillsTab.action", { action: t("agent.skillsTab.remove"), skill: m.title })} onPress={() => run(m.id, () => update({ params: { id: m.id }, payload: { state: "forgotten" }, reactivityKeys: ["memories"] }))}>
+                {t("agent.skillsTab.remove")}
+              </Button>
+            </SettingRow>
+          ))}
+        </SkillGroup>
+      )}
+      {common.length > 0 && (
+        <SkillGroup title={t("agent.skillsTab.shared")} hint={t("agent.skillsTab.sharedHint")}>
+          {common.map(sharedRow)}
+        </SkillGroup>
+      )}
+      {machine.length > 0 && (
+        <SkillGroup title={t("agent.skillsTab.machine")} hint={t("agent.skillsTab.machineHint")}>
+          {machine.map(machineRow)}
+        </SkillGroup>
+      )}
+      {(common.length > 0 || machine.length > 0) && <p className="text-sm text-dim">{t("agent.skillsTab.limitsNote", { name: agent.name })}</p>}
+      <Notice tone="neutral" icon={<Info />} title={t("agent.skillsTab.nativeTitle")}>
+        {t("agent.skillsTab.nativeBody")}
+      </Notice>
+    </Section>
+  )
+}
+
+function SkillGroup({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5 pt-2">
+      <h3 className="flex flex-wrap items-baseline gap-x-2 text-sm font-medium text-muted">
+        {title}
+        <span className="font-normal text-dim">{hint}</span>
+      </h3>
+      <Rows>{children}</Rows>
+    </div>
+  )
+}

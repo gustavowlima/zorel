@@ -8,14 +8,14 @@ import { agentsAtom, chatsAtom, memoriesAtom, memoryVersionsAtom, mutations, pag
 import { NewPage, PageView } from "./pages.tsx"
 import { agentTone, chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
+import { UsedBy, UsedByBadge, useUsedBy } from "./used-by.tsx"
 import { AgentAvatar, BookOpen, Button, cx, EmptyState, Field, Folder, Input, LineDiff, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Tab, TabList, Tabs, Textarea, Tooltip, Undo2, User } from "@/ui"
 
 // What is shown: a kind (the tabs) and a state (the "Show" select): active, waiting for review, or forgotten.
 type Kind = "all" | "fact" | "skill" | "page"
 type State = "active" | "pending" | "forgotten"
 
-const matches = (m: Memory, kind: Kind, state: State) =>
-  (state === "active" ? m.state !== "forgotten" : m.state === state) && (kind === "all" || m.kind === kind)
+const matches = (m: Memory, kind: Kind, state: State) => m.state === state && (kind === "all" || m.kind === kind)
 
 // A scope's mark in a list: the agent's face, a folder for a project, a person for "about you".
 function ScopeIcon({ scope, agents }: { scope: string; agents: ReadonlyArray<Agent> }) {
@@ -49,7 +49,7 @@ export function KnowledgeView({ selected, scope: openScope, kind: openKind }: { 
   const page = pages.find((p) => p.id === selected)
   const pageList = pages.filter((p) => (!scope || p.scope === scope) && (!q || `${p.title} ${p.body}`.toLowerCase().includes(q)))
   const showPages = kind === "page"
-  const scopes = [...new Set(memories.map((m) => m.scope))]
+  const scopes = [...new Set(showPages ? pages.map((p) => p.scope) : memories.map((m) => m.scope))]
   const count = memories.filter((m) => m.state !== "forgotten").length
   const pendingCount = memories.filter((m) => m.state === "pending").length
   // Nothing learned or written yet: one empty state for the whole screen, not one per pane.
@@ -165,7 +165,10 @@ export function KnowledgeView({ selected, scope: openScope, kind: openKind }: { 
                   m.id === selected ? "border-subtle bg-surface text-fg" : "border-transparent text-fg"
                 )}
               >
-                <span className="block w-full truncate font-medium">{m.kind === "skill" ? m.title : m.text}</span>
+                <span className="flex w-full items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate font-medium">{m.kind === "skill" ? m.title : m.text}</span>
+                  {m.kind === "skill" && m.agents?.length ? <UsedByBadge ids={m.agents} /> : null}
+                </span>
                 <span className="block w-full truncate text-sm text-muted">
                   {[m.kind === "skill" ? t("knowledge.skill") : t("knowledge.fact"), scopeLabel(m.scope, projects, agents), formatAge(Math.max(m.createdAt, m.confirmedAt))].join(" · ")}
                 </span>
@@ -200,19 +203,28 @@ function Reader({ memory: m }: { memory: Memory }) {
   const chats = useList(chatsAtom)
   const update = useMutation(mutations.updateMemory)
   const [editing, setEditing] = useState(false)
+  const [failed, setFailed] = useState<string>() // why the last save didn't go through
   const [title, setTitle] = useState(m.title)
   const [text, setText] = useState(m.text)
   const skill = m.kind === "skill"
+  // Which agents see a skill (an agent's own skill is already only its own).
+  const limitable = skill && !m.scope.startsWith("agent:")
+  const usedBy = useUsedBy(m.agents)
   const chat = chats.find((c) => c.id === m.chatId)
   // A proposed improvement: the skill it would replace (the person sees what changes before approving).
   const target = useList(memoriesAtom).find((x) => x.id === m.replaces)
-  const patch = (payload: { state?: Memory["state"]; title?: string; text?: string; essential?: boolean }) => update({ params: { id: m.id }, payload, reactivityKeys: ["memories"] })
+  const patch = (payload: { state?: Memory["state"]; title?: string; text?: string; essential?: boolean; agents?: string[] }) => update({ params: { id: m.id }, payload, reactivityKeys: ["memories"] })
 
   return (
     <article className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-10 py-8">
       <div className="flex flex-col gap-1.5">
         <span className="text-xs font-semibold tracking-wide text-accent-text uppercase">{skill ? t("knowledge.skill") : t("knowledge.fact")}</span>
         {skill && !editing && <h2 className="text-lg font-semibold">{m.title}</h2>}
+        {limitable && !editing && (
+          <div>
+            <UsedByBadge ids={m.agents} />
+          </div>
+        )}
         <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-muted">
           <span>{scopeLabel(m.scope, projects, agents)}</span>
           <span>·</span>
@@ -244,9 +256,18 @@ function Reader({ memory: m }: { memory: Memory }) {
           className="flex flex-col gap-3"
           onSubmit={(e) => {
             e.preventDefault()
-            void patch({ text: text.trim(), ...(skill && { title: title.trim() }) }).then(() => setEditing(false))
+            setFailed(undefined)
+            patch({ text: text.trim(), ...(skill && { title: title.trim() }), ...(limitable && usedBy.changed && { agents: usedBy.value }) }).then(
+              () => setEditing(false),
+              (e: unknown) => setFailed((e as { _tag?: string })?._tag === "Conflict" ? t("knowledge.sameText") : t("knowledge.saveFailed"))
+            )
           }}
         >
+          {failed && (
+            <p role="alert" className="text-sm text-danger">
+              {failed}
+            </p>
+          )}
           {skill && (
             <Field label={t("knowledge.titleField")}>
               <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
@@ -255,11 +276,18 @@ function Reader({ memory: m }: { memory: Memory }) {
           <Field label={skill ? t("knowledge.steps") : t("knowledge.text")}>
             <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={skill ? 10 : 4} maxLength={4000} autoFocus />
           </Field>
+          {limitable && <UsedBy state={usedBy} />}
           <div className="flex gap-2">
-            <Button type="submit" variant="default" isDisabled={!text.trim() || (skill && !title.trim())}>
+            <Button type="submit" variant="default" isDisabled={!text.trim() || (skill && !title.trim()) || (limitable && !usedBy.valid)}>
               {t("common.save")}
             </Button>
-            <Button variant="ghost" onPress={() => setEditing(false)}>
+            <Button
+              variant="ghost"
+              onPress={() => {
+                usedBy.reset()
+                setEditing(false)
+              }}
+            >
               {t("common.cancel")}
             </Button>
           </div>

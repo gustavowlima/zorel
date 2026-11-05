@@ -48,6 +48,8 @@ export const agents = sqliteTable("agents", {
   archivedAt: integer("archived_at"), // archived: answers no one, out of lists; history kept
   monthlyTokens: integer("monthly_tokens"), // a month's (UTC) token limit; null: none
   replyTokens: integer("reply_tokens"), // one reply's token limit; null: none
+  memory: text({ enum: ["auto", "ask", "read"] }).notNull().default("ask"), // what it does with what it learns
+  knowledge: text({ enum: ["read", "none"] }).notNull().default("read"), // whether it sees the knowledge pages
   createdAt: integer("created_at").notNull()
 })
 
@@ -72,6 +74,8 @@ export type AgentProfile = {
   failover: ReadonlyArray<FailoverTarget>
   access: "workspace" | "ask" | "full"
   permissions?: AgentPermissions // absent in versions saved before permissions existed
+  memory?: "auto" | "ask" | "read" // absent in versions saved before them
+  knowledge?: "read" | "none"
 }
 
 // Earlier texts of a memory or skill (each edit or approved improvement keeps the one before), newest first.
@@ -94,6 +98,7 @@ export const chats = sqliteTable("chats", {
   access: text({ enum: ["workspace", "ask", "full"] }), // the chat's level for every agent in it; null: each agent's own
   summary: text().notNull().default(""),
   summaryUntil: integer("summary_until").notNull().default(0),
+  learnedUntil: integer("learned_until").notNull().default(0), // `at` of the last message learned from (a quiet chat learns before it summarizes)
   failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>(), // null: the lead agent's list
   position: integer(), // manual order inside its group (project or General); null: by recent activity, above the placed ones
   worktree: text(), // a git worktree of the project the chat works in (its own branch); null: the project folder
@@ -163,7 +168,9 @@ export const memories = sqliteTable(
     // Other words for the same idea (consolidation writes them): indexed for search, never shown or sent.
     keywords: text().notNull().default(""),
     // Always in the prompt (the person marks it), ahead of the most recent ones.
-    essential: integer({ mode: "boolean" }).notNull().default(false)
+    essential: integer({ mode: "boolean" }).notNull().default(false),
+    // Skills only: the agents that see it (ids, JSON). Empty: all of them.
+    agents: text({ mode: "json" }).$type<ReadonlyArray<string>>().notNull().default([])
   },
   // ponytail: one memory per text and scope, whoever owns it; with more than one owner (hosting, D17) the key becomes
   // (scope, owner, normalized), in a migration that keeps memory_versions (rebuilding the table cascades them away).
@@ -224,6 +231,7 @@ export const steps = sqliteTable(
     turnId: text("turn_id").notNull().references(() => turns.id, { onDelete: "cascade" }),
     kind: text({ enum: ["read", "edit", "run", "search", "tool", "delegate"] }).notNull(),
     title: text().notNull(),
+    detail: text().notNull().default(""), // the command, path or URL behind the title; "" on steps saved before it existed
     tool: text(),
     files: text().notNull().default("[]"), // JSON of string[]
     status: text({ enum: ["running", "waiting", "ok", "error", "refused"] }).notNull(),
