@@ -45,13 +45,13 @@ const dice = (a: string, b: string) => {
   const y = pairs(b)
   return (2 * [...x].filter((p) => y.has(p)).length) / (x.size + y.size || 1)
 }
-// Two points of one map that are the same thing, for the sleep to merge: one was given the other's name, a plural
-// ("deploys" / "deploy"), or a close spelling ("versel"). Stricter than sameName: "memory" and "memory map" stay two.
+// Two points of one map that are the same thing, for the sleep to merge: one was given the other's name, or a plural
+// ("deploys" / "deploy"). Never a close spelling: "react" / "preact" and "python 2" / "python 3" look alike and aren't,
+// and a merge can't be undone. Stricter than sameName: "memory" and "memory map" stay two.
 export function twins(a: { normalized: string; aliases: ReadonlyArray<string> }, b: { normalized: string; aliases: ReadonlyArray<string> }): boolean {
   const [x, y] = [a.normalized, b.normalized]
   if (a.aliases.includes(y) || b.aliases.includes(x)) return true
-  if (x.replace(/s$/, "") === y.replace(/s$/, "")) return Math.min(x.length, y.length) >= 4
-  return Math.min(x.length, y.length) >= 5 && dice(x, y) >= 0.8
+  return x.replace(/s$/, "") === y.replace(/s$/, "") && Math.min(x.length, y.length) >= 4
 }
 
 // An FTS5 query from free text: each word of 3+ letters that isn't a stopword, as a prefix, any of them.

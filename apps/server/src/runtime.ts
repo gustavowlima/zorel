@@ -1565,8 +1565,10 @@ export const makeRuntime = Effect.gen(function* () {
   }
   // Facts kept before the memory's map existed are filed on it in the background, a little after start.
   yield* Effect.forkDetach(Effect.sleep("20 seconds").pipe(Effect.andThen(mapEarlierFacts()), Effect.provide(services), Effect.ignore))
-  // The map sleeps once a day (and a little after start): orphan points go, twins merge.
-  yield* Effect.forkDetach(Effect.sleep("1 minute").pipe(Effect.andThen(Effect.repeat(store.sleepMap(), Schedule.spaced("1 day"))), Effect.ignore))
+  // The map sleeps once a day (and a little after start): orphan points go, twins merge. A failed night is logged and
+  // the next one still comes (sleepMap dies on a database error, which would otherwise end the repeat).
+  const sleep = store.sleepMap().pipe(Effect.catchCause((cause) => Effect.logWarning("memory map sleep failed", { cause: String(cause) })))
+  yield* Effect.forkDetach(Effect.sleep("1 minute").pipe(Effect.andThen(Effect.repeat(sleep, Schedule.spaced("1 day"))), Effect.ignore))
   return service
 })
 
