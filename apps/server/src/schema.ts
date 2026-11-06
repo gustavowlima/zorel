@@ -48,6 +48,8 @@ export const agents = sqliteTable("agents", {
   archivedAt: integer("archived_at"), // archived: answers no one, out of lists; history kept
   monthlyTokens: integer("monthly_tokens"), // a month's (UTC) token limit; null: none
   replyTokens: integer("reply_tokens"), // one reply's token limit; null: none
+  memory: text({ enum: ["auto", "ask", "read"] }).notNull().default("ask"), // what it does with what it learns
+  knowledge: text({ enum: ["write", "read", "none"] }).notNull().default("read"), // its access to the pages (new agents: "write", set by createAgent)
   createdAt: integer("created_at").notNull()
 })
 
@@ -72,6 +74,8 @@ export type AgentProfile = {
   failover: ReadonlyArray<FailoverTarget>
   access: "workspace" | "ask" | "full"
   permissions?: AgentPermissions // absent in versions saved before permissions existed
+  memory?: "auto" | "ask" | "read" // absent in versions saved before them
+  knowledge?: "write" | "read" | "none"
 }
 
 // Earlier texts of a memory or skill (each edit or approved improvement keeps the one before), newest first.
@@ -94,6 +98,7 @@ export const chats = sqliteTable("chats", {
   access: text({ enum: ["workspace", "ask", "full"] }), // the chat's level for every agent in it; null: each agent's own
   summary: text().notNull().default(""),
   summaryUntil: integer("summary_until").notNull().default(0),
+  learnedUntil: integer("learned_until").notNull().default(0), // `at` of the last message learned from (a quiet chat learns before it summarizes)
   failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>(), // null: the lead agent's list
   position: integer(), // manual order inside its group (project or General); null: by recent activity, above the placed ones
   worktree: text(), // a git worktree of the project the chat works in (its own branch); null: the project folder
@@ -153,6 +158,7 @@ export const memories = sqliteTable(
     state: text({ enum: ["pending", "active", "forgotten"] }).notNull(),
     origin: text({ enum: ["auto", "manual"] }).notNull(),
     chatId: text("chat_id"),
+    agentId: text("agent_id"), // the agent that kept it (zorel_remember, or the one a chat's learning credits); null: learned from the chat
     replaces: text(), // a proposed improvement: the active skill it would replace when approved
     reason: text(), // why it was proposed (an agent's words), shown on review
     createdAt: integer("created_at").notNull(),
@@ -163,11 +169,67 @@ export const memories = sqliteTable(
     // Other words for the same idea (consolidation writes them): indexed for search, never shown or sent.
     keywords: text().notNull().default(""),
     // Always in the prompt (the person marks it), ahead of the most recent ones.
-    essential: integer({ mode: "boolean" }).notNull().default(false)
+    essential: integer({ mode: "boolean" }).notNull().default(false),
+    // Skills only: the agents that see it (ids, JSON). Empty: all of them.
+    agents: text({ mode: "json" }).$type<ReadonlyArray<string>>().notNull().default([])
   },
   // ponytail: one memory per text and scope, whoever owns it; with more than one owner (hosting, D17) the key becomes
   // (scope, owner, normalized), in a migration that keeps memory_versions (rebuilding the table cascades them away).
   (t) => [unique("memories_scope_normalized").on(t.scope, t.normalized)]
+)
+
+// The memory's map (2026-11-05): the things the facts are about (entities) and how they relate, so an agent recalls
+// by association. Each project has its own map; an entity's scope follows the facts that mention it (user,
+// project:<id>, agent:<id>). Facts are the proof: an entity lives while a fact mentions it.
+export const entities = sqliteTable(
+  "entities",
+  {
+    id: text().primaryKey(),
+    scope: text().notNull(),
+    name: text().notNull(),
+    normalized: text().notNull(),
+    type: text({ enum: ["project", "agent", "concept", "subject"] }).notNull(),
+    aliases: text({ mode: "json" }).$type<ReadonlyArray<string>>().notNull().default([]), // other names it was given ("vercel.com")
+    summary: text().notNull().default(""),
+    weight: integer().notNull().default(1), // how often facts mentioned it
+    createdAt: integer("created_at").notNull(),
+    usedAt: integer("used_at").notNull() // last mentioned or recalled
+  },
+  (t) => [unique("entities_scope_normalized").on(t.scope, t.normalized)]
+)
+// Which fact mentions which entity (its proof). Goes with the fact.
+export const memoryEntities = sqliteTable(
+  "memory_entities",
+  {
+    memoryId: text("memory_id").notNull().references(() => memories.id, { onDelete: "cascade" }),
+    entityId: text("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" })
+  },
+  (t) => [primaryKey({ columns: [t.memoryId, t.entityId] }), index("memory_entities_entity").on(t.entityId)]
+)
+// A named relation a fact states ("Deploy" goes to "Vercel"). invalidAt: a later correction made it untrue (kept, not deleted).
+export const relations = sqliteTable(
+  "relations",
+  {
+    id: text().primaryKey(),
+    scope: text().notNull(),
+    src: text().notNull().references(() => entities.id, { onDelete: "cascade" }),
+    dst: text().notNull().references(() => entities.id, { onDelete: "cascade" }),
+    rel: text().notNull(),
+    memoryId: text("memory_id").references(() => memories.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull(),
+    invalidAt: integer("invalid_at")
+  },
+  (t) => [unique("relations_src_dst_rel").on(t.src, t.dst, t.rel), index("relations_dst").on(t.dst)]
+)
+// A link the person made between two maps ("related to"): recall crosses it, and only it.
+export const entityLinks = sqliteTable(
+  "entity_links",
+  {
+    a: text().notNull().references(() => entities.id, { onDelete: "cascade" }),
+    b: text().notNull().references(() => entities.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at").notNull()
+  },
+  (t) => [primaryKey({ columns: [t.a, t.b] })]
 )
 
 export const mcpServers = sqliteTable("mcp_servers", {
@@ -224,6 +286,7 @@ export const steps = sqliteTable(
     turnId: text("turn_id").notNull().references(() => turns.id, { onDelete: "cascade" }),
     kind: text({ enum: ["read", "edit", "run", "search", "tool", "delegate"] }).notNull(),
     title: text().notNull(),
+    detail: text().notNull().default(""), // the command, path or URL behind the title; "" on steps saved before it existed
     tool: text(),
     files: text().notNull().default("[]"), // JSON of string[]
     status: text({ enum: ["running", "waiting", "ok", "error", "refused"] }).notNull(),
@@ -332,6 +395,10 @@ export const pages = sqliteTable("pages", {
   title: text().notNull(),
   body: text().notNull(),
   pinned: integer({ mode: "boolean" }).notNull().default(false),
+  // Its Markdown file, relative to the knowledge folder ("projects/zorel/Deploy.md"), and that file's hash as last
+  // written or read: a file whose hash differs was edited outside Zorel. null: not written yet.
+  file: text(),
+  hash: text(),
   updatedAt: integer("updated_at").notNull(),
   createdAt: integer("created_at").notNull()
 })

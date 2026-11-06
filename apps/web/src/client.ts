@@ -45,6 +45,7 @@ export const fileSkillsAtom = Zorel.query("settings", "fileSkills", { reactivity
 export const commandsAtom = (id: string) => Zorel.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
 export const terminalsAtom = (id: string) => Zorel.query("chats", "terminals", { params: { id }, reactivityKeys: ["terminals"] })
 export const pagesAtom = Zorel.query("pages", "list", { reactivityKeys: ["pages"] })
+export const memoryMapAtom = (scope: string) => Zorel.query("memories", "map", { query: scope ? { scope } : {}, reactivityKeys: ["memories"] })
 export const memoryVersionsAtom = (id: string) => Zorel.query("memories", "versions", { params: { id }, reactivityKeys: ["memories"] })
 export const pageVersionsAtom = (id: string) => Zorel.query("pages", "versions", { params: { id }, reactivityKeys: ["pages"] })
 export const routinesAtom = Zorel.query("routines", "list", { reactivityKeys: ["routines"] })
@@ -108,6 +109,9 @@ export const mutations = {
   consolidate: Zorel.mutation("chats", "consolidate"),
   createMemory: Zorel.mutation("memories", "create"),
   updateMemory: Zorel.mutation("memories", "update"),
+  removeMemory: Zorel.mutation("memories", "remove"),
+  connectPoints: Zorel.mutation("memories", "connect"),
+  disconnectPoints: Zorel.mutation("memories", "disconnect"),
   createServer: Zorel.mutation("tools", "create"),
   updateServer: Zorel.mutation("tools", "update"),
   removeServer: Zorel.mutation("tools", "remove"),
@@ -125,6 +129,9 @@ export const mutations = {
   closeConnection: Zorel.mutation("settings", "closeConnection"),
   pickFileSkill: Zorel.mutation("settings", "pickFileSkill"),
   nativeSkills: Zorel.mutation("settings", "nativeSkills"),
+  memoryApproval: Zorel.mutation("settings", "memoryApproval"),
+  memoryModel: Zorel.mutation("settings", "memoryModel"),
+  routerModel: Zorel.mutation("settings", "routerModel"),
   maxRunning: Zorel.mutation("settings", "maxRunning"),
   acceptFailoverTerms: Zorel.mutation("settings", "acceptFailoverTerms"),
   send: Live.mutation("send"),
@@ -190,6 +197,8 @@ export interface LiveTurn {
 // Things that happen between messages and aren't stored as messages (this session only).
 export type Note =
   | { readonly at: number; readonly kind: "handoff"; readonly from: string | null; readonly to: ReadonlyArray<string>; readonly via: "mention" | "send_message" | "start_task" | "reply" | "limit" | "route"; readonly reason?: string | undefined }
+  // What an agent set to "saves on its own" kept after the chat, with the ids to undo it.
+  | { readonly at: number; readonly kind: "remembered"; readonly memories: ReadonlyArray<{ readonly id: string; readonly scope: string; readonly text: string }> }
   // A failover move in the running turn; once the reply is saved, the message carries it instead.
   | { readonly at: number; readonly kind: "failover"; readonly turnId: string; readonly switch: Switch }
 export interface Receipt {
@@ -254,6 +263,8 @@ export function reduceChat(s: ChatState, e: ChatEvent): ChatState {
     }
     case "handoff":
       return { ...s, notes: [...s.notes, { at: Date.now(), kind: "handoff", from: e.from, to: e.to, via: e.via, reason: e.reason }] }
+    case "remembered":
+      return { ...s, notes: [...s.notes, { at: Date.now(), kind: "remembered", memories: e.memories }] }
     case "failover":
       // The turn starts over on the next route: drop what the failed one wrote.
       return {

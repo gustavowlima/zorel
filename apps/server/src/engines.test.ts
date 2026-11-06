@@ -3,10 +3,13 @@ import { expect, test } from "bun:test"
 process.env.ZOREL_API_ENGINE = "direct" // these tests drive the direct API engine against a mock server
 import { type Agent, DEFAULT_PERMISSIONS, type Memory, type Message, namedSkills, skillHandle } from "@zorel/contracts"
 import { Effect, Stream } from "effect"
-import { buildTurn, grounded, mentioned, parseConsolidation, pinned, similar } from "./context.ts"
-import { claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, Engines, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
-import { codexFailure, windowsOf } from "./engines/codex.ts"
+import { buildTurn, grounded, mappedOf, memoryNote, mentioned, namedPoints, parseConsolidation, pinned, readPage, reviewed, sectionOf, similar, spread, withinBudget } from "./context.ts"
+import { cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
+import { codexFailure, codexStep, windowsOf } from "./engines/codex.ts"
 import { hasCredential, redact } from "./observability.ts"
+import { stretchOf } from "./chat.ts"
+import { routerModel } from "./router.ts"
+import { ftsQuery } from "./db.ts"
 import { Secrets } from "./secrets.ts"
 import { classify, exposedName, needsApproval } from "./tools.ts"
 
@@ -39,14 +42,14 @@ test("CLI args: no session, no tools, model from the id", () => {
 })
 
 const mem = (text: string, confirmedAt: number, scope = "user", kind: Memory["kind"] = "fact", title = ""): Memory => ({ id: text, scope, kind, title, text, state: "active", origin: "manual", chatId: null, createdAt: 0, confirmedAt })
-const agentOf = (id: string, name: string, instructions = ""): Agent => ({ id, projectId: "p", archivedAt: null, monthlyTokens: null, replyTokens: null, name, title: "", description: "", instructions, model: "x/y", accountId: null, effort: null, failover: [], permissions: DEFAULT_PERMISSIONS, access: "workspace", createdAt: 0 })
+const agentOf = (id: string, name: string, instructions = ""): Agent => ({ id, projectId: "p", archivedAt: null, monthlyTokens: null, replyTokens: null, memory: "ask", knowledge: "read", name, title: "", description: "", instructions, model: "x/y", accountId: null, effort: null, failover: [], permissions: DEFAULT_PERMISSIONS, access: "workspace", createdAt: 0 })
 const msg = (role: "user" | "assistant", text: string, agentId: string | null = null): Message => ({ id: text, chatId: "c", role, agentId, text, model: null, error: null, steps: [], attachments: [], switches: [], turnId: null, changes: [], revertedAt: null, accountId: null, cost: null, inputTokens: 0, outputTokens: 0, durationMs: null, at: 1 })
 
 test("context: the memory budget favors the recent ones; layers in stable → volatile order", () => {
   expect(pinned([mem("stale", 1), mem("fresh", 2), mem("x".repeat(50), 3)], 59).map((m) => m.id)).toEqual(["x".repeat(50)])
   const dev = agentOf("a", "Dev", "INSTR")
   const turn = buildTurn({
-    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, effort: null, access: null, model: "anthropic/m", summary: "SUMMARYTEXT", summaryUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
+    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, effort: null, access: null, model: "anthropic/m", summary: "SUMMARYTEXT", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
     model: "anthropic/m",
     project: { id: "p", name: "P", brief: "BRIEF", path: null, defaultAgentId: null, createdAt: 0 },
     agent: dev,
@@ -86,7 +89,7 @@ test("tool policy: annotation > name; sensitive beats read", () => {
 
 test("consolidation: takes JSON with text around it, drops scopes not allowed", () => {
   const r = parseConsolidation('ok:\n{"summary":"S","memories":[{"scope":"user","text":"A","evidence":[1]},{"scope":"project","text":"B","evidence":[1]}],"confirm":["m2","x"],"skills":[{"scope":"user","title":"T","text":"steps"},{"scope":"user","text":"no title"}]}', ["user"])
-  expect(r).toEqual({ summary: "S", memories: [{ scope: "user", text: "A", keywords: "" }], confirm: [1], skills: [{ scope: "user", title: "T", text: "steps" }] })
+  expect(r).toEqual({ summary: "S", memories: [{ scope: "user", text: "A", keywords: "", evidence: [1], entities: [], relations: [] }], confirm: [1], skills: [{ scope: "user", title: "T", text: "steps" }] })
   expect(parseConsolidation("nothing", ["user"])).toBeUndefined()
   expect(parseConsolidation('{"summary":""}', ["user"])).toBeUndefined()
 })
@@ -106,7 +109,7 @@ test("consolidation: an agent's details don't become the person's; credentials a
   expect(grounded("Runs Postgres 17", "we use postgres", "Postgres 17 is out")).toBe(false) // the agent's number
   // A correction points at the memory it replaces; keywords come along, capped.
   const moved = '{"summary":"S","memories":[{"scope":"user","text":"Lives in Berlin","keywords":"city home address","evidence":[1],"replaces":"m2"}]}'
-  expect(parseConsolidation(moved, ["user"], () => "I moved to Berlin")?.memories).toEqual([{ scope: "user", text: "Lives in Berlin", keywords: "city home address", replaces: 1 }])
+  expect(parseConsolidation(moved, ["user"], () => "I moved to Berlin")?.memories).toEqual([{ scope: "user", text: "Lives in Berlin", keywords: "city home address", evidence: [1], entities: [], relations: [], replaces: 1 }])
 })
 
 test("credentials: secretlint's rules, the stored secrets and a password said in words; the rest stays", async () => {
@@ -251,4 +254,148 @@ test("skills by $handle: the title becomes the handle; only the exact handle cal
   expect(skillHandle("Deploy to Vercel")).toBe("deploy-to-vercel")
   expect(namedSkills("run $deploy-to-vercel now", skills).map((s) => s.title)).toEqual(["Deploy to Vercel"])
   expect(namedSkills("custa $5 e $deploy-to-vercelx", skills)).toEqual([])
+})
+
+test("commandStep: a command with no description is \"Run\" and its program, with the whole command as the detail", () => {
+  expect(commandStep("git status --short")).toEqual({ title: "Run git", detail: "git status --short" })
+  expect(commandStep("/usr/bin/git log")).toEqual({ title: "Run git", detail: "/usr/bin/git log" })
+  expect(commandStep("cd apps/web && bun test")).toEqual({ title: "Run bun", detail: "cd apps/web && bun test" })
+  expect(commandStep("CI=1 NODE_ENV=test bun test").title).toBe("Run bun")
+  expect(commandStep("   ")).toEqual({ title: "Run a command", detail: "" })
+  expect(commandStep("x".repeat(500)).detail.length).toBe(300)
+})
+
+test("commandStep looks through the shell wrapper Codex reports commands in", () => {
+  expect(commandStep(`/bin/zsh -lc 'rg -n "steps" apps'`)).toEqual({ title: "Run rg", detail: `/bin/zsh -lc 'rg -n "steps" apps'` })
+  expect(commandStep(`bash -c "ls -la"`).title).toBe("Run ls")
+})
+
+test("codexStep: a command is \"Run <program>\" with the command as the detail; a file change names its files", () => {
+  const run = codexStep({ type: "commandExecution", id: "1", command: "/bin/zsh -lc 'git diff'", status: "completed", aggregatedOutput: "ok" }, "/w")
+  expect(run).toMatchObject({ kind: "run", title: "Run git", detail: "/bin/zsh -lc 'git diff'", status: "ok", output: "ok" })
+  const edit = codexStep({ type: "fileChange", id: "2", status: "inProgress", changes: [{ path: "/w/src/a.ts" }, { path: "/w/b.ts" }] }, "/w")
+  expect(edit).toMatchObject({ kind: "edit", title: "Edit a.ts, b.ts", detail: "src/a.ts, b.ts", files: ["src/a.ts", "b.ts"], status: "running" })
+})
+
+test("thinking: Claude's thinking blocks and Codex's reasoning items are signs of reasoning, with no content", async () => {
+  const claude = await feed(claudeParser(), "claude-stream.jsonl")
+  expect(claude.some((e) => e.type === "thinking")).toBe(true)
+  const codex = codexParser()
+  expect(codex.line(JSON.stringify({ type: "item.started", item: { id: "i0", type: "reasoning" } }))).toEqual([{ type: "thinking" }])
+  expect(codex.line(JSON.stringify({ type: "item.completed", item: { id: "i0", type: "reasoning", text: "secret" } }))).toEqual([{ type: "thinking" }])
+})
+
+test("engineLabel: the engine and the model, as text for the timing steps", () => {
+  expect(engineLabel("claude-cli/opus")).toBe("Claude Code · Opus")
+  expect(engineLabel("claude-cli/claude-sonnet-5-5")).toBe("Claude Code · Sonnet 5.5")
+  expect(engineLabel("claude-cli/default")).toBe("Claude Code")
+  expect(engineLabel("codex-cli/gpt-5")).toBe("Codex · gpt-5")
+})
+
+test("commandStep on Windows: backslash paths, .exe, quoted paths, PowerShell and cmd wrappers", () => {
+  expect(commandStep("C:\\Git\\bin\\git.exe status").title).toBe("Run git")
+  expect(commandStep('"C:\\Program Files\\Git\\bin\\git.exe" status').title).toBe("Run git")
+  expect(commandStep("C:\\tools\\bun.exe test").title).toBe("Run bun")
+  expect(commandStep(`powershell.exe -NoProfile -Command "git status"`).title).toBe("Run git")
+  expect(commandStep(`"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command 'bun test'`).title).toBe("Run bun")
+  expect(commandStep(`pwsh -c "& 'C:\\Git\\git.exe' log"`).title).toBe("Run git")
+  expect(commandStep("cmd.exe /d /s /c \"npm run build\"").title).toBe("Run npm")
+  expect(commandStep("cmd /c cd /d C:\\app && bun test").title).toBe("Run bun")
+  expect(commandStep(`powershell -Command "cd C:\\app; bun test"`)).toEqual({ title: "Run bun", detail: `powershell -Command "cd C:\\app; bun test"` })
+  // Not a shell: left alone.
+  expect(commandStep("git commit -m 'a -c b'").title).toBe("Run git")
+})
+
+test("background calls go to the provider's small model; others keep the chat's", () => {
+  expect(cheapModel("claude-cli/opus")).toBe("claude-cli/haiku")
+  expect(cheapModel("anthropic/claude-opus-5-5")).toBe("anthropic/claude-haiku-5-5")
+  expect(cheapModel("codex-cli/default")).toBe("codex-cli/default")
+})
+
+test("search terms: common words don't match anything, accents and case don't matter", () => {
+  expect(ftsQuery("What is the deploy for the Café?")).toBe('"deploy"* OR "cafe"*')
+  expect(ftsQuery("ok, faça isso para mim")).toBe('"faca"* OR "mim"*')
+  expect(ftsQuery("the and")).toBe("")
+})
+
+test("the stretch to learn from: the window once it overflows, everything on Compact, the new messages of a quiet chat", () => {
+  const msgs = (n: number, from = 1, text = "hi") => Array.from({ length: n }, (_, i) => ({ role: i % 2 ? "assistant" : "user", at: from + i, text }))
+  expect(stretchOf(msgs(10), 0, "window")).toBeUndefined()
+  expect(stretchOf(msgs(51), 0, "window")?.length).toBe(21)
+  expect(stretchOf(msgs(2), 0, "all")?.length).toBe(2)
+  expect(stretchOf(msgs(2), 0, "quiet")).toBeUndefined() // too few
+  expect(stretchOf([{ role: "assistant", at: 1, text: "a" }, { role: "assistant", at: 2, text: "b" }, { role: "assistant", at: 3, text: "c" }], 0, "quiet")).toBeUndefined() // nothing the person said
+  // Few messages but too many characters: the oldest go, the newest that fit KEEP_CHARS (40k) stay.
+  expect(stretchOf(msgs(6, 1, "x".repeat(15_000)), 0, "window")?.map((m) => m.at)).toEqual([1, 2, 3, 4])
+  // 10 learned, 3 new: the new ones, after the last 6 learned for context
+  expect(stretchOf(msgs(13), 10, "quiet")?.map((m) => m.at)).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13])
+})
+
+test("a learning with no summary asked for parses; a consolidation that owes one still needs it", () => {
+  const reply = JSON.stringify({ summary: "", memories: [{ scope: "user", text: "Likes tea", evidence: [1] }] })
+  expect(parseConsolidation(reply, ["user"], () => "I like tea")).toBeUndefined()
+  expect(parseConsolidation(reply, ["user"], () => "I like tea", "", false)?.memories.map((m) => m.text)).toEqual(["Likes tea"])
+})
+
+test("history within its character budget: the newest that fit, and always the last one", () => {
+  const m = (text: string) => ({ text })
+  expect(withinBudget([m("a".repeat(50)), m("b".repeat(30)), m("c".repeat(30))], 70).map((x) => x.text[0])).toEqual(["b", "c"])
+  expect(withinBudget([m("a"), m("z".repeat(500))], 100).map((x) => x.text[0])).toEqual(["z"]) // too big alone, still sent
+})
+
+test("memory changes for a live session: new and reworded ones, and what's no longer true, not what fell past the budget", () => {
+  const seen = new Map([["1", "Likes tea"], ["2", "Lives in Rio"], ["3", "Uses tabs"]])
+  const note = memoryNote(seen, [{ id: "1", text: "Likes tea" }, { id: "2", text: "Lives in Lisbon" }, { id: "4", text: "Prefers short answers" }], ["1", "2", "3", "4"])!
+  expect(note).toContain("- New: Lives in Lisbon")
+  expect(note).toContain("- New: Prefers short answers")
+  expect(note).toContain("- No longer true: Lives in Rio")
+  expect(note).not.toContain("Uses tabs") // still active, only past the budget now
+  expect(memoryNote(seen, [{ id: "1", text: "Likes tea" }], ["1", "2"])).toContain("- No longer true: Uses tabs") // forgotten
+  expect(memoryNote(new Map([["1", "Likes tea"]]), [{ id: "1", text: "Likes tea" }], ["1"])).toBeUndefined()
+})
+
+test("a consolidation reads the memories most related to the stretch first", () => {
+  const ms = [mem("Deploys go to Vercel on Fridays", 3), mem("Likes green tea", 2), mem("Builds with Bun", 1)]
+  expect(reviewed(ms, "should we deploy to vercel today?", 40).map((m) => m.text)).toEqual(["Deploys go to Vercel on Fridays"])
+  expect(reviewed(ms, "tea or coffee").map((m) => m.text)[0]).toBe("Likes green tea")
+})
+
+test("pages are read by section, and a search hit names the section it's in", () => {
+  const body = "# Deploy\nIntro\n## Steps\n1. bun test\n### Notes\nfast\n## Rollback\nrevert the tag"
+  expect(readPage("Runbook", body, "steps").text).toBe("# Runbook › Steps\n\n## Steps\n1. bun test\n### Notes\nfast")
+  expect(readPage("Runbook", body, "nope")).toMatchObject({ error: true })
+  expect(readPage("Big", `## A\n${"x".repeat(30_000)}`).text).toContain("read a part with section")
+  expect(sectionOf(body, ["revert"])).toBe("Rollback")
+})
+
+test("what a fact is about: entities and relations read leniently, a relation's ends become entities, capped", () => {
+  const m = mappedOf([{ name: " Vercel ", type: "concept" }, { name: "Deploy" }, "Fridays", { type: "concept" }, 42], [["Deploy", "Goes To", "Vercel"], ["Deploy", "x"], ["Deploy", "happens on", "deploy"], ["Deploy", "owned by", "Leo"]])
+  expect(m.entities).toEqual([{ name: "Vercel", type: "concept" }, { name: "Deploy", type: "subject" }, { name: "Fridays", type: "subject" }, { name: "Leo", type: "subject" }])
+  expect(m.relations).toEqual([["Deploy", "goes to", "Vercel"], ["Deploy", "owned by", "Leo"]])
+})
+
+test("spread: activation starts at the seeds and fades with distance; an unlinked point gets none", () => {
+  const a = spread(["A", "B", "C", "D"], [{ a: "A", b: "B" }, { a: "B", b: "C" }], ["A"])
+  expect(a.get("A")! > a.get("B")!).toBe(true)
+  expect(a.get("B")! > a.get("C")!).toBe(true)
+  expect(a.get("D") ?? 0).toBe(0)
+  expect(spread(["A"], [], ["missing"]).size).toBe(0)
+})
+
+test("named points: a name or an alias as whole words in the text", () => {
+  const points = [{ id: "1", normalized: "deploy", aliases: [] }, { id: "2", normalized: "vercel", aliases: ["vercel com"] }, { id: "3", normalized: "ui", aliases: [] }]
+  expect(namedPoints("How do we Deploy to vercel.com?", points)).toEqual(["1", "2"])
+  expect(namedPoints("deployment", points)).toEqual([]) // not a whole word; short names never match by themselves
+})
+
+test("the routing model: the one chosen in Settings, else the provider's small one", () => {
+  expect(routerModel("claude-cli/opus")).toBe("claude-cli/haiku")
+  expect(routerModel("claude-cli/opus", "anthropic/claude-haiku-5-5")).toBe("anthropic/claude-haiku-5-5")
+})
+
+test("named points tolerate a plural", () => {
+  const points = [{ id: "1", normalized: "deploy", aliases: ["release"] }, { id: "2", normalized: "bus", aliases: [] }]
+  expect(namedPoints("when do releases go out?", points)).toEqual(["1"])
+  expect(namedPoints("two deploys", points)).toEqual(["1"])
+  expect(namedPoints("the bus", points)).toEqual(["2"]) // short words aren't cut
 })

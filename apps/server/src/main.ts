@@ -1,8 +1,8 @@
-import { discovered, pickedPaths } from "./file-skills.ts"
+import { discovered, pickedEntries, serializePicks } from "./file-skills.ts"
 import { listFolders } from "./folders.ts"
 import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, CronInvalid, GitFailed, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
+import { Api, CronInvalid, GitFailed, isTeammate, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
 import { ZorelRpc } from "@zorel/contracts/events"
 import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
 import { Effect, Layer, Schema } from "effect"
@@ -19,6 +19,8 @@ import { MAX_AFTER, snippet } from "./context.ts"
 
 const CHARS_PER_TOKEN = 4 // rough, provider-neutral: the meter says it is an estimate
 import { Store, type Repository } from "./db.ts"
+import { PAGES_DIR } from "./page-files.ts"
+import { PageSync } from "./page-sync.ts"
 import { Engines, listModels, splitModel } from "./engines.ts"
 import { claudeCommands } from "./engines/claude-sdk.ts"
 import { API_KEYS, mcpEnvName, oauthKey, Secrets } from "./secrets.ts"
@@ -45,6 +47,14 @@ import { BrowserService, BrowserSocket } from "./browser.ts"
 const BUILDER_KEEP_MS = 60 * 60 * 1000 // a Builder conversation younger than this is someone's, not litter
 
 const notFound = () => Effect.fail(new HttpApiError.NotFound())
+const badRequest = () => Effect.fail(new HttpApiError.BadRequest())
+// The agents a skill is limited to: each must exist and be a teammate (not archived, not the Builder). Deduplicated.
+const skillAgents = (store: Repository, ids: ReadonlyArray<string> | undefined) =>
+  Effect.gen(function* () {
+    const wanted = [...new Set(ids ?? [])]
+    const all = yield* store.agents()
+    return wanted.every((id) => all.some((a) => a.id === id && isTeammate(a))) ? wanted : undefined
+  })
 const found = <A, E, R>(e: Effect.Effect<A | undefined, E, R>) => Effect.flatMap(e, (a) => (a === undefined ? notFound() : Effect.succeed(a)))
 const exists = <A>(e: Effect.Effect<A | undefined>) => Effect.map(e, (a) => a !== undefined)
 
@@ -110,7 +120,7 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
   })
 )
 
-const AGENT_FIELDS = ["name", "title", "description", "instructions", "model", "accountId", "effort", "failover", "access", "permissions", "archivedAt", "monthlyTokens", "replyTokens"] as const
+const AGENT_FIELDS = ["name", "title", "description", "instructions", "model", "accountId", "effort", "failover", "access", "permissions", "archivedAt", "monthlyTokens", "replyTokens", "memory", "knowledge"] as const
 
 const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
   Effect.gen(function* () {
@@ -455,7 +465,7 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         })
       )
       .handle("consolidate", ({ params }) =>
-        consolidate(params.id, true).pipe(
+        consolidate(params.id, "all", (saved) => runtime.remembered(params.id, saved)).pipe(
           Effect.provide(services),
           Effect.catchTags({ NotFound: () => notFound(), Busy: () => Effect.fail(new HttpApiError.Conflict()) })
         )
@@ -485,16 +495,53 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
   })
 )
 
+// The point a scope's facts hang off on the map: its project or its agent (none for what's about you).
+const ownerPoint = (store: Repository, scope: string) =>
+  Effect.gen(function* () {
+    const [kind, id = ""] = scope.split(":")
+    const project = kind === "project" ? yield* store.project(id) : undefined
+    const agent = kind === "agent" ? yield* store.agent(id) : undefined
+    return project ? [{ id: project.id, name: project.name, type: "project" as const }] : agent ? [{ id: agent.id, name: agent.name, type: "agent" as const }] : []
+  })
+
+// A scope a memory can move to: you, a project that exists, or an agent that is a teammate.
+const scopeExists = (store: Repository, scope: string) =>
+  Effect.gen(function* () {
+    if (scope === "user") return true
+    const [kind, id = ""] = scope.split(":")
+    if (kind === "project") return !!(yield* store.project(id))
+    const a = kind === "agent" ? yield* store.agent(id) : undefined
+    return !!a && isTeammate(a)
+  })
+
 const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
     const actor = yield* Actor
     return h
       .handle("list", () => store.memories())
+      // The map of one scope (and what's about you), or of every scope.
+      .handle("map", ({ query }) =>
+        Effect.gen(function* () {
+          const scopes = query.scope ? [...new Set(["user", query.scope])] : [...new Set((yield* store.memories()).map((m) => m.scope))]
+          const shape = ({ memory_ids, ...p }: { id: string; scope: string; name: string; type: string; weight: number; facts: number; pending: number; memory_ids: string }) => ({ ...p, type: p.type as "project" | "agent" | "concept" | "subject", facts: Number(p.facts), pending: Number(p.pending ?? 0), memoryIds: memory_ids ? memory_ids.split(",") : [] })
+          const own = (yield* store.entitiesIn(scopes)).map(shape)
+          // A bridge brings its other end onto this map (drawn as another project's point).
+          const bridges = yield* store.bridgesOf(own.map((p) => p.id))
+          const across = bridges.others.length ? (yield* store.entitiesIn([...new Set(bridges.others.map((o) => o.scope))])).filter((p) => bridges.others.some((o) => o.id === p.id)).map(shape) : []
+          const points = [...own, ...across.filter((p) => !own.some((o) => o.id === p.id))]
+          return { points, links: [...(yield* store.linksAmong(own.map((p) => p.id))), ...bridges.links.map((l) => ({ ...l, rel: "", bridge: true }))] }
+        })
+      )
       // Written by the user: starts active. Duplicate: returns the existing one.
       .handle("create", ({ payload }) =>
         Effect.gen(function* () {
-          const added = yield* store.addMemory({ ...payload, state: "active", origin: "manual", chatId: null, owner: actor.id })
+          if (payload.agents?.length && payload.kind !== "skill") return yield* badRequest() // only a skill is limited to agents
+          const only = yield* skillAgents(store, payload.agents)
+          if (!only) return yield* badRequest()
+          const added = yield* store.addMemory({ ...payload, agents: only, state: "active", origin: "manual", chatId: null, owner: actor.id })
+          // A fact written by hand hangs off its project's or agent's point on the map (what it's about: the next sleep).
+          if (added && added.kind === "fact") yield* store.linkMemory(added.id, added.scope, { entities: [], relations: [] }, yield* ownerPoint(store, added.scope))
           return added ?? (yield* store.memories()).find((m) => m.scope === payload.scope && m.text === payload.text)!
         })
       )
@@ -502,19 +549,46 @@ const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
       .handle("update", ({ params, payload }) =>
         Effect.gen(function* () {
           const before = yield* store.memory(params.id)
+          if (payload.agents !== undefined && before && before.kind !== "skill") return yield* badRequest()
+          const only = payload.agents === undefined ? undefined : yield* skillAgents(store, payload.agents)
+          if (payload.agents !== undefined && !only) return yield* badRequest()
           if (before?.state === "pending" && before.replaces && payload.state === "active") {
             const applied = yield* store.applyImprovement(before.id, "you")
             if (applied) return applied
           }
-          return yield* found(store.updateMemory(params.id, payload))
+          // Moved to another owner: one that exists (you, a project, a teammate); its old one keeps nothing of it.
+          if (payload.scope !== undefined && before && payload.scope !== before.scope && !(yield* scopeExists(store, payload.scope))) return yield* badRequest()
+          // Edited or moved into the words of another memory of the scope: refused, not a crash on the unique key.
+          if (before && (payload.text !== undefined || payload.scope !== undefined) && (yield* store.textTaken(before.id, payload.scope ?? before.scope, payload.text ?? before.text))) return yield* new HttpApiError.Conflict()
+          const { agents: _, ...rest } = payload
+          return yield* found(store.updateMemory(params.id, { ...rest, agents: only }))
         })
       )
+      .handle("remove", ({ params }) =>
+        Effect.gen(function* () {
+          const m = yield* store.memory(params.id)
+          if (!m) return yield* notFound()
+          if (m.state !== "forgotten") return yield* new HttpApiError.Conflict() // forget it first
+          yield* store.removeMemory(m.id)
+        })
+      )
+      .handle("connect", ({ payload }) =>
+        Effect.gen(function* () {
+          const [a, b] = [yield* store.entity(payload.a), yield* store.entity(payload.b)]
+          if (!a || !b) return yield* notFound()
+          if (a.scope === b.scope || a.scope === "user" || b.scope === "user") return yield* badRequest() // a bridge is between projects (yours is on every map)
+          yield* store.connectEntities(a.id, b.id)
+        })
+      )
+      .handle("disconnect", ({ payload }) => store.disconnectEntities(payload.a, payload.b))
       .handle("versions", ({ params }) => Effect.flatMap(store.memory(params.id), (m) => (m ? store.memoryVersions(m.id) : notFound())))
       // An earlier text comes back (the current one is kept as a version too).
       .handle("restore", ({ params, payload }) =>
         Effect.gen(function* () {
           const v = yield* store.memoryVersion(payload.versionId)
           if (!v || v.memoryId !== params.id) return yield* notFound()
+          const m = yield* store.memory(params.id)
+          if (m && (yield* store.textTaken(m.id, m.scope, v.text))) return yield* new HttpApiError.Conflict()
           return yield* found(store.updateMemory(params.id, { title: v.title, text: v.text }))
         })
       )
@@ -640,8 +714,14 @@ const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
 
 // The failover terms warning (§6.1) is accepted once and remembered here.
 const FAILOVER_TERMS = "failover_terms_accepted_at"
+const MEMORY_APPROVAL = "memoryApproval" // "review" (default) or "undo": see Preferences
+const MEMORY_MODEL = "memoryModel" // "" (automatic) or a model id: see Preferences
+const ROUTER_MODEL = "routerModel" // "" (automatic) or a model id: see Preferences
 const preferencesOf = (store: Repository) =>
-  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills"), store.preference(MAX_RUNNING_KEY)]), ([v, p, n, m]) => ({
+  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills"), store.preference(MAX_RUNNING_KEY), store.preference(MEMORY_APPROVAL), store.preference(MEMORY_MODEL), store.preference(ROUTER_MODEL)]), ([v, p, n, m, a, mm, rm]) => ({
+    memoryApproval: a === "undo" ? ("undo" as const) : ("review" as const),
+    memoryModel: mm ?? "",
+    routerModel: rm ?? "",
     failoverTermsAcceptedAt: v ? Number(v) : null,
     paused: p === "1",
     nativeSkills: n === "1",
@@ -764,10 +844,13 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       .handle("pickFileSkill", ({ payload }) =>
         Effect.gen(function* () {
           if (!discovered().some((s) => s.path === payload.path)) return yield* notFound()
-          const now = new Set(pickedPaths(yield* store.preference("fileSkills")))
-          if (payload.enabled) now.add(payload.path)
+          const now = new Map(pickedEntries(yield* store.preference("fileSkills")).map((e) => [e.path, e.agents]))
+          const only = payload.agents === undefined ? undefined : yield* skillAgents(store, payload.agents)
+          if (payload.agents !== undefined && !only) return yield* badRequest()
+          // Picking again keeps the agents it already had unless new ones come with it.
+          if (payload.enabled) now.set(payload.path, only ?? now.get(payload.path) ?? [])
           else now.delete(payload.path)
-          const pref = JSON.stringify([...now])
+          const pref = serializePicks([...now].map(([path, agents]) => ({ path, agents })))
           yield* store.setPreference("fileSkills", pref)
           return fileSkillsWith(pref)
         })
@@ -775,6 +858,9 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       .handle("pause", ({ payload }) => runtime.setPaused(payload.paused))
       // The harnesses' own skills on or off (the next session of each chat picks it up).
       .handle("nativeSkills", ({ payload }) => Effect.andThen(store.setPreference("nativeSkills", payload.enabled ? "1" : "0"), preferencesOf(store)))
+      .handle("memoryApproval", ({ payload }) => Effect.andThen(store.setPreference(MEMORY_APPROVAL, payload.approval), preferencesOf(store)))
+      .handle("memoryModel", ({ payload }) => Effect.andThen(store.setPreference(MEMORY_MODEL, payload.model), preferencesOf(store)))
+      .handle("routerModel", ({ payload }) => Effect.andThen(store.setPreference(ROUTER_MODEL, payload.model), preferencesOf(store)))
       .handle("maxRunning", ({ payload }) => Effect.andThen(runtime.setMaxRunning(payload.value), preferencesOf(store)))
       .handle("acceptFailoverTerms", () =>
         Effect.andThen(
@@ -1082,7 +1168,8 @@ export const AppLive = (webDir?: string) =>
 
 // Services with real dependencies (system keychain). Tests build their own with Secrets.memory.
 export const services = (dbPath: string, dataDir: string, secrets?: Layer.Layer<Secrets, never, Store>) => {
-  const store = Store.layer(dbPath)
+  const pagesDir = join(dataDir, PAGES_DIR) // knowledge pages as Markdown files (page-files.ts)
+  const store = Layer.provideMerge(PageSync(pagesDir), Store.layer(dbPath, pagesDir))
   const withSecrets = Layer.provideMerge(secrets ?? Secrets.layer, store)
   const base = Layer.mergeAll(Layer.provideMerge(Layer.mergeAll(Engines.layer, Tools.layer), withSecrets), DataDir.layer(dataDir), DbPath.layer(dbPath))
   const withAccounts = Layer.provideMerge(Layer.mergeAll(Accounts.layer, Workspace.layer, Pricing.layer, Audit.layer, BrowserService.layer), base)
@@ -1148,6 +1235,6 @@ if (import.meta.main) await start()
 
 // Every skill found on this computer, with whether the agents use it.
 const fileSkillsWith = (pref: string | undefined) => {
-  const on = new Set(pickedPaths(pref))
-  return discovered().map((s) => ({ path: s.path, name: s.name, description: s.description, source: s.source, ...(s.plugin && { plugin: s.plugin }), enabled: on.has(s.path) }))
+  const on = new Map(pickedEntries(pref).map((e) => [e.path, e.agents]))
+  return discovered().map((s) => ({ path: s.path, name: s.name, description: s.description, source: s.source, ...(s.plugin && { plugin: s.plugin }), enabled: on.has(s.path), agents: on.get(s.path) ?? [] }))
 }

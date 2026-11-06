@@ -1,10 +1,10 @@
 // Route in the URL hash, and the theme preference. Data lives in atoms (client.ts), not here.
 import { useEffect, useRef, useState } from "react"
 
-export const SETTINGS_TABS = ["general", "providers", "mcp", "skills", "processes", "storage", "audit"] as const
+export const SETTINGS_TABS = ["general", "providers", "mcp", "processes", "storage", "audit"] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]
 export const PROJECT_TABS = ["overview", "agents", "tools"] as const
-export const AGENT_TABS = ["work", "profile", "tools", "activity"] as const
+export const AGENT_TABS = ["work", "profile", "tools", "memory", "activity"] as const
 export type AgentTab = (typeof AGENT_TABS)[number]
 export type ProjectTab = (typeof PROJECT_TABS)[number]
 
@@ -13,7 +13,10 @@ export type Route =
   | { view: "inbox" }
   | { view: "agents" }
   | { view: "routines" }
-  | { view: "knowledge"; id?: string; scope?: string; kind?: "fact" | "skill" } // scope/kind: opened filtered (an agent's memories)
+  | { view: "knowledge"; id: string } // an old link to one item: App sends it to Memory, Pages or Skills
+  | { view: "memory"; tab?: string; review?: boolean } // tab: "user", "project:<id>", "agent:<id>" or "forgotten"; none: All
+  | { view: "pages"; id?: string }
+  | { view: "skills"; id?: string; computer?: boolean } // computer: the skills already on this computer
   | { view: "usage"; agentId?: string } // agentId: Usage filtered to one agent (from its page)
   | { view: "settings"; tab: SettingsTab; provider?: string } // provider: one provider's page under Providers
   | { view: "project"; id: string; tab: ProjectTab }
@@ -34,11 +37,20 @@ export function parseRoute(hash: string): Route {
     case "usage":
       return a ? { view, agentId: a } : { view }
     case "knowledge":
-      // #/knowledge/in:<scope>[/fact|skill] opens it filtered; #/knowledge/<id> opens one item.
-      if (a?.startsWith("in:")) return { view, scope: decodeURIComponent(a.slice(3)), ...((b === "fact" || b === "skill") && { kind: b }) }
+      // Old links: #/knowledge/in:<scope>[/fact|skill] and #/knowledge/<id> (Knowledge became Memory, Pages and Skills).
+      if (a?.startsWith("in:")) return b === "skill" ? { view: "skills" } : { view: "memory", tab: decodeURIComponent(a.slice(3)) }
+      return a ? { view, id: a } : { view: "memory" }
+    case "memory":
+      // #/memory, #/memory/<tab>, #/memory/review
+      return a === "review" ? { view, review: true } : a ? { view, tab: decodeURIComponent(a) } : { view }
+    case "pages":
       return a ? { view, id: a } : { view }
+    case "skills":
+      return a === "computer" ? { view, computer: true } : a ? { view, id: a } : { view }
     case "settings":
-      // Old links: #/settings/accounts and #/settings/keys land on Providers, #/settings/appearance on General.
+      // Old links: #/settings/accounts and #/settings/keys land on Providers, #/settings/appearance on General,
+      // #/settings/skills on Skills › On this computer.
+      if (a === "skills") return { view: "skills", computer: true }
       return { view, tab: a === "appearance" ? "general" : a === "accounts" || a === "keys" ? "providers" : oneOf(SETTINGS_TABS, a, "general"), ...(a === "providers" && b && { provider: b }) }
     case "project":
       return a ? { view, id: a, tab: oneOf(PROJECT_TABS, b, "overview") } : { view: "home" }
@@ -61,8 +73,13 @@ export const hrefOf = (r: Route): string => {
     case "home":
       return r.projectId ? `#/new/${r.projectId}` : "#/"
     case "knowledge":
-      if (r.scope) return `#/knowledge/in:${encodeURIComponent(r.scope)}${r.kind ? `/${r.kind}` : ""}`
-      return r.id ? `#/knowledge/${r.id}` : "#/knowledge"
+      return `#/knowledge/${r.id}`
+    case "memory":
+      return r.review ? "#/memory/review" : r.tab ? `#/memory/${encodeURIComponent(r.tab)}` : "#/memory"
+    case "pages":
+      return r.id ? `#/pages/${r.id}` : "#/pages"
+    case "skills":
+      return r.computer ? "#/skills/computer" : r.id ? `#/skills/${r.id}` : "#/skills"
     case "settings":
       return r.provider ? `#/settings/${r.tab}/${r.provider}` : `#/settings/${r.tab}`
     case "project":
@@ -139,6 +156,26 @@ export function useResolvedTheme(): "dark" | "light" {
     return () => observer.disconnect()
   }, [])
   return theme
+}
+
+// ---------- the steps of a reply in progress: open (default) or folded into one line; per browser ----------
+
+const STEPS_OPEN_KEY = "zorel.steps.open"
+
+export function liveStepsOpen(): boolean {
+  try {
+    return localStorage.getItem(STEPS_OPEN_KEY) !== "0"
+  } catch {
+    return true // storage blocked: the default
+  }
+}
+
+export function setLiveStepsOpen(open: boolean) {
+  try {
+    localStorage.setItem(STEPS_OPEN_KEY, open ? "1" : "0")
+  } catch {
+    // storage blocked: the choice lasts until the page reloads
+  }
 }
 
 // ---------- small per-browser UI memory (expanded projects) ----------

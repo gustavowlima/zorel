@@ -66,6 +66,7 @@ const mcp = Bun.serve({
 const turns: Turn[] = []
 const mentionNext = new Map<string, string>() // reply text per agent name (to test handoff)
 let manyMemories = 0 // > 0: the fake consolidation proposes this many user memories
+let manyWord = "subject" // ...worded "Likes <word><letter>x"
 
 async function useTool(t: Turn, name: string, args: Record<string, unknown>) {
   const client = new Client({ name: "fake-cli", version: "1" })
@@ -81,12 +82,12 @@ const FakeEngines = Layer.succeed(Engines, {
     turns.push(t)
     if (t.system === CONSOLIDATION_SYSTEM && manyMemories)
       return Stream.make<EngineEvent[]>(
-        { type: "text", delta: JSON.stringify({ summary: "S", memories: Array.from({ length: manyMemories }, (_, i) => ({ scope: "user", text: `Likes subject${"abcdefghijklmnopqrstuvwxyz"[i]}x` /* grounded: no names or numbers the person didn't say */, evidence: [1] })) }) },
+        { type: "text", delta: JSON.stringify({ summary: "S", memories: Array.from({ length: manyMemories }, (_, i) => ({ scope: "user", text: `Likes ${manyWord}${"abcdefghijklmnopqrstuvwxyz"[i]}x` /* grounded: no names or numbers the person didn't say */, evidence: [1] })) }) },
         { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }
       )
     if (t.system === CONSOLIDATION_SYSTEM)
       return Stream.make(
-        { type: "text" as const, delta: JSON.stringify({ summary: "They talked about deploying.", memories: [{ scope: "project", text: "Deploys go out on fridays", evidence: [1] }, { scope: "team", text: "out of scope", evidence: [1] }], skills: [{ scope: "project", title: "Publish the site", text: "1. bun run build\n2. vercel deploy" }] }) },
+        { type: "text" as const, delta: JSON.stringify({ summary: "They talked about deploying.", memories: [{ scope: "project", text: "Deploys go out on fridays", evidence: [1], entities: [{ name: "Deploy", type: "subject" }, { name: "Fridays", type: "concept" }], relations: [["Deploy", "happens on", "Fridays"]] }, { scope: "team", text: "out of scope", evidence: [1] }], skills: [{ scope: "project", title: "Publish the site", text: "1. bun run build\n2. vercel deploy" }] }) },
         { type: "done" as const, usage: { inputTokens: 1, outputTokens: 1 } }
       )
     const last = t.messages.at(-1)!.text
@@ -213,6 +214,15 @@ test("project → agent → chat: streaming, layered context, model switch, cons
     ["skill", `project:${project.id}`, "Publish the site"],
     ["fact", `project:${project.id}`, "Deploys go out on fridays"]
   ])
+  // The fact is on the project's map: its point, what it's about and how those relate (pending until approved).
+  const map = await api((c) => c.memories.map({ query: { scope: `project:${project.id}` } }))
+  const named = (id: string) => map.points.find((p) => p.id === id)?.name
+  expect(map.points.map((p) => [p.name, p.type, p.pending]).sort()).toEqual([["Deploy", "subject", 1], ["Fridays", "concept", 1], ["Site", "project", 1]])
+  expect(map.links.map((l) => [named(l.a), l.rel, named(l.b)])).toContainEqual(["Deploy", "happens on", "Fridays"])
+  const bad = (f: () => Promise<unknown>) => f().then(() => "ok", (e: { _tag?: string }) => e._tag)
+  const [deploy, fridays] = ["Deploy", "Fridays"].map((n) => map.points.find((p) => p.name === n)!.id) as [string, string]
+  expect(await bad(() => api((c) => c.memories.connect({ payload: { a: deploy, b: fridays } })))).toBe("BadRequest") // same map
+  expect(await bad(() => api((c) => c.memories.connect({ payload: { a: deploy, b: "nothing" } })))).toBe("NotFound")
 
   await send(chat.id, { text: "como publico?" })
   expect(turns.at(-1)!.system).toContain("They talked about deploying.")
@@ -224,13 +234,15 @@ test("project → agent → chat: streaming, layered context, model switch, cons
   const sys = turns.at(-1)!.system
   expect(sys).toContain("Deploys go out on fridays")
   expect(sys).toContain("- Publish the site") // listed
-  expect(sys).toContain("vercel deploy") // relevant: full step-by-step
+  expect(sys).not.toContain("vercel deploy") // a related message only lists it: the steps are read on demand
+  await send(chat.id, { text: "do it with $publish-the-site" })
+  expect(turns.at(-1)!.system).toContain("vercel deploy") // named with $handle: full step-by-step
   expect((await api((c) => c.chats.list())).find((c) => c.id === chat.id)!.title).toBe("hi")
 
   // Usage: this chat's finished turns, summed per model.
   const usage = (await api((c) => c.settings.usage())).filter((u) => u.projectId === project.id)
   const byModel = Object.fromEntries(usage.map((u) => [u.model, [u.turns, u.agentId, u.inputTokens > 0]]))
-  expect(byModel).toEqual({ "claude-cli/sonnet": [1, agent.id, true], "anthropic/claude-sonnet-5-5": [3, agent.id, true] }) // the switch sticks to the chat
+  expect(byModel).toEqual({ "claude-cli/sonnet": [1, agent.id, true], "anthropic/claude-sonnet-5-5": [4, agent.id, true] }) // the switch sticks to the chat
   // Cost: priced from the catalog; the subscription row is the API equivalent (claude-cli/sonnet → newest Sonnet).
   const billed = Object.fromEntries(usage.map((u) => [u.model, [u.billing, (u.cost ?? 0) > 0]]))
   expect(billed).toEqual({ "claude-cli/sonnet": ["subscription", true], "anthropic/claude-sonnet-5-5": ["api", true] })
@@ -277,7 +289,7 @@ test("MCP tools: read mode hides writes; approve mode asks and respects the deci
   let r = await send(chat.id, { text: "tool:docs__search_docs" })
   let msg = dones(r.events)[0]!
   expect(msg.text).toBe("docs__search_docs => result of search_docs") // only the read one listed
-  expect(msg.steps).toEqual([{ tool: "docs__search_docs", args: '{"q":"deploy"}', status: "ok", result: "result of search_docs" }])
+  expect(msg.steps.filter((s) => s.tool !== "reply")).toEqual([{ tool: "docs__search_docs", args: '{"q":"deploy"}', status: "ok", result: "result of search_docs" }]) // the reply's own time closes the list
 
   await api((c) => c.tools.update({ params: { id: server.id }, payload: { mode: "approve" } }))
   r = await send(chat.id, { text: "tool:docs__delete_page" }, () => false)
@@ -287,7 +299,7 @@ test("MCP tools: read mode hides writes; approve mode asks and respects the deci
   expect(r.openWhileWaiting.map((a) => [a.chatId, a.tool])).toEqual([[chat.id, "docs__delete_page"]])
   expect(await rpc((c) => c.approvals())).toEqual([]) // decided: gone from "Needs you"
   expect(msg.text).toContain("The user declined")
-  expect(msg.steps.at(-1)!.status).toBe("refused")
+  expect(msg.steps.find((s) => s.tool === "docs__delete_page")!.status).toBe("refused")
   expect(toolCalls).toEqual(["search_docs"]) // denied one never reached the server
 
   r = await send(chat.id, { text: "tool:docs__delete_page" }, () => true)
@@ -593,6 +605,12 @@ test("pages by agents: writing in the project becomes a version, search and read
   expect(page.scope).toBe(`project:${project.id}`)
   expect(dones((await send(chat.id, { text: 'tool:zorel_knowledge_search {"query":"fly"}' })).events)[0]!.text).toContain(`Deploy [${page.id}]`)
   expect(dones((await send(chat.id, { text: `tool:zorel_knowledge_read {"page":"${page.id}"}` })).events)[0]!.text).toContain("We deploy on Fly.io.")
+  // Changing a page that exists waits for the person: refused, it stays; approved, it changes.
+  const change = `tool:zorel_knowledge_write {"page":"${page.id}","title":"Deploy","body":"We deploy on Vercel."}`
+  expect(dones((await send(chat.id, { text: change }, () => false)).events)[0]!.text).toContain("declined")
+  expect((await api((c) => c.pages.list())).find((p) => p.id === page.id)!.body).toBe("We deploy on Fly.io.")
+  await send(chat.id, { text: change }, () => true)
+  expect((await api((c) => c.pages.list())).find((p) => p.id === page.id)!.body).toBe("We deploy on Vercel.")
   await api((c) => c.pages.update({ params: { id: page.id }, payload: { pinned: true } }))
   await send(chat.id, { text: "hi" })
   expect(turns.at(-1)!.system).toContain(`- Deploy [${page.id}]`)
@@ -645,9 +663,223 @@ test("skills: read, propose an improvement, approve seeing the change and restor
   expect((await api((c) => c.memories.versions({ params: { id: skill.id } }))).length).toBe(2)
 })
 
+// Compact ("force") on a chat, listening: what the chat is told while it runs.
+const compactListening = (chatId: string) =>
+  rpc((c) =>
+    Effect.gen(function* () {
+      const events: ChatEvent[] = []
+      const ready = yield* Deferred.make<void>()
+      const fiber = yield* c.subscribeChat({ chatId }).pipe(
+        Stream.runForEach((e) => (e._tag === "snapshot" ? Deferred.succeed(ready, undefined) : Effect.sync(() => void events.push(e)))),
+        Effect.forkChild
+      )
+      yield* Deferred.await(ready)
+      yield* Effect.promise(() => api((x) => x.chats.consolidate({ params: { id: chatId } })))
+      yield* Effect.sleep("100 millis")
+      yield* Fiber.interrupt(fiber)
+      return events
+    })
+  )
+
+const approval = (a: "review" | "undo") => api((c) => c.settings.memoryApproval({ payload: { approval: a } }))
+
+test("memory approval: review proposes, undo saves facts (skills still wait, with a notice); an agent that doesn't learn keeps its chats from learning", async () => {
+  // The user's pending memories from earlier tests fill the review cap (20): the person clears them.
+  for (const m of (await api((c) => c.memories.list())).filter((x) => x.state === "pending" && x.scope === "user")) await api((c) => c.memories.update({ params: { id: m.id }, payload: { state: "forgotten" } }))
+  // A project each: a proposal that repeats a pending one in the same scope is dropped.
+  let n = 0
+  const learned = async (learns: boolean[]) => {
+    const project = await api((c) => c.projects.create({ payload: { name: `Learning ${++n}`, brief: "" } }))
+    const mk = async (on: boolean, i: number) => {
+      const a = await api((c) => c.agents.create({ payload: { projectId: project.id, name: `A${i}`, instructions: "x", model: "claude-cli/sonnet" } }))
+      expect(a).toMatchObject({ memory: "ask", knowledge: "write" }) // the defaults: it learns, and reads and writes pages
+      return on ? a : api((c) => c.agents.update({ params: { id: a.id }, payload: { memory: "read" } }))
+    }
+    const agents = await Promise.all(learns.map(mk))
+    const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: agents.map((a) => a.id), model: "claude-cli/sonnet" } }))
+    await send(chat.id, { text: "hi" })
+    const events = await compactListening(chat.id)
+    const mine = (await api((c) => c.memories.list())).filter((m) => m.chatId === chat.id)
+    const summary = (await api((c) => c.chats.list())).find((x) => x.id === chat.id)!.summary
+    return { events, mine, summary }
+  }
+
+  expect((await api((c) => c.settings.preferences())).memoryApproval).toBe("review") // the default
+  const review = await learned([true])
+  expect(review.mine.map((m) => [m.kind, m.state]).sort()).toEqual([["fact", "pending"], ["skill", "pending"]])
+  expect(review.events.some((e) => e._tag === "remembered")).toBe(false)
+
+  await approval("undo")
+  const undo = await learned([true])
+  const fact = undo.mine.find((m) => m.kind === "fact")!
+  expect(fact).toMatchObject({ state: "active", origin: "auto", text: "Deploys go out on fridays" })
+  expect(undo.mine.find((m) => m.kind === "skill")!.state).toBe("pending") // a skill is instructions: it never turns on by itself
+  const note = undo.events.find((e) => e._tag === "remembered")
+  expect(note && note._tag === "remembered" && note.memories.map((m) => m.id)).toEqual([fact.id])
+  // Undo: forgetting it is the existing PATCH.
+  expect((await api((c) => c.memories.update({ params: { id: fact.id }, payload: { state: "forgotten" } }))).state).toBe("forgotten")
+
+  const read = await learned([false])
+  expect(read.mine).toEqual([]) // proposes nothing, saves nothing
+  expect(read.summary).toBe("They talked about deploying.") // the chat's own summary still folds
+  // One agent that doesn't learn keeps a shared chat from learning.
+  expect((await learned([true, false])).mine).toEqual([])
+  await approval("review")
+})
+
+test("memory approval undo: at most 20 facts on their own per consolidation", async () => {
+  await approval("undo")
+  const agent = await api((c) => c.agents.create({ payload: { projectId: null, name: "Eager", instructions: "x", model: "claude-cli/sonnet" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [agent.id], model: "claude-cli/sonnet" } }))
+  await send(chat.id, { text: "hi" })
+  manyMemories = 25
+  manyWord = "gadget" // not the words an earlier test already stored
+  const events = await compactListening(chat.id)
+  manyMemories = 0
+  manyWord = "subject"
+  await approval("review")
+  const mine = (await api((c) => c.memories.list())).filter((m) => m.chatId === chat.id)
+  expect(mine.filter((m) => m.state === "active").length).toBe(20)
+  const note = events.find((e) => e._tag === "remembered")
+  expect(note && note._tag === "remembered" && note.memories.length).toBe(20)
+})
+
+test("memory mode and knowledge access gate the tools and the context, not only the screen", async () => {
+  const project = await api((c) => c.projects.create({ payload: { name: "Gates", brief: "" } }))
+  const page = await api((c) => c.pages.create({ payload: { scope: `project:${project.id}`, title: "Runbook", body: "Restart nginx" } }))
+  await api((c) => c.pages.update({ params: { id: page.id }, payload: { pinned: true } }))
+  await api((c) => c.memories.create({ payload: { scope: `project:${project.id}`, kind: "skill", title: "Restart", text: "1. restart" } })) // the prompt lists skills only when there are some
+  const agent = await api((c) => c.agents.create({ payload: { projectId: project.id, name: "Gated", instructions: "x", model: "claude-cli/sonnet" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [agent.id], model: "claude-cli/sonnet" } }))
+  const names = () => turns.at(-1)!.tools!.defs.map((d) => d.name)
+
+  await send(chat.id, { text: "hi" })
+  expect(names()).toEqual(expect.arrayContaining(["zorel_knowledge_write", "zorel_knowledge_read", "zorel_knowledge_search", "zorel_propose_skill"]))
+  expect(turns.at(-1)!.system).toContain(`- Runbook [${page.id}]`)
+  expect(turns.at(-1)!.system).toContain("propose it with zorel_propose_skill")
+
+  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { memory: "read", knowledge: "read" } }))
+  const refused = dones((await send(chat.id, { text: 'tool:zorel_knowledge_write {"title":"Nope","body":"x","scope":"project"}' })).events)[0]!
+  expect(names()).not.toContain("zorel_knowledge_write")
+  expect(names()).not.toContain("zorel_propose_skill")
+  expect(names()).toEqual(expect.arrayContaining(["zorel_knowledge_read", "zorel_knowledge_search", "zorel_read_skill"])) // reading stays
+  expect(refused.text).not.toContain("Saved")
+  expect((await api((c) => c.pages.list())).some((p) => p.title === "Nope")).toBe(false)
+  expect(turns.at(-1)!.system).not.toContain("propose it with zorel_propose_skill")
+
+  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { memory: "ask", knowledge: "none" } }))
+  await send(chat.id, { text: "hi again" })
+  for (const n of ["zorel_knowledge_write", "zorel_knowledge_read", "zorel_knowledge_search"]) expect(names()).not.toContain(n)
+  expect(turns.at(-1)!.system).not.toContain("Runbook")
+  expect(names()).toContain("zorel_propose_skill") // skills aren't knowledge pages
+
+  // Every change is a version of the agent, and can be restored.
+  const versions = await api((c) => c.agents.versions({ params: { id: agent.id } }))
+  expect(versions[0]!.profile).toMatchObject({ memory: "ask", knowledge: "none" })
+  expect(versions.map((v) => v.profile.memory)).toContain("read")
+})
+
+test("skills by agent: a skill that lists agents shows only to them; empty means everyone", async () => {
+  const project = await api((c) => c.projects.create({ payload: { name: "Teams", brief: "" } }))
+  const mk = (name: string) => api((c) => c.agents.create({ payload: { projectId: project.id, name, instructions: "x", model: "claude-cli/sonnet" } }))
+  const [rev, dev] = [await mk("Rev"), await mk("Dev")]
+  const scope = `project:${project.id}`
+  const only = await api((c) => c.memories.create({ payload: { scope, kind: "skill", title: "Review PRs", text: "1. read the diff", agents: [rev.id] } }))
+  await api((c) => c.memories.create({ payload: { scope, kind: "skill", title: "Ship it", text: "1. tag" } }))
+  expect(only.agents).toEqual([rev.id])
+  const chatOf = (agentId: string) => api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [agentId], model: "claude-cli/sonnet" } }))
+  const [forRev, forDev] = [await chatOf(rev.id), await chatOf(dev.id)]
+
+  await send(forRev.id, { text: "hi" })
+  expect(turns.at(-1)!.system).toContain("- Review PRs")
+  expect(turns.at(-1)!.system).toContain("- Ship it")
+  await send(forDev.id, { text: "hi" })
+  expect(turns.at(-1)!.system).not.toContain("Review PRs")
+  expect(turns.at(-1)!.system).toContain("- Ship it")
+  // $handle and search don't bring it to the others either
+  await send(forDev.id, { text: "use $review-prs on the diff" })
+  expect(turns.at(-1)!.system).not.toContain("1. read the diff")
+  await send(forRev.id, { text: "use $review-prs on the diff" })
+  expect(turns.at(-1)!.system).toContain("1. read the diff")
+  // zorel_read_skill
+  expect(dones((await send(forDev.id, { text: 'tool:zorel_read_skill {"skill":"Review PRs"}' })).events)[0]!.text).toContain('No skill "Review PRs"')
+  expect(dones((await send(forRev.id, { text: 'tool:zorel_read_skill {"skill":"Review PRs"}' })).events)[0]!.text).toContain("1. read the diff")
+  // improving one the agent can't see is refused like a missing one
+  expect(dones((await send(forDev.id, { text: 'tool:zorel_propose_skill {"title":"Review PRs","steps":"x","reason":"y","improves":"Review PRs"}' })).events)[0]!.text).toContain("No skill")
+
+  // Empty again: everyone.
+  await api((c) => c.memories.update({ params: { id: only.id }, payload: { agents: [] } }))
+  await send(forDev.id, { text: "hi" })
+  expect(turns.at(-1)!.system).toContain("- Review PRs")
+
+  // The server checks the ids: unknown, archived, or on something that isn't a skill.
+  const bad = (f: () => Promise<unknown>) => f().then(() => "ok", (e: { _tag?: string }) => e._tag)
+  expect(await bad(() => api((c) => c.memories.update({ params: { id: only.id }, payload: { agents: ["nobody"] } })))).toBe("BadRequest")
+  const gone = await mk("Gone")
+  await api((c) => c.agents.update({ params: { id: gone.id }, payload: { archived: true } }))
+  expect(await bad(() => api((c) => c.memories.update({ params: { id: only.id }, payload: { agents: [gone.id] } })))).toBe("BadRequest")
+  expect(await bad(() => api((c) => c.memories.create({ payload: { scope, kind: "skill", title: "X", text: "y", agents: ["nobody"] } })))).toBe("BadRequest")
+  const fact = await api((c) => c.memories.create({ payload: { scope, kind: "fact", title: "", text: "A fact", } }))
+  expect(await bad(() => api((c) => c.memories.update({ params: { id: fact.id }, payload: { agents: [rev.id] } })))).toBe("BadRequest")
+})
+
 test("file skills: only a path the scan found can be turned on", async () => {
   const bad = await api((c) => c.settings.pickFileSkill({ payload: { path: "/etc/passwd", enabled: true } })).catch((e: unknown) => e)
   expect((bad as { _tag?: string })._tag).toBe("NotFound")
   const list = await api((c) => c.settings.fileSkills())
   expect(list.every((s) => !s.enabled)).toBe(true)
+})
+
+test("memory edits that collide are refused (409), and a removed project takes its pages with it", async () => {
+  const project = await api((c) => c.projects.create({ payload: { name: "Cleanup", brief: "" } }))
+  const scope = `project:${project.id}`
+  await api((c) => c.memories.create({ payload: { scope, kind: "fact", title: "", text: "Builds run on CI" } }))
+  const other = await api((c) => c.memories.create({ payload: { scope, kind: "fact", title: "", text: "Releases on Mondays" } }))
+  const taken = await api((c) => c.memories.update({ params: { id: other.id }, payload: { text: "builds run on CI!" } })).catch((e: unknown) => e)
+  expect((taken as { _tag?: string })._tag).toBe("Conflict")
+  expect((await api((c) => c.memories.update({ params: { id: other.id }, payload: { text: "Releases on Tuesdays" } }))).text).toBe("Releases on Tuesdays")
+
+  const agent = await api((c) => c.agents.create({ payload: { projectId: project.id, name: "Keeper", instructions: "", model: "claude-cli/sonnet" } }))
+  await api((c) => c.pages.create({ payload: { scope, title: "Cleanup runbook", body: "x" } }))
+  await api((c) => c.pages.create({ payload: { scope: `agent:${agent.id}`, title: "Keeper notes", body: "y" } }))
+  await api((c) => c.projects.remove({ params: { id: project.id } }))
+  const titles = (await api((c) => c.pages.list())).map((p) => p.title)
+  expect(titles).not.toContain("Cleanup runbook")
+  expect(titles).not.toContain("Keeper notes")
+})
+
+test("memory moves to another owner that exists; only a forgotten one is deleted for good", async () => {
+  const project = await api((c) => c.projects.create({ payload: { name: "Mover", brief: "" } }))
+  const m = await api((c) => c.memories.create({ payload: { scope: "user", kind: "fact", title: "", text: "Ships on Thursdays" } }))
+  const moved = await api((c) => c.memories.update({ params: { id: m.id }, payload: { scope: `project:${project.id}` } }))
+  expect(moved.scope).toBe(`project:${project.id}`)
+  const nowhere = await api((c) => c.memories.update({ params: { id: m.id }, payload: { scope: "project:missing" } })).catch((e: unknown) => e)
+  expect((nowhere as { _tag?: string })._tag).toBe("BadRequest")
+  const active = await api((c) => c.memories.remove({ params: { id: m.id } })).catch((e: unknown) => e)
+  expect((active as { _tag?: string })._tag).toBe("Conflict") // forget it first
+  await api((c) => c.memories.update({ params: { id: m.id }, payload: { state: "forgotten" } }))
+  await api((c) => c.memories.remove({ params: { id: m.id } }))
+  expect((await api((c) => c.memories.list())).some((x) => x.id === m.id)).toBe(false)
+})
+
+test("zorel_remember: the approval setting decides (undo keeps, review proposes); an agent that doesn't learn lacks the tool; credentials and repeats aren't kept", async () => {
+  const agent = await api((c) => c.agents.create({ payload: { projectId: null, name: "Keeper", instructions: "x", model: "claude-cli/sonnet" } }))
+  await approval("undo")
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [agent.id], model: "claude-cli/sonnet" } }))
+  const remember = (text: string, about = "user") => send(chat.id, { text: `tool:zorel_remember ${JSON.stringify({ text, about })}` })
+  const mine = async () => (await api((c) => c.memories.list())).filter((m) => m.chatId === chat.id)
+
+  expect(dones((await remember("Drinks green tea")).events)[0]!.text).toContain("Kept")
+  expect((await mine()).find((m) => m.text === "Drinks green tea")).toMatchObject({ state: "active", agentId: agent.id, scope: "user" })
+  expect(dones((await remember("Drinks green tea")).events)[0]!.text).toContain("Already kept") // a repeat confirms it
+  expect(dones((await remember("Plays chess", "project")).events)[0]!.text).toContain("no project")
+  expect(dones((await remember("The api key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH")).events)[0]!.text).toContain("credential")
+
+  await approval("review")
+  await remember("Works from Lisbon")
+  expect((await mine()).find((m) => m.text === "Works from Lisbon")?.state).toBe("pending")
+
+  await api((c) => c.agents.update({ params: { id: agent.id }, payload: { memory: "read" } }))
+  await send(chat.id, { text: "hi" })
+  expect(turns.at(-1)!.tools!.defs.map((d) => d.name)).not.toContain("zorel_remember")
 })

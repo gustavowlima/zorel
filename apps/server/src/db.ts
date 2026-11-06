@@ -7,18 +7,60 @@ import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, ne, notInA
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { LOCAL_ACTOR } from "./access.ts"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
-import { Context, Effect, Layer } from "effect"
+import { existsSync } from "node:fs"
+import { join } from "node:path"
+import { Context, Effect, Layer, Semaphore } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
-import { type AgentProfile, agents, agentVersions, memoryVersions, pages, pageVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
+import type { EntityType, Mapped } from "./context.ts"
+import { fileTitle, hashOf, markdownFiles, pageText, parsePageText, readText, removeFile, slugOf, titleOfFile, writeAtomic } from "./page-files.ts"
+import { type AgentProfile, agents, agentVersions, entities, entityLinks, memoryEntities, memoryVersions, relations, pages, pageVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
 
 // The part of an agent a version keeps (everything but its id, project and creation time).
 export const profileOf = (a: Agent): AgentProfile => ({
   name: a.name, title: a.title, description: a.description, instructions: a.instructions, model: a.model,
-  accountId: a.accountId, effort: a.effort, failover: a.failover, access: a.access, permissions: a.permissions
+  accountId: a.accountId, effort: a.effort, failover: a.failover, access: a.access, permissions: a.permissions, memory: a.memory, knowledge: a.knowledge
 })
 
 // "Prefere PRs pequenos." and "prefere prs pequenos" are the same memory.
 export const normalize = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
+
+// Words too common to find anything (English and Portuguese, after normalize): matching them ranks noise.
+const STOPWORDS = new Set(
+  "the and you for with that this are was were not but have has had what from can your our they them then than there here will would should could about into just also its ".concat(
+    "que para com uma por mais nao isso esse essa este esta ele ela eles elas dos das nos nas foi ser tem como mas seu sua meu minha voce aqui ali pra pelo pela sobre quando onde"
+  ).split(" ")
+)
+// Two spellings of one name: one holds the other whole ("vercel" in "vercel com"), or their letter pairs mostly match
+// (Dice ≥ 0.8: "versel" / "vercel"). Short names must match exactly.
+export function sameName(a: string, b: string): boolean {
+  if (a === b) return true
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a]
+  if (short.length < 4) return false
+  if (` ${long} `.includes(` ${short} `)) return true
+  return dice(a, b) >= 0.8
+}
+const dice = (a: string, b: string) => {
+  const pairs = (t: string) => new Set(Array.from({ length: t.length - 1 }, (_, i) => t.slice(i, i + 2)))
+  const x = pairs(a)
+  const y = pairs(b)
+  return (2 * [...x].filter((p) => y.has(p)).length) / (x.size + y.size || 1)
+}
+// Two points of one map that are the same thing, for the sleep to merge: one was given the other's name, or a plural
+// ("deploys" / "deploy"). Never a close spelling: "react" / "preact" and "python 2" / "python 3" look alike and aren't,
+// and a merge can't be undone. Stricter than sameName: "memory" and "memory map" stay two.
+export function twins(a: { normalized: string; aliases: ReadonlyArray<string> }, b: { normalized: string; aliases: ReadonlyArray<string> }): boolean {
+  const [x, y] = [a.normalized, b.normalized]
+  if (a.aliases.includes(y) || b.aliases.includes(x)) return true
+  return x.replace(/s$/, "") === y.replace(/s$/, "") && Math.min(x.length, y.length) >= 4
+}
+
+// An FTS5 query from free text: each word of 3+ letters that isn't a stopword, as a prefix, any of them.
+export const ftsQuery = (text: string) =>
+  normalize(text)
+    .split(" ")
+    .filter((t) => t.length > 2 && !STOPWORDS.has(t))
+    .map((t) => `"${t}"*`)
+    .join(" OR ")
 
 // Monotonic clock: two messages in the same ms still stay ordered (the summary cuts by `at`).
 let last = 0
@@ -32,10 +74,16 @@ const toMemory = (r: typeof memories.$inferSelect): Memory => {
   const { normalized: _, owner: _o, audience: _a, keywords: _k, ...m } = r
   return m
 }
+// A skill an agent sees: its own (agent scope), one for everyone (no agents listed) or one listing it. `forAgent`
+// null is no agent at all (a solo chat): only the ones for everyone.
+const seenBy = (forAgent: string | null) =>
+  forAgent
+    ? sql`(${memories.scope} LIKE 'agent:%' OR ${memories.agents} = '[]' OR EXISTS (SELECT 1 FROM json_each(${memories.agents}) WHERE value = ${forAgent}))`
+    : sql`(${memories.scope} LIKE 'agent:%' OR ${memories.agents} = '[]')`
 // Raw row (hand-written SQL, snake_case columns) from the FTS search.
 const memoryRow = (r: Row): Memory => ({
-  id: r.id, scope: r.scope, kind: r.kind, title: r.title, text: r.text, state: r.state, origin: r.origin, chatId: r.chat_id,
-  essential: !!r.essential, createdAt: r.created_at, confirmedAt: r.confirmed_at
+  id: r.id, scope: r.scope, kind: r.kind, title: r.title, text: r.text, state: r.state, origin: r.origin, chatId: r.chat_id, agentId: r.agent_id ?? null,
+  essential: !!r.essential, agents: JSON.parse(r.agents ?? "[]"), createdAt: r.created_at, confirmedAt: r.confirmed_at
 })
 // Memories in these scopes that this owner may hear: about the person (user scope), only their own.
 const heard = (scopes: ReadonlyArray<string>, owner: string) =>
@@ -57,9 +105,97 @@ const defined = <T extends Record<string, unknown>>(o: T) => Object.fromEntries(
 const makeDb = Drizzle.makeWithDefaults()
 type Db = Effect.Success<typeof makeDb>
 
-export const repository = (db: Db) => {
+export const repository = (db: Db, pagesDir?: string) => {
   const orDie = <A, E>(e: Effect.Effect<A, E>) => Effect.orDie(e)
   const first = <A>(rows: ReadonlyArray<A>) => rows[0]
+
+  // ---------- knowledge pages as files (page-files.ts) ----------
+  // With a folder, every page is also its Markdown file, written through here (the file is the truth; the row
+  // indexes it). Without one (tests in memory), only rows.
+  type PageRow = typeof pages.$inferSelect
+  const pageLock = Semaphore.makeUnsafe(1) // writes and the sync of outside edits, one at a time
+  const pathOf = (file: string) => join(pagesDir!, ...file.split("/"))
+  const nameOf = (scope: string) =>
+    Effect.gen(function* () {
+      const [kind, id = ""] = scope.split(":")
+      if (kind === "project") return (yield* db.select({ name: projects.name }).from(projects).where(eq(projects.id, id)))[0]?.name
+      if (kind === "agent") return (yield* db.select({ name: agents.name }).from(agents).where(eq(agents.id, id)))[0]?.name
+      return undefined
+    })
+  // you/, projects/<name>/, agents/<name>/; a folder another scope already uses gets the id too.
+  const folderOf = (scope: string) =>
+    Effect.gen(function* () {
+      if (scope === "user") return "you"
+      const [kind, id = ""] = scope.split(":")
+      const base = `${kind === "project" ? "projects" : "agents"}/${slugOf((yield* nameOf(scope)) ?? id)}`
+      const taken = yield* db.select({ id: pages.id }).from(pages).where(and(sql`${pages.file} like ${`${base}/%`}`, ne(pages.scope, scope))).limit(1)
+      return taken.length ? `${base}-${id.slice(0, 6)}` : base
+    })
+  const fileTaken = (file: string, id: string) =>
+    Effect.map(db.select({ id: pages.id }).from(pages).where(and(eq(pages.file, file), ne(pages.id, id))).limit(1), (r) => r.length > 0 || existsSync(pathOf(file)))
+  // Writes the row's file (renamed when the title changed; "Title (2).md" when the name is taken) and records it.
+  const writePageFile = (row: PageRow) =>
+    Effect.gen(function* () {
+      if (!pagesDir) return row
+      const folder = row.file ? row.file.slice(0, row.file.lastIndexOf("/")) : yield* folderOf(row.scope)
+      const name = fileTitle(row.title)
+      let file = `${folder}/${name}.md`
+      for (let i = 2; file !== row.file && (yield* fileTaken(file, row.id)); i++) file = `${folder}/${name} (${i}).md`
+      const text = pageText({ id: row.id, scope: row.scope, title: row.title, pinned: row.pinned, body: row.body })
+      writeAtomic(pathOf(file), text)
+      if (row.file && row.file !== file) removeFile(pathOf(row.file))
+      const hash = hashOf(text)
+      yield* db.update(pages).set({ file, hash }).where(eq(pages.id, row.id))
+      return { ...row, file, hash }
+    })
+  const removePageFiles = (rows: ReadonlyArray<{ file: string | null }>) =>
+    Effect.sync(() => {
+      if (pagesDir) for (const r of rows) if (r.file) removeFile(pathOf(r.file))
+    })
+  const addPageVersion = (pageId: string, title: string, body: string, by: string, at: number) =>
+    Effect.gen(function* () {
+      const [{ n = 0 } = {}] = yield* db.select({ n: sql<number>`coalesce(max(${pageVersions.n}), 0)` }).from(pageVersions).where(eq(pageVersions.pageId, pageId))
+      yield* db.insert(pageVersions).values({ id: crypto.randomUUID(), pageId, n: n + 1, title, body, by, at })
+    })
+  // An entity of the scope by its name or an alias, else by a close spelling (trigrams: "vercel.com", "Versel").
+  const findEntity = (scope: string, norm: string) =>
+    Effect.gen(function* () {
+      const exact = yield* db.all<{ id: string; normalized: string; aliases: string }>(
+        sql`SELECT id, normalized, aliases FROM entities WHERE scope = ${scope} AND (normalized = ${norm} OR EXISTS (SELECT 1 FROM json_each(aliases) WHERE value = ${norm})) LIMIT 1`
+      )
+      // Candidates share a word of 3+ letters (trigrams need 3); sameName decides.
+      const words = norm.split(" ").filter((w) => w.length >= 3)
+      const near =
+        exact[0] ??
+        (words.length
+          ? (yield* db.all<{ id: string; normalized: string; aliases: string }>(
+              sql`SELECT e.id, e.normalized, e.aliases FROM entity_index JOIN entities e ON e.id = entity_index.id
+                  WHERE entity_index MATCH ${words.map((w) => `"${w}"`).join(" OR ")} AND e.scope = ${scope} LIMIT 10`
+            )).find((e) => sameName(e.normalized, norm) || (JSON.parse(e.aliases) as string[]).some((a) => sameName(a, norm)))
+          : undefined)
+      return near && { id: near.id, normalized: near.normalized, aliases: JSON.parse(near.aliases) as string[] }
+    })
+
+  // The scope of a file that came from outside: its front matter's (if it names one that exists), else its folder's.
+  const scopeOfFile = (file: string, said: string | undefined, rows: ReadonlyArray<PageRow>) =>
+    Effect.gen(function* () {
+      const exists = (scope: string) =>
+        Effect.gen(function* () {
+          if (scope === "user") return true
+          const [kind, id = ""] = scope.split(":")
+          const table = kind === "project" ? projects : kind === "agent" ? agents : undefined
+          return !!table && (yield* db.select({ id: table.id }).from(table).where(eq(table.id, id))).length > 0
+        })
+      if (said && (yield* exists(said))) return said
+      const folder = file.slice(0, file.lastIndexOf("/"))
+      if (folder === "you") return "user"
+      const sibling = rows.find((r) => r.file?.startsWith(`${folder}/`))
+      if (sibling) return sibling.scope
+      const [kind, slug] = folder.split("/")
+      if (kind === "projects") return (yield* db.select({ id: projects.id, name: projects.name }).from(projects)).filter((p) => slugOf(p.name) === slug).map((p) => `project:${p.id}`)[0]
+      if (kind === "agents") return (yield* db.select({ id: agents.id, name: agents.name }).from(agents)).filter((a) => slugOf(a.name) === slug).map((a) => `agent:${a.id}`)[0]
+      return undefined
+    })
 
   // Members in order (the first is the leader), and the last message as a one-line preview.
   const withMembers = (rows: ReadonlyArray<typeof chats.$inferSelect>) =>
@@ -134,12 +270,22 @@ export const repository = (db: Db) => {
         return yield* project(id)
       }).pipe(orDie),
     removeProject: (id: string) =>
-      orDie(
-        db.transaction((tx) =>
+      pageLock.withPermit(
+        orDie(
           Effect.gen(function* () {
-            const own = yield* tx.select({ id: agents.id }).from(agents).where(eq(agents.projectId, id))
-            yield* tx.delete(memories).where(inArray(memories.scope, [`project:${id}`, ...own.map((a) => `agent:${a.id}`)]))
-            yield* tx.delete(projects).where(eq(projects.id, id)) // agents, chats and MCP servers cascade
+            const gone = yield* db.transaction((tx) =>
+              Effect.gen(function* () {
+                const own = yield* tx.select({ id: agents.id }).from(agents).where(eq(agents.projectId, id))
+                const scopes = [`project:${id}`, ...own.map((a) => `agent:${a.id}`)]
+                const files = yield* tx.select({ file: pages.file }).from(pages).where(inArray(pages.scope, scopes))
+                yield* tx.delete(memories).where(inArray(memories.scope, scopes))
+                yield* tx.delete(entities).where(inArray(entities.scope, scopes)) // its map: links and bridges cascade
+                yield* tx.delete(pages).where(inArray(pages.scope, scopes)) // versions cascade
+                yield* tx.delete(projects).where(eq(projects.id, id)) // agents, chats and MCP servers cascade
+                return files
+              })
+            )
+            yield* removePageFiles(gone)
           })
         )
       ),
@@ -147,14 +293,14 @@ export const repository = (db: Db) => {
     // ---------- agents ----------
     agents: (): Effect.Effect<Agent[]> => orDie(db.select().from(agents).orderBy(asc(agents.createdAt))),
     agent,
-    createAgent: (input: { projectId: string | null; name: string; title?: string | undefined; description?: string | undefined; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined; builtin?: "builder" | undefined }, by = "you") =>
+    createAgent: (input: { projectId: string | null; name: string; title?: string | undefined; description?: string | undefined; instructions: string; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined; builtin?: "builder" | undefined; memory?: Agent["memory"] | undefined; knowledge?: Agent["knowledge"] | undefined }, by = "you") =>
       Effect.gen(function* () {
-        const a: Agent = { id: crypto.randomUUID(), archivedAt: null, monthlyTokens: null, replyTokens: null, ...input, title: input.title ?? "", description: input.description ?? "", accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], access: input.access ?? "workspace", permissions: input.permissions ?? DEFAULT_PERMISSIONS, builtin: input.builtin ?? null, createdAt: now() }
+        const a: Agent = { id: crypto.randomUUID(), archivedAt: null, monthlyTokens: null, replyTokens: null, ...input, title: input.title ?? "", description: input.description ?? "", accountId: input.accountId ?? null, effort: input.effort ?? null, failover: input.failover ?? [], access: input.access ?? "workspace", permissions: input.permissions ?? DEFAULT_PERMISSIONS, builtin: input.builtin ?? null, memory: input.memory ?? "ask", knowledge: input.knowledge ?? "write", createdAt: now() }
         yield* db.insert(agents).values(a)
         yield* addVersion(a, by)
         return a
       }).pipe(orDie),
-    updateAgent: (id: string, input: { name?: string | undefined; title?: string | undefined; description?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined; archivedAt?: number | null | undefined; monthlyTokens?: number | null | undefined; replyTokens?: number | null | undefined }, by = "you") =>
+    updateAgent: (id: string, input: { name?: string | undefined; title?: string | undefined; description?: string | undefined; instructions?: string | undefined; model?: string | undefined; accountId?: string | null | undefined; effort?: Effort | null | undefined; failover?: ReadonlyArray<FailoverTarget> | undefined; access?: Access | undefined; permissions?: AgentPermissions | undefined; archivedAt?: number | null | undefined; monthlyTokens?: number | null | undefined; replyTokens?: number | null | undefined; memory?: Agent["memory"] | undefined; knowledge?: Agent["knowledge"] | undefined }, by = "you") =>
       Effect.gen(function* () {
         const before = yield* agent(id)
         const set = defined(input)
@@ -200,11 +346,19 @@ export const repository = (db: Db) => {
       ),
     agentVersions: (agentId: string) => orDie(db.select().from(agentVersions).where(eq(agentVersions.agentId, agentId)).orderBy(desc(agentVersions.n))),
     removeAgent: (id: string) =>
-      orDie(
-        db.transaction((tx) =>
+      pageLock.withPermit(
+        orDie(
           Effect.gen(function* () {
-            yield* tx.delete(memories).where(eq(memories.scope, `agent:${id}`))
-            yield* tx.delete(agents).where(eq(agents.id, id))
+            const gone = yield* db.transaction((tx) =>
+              Effect.gen(function* () {
+                const files = yield* tx.select({ file: pages.file }).from(pages).where(eq(pages.scope, `agent:${id}`))
+                yield* tx.delete(memories).where(eq(memories.scope, `agent:${id}`))
+                yield* tx.delete(pages).where(eq(pages.scope, `agent:${id}`))
+                yield* tx.delete(agents).where(eq(agents.id, id))
+                return files
+              })
+            )
+            yield* removePageFiles(gone)
           })
         )
       ),
@@ -212,35 +366,108 @@ export const repository = (db: Db) => {
     // ---------- knowledge pages (phase 3b) ----------
     pages: () => orDie(db.select().from(pages).orderBy(desc(pages.updatedAt))),
     page: (id: string) => orDie(db.select().from(pages).where(eq(pages.id, id)).pipe(Effect.map(first))),
-    // Every change of title or body is kept as a version (the first one too), with who made it.
+    // Every change of title or body is kept as a version (the first one too), with who made it; the file follows.
     savePage: (input: { id?: string | undefined; scope: string; title: string; body: string }, by = "you") =>
-      Effect.gen(function* () {
-        const at = now()
-        const existing = input.id ? (yield* db.select().from(pages).where(eq(pages.id, input.id)))[0] : undefined
-        const id = existing?.id ?? crypto.randomUUID()
-        if (existing) {
-          if (existing.title === input.title && existing.body === input.body) return existing
-          yield* db.update(pages).set({ title: input.title, body: input.body, updatedAt: at }).where(eq(pages.id, id))
-        } else yield* db.insert(pages).values({ id, scope: input.scope, title: input.title, body: input.body, pinned: false, updatedAt: at, createdAt: at })
-        const [{ n = 0 } = {}] = yield* db.select({ n: sql<number>`coalesce(max(${pageVersions.n}), 0)` }).from(pageVersions).where(eq(pageVersions.pageId, id))
-        yield* db.insert(pageVersions).values({ id: crypto.randomUUID(), pageId: id, n: n + 1, title: input.title, body: input.body, by, at })
-        return (yield* db.select().from(pages).where(eq(pages.id, id)))[0]!
-      }).pipe(orDie),
-    pinPage: (id: string, pinned: boolean) => orDie(db.update(pages).set({ pinned }).where(eq(pages.id, id)).pipe(Effect.asVoid)),
-    removePage: (id: string) => orDie(db.delete(pages).where(eq(pages.id, id)).pipe(Effect.asVoid)),
+      pageLock.withPermit(
+        Effect.gen(function* () {
+          const at = now()
+          const existing = input.id ? (yield* db.select().from(pages).where(eq(pages.id, input.id)))[0] : undefined
+          const id = existing?.id ?? crypto.randomUUID()
+          if (existing) {
+            if (existing.title === input.title && existing.body === input.body) return existing
+            yield* db.update(pages).set({ title: input.title, body: input.body, updatedAt: at }).where(eq(pages.id, id))
+          } else yield* db.insert(pages).values({ id, scope: input.scope, title: input.title, body: input.body, pinned: false, updatedAt: at, createdAt: at })
+          yield* addPageVersion(id, input.title, input.body, by, at)
+          return yield* writePageFile((yield* db.select().from(pages).where(eq(pages.id, id)))[0]!)
+        }).pipe(orDie)
+      ),
+    pinPage: (id: string, pinned: boolean) =>
+      pageLock.withPermit(
+        Effect.gen(function* () {
+          yield* db.update(pages).set({ pinned }).where(eq(pages.id, id))
+          const row = (yield* db.select().from(pages).where(eq(pages.id, id)))[0]
+          if (row) yield* writePageFile(row)
+        }).pipe(orDie)
+      ),
+    removePage: (id: string) =>
+      pageLock.withPermit(
+        Effect.gen(function* () {
+          const gone = yield* db.delete(pages).where(eq(pages.id, id)).returning({ file: pages.file })
+          yield* removePageFiles(gone)
+        }).pipe(orDie)
+      ),
+    // Brings the folder and the rows together. A file edited, added or moved outside Zorel updates its page (a
+    // version by "outside"); a row without its file gets it written (first run, an imported workspace), unless
+    // `deleted` says the folder lost it while Zorel watched it, then the page goes. A file whose scope can't be
+    // told (no front matter, a folder nobody owns) is left alone.
+    syncPages: (deleted = false) =>
+      !pagesDir
+        ? Effect.succeed({ imported: 0, updated: 0, written: 0, removed: 0 })
+        : pageLock.withPermit(
+            Effect.gen(function* () {
+              const report = { imported: 0, updated: 0, written: 0, removed: 0 }
+              const rows = yield* db.select().from(pages)
+              const matched = new Set<string>()
+              const disk = markdownFiles(pagesDir)
+              for (const file of disk) {
+                const text = readText(pathOf(file))
+                const hash = hashOf(text)
+                const parsed = parsePageText(text)
+                const row = rows.find((r) => r.file === file) ?? (parsed.id ? rows.find((r) => r.id === parsed.id && !matched.has(r.id) && !(r.file && disk.includes(r.file))) : undefined) // moved or renamed outside
+                if (row) matched.add(row.id)
+                if (row && row.file === file && row.hash === hash) continue
+                const title = parsed.title ?? titleOfFile(file)
+                const at = now()
+                if (row) {
+                  const changed = row.title !== title || row.body !== parsed.body
+                  yield* db.update(pages).set({ title, body: parsed.body, pinned: parsed.pinned ?? row.pinned, file, hash, ...(changed && { updatedAt: at }) }).where(eq(pages.id, row.id))
+                  if (changed) yield* addPageVersion(row.id, title, parsed.body, "outside", at)
+                  report.updated++
+                  continue
+                }
+                const scope = yield* scopeOfFile(file, parsed.scope, rows)
+                if (!scope) continue
+                const id = parsed.id && !rows.some((r) => r.id === parsed.id) ? parsed.id : crypto.randomUUID()
+                yield* db.insert(pages).values({ id, scope, title, body: parsed.body, pinned: parsed.pinned ?? false, file, hash, updatedAt: at, createdAt: at })
+                yield* addPageVersion(id, title, parsed.body, "outside", at)
+                matched.add(id)
+                report.imported++
+                // Its front matter gets the id and scope, so a later rename or move keeps it the same page.
+                if (parsed.id !== id || parsed.scope !== scope) yield* writePageFile((yield* db.select().from(pages).where(eq(pages.id, id)))[0]!)
+              }
+              for (const r of rows) {
+                if (matched.has(r.id)) continue
+                if (deleted && r.file) {
+                  yield* db.delete(pages).where(eq(pages.id, r.id))
+                  report.removed++
+                } else {
+                  yield* writePageFile(r)
+                  report.written++
+                }
+              }
+              return report
+            }).pipe(orDie)
+          ),
     pageVersions: (pageId: string) => orDie(db.select().from(pageVersions).where(eq(pageVersions.pageId, pageId)).orderBy(desc(pageVersions.n))),
     // BM25 over title + body in the scopes; the words around the first match.
     searchPages: (scopes: ReadonlyArray<string>, query: string, limit: number) => {
-      const terms = normalize(query).split(" ").filter((t) => t.length > 2).map((t) => `"${t}"*`)
-      if (!terms.length || !scopes.length) return Effect.succeed([] as Array<typeof pages.$inferSelect>)
+      const match = ftsQuery(query)
+      if (!match || !scopes.length) return Effect.succeed([] as Array<typeof pages.$inferSelect>)
       return orDie(
         db.all<typeof pages.$inferSelect>(
           sql`SELECT pages.* FROM page_index JOIN pages ON pages.id = page_index.id
-              WHERE page_index MATCH ${terms.join(" OR ")} AND ${inArray(pages.scope, [...scopes])}
+              WHERE page_index MATCH ${match} AND ${inArray(pages.scope, [...scopes])}
               ORDER BY bm25(page_index) LIMIT ${limit}`
         )
       )
     },
+    hasPages: (scopes: ReadonlyArray<string>) =>
+      scopes.length ? orDie(db.select({ id: pages.id }).from(pages).where(inArray(pages.scope, [...scopes])).limit(1).pipe(Effect.map((r) => r.length > 0))) : Effect.succeed(false),
+    // A page in the scopes by id or exact title (case aside), without loading every page's body.
+    pageIn: (scopes: ReadonlyArray<string>, ref: string) =>
+      scopes.length
+        ? orDie(db.select().from(pages).where(and(inArray(pages.scope, [...scopes]), sql`(${pages.id} = ${ref} OR lower(${pages.title}) = lower(${ref}))`)).limit(1).pipe(Effect.map(first)))
+        : Effect.succeed(undefined),
     pinnedPages: (scopes: ReadonlyArray<string>) =>
       scopes.length ? orDie(db.select({ id: pages.id, scope: pages.scope, title: pages.title }).from(pages).where(and(eq(pages.pinned, true), inArray(pages.scope, [...scopes])))) : Effect.succeed([]),
 
@@ -313,7 +540,8 @@ export const repository = (db: Db) => {
     // Chats whose usage-limit pause is over.
     dueResumes: (at: number) => orDie(db.select({ id: chats.id, resumeAt: chats.resumeAt }).from(chats).where(sql`${chats.resumeAt} <= ${at}`)),
     setWorktree: (id: string, worktree: string | null) => orDie(db.update(chats).set({ worktree }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
-    setSummary: (id: string, summary: string, until: number) => orDie(db.update(chats).set({ summary, summaryUntil: until }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
+    setSummary: (id: string, summary: string, until: number) => orDie(db.update(chats).set({ summary, summaryUntil: until, learnedUntil: sql`max(${chats.learnedUntil}, ${until})` }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
+    setLearned: (id: string, until: number) => orDie(db.update(chats).set({ learnedUntil: until }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
     // Messages containing the words (newest first). ponytail: LIKE scan; FTS5 like memory_index when chats grow large.
     searchMessages: (q: string, limit = 30) => {
       const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
@@ -397,23 +625,25 @@ export const repository = (db: Db) => {
     pendingMemories: (scopes: ReadonlyArray<string>, owner = LOCAL_ACTOR.id) =>
       orDie(db.select().from(memories).where(and(eq(memories.state, "pending"), heard(scopes, owner))).pipe(Effect.map((r) => r.map(toMemory)))),
     memory,
-    activeMemories: (scopes: ReadonlyArray<string>, kind: Memory["kind"] = "fact", owner = LOCAL_ACTOR.id) =>
+    // forAgent: the agent reading skills (the ones restricted to other agents stay out); undefined: no filter.
+    activeMemories: (scopes: ReadonlyArray<string>, kind: Memory["kind"] = "fact", owner = LOCAL_ACTOR.id, forAgent?: string | null) =>
       orDie(
         db
           .select()
           .from(memories)
-          .where(and(eq(memories.state, "active"), eq(memories.kind, kind), heard(scopes, owner)))
+          .where(and(eq(memories.state, "active"), eq(memories.kind, kind), heard(scopes, owner), forAgent === undefined ? undefined : seenBy(forAgent)))
           .orderBy(desc(memories.confirmedAt))
           .pipe(Effect.map((r) => r.map(toMemory)))
       ),
     // Already exists (same normalized text in scope): returns undefined and doesn't duplicate or revive a forgotten one.
     // owner: the Actor who created it (or the chat owner, in consolidation). About the person (user scope): only the owner hears.
     // keywords: other words for the same idea, indexed for search only.
-    addMemory: (input: { scope: string; kind?: Memory["kind"]; title?: string; text: string; state: Memory["state"]; origin: Memory["origin"]; chatId: string | null; owner?: string; replaces?: string | null; reason?: string | null; keywords?: string }) =>
+    addMemory: (input: { scope: string; kind?: Memory["kind"]; title?: string; text: string; state: Memory["state"]; origin: Memory["origin"]; chatId: string | null; agentId?: string | null; owner?: string; replaces?: string | null; reason?: string | null; keywords?: string; agents?: ReadonlyArray<string> | undefined }) =>
       Effect.gen(function* () {
         const at = now()
-        const { owner = LOCAL_ACTOR.id, keywords = "", ...rest } = input
-        const m: Memory = { id: crypto.randomUUID(), kind: "fact", title: "", replaces: null, reason: null, ...rest, createdAt: at, confirmedAt: at }
+        const { owner = LOCAL_ACTOR.id, keywords = "", agents: only = [], ...rest } = input
+        // Only a skill can be limited to some agents.
+        const m: Memory = { id: crypto.randomUUID(), kind: "fact", title: "", replaces: null, reason: null, agentId: null, ...rest, agents: rest.kind === "skill" ? only : [], createdAt: at, confirmedAt: at }
         const audience = m.scope === "user" ? "owner" : "project"
         const inserted = yield* db.insert(memories).values({ ...m, owner, audience, keywords, normalized: normalize(m.text) }).onConflictDoNothing().returning({ id: memories.id })
         // Said again: the existing active one is confirmed (it ranks first for the prompt's budget).
@@ -424,13 +654,177 @@ export const repository = (db: Db) => {
     // Still true (consolidation saw it again): ranks first for the prompt's budget.
     confirmMemories: (ids: ReadonlyArray<string>) =>
       ids.length ? orDie(db.update(memories).set({ confirmedAt: now() }).where(and(inArray(memories.id, [...ids]), eq(memories.state, "active"))).pipe(Effect.asVoid)) : Effect.void,
+    // ---------- the memory's map (entities and relations) ----------
+    // Files a fact on the map: each thing it's about becomes an entity of its scope (found by name, alias or a close
+    // spelling before a new one is made), mentioned by the fact; its relations join them. A fact of a project or of
+    // an agent also hangs off that project's or agent's own point. `known`: the names that are a project or an agent.
+    linkMemory: (memoryId: string, scope: string, mapped: Mapped, known: ReadonlyArray<{ id: string; name: string; type: "project" | "agent" }> = []) =>
+      Effect.gen(function* () {
+        const at = now()
+        const ids = new Map<string, string>() // normalized name → entity id
+        const resolve = (name: string, wanted: EntityType | "project" | "agent", given: ReadonlyArray<string> = []) =>
+          Effect.gen(function* () {
+            const norm = normalize(name)
+            const extra = given.map(normalize).filter((a) => a && a !== norm)
+            if (!norm) return undefined
+            if (ids.has(norm)) return ids.get(norm)
+            const type = known.find((k) => normalize(k.name) === norm)?.type ?? wanted
+            const found = yield* findEntity(scope, norm)
+            let id = found?.id
+            if (found) {
+              const aliases = [...new Set([...found.aliases, ...(found.normalized !== norm ? [norm] : []), ...extra])].filter((a) => a !== found.normalized).slice(-10)
+              yield* db.update(entities).set({ weight: sql`${entities.weight} + 1`, usedAt: at, aliases }).where(eq(entities.id, found.id))
+            } else {
+              id = crypto.randomUUID()
+              yield* db.insert(entities).values({ id, scope, name, normalized: norm, type, aliases: [...new Set(extra)].slice(0, 10), createdAt: at, usedAt: at }).onConflictDoNothing()
+            }
+            ids.set(norm, id!)
+            return id
+          })
+        const own = known.find((k) => `${k.type}:${k.id}` === scope)
+        for (const e of [...(own ? [{ name: own.name, type: own.type }] : []), ...mapped.entities]) {
+          const id = yield* resolve(e.name, e.type, "aliases" in e ? e.aliases : [])
+          if (id) yield* db.insert(memoryEntities).values({ memoryId, entityId: id }).onConflictDoNothing()
+        }
+        for (const [a, rel, b] of mapped.relations) {
+          const [src, dst] = [yield* resolve(a, "subject"), yield* resolve(b, "subject")]
+          if (src && dst && src !== dst) yield* db.insert(relations).values({ id: crypto.randomUUID(), scope, src, dst, rel, memoryId, createdAt: at }).onConflictDoNothing()
+        }
+        return [...ids.values()]
+      }).pipe(orDie),
+    // Active and pending facts made before the map existed and not on it yet, oldest first after `after` (the
+    // backfill's cursor, so a fact the model found nothing in isn't read again).
+    unmappedMemories: (limit: number, after: number, before: number) =>
+      orDie(
+        db
+          .select()
+          .from(memories)
+          .where(
+            and(
+              eq(memories.kind, "fact"),
+              inArray(memories.state, ["active", "pending"]),
+              gt(memories.createdAt, after),
+              lt(memories.createdAt, before),
+              sql`NOT EXISTS (SELECT 1 FROM memory_entities me WHERE me.memory_id = ${memories.id})`
+            )
+          )
+          .orderBy(asc(memories.createdAt))
+          .limit(limit)
+          .pipe(Effect.map((r) => r.map(toMemory)))
+      ),
+    // The entities of these scopes that a living fact mentions, with how many facts and whether all of them wait.
+    entitiesIn: (scopes: ReadonlyArray<string>) =>
+      scopes.length
+        ? orDie(
+            db.all<{ id: string; scope: string; name: string; type: string; weight: number; facts: number; pending: number; memory_ids: string }>(
+              sql`SELECT e.id, e.scope, e.name, e.type, e.weight, count(m.id) AS facts, sum(m.state = 'pending') AS pending, group_concat(m.id) AS memory_ids
+                  FROM entities e JOIN memory_entities me ON me.entity_id = e.id JOIN memories m ON m.id = me.memory_id
+                  WHERE e.scope IN (${sql.join(scopes.map((x) => sql`${x}`), sql`, `)}) AND m.state IN ('active', 'pending')
+                  GROUP BY e.id`
+            )
+          )
+        : Effect.succeed([]),
+    entity: (id: string) => orDie(db.select().from(entities).where(eq(entities.id, id)).pipe(Effect.map(first))),
+    // The map's sleep (daily, rules only): points no fact mentions any more go, and twins of one map merge into the
+    // heavier one (its facts, relations, bridges, names and weight).
+    sleepMap: () =>
+      orDie(
+        Effect.gen(function* () {
+          const all = yield* db.select().from(entities)
+          const linked = new Set((yield* db.selectDistinct({ id: memoryEntities.entityId }).from(memoryEntities)).map((r) => r.id))
+          const orphans = all.filter((e) => !linked.has(e.id)).map((e) => e.id)
+          if (orphans.length) yield* db.delete(entities).where(inArray(entities.id, orphans))
+          const live = all.filter((e) => linked.has(e.id) && e.type !== "project" && e.type !== "agent").sort((a, b) => b.weight - a.weight)
+          const gone = new Set<string>()
+          for (const keep of live) {
+            if (gone.has(keep.id)) continue
+            for (const dupe of live) {
+              if (dupe === keep || gone.has(dupe.id) || dupe.scope !== keep.scope || !twins(keep, dupe)) continue
+              gone.add(dupe.id)
+              yield* db.transaction((tx) =>
+                Effect.gen(function* () {
+                  yield* tx.run(sql`INSERT OR IGNORE INTO memory_entities (memory_id, entity_id) SELECT memory_id, ${keep.id} FROM memory_entities WHERE entity_id = ${dupe.id}`)
+                  yield* tx.run(sql`UPDATE OR IGNORE relations SET src = ${keep.id} WHERE src = ${dupe.id}`)
+                  yield* tx.run(sql`UPDATE OR IGNORE relations SET dst = ${keep.id} WHERE dst = ${dupe.id}`)
+                  yield* tx.run(sql`DELETE FROM relations WHERE src = dst`)
+                  yield* tx.run(sql`INSERT OR IGNORE INTO entity_links (a, b, created_at) SELECT min(${keep.id}, o), max(${keep.id}, o), created_at FROM (SELECT CASE WHEN a = ${dupe.id} THEN b ELSE a END AS o, created_at FROM entity_links WHERE a = ${dupe.id} OR b = ${dupe.id})`)
+                  const aliases = [...new Set([...keep.aliases, dupe.normalized, ...dupe.aliases])].filter((a) => a !== keep.normalized).slice(-10)
+                  Object.assign(keep, { aliases, weight: keep.weight + dupe.weight, usedAt: Math.max(keep.usedAt, dupe.usedAt) }) // a next twin adds to this
+                  yield* tx.update(entities).set({ aliases: keep.aliases, weight: keep.weight, usedAt: keep.usedAt }).where(eq(entities.id, keep.id))
+                  yield* tx.delete(entities).where(eq(entities.id, dupe.id)) // the rest cascades
+                })
+              )
+            }
+          }
+          return { removed: orphans.length, merged: gone.size }
+        })
+      ),
+    // Bridges are stored once, the smaller id first.
+    connectEntities: (a: string, b: string) => orDie(db.insert(entityLinks).values({ a: a < b ? a : b, b: a < b ? b : a, createdAt: now() }).onConflictDoNothing().pipe(Effect.asVoid)),
+    disconnectEntities: (a: string, b: string) => orDie(db.delete(entityLinks).where(and(eq(entityLinks.a, a < b ? a : b), eq(entityLinks.b, a < b ? b : a))).pipe(Effect.asVoid)),
+    // The bridges touching these entities, with the point on the other side.
+    bridgesOf: (ids: ReadonlyArray<string>) =>
+      ids.length
+        ? orDie(
+            Effect.gen(function* () {
+              const rows = yield* db.select().from(entityLinks).where(or(inArray(entityLinks.a, [...ids]), inArray(entityLinks.b, [...ids])))
+              const mine = new Set(ids)
+              const others = [...new Set(rows.flatMap((r) => [r.a, r.b]).filter((x) => !mine.has(x)))]
+              const info = others.length ? yield* db.select({ id: entities.id, scope: entities.scope, name: entities.name, type: entities.type, weight: entities.weight }).from(entities).where(inArray(entities.id, others)) : []
+              return { links: rows.map((r) => ({ a: r.a, b: r.b })), others: info }
+            })
+          )
+        : Effect.succeed({ links: [] as Array<{ a: string; b: string }>, others: [] as Array<{ id: string; scope: string; name: string; type: string; weight: number }> }),
+    // Every entity of these scopes, for finding the ones a message names (recall's seeds).
+    entityNames: (scopes: ReadonlyArray<string>) =>
+      scopes.length
+        ? orDie(db.select({ id: entities.id, normalized: entities.normalized, aliases: entities.aliases }).from(entities).where(inArray(entities.scope, [...scopes])))
+        : Effect.succeed([] as Array<{ id: string; normalized: string; aliases: ReadonlyArray<string> }>),
+    // The active facts of these scopes that mention these entities, with which.
+    factsAbout: (entityIds: ReadonlyArray<string>, scopes: ReadonlyArray<string>, owner = LOCAL_ACTOR.id) =>
+      entityIds.length && scopes.length
+        ? orDie(
+            db
+              .select({ m: memories, entityId: memoryEntities.entityId })
+              .from(memoryEntities)
+              .innerJoin(memories, eq(memories.id, memoryEntities.memoryId))
+              .where(and(inArray(memoryEntities.entityId, [...entityIds]), eq(memories.state, "active"), eq(memories.kind, "fact"), heard(scopes, owner)))
+              .pipe(Effect.map((rows) => rows.map((r) => ({ memory: toMemory(r.m), entityId: r.entityId }))))
+          )
+        : Effect.succeed([] as Array<{ memory: Memory; entityId: string }>),
+    // The links among these entities: valid relations, then pairs that one living fact names together (unlabeled).
+    linksAmong: (ids: ReadonlyArray<string>) =>
+      ids.length
+        ? orDie(
+            Effect.gen(function* () {
+              const list = sql.join(ids.map((x) => sql`${x}`), sql`, `)
+              const named = yield* db.all<{ a: string; b: string; rel: string }>(
+                sql`SELECT src AS a, dst AS b, rel FROM relations WHERE invalid_at IS NULL AND src IN (${list}) AND dst IN (${list})`
+              )
+              const together = yield* db.all<{ a: string; b: string }>(
+                sql`SELECT DISTINCT x.entity_id AS a, y.entity_id AS b FROM memory_entities x
+                    JOIN memory_entities y ON y.memory_id = x.memory_id AND x.entity_id < y.entity_id
+                    JOIN memories m ON m.id = x.memory_id AND m.state IN ('active', 'pending')
+                    WHERE x.entity_id IN (${list}) AND y.entity_id IN (${list})`
+              )
+              const seen = new Set(named.map((l) => [l.a, l.b].sort().join("|")))
+              return [...named, ...together.filter((l) => !seen.has([l.a, l.b].sort().join("|"))).map((l) => ({ ...l, rel: "" }))]
+            })
+          )
+        : Effect.succeed([] as Array<{ a: string; b: string; rel: string }>),
+    removeMemory: (id: string) => orDie(db.delete(memories).where(eq(memories.id, id)).pipe(Effect.asVoid)), // versions cascade
+    // Another memory of the scope already says this (the unique key would refuse the edit).
+    textTaken: (id: string, scope: string, text: string) =>
+      orDie(db.select({ id: memories.id }).from(memories).where(and(eq(memories.scope, scope), eq(memories.normalized, normalize(text)), ne(memories.id, id))).pipe(Effect.map((r) => r.length > 0))),
     // A changed text or title keeps the one before as a version (by: who changed it).
-    updateMemory: (id: string, input: { state?: Memory["state"] | undefined; title?: string | undefined; text?: string | undefined; essential?: boolean | undefined }, by = "you") =>
+    updateMemory: (id: string, input: { scope?: string | undefined; state?: Memory["state"] | undefined; title?: string | undefined; text?: string | undefined; essential?: boolean | undefined; agents?: ReadonlyArray<string> | undefined }, by = "you") =>
       Effect.gen(function* () {
         const before = yield* memory(id)
         if (before && ((input.text !== undefined && input.text !== before.text) || (input.title !== undefined && input.title !== before.title)))
           yield* db.insert(memoryVersions).values({ id: crypto.randomUUID(), memoryId: id, title: before.title, text: before.text, by, at: now() })
-        const set = defined({ ...input, normalized: input.text && normalize(input.text), confirmedAt: now() })
+        // A move to "you" makes it the owner's alone, like one created there (audience: see addMemory).
+        const audience = input.scope === undefined ? undefined : input.scope === "user" ? ("owner" as const) : ("project" as const)
+        const set = defined({ ...input, audience, normalized: input.text && normalize(input.text), confirmedAt: now() })
         yield* db.update(memories).set(set).where(eq(memories.id, id))
         return yield* memory(id)
       }).pipe(orDie),
@@ -452,15 +846,15 @@ export const repository = (db: Db) => {
         return yield* memory(target.id)
       }).pipe(orDie),
     // BM25 (FTS5) among active ones in the scopes, excluding those already in the prompt. Skills also match by title.
-    searchMemories: (scopes: ReadonlyArray<string>, query: string, exclude: ReadonlyArray<string>, limit: number, kind: Memory["kind"] = "fact", owner = LOCAL_ACTOR.id) => {
-      const terms = normalize(query).split(" ").filter((t) => t.length > 2).map((t) => `"${t}"*`)
-      if (!terms.length) return Effect.succeed([] as Memory[])
+    searchMemories: (scopes: ReadonlyArray<string>, query: string, exclude: ReadonlyArray<string>, limit: number, kind: Memory["kind"] = "fact", owner = LOCAL_ACTOR.id, forAgent?: string | null) => {
+      const match = ftsQuery(query)
+      if (!match) return Effect.succeed([] as Memory[])
       return orDie(
         db
           .all<Row>(
             sql`SELECT memories.* FROM memory_index JOIN memories ON memories.id = memory_index.id
-                WHERE memory_index MATCH ${terms.join(" OR ")} AND ${eq(memories.state, "active")} AND ${eq(memories.kind, kind)}
-                  AND ${heard(scopes, owner)} AND ${notInArray(memories.id, [...exclude])}
+                WHERE memory_index MATCH ${match} AND ${eq(memories.state, "active")} AND ${eq(memories.kind, kind)}
+                  AND ${heard(scopes, owner)} AND ${notInArray(memories.id, [...exclude])}${forAgent === undefined ? sql`` : sql` AND ${seenBy(forAgent)}`}
                 ORDER BY bm25(memory_index) LIMIT ${limit}`
           )
           .pipe(Effect.map((r) => r.map(memoryRow)))
@@ -523,8 +917,10 @@ export const repository = (db: Db) => {
       orDie(db.update(turns).set({ ...to, route: false }).where(eq(turns.id, id)).returning().pipe(Effect.map((r) => r[0]!))),
     enqueueTurn: (input: { chatId: string; agentId: string | null; model: string; accountId?: string | null; clientId: string | null; depth: number; route?: boolean }) =>
       orDie(db.insert(turns).values({ id: crypto.randomUUID(), ...input, state: "queued", createdAt: now() }).returning().pipe(Effect.map((r) => r[0]!))),
+    // What a chat runs next: your own messages (depth 0) before the replies that agents handed to one another (depth > 0),
+    // each group in order of arrival. A message of yours never waits behind a chain it didn't start.
     nextQueued: (chatId: string) =>
-      orDie(db.select().from(turns).where(and(eq(turns.chatId, chatId), eq(turns.state, "queued"))).orderBy(asc(turns.createdAt)).limit(1).pipe(Effect.map(first))),
+      orDie(db.select().from(turns).where(and(eq(turns.chatId, chatId), eq(turns.state, "queued"))).orderBy(asc(sql`${turns.depth} > 0`), asc(turns.createdAt)).limit(1).pipe(Effect.map(first))),
     turnsIn: (state: TurnRow["state"]) => orDie(db.select().from(turns).where(eq(turns.state, state)).orderBy(asc(turns.createdAt))),
     activeTurns: (chatId: string) =>
       orDie(db.select().from(turns).where(and(eq(turns.chatId, chatId), inArray(turns.state, ["queued", "running"]))).orderBy(asc(turns.createdAt)).pipe(Effect.map((r) => r.map(toTurn)))),
@@ -544,9 +940,9 @@ export const repository = (db: Db) => {
     toTurn: (r: TurnRow) => toTurn(r),
 
     // ---------- steps ----------
-    addStep: (input: Omit<WorkStep, "id" | "startedAt" | "durationMs" | "changes" | "output"> & { changes?: ReadonlyArray<FileChange> }) =>
+    addStep: (input: Omit<WorkStep, "id" | "startedAt" | "durationMs" | "changes" | "output" | "detail"> & { changes?: ReadonlyArray<FileChange>; detail?: string }) =>
       Effect.gen(function* () {
-        const step: WorkStep = { id: crypto.randomUUID(), startedAt: now(), durationMs: null, output: "", ...input, changes: input.changes ?? [] }
+        const step: WorkStep = { id: crypto.randomUUID(), startedAt: now(), durationMs: null, output: "", ...input, detail: input.detail ?? "", changes: input.changes ?? [] }
         yield* db.insert(steps).values({ ...step, files: JSON.stringify(step.files), changes: JSON.stringify(step.changes) })
         return step
       }).pipe(orDie),
@@ -696,8 +1092,9 @@ export const openDb = Effect.gen(function* () {
 })
 
 export class Store extends Context.Service<Store, Repository>()("Store") {
-  static layer = (path: string) =>
-    Layer.effect(Store, Effect.map(Effect.orDie(openDb), repository)).pipe(
+  // pagesDir: where knowledge pages live as Markdown files (none: rows only, as in the tests).
+  static layer = (path: string, pagesDir?: string) =>
+    Layer.effect(Store, Effect.map(Effect.orDie(openDb), (db) => repository(db, pagesDir))).pipe(
       Layer.provide(Layer.orDie(Layer.suspend(() => {
         prepare(path) // MVP database: backup and adoption before SqliteClient opens the file
         return SqliteClient.layer({ filename: path })

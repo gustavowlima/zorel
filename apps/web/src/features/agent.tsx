@@ -1,13 +1,14 @@
-// Agent page, in three tabs: Profile (groups: who it is, its model and fallbacks, its instructions), Tools and access
-// (folder access, web, browser, connectors, what was allowed for good), and Knowledge and activity (its memories and
-// skills, usage, routines, versions). One Save in the header saves every tab; unsaved edits survive leaving the page.
+// Agent page, in tabs: Work, Profile (groups: who it is, its model and fallbacks, its instructions), Tools and access
+// (folder access, web, browser, connectors, what was allowed for good), Memory & skills (what it keeps, its Knowledge
+// access, the skills it sees: applied at once) and Activity (usage, routines, versions). One Save in the header saves every tab; unsaved edits survive leaving the page.
 // Without an id it creates one, in a project or global.
 import { type Access, type Agent, type AgentPermissions, type AgentVersion, DEFAULT_PERMISSIONS, type FailoverTarget } from "@zorel/contracts"
 import { formatAge, formatCompact, t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
-import { agentsAtom, agentVersionsAtom, memoriesAtom, mutations, projectsAtom, serversAtom, useList, useMutation, useReading } from "../client.ts"
+import { agentsAtom, agentVersionsAtom, mutations, projectsAtom, serversAtom, useList, useMutation, useReading } from "../client.ts"
 import { agentTone } from "../labels.ts"
 import { type AgentTab, go } from "../state.ts"
+import { AgentMemory } from "./agent-memory.tsx"
 import { AgentWork } from "./agent-work.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { AgentRoutines } from "./routines.tsx"
@@ -15,7 +16,7 @@ import { useArchive } from "./agents.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import {
-  AgentAvatar, Archive, ArchiveRestore, BookOpen, Button, ChartColumn, ConfirmDialog, Download, Field, IconButton, Input, ListRow, Menu, MenuItem, MoreHorizontal, Notice, Rows, Screen, Section, Select, SettingRow, Sparkles, Tab, TabList,
+  AgentAvatar, Archive, ArchiveRestore, Button, ChartColumn, ConfirmDialog, Download, Field, IconButton, Input, ListRow, Menu, MenuItem, MoreHorizontal, Notice, Rows, Screen, Section, Select, SettingRow, Tab, TabList,
   TabPanel, Tabs, Textarea, Trash2, Undo2
 } from "@/ui"
 
@@ -90,10 +91,6 @@ export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; pr
 
   const project = projects.find((p) => p.id === (agent?.projectId ?? projectId))
   const tools = servers.filter((s) => s.projectId === null || s.projectId === project?.id)
-  // What it knows of its own: memories and skills scoped to this agent (made and edited in Knowledge).
-  const own = useList(memoriesAtom).filter((m) => agent && m.scope === `agent:${agent.id}` && m.state !== "forgotten")
-  const facts = own.filter((m) => m.kind === "fact")
-  const skills = own.filter((m) => m.kind === "skill")
   const changed = JSON.stringify(form) !== JSON.stringify(fromAgent(agent))
   const dirty = !agent || changed
   useEffect(() => writeDraft(key, changed && (agent || name.trim()) ? form : undefined), [key, changed, form, agent, name])
@@ -167,6 +164,7 @@ export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; pr
             {agent && <Tab id="work">{t("agent.tabs.work")}</Tab>}
             <Tab id="profile">{t("agent.tabs.profile")}</Tab>
             <Tab id="tools">{t("agent.tabs.tools")}</Tab>
+            {agent && <Tab id="memory">{t("agent.tabs.memory")}</Tab>}
             {agent && <Tab id="activity">{t("agent.tabs.activity")}</Tab>}
           </TabList>
 
@@ -229,28 +227,13 @@ export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; pr
           </TabPanel>
 
           {agent && (
+            <TabPanel id="memory" className="flex flex-col gap-10">
+              <AgentMemory agent={agent} />
+            </TabPanel>
+          )}
+
+          {agent && (
             <TabPanel id="activity" className="flex flex-col gap-10">
-              {/* Its own memories and skills open in Knowledge, filtered to this agent. */}
-              <Section title={t("agent.knows")}>
-                <Rows>
-                  <ListRow
-                    icon={<BookOpen className="size-4 text-muted" />}
-                    title={t("agent.memories")}
-                    hint={t("agent.memoriesHint")}
-                    aside={t("agent.memoryCount", { count: facts.length })}
-                    label={t("agent.memories")}
-                    onPress={() => go({ view: "knowledge", scope: `agent:${agent.id}`, kind: "fact" })}
-                  />
-                  <ListRow
-                    icon={<Sparkles className="size-4 text-muted" />}
-                    title={t("agent.skills")}
-                    hint={t("agent.skillsHint")}
-                    aside={t("agent.skillCount", { count: skills.length })}
-                    label={t("agent.skills")}
-                    onPress={() => go({ view: "knowledge", scope: `agent:${agent.id}`, kind: "skill" })}
-                  />
-                </Rows>
-              </Section>
               <Section title={t("agent.does")}>
                 <Rows>
                   <ListRow icon={<ChartColumn className="size-4 text-muted" />} title={t("agent.usage")} hint={t("agent.usageHint")} label={t("agent.usage")} onPress={() => go({ view: "usage", agentId: agent.id })} />
@@ -351,7 +334,9 @@ export function exportAgent(a: Agent) {
     version: 1,
     name: a.name, title: a.title, description: a.description, instructions: a.instructions, model: a.model, effort: a.effort,
     failover: a.failover.map((f) => ({ model: f.model, accountId: null })),
-    access: a.access
+    access: a.access,
+    memory: a.memory,
+    knowledge: a.knowledge
   }
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }))
   const link = document.createElement("a")
@@ -375,6 +360,8 @@ export function importedAgent(text: string, projectId: string | null) {
     model: str(v.model),
     effort: (["low", "medium", "high", "max"] as const).find((e) => e === v.effort) ?? null,
     failover: Array.isArray(v.failover) ? (v.failover as Array<{ model?: unknown }>).flatMap((f) => (typeof f.model === "string" ? [{ model: f.model, accountId: null }] : [])) : [],
-    access: (["ask", "workspace", "full"] as const).find((a) => a === v.access) ?? "workspace"
+    access: (["ask", "workspace", "full"] as const).find((a) => a === v.access) ?? "workspace",
+    memory: (["auto", "ask", "read"] as const).find((m) => m === v.memory) ?? "ask", // files from before it: the default
+    knowledge: (["read", "none"] as const).find((k) => k === v.knowledge) ?? "read"
   }
 }

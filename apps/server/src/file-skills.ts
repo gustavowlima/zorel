@@ -100,21 +100,44 @@ export const discovered = (): FileSkill[] => {
   return cache.list
 }
 
-// The picked ones (preference "fileSkills": their paths), among those still on disk.
-export const pickedPaths = (pref: string | undefined): string[] => {
+// The picked ones: preference "fileSkills", a JSON list where each entry is a path (every agent uses it, the
+// first format) or { path, agents } (only those agents do).
+export interface Pick {
+  readonly path: string
+  readonly agents: ReadonlyArray<string> // empty: all
+}
+export const pickedEntries = (pref: string | undefined): Pick[] => {
   try {
     const v = JSON.parse(pref ?? "[]")
-    return Array.isArray(v) ? v.filter((p): p is string => typeof p === "string") : []
+    if (!Array.isArray(v)) return []
+    return v.flatMap((e): Pick[] => {
+      if (typeof e === "string") return [{ path: e, agents: [] }]
+      if (e && typeof e === "object" && typeof e.path === "string")
+        return [{ path: e.path, agents: Array.isArray(e.agents) ? e.agents.filter((x: unknown): x is string => typeof x === "string") : [] }]
+      return []
+    })
   } catch {
     return []
   }
 }
-export const picked = (pref: string | undefined): FileSkill[] => {
-  const paths = new Set(pickedPaths(pref))
-  return paths.size ? discovered().filter((s) => paths.has(s.path)) : []
+export const pickedPaths = (pref: string | undefined): string[] => pickedEntries(pref).map((e) => e.path)
+export const serializePicks = (entries: ReadonlyArray<Pick>): string => JSON.stringify(entries.map((e) => (e.agents.length ? { path: e.path, agents: e.agents } : e.path)))
+export type PickedSkill = FileSkill & { readonly agents: ReadonlyArray<string> }
+// Among those still on disk. forAgent: the agent that uses them (the ones for other agents stay out; null: no agent,
+// only the ones for everyone); undefined: all of them.
+export const picked = (pref: string | undefined, forAgent?: string | null): PickedSkill[] => {
+  const by = new Map(pickedEntries(pref).map((e) => [e.path, e.agents]))
+  if (!by.size) return []
+  return discovered()
+    .filter((s) => by.has(s.path))
+    .map((s) => ({ ...s, agents: by.get(s.path)! }))
+    .filter((s) => usedBy(s.agents, forAgent))
 }
+// Whether an agent uses a skill limited to these agents (none listed: all do; forAgent undefined: no filter, null: no agent).
+export const usedBy = (agents: ReadonlyArray<string>, forAgent: string | null | undefined): boolean =>
+  forAgent === undefined || !agents.length || (forAgent !== null && agents.includes(forAgent))
 
 // A picked skill in the agents' list of skills: its title and what it's for (the steps are read on demand).
-export const asMemory = (s: FileSkill): Memory => ({
-  id: `file:${s.path}`, scope: "user", kind: "skill", title: s.name, text: s.description, state: "active", origin: "manual", chatId: null, createdAt: 0, confirmedAt: 0
+export const asMemory = (s: FileSkill & { readonly agents?: ReadonlyArray<string> }): Memory => ({
+  id: `file:${s.path}`, scope: "user", kind: "skill", title: s.name, text: s.description, state: "active", origin: "manual", chatId: null, agents: s.agents ?? [], createdAt: 0, confirmedAt: 0
 })

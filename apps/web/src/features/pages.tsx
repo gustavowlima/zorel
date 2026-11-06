@@ -1,17 +1,94 @@
-// Knowledge pages (phase 3b): longer Markdown notes by scope that agents search and
-// read with tools and write as versions. Read as Markdown; edit in place; pin (its title then goes into every turn
-// in that scope); every save is a version you can restore.
-import type { Page } from "@zorel/contracts"
+// Pages: longer Markdown notes by scope (each one a .md file in the knowledge folder) that agents search and
+// read with tools and write as versions. A list on the left (pinned first, a scope filter, search) and the page on
+// the right: read as Markdown, edit in place, pin (its title then goes into every turn in that scope), and every
+// save is a version you can restore.
+import { isTeammate, type Page } from "@zorel/contracts"
 import { formatAge, formatDate, t } from "@zorel/i18n"
 import { useState } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { agentsAtom, mutations, pageVersionsAtom, projectsAtom, useList, useMutation, useReading } from "../client.ts"
+import { agentsAtom, mutations, pagesAtom, pageVersionsAtom, projectsAtom, useList, useMutation, useReading } from "../client.ts"
 import { scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { Button, ConfirmDialog, Field, Input, Pin, PinOff, Rows, Select, Textarea, Trash2, Undo2 } from "@/ui"
+import { BookOpen, Button, ConfirmDialog, cx, EmptyState, Field, Input, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Textarea, Trash2, Undo2 } from "@/ui"
 
 const prose = "prose-chat leading-relaxed" // the same Markdown look as the chat
+
+export function PagesView({ selected }: { selected?: string | undefined }) {
+  const pages = useList(pagesAtom)
+  const projects = useList(projectsAtom)
+  const agents = useList(agentsAtom)
+  const [query, setQuery] = useState("")
+  const [scope, setScope] = useState("")
+  const [creating, setCreating] = useState(false)
+  const q = query.trim().toLowerCase()
+  const list = pages
+    .filter((p) => (!scope || p.scope === scope) && (!q || `${p.title} ${p.body}`.toLowerCase().includes(q)))
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt)
+  const scopes = [...new Set(pages.map((p) => p.scope))]
+  const page = pages.find((p) => p.id === selected)
+  return (
+    <Screen
+      title={t("pages.pages")}
+      subtitle={t("pages.subtitle", { count: pages.length })}
+      bodyClassName="flex"
+      actions={
+        <>
+          <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("common.search")} />
+          <Button size="sm" variant="secondary" onPress={() => setCreating(true)}>
+            <Plus />
+            {t("pages.new")}
+          </Button>
+        </>
+      }
+    >
+      <nav aria-label={t("pages.pages")} className="flex w-96 shrink-0 flex-col gap-3 overflow-y-auto border-r border-subtle py-4 pr-3 pl-4">
+        {scopes.length > 1 && (
+          <Select
+            size="sm"
+            aria-label={t("knowledge.scope")}
+            value={scope}
+            onChange={setScope}
+            options={[{ value: "", label: t("knowledge.allScopes") }, ...scopes.map((s) => ({ value: s, label: scopeLabel(s, projects, agents) }))]}
+          />
+        )}
+        <ul className="flex flex-col gap-0.5">
+          {list.map((p) => (
+            <li key={p.id}>
+              <Button
+                variant="ghost"
+                onPress={() => {
+                  setCreating(false)
+                  go({ view: "pages", id: p.id })
+                }}
+                className={cx("h-auto w-full flex-col items-start gap-0.5 rounded-card border px-3 py-2.5 text-left font-normal whitespace-normal", p.id === selected ? "border-subtle bg-surface text-fg" : "border-transparent text-fg")}
+              >
+                <span className="flex w-full items-center gap-1.5 truncate font-medium">
+                  {p.pinned && <Pin className="size-3 shrink-0 text-muted" />}
+                  {p.title}
+                </span>
+                <span className="block w-full truncate text-sm text-muted">{[scopeLabel(p.scope, projects, agents), formatAge(p.updatedAt)].join(" · ")}</span>
+              </Button>
+            </li>
+          ))}
+          {list.length === 0 && <p className="px-2 py-6 text-center text-muted">{pages.length ? t("knowledge.noMatch") : t("pages.empty")}</p>}
+        </ul>
+      </nav>
+      <div className="min-w-0 flex-1 overflow-y-auto">
+        {creating ? (
+          <NewPage onDone={(id) => {
+            setCreating(false)
+            if (id) go({ view: "pages", id })
+          }} />
+        ) : page ? (
+          <PageView key={page.id} page={page} />
+        ) : (
+          <EmptyState icon={<BookOpen />} title={pages.length ? t("pages.select") : t("pages.empty")} {...(!pages.length && { hint: t("pages.emptyHint") })} />
+        )}
+      </div>
+    </Screen>
+  )
+}
 
 export function PageView({ page }: { page: Page }) {
   const projects = useList(projectsAtom)
@@ -35,6 +112,12 @@ export function PageView({ page }: { page: Page }) {
             <h2 className="text-lg font-semibold">{page.title}</h2>
           )}
           <p className="text-sm text-muted">{`${scopeLabel(page.scope, projects, agents)} · ${t("pages.updated", { age: formatAge(page.updatedAt) })}`}</p>
+          {/* The page is a Markdown file: open it in any editor; edits there come back here. */}
+          {page.file && (
+            <p className="truncate font-mono text-xs text-dim" title={t("pages.fileHint")}>
+              {`knowledge/${page.file}`}
+            </p>
+          )}
         </div>
         {!editing && (
           <div className="flex gap-1.5">
@@ -83,7 +166,7 @@ export function PageView({ page }: { page: Page }) {
         onOpenChange={setConfirm}
         title={t("pages.deleteTitle", { title: page.title })}
         description={t("pages.deleteBody")}
-        onConfirm={() => void remove({ params: { id: page.id }, reactivityKeys: ["pages"] }).then(() => go({ view: "knowledge" }))}
+        onConfirm={() => void remove({ params: { id: page.id }, reactivityKeys: ["pages"] }).then(() => go({ view: "pages" }))}
       />
     </article>
   )
@@ -145,7 +228,7 @@ export function NewPage({ onDone }: { onDone: (id?: string) => void }) {
             options={[
               { value: "user", label: t("scope.user") },
               ...projects.map((p) => ({ value: `project:${p.id}`, label: t("scope.project", { name: p.name }) })),
-              ...agents.map((a) => ({ value: `agent:${a.id}`, label: t("scope.agent", { name: a.name }) }))
+              ...agents.filter((a) => isTeammate(a)).map((a) => ({ value: `agent:${a.id}`, label: t("scope.agent", { name: a.name }) }))
             ]}
           />
         </Field>

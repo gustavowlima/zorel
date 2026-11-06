@@ -1,7 +1,7 @@
 // Readable labels derived from data: model and provider names, memory scopes, chat titles, live status,
 // and each agent's identity tone (its position among its teammates, so colors don't repeat).
 import type { Agent, Chat, ModelInfo, Project, ProviderAccount, Switch } from "@zorel/contracts"
-import type { ChatStatus } from "@zorel/contracts/events"
+import type { AgentWait, ChatStatus } from "@zorel/contracts/events"
 import { formatTime, type MessageKey, t } from "@zorel/i18n"
 
 const has = <K extends string>(map: Record<K, unknown>, k: string): k is K => k in map
@@ -72,8 +72,13 @@ export function statusLabel(status: ChatStatus, agents: ReadonlyArray<Agent>): s
   if (status.state === "running") return t("status.running", { agent })
   if (status.state === "waiting") return status.label === "question" ? t("status.asking", { agent }) : t("status.waiting", { agent }) // "question": the server's mark for zorel_ask_user
   if (status.state === "failed") return t("status.failed")
-  return ""
+  const wait = status.waits?.[0]
+  return wait ? waitLabel(wait, agents) : ""
 }
+
+// "Leo waits for Iris" / "Leo waits for Iris and Nico".
+export const waitLabel = (w: AgentWait, agents: ReadonlyArray<Agent>) =>
+  t("status.waitsFor", { agent: agentName(w.agentId, agents), other: new Intl.ListFormat(undefined, { type: "conjunction" }).format(w.on.map((id) => agentName(id, agents))) })
 
 // @handle from an agent name: "Ana Júlia" → "ana-julia" (what the server matches in mentions).
 export const handleOf = (a: Pick<Agent, "name">) =>

@@ -120,6 +120,20 @@ export const MEMORY_TOOL = {
   writes: false
 } as const
 
+// Remember: the agent keeps a fact the person just said or confirmed (their words, not its guess), during the turn.
+// Its memory mode decides: "auto" keeps it (a note under the reply, with Undo), "ask" proposes it for review; "read"
+// doesn't get the tool. A correction of an existing memory always waits for review.
+export const REMEMBER_TOOL = {
+  name: "zorel_remember",
+  description:
+    "Keep a durable fact the user just told you or confirmed (a preference, a decision, how they work), so later chats know it. text: one short self-contained sentence in the third person (\"Prefers small PRs\"). about: 'user' (holds everywhere), 'project' (a fact or decision of this project) or 'agent' (how you should do your work). topics: the things it's about, named as they'd be anywhere (\"Deploy\", \"Vercel\"), so it's found by association later. replaces: the text of an existing memory it corrects, if any. Never your own guess, nothing temporary (\"this week\"), never a credential. Don't mention it in your reply: the user sees a note with Undo.",
+  inputSchema: {
+    properties: { text: { type: "string" }, about: { type: "string", enum: ["user", "project", "agent"] }, topics: { type: "array", items: { type: "string" } }, replaces: { type: "string" } },
+    required: ["text", "about"]
+  },
+  writes: false
+} as const
+
 // Skills: read a recipe when the task matches; propose a new one or a better version of one, with
 // the reason. Proposals wait for the person in Knowledge, who sees what changes before approving.
 export const SKILL_TOOLS = [
@@ -140,6 +154,20 @@ export const SKILL_TOOLS = [
     writes: false
   }
 ] as const
+
+// What an agent learns and sees (Agent.memory / Agent.knowledge; no agent: the defaults, "ask" and "write").
+type Learner = { readonly memory?: Agent["memory"] | undefined; readonly knowledge?: Agent["knowledge"] | undefined }
+export const memoryModeOf = (a: Learner | undefined): Agent["memory"] => a?.memory ?? "ask"
+export const knowledgeOf = (a: Learner | undefined): Agent["knowledge"] => a?.knowledge ?? "write"
+// Whether a chat learns is for the whole chat: one agent that doesn't learn ("read") keeps it from learning at all.
+// Whether what it learns waits for review is the person's one setting (Preferences.memoryApproval), not an agent's.
+export const learningOf = (members: ReadonlyArray<Learner>): "learn" | "read" => (members.some((m) => memoryModeOf(m) === "read") ? "read" : "learn")
+// The tools the agent doesn't get. The server refuses them even if the model names one anyway.
+export const withheldTools = (a: Learner | undefined): ReadonlySet<string> =>
+  new Set([
+    ...(memoryModeOf(a) === "read" ? ["zorel_propose_skill", REMEMBER_TOOL.name] : []),
+    ...(knowledgeOf(a) === "none" ? KNOWLEDGE_TOOLS.map((t) => t.name) : knowledgeOf(a) === "read" ? ["zorel_knowledge_write"] : [])
+  ])
 
 const RANK: Record<Access, number> = { ask: 0, workspace: 1, full: 2 }
 export const narrower = (a: Access, b: Access): Access => (RANK[a] <= RANK[b] ? a : b)
@@ -366,14 +394,14 @@ export const KNOWLEDGE_TOOLS = [
   },
   {
     name: "zorel_knowledge_read",
-    description: "Read a whole knowledge page. page: its id (from the search or the pinned list) or its exact title.",
-    inputSchema: { properties: { page: { type: "string" } }, required: ["page"] },
+    description: "Read a knowledge page. page: its id (from the search or the pinned list) or its exact title. section: a heading, to read only that part (search results name the section of each match); a long page comes back cut, with its headings.",
+    inputSchema: { properties: { page: { type: "string" }, section: { type: "string" } }, required: ["page"] },
     writes: false
   },
   {
     name: "zorel_knowledge_write",
     description:
-      "Create or update a knowledge page in Markdown: a decision and why, a how-to that worked, a gotcha, a reference. page: an existing page's id to update (send the whole new body). scope: 'project' (default), 'agent' (your own notes) or 'user' (about the user: they approve it first). Keep pages short and current; update instead of duplicating.",
+      "Create or update a knowledge page in Markdown: a decision and why, a how-to that worked, a gotcha, a reference. page: an existing page's id to update (send the whole new body; the user approves a change to an existing page first). scope: 'project' (default), 'agent' (your own notes) or 'user' (about the user: they approve it first). Keep pages short and current; update instead of duplicating.",
     inputSchema: {
       properties: { page: { type: "string" }, title: { type: "string" }, body: { type: "string" }, scope: { type: "string", enum: ["project", "agent", "user"] } },
       required: ["title", "body"]

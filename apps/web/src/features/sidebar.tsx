@@ -16,7 +16,7 @@ import { NewProjectButton } from "./project.tsx"
 import { byTurn, ordered, type Statuses, visibleChats } from "./sidebar-order.ts"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  ChevronRight, Fold, FolderOpen, Marker, Menu, ModelAvatar, MoreHorizontal, Search, Users, Pause, Play, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder, Width
+  ChevronRight, Fold, FolderOpen, Marker, Menu, ModelAvatar, MoreHorizontal, Search, Users, Pause, Play, PanelLeftClose, PanelLeftOpen, AgentAvatar, AlarmClock, BookOpen, Bot, Brain, Layers, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, Tooltip, Trash2, useNavReorder, Width
 } from "@/ui"
 
 const VISIBLE = 5
@@ -64,7 +64,9 @@ export function Rail({
     { key: "inbox", icon: <Inbox />, label: t("nav.needsYou"), active: route.view === "inbox", go: () => go({ view: "inbox" }), count: needsYou },
     { key: "agents", icon: <Bot />, label: t("nav.agents"), active: ["agents", "agent", "new-agent", "builder"].includes(route.view), go: () => go({ view: "agents" }) },
     { key: "routines", icon: <AlarmClock />, label: t("nav.routines"), active: route.view === "routines", go: () => go({ view: "routines" }) },
-    { key: "knowledge", icon: <BookOpen />, label: t("nav.knowledge"), active: route.view === "knowledge", go: () => go({ view: "knowledge" }) }
+    { key: "memory", icon: <Brain />, label: t("nav.memory"), active: route.view === "memory", go: () => go({ view: "memory" }) },
+    { key: "pages", icon: <BookOpen />, label: t("nav.pages"), active: route.view === "pages", go: () => go({ view: "pages" }) },
+    { key: "skills", icon: <Layers />, label: t("nav.skills"), active: route.view === "skills", go: () => go({ view: "skills" }), count: memories.filter((m) => m.kind === "skill" && m.state === "pending").length }
   ]
   return (
     <nav aria-label={t("nav.label")} className="flex w-15 shrink-0 flex-col items-center gap-1 border-r border-subtle pt-3 pb-3">
@@ -523,7 +525,7 @@ function ChatItem({ chat, status, active, agents, menu, nested = false }: { chat
   const live = status && status.state !== "idle" ? status : undefined
   const members = chat.agentIds.flatMap((id) => agents.filter((a) => a.id === id))
   const at = Math.max(chat.lastAt ?? chat.createdAt, status?.updatedAt ?? 0)
-  const said = live ? statusLabel(live, agents) : undefined
+  const said = status ? statusLabel(status, agents) || undefined : undefined // idle shows only who waits on a teammate
   const model = modelName(chat.model)
   const who = members.length > 1 ? `${members[0]!.name} +${members.length - 1}` : members[0]?.name
   const detail = who ? t("nav.withModel", { agent: who, model }) : model

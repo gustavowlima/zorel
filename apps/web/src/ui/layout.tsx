@@ -83,11 +83,11 @@ export function IconTile({ size = "md", className, children }: { size?: keyof ty
 }
 
 // A notice that needs attention on a page (a limit reached, a failover): the icon in the state color, the text in
-// the page's own, an optional action under it.
-export function Notice({ tone = "warning", icon, title, children, action, className }: { tone?: "warning" | "danger"; icon: ReactNode; title?: ReactNode; children?: ReactNode; action?: ReactNode; className?: string }) {
+// the page's own, an optional action under it. "neutral": information, not an alert (a quiet icon, announced politely).
+export function Notice({ tone = "warning", icon, title, children, action, className }: { tone?: "warning" | "danger" | "neutral"; icon: ReactNode; title?: ReactNode; children?: ReactNode; action?: ReactNode; className?: string }) {
   return (
-    <div role="alert" className={cn("flex gap-3 rounded-card border border-subtle bg-surface px-4 py-3", className)}>
-      <span className={cn("mt-0.5 shrink-0 [&_svg]:size-4", tone === "warning" ? "text-warning" : "text-danger")}>{icon}</span>
+    <div role={tone === "neutral" ? "status" : "alert"} className={cn("flex gap-3 rounded-card border border-subtle bg-surface px-4 py-3", className)}>
+      <span className={cn("mt-0.5 shrink-0 [&_svg]:size-4", tone === "warning" ? "text-warning" : tone === "danger" ? "text-danger" : "text-muted")}>{icon}</span>
       <div className="flex min-w-0 flex-1 flex-col items-start gap-2 text-sm">
         {title && <p className="font-medium text-fg">{title}</p>}
         {children && <div className="text-secondary">{children}</div>}

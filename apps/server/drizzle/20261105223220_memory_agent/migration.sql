@@ -1,0 +1,1 @@
+ALTER TABLE `memories` ADD `agent_id` text;

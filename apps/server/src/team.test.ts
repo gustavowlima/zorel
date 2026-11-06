@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test"
 import { type Agent, DEFAULT_PERMISSIONS } from "@zorel/contracts"
-import { createInput, createInputs, effectiveAccess, findAgent, narrower, updateInput, visibleTo } from "./team.ts"
+import { createInput, createInputs, effectiveAccess, findAgent, learningOf, narrower, updateInput, visibleTo, withheldTools } from "./team.ts"
 
 const agent = (over: Partial<Agent>): Agent => ({
   id: "a1", projectId: null, name: "Code Reviewer", title: "", description: "", instructions: "x", model: "claude-cli/claude-sonnet-5-5",
-  accountId: null, effort: null, failover: [], access: "workspace", permissions: DEFAULT_PERMISSIONS, archivedAt: null, monthlyTokens: null, replyTokens: null, createdAt: 0, ...over
+  accountId: null, effort: null, failover: [], access: "workspace", permissions: DEFAULT_PERMISSIONS, archivedAt: null, monthlyTokens: null, replyTokens: null, memory: "ask", knowledge: "read", createdAt: 0, ...over
 })
 const caller = { model: "codex-cli/default", effort: "high" as const, access: "workspace" as const }
 
@@ -64,4 +64,26 @@ test("a proposal carries its powers: web, browser, connectors by name (others no
   expect(() => createInput({ name: "Rev", instructions: "x", connectors: [{ name: "Jira" }] }, caller, null, servers)).toThrow('No connector "Jira"')
   // Nothing about connectors: it follows each server's own mode.
   expect(createInput({ name: "Rev", instructions: "x" }, caller, null, servers).permissions.grants).toEqual({})
+})
+
+test("learning: a chat learns unless one of its agents doesn't; no agent learns", () => {
+  const m = (memory: "auto" | "ask" | "read") => ({ memory })
+  expect(learningOf([])).toBe("learn")
+  expect(learningOf([m("auto"), m("ask")])).toBe("learn")
+  expect(learningOf([m("ask"), m("read")])).toBe("read")
+})
+
+test("withheld tools: memory read keeps remembering and skill proposals away; pages read keeps writing away; none keeps every page tool away", () => {
+  expect([...withheldTools(undefined)]).toEqual([])
+  expect([...withheldTools({ memory: "ask", knowledge: "write" })]).toEqual([])
+  expect([...withheldTools({ memory: "ask", knowledge: "read" })]).toEqual(["zorel_knowledge_write"])
+  expect([...withheldTools({ memory: "read", knowledge: "write" })]).toEqual(["zorel_propose_skill", "zorel_remember"])
+  expect([...withheldTools({ memory: "read", knowledge: "read" })].sort()).toEqual(["zorel_knowledge_write", "zorel_propose_skill", "zorel_remember"])
+  expect([...withheldTools({ memory: "ask", knowledge: "none" })].sort()).toEqual(["zorel_knowledge_read", "zorel_knowledge_search", "zorel_knowledge_write"])
+})
+
+test("an agent can't change what it learns or sees: those are the user's to set", () => {
+  const changes = updateInput({ memory: "auto", knowledge: "read", title: "Lead" }, agent({ memory: "read", knowledge: "none" }), "workspace")
+  expect(JSON.stringify(changes)).not.toContain("memory")
+  expect(JSON.stringify(changes)).not.toContain("knowledge")
 })

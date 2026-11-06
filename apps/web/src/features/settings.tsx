@@ -3,22 +3,21 @@
 // (audit.tsx), what runs in the background (processes.tsx), General (the theme and the preferences to come).
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
-import { MAX_RUNNING_CHOICES, MAX_RUNNING_DEFAULT } from "@zorel/contracts"
-import { formatAge, t } from "@zorel/i18n"
+import { t } from "@zorel/i18n"
+import { MAX_RUNNING_CHOICES, MAX_RUNNING_DEFAULT, type MemoryApproval } from "@zorel/contracts"
 import { type ReactNode, useEffect, useState } from "react"
-import { agentsAtom, fileSkillsAtom, memoriesAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
-import { scopeLabel } from "../labels.ts"
-import { go, SETTINGS_TABS, type SettingsTab, setThemePref, themePref, type ThemePref } from "../state.ts"
+import { mutations, preferencesAtom, useMutation } from "../client.ts"
+import { go, liveStepsOpen, SETTINGS_TABS, type SettingsTab, setLiveStepsOpen, setThemePref, themePref, type ThemePref } from "../state.ts"
 import { AuditSection } from "./audit.tsx"
 import { NotifySetting, SoundSetting } from "./notify.tsx"
 import { McpSection } from "./mcp.tsx"
+import { ModelPicker } from "./model-picker.tsx"
 import { ProvidersSection } from "./providers.tsx"
-import { ReadingState } from "./reading.tsx"
 import { ProcessesSection } from "./processes.tsx"
 import { StorageSection } from "./storage.tsx"
-import { Activity, ArrowRight, BookOpen, Button, EmptyState, FolderOpen, HardDrive, History, NavItem, Plug, Rows, Screen, SearchInput, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch } from "@/ui"
+import { Activity, Button, HardDrive, History, NavItem, Plug, Rows, Screen, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch } from "@/ui"
 
-const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, skills: <BookOpen />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
+const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
 
 export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: string | undefined }) {
   return (
@@ -31,7 +30,7 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
           </NavItem>
         ))}
       </nav>
-      <div className="min-w-0 flex-1 overflow-y-auto">
+      <div className="relative min-w-0 flex-1 overflow-y-auto">
         {/* One column for every page: it fills the space up to a reading width, then stays centered. */}
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-8 py-7">
           {tab === "providers" && <ProvidersSection provider={provider} />}
@@ -39,13 +38,6 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
           {tab === "storage" && <StorageSection />}
           {tab === "audit" && <AuditSection />}
           {tab === "mcp" && <McpSection projectId={null} />}
-          {tab === "skills" && (
-            <>
-              <NativeSkills />
-              <Skills />
-              <FileSkills />
-            </>
-          )}
           {tab === "general" && <General />}
         </div>
       </div>
@@ -53,160 +45,67 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
   )
 }
 
-// ---------- skills ----------
+// ---------- memory ----------
 
-function Skills() {
-  const reading = useReading(memoriesAtom)
-  const skills = reading.items.filter((m) => m.kind === "skill")
-  const invalidate = useInvalidate()
-  const [failed, setFailed] = useState<string>()
-  const projects = useList(projectsAtom)
-  const agents = useList(agentsAtom)
-  const update = useMutation(mutations.updateMemory)
-  return (
-    <Section
-        title={t("skills.listTitle")}
-        description={<span className="block max-w-prose">{t("skills.intro")}</span>}
-        action={
-          skills.length > 0 && (
-            <Button size="sm" variant="secondary" onPress={() => go({ view: "knowledge" })}>
-              {t("skills.newInKnowledge")}
-              <ArrowRight />
-            </Button>
-          )
-        }
-      >
-        <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["memories"])} />
-        {failed && <p className="text-sm text-danger">{failed}</p>}
-        {!reading.loading && !reading.failed && skills.length === 0 && (
-          <EmptyState
-            icon={<BookOpen />}
-            title={t("skills.empty")}
-            hint={t("skills.emptyHint")}
-            action={
-              <Button size="sm" variant="default" onPress={() => go({ view: "knowledge" })}>
-                {t("skills.newInKnowledge")}
-              </Button>
-            }
-          />
-        )}
-        {skills.length > 0 && (
-          <Rows>
-            {skills.map((s) => (
-              <div key={s.id} className="flex items-center gap-3 py-3">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-medium">{s.title}</span>
-                  <span className="truncate text-sm text-muted">
-                    {[s.state === "pending" ? t("skills.pending") : s.origin === "auto" ? t("skills.learned") : t("skills.added"), formatAge(s.createdAt)].join(" · ")}
-                  </span>
-                </span>
-                <span className="shrink-0 text-sm text-muted">{scopeLabel(s.scope, projects, agents)}</span>
-                {s.state === "pending" ? (
-                  <Button size="sm" variant="secondary" onPress={() => go({ view: "knowledge", id: s.id })}>
-                    {t("skills.review")}
-                  </Button>
-                ) : (
-                  <Switch
-                    isSelected={s.state === "active"}
-                    aria-label={t("skills.active", { name: s.title })}
-                    onChange={(on) => {
-                      setFailed(undefined)
-                      update({ params: { id: s.id }, payload: { state: on ? "active" : "forgotten" }, reactivityKeys: ["memories"] }).catch(() => setFailed(t("skills.updateFailed", { name: s.title })))
-                    }}
-                  />
-                )}
-              </div>
-            ))}
-          </Rows>
-        )}
-      </Section>
-  )
-}
-
-// ---------- the harnesses' own skills ----------
-
-// Claude Code and Codex come with skills of their own (the person's ~/.claude/skills, plugins, Codex's). Off by
-// default (Zorel gives the context); on, they use them as in their own app. Takes effect in each chat's next session.
-function NativeSkills() {
+// The model that learns from chats (automatic: each chat's provider's small model) and what a new fact becomes.
+function MemorySettings() {
   const prefs = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)
-  const set = useMutation(mutations.nativeSkills)
+  const setMemory = useMutation(mutations.memoryModel)
+  const setRouter = useMutation(mutations.routerModel)
+  const setApproval = useMutation(mutations.memoryApproval)
   return (
-    <Section title={t("skills.nativeTitle")}>
+    <Section title={t("settings.modelsTitle")} description={<span className="block max-w-prose">{t("settings.memoryHint")}</span>}>
       <Rows>
-        <SettingRow title={t("skills.native")} hint={t("skills.nativeHint")}>
-          <Switch aria-label={t("skills.native")} isSelected={!!prefs?.nativeSkills} isDisabled={!prefs} onChange={(enabled) => void set({ payload: { enabled }, reactivityKeys: ["preferences"] })} />
+        <BackgroundModel
+          title={t("settings.memoryModel")}
+          model={prefs?.memoryModel ?? ""}
+          auto={t("settings.memoryModelAuto")}
+          chosen={t("settings.memoryModelChosen")}
+          onChange={(model) => void setMemory({ payload: { model }, reactivityKeys: ["preferences"] })}
+        />
+        <BackgroundModel
+          title={t("settings.routerModel")}
+          model={prefs?.routerModel ?? ""}
+          auto={t("settings.routerModelAuto")}
+          chosen={t("settings.routerModelChosen")}
+          onChange={(model) => void setRouter({ payload: { model }, reactivityKeys: ["preferences"] })}
+        />
+        <SettingRow title={t("memory.approval")} hint={t("memory.approvalHint")}>
+          <Select
+            size="sm"
+            aria-label={t("memory.approval")}
+            value={prefs?.memoryApproval ?? "review"}
+            onChange={(v) => void setApproval({ payload: { approval: v as MemoryApproval }, reactivityKeys: ["preferences"] })}
+            options={[
+              { value: "review", label: t("memory.approvalReview") },
+              { value: "undo", label: t("memory.approvalUndo") }
+            ]}
+          />
         </SettingRow>
       </Rows>
     </Section>
   )
 }
 
-// ---------- skills on this computer ----------
-
-// The SKILL.md files already here (Claude Code, Codex, other agents, plugins): pick which ones Zorel's agents use.
-// A picked skill shows in their list of skills and is read from its file when they need it (always current).
-const SOURCES = ["claude", "agents", "codex", "plugin"] as const
-function FileSkills() {
-  const reading = useReading(fileSkillsAtom)
-  const pick = useMutation(mutations.pickFileSkill)
-  const invalidate = useInvalidate()
-  const [query, setQuery] = useState("")
-  const [only, setOnly] = useState<"all" | "on">("all")
-  const all = reading.items
-  const q = query.trim().toLowerCase()
-  const shown = all.filter((s) => (only === "all" || s.enabled) && (!q || `${s.name} ${s.description} ${s.plugin ?? ""}`.toLowerCase().includes(q)))
-  const inUse = all.filter((s) => s.enabled).length
+// A model that works in the background: automatic (each chat's provider's small model) or one chosen for all chats.
+function BackgroundModel({ title, model, auto, chosen, onChange }: { title: string; model: string; auto: string; chosen: string; onChange: (model: string) => void }) {
   return (
-    <Section
-      title={t("skills.files")}
-      description={<span className="block max-w-prose">{t("skills.filesHint")}</span>}
-      action={all.length > 0 && <span className="text-sm text-muted tabular-nums">{t("skills.inUse", { count: inUse })}</span>}
-    >
-      <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["fileSkills"])} />
-      {!reading.loading && !reading.failed && all.length === 0 && <EmptyState icon={<FolderOpen />} title={t("skills.noFiles")} hint={t("skills.noFilesHint")} />}
-      {all.length > 0 && (
-        <div className="flex items-center gap-2">
-          <SearchInput size="sm" className="flex-1" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("skills.search", { count: all.length })} aria-label={t("common.search")} />
-          <Segmented
-            label={t("skills.show")}
-            value={only}
-            onChange={setOnly}
-            options={[
-              { id: "all", label: t("skills.showAll") },
-              { id: "on", label: t("skills.showInUse") }
-            ]}
-          />
-        </div>
-      )}
-      {SOURCES.map((src) => {
-        const list = shown.filter((s) => s.source === src)
-        if (!list.length) return null
-        return (
-          <div key={src} className="flex flex-col gap-1.5 pt-2">
-            <h3 className="text-sm font-medium text-muted">{`${t(`skills.source.${src}`)} · ${list.length}`}</h3>
-            <Rows>
-              {list.map((s) => (
-                <div key={s.path} className="flex items-center gap-3 py-2.5">
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="truncate font-medium">{s.name}</span>
-                      {s.plugin && <span className="shrink-0 text-sm text-muted">{s.plugin}</span>}
-                    </span>
-                    {s.description && <span className="line-clamp-1 text-sm text-muted">{s.description}</span>}
-                  </span>
-                  <Switch
-                    aria-label={t("skills.use", { name: s.name })}
-                    isSelected={s.enabled}
-                    onChange={(enabled) => void pick({ payload: { path: s.path, enabled }, reactivityKeys: ["fileSkills"] })}
-                  />
-                </div>
-              ))}
-            </Rows>
-          </div>
-        )
-      })}
-      {all.length > 0 && shown.length === 0 && <p className="text-sm text-muted">{t("skills.noMatch")}</p>}
-    </Section>
+    <SettingRow title={title} hint={model ? chosen : auto}>
+      <div className="flex items-center gap-2">
+        {model ? (
+          <>
+            <ModelPicker variant="field" value={{ model, accountId: null, effort: null }} onChange={(v) => onChange(v.model)} />
+            <Button size="sm" variant="ghost" onPress={() => onChange("")}>
+              {t("settings.memoryModelUseAuto")}
+            </Button>
+          </>
+        ) : (
+          <Button size="sm" variant="secondary" aria-label={`${t("settings.memoryModelChoose")}: ${title}`} onPress={() => onChange("claude-cli/haiku")}>
+            {t("settings.memoryModelChoose")}
+          </Button>
+        )}
+      </div>
+    </SettingRow>
   )
 }
 
@@ -296,6 +195,7 @@ function AgentsSetting() {
 
 function General() {
   const [pref, setPref] = useState<ThemePref>(themePref)
+  const [stepsOpen, setStepsOpen] = useState(liveStepsOpen)
   return (
     <>
     <Section title={t("appearance.title")}>
@@ -311,8 +211,19 @@ function General() {
             options={(["system", "dark", "light"] as const).map((p) => ({ id: p, label: t(`appearance.${p}`) }))}
           />
         </SettingRow>
+        <SettingRow title={t("appearance.liveSteps")} hint={t("appearance.liveStepsHint")}>
+          <Switch
+            aria-label={t("appearance.liveSteps")}
+            isSelected={stepsOpen}
+            onChange={(v) => {
+              setStepsOpen(v)
+              setLiveStepsOpen(v)
+            }}
+          />
+        </SettingRow>
       </Rows>
     </Section>
+    <MemorySettings />
     <Section title={t("appearance.notifications")}>
       <Rows>
         <NotifySetting />
