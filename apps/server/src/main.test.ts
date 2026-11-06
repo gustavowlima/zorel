@@ -175,7 +175,7 @@ async function send(chatId: string, body: { text: string; model?: string; attach
               yield* c.decide({ approvalId: e.approval.id, outcome: o === "always" ? "always" : o ? "approved" : "denied" })
             }
             if (e._tag === "turn-completed" || e._tag === "turn-failed" || e._tag === "interrupted") ended++
-            if (e._tag === "status" && e.status.state === "idle" && ended) yield* Deferred.succeed(idle, undefined)
+            if (e._tag === "status" && (e.status.state === "idle" || e.status.state === "failed") && ended) yield* Deferred.succeed(idle, undefined) // the chat at rest
           })
         ),
         Effect.forkChild

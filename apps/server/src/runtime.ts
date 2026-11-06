@@ -515,7 +515,7 @@ export const makeRuntime = Effect.gen(function* () {
       // The Builder (Zorel's own) does no work itself: what it proposes is capped at workspace, not at its own "ask";
       // and never above its own: a chat set wider lets it work there, not hand that level to the agents it creates.
       const caller = { model: agent?.model ?? chat.model, effort: agent?.effort ?? chat.effort, access: agent?.builtin === "builder" ? ("workspace" as const) : narrower(effectiveAccess(chat, agent), agent?.access ?? "workspace") }
-      const working = (id: string) => [...statuses.values()].some((st) => st.agentId === id && st.state !== "idle")
+      const working = (id: string) => [...statuses.values()].some((st) => st.agentId === id && (st.state === "running" || st.state === "waiting"))
       if (name === "zorel_list_agents") return textResult(listText(visible, working))
       const target = name === "zorel_create_agent" ? undefined : findAgent(visible, args.agent)
       if (name !== "zorel_create_agent" && !target) return textResult(`No agent "${String(args.agent ?? "")}" here. Call zorel_list_agents.`, true)
@@ -1247,6 +1247,7 @@ export const makeRuntime = Effect.gen(function* () {
     Effect.gen(function* () {
       const self = workers.get(chatId)!
       let last: { text: string; agent: Agent | undefined } | undefined
+      let failed: string | null | undefined // the last turn failed: its agent (the chat rests "failed", not idle)
       while (true) {
         const row = yield* store.nextQueued(chatId)
         if (!row) {
@@ -1261,13 +1262,15 @@ export const makeRuntime = Effect.gen(function* () {
         const done = yield* Fiber.join(fiber).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         running.delete(chatId)
         last = done
+        failed = (yield* store.turnRow(row.id))?.state === "failed" ? (row.agentId ?? null) : undefined
         yield* chain(row, done) // also when it failed: a hand-off waiting on it must not wait forever
         const hold = holding.get(chatId)
         if (hold) yield* Deferred.await(hold) // a "send now" is queueing its message: it goes before whatever is queued
       }
       yield* reportTask(chatId, last)
       workers.delete(chatId)
-      yield* setStatus(chatId, "idle", null, "")
+      // A failed last turn leaves the chat "failed" (the sidebar says so) until its next turn starts.
+      yield* setStatus(chatId, failed === undefined ? "idle" : "failed", failed ?? null, "")
       yield* Effect.forkDetach(consolidate(chatId, "window", (saved) => remembered(chatId, saved)).pipe(Effect.provide(services), Effect.ignore))
       yield* learnWhenQuiet(chatId)
     }).pipe(Effect.ensuring(Effect.suspend(() => {
