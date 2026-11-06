@@ -10,7 +10,7 @@ import { agentsAtom, mutations, projectsAtom, useList, useMutation, useStatuses 
 import { exportAgent, importedAgent } from "./agent.tsx"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { AgentAvatar, Archive, ArchiveRestore, Bot, Button, ChevronDown, ChevronRight, Column, cx, MessageCircle, Settings, ConfirmDialog, Dot, Download, EmptyState, IconButton, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, SearchInput, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
+import { AgentAvatar, Archive, ArchiveRestore, Bot, Button, ChevronDown, Column, cx, MessageCircle, Settings, ConfirmDialog, Dot, Download, EmptyState, IconButton, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, SearchInput, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
 
 // The agents working now, each with what it's doing (a chat of theirs running or waiting; waiting on you first).
 export function useWorking() {

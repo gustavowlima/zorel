@@ -8,7 +8,7 @@ import { AsyncResult } from "effect/reactivity"
 import { mutations, projectsAtom, storageAtom, useInvalidate, useList, useMutation } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
-import { Button, ChevronRight, ConfirmButton, ConfirmDialog, Download, Meter, pickFiles, RefreshCw, Rows, Section, SettingRow, ListRow, Upload } from "@/ui"
+import { Button, ConfirmButton, ConfirmDialog, Download, Meter, pickFiles, RefreshCw, Rows, Section, SettingRow, ListRow, Upload } from "@/ui"
 import { ReadingState } from "./reading.tsx"
 import { useEffect, useState } from "react"
 
