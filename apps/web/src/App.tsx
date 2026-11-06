@@ -19,11 +19,11 @@ import { PagesView } from "./features/pages.tsx"
 import { SkillsView } from "./features/skills.tsx"
 import { ProjectView } from "./features/project.tsx"
 import { SettingsView } from "./features/settings.tsx"
-import { Rail, Sidebar, TitleBar } from "./features/sidebar.tsx"
+import { SIDEBAR_FOLDED, SIDEBAR_WIDTH, Sidebar, TitleBar } from "./features/sidebar.tsx"
 import { UsageView } from "./features/usage.tsx"
 import { rememberModels } from "./labels.ts"
 import { go, type Route, useRoute, useSidebar } from "./state.ts"
-import { Button, CircleAlert, EmptyState, Pause, SlideWidth, Spinner } from "@/ui"
+import { Button, CircleAlert, EmptyState, Pause, Spinner, Width } from "@/ui"
 import { useNotifications } from "./features/notify.tsx"
 import { Palette } from "./features/palette.tsx"
 
@@ -53,11 +53,17 @@ export function App() {
       {desktop && <TitleBar sidebarHidden={sidebar.hidden} />}
     <div className="flex min-h-0 flex-1">
       <Palette onToggleSidebar={sidebar.toggle} />
-      <Rail route={route} sidebar={sidebar} paused={paused} onPause={(p) => void setPause({ payload: { paused: p }, reactivityKeys: ["preferences"] })} />
-      {/* Closed, it keeps a 12px gutter so the card moves in the same spring (no jump). */}
-      <SlideWidth open={!sidebar.hidden} width={248} closed={12}>
-        <Sidebar route={route} activeProjectId={activeProjectId} />
-      </SlideWidth>
+      {/* One sidebar: open, or folded to its icons (⌘B); the card follows in the same spring. */}
+      <Width width={sidebar.hidden ? SIDEBAR_FOLDED : SIDEBAR_WIDTH} className="flex shrink-0 overflow-hidden">
+        <Sidebar
+          route={route}
+          activeProjectId={activeProjectId}
+          folded={sidebar.hidden}
+          onToggle={sidebar.toggle}
+          paused={paused}
+          onPause={(p) => void setPause({ payload: { paused: p }, reactivityKeys: ["preferences"] })}
+        />
+      </Width>
       {/* The content card: the whole height and the right edge of the window, rounded only toward the sidebar. */}
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-l-sheet border-l border-subtle bg-canvas">

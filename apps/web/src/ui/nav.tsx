@@ -1,8 +1,7 @@
-// Sidebar rows (the chosen redesign, "Zorel — main screen"): 32px rows on the frame, a quiet hover wash, section
-// titles in sentence case. A project is a subtitle aligned with the chats: its name, a small arrow that opens it,
-// and on the right its chat count or its state (a dot when waiting for you, a spinner while working); its chats
-// sit slightly indented on a hairline, on two lines when agents are in them (title, then who / what is happening);
-// the open chat floats as a raised chip. NavItem is a plain React Aria button; the trees are React Aria Trees,
+// Sidebar rows (the one sidebar, 2026-11-05, after Zeron's): rows on the frame, a quiet hover wash, section titles in
+// sentence case. A project is a subtitle: its tile, its name, and on the right its chat count or its state (how many
+// wait for you, a spinner while working); its chats hang from it on a tree, one line each, a second only when one
+// needs you or failed. NavItem is a plain React Aria button; the trees are React Aria Trees,
 // so they get one Tab stop, arrow keys, type-ahead, aria-level, and drag and drop (pointer, keyboard and
 // screen reader) from the library instead of hand-written handlers.
 import { type ReactNode, useRef } from "react"
@@ -25,8 +24,6 @@ import { Tooltip } from "./tooltip"
 const row =
   "flex w-full min-w-0 shrink-0 cursor-default items-center gap-2.5 rounded-control border text-left text-base outline-none transition-colors duration-120 ease-out motion-reduce:transition-none"
 const state = (active: boolean | undefined) => (active ? "border-subtle bg-canvas font-medium text-fg" : "border-transparent text-secondary")
-// The open chat: a raised chip on the frame, apart from the card.
-const chip = "border-transparent bg-surface text-fg shadow-chip"
 // A row's actions (the ⋯, +) sit over what the row shows on the right (the time, the count): they appear on hover,
 // focus or touch, and stay while a menu opened from them is open (its popover lives outside the row, so the row
 // loses hover and focus). The `peer` class lets that spot hide while they show.
@@ -149,12 +146,13 @@ const navDropIndicator = (target: DropTarget) => (
   <DropIndicator target={target} className="relative z-10 -my-px h-0.5 rounded-full outline-none data-drop-target:bg-accent" />
 )
 
-// One row of the tree. A group (project) shows its icon in the icon column (a folder that turns into the opening
-// arrow on hover or focus) and keeps its state on the right (a count, a dot or a spinner); its actions (+, ⋯) take
-// that spot on hover or focus, and stay shown on touch. A leaf (chat) takes the sidebar's full width: `leading`
-// (an avatar) in the icon column, then its title and time over a second line (`detail`); the actions replace the
-// time on hover, focus or touch, so the line never jumps. The open one is a raised chip. `quiet` is the "show more"
-// row: 28px, muted, its text aligned with the titles above it.
+// One row of the tree. A group (project) shows its icon in the icon column (its tile, which turns into the opening
+// arrow on hover or focus) and keeps its state on the right (a count, waiting chats or a spinner); its actions (+, ⋯)
+// take that spot on hover or focus, and stay shown on touch. A leaf (chat) is its title and time, 40px tall, with a
+// second line (`detail`) only when it has something to say; the actions replace the time on hover, focus or touch, so
+// the line never jumps. A group's leaves hang from a tree: a trunk down from the group's icon and a rounded elbow to
+// each title, the trunk ending at the `last` one; their hover and the open one's wash fade in from the trunk
+// (.tree-wash) instead of starting on it. `quiet` is the "show more" row: 28px, muted, aligned with the titles.
 export function NavTreeItem({
   id,
   textValue,
@@ -170,6 +168,8 @@ export function NavTreeItem({
   onAction,
   dragLabel,
   nested = false,
+  last = false,
+  tooltip,
   children
 }: {
   id: Key
@@ -185,7 +185,9 @@ export function NavTreeItem({
   actions?: ReactNode
   onAction: () => void
   dragLabel?: string
-  nested?: boolean // a row inside a group (a project's chat): indented under its name, on the group's guide line
+  nested?: boolean // a row inside a group (a project's chat): on the group's tree, its title past the elbow
+  last?: boolean // the group's last row: the trunk ends in its elbow
+  tooltip?: string // what the row leaves out (who answers, the model), on hover
   children?: ReactNode
 }) {
   return (
@@ -199,21 +201,23 @@ export function NavTreeItem({
         {({ hasChildItems, isExpanded, isFocusVisible, isHovered, isPressed, allowsDragging }) => (
           <div
             {...(active && { "aria-current": "page" as const })}
+            {...(tooltip && { title: tooltip })}
             className={cn(
               row,
-              "relative",
+              "relative border-transparent",
               hasChildItems
-                ? "h-control px-2.5"
+                ? "h-9 px-2.5 font-medium text-fg"
                 : quiet
-                  ? cn("h-control-sm", nested ? "pr-2.5 pl-14" : "pr-2.5 pl-10.5")
-                  : detail
-                    ? cn("h-13 gap-3 rounded-card", nested ? "pr-2.5 pl-6" : "px-2.5")
-                    : nested
-                      ? "h-control pr-2.5 pl-6"
-                      : "h-control px-2.5",
-              hasChildItems ? "border-transparent font-medium text-fg" : active ? chip : "border-transparent",
-              !active && (isHovered || isFocusVisible) && "bg-hover text-fg",
-              !active && isPressed && "bg-control-active",
+                  ? cn("h-control-sm pr-2.5", nested ? "pl-10" : "pl-2.5")
+                  : cn(detail ? "h-[58px]" : "h-10", nested ? "pr-2.5 pl-10" : "px-2.5"),
+              // Under a group the wash fades in from the trunk; elsewhere it's a plain row's.
+              !hasChildItems && nested
+                ? (active || isHovered || isFocusVisible) && cn("tree-wash", active ? "[--wash:var(--z-bg-control-hover)]" : "[--wash:var(--z-bg-hover)]")
+                : active
+                  ? "bg-control-hover"
+                  : (isHovered || isFocusVisible) && "bg-hover",
+              !active && (isHovered || isFocusVisible) && "text-fg",
+              !active && isPressed && !nested && "bg-control-active",
               isFocusVisible && "ring-2 ring-accent"
             )}
           >
@@ -222,8 +226,16 @@ export function NavTreeItem({
                 <GripVertical className="size-3.5" />
               </Button>
             )}
-            {/* A group's rows hang, slightly indented, from a hairline under the start of the group's name. */}
-            {nested && <span aria-hidden="true" className="pointer-events-none absolute inset-y-1 left-3 w-px bg-subtle" />}
+            {/* The tree: an elbow from the trunk (x 20, under the group's icon) to the middle of the title's line, and
+                the trunk on below it unless this is the group's last row. The rows' 1px gaps are bridged. */}
+            {nested && !hasChildItems && (
+              <>
+                <span aria-hidden="true" className={cn("pointer-events-none absolute -top-px left-5 w-3 rounded-bl-lg border-b border-l border-strong", quiet ? "h-[15px]" : "h-[21px]")} />
+                {!last && <span aria-hidden="true" className={cn("pointer-events-none absolute -bottom-px left-5 border-l border-strong", quiet ? "top-3.5" : "top-5")} />}
+              </>
+            )}
+            {/* An open group with rows: the trunk starts under its icon. */}
+            {hasChildItems && isExpanded && <span aria-hidden="true" className="pointer-events-none absolute top-7.5 -bottom-px left-5 border-l border-strong" />}
             {hasChildItems && (
               // The icon column: the folder, which gives way to the arrow (it opens and closes the group) on hover or focus.
               <Button slot="chevron" className={cn(glyphBox, "relative rounded-control outline-none data-hovered:text-fg")}>
