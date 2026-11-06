@@ -47,8 +47,8 @@ export const en = {
     skills: "Skills",
     agents: "Agents",
     routines: "Routines",
-    hideSidebar: "Hide chats (⌘B)",
-    showSidebar: "Show chats (⌘B)",
+    hideSidebar: "Fold the sidebar (⌘B)",
+    showSidebar: "Open the sidebar (⌘B)",
     newAgentIn: "New agent in {name}",
     usage: "Usage",
     settings: "Settings",
@@ -161,7 +161,19 @@ export const en = {
     errors: { one: "1 failed", other: "{count} failed" },
     waiting: "waiting for you",
     result: "Result",
-    args: "Arguments"
+    args: "Arguments",
+    // The one-line summary over a turn's steps ("Read 2 files and ran 3 commands"), each kind as a phrase.
+    did: {
+      search: { one: "searched the code", other: "searched the code {count} times" },
+      read: { one: "read 1 file", other: "read {count} files" },
+      edit: { one: "edited 1 file", other: "edited {count} files" },
+      run: { one: "ran 1 command", other: "ran {count} commands" },
+      tool: { one: "used 1 tool", other: "used {count} tools" },
+      delegate: { one: "asked 1 teammate", other: "asked {count} teammates" }
+    },
+    failedStep: "failed",
+    refusedStep: "refused",
+    thought: "Thought for {time}"
   },
   approval: {
     waiting: "Waiting for you",
@@ -1149,7 +1161,24 @@ export const en = {
     inWorktreeNow: "The chat now works in its worktree.",
     inWorktree: "This chat works in a worktree",
     leaveWorktree: "Back to the project folder",
-    leftWorktree: "Back in the project folder. The branch stays."
+    leftWorktree: "Back in the project folder. The branch stays.",
+    // Overview's way out for the branch, one step at a time.
+    overview: "Overview",
+    fromBase: "Branched from {base}",
+    showFiles: { one: "Show the file", other: "Show {count} files" },
+    hideFiles: "Hide files",
+    upToDate: "Up to date with {upstream}",
+    noRemoteStep: "No remote to push to",
+    noPr: "No pull request yet",
+    prInto: "Into {base}",
+    prOpen: "#{number} · {state}",
+    updatesPr: "Updates pull request #{number}",
+    openOnGithub: "Open on GitHub",
+    run: "Run",
+    running: "Running · {url}",
+    openInBrowser: "Open in Browser",
+    noScripts: "No scripts in package.json",
+    notRepo: "This folder isn't a git repository: nothing to commit or push here."
   },
   // The Files panel (an editor's explorer on the chat's folder).
   explorer: {
@@ -1247,8 +1276,9 @@ export const en = {
   },
   memory: {
     title: "Memory",
-    list: "List",
+    list: "Facts",
     map: "Map",
+    pages: "Pages",
     view: "Show as",
     mapEmpty: "Nothing on the map yet",
     connect: "Connect to another project",

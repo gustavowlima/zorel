@@ -12,7 +12,7 @@ import { accountsAtom, agentsAtom, mutations, projectsAtom, topTurnsAtom, usageA
 import { chatTitle, formatCost, fullest, modelLabel, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
 import { LimitWindows } from "./limits.tsx"
-import { Button, ChartColumn, CircleAlert, EmptyState, IconButton, Notice, ProviderIcon, RowHit, Rows, Screen, Section, Select, Tab, TabList, Tabs } from "@/ui"
+import { Button, ChartColumn, Column, CircleAlert, EmptyState, IconButton, Notice, ProviderIcon, RowHit, Rows, Screen, Section, Select, Tab, TabList, Tabs } from "@/ui"
 
 type Range = "month" | "7" | "30"
 type Metric = "cost" | "tokens"
@@ -98,7 +98,7 @@ export function UsageView({ agentId }: { agentId?: string | undefined }) {
         </>
       }
     >
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-12 px-7 py-8">
+      <Column wide>
         {alerts.length > 0 && (
           <Notice icon={<CircleAlert />}>{t("usage.alert", { count: alerts.length })}</Notice>
         )}
@@ -163,7 +163,7 @@ export function UsageView({ agentId }: { agentId?: string | undefined }) {
 
         {turns > 0 && <Breakdown rows={inRange} metric={metric} total={total} />}
         {turns > 0 && <TopTurns since={since} />}
-      </div>
+      </Column>
     </Screen>
   )
 }

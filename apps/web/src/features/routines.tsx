@@ -53,7 +53,7 @@ export function RoutinesView() {
     )
   return (
     <Screen title={t("routines.title")} subtitle={t("routines.pageHint")} actions={withRoutines.length > 0 && newButton("secondary")}>
-      <Column className="gap-10">
+      <Column>
         {withRoutines.length === 0 ? (
           <EmptyState icon={<AlarmClock />} title={t("routines.emptyTitle")} hint={t("routines.emptyHint")} action={newButton("default")} />
         ) : (

@@ -1,4 +1,5 @@
-// Memory: what the agents know about you and your work (facts; skills and pages have screens of their own). Tabs by
+// Memory: what the agents know about you and your work, three ways (MemorySwitch): its facts as a list, the same facts
+// as a map, and its pages (pages.tsx; skills have a screen of their own). Tabs by
 // owner (about you, each project, each agent's notes, forgotten), a strip when something waits for you, a field to
 // teach it something about you, and each memory with where it came from. Review shows the new ones (Keep, Edit,
 // Move, Discard) and the ones not confirmed in STALE_DAYS (Still true, Forget). The server enforces the rules
@@ -7,16 +8,39 @@ import { useAtomValue } from "@effect/atom-react"
 import { isTeammate, type Memory, type MemoryApproval } from "@zorel/contracts"
 import { AsyncResult } from "effect/reactivity"
 import { formatAge, formatDate, t } from "@zorel/i18n"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { agentsAtom, chatsAtom, memoriesAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
 import { ScopeIcon } from "./knowledge.tsx"
 import { MemoryMap } from "./memory-map.tsx"
 import { ReadingState } from "./reading.tsx"
-import { Brain, Button, ConfirmDialog, cx, EmptyState, Input, LineDiff, Menu, MenuItem, Pin, PinOff, Plus, Rows, Screen, SearchInput, Segmented, Select, Tab, TabList, Tabs, Textarea, Tooltip } from "@/ui"
+import { Brain, Button, Column, ConfirmDialog, cx, EmptyState, Input, LineDiff, Menu, MenuItem, Pin, PinOff, Plus, Rows, Screen, SearchInput, Segmented, Select, Tab, TabList, Tabs, Textarea, Tooltip } from "@/ui"
 
-const MAP_KEY = "zorel.memory.map" // List or Map, remembered on this computer
+const MAP_KEY = "zorel.memory.map" // Facts as a list or a map, remembered on this computer
+
+// Memory's three views, one control in its header: Facts, Map (both of its facts) and Pages (#/pages, its own route so
+// links to a page keep working). Facts or Map is remembered on this computer; `onFacts` shows it in place (the facts'
+// screen), else it opens Memory (from Pages).
+export function MemorySwitch({ value, onFacts }: { value: "list" | "map" | "pages"; onFacts?: (asMap: boolean) => void }) {
+  return (
+    <Segmented
+      label={t("memory.view")}
+      value={value}
+      onChange={(v) => {
+        if (v === "pages") return go({ view: "pages" })
+        localStorage.setItem(MAP_KEY, v === "map" ? "1" : "0")
+        if (onFacts) onFacts(v === "map")
+        else go({ view: "memory" })
+      }}
+      options={[
+        { id: "list", label: t("memory.list") },
+        { id: "map", label: t("memory.map") },
+        { id: "pages", label: t("memory.pages") }
+      ]}
+    />
+  )
+}
 const STALE_DAYS = 60 // an active memory not confirmed for this long asks "Still true?" (it stays in the prompt meanwhile)
 const DAY = 86_400_000
 const isStale = (m: Memory, now: number) => m.state === "active" && now - m.confirmedAt > STALE_DAYS * DAY
@@ -28,7 +52,6 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
   const invalidate = useInvalidate()
   const [query, setQuery] = useState("")
   const [asMap, setAsMap] = useState(() => localStorage.getItem(MAP_KEY) === "1")
-  useEffect(() => localStorage.setItem(MAP_KEY, asMap ? "1" : "0"), [asMap])
   const now = Date.now()
   const facts = reading.items.filter((m) => m.kind === "fact")
   const q = query.trim().toLowerCase()
@@ -50,17 +73,7 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
       {...(asMap && !review && { bodyClassName: "flex flex-col" })}
       actions={
         <>
-          {!review && (
-            <Segmented
-              label={t("memory.view")}
-              value={asMap ? "map" : "list"}
-              onChange={(v) => setAsMap(v === "map")}
-              options={[
-                { id: "list", label: t("memory.list") },
-                { id: "map", label: t("memory.map") }
-              ]}
-            />
-          )}
+          {!review && <MemorySwitch value={asMap ? "map" : "list"} onFacts={setAsMap} />}
           <Approval />
           <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("memory.search")} />
         </>
@@ -68,7 +81,7 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
     >
       {asMap && !review ? (
         <>
-          <div className="px-8 pt-4">
+          <div className="px-7 pt-4">
             <Tabs selectedKey={tab === "forgotten" ? "all" : tab} onSelectionChange={(k) => go(k === "all" ? { view: "memory" } : { view: "memory", tab: String(k) })}>
               <TabList label={t("memory.title")}>
                 <Tab id="all">{t("memory.all")}</Tab>
@@ -87,7 +100,7 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
           <MemoryMap key={tab} scope={tab === "all" || tab === "forgotten" ? "" : tab} />
         </>
       ) : (
-      <div className="flex w-full max-w-3xl flex-col gap-5 px-8 py-6">
+      <Column>
         <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["memories"])} />
         {review ? (
           <>
@@ -104,7 +117,8 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
             </Group>
           </>
         ) : (
-          <>
+          // The tabs 32px above what they show; the strip, the field and each owner's group 40px apart (DESIGN.md).
+          <div className="flex flex-col gap-8">
             <Tabs selectedKey={tab} onSelectionChange={(k) => go(k === "all" ? { view: "memory" } : { view: "memory", tab: String(k) })}>
               <TabList label={t("memory.title")}>
                 <Tab id="all">{t("memory.all")}</Tab>
@@ -122,42 +136,44 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
                 {anyForgotten && <Tab id="forgotten">{t("memory.forgotten")}</Tab>}
               </TabList>
             </Tabs>
-            {waiting > 0 && tab !== "forgotten" && (
-              <div role="status" className="flex items-center gap-3 rounded-card border border-accent-line bg-accent-faint px-3.5 py-2.5">
-                <span aria-hidden="true" className="size-2 rounded-full bg-accent-text" />
-                <span className="flex-1 text-sm">
-                  <span className="font-medium">{t("memory.waiting", { count: waiting })}</span>
-                  <span className="text-muted">{` · ${t("memory.waitingParts", { fresh: facts.filter((m) => m.state === "pending").length, old: facts.filter((m) => isStale(m, now)).length })}`}</span>
-                </span>
-                <Button size="sm" variant="default" onPress={() => go({ view: "memory", review: true })}>
-                  {t("memory.review")}
-                </Button>
-              </div>
-            )}
-            {(tab === "all" || tab === "user") && <Teach />}
-            {groups.map((s) => (
-              <Group
-                key={s}
-                title={tab === "all" ? ownerName(s, projects, agents) : undefined}
-                icon={tab === "all" ? <ScopeIcon scope={s} agents={agents} /> : undefined}
-                hint={tab === "all" ? t(s === "user" ? "memory.seenByAll" : s.startsWith("agent:") ? "memory.seenByAgent" : "memory.seenByProject", { name: agents.find((a) => `agent:${a.id}` === s)?.name ?? ownerName(s, projects, agents) }) : undefined}
-              >
-                {shown.filter((m) => m.scope === s || tab === "forgotten").map((m) => (
-                  <FactRow key={m.id} memory={m} />
-                ))}
-              </Group>
-            ))}
-            {!reading.loading && shown.length === 0 && (
-              <EmptyState
-                icon={<Brain />}
-                title={tab === "forgotten" ? t("memory.noneForgotten") : facts.length ? t("memory.noneHere") : t("memory.empty")}
-                hint={tab === "forgotten" ? t("memory.forgottenHint") : t("memory.emptyHint")}
-              />
-            )}
-            {tab === "forgotten" && shown.length > 0 && <p className="text-sm text-dim">{t("memory.forgottenHint")}</p>}
-          </>
+            <div className="flex flex-col gap-10">
+              {waiting > 0 && tab !== "forgotten" && (
+                <div role="status" className="flex items-center gap-3 rounded-card border border-accent-line bg-accent-faint px-3.5 py-2.5">
+                  <span aria-hidden="true" className="size-2 rounded-full bg-accent-text" />
+                  <span className="flex-1 text-sm">
+                    <span className="font-medium">{t("memory.waiting", { count: waiting })}</span>
+                    <span className="text-muted">{` · ${t("memory.waitingParts", { fresh: facts.filter((m) => m.state === "pending").length, old: facts.filter((m) => isStale(m, now)).length })}`}</span>
+                  </span>
+                  <Button size="sm" variant="default" onPress={() => go({ view: "memory", review: true })}>
+                    {t("memory.review")}
+                  </Button>
+                </div>
+              )}
+              {(tab === "all" || tab === "user") && <Teach />}
+              {groups.map((s) => (
+                <Group
+                  key={s}
+                  title={tab === "all" ? ownerName(s, projects, agents) : undefined}
+                  icon={tab === "all" ? <ScopeIcon scope={s} agents={agents} /> : undefined}
+                  hint={tab === "all" ? t(s === "user" ? "memory.seenByAll" : s.startsWith("agent:") ? "memory.seenByAgent" : "memory.seenByProject", { name: agents.find((a) => `agent:${a.id}` === s)?.name ?? ownerName(s, projects, agents) }) : undefined}
+                >
+                  {shown.filter((m) => m.scope === s || tab === "forgotten").map((m) => (
+                    <FactRow key={m.id} memory={m} />
+                  ))}
+                </Group>
+              ))}
+              {!reading.loading && shown.length === 0 && (
+                <EmptyState
+                  icon={<Brain />}
+                  title={tab === "forgotten" ? t("memory.noneForgotten") : facts.length ? t("memory.noneHere") : t("memory.empty")}
+                  hint={tab === "forgotten" ? t("memory.forgottenHint") : t("memory.emptyHint")}
+                />
+              )}
+              {tab === "forgotten" && shown.length > 0 && <p className="text-sm text-dim">{t("memory.forgottenHint")}</p>}
+            </div>
+          </div>
         )}
-      </div>
+      </Column>
       )}
     </Screen>
   )
@@ -196,7 +212,7 @@ const ownerName = (scope: string, projects: ReadonlyArray<{ id: string; name: st
 
 function Group({ title, icon, hint, children }: { title?: string | undefined; icon?: React.ReactNode; hint?: string | undefined; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-1.5">
+    <section className="flex flex-col gap-3">
       {title && (
         <h3 className="flex flex-wrap items-center gap-x-2 text-sm font-medium text-muted">
           {icon}

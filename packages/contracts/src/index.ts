@@ -330,7 +330,10 @@ export const Step = Schema.Struct({
   // Absent on MCP steps and on messages saved before they existed: read a missing one as "".
   title: Schema.optional(Schema.String),
   detail: Schema.optional(Schema.String),
-  ms: Schema.optional(Schema.Number) // how long it took; absent on MCP steps and on messages saved before it existed
+  ms: Schema.optional(Schema.Number), // how long it took; absent on MCP steps and on messages saved before it existed
+  // Where in the reply's text it began (characters): the chat lays the reply out as text, steps, text… in that order.
+  // Absent on Zorel's timing rows and on messages saved before it existed (their steps go above the text).
+  at: Schema.optional(Schema.Number)
 })
 export type Step = typeof Step.Type
 // The steps that did work: not Thought or Replied (counted and shown as work, they'd put a pill on every answer).
