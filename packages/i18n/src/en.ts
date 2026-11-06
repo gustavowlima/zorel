@@ -1276,8 +1276,9 @@ export const en = {
   },
   memory: {
     title: "Memory",
-    list: "List",
+    list: "Facts",
     map: "Map",
+    pages: "Pages",
     view: "Show as",
     mapEmpty: "Nothing on the map yet",
     connect: "Connect to another project",

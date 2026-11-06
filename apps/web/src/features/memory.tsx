@@ -1,4 +1,5 @@
-// Memory: what the agents know about you and your work (facts; skills and pages have screens of their own). Tabs by
+// Memory: what the agents know about you and your work, three ways (MemorySwitch): its facts as a list, the same facts
+// as a map, and its pages (pages.tsx; skills have a screen of their own). Tabs by
 // owner (about you, each project, each agent's notes, forgotten), a strip when something waits for you, a field to
 // teach it something about you, and each memory with where it came from. Review shows the new ones (Keep, Edit,
 // Move, Discard) and the ones not confirmed in STALE_DAYS (Still true, Forget). The server enforces the rules
@@ -7,7 +8,7 @@ import { useAtomValue } from "@effect/atom-react"
 import { isTeammate, type Memory, type MemoryApproval } from "@zorel/contracts"
 import { AsyncResult } from "effect/reactivity"
 import { formatAge, formatDate, t } from "@zorel/i18n"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { agentsAtom, chatsAtom, memoriesAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
@@ -16,7 +17,30 @@ import { MemoryMap } from "./memory-map.tsx"
 import { ReadingState } from "./reading.tsx"
 import { Brain, Button, ConfirmDialog, cx, EmptyState, Input, LineDiff, Menu, MenuItem, Pin, PinOff, Plus, Rows, Screen, SearchInput, Segmented, Select, Tab, TabList, Tabs, Textarea, Tooltip } from "@/ui"
 
-const MAP_KEY = "zorel.memory.map" // List or Map, remembered on this computer
+const MAP_KEY = "zorel.memory.map" // Facts as a list or a map, remembered on this computer
+
+// Memory's three views, one control in its header: Facts, Map (both of its facts) and Pages (#/pages, its own route so
+// links to a page keep working). Facts or Map is remembered on this computer; `onFacts` shows it in place (the facts'
+// screen), else it opens Memory (from Pages).
+export function MemorySwitch({ value, onFacts }: { value: "list" | "map" | "pages"; onFacts?: (asMap: boolean) => void }) {
+  return (
+    <Segmented
+      label={t("memory.view")}
+      value={value}
+      onChange={(v) => {
+        if (v === "pages") return go({ view: "pages" })
+        localStorage.setItem(MAP_KEY, v === "map" ? "1" : "0")
+        if (onFacts) onFacts(v === "map")
+        else go({ view: "memory" })
+      }}
+      options={[
+        { id: "list", label: t("memory.list") },
+        { id: "map", label: t("memory.map") },
+        { id: "pages", label: t("memory.pages") }
+      ]}
+    />
+  )
+}
 const STALE_DAYS = 60 // an active memory not confirmed for this long asks "Still true?" (it stays in the prompt meanwhile)
 const DAY = 86_400_000
 const isStale = (m: Memory, now: number) => m.state === "active" && now - m.confirmedAt > STALE_DAYS * DAY
@@ -28,7 +52,6 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
   const invalidate = useInvalidate()
   const [query, setQuery] = useState("")
   const [asMap, setAsMap] = useState(() => localStorage.getItem(MAP_KEY) === "1")
-  useEffect(() => localStorage.setItem(MAP_KEY, asMap ? "1" : "0"), [asMap])
   const now = Date.now()
   const facts = reading.items.filter((m) => m.kind === "fact")
   const q = query.trim().toLowerCase()
@@ -50,17 +73,7 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
       {...(asMap && !review && { bodyClassName: "flex flex-col" })}
       actions={
         <>
-          {!review && (
-            <Segmented
-              label={t("memory.view")}
-              value={asMap ? "map" : "list"}
-              onChange={(v) => setAsMap(v === "map")}
-              options={[
-                { id: "list", label: t("memory.list") },
-                { id: "map", label: t("memory.map") }
-              ]}
-            />
-          )}
+          {!review && <MemorySwitch value={asMap ? "map" : "list"} onFacts={setAsMap} />}
           <Approval />
           <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("memory.search")} />
         </>

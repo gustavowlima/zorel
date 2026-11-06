@@ -9,6 +9,7 @@ import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { agentsAtom, mutations, pagesAtom, pageVersionsAtom, projectsAtom, useList, useMutation, useReading } from "../client.ts"
 import { scopeLabel } from "../labels.ts"
+import { MemorySwitch } from "./memory.tsx"
 import { go } from "../state.ts"
 import { BookOpen, Button, ConfirmDialog, cx, EmptyState, Field, Input, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Textarea, Trash2, Undo2 } from "@/ui"
 
@@ -28,12 +29,14 @@ export function PagesView({ selected }: { selected?: string | undefined }) {
   const scopes = [...new Set(pages.map((p) => p.scope))]
   const page = pages.find((p) => p.id === selected)
   return (
+    // Memory's third view: the same title and switch as its facts, so Pages reads as a tab of Memory.
     <Screen
-      title={t("pages.pages")}
+      title={t("memory.title")}
       subtitle={t("pages.subtitle", { count: pages.length })}
       bodyClassName="flex"
       actions={
         <>
+          <MemorySwitch value="pages" />
           <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("common.search")} />
           <Button size="sm" variant="secondary" onPress={() => setCreating(true)}>
             <Plus />

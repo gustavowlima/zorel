@@ -255,6 +255,9 @@ img, svg, a { -webkit-user-drag: none; }
 .composer-editor p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--z-text-dim); float: left; height: 0; pointer-events: none; }
 /* A scrolling list with more below fades out over its last 24px instead of ending on a cut row. */
 .fade-bottom { mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
+/* …and scrolled away above it, over its first 24px (both edges when both hold more). */
+.fade-top { mask-image: linear-gradient(to bottom, transparent, #000 24px); }
+.fade-y { mask-image: linear-gradient(to bottom, transparent, #000 24px, #000 calc(100% - 24px), transparent); }
 /* A sidebar row under a project (ui/nav.tsx): its hover or open wash (--wash) fades in from the tree's trunk at x 20,
    clear over the lines and full past the title's start, eased over six stops so no edge shows where it begins. */
 .tree-wash {

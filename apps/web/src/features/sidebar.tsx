@@ -1,5 +1,5 @@
 // Sidebar (one column, 2026-11-05, after Zeron's): the brand and its fold on top, then the app's places as rows (New
-// chat, Search, Needs you; then Agents, Routines, Memory, Pages and Skills, quieter), the scrolling Chats section
+// chat, Search, Needs you; then Agents, Routines, Memory (with its pages) and Skills, quieter), the scrolling Chats section
 // (chats without a project) and Projects section (the tree), and at the foot the usage ring, Pause and Settings.
 // Folded (⌘B) it narrows to a column of the places' icons with the foot under them; the chats wait for it to open.
 // The list fades out at the bottom while more is below. Chats sort by whose turn it is, then manual order and
@@ -17,7 +17,7 @@ import { NewProjectButton } from "./project.tsx"
 import { byTurn, ordered, type Statuses, visibleChats } from "./sidebar-order.ts"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  ChevronRight, Fold, Marker, Menu, MoreHorizontal, NavItem, Search, Pause, Play, PanelLeftClose, PanelLeftOpen, AlarmClock, BookOpen, Bot, Brain, Layers, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, SquarePen, Tooltip, Trash2, useNavReorder, Width
+  ChevronRight, Fold, Marker, Menu, MoreHorizontal, NavItem, Search, Pause, Play, PanelLeftClose, PanelLeftOpen, AlarmClock, Bot, Brain, Layers, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, SquarePen, Tooltip, Trash2, useNavReorder, Width
 } from "@/ui"
 
 // Open and folded widths (App animates between them; the desktop title bar lines up with the open one).
@@ -38,7 +38,7 @@ const idOf = (key: NavKey) => String(key).slice(2)
 type Place = { key: string; icon: ReactNode; label: string; active?: boolean; go: () => void; count?: number; kbd?: string }
 
 // The app's places: what you start or look for (New chat, Search, Needs you, which counts everything that waits for
-// you), then where the team and what it knows live, quieter. Open, each is a 36px row (the projects' height; icons at
+// you), then where the team and what it knows live, quieter (Pages is a view of Memory). Open, each is a 36px row (the projects' height; icons at
 // x 19-39, words from x 49 like every row); folded, an icon with its name as a tooltip. The current one has the open
 // chat's wash.
 function Places({ route, folded }: { route: Route; folded: boolean }) {
@@ -53,8 +53,8 @@ function Places({ route, folded }: { route: Route; folded: boolean }) {
   const library: Place[] = [
     { key: "agents", icon: <Bot />, label: t("nav.agents"), active: ["agents", "agent", "new-agent", "builder"].includes(route.view), go: () => go({ view: "agents" }) },
     { key: "routines", icon: <AlarmClock />, label: t("nav.routines"), active: route.view === "routines", go: () => go({ view: "routines" }) },
-    { key: "memory", icon: <Brain />, label: t("nav.memory"), active: route.view === "memory", go: () => go({ view: "memory" }) },
-    { key: "pages", icon: <BookOpen />, label: t("nav.pages"), active: route.view === "pages", go: () => go({ view: "pages" }) },
+    // Pages is a view of Memory (its header's switch): Memory stays current there.
+    { key: "memory", icon: <Brain />, label: t("nav.memory"), active: route.view === "memory" || route.view === "pages", go: () => go({ view: "memory" }) },
     { key: "skills", icon: <Layers />, label: t("nav.skills"), active: route.view === "skills", go: () => go({ view: "skills" }) }
   ]
   if (folded)
@@ -283,12 +283,15 @@ export function Sidebar({
     setCollapsed(next)
     writeSet(COLLAPSED_KEY, next)
   }
-  // More of the list below the fold: the list fades out and the foot draws its hairline (DESIGN.md).
+  // More of the list past an edge (below the fold, or scrolled away above): the list fades out over that edge.
   const listRef = useRef<HTMLDivElement>(null)
-  const [more, setMore] = useState(false)
+  const [edges, setEdges] = useState({ above: false, below: false })
   const measure = () => {
     const el = listRef.current
-    if (el) setMore(el.scrollTop + el.clientHeight < el.scrollHeight - 1)
+    if (!el) return
+    const above = el.scrollTop > 1
+    const below = el.scrollTop + el.clientHeight < el.scrollHeight - 1
+    setEdges((e) => (e.above === above && e.below === below ? e : { above, below }))
   }
   useLayoutEffect(measure)
 
@@ -384,7 +387,7 @@ export function Sidebar({
       ) : (
       <>
       <ContextMenu label={t("common.more")} menuFor={menuFor} className="mt-4 flex min-h-0 flex-1 flex-col pl-2">
-      <div ref={listRef} onScroll={measure} className={cx("scroll-quiet flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain pr-2.5 pb-2", more && "fade-bottom")}>
+      <div ref={listRef} onScroll={measure} className={cx("scroll-quiet flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain pr-2.5 pb-2", edges.above && edges.below ? "fade-y" : edges.above ? "fade-top" : edges.below && "fade-bottom")}>
         <section className="flex flex-col gap-px">
           <NavLabel
             hint={t("nav.chatsHint")}
