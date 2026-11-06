@@ -1161,7 +1161,24 @@ export const en = {
     inWorktreeNow: "The chat now works in its worktree.",
     inWorktree: "This chat works in a worktree",
     leaveWorktree: "Back to the project folder",
-    leftWorktree: "Back in the project folder. The branch stays."
+    leftWorktree: "Back in the project folder. The branch stays.",
+    // Overview's way out for the branch, one step at a time.
+    overview: "Overview",
+    fromBase: "Branched from {base}",
+    showFiles: { one: "Show the file", other: "Show {count} files" },
+    hideFiles: "Hide files",
+    upToDate: "Up to date with {upstream}",
+    noRemoteStep: "No remote to push to",
+    noPr: "No pull request yet",
+    prInto: "Into {base}",
+    prOpen: "#{number} · {state}",
+    updatesPr: "Updates pull request #{number}",
+    openOnGithub: "Open on GitHub",
+    run: "Run",
+    running: "Running · {url}",
+    openInBrowser: "Open in Browser",
+    noScripts: "No scripts in package.json",
+    notRepo: "This folder isn't a git repository: nothing to commit or push here."
   },
   // The Files panel (an editor's explorer on the chat's folder).
   explorer: {
