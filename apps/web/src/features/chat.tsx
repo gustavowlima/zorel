@@ -5,8 +5,8 @@
 import { type Agent, type Chat, type FailoverTarget, type Memory, type Message, type ProviderAccount, skillHandle, type WorkspaceFile, workSteps } from "@zorel/contracts"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
-import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zorel/contracts/events"
-import { formatCompact, formatDuration, formatTime, t } from "@zorel/i18n"
+import { type Approval, ErrorCode, isInterruption } from "@zorel/contracts/events"
+import { formatCompact, formatDuration, formatTime, locale, t } from "@zorel/i18n"
 import { memo, type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
 import { agentName, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText, waitLabel } from "../labels.ts"
@@ -29,9 +29,10 @@ import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import { ChatProcesses } from "./processes.tsx"
 import { QuestionAnswer } from "./question.tsx"
 import {
-  Button, Check, ChevronDown, CircleAlert, CircleCheck, CircleX, Clock, Code, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, Dot, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
-  MenuSeparator, MessageCircle, MessageCircleQuestion, ShieldAlert, Minimize2, MoreHorizontal, PanelRight, Pencil, RefreshCw, Shield, Shuffle, Sparkles, Spinner, Square, SquarePen, SquareTerminal, Switch, Tooltip, Trash2
+  Button, Check, ChevronDown, CircleAlert, CircleCheck, CircleX, Clock, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
+  MenuSeparator, MessageCircle, MessageCircleQuestion, ShieldAlert, Minimize2, MoreHorizontal, PanelRight, Pencil, RefreshCw, Search, Shuffle, Sparkles, Spinner, Square, SquarePen, SquareTerminal, StepHead, StepList, StepNote, StepRow, Switch, Tooltip, Trash2, Users, Wrench, FileText
 } from "@/ui"
+import { kindOf, type SummaryKind, type SummaryStep, summarize } from "./steps.ts"
 
 export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) {
   const state = useChat(chat.id)
@@ -840,7 +841,6 @@ function AgentReply({
       agents={agents}
       continued={continued}
       bare={bare}
-      pill={workSteps(m.steps).length > 0 && <StoredActivity steps={m.steps} durationMs={m.durationMs} ended={!m.error} />}
       footer={
         <>
           {ending && (
@@ -882,6 +882,7 @@ function AgentReply({
         </>
       }
     >
+      {workSteps(m.steps).length > 0 && <StoredActivity steps={m.steps} durationMs={m.durationMs} />}
       {m.text && <ChatMarkdown text={m.text} />}
       <TurnChanges message={m} onView={onView} />
       {ending?.tone === "danger" && <pre className="overflow-auto rounded-control bg-code px-3 py-2 font-mono text-sm whitespace-pre-wrap text-danger">{ending.text}</pre>}
@@ -891,94 +892,84 @@ function AgentReply({
 
 // ---------- activity ----------
 
-// A finished turn in one line: its steps, what was refused or failed and how long it took; opens the steps.
-function StoredActivity({ steps, durationMs, ended }: { steps: Message["steps"]; durationMs: number | null; ended: boolean }) {
+// A step's glyph says what kind of work it was (one running spins, one waiting for you is the clock).
+const KIND_ICON: Record<SummaryKind, ReactNode> = { search: <Search />, read: <FileText />, edit: <Pencil />, run: <SquareTerminal />, tool: <Wrench />, delegate: <Users /> }
+const glyphOf = (kind: string) => KIND_ICON[kindOf(kind) ?? "tool"]
+const savedStep = (s: Message["steps"][number]): SummaryStep => ({ kind: s.tool, status: s.status, title: s.title ?? "", detail: s.detail || s.args, files: s.tool === "edit" ? s.args.split(", ").filter(Boolean) : [] })
+
+// The summary as a sentence ("Read 2 files and ran 3 commands"), with what still failed or was refused.
+function sentenceOf(steps: ReadonlyArray<SummaryStep>) {
+  const { parts, failed, refused } = summarize(steps)
+  const words = new Intl.ListFormat(locale(), { type: "conjunction" }).format(parts.map((p) => t(`activity.did.${p.kind}`, { count: p.count })))
+  return { text: words.charAt(0).toUpperCase() + words.slice(1), failed, refused }
+}
+
+// A finished turn's work: one line (what it did, what still failed, how long) that opens to its steps as a tree.
+// Folded by default; the reply's words are what's read.
+function StoredActivity({ steps, durationMs }: { steps: Message["steps"]; durationMs: number | null }) {
   const [open, setOpen] = useState(false)
   const id = useId()
-  const refused = steps.filter((s) => s.status === "refused").length
-  const failed = steps.filter((s) => s.status === "error").length
-  const parts = [
-    ended && !refused && !failed && t("activity.done"),
-    t("activity.steps", { count: workSteps(steps).length }),
-    refused && t("activity.refused", { count: refused }),
-    failed && t("activity.errors", { count: failed }),
-    durationMs !== null && durationMs >= 1000 && formatDuration(durationMs)
-  ].filter(Boolean)
+  const { text, failed, refused } = sentenceOf(steps.map(savedStep))
+  // Replied is the reply itself; a thought shows when it took a while.
+  const shown = steps.filter((s) => s.tool !== "reply" && (s.tool !== "thought" || (s.ms ?? 0) >= 1000))
+  const lastWork = shown.map((s) => s.tool !== "thought").lastIndexOf(true)
   return (
-    <>
-      <DisclosurePill expanded={open} onToggle={() => setOpen(!open)} controls={id} leading={<Dot tone={failed ? "danger" : refused ? "warning" : "success"} />}>
-        {parts.join(" · ")}
-      </DisclosurePill>
+    <div className="flex min-w-0 flex-col">
+      <StepHead open={open} onToggle={() => setOpen(!open)} controls={id}>
+        <span className="truncate">{text}</span>
+        {failed > 0 && <span className="shrink-0 text-danger">· {t("activity.errors", { count: failed })}</span>}
+        {refused > 0 && <span className="shrink-0 text-warning">· {t("activity.refused", { count: refused })}</span>}
+        {durationMs !== null && durationMs >= 1000 && <span className="shrink-0 text-dim tabular-nums">· {formatDuration(durationMs)}</span>}
+      </StepHead>
       {open && (
-        <div className="basis-full">
-          <ol id={id} className="flex max-w-130 flex-col gap-2.5 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
-            {steps.map((s, i) => (
+        <StepList id={id}>
+          {shown.map((s, i) =>
+            s.tool === "thought" ? (
               // biome-ignore lint/suspicious/noArrayIndexKey: stored steps are immutable and may repeat a tool
-              <StoredStep key={i} step={s} />
-            ))}
-          </ol>
-        </div>
+              <StepNote key={i} last={i > lastWork}>
+                {t("activity.thought", { time: formatDuration(s.ms ?? 0) })}
+              </StepNote>
+            ) : (
+              // biome-ignore lint/suspicious/noArrayIndexKey: stored steps are immutable and may repeat a tool
+              <StoredStep key={i} step={s} last={i === lastWork} />
+            )
+          )}
+        </StepList>
       )}
-    </>
+    </div>
   )
 }
 
-// One finished step: its icon, what it ran or touched and the start of its output (all of it on "Show all").
+// One finished step: its title in plain words (the command, path or URL on hover), how long it took or that it
+// failed; it opens to the whole command and the start of its output (all of it on "Show all"). Steps saved before
+// titles existed, and MCP tools, are named by their tool.
 const NATIVE_LABEL: Record<string, string> = { run: "$", read: "read", search: "search" }
-function StoredStep({ step: s }: { step: Message["steps"][number] }) {
+function StoredStep({ step: s, last }: { step: Message["steps"][number]; last: boolean }) {
   const [open, setOpen] = useState(false)
   const id = useId()
-  const took = s.ms !== undefined && s.ms >= 1000 && <span className="shrink-0 text-sm text-dim tabular-nums">{formatDuration(s.ms)}</span>
-  // Thought and Replied: timing rows with nothing to open.
-  if (s.tool === "thought" || s.tool === "reply") {
-    return (
-      <li className="flex min-h-7 items-center gap-2 px-1 py-1">
-        <StepIcon status={s.status} />
-        <span className="shrink-0 text-fg">{s.title}</span>
-        {s.detail && <span className="min-w-0 flex-1 truncate font-mono text-xs text-dim" title={s.detail}>{s.detail}</span>}
-        <span className="ml-auto flex shrink-0 items-center">{took}</span>
-      </li>
-    )
-  }
-  // A step saved with a summary: one quiet line (the summary, then the command, path or URL in mono) that opens to the
-  // whole command and the output. The summary is absent on steps saved before it existed and on MCP tools.
-  if (s.title) {
-    const command = s.tool === "run" ? s.args : s.detail || s.args
-    return (
-      <li className="flex flex-col gap-1.5">
-        <Button variant="ghost" size="sm" aria-expanded={open} aria-controls={id} onPress={() => setOpen(!open)} className="h-auto min-h-7 w-full justify-start gap-2 px-1 py-1 font-normal">
-          <StepIcon status={s.status} />
-          <span className={cx("truncate text-left text-fg", s.detail && "max-w-3/5 shrink-0")} title={s.detail ? `${s.title}\n${s.detail}` : s.title}>
-            {s.title}
-          </span>
-          {s.detail && <span className="min-w-0 flex-1 truncate text-left font-mono text-xs text-dim">{s.detail}</span>}
-          <span className="ml-auto flex shrink-0 items-center gap-2">
-            {took}
-            <ChevronDown aria-hidden="true" className={cx("size-3.5 shrink-0 text-muted transition-transform duration-150 ease-out motion-reduce:transition-none", open && "rotate-180")} />
-          </span>
-        </Button>
-        {open && (
-          <div id={id} className="flex min-w-0 flex-col gap-1 pl-7">
-            {command && <pre className="max-h-48 overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm whitespace-pre-wrap break-all text-secondary">{command}</pre>}
-            <StepOutput result={s.result} />
-          </div>
-        )}
-      </li>
-    )
-  }
+  const title = s.title || (NATIVE_LABEL[s.tool] ? `${NATIVE_LABEL[s.tool]} ${s.args}` : s.tool === "edit" ? s.args : s.tool)
+  const command = s.tool === "run" ? s.args : s.detail || (s.args && s.args !== "{}" && !NATIVE_LABEL[s.tool] && s.tool !== "edit" ? s.args : "")
+  const hint = (s.detail || (s.tool === "run" ? s.args : "")) || undefined
+  const facts = [
+    s.status === "error" && <span key="e" className="text-danger">{t("activity.failedStep")}</span>,
+    s.status === "refused" && <span key="r" className="text-warning">{t("activity.refusedStep")}</span>,
+    s.ms !== undefined && s.ms >= 1000 && <span key="t">{formatDuration(s.ms)}</span>
+  ].filter(Boolean)
   return (
-    <li className="flex gap-2.5">
-      <StepIcon status={s.status} />
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        {/* Native steps: "run" keeps the command, "read"/"search" the path or pattern, "edit" the files; MCP tools
-            keep name and arguments. */}
-        <Code className="self-start break-all">{NATIVE_LABEL[s.tool] ? `${NATIVE_LABEL[s.tool]} ${s.args}` : s.tool === "edit" ? s.args : s.tool}</Code>
-        {!NATIVE_LABEL[s.tool] && s.tool !== "edit" && s.args && s.args !== "{}" && (
-          <pre className="overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{s.args}</pre>
-        )}
-        <StepOutput result={s.result} />
-      </div>
-    </li>
+    <StepRow
+      icon={glyphOf(s.tool)}
+      tone={s.status === "error" ? "danger" : s.status === "refused" ? "warning" : "default"}
+      title={title}
+      hint={hint !== title ? hint : undefined}
+      facts={facts.length ? facts : undefined}
+      last={last}
+      open={open}
+      onToggle={command || s.result ? () => setOpen(!open) : undefined}
+      controls={id}
+    >
+      {command && <pre className="max-h-48 overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm whitespace-pre-wrap break-all text-secondary">{command}</pre>}
+      <StepOutput result={s.result} />
+    </StepRow>
   )
 }
 
@@ -989,7 +980,11 @@ function StepOutput({ result }: { result: string }) {
   const long = result.length > 240 || result.split("\n").length > 3
   return (
     <>
-      {all ? <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-control bg-code px-2.5 py-1.5 font-mono text-sm text-muted">{result}</pre> : <p className="line-clamp-3 text-sm text-muted">{result}</p>}
+      {/* Its lines as it wrote them (a test run reads line by line), three of them until "Show all". */}
+      <pre className={cx("overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm whitespace-pre-wrap text-muted", all && "max-h-96")}>
+        {/* Clamped inside the padding, so a fourth line doesn't peek through it. */}
+        <span className={all ? undefined : "line-clamp-3"}>{result}</span>
+      </pre>
       {long && (
         <Button size="sm" variant="ghost" className="-ml-2 self-start" onPress={() => setAll(!all)}>
           {all ? t("activity.showLess") : t("activity.showAll")}
@@ -997,15 +992,6 @@ function StepOutput({ result }: { result: string }) {
       )}
     </>
   )
-}
-
-function StepIcon({ status }: { status: WorkStep["status"] }) {
-  const cls = "mt-0.5 size-4 shrink-0"
-  if (status === "running") return <Spinner size={16} className={cx(cls, "text-success")} />
-  if (status === "waiting") return <Clock className={cx(cls, "text-accent-text")} />
-  if (status === "refused") return <Shield className={cx(cls, "text-warning")} />
-  if (status === "error") return <CircleX className={cx(cls, "text-danger")} />
-  return <CircleCheck className={cx(cls, "text-success")} />
 }
 
 // Re-renders every second while mounted (live elapsed time).
@@ -1037,7 +1023,7 @@ function useHeldLabel(wanted: string, specific: boolean) {
 const SHOW_TIME_AFTER_MS = 5000
 function LiveMessage({ live, agents, receipts, bare, onStop }: { live: LiveTurn; agents: ReadonlyArray<Agent>; receipts: ReadonlyArray<Receipt>; bare: boolean; onStop?: (() => void) | undefined }) {
   // Open while it works (the default) so the steps are seen without a click, or folded into the pill when the person
-  // turned that off in Settings; the finished message folds them into StoredActivity either way.
+  // turned that off in Settings; the finished message folds them into StoredActivity's line either way.
   const [open, setOpen] = useState(liveStepsOpen)
   const id = useId()
   const now = useNow(true)
@@ -1062,12 +1048,12 @@ function LiveMessage({ live, agents, receipts, bare, onStop }: { live: LiveTurn;
       continued={bare}
       footer={
         // Below what the agent has written so far: the text grows above it and the status stays at the end.
-        <div className="flex min-w-0 flex-col items-start gap-2">
-          {/* The pill and Stop are siblings (a button inside a button isn't valid); Stop is the composer's action. */}
-          <div className="flex items-center gap-1">
-            <DisclosurePill expanded={open} onToggle={() => setOpen(!open)} controls={id} leading={current?.status === "waiting" ? <Clock className="size-3.5 text-accent-text" /> : <Spinner size={12} className="text-success" />}>
+        <div className="flex min-w-0 flex-col items-start">
+          {/* The head and Stop are siblings (a button inside a button isn't valid); Stop is the composer's action. */}
+          <div className="flex max-w-full min-w-0 items-center gap-1">
+            <StepHead open={open} rows={live.steps.length > 0} onToggle={() => setOpen(!open)} controls={id} leading={current?.status === "waiting" ? <Clock className="text-accent-text" /> : <Spinner size={12} className="text-muted" />}>
               {label}
-            </DisclosurePill>
+            </StepHead>
             {onStop && (
               <Tooltip content={t("composer.stop")}>
                 <IconButton label={t("composer.stop")} variant="ghost" shape="pill" size="xs" onPress={onStop}>
@@ -1076,23 +1062,29 @@ function LiveMessage({ live, agents, receipts, bare, onStop }: { live: LiveTurn;
               </Tooltip>
             )}
           </div>
+          {/* The steps as they come, on the tree: the one running spins, one waiting for you is the clock. */}
           {open && live.steps.length > 0 && (
-            <ol id={id} className="flex w-full max-w-130 flex-col gap-2 rounded-card border border-subtle px-3.5 py-2.5 text-sm">
-              {live.steps.map((s) => (
-                <li key={s.id} className="flex items-start gap-2.5">
-                  <StepIcon status={s.status} />
-                  {/* One line per step: the summary, then what it stands for (command, path, URL) in quiet mono. Both
-                      truncate and the full text is on hover. Steps from before `detail` existed carry the whole command in
-                      the title and just truncate. */}
-                  <span className="flex min-w-0 flex-1 items-baseline gap-2" title={s.detail ? `${s.title}\n${s.detail}` : s.title}>
-                    <span className={cx("truncate text-fg", s.detail && "max-w-3/5 shrink-0")}>{s.title}</span>
-                    {s.detail && <span className="min-w-0 truncate font-mono text-xs text-dim">{s.detail}</span>}
-                    {s.status === "waiting" && <span className="shrink-0 whitespace-pre text-accent-text">{` · ${t("activity.waiting")}`}</span>}
-                  </span>
-                  {s.durationMs !== null && s.durationMs >= 1000 && <span className="shrink-0 text-sm text-muted tabular-nums">{formatDuration(s.durationMs)}</span>}
-                </li>
-              ))}
-            </ol>
+            <StepList id={id}>
+              {live.steps.map((s, i) => {
+                const facts = [
+                  s.status === "waiting" && <span key="w" className="text-accent-text">{t("activity.waiting")}</span>,
+                  s.status === "error" && <span key="e" className="text-danger">{t("activity.failedStep")}</span>,
+                  s.status === "refused" && <span key="r" className="text-warning">{t("activity.refusedStep")}</span>,
+                  s.durationMs !== null && s.durationMs >= 1000 && <span key="t">{formatDuration(s.durationMs)}</span>
+                ].filter(Boolean)
+                return (
+                  <StepRow
+                    key={s.id}
+                    icon={s.status === "running" ? <Spinner size={12} className="text-muted" /> : s.status === "waiting" ? <Clock /> : glyphOf(s.kind)}
+                    tone={s.status === "waiting" ? "waiting" : s.status === "error" ? "danger" : s.status === "refused" ? "warning" : "default"}
+                    title={s.title}
+                    hint={s.detail && s.detail !== s.title ? s.detail : undefined}
+                    facts={facts.length ? facts : undefined}
+                    last={i === live.steps.length - 1}
+                  />
+                )
+              })}
+            </StepList>
           )}
         </div>
       }

@@ -161,7 +161,19 @@ export const en = {
     errors: { one: "1 failed", other: "{count} failed" },
     waiting: "waiting for you",
     result: "Result",
-    args: "Arguments"
+    args: "Arguments",
+    // The one-line summary over a turn's steps ("Read 2 files and ran 3 commands"), each kind as a phrase.
+    did: {
+      search: { one: "searched the code", other: "searched the code {count} times" },
+      read: { one: "read 1 file", other: "read {count} files" },
+      edit: { one: "edited 1 file", other: "edited {count} files" },
+      run: { one: "ran 1 command", other: "ran {count} commands" },
+      tool: { one: "used 1 tool", other: "used {count} tools" },
+      delegate: { one: "asked 1 teammate", other: "asked {count} teammates" }
+    },
+    failedStep: "failed",
+    refusedStep: "refused",
+    thought: "Thought for {time}"
   },
   approval: {
     waiting: "Waiting for you",
