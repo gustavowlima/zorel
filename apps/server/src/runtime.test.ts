@@ -88,6 +88,24 @@ test("interrupting keeps the partial text and emits interrupted", () =>
     expect(msgs.at(-1)!.error).toBeTruthy()
   })))
 
+// The chat rests "failed" after a failed last turn (the sidebar says so until the next turn), idle after a good one.
+const Failing = Layer.succeed(Engines, { run: () => Stream.make<EngineEvent[]>({ type: "error", message: "upstream timed out" }) })
+const restingState = (engines: Layer.Layer<Engines>) =>
+  runWith(":memory:", engines, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const c = yield* collect(chat.id, (e) => e._tag === "status" && e.status.state !== "running")
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "hi" })
+    yield* c.done
+    const last = c.events.filter((e) => e._tag === "status").at(-1)
+    return last?._tag === "status" ? last.status.state : undefined
+  }))
+test("a failed last turn leaves the chat failed, a good one leaves it idle", async () => {
+  expect(await restingState(Failing)).toBe("failed")
+  expect(await restingState(Echo)).toBe("idle")
+})
+
 test("kill -9 mid-turn: on the next boot the turn becomes interrupted with the partial text", async () => {
   const dir = join(tmpdir(), `zorel-rt-${crypto.randomUUID()}`)
   mkdirSync(dir)
