@@ -220,15 +220,18 @@ export function GitPanel({ chatId, worktree, after }: { chatId: string; worktree
       {s.commits.length > 0 && (
         <Part title={t("git.commits")}>
           {/* A timeline: commits not pushed yet are the accent dots at the top. */}
+          {/* Its dots on Ship's column (centre x 26), its words from x 48, 32px rows. */}
           <ol className="relative flex flex-col">
-            <span aria-hidden="true" className="absolute inset-y-2 left-1 w-px bg-subtle" />
+            <span aria-hidden="true" className="absolute inset-y-4 left-2.5 w-px bg-subtle" />
             {s.commits.map((c) => (
-              <li key={c.sha} className="relative flex items-center gap-3 py-1.5 text-sm">
-                <span
-                  role="img"
-                  aria-label={c.pushed ? t("git.pushedCommit") : t("git.notPushed")}
-                  className={cx("relative size-2 shrink-0 rounded-full ring-4 ring-canvas", c.pushed ? "border border-strong bg-canvas" : "bg-accent")}
-                />
+              <li key={c.sha} className="relative flex h-8 items-center gap-3 text-sm">
+                <span className="flex size-5 shrink-0 items-center justify-center">
+                  <span
+                    role="img"
+                    aria-label={c.pushed ? t("git.pushedCommit") : t("git.notPushed")}
+                    className={cx("relative size-2 rounded-full ring-4 ring-canvas", c.pushed ? "border border-strong bg-canvas" : "bg-accent")}
+                  />
+                </span>
                 <span className="min-w-0 flex-1 truncate text-secondary" title={c.subject}>
                   {c.subject}
                 </span>

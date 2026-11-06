@@ -422,7 +422,9 @@ export function RunPart({ chatId, onOpenUrl }: { chatId: string; onOpenUrl: (url
         invalidate(["terminals", "localServers"])
       })
   }
-  const row = "flex h-9 items-center gap-2.5 rounded-control px-2 hover:bg-hover"
+  // One column with Ship's marks (a 20px slot, its centre at x 26) and words from x 48, as Ship's titles.
+  const row = "flex h-9 items-center gap-3 rounded-control px-2 hover:bg-hover"
+  const slot = "flex size-5 shrink-0 items-center justify-center [&_svg]:size-3.5"
   return (
     <Part title={t("git.run")}>
       <div className="-mx-2 flex flex-col">
@@ -430,7 +432,9 @@ export function RunPart({ chatId, onOpenUrl }: { chatId: string; onOpenUrl: (url
           const url = s.ports[0] ? `http://localhost:${s.ports[0]}` : undefined
           return (
             <div key={s.pid} className={row}>
-              <Globe className="size-3.5 shrink-0 text-muted" />
+              <span className={cx(slot, "text-muted")}>
+                <Globe />
+              </span>
               <span className="min-w-0 shrink truncate text-sm text-fg" title={s.command}>
                 {s.command}
               </span>
@@ -452,7 +456,9 @@ export function RunPart({ chatId, onOpenUrl }: { chatId: string; onOpenUrl: (url
         })}
         {scripts.map((x) => (
           <div key={x.name} className={row}>
-            <SquareTerminal className="size-3.5 shrink-0 text-dim" />
+            <span className={cx(slot, "text-dim")}>
+              <SquareTerminal />
+            </span>
             <span className="shrink-0 text-sm text-fg">{x.name}</span>
             <span className="min-w-0 flex-1 truncate font-mono text-sm text-dim" title={x.command}>
               {x.command}

@@ -38,8 +38,9 @@ const idOf = (key: NavKey) => String(key).slice(2)
 type Place = { key: string; icon: ReactNode; label: string; active?: boolean; go: () => void; count?: number; kbd?: string }
 
 // The app's places: what you start or look for (New chat, Search, Needs you, which counts everything that waits for
-// you), then where the team and what it knows live, quieter. Open, each is a 28px row; folded, an icon with its name
-// as a tooltip. The current one is marked.
+// you), then where the team and what it knows live, quieter. Open, each is a 36px row (the projects' height; icons at
+// x 19-39, words from x 49 like every row); folded, an icon with its name as a tooltip. The current one has the open
+// chat's wash.
 function Places({ route, folded }: { route: Route; folded: boolean }) {
   const memories = useList(memoriesAtom)
   const approvals = useList(approvalsAtom)
@@ -79,16 +80,16 @@ function Places({ route, folded }: { route: Route; folded: boolean }) {
       active={!!p.active}
       onPress={p.go}
       aria-label={p.count ? `${p.label} (${p.count})` : p.label}
-      className={cx("h-control-sm", quiet && !p.active && "text-muted")}
+      className={cx("h-9", p.active ? "border-transparent bg-control-hover" : quiet && "text-muted")}
       trailing={p.kbd ? <kbd className="font-sans text-sm text-dim">{p.kbd}</kbd> : p.count ? <Count n={p.count} /> : undefined}
     >
       {p.label}
     </NavItem>
   )
   return (
-    <div className="flex shrink-0 flex-col gap-3 pr-2.5 pl-2">
-      <div className="flex flex-col gap-px">{primary.map((p) => row(p, false))}</div>
-      <div className="flex flex-col gap-px">{library.map((p) => row(p, true))}</div>
+    <div className="flex shrink-0 flex-col gap-4 pr-2.5 pl-2">
+      <div className="flex flex-col gap-0.5">{primary.map((p) => row(p, false))}</div>
+      <div className="flex flex-col gap-0.5">{library.map((p) => row(p, true))}</div>
     </div>
   )
 }
@@ -105,7 +106,7 @@ function Head({ folded, onToggle }: { folded: boolean; onToggle: () => void }) {
   )
   if (folded) return <div className="flex h-13 shrink-0 items-center pl-2">{button}</div>
   return (
-    <div className="flex h-13 shrink-0 items-center gap-2.5 pr-3 pl-4.5">
+    <div className="flex h-13 shrink-0 items-center gap-2.5 pr-2.5 pl-4.5">
       <Logo className="size-5 shrink-0" />
       <span className="min-w-0 flex-1 truncate font-semibold">{t("app.name")}</span>
       {button}
@@ -118,7 +119,7 @@ function Head({ folded, onToggle }: { folded: boolean; onToggle: () => void }) {
 function Foot({ route, folded, paused, onPause }: { route: Route; folded: boolean; paused: boolean; onPause: (paused: boolean) => void }) {
   const side = folded ? "right" : "top"
   return (
-    <div className={cx("flex shrink-0 gap-1", folded ? "flex-col items-start pt-2 pl-2" : "items-center pt-2 pr-3 pl-3")}>
+    <div className={cx("flex shrink-0 gap-1", folded ? "flex-col items-start pt-2 pl-2" : "items-center pt-2 pr-2 pl-3.25")}>
       {folded && <UpdateItem />}
       <UsageFoot active={route.view === "usage"} placement={side} />
       {!folded && <span className="flex-1" />}
@@ -383,7 +384,7 @@ export function Sidebar({
       ) : (
       <>
       <ContextMenu label={t("common.more")} menuFor={menuFor} className="mt-4 flex min-h-0 flex-1 flex-col pl-2">
-      <div ref={listRef} onScroll={measure} className={cx("scroll-quiet flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain pr-2.5 pb-2", more && "fade-bottom")}>
+      <div ref={listRef} onScroll={measure} className={cx("scroll-quiet flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain pr-2.5 pb-2", more && "fade-bottom")}>
         <section className="flex flex-col gap-px">
           <NavLabel
             hint={t("nav.chatsHint")}
@@ -589,6 +590,7 @@ const ProjectTile = ({ name }: { name: string }) => (
 )
 
 // A chat: its title and when it last moved (a spinner while it works); ⋯ takes the time's place on hover or focus.
+// Outside a project the chat glyph sits in the icon column (inside one, the tree does), so its words line up at x 49.
 // A second line only when there is something to read: it waits for you (accent), it failed (danger), or an agent in
 // it waits on a teammate. Who answers and the model are its tooltip; the state is always words, never colour alone.
 function ChatItem({
@@ -624,6 +626,13 @@ function ChatItem({
       strong={live?.state === "waiting"}
       title={chatTitle(chat)}
       tooltip={detail}
+      {...(!nested && {
+        leading: (
+          <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center text-muted [&_svg]:size-4">
+            <MessageCircle />
+          </span>
+        )
+      })}
       trailing={live?.state === "running" ? <Spinner size={11} className="text-muted" label={said ?? ""} /> : formatAge(at)}
       actions={<RowMenu name={chatTitle(chat)}>{menu}</RowMenu>}
       {...(line && { detail: <span className={cx("truncate", live?.state === "waiting" ? "text-accent-text" : live?.state === "failed" ? "text-danger" : undefined)}>{line}</span> })}
