@@ -15,10 +15,10 @@ const FileView = lazy(() => import("./file-view.tsx"))
 // The text a line comment puts in the message box (kept out of the lazy chunk's default export).
 const commentText = (c: LineComment) =>
   t("diff.commentRef", { path: c.path, lines: c.start === c.end ? t("diff.line", { n: c.start }) : t("diff.lines", { from: c.start, to: c.end }), side: c.side === "deletions" ? t("diff.old") : t("diff.new"), text: c.text.trim() })
-import { Button, ChevronDown, ChevronRight, ChevronsDownUp, Columns2, ConfirmButton, ConfirmDialog, ContextMenu, Copy, cx, Dialog, EmptyState, ExternalLink, Field, File, FileIcon, FilePlus, FileTree, Folder, FolderOpen, GitBranch, Globe, IconButton, Input, Menu, MenuItem, MenuSeparator, PanelRight, Pencil, Pin, PinOff, Play, Plus, Popover, Rows2, SearchInput, Server, Spinner, Square, SquareTerminal, StatusMark, Tab, TabList, TabPanel, Tabs, Tooltip, Trash2, Undo2, X } from "@/ui"
+import { Button, ChevronDown, ChevronRight, ChevronsDownUp, Columns2, ConfirmButton, ConfirmDialog, ContextMenu, Copy, cx, Dialog, EmptyState, ExternalLink, Field, File, FileIcon, FilePlus, FileTree, Folder, FolderOpen, GitBranch, Globe, House, IconButton, Input, Menu, MenuItem, MenuSeparator, PanelRight, Pencil, Pin, PinOff, Play, Plus, Popover, Rows2, SearchInput, Server, Spinner, Square, SquareTerminal, StatusMark, Tab, TabList, TabPanel, Tabs, Tooltip, Trash2, Undo2, X } from "@/ui"
 import { Shell } from "./shell.tsx"
 import { BrowserPanel } from "./browser.tsx"
-import { GitPanel, useIsRepo } from "./git.tsx"
+import { GitPanel, Part, useIsRepo } from "./git.tsx"
 
 
 // turnId null: every turn closed in Changes (pressing the open one closes it).
@@ -121,8 +121,9 @@ export function usePins(chatId: string) {
 }
 export type Pins = ReturnType<typeof usePins>
 
-export const SIDE_ICON: Record<SideTab, typeof PanelRight> = { changes: PanelRight, git: GitBranch, files: Folder, browser: Globe, terminal: SquareTerminal }
-export const sideLabel = (tab: SideTab) => (tab === "browser" ? t("browser.title") : tab === "git" ? t("git.title") : t(`workspace.${tab}`))
+// "git" is the Overview (its id stays: pins saved on this computer name it).
+export const SIDE_ICON: Record<SideTab, typeof PanelRight> = { changes: PanelRight, git: House, files: Folder, browser: Globe, terminal: SquareTerminal }
+export const sideLabel = (tab: SideTab) => (tab === "browser" ? t("browser.title") : tab === "git" ? t("git.overview") : t(`workspace.${tab}`))
 
 // The pin/unpin item of a right-click menu.
 export const PinItem = ({ pinned, onAction }: { pinned: boolean; onAction: () => void }) => (
@@ -133,8 +134,8 @@ export const PinItem = ({ pinned, onAction }: { pinned: boolean; onAction: () =>
 const WIDTH_KEY = "zorel.side.width"
 const MIN_WIDTH = 360
 
-// The panel to the right of the chat: Changes, Files, Browser and Terminal as tabs (Files and Terminal only with a
-// project folder). Its left edge drags (or takes the arrow keys) to change the width, remembered on this computer.
+// The panel to the right of the chat: Overview (where the branch stands and the next step out, Run), Changes, Files,
+// Browser and Terminal as tabs (Overview, Files and Terminal only with a project folder). Its left edge drags (or takes the arrow keys) to change the width, remembered on this computer.
 // The browser and the terminal stay mounted once opened, so switching tabs keeps them live.
 export function SidePanel({
   chat,
@@ -224,8 +225,8 @@ export function SidePanel({
             }}
           >
             <TabList label={t("workspace.panel")} className="min-w-0 flex-nowrap overflow-x-auto">
-              {(["changes", "git", "files", "browser", "terminal"] as const)
-                .filter((id) => (id === "git" ? folder && repo : folder || (id !== "files" && id !== "terminal")))
+              {(["git", "changes", "files", "browser", "terminal"] as const)
+                .filter((id) => folder || (id !== "git" && id !== "files" && id !== "terminal"))
                 .map((id) => {
                   const Icon = SIDE_ICON[id]
                   return (
@@ -233,7 +234,8 @@ export function SidePanel({
                       {/* Narrow panel: icons only (the name stays as the tab's accessible name). */}
                       <span data-side-tab={id} className="flex items-center gap-1.5 whitespace-nowrap" title={sideLabel(id)}>
                         <Icon className="size-3.5" />
-                        <span className="sr-only @3xl:not-sr-only">{sideLabel(id)}</span>
+                        {/* Overview is its house icon only; the others name themselves once the panel is wide. */}
+                        <span className={id === "git" ? "sr-only" : "sr-only @3xl:not-sr-only"}>{sideLabel(id)}</span>
                         {id === "changes" && delta.added + delta.removed > 0 && <Delta {...delta} />}
                         {pins.side.includes(id) && <Pin className="size-3 text-dim" aria-label={t("workspace.pinned")} />}
                       </span>
@@ -249,9 +251,16 @@ export function SidePanel({
         <TabPanel id="changes" className="min-h-0 flex-1 overflow-y-auto">
           <ChangesTab messages={messages} agents={agents} focus={focus} onFocus={onFocus} onAddToChat={onAddToChat} />
         </TabPanel>
-        {folder && repo && (
+        {folder && (
           <TabPanel id="git" className="min-h-0 flex-1 overflow-y-auto">
-            <GitPanel chatId={chat.id} worktree={chat.worktree} />
+            {repo ? (
+              <GitPanel chatId={chat.id} worktree={chat.worktree} after={<RunPart chatId={chat.id} onOpenUrl={onOpenUrl} />} />
+            ) : (
+              <div className="flex flex-col gap-6 p-4">
+                <p className="text-sm text-muted">{t("git.notRepo")}</p>
+                <RunPart chatId={chat.id} onOpenUrl={onOpenUrl} />
+              </div>
+            )}
           </TabPanel>
         )}
         {folder && project && (
@@ -390,6 +399,77 @@ function treeOf(files: ReadonlyArray<WorkspaceFile>): Node[] {
 }
 
 const openFiles = new Map<string, { tabs: string[]; tab: string }>()
+// Overview's Run: the servers running for this chat (open in Browser, stop) and the project's package.json scripts
+// (▶ starts one as the header's Run does: a free port, a shell of the chat, its page in Browser once it listens).
+export function RunPart({ chatId, onOpenUrl }: { chatId: string; onOpenUrl: (url: string) => void }) {
+  const scripts = useReading(scriptsAtom(chatId)).items
+  const servers = useReading(localServersAtom(chatId)).items
+  const start = useMutation(mutations.startPreview)
+  const stop = useMutation(mutations.stopServer)
+  const invalidate = useInvalidate()
+  const [busy, setBusy] = useState<string>()
+  const [failed, setFailed] = useState<string>()
+  useEffect(() => invalidate(["localServers"]), [invalidate])
+  if (!scripts.length && !servers.length) return null
+  const run = (script: string) => {
+    setBusy(script)
+    setFailed(undefined)
+    start({ params: { id: chatId }, payload: { script } })
+      .then((r) => onOpenUrl(r.url))
+      .catch((e: unknown) => setFailed((e as { message?: string })?.message || t("workspace.runFailed")))
+      .finally(() => {
+        setBusy(undefined)
+        invalidate(["terminals", "localServers"])
+      })
+  }
+  const row = "flex h-9 items-center gap-2.5 rounded-control px-2 hover:bg-hover"
+  return (
+    <Part title={t("git.run")}>
+      <div className="-mx-2 flex flex-col">
+        {servers.map((s) => {
+          const url = s.ports[0] ? `http://localhost:${s.ports[0]}` : undefined
+          return (
+            <div key={s.pid} className={row}>
+              <Globe className="size-3.5 shrink-0 text-muted" />
+              <span className="min-w-0 shrink truncate text-sm text-fg" title={s.command}>
+                {s.command}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-sm text-dim">{url ? t("git.running", { url: url.replace("http://", "") }) : ""}</span>
+              {url && (
+                <Tooltip content={t("git.openInBrowser")}>
+                  <IconButton label={t("git.openInBrowser")} size="xs" onPress={() => onOpenUrl(url)}>
+                    <Globe className="size-3.5" />
+                  </IconButton>
+                </Tooltip>
+              )}
+              <Tooltip content={t("workspace.stopServer")}>
+                <IconButton label={t("workspace.stopServer")} size="xs" onPress={() => void stop({ params: { id: chatId, pid: s.pid }, reactivityKeys: ["localServers"] }).catch(() => undefined)}>
+                  <Square className="size-3" />
+                </IconButton>
+              </Tooltip>
+            </div>
+          )
+        })}
+        {scripts.map((x) => (
+          <div key={x.name} className={row}>
+            <SquareTerminal className="size-3.5 shrink-0 text-dim" />
+            <span className="shrink-0 text-sm text-fg">{x.name}</span>
+            <span className="min-w-0 flex-1 truncate font-mono text-sm text-dim" title={x.command}>
+              {x.command}
+            </span>
+            <Tooltip content={t("workspace.run")}>
+              <IconButton label={`${t("workspace.run")} ${x.name}`} size="xs" isDisabled={!!busy} onPress={() => run(x.name)}>
+                {busy === x.name ? <Spinner size={12} /> : <Play className="size-3.5" />}
+              </IconButton>
+            </Tooltip>
+          </div>
+        ))}
+      </div>
+      {failed && <pre className="max-h-40 overflow-auto rounded-control bg-danger-soft px-3 py-2 font-mono text-sm whitespace-pre-wrap text-danger">{failed}</pre>}
+    </Part>
+  )
+}
+
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
 const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")))
 

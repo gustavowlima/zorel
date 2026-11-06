@@ -149,7 +149,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
         team={team}
         delta={chatDelta(state.messages)}
         panelOpen={!!panel}
-        onPanel={() => setPanel(panel ? undefined : "changes")}
+        onPanel={() => setPanel(panel ? undefined : project?.path ? "git" : "changes")}
         workspace={!!project?.path}
         pins={pins}
         panel={panel}
