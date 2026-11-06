@@ -148,7 +148,7 @@ export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; pr
       }
     >
       <form
-        className="mx-auto flex w-full max-w-2xl flex-col px-8 py-6"
+        className="mx-auto flex w-full max-w-3xl flex-col px-7 py-7"
         onSubmit={(e) => {
           e.preventDefault()
           if (dirty && name.trim() && !termsPending) save()
@@ -159,7 +159,7 @@ export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; pr
             {t("agent.archivedBody")}
           </Notice>
         )}
-        <Tabs selectedKey={tab} onSelectionChange={(k) => setTab(k as typeof tab)} className="gap-7">
+        <Tabs selectedKey={tab} onSelectionChange={(k) => setTab(k as typeof tab)} className="gap-8">
           <TabList label={agent ? t("agent.tabsLabel", { name: agent.name }) : t("agent.newTitle")}>
             {agent && <Tab id="work">{t("agent.tabs.work")}</Tab>}
             <Tab id="profile">{t("agent.tabs.profile")}</Tab>
@@ -246,7 +246,7 @@ export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; pr
       </form>
       {/* Outside the profile form (a form of its own): the agent's routines, with its activity. */}
       {agent && tab === "activity" && (
-        <div className="mx-auto flex w-full max-w-2xl flex-col px-8 pb-10">
+        <div className="mx-auto flex w-full max-w-3xl flex-col px-7 pb-7">
           <AgentRoutines agent={agent} />
         </div>
       )}

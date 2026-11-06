@@ -12,7 +12,7 @@ import { go } from "../state.ts"
 import { NewMemory, Reader } from "./knowledge.tsx"
 import { ReadingState } from "./reading.tsx"
 import { UsedBy, UsedByBadge, useUsedBy } from "./used-by.tsx"
-import { Button, cx, Dialog, EmptyState, FolderOpen, Layers, Plus, Rows, Screen, SearchInput, Section, Segmented, SettingRow, Switch, Tab, TabList, Tabs } from "@/ui"
+import { Button, Column, cx, Dialog, EmptyState, FolderOpen, Layers, Plus, Rows, Screen, SearchInput, Section, Segmented, SettingRow, Switch, Tab, TabList, Tabs } from "@/ui"
 
 export function SkillsView({ selected, computer }: { selected?: string | undefined; computer?: boolean | undefined }) {
   const reading = useReading(memoriesAtom)
@@ -55,7 +55,7 @@ export function SkillsView({ selected, computer }: { selected?: string | undefin
   const group = (title: string, list: Memory[], tone?: "accent") =>
     list.length > 0 && (
       <div className="flex flex-col gap-1">
-        <h3 className={cx("px-1 text-sm font-medium", tone === "accent" ? "text-accent-text" : "text-muted")}>{title}</h3>
+        <h3 className={cx("px-3 text-sm font-medium", tone === "accent" ? "text-accent-text" : "text-muted")}>{title}</h3>
         <ul className="flex flex-col gap-0.5">{list.map(item)}</ul>
       </div>
     )
@@ -86,11 +86,11 @@ export function SkillsView({ selected, computer }: { selected?: string | undefin
         </Tabs>
       </div>
       {computer ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="flex w-full max-w-5xl flex-col gap-8 px-8 py-7">
+        <div className="gutter-stable min-h-0 flex-1 overflow-y-auto">
+          <Column wide>
             <NativeSkills />
             <FileSkills />
-          </div>
+          </Column>
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
