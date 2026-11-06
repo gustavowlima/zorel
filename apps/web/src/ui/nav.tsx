@@ -226,16 +226,21 @@ export function NavTreeItem({
                 <GripVertical className="size-3.5" />
               </Button>
             )}
-            {/* The tree: an elbow from the trunk (x 20, under the group's icon) to the middle of the title's line, and
-                the trunk on below it unless this is the group's last row. The rows' 1px gaps are bridged. */}
-            {nested && !hasChildItems && (
-              <>
-                <span aria-hidden="true" className={cn("pointer-events-none absolute -top-px left-5 w-3 rounded-bl-lg border-b border-l border-strong", quiet ? "h-[15px]" : "h-[21px]")} />
-                {!last && <span aria-hidden="true" className={cn("pointer-events-none absolute -bottom-px left-5 border-l border-strong", quiet ? "top-3.5" : "top-5")} />}
-              </>
-            )}
+            {/* The tree: the trunk (x 20, under the group's icon) runs straight through every row but the last, and an
+                8px arc branches off it to the middle of the title's line (y 20; 14 on a quiet row); the last row's
+                elbow comes down from its top instead, where the trunk ends. Offsets count from inside the row's 1px
+                border, so the lines reach 2px past it (that border and the row's 1px gap) to meet the next row's. */}
+            {nested && !hasChildItems &&
+              (last ? (
+                <span aria-hidden="true" className={cn("pointer-events-none absolute -top-0.5 left-5 w-3 rounded-bl-lg border-b border-l border-strong", quiet ? "h-4" : "h-5.5")} />
+              ) : (
+                <>
+                  <span aria-hidden="true" className="pointer-events-none absolute -top-0.5 -bottom-0.5 left-5 border-l border-strong" />
+                  <span aria-hidden="true" className={cn("pointer-events-none absolute left-5 h-2 w-3 rounded-bl-lg border-b border-l border-strong", quiet ? "top-1.5" : "top-3")} />
+                </>
+              ))}
             {/* An open group with rows: the trunk starts under its icon. */}
-            {hasChildItems && isExpanded && <span aria-hidden="true" className="pointer-events-none absolute top-7.5 -bottom-px left-5 border-l border-strong" />}
+            {hasChildItems && isExpanded && <span aria-hidden="true" className="pointer-events-none absolute top-7.5 -bottom-0.5 left-5 border-l border-strong" />}
             {hasChildItems && (
               // The icon column: the folder, which gives way to the arrow (it opens and closes the group) on hover or focus.
               <Button slot="chevron" className={cn(glyphBox, "relative rounded-control outline-none data-hovered:text-fg")}>

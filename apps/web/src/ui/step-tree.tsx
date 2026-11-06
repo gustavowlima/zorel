@@ -1,6 +1,6 @@
 // The work a reply did, as a tree (the sidebar's lines; DESIGN.md "Steps"): a head with a chevron (a spinner while it
 // works) the trunk hangs from, and the summary in words; under it, open, one row per step: an elbow from the trunk
-// (x 8) to its glyph (x 24), its title in plain words from x 46, quiet facts after it (how long, that it failed), and
+// (x 8) to its glyph (x 24), the trunk straight through,, its title in plain words from x 46, quiet facts after it (how long, that it failed), and
 // its command or path in mono only on hover or focus. The trunk runs on only while a step follows (`last` ends it). A
 // row that opens shows what it ran and returned under it, the trunk passing beside. A note (a thought) has no glyph
 // and no elbow: its words sit in the tree.
@@ -92,9 +92,16 @@ export function StepRow({
   const row = "group/step relative flex min-h-7 w-full min-w-0 items-center gap-2 rounded-control pr-2.5 pl-11.5 text-left outline-none"
   return (
     <li className="relative">
-      {/* The elbow from the trunk to the glyph, and the trunk on below unless this is the last step. */}
-      <span aria-hidden="true" className="pointer-events-none absolute top-0 left-2 h-3.5 w-3 rounded-bl-lg border-b border-l border-strong" />
-      {!last && <span aria-hidden="true" className="pointer-events-none absolute top-3.5 bottom-0 left-2 border-l border-strong" />}
+      {/* The trunk runs straight through every step but the last, an 8px arc branching off it to the glyph's middle
+          (y 14); the last step's elbow comes down from its top instead, where the trunk ends. */}
+      {last ? (
+        <span aria-hidden="true" className="pointer-events-none absolute top-0 left-2 h-3.5 w-3 rounded-bl-lg border-b border-l border-strong" />
+      ) : (
+        <>
+          <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-2 border-l border-strong" />
+          <span aria-hidden="true" className="pointer-events-none absolute top-1.5 left-2 h-2 w-3 rounded-bl-lg border-b border-l border-strong" />
+        </>
+      )}
       {onToggle ? (
         <Button
           onPress={onToggle}
