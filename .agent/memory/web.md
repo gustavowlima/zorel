@@ -94,3 +94,4 @@ updated: 2026-11-05
 - Pages is Memory's third view (2026-11-06): MemorySwitch (memory.tsx: Facts | Map | Pages) in both MemoryView and PagesView headers; #/pages keeps its route; the sidebar has no Pages row and marks Memory on view "pages". Sidebar list fades at the top too (fade-top / fade-y in styles.css) when scrolled.
 
 - One page rhythm (2026-11-06): HEADER (ui/layout.tsx) for every page header incl. chat and builder; Column (centered, px-7 py-7, gap-10; `wide` = max-w-5xl) for every page body; page tabs gap-8; Section title→card gap-3, its action wrapped in -my-1.5 so it adds no height; Screen's plain body has .gutter-stable (styles.css) so centered columns don't shift. Don't hand-write mx-auto/max-w/px/py page wrappers.
+- column(wide?) (ui/layout.tsx) gives Column's box to forms/articles/Tabs: agent profile, project tabs, page + skill readers/editors, builder steps/review. Home's centered composer is the deliberate exception.

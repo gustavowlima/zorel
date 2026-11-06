@@ -37,10 +37,12 @@ export function Screen({ title, subtitle, actions, children, bodyClassName }: { 
   )
 }
 
-// A page's column inside a Screen: centered, 28px around it, its sections 40px apart. Reading width (768px) for lists
-// and forms; wide (1024px) for settings and dashboards.
+// A page's column inside a Screen: centered, 28px around it, its sections 40px apart. Reading width (768px) for lists,
+// forms and readers; wide (1024px) for settings and dashboards. `column()` gives the same box to an element that must
+// be something else (a form, an article, a Tabs).
+export const column = (wide?: boolean) => cn("mx-auto flex w-full flex-col px-7 py-7", wide ? "max-w-5xl" : "max-w-3xl")
 export const Column = ({ children, className, wide }: { children: ReactNode; className?: string; wide?: boolean }) => (
-  <div className={cn("mx-auto flex w-full flex-col gap-10 px-7 py-7", wide ? "max-w-5xl" : "max-w-3xl", className)}>{children}</div>
+  <div className={cn(column(wide), "gap-10", className)}>{children}</div>
 )
 
 export function Section({ title, description, action, children, className }: { title: ReactNode; description?: ReactNode; action?: ReactNode; children?: ReactNode; className?: string }) {
