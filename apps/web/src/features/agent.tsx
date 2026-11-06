@@ -16,7 +16,7 @@ import { useArchive } from "./agents.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import {
-  AgentAvatar, Archive, ArchiveRestore, Button, ChartColumn, ConfirmDialog, Download, Field, IconButton, Input, ListRow, Menu, MenuItem, MoreHorizontal, Notice, Rows, Screen, Section, Select, SettingRow, Tab, TabList,
+  AgentAvatar, Archive, ArchiveRestore, Button, ChartColumn, column, ConfirmDialog, cx, Download, Field, IconButton, Input, ListRow, Menu, MenuItem, MoreHorizontal, Notice, Rows, Screen, Section, Select, SettingRow, Tab, TabList,
   TabPanel, Tabs, Textarea, Trash2, Undo2
 } from "@/ui"
 
@@ -148,7 +148,7 @@ export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; pr
       }
     >
       <form
-        className="mx-auto flex w-full max-w-3xl flex-col px-7 py-7"
+        className={column()}
         onSubmit={(e) => {
           e.preventDefault()
           if (dirty && name.trim() && !termsPending) save()
@@ -246,7 +246,7 @@ export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; pr
       </form>
       {/* Outside the profile form (a form of its own): the agent's routines, with its activity. */}
       {agent && tab === "activity" && (
-        <div className="mx-auto flex w-full max-w-3xl flex-col px-7 pb-7">
+        <div className={cx(column(), "pt-0")}>
           <AgentRoutines agent={agent} />
         </div>
       )}
