@@ -30,3 +30,36 @@ export function summarize(steps: ReadonlyArray<SummaryStep>) {
   const refused = steps.filter((s) => s.status === "refused").length
   return { parts: SUMMARY_ORDER.flatMap((kind) => (counts.get(kind) ? [{ kind, count: counts.get(kind)! }] : [])), failed, refused }
 }
+
+// A reply laid out as it happened: its text cut where steps began, each run of steps with no words between them one
+// group, in order ("Let me look." · [3 steps] · "Found it." · [2 steps] · "Done."). Steps that don't know where they
+// began (messages saved before `at`, a reload mid-turn) form one group: above the text when none knows, after it when
+// some do.
+export type Piece<S> = { kind: "text"; text: string } | { kind: "steps"; key: string; steps: ReadonlyArray<S> }
+export function interleave<S>(text: string, steps: ReadonlyArray<S>, atOf: (s: S) => number | undefined): Piece<S>[] {
+  if (!steps.length) return text ? [{ kind: "text", text }] : []
+  const placed = steps.flatMap((s, i) => {
+    const at = atOf(s)
+    return at === undefined ? [] : [{ s, i, at: Math.max(0, Math.min(at, text.length)) }]
+  })
+  const loose = steps.filter((s) => atOf(s) === undefined)
+  if (!placed.length) return [{ kind: "steps", key: "g0", steps: loose }, ...(text ? [{ kind: "text" as const, text }] : [])]
+  placed.sort((a, b) => a.at - b.at || a.i - b.i)
+  const out: Piece<S>[] = []
+  let cursor = 0
+  let group: S[] | undefined
+  for (const p of placed) {
+    const between = text.slice(cursor, p.at)
+    if (group && !between.trim()) group.push(p.s)
+    else {
+      if (between.trim()) out.push({ kind: "text", text: between })
+      group = [p.s]
+      out.push({ kind: "steps", key: `g${out.length}`, steps: group })
+    }
+    cursor = p.at
+  }
+  const rest = text.slice(cursor)
+  if (rest.trim()) out.push({ kind: "text", text: rest })
+  if (loose.length) out.push({ kind: "steps", key: `g${out.length}`, steps: loose })
+  return out
+}

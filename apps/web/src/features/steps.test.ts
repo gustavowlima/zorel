@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { summarize, type SummaryStep } from "./steps.ts"
+import { interleave, summarize, type SummaryStep } from "./steps.ts"
 
 const step = (kind: string, title: string, over: Partial<SummaryStep> = {}): SummaryStep => ({ kind, status: "ok", title, detail: "", files: [], ...over })
 
@@ -24,4 +24,18 @@ test("a failure fixed later doesn't stand; one never fixed does; refusals count 
   const standing = summarize([step("run", "Run the tests", { ...tests, status: "error" }), step("run", "Run the linter", { detail: "biome lint" })])
   expect(standing.failed).toBe(1)
   expect(summarize([step("run", "Run rm", { status: "refused" })]).refused).toBe(1)
+})
+
+test("a reply is laid out as it happened: text, a group of steps, text, another group", () => {
+  const text = "Let me look. Found it. Done."
+  const pieces = interleave(text, [{ n: "a", at: 12 }, { n: "b", at: 12 }, { n: "c", at: 22 }], (s) => s.at)
+  expect(pieces.map((p) => (p.kind === "text" ? p.text : p.steps.map((s) => s.n).join("")))).toEqual(["Let me look.", "ab", " Found it.", "c", " Done."])
+})
+
+test("steps that don't know where they began: above the text when none does, after it when some do", () => {
+  const none = interleave("Done.", [{ n: "a" }], () => undefined)
+  expect(none.map((p) => p.kind)).toEqual(["steps", "text"])
+  const some = interleave("Hi. Done.", [{ n: "a", at: 3 }, { n: "b" }], (s: { at?: number }) => s.at)
+  expect(some.map((p) => p.kind)).toEqual(["text", "steps", "text", "steps"])
+  expect(interleave("", [{ n: "a", at: 0 }], (s) => s.at).map((p) => p.kind)).toEqual(["steps"])
 })

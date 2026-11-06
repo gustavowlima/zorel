@@ -388,19 +388,25 @@ export const makeRuntime = Effect.gen(function* () {
   // ---------- turn tools: steps and approvals persisted and published ----------
   // `fixed`: a native session's gateway (one URL for the whole session); without it, one URL per turn.
   // `onWrite`: a tool that writes (or is sensitive) is about to run; the turn has acted, so failover won't repeat it.
-  const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, legacy: Step[], onWrite: () => void, fixed?: GatewayHandle, onFinished: (s: WorkStep) => void = () => {}) => {
+  // `keep` saves a finished step on the reply (stamped with where its text stands: tools run while the model waits).
+  // `settled` waits for the words the agent wrote before calling a tool to go out first (they sit in the text batch),
+  // so the tool's step comes after them, live and in its `at`.
+  const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, keep: (s: Step) => void, onWrite: () => void, fixed?: GatewayHandle, onFinished: (s: WorkStep) => void = () => {}, settled: () => Promise<void> = async () => {}) => {
     const routes = new Map<string, { server: string; tool: string; approve: boolean; writes: boolean; alwaysKey: string }>()
     const perms = permissionsOf(agent)
     const askFirst = effectiveAccess(chat, agent) === "ask"
     const defs: ToolDef[] = []
     const withheld = withheldTools(agent) // by the agent's memory mode and knowledge access
-    const step = (title: string, tool: string) => run(store.addStep({ turnId: row.id, kind: "tool", title, tool, files: [], status: "running" }).pipe(Effect.tap((s) => publish(chat.id, ev("step-started", { step: s })))))
+    const step = async (title: string, tool: string) => {
+      await settled()
+      return run(store.addStep({ turnId: row.id, kind: "tool", title, tool, files: [], status: "running" }).pipe(Effect.tap((s) => publish(chat.id, ev("step-started", { step: s })))))
+    }
     const finish = (s: WorkStep, status: WorkStep["status"], output = "") =>
       run(store.finishStep(s, { status, output: output.slice(0, 300) }).pipe(Effect.tap((done) => publish(chat.id, ev("step-finished", { step: done }))), Effect.tap((done) => Effect.sync(() => onFinished(done)))))
     for (const s of await run(store.mcpServersFor(chat.projectId))) {
       const listed = await hub.tools(s).catch(async (e: unknown) => {
         const msg = `Didn't connect: ${e instanceof Error ? e.message : e}`
-        legacy.push({ tool: s.name, args: "", status: "error", result: msg })
+        keep({ tool: s.name, args: "", status: "error", result: msg })
         await finish(await step(`Connect ${s.name}`, s.name), "error", msg)
         return []
       })
@@ -563,7 +569,7 @@ export const makeRuntime = Effect.gen(function* () {
       const s = await step(proposal.title, name)
       const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: proposal.title, args: card, cwd: null }))
       if (outcome === "denied" || outcome === "expired") {
-        legacy.push({ tool: name, args: "", status: "refused", result: "" })
+        keep({ tool: name, args: "", status: "refused", result: "" })
         await finish(s, "refused")
         return textResult("The user declined this proposal. Don't propose it again unless they ask.", true)
       }
@@ -581,7 +587,7 @@ export const makeRuntime = Effect.gen(function* () {
         name === "zorel_create_agent"
           ? `Created ${done.map((d) => `${d.name} (@${handleOf(d)}, id ${d.id})`).join(", ")}. Mention them to give them work.`
           : `Updated ${done[0]!.name}.`
-      legacy.push({ tool: name, args: "", status: "ok", result: out })
+      keep({ tool: name, args: "", status: "ok", result: out })
       await finish(s, "ok", out)
       return textResult(out)
     }
@@ -793,7 +799,7 @@ export const makeRuntime = Effect.gen(function* () {
           if (!card) return textResult(TOO_LARGE, true)
           const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to ${browserStepTitle(name, args).toLowerCase()}`, args: card, cwd: null }, gate.alwaysKey))
           if (outcome === "denied" || outcome === "expired") {
-            legacy.push({ tool: name, args: shown, status: "refused", result: "" })
+            keep({ tool: name, args: shown, status: "refused", result: "" })
             await finish(s, "refused")
             return textResult("The user declined this action. Don't try it again without asking.", true)
           }
@@ -805,7 +811,7 @@ export const makeRuntime = Effect.gen(function* () {
           (e: unknown) => textResult(e instanceof Error ? e.message.split("\n")[0]! : String(e), true)
         )
         const out = resultText(r)
-        legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
+        keep({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
         await finish(s, r.isError ? "error" : "ok", out)
         return r
       }
@@ -819,7 +825,7 @@ export const makeRuntime = Effect.gen(function* () {
         if (!card) return textResult(TOO_LARGE, true)
         const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to use ${name}`, args: card, cwd: null }, agent ? route.alwaysKey : null))
         if (outcome === "denied" || outcome === "expired") {
-          legacy.push({ tool: name, args: shown, status: "refused", result: "" })
+          keep({ tool: name, args: shown, status: "refused", result: "" })
           await finish(s, "refused")
           return textResult("The user declined this action. Don't try it again without asking.", true)
         }
@@ -831,7 +837,7 @@ export const makeRuntime = Effect.gen(function* () {
         )
       )
       const out = resultText(r)
-      legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
+      keep({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
       await finish(s, r.isError ? "error" : "ok", out)
       return r
     }
@@ -958,6 +964,20 @@ export const makeRuntime = Effect.gen(function* () {
           let failure: EngineFailure | undefined
           // Liveness: any engine event or a settled approval counts as activity.
           let lastActivity = Date.now()
+          // Text events seen on the engine's stream and those already out (appended and published): a tool's step waits
+          // until the second catches up with the first (at most 400 ms). It first gives the stream a moment to be read:
+          // an engine queues the words it wrote before the tool call, and the tool can start before they're pulled.
+          let textSeen = 0
+          let textOut = 0
+          const settled = () =>
+            new Promise<void>((resolve) => {
+              const until = Date.now() + 400
+              setTimeout(() => {
+                const target = textSeen
+                const check = () => (textOut >= target || Date.now() > until ? resolve() : setTimeout(check, 10))
+                check()
+              }, 10)
+            })
           let approvalsWaiting = 0
           const stalled = yield* Deferred.make<void>()
           const runaway = yield* Deferred.make<string>()
@@ -987,10 +1007,12 @@ export const makeRuntime = Effect.gen(function* () {
           yield* Effect.addFinalizer(() => Effect.sync(() => approvers.delete(key)))
           // Native steps (reads, edits, commands): persisted, published, and kept on the reply.
           const stepsById = new Map<string, WorkStep>()
+          const startedAt = new Map<string, number>() // where the reply's text stood when each began
           const onStep = (n: NativeStep) =>
             Effect.gen(function* () {
               const started = stepsById.get(n.id)
               if (!started) {
+                startedAt.set(n.id, acc.text.length)
                 if (n.kind === "edit" || n.kind === "run") acted = true // failover won't repeat a turn that may have changed something
                 const s = yield* store.addStep({ turnId: row.id, kind: n.kind, title: n.title, detail: n.detail, tool: null, files: n.files, status: "running" })
                 stepsById.set(n.id, s)
@@ -1004,12 +1026,12 @@ export const makeRuntime = Effect.gen(function* () {
               watch({ kind: n.kind, title: n.title, detail: n.detail, status: n.status, output: n.output })
               // Every step stays with the reply (reads and searches too), with enough of its output to review later.
               // The transcript keeps the command, not its summary.
-              acc.steps.push({ tool: n.kind, args: n.kind === "edit" && n.files.length ? n.files.join(", ") : n.detail || n.title, status: n.status, result: n.output.slice(0, STEP_RESULT_CHARS), title: n.title, detail: n.detail, ...(done.durationMs != null && { ms: done.durationMs }) })
+              acc.steps.push({ tool: n.kind, args: n.kind === "edit" && n.files.length ? n.files.join(", ") : n.detail || n.title, status: n.status, result: n.output.slice(0, STEP_RESULT_CHARS), title: n.title, detail: n.detail, ...(done.durationMs != null && { ms: done.durationMs }), at: startedAt.get(n.id) ?? acc.text.length })
             })
           const opened = yield* Effect.promise(() =>
-            openTools(chat, attemptRow, agent, acc.steps, () => {
+            openTools(chat, attemptRow, agent, (s) => void acc.steps.push({ ...s, at: acc.text.length }), () => {
               acted = true
-            }, native ? gatewayOf(sessionKey(attemptRow)) : undefined, (done) => watch({ kind: done.kind, title: done.title, detail: done.detail, status: done.status, output: done.output ?? "" }))
+            }, native ? gatewayOf(sessionKey(attemptRow)) : undefined, (done) => watch({ kind: done.kind, title: done.title, detail: done.detail, status: done.status, output: done.output ?? "" }), settled)
           )
           yield* Effect.addFinalizer(() =>
             Effect.gen(function* () {
@@ -1024,9 +1046,10 @@ export const makeRuntime = Effect.gen(function* () {
             markSeen = set
           })
           yield* stream.pipe(
-            Stream.tap(() =>
+            Stream.tap((e) =>
               Effect.sync(() => {
                 lastActivity = Date.now()
+                if (e.type === "text") textSeen++
               })
             ),
             Stream.interruptWhen(Deferred.await(stalled)),
@@ -1036,8 +1059,23 @@ export const makeRuntime = Effect.gen(function* () {
             Stream.runForEach((batch) =>
               Effect.gen(function* () {
                 let delta = ""
+                let texts = 0 // text events in `delta`
+                // The batch's text so far goes out before a step, so the step lands after it: in the live view and in
+                // the step's `at` (else a step would come before words the agent wrote first).
+                const flush = Effect.gen(function* () {
+                  if (delta) {
+                    if (!acc.text) yield* store.markFirstToken(row.id)
+                    acc.text += delta
+                    yield* publish(chatId, ev("text", { turnId: row.id, delta }))
+                    yield* store.savePartial(row.id, acc.text)
+                    delta = ""
+                  }
+                  textOut += texts
+                  texts = 0
+                })
                 for (const e of batch) {
                   if (e.type === "text") {
+                    texts++
                     delta += e.delta
                     if (e.delta) timing.text(Date.now())
                   } else if (e.type === "thinking") timing.thinking(Date.now())
@@ -1049,6 +1087,7 @@ export const makeRuntime = Effect.gen(function* () {
                   else if (e.type === "limits") {
                     if (account) yield* accounts.observe(account.id, e.windows)
                   } else if (e.type === "step") {
+                    yield* flush
                     timing.step(Date.now())
                     yield* onStep(e.step)
                   }
@@ -1057,11 +1096,7 @@ export const makeRuntime = Effect.gen(function* () {
                     failure = e.failure
                   }
                 }
-                if (!delta) return
-                if (!acc.text) yield* store.markFirstToken(row.id)
-                acc.text += delta
-                yield* publish(chatId, ev("text", { turnId: row.id, delta }))
-                yield* store.savePartial(row.id, acc.text)
+                yield* flush
               })
             )
           )
