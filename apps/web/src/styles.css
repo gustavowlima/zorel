@@ -254,6 +254,8 @@ img, svg, a { -webkit-user-drag: none; }
 .composer-editor p { margin: 0; }
 .composer-editor p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--z-text-dim); float: left; height: 0; pointer-events: none; }
 /* A scrolling list with more below fades out over its last 24px instead of ending on a cut row. */
+/* A scrolling page keeps its scrollbar's room, so a centered column never shifts when the page starts to scroll. */
+.gutter-stable { scrollbar-gutter: stable; }
 .fade-bottom { mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
 /* …and scrolled away above it, over its first 24px (both edges when both hold more). */
 .fade-top { mask-image: linear-gradient(to bottom, transparent, #000 24px); }

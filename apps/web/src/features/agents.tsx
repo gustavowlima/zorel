@@ -198,7 +198,7 @@ export function AgentsView() {
         </>
       }
     >
-      <Column className="gap-10">
+      <Column>
         {team.length === 0 ? (
           <EmptyState
             icon={<Bot />}

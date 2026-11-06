@@ -16,7 +16,7 @@ import { PendingTray, Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
-import { AgentAvatar, Button, Check, ChevronRight, cx, Dialog, EmptyState, Folder, IconTile, ListRow, PageHeader, Pencil, Rows, Section, Select, Sparkles, Spinner, Tag } from "@/ui"
+import { AgentAvatar, Button, Check, ChevronRight, cx, Dialog, EmptyState, Folder, HEADER, IconTile, ListRow, PageHeader, Pencil, Rows, Section, Select, Sparkles, Spinner, Tag } from "@/ui"
 
 const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builder.suggest.docs", "builder.suggest.team"] as const
 type Step = "describe" | "powers"
@@ -110,7 +110,7 @@ function BuilderHeader({ projectId }: { projectId: string | null }) {
 // The page header (in the desktop title bar like every screen's).
 function ScreenHeader({ title, subtitle, action }: { title: string; subtitle: string; action: ReactNode }) {
   return (
-    <PageHeader className="min-h-14 gap-x-4 gap-y-2 px-7 py-3">
+    <PageHeader className={HEADER}>
       <h1 className="truncate text-lg font-semibold">{title}</h1>
       <span className="min-w-0 flex-1 truncate text-muted">{subtitle}</span>
       {action}

@@ -24,7 +24,7 @@ import { chatDelta, Delta, type Focus, PinItem, type Pins, RunControl, type Shel
 import { ModelPicker } from "./model-picker.tsx"
 import { AccessChip } from "./access-chip.tsx"
 import { GitControl } from "./git.tsx"
-import { ContextMenu, PageHeader } from "@/ui"
+import { ContextMenu, HEADER, PageHeader } from "@/ui"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import { ChatProcesses } from "./processes.tsx"
 import { QuestionAnswer } from "./question.tsx"
@@ -332,7 +332,7 @@ function ChatHeader({
 
   return (
     <>
-      <PageHeader className="min-h-13 gap-x-3 gap-y-2 py-2 pr-4 pl-7">
+      <PageHeader className={cx(HEADER, "gap-x-3")}>
         <div className="flex min-w-0 flex-1 items-baseline gap-3">
           <h1 className="truncate text-lg font-semibold">{chatTitle(chat)}</h1>
           <Button size="sm" variant="ghost" className="-ml-2 shrink-0 text-muted" onPress={() => go(project ? { view: "project", id: project.id, tab: "overview" } : { view: "home" })}>
