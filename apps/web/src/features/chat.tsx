@@ -5,7 +5,7 @@
 import { type Agent, type Chat, type FailoverTarget, type Memory, type Message, type ProviderAccount, skillHandle, type WorkspaceFile, workSteps } from "@zorel/contracts"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
-import { type Approval, ErrorCode, isInterruption } from "@zorel/contracts/events"
+import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zorel/contracts/events"
 import { formatCompact, formatDuration, formatTime, locale, t } from "@zorel/i18n"
 import { memo, type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
@@ -32,7 +32,7 @@ import {
   Button, Check, ChevronDown, CircleAlert, CircleCheck, CircleX, Clock, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
   MenuSeparator, MessageCircle, MessageCircleQuestion, ShieldAlert, Minimize2, MoreHorizontal, PanelRight, Pencil, RefreshCw, Search, Shuffle, Sparkles, Spinner, Square, SquarePen, SquareTerminal, StepHead, StepList, StepNote, StepRow, Switch, Tooltip, Trash2, Users, Wrench, FileText
 } from "@/ui"
-import { kindOf, type SummaryKind, type SummaryStep, summarize } from "./steps.ts"
+import { interleave, kindOf, type SummaryKind, type SummaryStep, summarize } from "./steps.ts"
 
 export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) {
   const state = useChat(chat.id)
@@ -882,8 +882,7 @@ function AgentReply({
         </>
       }
     >
-      {workSteps(m.steps).length > 0 && <StoredActivity steps={m.steps} durationMs={m.durationMs} />}
-      {m.text && <ChatMarkdown text={m.text} />}
+      <StoredReply message={m} />
       <TurnChanges message={m} onView={onView} />
       {ending?.tone === "danger" && <pre className="overflow-auto rounded-control bg-code px-3 py-2 font-mono text-sm whitespace-pre-wrap text-danger">{ending.text}</pre>}
     </Reply>
@@ -891,6 +890,25 @@ function AgentReply({
 }
 
 // ---------- activity ----------
+
+// A finished reply as it happened: its words cut where steps began, each run of steps one folded line with its own
+// summary between them. Replies saved before steps knew where they began keep one line above the words. A long
+// thought goes at the top of the first group; with one group the line says how long the whole turn took.
+function StoredReply({ message: m }: { message: Message }) {
+  const work = workSteps(m.steps)
+  const pieces = interleave(m.text, work, (s) => s.at)
+  const groups = pieces.filter((p) => p.kind === "steps").length
+  const thought = m.steps.filter((s) => s.tool === "thought")
+  let first = true
+  return pieces.map((p, i) => {
+    // biome-ignore lint/suspicious/noArrayIndexKey: a saved reply's pieces never change
+    if (p.kind === "text") return <ChatMarkdown key={`t${i}`} text={p.text} />
+    const steps = first ? [...thought, ...p.steps] : p.steps
+    first = false
+    const took = groups === 1 ? m.durationMs : p.steps.reduce((sum, s) => sum + (s.ms ?? 0), 0)
+    return <StoredActivity key={p.key} steps={steps} durationMs={took} />
+  })
+}
 
 // A step's glyph says what kind of work it was (one running spins, one waiting for you is the clock).
 const KIND_ICON: Record<SummaryKind, ReactNode> = { search: <Search />, read: <FileText />, edit: <Pencil />, run: <SquareTerminal />, tool: <Wrench />, delegate: <Users /> }
@@ -1018,27 +1036,19 @@ function useHeldLabel(wanted: string, specific: boolean) {
   return specific ? wanted : shown
 }
 
-// The turn running now: what it does (a light sweeps across it), or plainly that it waits for the provider before
-// anything came back; the time only after 5 s. Questions and approvals wait above the message box (PendingTray).
+// The turn running now, laid out as it happens: what it has written so far, cut where steps began, each run of steps
+// a group on the tree (open while it works, unless turned off in Settings) with its own summary; at the end what it
+// does now (a light sweeps across it), or plainly that it waits for the provider before anything came back, the time
+// only after 5 s, and Stop. Questions and approvals wait above the message box (PendingTray).
 const SHOW_TIME_AFTER_MS = 5000
 function LiveMessage({ live, agents, receipts, bare, onStop }: { live: LiveTurn; agents: ReadonlyArray<Agent>; receipts: ReadonlyArray<Receipt>; bare: boolean; onStop?: (() => void) | undefined }) {
-  // Open while it works (the default) so the steps are seen without a click, or folded into the pill when the person
-  // turned that off in Settings; the finished message folds them into StoredActivity's line either way.
-  const [open, setOpen] = useState(liveStepsOpen)
-  const id = useId()
   const now = useNow(true)
   const current = [...live.steps].reverse().find((s) => s.status === "running" || s.status === "waiting")
   const idle = !live.text && !live.steps.length
   const elapsed = now - live.startedAt
   const wanted = current?.title ?? (idle ? t("activity.waitingFor", { provider: providerLabel(splitModel(live.model).provider) }) : t("activity.working"))
   const what = useHeldLabel(wanted, !!current)
-  const label = (
-    <>
-      {/* One element for every state, so the sweep doesn't restart each time the label changes. */}
-      <span className={idle || current?.status === "waiting" ? undefined : "shimmer-text"}>{what}</span>
-      {elapsed >= SHOW_TIME_AFTER_MS && <span className="text-muted tabular-nums">{` · ${formatDuration(elapsed)}`}</span>}
-    </>
-  )
+  const pieces = interleave(live.text, live.steps, (s) => live.stepAt[s.id])
   return (
     <Reply
       agentId={live.agentId}
@@ -1047,53 +1057,85 @@ function LiveMessage({ live, agents, receipts, bare, onStop }: { live: LiveTurn;
       bare={bare}
       continued={bare}
       footer={
-        // Below what the agent has written so far: the text grows above it and the status stays at the end.
-        <div className="flex min-w-0 flex-col items-start">
-          {/* The head and Stop are siblings (a button inside a button isn't valid); Stop is the composer's action. */}
-          <div className="flex max-w-full min-w-0 items-center gap-1">
-            <StepHead open={open} rows={live.steps.length > 0} onToggle={() => setOpen(!open)} controls={id} leading={current?.status === "waiting" ? <Clock className="text-accent-text" /> : <Spinner size={12} className="text-muted" />}>
-              {label}
-            </StepHead>
-            {onStop && (
-              <Tooltip content={t("composer.stop")}>
-                <IconButton label={t("composer.stop")} variant="ghost" shape="pill" size="xs" onPress={onStop}>
-                  <Square className="size-3 fill-current" />
-                </IconButton>
-              </Tooltip>
-            )}
-          </div>
-          {/* The steps as they come, on the tree: the one running spins, one waiting for you is the clock. */}
-          {open && live.steps.length > 0 && (
-            <StepList id={id}>
-              {live.steps.map((s, i) => {
-                const facts = [
-                  s.status === "waiting" && <span key="w" className="text-accent-text">{t("activity.waiting")}</span>,
-                  s.status === "error" && <span key="e" className="text-danger">{t("activity.failedStep")}</span>,
-                  s.status === "refused" && <span key="r" className="text-warning">{t("activity.refusedStep")}</span>,
-                  s.durationMs !== null && s.durationMs >= 1000 && <span key="t">{formatDuration(s.durationMs)}</span>
-                ].filter(Boolean)
-                return (
-                  <StepRow
-                    key={s.id}
-                    icon={s.status === "running" ? <Spinner size={12} className="text-muted" /> : s.status === "waiting" ? <Clock /> : glyphOf(s.kind)}
-                    tone={s.status === "waiting" ? "waiting" : s.status === "error" ? "danger" : s.status === "refused" ? "warning" : "default"}
-                    title={s.title}
-                    hint={s.detail && s.detail !== s.title ? s.detail : undefined}
-                    facts={facts.length ? facts : undefined}
-                    last={i === live.steps.length - 1}
-                  />
-                )
-              })}
-            </StepList>
+        // Below everything so far: the words and steps grow above it and the status stays at the end. Stop sits beside
+        // the words (a button inside a button isn't valid); it is the composer's action too.
+        <div className="flex h-7 max-w-full min-w-0 items-center gap-2 text-base text-muted">
+          <span className="flex w-4 shrink-0 justify-center [&_svg]:size-3.5">{current?.status === "waiting" ? <Clock className="text-accent-text" /> : <Spinner size={12} className="text-muted" />}</span>
+          {/* One element for every state, so the sweep doesn't restart each time the label changes. */}
+          <span className={cx("truncate", idle || current?.status === "waiting" ? undefined : "shimmer-text")}>{what}</span>
+          {elapsed >= SHOW_TIME_AFTER_MS && <span className="shrink-0 text-dim tabular-nums">{`· ${formatDuration(elapsed)}`}</span>}
+          {onStop && (
+            <Tooltip content={t("composer.stop")}>
+              <IconButton label={t("composer.stop")} variant="ghost" shape="pill" size="xs" onPress={onStop}>
+                <Square className="size-3 fill-current" />
+              </IconButton>
+            </Tooltip>
           )}
         </div>
       }
     >
-      {live.text && <LiveText text={live.text} />}
+      {pieces.map((p, i) =>
+        p.kind === "steps" ? (
+          <LiveSteps key={p.key} steps={p.steps} />
+        ) : i === pieces.length - 1 ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: a piece is its position in a reply that only grows
+          <LiveText key={`t${i}`} text={p.text} />
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: a piece is its position in a reply that only grows
+          <ChatMarkdown key={`t${i}`} text={p.text} />
+        )
+      )}
       {receipts.map((r) => (
         <ReceiptCard key={r.approval.id} receipt={r} />
       ))}
     </Reply>
+  )
+}
+
+// One run of a live turn's steps: its summary, a spinner (the clock while one waits for you) while one runs, and its
+// steps as they come on the tree.
+const liveStep = (s: WorkStep): SummaryStep => ({ kind: s.kind, status: s.status, title: s.title, detail: s.detail, files: s.files })
+function LiveSteps({ steps }: { steps: ReadonlyArray<WorkStep> }) {
+  const [open, setOpen] = useState(liveStepsOpen)
+  const id = useId()
+  const working = steps.find((s) => s.status === "running" || s.status === "waiting")
+  const { text, failed, refused } = sentenceOf(steps.map(liveStep))
+  return (
+    <div className="flex min-w-0 flex-col">
+      <StepHead
+        open={open}
+        onToggle={() => setOpen(!open)}
+        controls={id}
+        {...(working && { leading: working.status === "waiting" ? <Clock className="text-accent-text" /> : <Spinner size={12} className="text-muted" /> })}
+      >
+        <span className="truncate">{text}</span>
+        {failed > 0 && <span className="shrink-0 text-danger">· {t("activity.errors", { count: failed })}</span>}
+        {refused > 0 && <span className="shrink-0 text-warning">· {t("activity.refused", { count: refused })}</span>}
+      </StepHead>
+      {open && (
+        <StepList id={id}>
+          {steps.map((s, i) => {
+            const facts = [
+              s.status === "waiting" && <span key="w" className="text-accent-text">{t("activity.waiting")}</span>,
+              s.status === "error" && <span key="e" className="text-danger">{t("activity.failedStep")}</span>,
+              s.status === "refused" && <span key="r" className="text-warning">{t("activity.refusedStep")}</span>,
+              s.durationMs !== null && s.durationMs >= 1000 && <span key="t">{formatDuration(s.durationMs)}</span>
+            ].filter(Boolean)
+            return (
+              <StepRow
+                key={s.id}
+                icon={s.status === "running" ? <Spinner size={12} className="text-muted" /> : s.status === "waiting" ? <Clock /> : glyphOf(s.kind)}
+                tone={s.status === "waiting" ? "waiting" : s.status === "error" ? "danger" : s.status === "refused" ? "warning" : "default"}
+                title={s.title}
+                hint={s.detail && s.detail !== s.title ? s.detail : undefined}
+                facts={facts.length ? facts : undefined}
+                last={i === steps.length - 1}
+              />
+            )
+          })}
+        </StepList>
+      )}
+    </div>
   )
 }
 

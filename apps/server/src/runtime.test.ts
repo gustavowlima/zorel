@@ -106,6 +106,35 @@ test("a failed last turn leaves the chat failed, a good one leaves it idle", asy
   expect(await restingState(Echo)).toBe("idle")
 })
 
+// Text, a step, more text, all inside one 100 ms batch: the step is saved where the text stood when it began, and the
+// live view gets the first words before the step (the chat lays the reply out in that order).
+const Interleaved = Layer.succeed(Engines, {
+  run: () => {
+    const step = { id: "s1", kind: "run" as const, title: "Run the tests", detail: "bun test", files: [] }
+    return Stream.make<EngineEvent[]>(
+      { type: "text", delta: "Let me check." },
+      { type: "step", step: { ...step, status: "running", output: "" } },
+      { type: "step", step: { ...step, status: "ok", output: "1 pass" } },
+      { type: "text", delta: " All green." },
+      { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }
+    )
+  }
+})
+test("a step keeps where the reply's text stood when it began, and goes out after the words before it", () =>
+  runWith(":memory:", Interleaved, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "hi" })
+    yield* c.done
+    const order = c.events.flatMap((e) => (e._tag === "text" ? [`text:${e.delta}`] : e._tag === "step-started" ? ["step"] : []))
+    expect(order).toEqual(["text:Let me check.", "step", "text: All green."])
+    const reply = (yield* store.messages(chat.id)).at(-1)!
+    expect(reply.text).toBe("Let me check. All green.")
+    expect(reply.steps.find((s) => s.tool === "run")?.at).toBe("Let me check.".length)
+  })))
+
 test("kill -9 mid-turn: on the next boot the turn becomes interrupted with the partial text", async () => {
   const dir = join(tmpdir(), `zorel-rt-${crypto.randomUUID()}`)
   mkdirSync(dir)
