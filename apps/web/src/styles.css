@@ -255,6 +255,14 @@ img, svg, a { -webkit-user-drag: none; }
 .composer-editor p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--z-text-dim); float: left; height: 0; pointer-events: none; }
 /* A scrolling list with more below fades out over its last 24px instead of ending on a cut row. */
 .fade-bottom { mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
+/* A sidebar row under a project (ui/nav.tsx): its hover or open wash (--wash) fades in from the tree's trunk at x 20,
+   clear over the lines and full past the title's start, eased over six stops so no edge shows where it begins. */
+.tree-wash {
+  background-image: linear-gradient(to right, transparent 18px, color-mix(in srgb, var(--wash) 12%, transparent) 40px, color-mix(in srgb, var(--wash) 35%, transparent) 64px,
+    color-mix(in srgb, var(--wash) 65%, transparent) 92px, color-mix(in srgb, var(--wash) 88%, transparent) 124px, var(--wash) 156px);
+  background-origin: border-box; /* else it repeats under the row's transparent border: a stripe of full wash on its left */
+  background-repeat: no-repeat;
+}
 
 
 /* Desktop app: the rail, the sidebar top and screen headers move the window; their controls stay clickable. */
