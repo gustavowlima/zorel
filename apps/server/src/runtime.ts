@@ -17,7 +17,7 @@ import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
 import { cardText, TOO_LARGE } from "./engines/policy.ts"
-import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, READ_RESULT_TOOL, REMEMBER_TOOL, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo } from "./team.ts"
+import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, READ_RESULT_TOOL, REMEMBER_TOOL, staleWrite, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
@@ -173,6 +173,8 @@ const STEP_RESULT_CHARS = 4000 // of each step's output kept with the reply (its
 const ev = <T extends ChatEvent["_tag"]>(_tag: T, body: Omit<Extract<ChatEvent, { _tag: T }>, "_tag">) => ({ _tag, ...body }) as unknown as ChatEvent
 
 export const makeRuntime = Effect.gen(function* () {
+  // ponytail: in memory per chat, lost on restart (the agent just reads the page again)
+  const pagesReadBy = new Map<string, Map<string, number>>()
   const store = yield* Store
   const accounts = yield* Accounts
   const workspace = yield* Workspace
@@ -710,6 +712,8 @@ export const makeRuntime = Effect.gen(function* () {
 
     // Knowledge pages: search/read in the chat's scopes; write to project/agent scope as a version, or, about the
     // user, only on the person's OK.
+    const pagesRead = pagesReadBy.get(chat.id) ?? new Map<string, number>() // page id → its updatedAt when this chat read it (staleWrite)
+    pagesReadBy.set(chat.id, pagesRead)
     const knowledgeCall = async (name: string, args: Record<string, unknown>) => {
       const scopes = scopesOf(chat, agent?.id ?? null)
       const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "")
@@ -722,13 +726,14 @@ export const makeRuntime = Effect.gen(function* () {
         return textResult(
           found.length
             ? found.map((p) => { const where = sectionOf(p.body, terms); return `- ${p.title} [${p.id}] (${p.scope})${where ? ` › ${where}` : ""}: ${snippet(p.body, hit(p.body), 80)}` }).join("\n")
-            : "No page matches. Try other words."
+            : "No page matches. Try other words; if nothing matches, tell the user you didn't find it instead of guessing."
         )
       }
       if (name === "zorel_knowledge_read") {
         const ref = str(args.page, 200)
         const p = await run(store.pageIn(scopes, ref))
         if (!p) return textResult(`No page "${ref}" here. Search with zorel_knowledge_search.`, true)
+        pagesRead.set(p.id, p.updatedAt)
         const r = readPage(p.title, p.body, str(args.section, 200) || undefined)
         return textResult(r.text, r.error)
       }
@@ -737,6 +742,8 @@ export const makeRuntime = Effect.gen(function* () {
       if (!title || !body.trim()) return textResult("title and body are required.", true)
       const existing = args.page ? await run(store.pageIn(scopes, str(args.page, 200))) : undefined
       if (args.page && !existing) return textResult("No such page here.", true)
+      const stale = existing && staleWrite(pagesRead, existing)
+      if (stale) return textResult(stale, true)
       const want = str(args.scope, 10) || "project"
       const scope = existing?.scope ?? (want === "user" ? "user" : want === "agent" ? (agent ? `agent:${agent.id}` : "") : chat.projectId ? `project:${chat.projectId}` : "")
       if (!scope) return textResult(want === "agent" ? "Only an agent has its own pages." : "This chat has no project: use scope 'user' or 'agent'.", true)
@@ -753,6 +760,7 @@ export const makeRuntime = Effect.gen(function* () {
       }
       onWrite()
       const saved = await run(store.savePage({ id: existing?.id, scope, title, body }, nameOf(agent)))
+      pagesRead.set(saved.id, saved.updatedAt) // what it wrote is what it has seen
       await finish(s, "ok", saved.title)
       return textResult(`Saved "${saved.title}" [${saved.id}]. The user can see its versions and restore any.`)
     }

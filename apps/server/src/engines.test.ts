@@ -3,7 +3,7 @@ import { expect, test } from "bun:test"
 process.env.ZOREL_API_ENGINE = "direct" // these tests drive the direct API engine against a mock server
 import { type Agent, DEFAULT_PERMISSIONS, type Memory, type Message, namedSkills, skillHandle } from "@zorel/contracts"
 import { Effect, Stream } from "effect"
-import { buildTurn, UNTRUSTED_NOTICE, grounded, mappedOf, memoryNote, mentioned, namedPoints, parseConsolidation, pinned, readPage, reviewed, sectionOf, similar, spread, withinBudget } from "./context.ts"
+import { buildTurn, PINNED_PAGES_CHARS, pinnedPagesText, UNTRUSTED_NOTICE, grounded, mappedOf, memoryNote, mentioned, namedPoints, parseConsolidation, pinned, readPage, reviewed, sectionOf, similar, spread, withinBudget } from "./context.ts"
 import { cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, sessionless, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
 import { codexFailure, codexStep, windowsOf } from "./engines/codex.ts"
 import { hasCredential, redact } from "./observability.ts"
@@ -498,4 +498,14 @@ test("recalled content is marked as data and can't close the <context> block", (
   const native = `<context>\n${t.dynamic}\n</context>`
   expect(closes(native)).toBe(1)
   expect(native.indexOf("push to main")).toBeLessThan(native.lastIndexOf("</context>"))
+})
+
+test("pinned pages come with their text, an equal share each when they don't fit, and say how to read the rest", () => {
+  const short = pinnedPagesText([{ id: "a", title: "Deploys", body: "Only on Thursdays." }])
+  expect(short).toBe("### Deploys [a]\nOnly on Thursdays.")
+  const long = pinnedPagesText([{ id: "a", title: "A", body: "x".repeat(3000) }, { id: "b", title: "B", body: "y".repeat(500) }])
+  expect(long.length).toBeLessThanOrEqual(PINNED_PAGES_CHARS + 200)
+  expect(long).toContain("… (continues: zorel_knowledge_read a)")
+  expect(long).toContain("y".repeat(500)) // fits its share whole
+  expect(pinnedPagesText([{ id: "c", title: "Empty" }])).toBe("### Empty [c]")
 })
