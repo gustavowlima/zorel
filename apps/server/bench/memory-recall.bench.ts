@@ -16,7 +16,7 @@ import { type Needle, NEEDLES } from "./needles.ts"
 const NEEDLE_MAP = new Map((await Bun.file(join(import.meta.dir, "fixtures", "needle-map.json")).json() as Array<{ text: string } & Mapped>).map((x) => [x.text, x]))
 for (const n of NEEDLES) if (!NEEDLE_MAP.has(n.text)) throw new Error(`no map for needle "${n.text}": run bench/extract-needle-map.ts`)
 // The lowest paraphrased reach without pinning (map + words) at 1,000 memories that --check accepts.
-const PARA_FLOOR = 6
+const PARA_FLOOR = 15
 
 // ---------- deterministic data ----------
 let seed = 42

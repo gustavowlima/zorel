@@ -352,9 +352,9 @@ const MAP_BATCH = 30 // facts per call
 export const MAP_SYSTEM = [
   "You file facts on a map of what they are about. For each numbered fact, list:",
   '- "entities": the things it is about, 1 to 5, each named as it would be anywhere ("Vercel", not "vercel deploys"): "concept" for a concrete thing (a tool, a service, a file, a day), "subject" for a theme or a decision ("Deploy", "Authentication"). Use a project\'s or an agent\'s own name when the fact is about it.',
-  '  Each entity may carry "aliases" (up to 3 other names, the other language included) and a "category" (what kind of thing it is, one or two words: "Hosting" for Vercel).',
+  '  Give each entity "aliases": up to 3 everyday words someone would use for it in a question without knowing its name (synonyms, the plain word, the other language: "money back" for Refund, "laptop" for a MacBook, "dog" for a pet\'s name), and a "category": what kind of thing it is, one or two plain words ("Hosting" for Vercel, "Programming language" for Rust).',
   '- "relations": how those entities relate, as [from, relation, to] with a short relation ("goes to", "uses"). Only what the fact says.',
-  'Answer ONLY with JSON: {"items": [{"n": 1, "entities": [{"name": "...", "type": "concept" | "subject"}], "relations": [["...", "...", "..."]]}]}'
+  'Answer ONLY with JSON: {"items": [{"n": 1, "entities": [{"name": "...", "type": "concept" | "subject", "aliases": ["..."], "category": "..."}], "relations": [["...", "...", "..."]]}]}'
 ].join("\n")
 
 // Reads the facts kept before the map in batches on the small model and files them. Stops at a failed call (the next
