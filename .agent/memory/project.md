@@ -1,5 +1,5 @@
 # project
-updated: 2026-11-04
+updated: 2026-11-08
 
 ## summary
 
@@ -54,3 +54,4 @@ using subscriptions (official CLI: Claude Code, Codex, ACP) or API token (effect
 - alias in the server: `#server/*` (package.json "imports"), not tsconfig `paths`: the desktop bundles the server and only imports is resolved by the server's own package.json
 - commits in English from 2026-11-03 (user request); code comments in English too; earlier history stays in Portuguese
 - renamed Zero → Zorel (2026-11-04): packages @zorel/*, env ZOREL_*, tools zorel_*, MCP gateway "zorel", keychain dev.zorel.app, appId dev.zorel.app. Legacy kept: data in ~/.zero/zero.db keeps being used if it exists (not moved: the database stores absolute paths); keychain reads dev.zero.app and copies; localStorage zero.* copied to zorel.*; zero-* backups still pruned; import accepts "zero.agent". The repository folder stays dev/zero
+- spec-kit (github/spec-kit, CLI 0.12.4, 2026-11-08): `specify init --here --integration claude` adds `.claude/skills/speckit-*` and `.specify/` (scripts, templates, constitution). Per project only: the skills call `.specify/...` paths, so a global copy in ~/.claude/skills would break. CLI global via `uv tool install specify-cli`
