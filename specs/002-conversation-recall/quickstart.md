@@ -47,3 +47,13 @@ bun bench/longmemeval.bench.ts --limit 50 # quick look
 
 Expected: hit@5, hit@10, in-turn reach and latency, overall and by type; first run before Story 1,
 last after Stories 1–3, both recorded next to ai-memory's 0.951 (SC-004).
+
+## Before
+
+Measured 2026-11-08 at 9e62b93 (code unchanged since), `bun bench/memory-recall.bench.ts 1000`:
+lex reach 25/25 (FTS hit@5 8/25); para reach without pin 6/25 (map 6, words 0), total 20/25;
+`prepare()` p50 4.32 ms, p95 8.69 ms. `bun test` (apps/server): 250 pass, 0 fail.
+
+LongMemEval-S before (`bun bench/longmemeval.bench.ts`, all 470 scored, 30 abstention skipped):
+hit@5 0.000, hit@10 0.000, in-turn 0.000 on every type, as expected by construction (recall can't
+see conversations; the benchmark runs no consolidation). ai-memory 3.4.3: hit@5 0.951.

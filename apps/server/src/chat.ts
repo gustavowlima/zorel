@@ -40,10 +40,29 @@ export const memoryModelFor = (store: Repository, chatModel: string) =>
 const ASSOCIATED = 5 // facts recalled by association each turn, besides the RETRIEVED found by their words
 const RECALL_CHARS = 2_000 // the most the recalled facts take in a turn
 
+// A bounded piece of a past message around the words that matched, with who said it and where.
+export interface Excerpt {
+  readonly id: string
+  readonly chatId: string
+  readonly chatTitle: string
+  readonly author: string // "user" or the agent's name
+  readonly at: number
+  readonly text: string
+}
+// What recall found: facts and excerpts within the budget, best first (for the prompt), and the whole ranked list
+// before the budget (for the benchmarks).
+export interface Recalled {
+  readonly facts: ReadonlyArray<Memory>
+  readonly excerpts: ReadonlyArray<Excerpt>
+  readonly ranked: ReadonlyArray<{ readonly kind: "fact" | "message"; readonly id: string; readonly chatId: string | null }>
+}
+
 // What a turn recalls beyond the pinned memories: facts by association first (the points the person's messages name,
 // spread along the map: "deploy" brings Vercel and the Friday rule though neither word was said), then facts by their
 // words (FTS), without repeats, within RECALL_CHARS. No model call; a project's map in milliseconds.
-export const recall = (store: Repository, scopes: ReadonlyArray<string>, query: string, exclude: ReadonlyArray<string>) =>
+// `messages`: also search past messages of the chat's project (or of chats without one), leaving out the chat's own
+// messages after `after` (they are in the window).
+export const recall = (store: Repository, scopes: ReadonlyArray<string>, query: string, exclude: ReadonlyArray<string>, messages?: { projectId: string | null; chatId: string; after: number }) =>
   Effect.gen(function* () {
     const byWords = yield* store.searchMemories(scopes, query, exclude, RETRIEVED)
     const points = yield* store.entityNames(scopes)
@@ -71,12 +90,14 @@ export const recall = (store: Repository, scopes: ReadonlyArray<string>, query: 
     }
     let used = 0
     const seen = new Set<string>()
-    return [...byAssociation, ...byWords].filter((m) => {
+    const facts = [...byAssociation, ...byWords].filter((m) => {
       if (seen.has(m.id)) return false
       seen.add(m.id)
       used += m.text.length + 3
       return used <= RECALL_CHARS
     })
+    const recalled: Recalled = { facts, excerpts: [], ranked: facts.map((m) => ({ kind: "fact", id: m.id, chatId: null })) }
+    return recalled
   })
 
 // The names on a chat's map that stand for its project and its agents (so "Zorel" is the project's point, not a concept).
@@ -112,7 +133,7 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
       members: yield* members(store, chat),
       pinned: fixed,
       activeIds: active.map((m) => m.id),
-      retrieved: yield* recall(store, scopes, query, fixed.map((m) => m.id)),
+      retrieved: (yield* recall(store, scopes, query, fixed.map((m) => m.id))).facts,
       skills: { all, relevant: named },
       pages: knowledgeOf(agent) === "none" ? [] : yield* store.pinnedPages(scopes), // no access: no page in its context
       canPropose: memoryModeOf(agent) !== "read",

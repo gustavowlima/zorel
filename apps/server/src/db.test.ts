@@ -379,7 +379,7 @@ test("recall by association finds a fact its words don't (the measure for A2): d
       const byWords = (yield* r.searchMemories([scope], query, [], 5)).map((m) => m.id)
       expect(byWords).toContain(deploy.id)
       expect(byWords).not.toContain(build.id) // its words don't match
-      const recalled = (yield* recall(r, [scope], query, [])).map((m) => m.text)
+      const recalled = (yield* recall(r, [scope], query, [])).facts.map((m) => m.text)
       expect(recalled).toContain("Builds need NODE_VERSION 22 set in the dashboard") // association does
       expect(recalled).not.toContain("Lunch is at noon")
     })
@@ -391,8 +391,8 @@ test("aliases and categories let a question in other words reach the fact (parap
       const m = (yield* r.addMemory({ scope: "user", text: "Drinks green tea in the morning", state: "active", origin: "auto", chatId: null }))!
       yield* r.linkMemory(m.id, "user", mappedOf([{ name: "Green tea", type: "concept", aliases: ["chá verde"], category: "Beverage" }], []))
       expect((yield* r.searchMemories(["user"], "which hot beverage do I like?", [], 5)).length).toBe(0) // its words don't match
-      expect((yield* recall(r, ["user"], "which hot beverage do I like?", [])).map((x) => x.id)).toEqual([m.id]) // its category does
-      expect((yield* recall(r, ["user"], "quero um chá verde?", [])).map((x) => x.id)).toEqual([m.id]) // and its other name
+      expect((yield* recall(r, ["user"], "which hot beverage do I like?", [])).facts.map((x) => x.id)).toEqual([m.id]) // its category does
+      expect((yield* recall(r, ["user"], "quero um chá verde?", [])).facts.map((x) => x.id)).toEqual([m.id]) // and its other name
     })
   ))
 
@@ -410,11 +410,11 @@ test("a bridge between two projects' points: on both maps, and recall crosses it
       const unrelated = yield* add("project:b", "Webhooks retry three times", [{ name: "Webhooks", type: "concept" }, { name: "Retry", type: "concept" }])
       const pointIn = (scope: string) => Effect.map(r.entitiesIn([scope]), (es) => es.find((e) => e.name === "Stripe")!.id)
       const [a, b] = [yield* pointIn("project:a"), yield* pointIn("project:b")]
-      const before = (yield* recall(r, ["user", "project:a"], "how is billing set up?", [])).map((m) => m.id)
+      const before = (yield* recall(r, ["user", "project:a"], "how is billing set up?", [])).facts.map((m) => m.id)
       expect(before).not.toContain(webhooks.id)
       yield* r.connectEntities(b, a)
       expect((yield* r.bridgesOf([a])).others.map((o) => o.id)).toEqual([b])
-      const after = (yield* recall(r, ["user", "project:a"], "how is billing set up?", [])).map((m) => m.id)
+      const after = (yield* recall(r, ["user", "project:a"], "how is billing set up?", [])).facts.map((m) => m.id)
       expect(after).toContain(webhooks.id) // the other side's point's own fact
       expect(after).not.toContain(unrelated.id) // not the rest of that project's map
       yield* r.disconnectEntities(a, b)
