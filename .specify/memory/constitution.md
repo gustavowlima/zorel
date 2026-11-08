@@ -1,50 +1,86 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report
+- Version change: template → 1.0.0 (first ratification)
+- Principles: I. Scope and Simplicity, II. Security (NON-NEGOTIABLE), III. Explicit Errors and
+  Boundary Validation, IV. Cross-Platform, V. Language and Attribution
+- Added sections: Architecture Constraints, Development Workflow, Governance
+- Removed sections: none
+- Source: derived only from /Volumes/Gustavo_SSD/AGENTS.md and .agent/memory/project.md
+  conventions; no new rules introduced
+- Templates: ✅ .specify/templates/plan-template.md (Constitution Check reads gates from this
+  file, no edit needed) ✅ spec-template.md ✅ tasks-template.md (no principle-specific task types)
+- Deferred TODOs: none
+-->
+
+# Zorel Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Scope and Simplicity
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+- Understand the full scope before writing code; if a task is ambiguous, ask before assuming.
+- Do not refactor outside the task scope; prefer editing existing code over creating new files.
+- Do not install a dependency without stating why it is needed.
+- Do not delete code without understanding why it exists.
+- Small functions with a single responsibility; follow the style of the file being edited.
+- Light first: one process, one database file, no mandatory external service; grow only with
+  measurement.
+- Deliver complete or do not deliver: no partial implementation. A temporary hack is marked
+  `HACK:` with the reason.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+Rationale: the codebase is maintained by successive agents without shared memory; unrequested
+scope and silent shortcuts are what the next agent cannot reconstruct.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### II. Security (NON-NEGOTIABLE)
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+- Never commit secrets; use environment variables or the OS keychain.
+- Input validation always runs on the server, even when the client also validates.
+- Every authenticated route checks authorization, not only authentication.
+- Never expose a stack trace to the client in production.
+- Subscriptions always spawn the official CLI; Zorel never reads or stores its OAuth token.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+### III. Explicit Errors and Boundary Validation
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+- Validate input at the application boundary, not in the middle of the code.
+- Errors are explicit; an exception is never silenced without logging.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+### IV. Cross-Platform
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+- Every feature works on Windows, macOS and Linux.
+- Code that shells out to OS tools has a path per platform, and its parsers have unit tests with
+  sample output from each OS.
+- What could not be exercised live (CI and development run on macOS) is stated plainly.
+
+### V. Language and Attribution
+
+- Code, code comments and commit messages are in English.
+- Every text sent to models (prompts, tool results, engine errors) is in English and never tells
+  the model which language to reply in.
+- UI text goes through `packages/i18n`; user content is not translated.
+- No Claude attribution in commits, PR titles, PR bodies or PR comments.
+
+## Architecture Constraints
+
+- `packages/contracts` is the only source of types that cross the network.
+- Naming is Zorel: packages `@zorel/*`, env `ZOREL_*`, tools `zorel_*`; legacy `zero` names are
+  kept only where `.agent/memory/project.md` lists them.
+- `docs/ARCHITECTURE.md` is the source of truth for decisions (D1–D20) and phases.
+
+## Development Workflow
+
+- Before a task: read `.agent/memory/index.md` and only the domain files whose keywords match.
+- Before declaring done: run `bun run test`; check whether a new file needs an index, route or
+  export entry; if an API contract changed, verify every consumer.
+- Before declaring done: update the domain file in `.agent/memory/`, its index, and append to
+  `.agent/memory/changelog/[domain].md` when a rule changed.
+- The final report states what was done and what was left out of scope.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+This constitution restates the rules in `AGENTS.md` and `.agent/memory/project.md`; when they
+conflict, those files win and this one is amended to match. Amendments follow semantic
+versioning: MAJOR for a removed or redefined principle, MINOR for a new principle or section,
+PATCH for wording. Every plan's Constitution Check verifies the principles above, and any
+violation is justified in the plan's Complexity Tracking table.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-08
