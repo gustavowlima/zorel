@@ -67,12 +67,12 @@ No shared prerequisite: each story touches its own files. Stories can start afte
 
 **Independent Test**: unit tests show a 48k result returned ≤ 3,200 chars with the handle line, the rest readable by offset and by `find`, and small results unchanged.
 
-- [ ] T012 [P] [US3] In `apps/server/src/tools.ts`: add `COMPACT_AT = 16_000`, `COMPACT_HEAD = 3_000`, a per-chat store of the last 20 full results (`Map<chatId, {id, text}[]>`, ids `r1`, `r2`…), `compact(chatId, text)` returning the text unchanged or head + the English line from `contracts/agent-tools.md`, and `readResult(chatId, {id, offset, length, find})`; change the `resultText` marker to English (`[… result cut]`)
-- [ ] T013 [P] [US3] Define `READ_RESULT_TOOL` (`zorel_read_result`, inputs per `contracts/agent-tools.md`, class read) in `apps/server/src/team.ts` next to `REMEMBER_TOOL`
-- [ ] T014 [US3] In `apps/server/src/runtime.ts` tool `call`: pass the text content of every MCP and browser result through `compact(chat.id, …)` before returning it to the agent (the step shown in the app keeps `resultText`), handle `READ_RESULT_TOOL` with `readResult`, add it to the tool list at line ~422, and keep it out of the list while the chat has no shortened result (same rule as `idleTools`)
-- [ ] T015 [US3] In `apps/server/src/browser.ts`, drop the 30,000-char cut of `browser_snapshot` (compaction now applies) and remove `MAX_SNAPSHOT_CHARS` if nothing else uses it
-- [ ] T016 [US3] Tests in `apps/server/src/engines.test.ts` (or a new `apps/server/src/tools.test.ts` if they don't fit there): 48,000-char result → ≤ 3,200 chars with handle; `offset` and `find` return the cut part; unknown id and offset past the end return the contract's tool errors; a 15,000-char result is unchanged; another chat cannot read the handle
-- [ ] T017 [US3] Record before/after (largest result sizes, ratio) in `docs/ARCHITECTURE.md` §8 and `.agent/memory/server.md`
+- [X] T012 [P] [US3] In `apps/server/src/tools.ts`: add `COMPACT_AT = 16_000`, `COMPACT_HEAD = 3_000`, a per-chat store of the last 20 full results (`Map<chatId, {id, text}[]>`, ids `r1`, `r2`…), `compact(chatId, text)` returning the text unchanged or head + the English line from `contracts/agent-tools.md`, and `readResult(chatId, {id, offset, length, find})`; change the `resultText` marker to English (`[… result cut]`)
+- [X] T013 [P] [US3] Define `READ_RESULT_TOOL` (`zorel_read_result`, inputs per `contracts/agent-tools.md`, class read) in `apps/server/src/team.ts` next to `REMEMBER_TOOL`
+- [X] T014 [US3] In `apps/server/src/runtime.ts` tool `call`: pass the text content of every MCP and browser result through `compact(chat.id, …)` before returning it to the agent (the step shown in the app keeps `resultText`), handle `READ_RESULT_TOOL` with `readResult`, add it to the tool list at line ~422, and keep it out of the list while the chat has no shortened result (same rule as `idleTools`)
+- [X] T015 [US3] In `apps/server/src/browser.ts`, drop the 30,000-char cut of `browser_snapshot` (compaction now applies) and remove `MAX_SNAPSHOT_CHARS` if nothing else uses it
+- [X] T016 [US3] Tests in `apps/server/src/engines.test.ts` (or a new `apps/server/src/tools.test.ts` if they don't fit there): 48,000-char result → ≤ 3,200 chars with handle; `offset` and `find` return the cut part; unknown id and offset past the end return the contract's tool errors; a 15,000-char result is unchanged; another chat cannot read the handle
+- [X] T017 [US3] Record before/after (largest result sizes, ratio) in `docs/ARCHITECTURE.md` §8 and `.agent/memory/server.md`
 
 **Checkpoint**: no tool result of Zorel's own carries more than ~4k tokens into later steps.
 

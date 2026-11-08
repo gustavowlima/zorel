@@ -41,7 +41,56 @@ export const needsApproval = (mode: McpServer["mode"], cls: ToolInfo["cls"]) => 
 export const textResult = (text: string, isError = false): CallToolResult => ({ content: [{ type: "text", text }], isError })
 export function resultText(r: CallToolResult): string {
   const text = (r.content ?? []).map((c) => (c.type === "text" ? c.text : `[${c.type}]`)).join("\n")
-  return text.length > MAX_RESULT_CHARS ? `${text.slice(0, MAX_RESULT_CHARS)}\n[… resultado cortado]` : text
+  return text.length > MAX_RESULT_CHARS ? `${text.slice(0, MAX_RESULT_CHARS)}\n[… result cut]` : text
+}
+
+// ---------- large results ----------
+// A result of Zorel's own tools (MCP, browser) over COMPACT_AT characters reaches the agent as its first COMPACT_HEAD
+// and a handle; the whole text stays here, readable with zorel_read_result. A big result would otherwise be sent
+// again at every later step of the turn.
+export const COMPACT_AT = 16_000
+export const COMPACT_HEAD = 3_000
+const KEPT_PER_CHAT = 20
+const KEPT_CHATS = 50
+// ponytail: in memory, lost on restart (the agent is told to run the tool again); LRU by chat.
+const kept = new Map<string, { n: number; results: Array<{ id: string; text: string }> }>()
+
+export function compact(chatId: string, r: CallToolResult): CallToolResult {
+  const content = r.content ?? []
+  const text = content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join("\n")
+  if (text.length <= COMPACT_AT) return r
+  const entry = kept.get(chatId) ?? { n: 0, results: [] }
+  kept.delete(chatId)
+  kept.set(chatId, entry) // most recent last
+  if (kept.size > KEPT_CHATS) kept.delete(kept.keys().next().value!)
+  const id = `r${++entry.n}`
+  entry.results = [...entry.results, { id, text }].slice(-KEPT_PER_CHAT)
+  const line = `[Result shortened: ${text.length.toLocaleString("en-US")} characters in all, the first ${COMPACT_HEAD.toLocaleString("en-US")} shown. Read more with zorel_read_result {"id":"${id}","offset":${COMPACT_HEAD}}, or {"id":"${id}","find":"some text"} for the lines holding it.]`
+  return { ...r, content: [...content.filter((c) => c.type !== "text"), { type: "text", text: `${text.slice(0, COMPACT_HEAD)}\n${line}` }] }
+}
+
+// zorel_read_result: a slice of a shortened result, or its lines holding a text. Bad input is a tool error.
+export function readResult(chatId: string, args: Record<string, unknown>): CallToolResult {
+  const found = kept.get(chatId)?.results.find((x) => x.id === args.id)
+  if (!found) return textResult("That result is no longer available; run the tool again.", true)
+  const text = found.text
+  if (typeof args.find === "string" && args.find.trim()) {
+    const want = args.find.trim().toLowerCase()
+    const lines = text.split("\n").filter((l) => l.toLowerCase().includes(want))
+    let out = ""
+    let k = 0
+    for (const l of lines) {
+      if (out.length + l.length + 1 > COMPACT_AT) break
+      out += `${l}\n`
+      k++
+    }
+    return textResult(`${out}[${k} matching lines${k < lines.length ? ` of ${lines.length}` : ""}]`)
+  }
+  const offset = Number.isInteger(args.offset) && (args.offset as number) >= 0 ? (args.offset as number) : 0
+  if (offset >= text.length) return textResult(`The result has ${text.length} characters.`, true)
+  const length = Number.isInteger(args.length) ? Math.min(COMPACT_AT, Math.max(1, args.length as number)) : COMPACT_HEAD
+  const end = Math.min(text.length, offset + length)
+  return textResult(`${text.slice(offset, end)}\n[characters ${offset}–${end} of ${text.length}]`)
 }
 
 // ---------- hub ----------

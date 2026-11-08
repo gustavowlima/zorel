@@ -11,8 +11,8 @@ Returned in place of any result of Zorel's own tools (gateway MCP tools, browser
 
 ```text
 <first COMPACT_HEAD characters of the result>
-[Result shortened: 48,213 characters in all, this shows the first 3,000. Read more with
-zorel_read_result {"id":"r3","offset":3000} or find lines with {"id":"r3","find":"invoice"}.]
+[Result shortened: 48,213 characters in all, the first 3,000 shown. Read more with zorel_read_result
+{"id":"r3","offset":3000}, or {"id":"r3","find":"some text"} for the lines holding it.]
 ```
 
 Results at or under the limit are returned unchanged.
@@ -33,8 +33,11 @@ Errors (as tool errors, not exceptions):
 - unknown or dropped `id` → `That result is no longer available; run the tool again.`
 - `offset` past the end → `The result has N characters.`
 
-Classification: read (never asks for approval). Withheld from no access level; listed only after
-a result was shortened in the chat (idle-tools rule: no tool with nothing to read).
+Classification: read (never asks for approval). Withheld from no access level; listed whenever the
+turn has a tool whose result can be shortened (an MCP or browser tool). The tool list is fixed when
+the turn starts, so "only after a result was shortened" would hide it from the turn that needs it.
+Full results are kept in memory, the last 20 per chat (50 chats); after a restart the agent is told
+to run the tool again.
 
 ## Turn prompt layout (sessionless engines)
 
