@@ -11,7 +11,7 @@ import { stretchOf } from "./chat.ts"
 import { routerModel } from "./router.ts"
 import { ftsQuery } from "./db.ts"
 import { Secrets } from "./secrets.ts"
-import { classify, exposedName, needsApproval } from "./tools.ts"
+import { classify, compact, COMPACT_HEAD, exposedName, needsApproval, readResult, textResult } from "./tools.ts"
 
 const feed = (p: Parser, file: string) =>
   Bun.file(new URL(`./fixtures/${file}`, import.meta.url)).text().then((t) => [...t.split("\n").flatMap((l) => p.line(l)), ...p.end(0, "")] as EngineEvent[])
@@ -398,4 +398,25 @@ test("named points tolerate a plural", () => {
   expect(namedPoints("when do releases go out?", points)).toEqual(["1"])
   expect(namedPoints("two deploys", points)).toEqual(["1"])
   expect(namedPoints("the bus", points)).toEqual(["2"]) // short words aren't cut
+})
+
+test("a large tool result reaches the agent shortened, and the rest stays readable from that chat only", () => {
+  const big = Array.from({ length: 1000 }, (_, i) => `line ${i} ${i === 900 ? "invoice 42 overdue" : "x".repeat(40)}`).join("\n")
+  expect(big.length).toBeGreaterThan(45_000)
+  const r = compact("chat-a", textResult(big))
+  const shown = (r.content[0] as { text: string }).text
+  expect(shown.length).toBeLessThanOrEqual(3_200)
+  expect(shown.startsWith(big.slice(0, COMPACT_HEAD))).toBe(true)
+  const id = shown.match(/"id":"(r\d+)"/)![1]!
+  expect(shown).toContain(`${big.length.toLocaleString("en-US")} characters in all`)
+  const slice = (readResult("chat-a", { id, offset: COMPACT_HEAD, length: 500 }).content[0] as { text: string }).text
+  expect(slice.startsWith(big.slice(COMPACT_HEAD, COMPACT_HEAD + 500))).toBe(true)
+  expect(slice).toContain(`[characters ${COMPACT_HEAD}–${COMPACT_HEAD + 500} of ${big.length}]`)
+  const found = (readResult("chat-a", { id, find: "INVOICE" }).content[0] as { text: string }).text
+  expect(found).toBe("line 900 invoice 42 overdue\n[1 matching lines]")
+  expect(readResult("chat-b", { id }).isError).toBe(true) // another chat can't read it
+  expect(readResult("chat-a", { id: "r999" })).toEqual(textResult("That result is no longer available; run the tool again.", true))
+  expect(readResult("chat-a", { id, offset: big.length })).toEqual(textResult(`The result has ${big.length} characters.`, true))
+  const small = textResult("y".repeat(15_000))
+  expect(compact("chat-a", small)).toBe(small) // under the limit: unchanged
 })

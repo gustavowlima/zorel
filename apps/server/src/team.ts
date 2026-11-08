@@ -134,6 +134,15 @@ export const REMEMBER_TOOL = {
   writes: false
 } as const
 
+// A result of Zorel's own tools too long to send whole (tools.ts compact): read the rest by position or by a text.
+export const READ_RESULT_TOOL = {
+  name: "zorel_read_result",
+  description:
+    "Read more of a tool result that was shortened (it ends with a [Result shortened …] line giving its id). offset: where to start; length: how much (default 3000, at most 16000); or find: a text, to get only the lines that hold it.",
+  inputSchema: { properties: { id: { type: "string" }, offset: { type: "integer", minimum: 0 }, length: { type: "integer", minimum: 1, maximum: 16000 }, find: { type: "string" } }, required: ["id"] },
+  writes: false
+} as const
+
 // Skills: read a recipe when the task matches; propose a new one or a better version of one, with
 // the reason. Proposals wait for the person in Knowledge, who sees what changes before approving.
 export const SKILL_TOOLS = [

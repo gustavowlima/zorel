@@ -17,14 +17,14 @@ import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
 import { cardText, TOO_LARGE } from "./engines/policy.ts"
-import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, REMEMBER_TOOL, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo } from "./team.ts"
+import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, READ_RESULT_TOOL, REMEMBER_TOOL, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
 import { freePort, outputTail, PREVIEW_TOOL, previewFolder, previewKey, previewLine, previewUrl, waitForPort } from "./preview.ts"
 import { managerOf, scriptsOf, shellAlive, startShell } from "./terminals.ts"
-import { exposedName, type GatewayHandle, NO_TOOLS, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
+import { compact, exposedName, type GatewayHandle, NO_TOOLS, readResult, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
 import { asMemory, picked, readSkill } from "./file-skills.ts"
 import { accessChange, browserRoute, mcpRoute, permissionsOf, REQUEST_ACCESS_TOOL, withAlways } from "./permissions.ts"
 
@@ -415,6 +415,8 @@ export const makeRuntime = Effect.gen(function* () {
     // The chat's browser: Zorel's own tools, always there. Reading never asks; acting asks when the agent's
     // access is "ask", like any tool that writes.
     if (perms.browser) for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    // Only tools whose results can be shortened (MCP, browser) need a way to read the rest (tools.ts compact).
+    if (defs.length) defs.push({ name: READ_RESULT_TOOL.name, description: READ_RESULT_TOOL.description, inputSchema: READ_RESULT_TOOL.inputSchema })
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
     // Each tool's description costs tokens in every session: the ones that only read something are offered once
     // there is something to read (memories past the prompt's budget, a page, a skill); writing ones stay.
@@ -777,6 +779,7 @@ export const makeRuntime = Effect.gen(function* () {
         await finish(s, "ok", change.label)
         return textResult(`Granted: ${change.label}. It works from your next turn.`)
       }
+      if (name === READ_RESULT_TOOL.name) return readResult(chat.id, args)
       if (name === MEMORY_TOOL.name) return memoryCall(args)
       if (name === REMEMBER_TOOL.name) return rememberCall(args)
       if (name === TASK_TOOL.name) return taskCall(args)
@@ -807,7 +810,7 @@ export const makeRuntime = Effect.gen(function* () {
         const out = resultText(r)
         legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
         await finish(s, r.isError ? "error" : "ok", out)
-        return r
+        return compact(chat.id, r)
       }
       const route = routes.get(name)
       const server = route && (await run(store.mcpServer(route.server)))
@@ -833,7 +836,7 @@ export const makeRuntime = Effect.gen(function* () {
       const out = resultText(r)
       legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
       await finish(s, r.isError ? "error" : "ok", out)
-      return r
+      return compact(chat.id, r)
     }
     if (fixed) {
       fixed.update({ tools: defs, call })
