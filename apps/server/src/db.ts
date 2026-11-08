@@ -24,6 +24,16 @@ export const profileOf = (a: Agent): AgentProfile => ({
 // "Prefere PRs pequenos." and "prefere prs pequenos" are the same memory.
 export const normalize = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
 
+// The same fact said with other small words: normalized words in order, without articles and possessives, without a
+// leading subject ("The user uses…" is "Uses…"), and a final -s off words of 4+ letters ("Fridays", "runs"). Order,
+// numbers and negations stay, so "TypeScript over JavaScript", "port 8081" and "never deploys" keep their own key.
+const SMALL_WORDS = new Set("the a an their his her my its o os as um uma meu minha seu sua".split(" "))
+const SUBJECTS = new Set(["user", "person", "pessoa", "usuario"])
+export const canonical = (t: string) => {
+  const w = normalize(t).split(" ").filter((x) => x && !SMALL_WORDS.has(x))
+  return (SUBJECTS.has(w[0] ?? "") ? w.slice(1) : w).map((x) => (x.length >= 4 && x.endsWith("s") ? x.slice(0, -1) : x)).join(" ")
+}
+
 // Words too common to find anything (English and Portuguese, after normalize): matching them ranks noise.
 const STOPWORDS = new Set(
   "the and you for with that this are was were not but have has had what from can your our they them then than there here will would should could about into just also its ".concat(
@@ -645,6 +655,17 @@ export const repository = (db: Db, pagesDir?: string) => {
         // Only a skill can be limited to some agents.
         const m: Memory = { id: crypto.randomUUID(), kind: "fact", title: "", replaces: null, reason: null, agentId: null, ...rest, agents: rest.kind === "skill" ? only : [], createdAt: at, confirmedAt: at }
         const audience = m.scope === "user" ? "owner" : "project"
+        // Said again in other small words: the active fact of the same scope and owner is confirmed instead.
+        // ponytail: scans the scope's active facts (~1 ms at 1k); add an indexed canonical column past ~10k per scope.
+        if (m.kind === "fact") {
+          const key = canonical(m.text)
+          const rows = yield* db.select({ id: memories.id, text: memories.text }).from(memories).where(and(eq(memories.scope, m.scope), eq(memories.owner, owner), eq(memories.kind, "fact"), eq(memories.state, "active")))
+          const same = rows.find((r) => canonical(r.text) === key)
+          if (same) {
+            yield* db.update(memories).set({ confirmedAt: at }).where(eq(memories.id, same.id))
+            return undefined
+          }
+        }
         const inserted = yield* db.insert(memories).values({ ...m, owner, audience, keywords, normalized: normalize(m.text) }).onConflictDoNothing().returning({ id: memories.id })
         // Said again: the existing active one is confirmed (it ranks first for the prompt's budget).
         if (!inserted.length)

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSy
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
-import { sameName, Store, twins } from "./db.ts"
+import { canonical, sameName, Store, twins } from "./db.ts"
 import { LEGACY_MIGRATIONS } from "./migrate.ts"
 import { recall } from "./chat.ts"
 import { mappedOf } from "./context.ts"
@@ -31,6 +31,32 @@ test("memories: dedupe by normalized text, FTS search by scope, excludes those a
       expect((yield* r.searchMemories(scopes, "netlify", [], 5)).map((m) => m.id)).toEqual([a.id])
       yield* r.removeProject(p.id)
       expect(yield* r.memory(a.id)).toBeUndefined()
+    })
+  ))
+
+test("memories: the same fact in other small words confirms the existing one; another meaning, owner or scope stays apart", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const add = (text: string, scope = "project:p", extra: { owner?: string } = {}) => r.addMemory({ scope, text, state: "active", origin: "auto", chatId: null, ...extra })
+      // Merged: dropped article, plural, third-person rewrite.
+      expect(yield* add("The API runs on port 8080")).toBeDefined()
+      expect(yield* add("API runs on port 8080")).toBeUndefined()
+      expect(yield* add("Deploys happen on Fridays")).toBeDefined()
+      expect(yield* add("Deploys happen on Friday")).toBeUndefined()
+      expect(yield* add("Uses Neovim as the editor", "user")).toBeDefined()
+      expect(yield* add("The user uses Neovim as their editor", "user")).toBeUndefined()
+      // Kept apart: reversed order, a negation, another number, another owner, another scope.
+      expect(yield* add("Prefers TypeScript over JavaScript")).toBeDefined()
+      expect(yield* add("Prefers JavaScript over TypeScript")).toBeDefined()
+      expect(yield* add("Never deploys happen on Fridays")).toBeDefined()
+      expect(yield* add("The API runs on port 8081")).toBeDefined()
+      expect(yield* add("The user uses Neovim as their editor", "user", { owner: "bob" })).toBeDefined()
+      expect(yield* add("API runs on port 8080", "project:q")).toBeDefined()
+      // A forgotten fact is not "the same" as a new one.
+      const old = (yield* add("Likes emojis", "user"))!
+      yield* r.updateMemory(old.id, { state: "forgotten" })
+      expect(yield* add("Likes the emojis", "user")).toBeDefined()
+      expect(canonical("The user uses Neovim as their editor")).toBe(canonical("Uses Neovim as the editor"))
     })
   ))
 
