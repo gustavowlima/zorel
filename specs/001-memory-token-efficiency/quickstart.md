@@ -92,3 +92,20 @@ Measured 2026-11-08 on `feat/memory-efficiency` at 111a798 (`bun bench/memory-re
 Dedupe: 5/11 same-meaning variants merged (case+punct, whitespace+hyphen, punct, diacritics,
 diacritics in token); kept apart: abbreviation, reworded, dropped article, synonym, plural,
 third-person rewrite; reversed meaning kept (correct).
+
+## After
+
+Measured 2026-11-08 at the end of spec 001 (`bun bench/memory-recall.bench.ts 1000 --check`: ok;
+`bun run test`: 314 pass, 0 fail; `bun run typecheck`: ok; `bun run lint` fails on its config, a
+nested `biome.json` in an untracked `.delta/worktrees/` folder; the changed files have the same 18
+warnings as before).
+
+| SC | before | after | met? |
+|---|---|---|---|
+| SC-001 paraphrased reach without pin (1,000) | not measured (map unused in the bench) | 6/25 by map, 0/25 by words; total with pin 20/25 (was 17/25) | no (≥ 20/25) |
+| SC-002 same-meaning variants merged | 5/11 | 8/11, reversed meaning kept, 0 false merges in db.test | yes |
+| SC-003 results over the limit | MCP whole (no limit), snapshot cut at 30k with the rest lost | ≤ 3,200 chars + handle, rest readable; 48k → 15× smaller | yes |
+| SC-004 stable prefix (sessionless) | recall in the system prompt | identical args/prompt up to `<context>` (test); real cache share not re-measured | yes (test) |
+| SC-005 memory layer ≤ 1k tokens | ~2,071 tokens | unchanged (gated on SC-001) | skipped |
+| SC-006 procedure kept once | 1 skill + 2 facts | 1 skill + 0 facts; false 0, secrets 0/2 | yes |
+| SC-007 no regression | 246 tests | 250 server tests (314 total) green; prepare p50 1.9 ms → 4.3 ms with the map filled (19.7 ms before T029) | yes |

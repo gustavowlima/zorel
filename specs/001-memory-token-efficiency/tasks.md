@@ -119,8 +119,8 @@ No shared prerequisite: each story touches its own files. Stories can start afte
 ## Phase 9: Polish & Cross-Cutting
 
 - [X] T029 [US1] Bring `prepare()` back under 5 ms p95 at 1,000 mapped memories: `linksAmong` (`apps/server/src/db.ts`) co-mention self-join costs ~16 ms (found by T005)
-- [ ] T027 Run `bun run test`, `bun run typecheck`, `bun run lint` from the repo root and `bun bench/memory-recall.bench.ts 1000 --check` from `apps/server`; all green
-- [ ] T028 Add a `## After` table next to `## Before` in `specs/001-memory-token-efficiency/quickstart.md` with every SC's before/after number, and append a line per changed rule to `.agent/memory/changelog/server.md`
+- [X] T027 Run `bun run test`, `bun run typecheck`, `bun run lint` from the repo root and `bun bench/memory-recall.bench.ts 1000 --check` from `apps/server`; all green
+- [X] T028 Add a `## After` table next to `## Before` in `specs/001-memory-token-efficiency/quickstart.md` with every SC's before/after number, and append a line per changed rule to `.agent/memory/changelog/server.md`
 
 ---
 
