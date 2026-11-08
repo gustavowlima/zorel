@@ -4,7 +4,7 @@ process.env.ZOREL_API_ENGINE = "direct" // these tests drive the direct API engi
 import { type Agent, DEFAULT_PERMISSIONS, type Memory, type Message, namedSkills, skillHandle } from "@zorel/contracts"
 import { Effect, Stream } from "effect"
 import { buildTurn, grounded, mappedOf, memoryNote, mentioned, namedPoints, parseConsolidation, pinned, readPage, reviewed, sectionOf, similar, spread, withinBudget } from "./context.ts"
-import { cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
+import { cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, sessionless, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
 import { codexFailure, codexStep, windowsOf } from "./engines/codex.ts"
 import { hasCredential, redact } from "./observability.ts"
 import { stretchOf } from "./chat.ts"
@@ -419,4 +419,37 @@ test("a large tool result reaches the agent shortened, and the rest stays readab
   expect(readResult("chat-a", { id, offset: big.length })).toEqual(textResult(`The result has ${big.length} characters.`, true))
   const small = textResult("y".repeat(15_000))
   expect(compact("chat-a", small)).toBe(small) // under the limit: unchanged
+})
+
+test("sessionless engines: two turns that recall different memories send the same prompt up to <context>", () => {
+  const dev = agentOf("a", "Dev", "INSTR")
+  const turnWith = (found: string) =>
+    sessionless(buildTurn({
+      chat: { id: "c", projectId: "p", agentIds: ["a"], title: "", accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "SUMMARYTEXT", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
+      model: "claude-cli/sonnet",
+      project: { id: "p", name: "P", brief: "BRIEF", path: null, defaultAgentId: null, createdAt: 0 },
+      agent: dev,
+      members: [dev],
+      pinned: [mem("MINE", 1)],
+      retrieved: [mem(found, 1)],
+      skills: { all: [], relevant: [] },
+      messages: [msg("user", "hi"), msg("assistant", "hello", "a"), msg("user", "so?")],
+      cwd: "/tmp"
+    }))
+  const [a, b] = [turnWith("FOUND ONE"), turnWith("FOUND TWO")]
+  const upTo = (s: string) => s.slice(0, s.indexOf("<context>"))
+  // CLI (claude, codex): system prompt argument + transcript on stdin; ACP: system + transcript in one prompt; API: system + messages.
+  expect(claudeArgs(a)).toEqual(claudeArgs(b))
+  expect(codexArgs(a)).toEqual(codexArgs(b))
+  expect(a.system).not.toContain("FOUND")
+  const [ta, tb] = [`${a.system}\n\n${transcript(a.messages)}`, `${b.system}\n\n${transcript(b.messages)}`]
+  expect(upTo(ta)).toBe(upTo(tb))
+  expect(upTo(ta).length).toBeGreaterThan(0)
+  expect(ta.slice(ta.indexOf("<context>"))).toContain("FOUND ONE")
+  expect(tb.slice(tb.indexOf("<context>"))).toContain("FOUND TWO")
+  expect(a.messages.slice(0, -1)).toEqual(b.messages.slice(0, -1))
+  expect(ta.indexOf("<context>")).toBeGreaterThan(ta.indexOf("so?")) // after the new message
+  // An internal task (no stable part) is sent as it is.
+  const plain = { model: "claude-cli/haiku", system: "S", messages: [{ role: "user" as const, text: "x" }], cwd: "/tmp" }
+  expect(sessionless(plain)).toBe(plain)
 })

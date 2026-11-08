@@ -292,6 +292,7 @@ base → agent → channel → about you (approved) → project (brief) → know
   - Skills: the list carries titles (a file skill's description too); the steps come only for skills named with `$handle`, otherwise through `zorel_read_skill`.
   - Reading tools are offered once there is something to read (`idleTools`): `zorel_search_memories` when memories pass the prompt's budget, `zorel_knowledge_search`/`_read` when a page exists in scope, `zorel_read_skill` when the agent sees a skill. Writing tools stay.
   - Pages are read by section (`section`), at most 24k characters per read; search results name the section of each hit.
+- **Stable prefix for sessionless engines (spec 001 US4, 2026-11-08):** `claude -p`, `codex exec`, ACP agents and the direct API used to get `system = stable + dynamic`, so a turn that recalled other memories changed the system prompt and the provider re-read it uncached. Now `sessionless()` (engines.ts) sends `stable` as the system prompt and appends the dynamic part (skill bodies, summary, recalled memories) as a `<context>` block after the new message, the same block native sessions use. Internal tasks (no `stable`) are unchanged. Test: two turns differing only in recalled facts give identical CLI args and identical prompts up to `<context>`.
 - **Measurement on every turn:** latency to the first token, total latency, input tokens, tokens read from cache and output tokens. Context decisions are based on these numbers.
 
 ---
