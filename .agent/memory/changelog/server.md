@@ -99,3 +99,5 @@
 2026-11-08 | addMemory merges by canonical(text) within scope+owner (active facts) | spec 001 US2: dedupe 5/11 → 8/11, reversed meaning kept
 2026-11-08 | consolidation drops a fact that restates a skill of the same answer; prompt rule added | spec 001 US6: procedure was kept as skill + 2 facts
 2026-11-08 | linksAmong pairs co-mentions in JS, single IN for relations | prepare p50 19.7 → 4.3 ms at 1k mapped memories
+2026-11-08 | recalled section opens with UNTRUSTED_NOTICE; noClose() on everything inside <context> | spec 002 US3: recalled text could close the block and read as instructions
+2026-11-08 | message_index FTS5 + recall fuses map, fact FTS and past-message excerpts by RRF k=60 (10 per source, 5 excerpts shown) | spec 002 US1/US2: conversations were never recalled; LongMemEval-S 0 → 0.940 hit@5
