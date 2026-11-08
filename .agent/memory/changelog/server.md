@@ -93,3 +93,9 @@
 2026-11-05 | memory map A4.1: entity aliases + category (IS_A relation) in extraction and backfill, namedPoints tolerates plurals, bench asks in other words via recall (and fixed the bench's old consolidate(chat, true) call) | paraphrase recall without embeddings: real Haiku run words 3/5 → recall 4/5
 2026-11-05 | memory map A4.2: bridges (entity_links) connect/disconnect endpoints, map includes far ends + bridge links, recall spreads across but takes only the far point's own facts; removeProject deletes the scope's entities | manual cross-project links, never automatic; a removed project left an orphan point
 2026-11-05 | memory map A4.3: Store.sleepMap (orphans out, twins merge: facts/relations/bridges/aliases/weight), twins(), daily fork in runtime | a later alias can make two points one thing; points of deleted facts lingered. No decay/contradiction flags: false positives > value
+2026-11-08 | recall bench files needles (frozen real map) and noise on the map, reports reach by map/words/pin, --check PARA_FLOOR 6 | spec 001 US1: map recall was never measured; paraphrase reach without pin 6/25
+2026-11-08 | MCP and browser results over 16k chars reach the agent as 3k + handle; zorel_read_result reads the rest; snapshot 30k cut removed; display marker in English | spec 001 US3: MCP results reached the agent whole and were resent every step
+2026-11-08 | sessionless engines: system = stable, dynamic as <context> after the new message (sessionless()) | spec 001 US4: per-turn recall in the system prompt broke the provider cache
+2026-11-08 | addMemory merges by canonical(text) within scope+owner (active facts) | spec 001 US2: dedupe 5/11 → 8/11, reversed meaning kept
+2026-11-08 | consolidation drops a fact that restates a skill of the same answer; prompt rule added | spec 001 US6: procedure was kept as skill + 2 facts
+2026-11-08 | linksAmong pairs co-mentions in JS, single IN for relations | prepare p50 19.7 → 4.3 ms at 1k mapped memories
