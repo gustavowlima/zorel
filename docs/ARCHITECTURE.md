@@ -74,18 +74,21 @@ Reviewed on 2026-11-04.
 
 ## 3. Modules
 
-| Module | Today | Target |
+State checked against the code on 2026-11-08 (`feat/memory-efficiency`). "Open" lists what the original
+target named and the code doesn't do yet.
+
+| Module | Today | Open |
 |---|---|---|
-| `packages/contracts` | Entities + `Api` (HttpApi) + `SendEvent` | + `ZorelRpc` (`RpcGroup`) with a typed `ChatEvent`. `SendEvent` goes away |
-| `server/db.ts` | 3 migrations; synchronous repository over `bun:sqlite` | `db/schema.ts` (Drizzle) + `db/migrations/` (`drizzle-kit`) + Effect repositories over `@effect/sql-sqlite-bun`. New tables: `turns`, `approvals`, `provider_sessions`, `provider_accounts`, `usage_windows`, structured work steps, `projects.path`, failover list on agent and chat, `observations`, `pages` (+ `page_versions`, FTS5) with owner/audience, agent versions |
-| `server/access.ts`, `server/workspace.ts` | — | `Actor` (who makes the request) and `Workspace` (where the agent works): D17's doors |
-| `server/usage/` | Tokens per message | `pricing.ts` (price per model, from the OpenCode/models.dev catalog, with a manual fallback), `windows.ts` (reading the limit windows per account, with cache and spacing), `aggregate.ts` (queries for the usage area) |
-| `server/engines.ts` | CLI wrappers + `effect/ai` in a single file | `engines/` folder: `types.ts` (interface + capabilities), `claude-sdk.ts`, `codex-app-server.ts`, `acp.ts` (own JSON-RPC client), `api.ts`. Codex has its own minimal App Server client (`codex.ts`) |
-| `server/chat.ts` | Turn inside the request stream | `runtime/`: `queue.ts` (queue per chat), `turn.ts` (execution of one response), `recovery.ts` (boot), `events.ts` (PubSub per chat) |
-| `server/context.ts` | Full assembly on every turn | + `deltaSince(session)` (only what the session has not seen); the full assembly becomes the resume point |
-| `server/tools.ts` | Hub + gateway + policy | + internal `zorel.*` tools; permission bridge for native tools |
-| `server/knowledge/` | Memories and skills scattered across `chat.ts`/`db.ts`/`context.ts` | `capture.ts` (observations per turn, no secrets), `consolidate.ts` (session page without LLM + proposals with optional LLM), `brief.ts` (entry brief), `search.ts` (FTS), `redact.ts` |
-| `web/api.ts`, `state.ts` | `call()` + `useState` + `reload()` | `client.ts` (`AtomHttpApi.Service` + `AtomRpc`) and atoms per resource |
+| `packages/contracts` | Entities, `Api` (HttpApi) and `ZorelRpc` (`RpcGroup`) with a typed `ChatEvent` | — |
+| `server/schema.ts`, `server/db.ts`, `drizzle/` | Drizzle schema (23 tables, FTS5 indexes for memories, pages, entities and messages kept by triggers), 41 `drizzle-kit` migrations, one Effect repository (`Store`) over `@effect/sql-sqlite-bun` | Split `db.ts` by domain only if it starts to hurt; `observations` were not needed (messages are recalled directly, spec 002) |
+| `server/access.ts`, `server/workspace.ts` | `Actor` and `Workspace` (shadow git per project, turn diffs and undo) | — |
+| `server/pricing.ts`, `server/accounts.ts` | Price per model (models.dev catalog + fallback), limit windows per account read from the CLIs with cache and backoff | — |
+| `server/engines.ts`, `server/engines/` | `engines.ts` (interface, CLI and `effect/ai` paths, `sessionless()`), `engines/claude-sdk.ts`, `engines/codex.ts` (own App Server client), `engines/acp.ts` (own JSON-RPC client), `engines/session.ts`, `engines/policy.ts` | — |
+| `server/runtime.ts`, `server/chat.ts` | Per-chat queue in the database, one turn at a time, boot recovery, events per chat (`runtime.ts`); turn preparation, recall and consolidation (`chat.ts`) | A `runtime/` folder was the target; one file still reads fine |
+| `server/context.ts` | `buildTurn`: stable / frame / dynamic parts; native sessions are tied to `frame` and get changes as `memoryNote` (the target's `deltaSince`) | — |
+| `server/tools.ts`, `server/team.ts`, `server/browser.ts` | MCP hub + per-turn gateway + policy, internal `zorel_*` tools, chat browser; large results shortened behind `zorel_read_result` | — |
+| Memory and knowledge (`chat.ts`, `context.ts`, `db.ts`, `page-*.ts`) | Facts and skills with consolidation, the map (A1–A4.3), recall from facts and past chats (spec 002), pages as files | A `knowledge/` folder was the target; the code stayed in the files above |
+| `web/client.ts` + `web/features/` | `AtomHttpApi` + `AtomRpc` client, atoms per resource, one file per feature | — |
 
 Rule: the domain (context, engines, learning, tools) imports nothing from transport. `main.ts` and `rpc.ts` only translate.
 
