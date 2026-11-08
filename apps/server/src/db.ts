@@ -819,15 +819,22 @@ export const repository = (db: Db, pagesDir?: string) => {
         ? orDie(
             Effect.gen(function* () {
               const list = sql.join(ids.map((x) => sql`${x}`), sql`, `)
-              const named = yield* db.all<{ a: string; b: string; rel: string }>(
-                sql`SELECT src AS a, dst AS b, rel FROM relations WHERE invalid_at IS NULL AND src IN (${list}) AND dst IN (${list})`
+              // One IN, the other end checked here: two IN lists of the same ids made SQLite take ~3 ms.
+              const among = new Set(ids)
+              const named = (yield* db.all<{ a: string; b: string; rel: string }>(
+                sql`SELECT src AS a, dst AS b, rel FROM relations WHERE invalid_at IS NULL AND src IN (${list})`
+              )).filter((l) => among.has(l.b))
+              // Pairs one living fact names together, paired here: SQLite's self-join took ~16 ms at 1k mapped facts.
+              const mentions = yield* db.all<{ memory_id: string; entity_id: string }>(
+                sql`SELECT me.memory_id, me.entity_id FROM memory_entities me
+                    JOIN memories m ON m.id = me.memory_id AND m.state IN ('active', 'pending')
+                    WHERE me.entity_id IN (${list})`
               )
-              const together = yield* db.all<{ a: string; b: string }>(
-                sql`SELECT DISTINCT x.entity_id AS a, y.entity_id AS b FROM memory_entities x
-                    JOIN memory_entities y ON y.memory_id = x.memory_id AND x.entity_id < y.entity_id
-                    JOIN memories m ON m.id = x.memory_id AND m.state IN ('active', 'pending')
-                    WHERE x.entity_id IN (${list}) AND y.entity_id IN (${list})`
-              )
+              const byFact = new Map<string, string[]>()
+              for (const r of mentions) byFact.set(r.memory_id, [...(byFact.get(r.memory_id) ?? []), r.entity_id])
+              const pairs = new Set<string>()
+              for (const es of byFact.values()) for (const a of es) for (const b of es) if (a < b) pairs.add(`${a}|${b}`)
+              const together = [...pairs].map((p) => { const [a, b] = p.split("|") as [string, string]; return { a, b } })
               const seen = new Set(named.map((l) => [l.a, l.b].sort().join("|")))
               return [...named, ...together.filter((l) => !seen.has([l.a, l.b].sort().join("|"))).map((l) => ({ ...l, rel: "" }))]
             })
