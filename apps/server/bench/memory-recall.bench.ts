@@ -206,7 +206,7 @@ const bench = (total: number, r: Repository, dataDir: string) =>
           if (!scopes.includes(m.scope)) leaks.push(`scope ${m.scope} for "${q}"`)
         }
         if (kind === "para") {
-          const recalled = yield* recall(r, scopes, q, [])
+          const recalled = (yield* recall(r, scopes, q, [])).facts
           const byWords = (yield* r.searchMemories(scopes, q, [], RETRIEVED)).some((m) => m.id === id)
           const how = !recalled.some((m) => m.id === id) ? (pinnedIds.has(id) ? "pin" : "none") : byWords ? "words" : "map"
           reach[how]++

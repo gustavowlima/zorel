@@ -106,7 +106,7 @@ const runCase = (c: Case) => {
       const scopes = ["user", `project:${project.id}`, ...(c.agent ? [`agent:${agent.id}`] : [])]
       const hits = yield* store.searchMemories(scopes, c.ask, [], 5)
       found = hits.some((h) => proposed.some((p) => p.id === h.id))
-      recalled = (yield* recall(store, scopes, c.ask, [])).some((h) => proposed.some((p) => p.id === h.id))
+      recalled = (yield* recall(store, scopes, c.ask, [])).facts.some((h) => proposed.some((p) => p.id === h.id))
       if (process.env.BENCH_MAP) console.error(c.id, "map:", JSON.stringify((yield* store.entitiesIn(scopes)).map((e) => e.name)), JSON.stringify((yield* store.entityNames(scopes)).map((e) => [e.normalized, e.aliases])))
     }
     const call = calls[before]
