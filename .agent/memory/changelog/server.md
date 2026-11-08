@@ -102,3 +102,4 @@
 2026-11-08 | recalled section opens with UNTRUSTED_NOTICE; noClose() on everything inside <context> | spec 002 US3: recalled text could close the block and read as instructions
 2026-11-08 | message_index FTS5 + recall fuses map, fact FTS and past-message excerpts by RRF k=60 (10 per source, 5 excerpts shown) | spec 002 US1/US2: conversations were never recalled; LongMemEval-S 0 → 0.940 hit@5
 2026-11-08 | pinned pages carry their text (2,000 chars); page writes refused unless read and unchanged since; empty search says not to guess | ideas from Mastra Knowledge: a standing rule cost a tool call; blind whole-page overwrites
+2026-11-08 | map extraction and consolidation ask for everyday-word aliases and a plain category | paraphrase reach without pin 6/25 → 15/25 (Haiku filled aliases for 1/25 needles)
