@@ -110,15 +110,15 @@ No shared prerequisite: each story touches its own files. Stories can start afte
 
 **Depends on**: T007 (US1 result). If SC-001 was missed, do only T026. **US1 result: missed (6/25) → only T026.**
 
-- [ ] T024 [US5] In `apps/server/src/context.ts`, set `MEMORY_BUDGET` to 4,000 (from 8,000)
-- [ ] T025 [US5] Run the recall bench at 1,000; keep the change only if `memory layer chars in prompt` ≤ ~4,000 and `total` reach is not below the 8,000-budget run; otherwise revert T024
-- [ ] T026 [US5] Record the outcome in `docs/ARCHITECTURE.md` §8 and `.agent/memory/server.md`; if SC-001 was missed or T025 reverted, write the gap as the entry criterion for embeddings
+- [ ] T024 (skipped: US1 missed SC-001) [US5] In `apps/server/src/context.ts`, set `MEMORY_BUDGET` to 4,000 (from 8,000)
+- [ ] T025 (skipped: US1 missed SC-001) [US5] Run the recall bench at 1,000; keep the change only if `memory layer chars in prompt` ≤ ~4,000 and `total` reach is not below the 8,000-budget run; otherwise revert T024
+- [X] T026 [US5] Record the outcome in `docs/ARCHITECTURE.md` §8 and `.agent/memory/server.md`; if SC-001 was missed or T025 reverted, write the gap as the entry criterion for embeddings
 
 ---
 
 ## Phase 9: Polish & Cross-Cutting
 
-- [ ] T029 [US1] Bring `prepare()` back under 5 ms p95 at 1,000 mapped memories: `linksAmong` (`apps/server/src/db.ts`) co-mention self-join costs ~16 ms (found by T005)
+- [X] T029 [US1] Bring `prepare()` back under 5 ms p95 at 1,000 mapped memories: `linksAmong` (`apps/server/src/db.ts`) co-mention self-join costs ~16 ms (found by T005)
 - [ ] T027 Run `bun run test`, `bun run typecheck`, `bun run lint` from the repo root and `bun bench/memory-recall.bench.ts 1000 --check` from `apps/server`; all green
 - [ ] T028 Add a `## After` table next to `## Before` in `specs/001-memory-token-efficiency/quickstart.md` with every SC's before/after number, and append a line per changed rule to `.agent/memory/changelog/server.md`
 
