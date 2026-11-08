@@ -98,9 +98,9 @@ No shared prerequisite: each story touches its own files. Stories can start afte
 
 **Independent Test**: consolidation bench `procedure` case → 1 skill, 0 restating facts; totals unchanged.
 
-- [ ] T021 [P] [US6] Add the rule "A fact must not restate a skill you propose in the same answer" to `CONSOLIDATION_SYSTEM` in `apps/server/src/context.ts`
-- [ ] T022 [US6] After `parseConsolidation` in `apps/server/src/context.ts`, drop a proposed fact whose content words (normalized, stopwords out) are all contained in a skill proposed in the same answer; unit test for it in `apps/server/src/engines.test.ts` (or wherever `parseConsolidation` is already tested: `grep -rn parseConsolidation apps/server/src/*.test.ts`)
-- [ ] T023 [US6] Run `bun bench/memory-consolidation.bench.ts claude-cli/haiku`; expect procedure → 1 skill, 0 restating facts and `learned 11/11, false 0, secrets leaked 0/2`; record in `docs/ARCHITECTURE.md` §8 and `.agent/memory/server.md`
+- [X] T021 [P] [US6] Add the rule "A fact must not restate a skill you propose in the same answer" to `CONSOLIDATION_SYSTEM` in `apps/server/src/context.ts`
+- [X] T022 [US6] After `parseConsolidation` in `apps/server/src/context.ts`, drop a proposed fact whose content words (normalized, stopwords out) are all contained in a skill proposed in the same answer; unit test for it in `apps/server/src/engines.test.ts` (or wherever `parseConsolidation` is already tested: `grep -rn parseConsolidation apps/server/src/*.test.ts`)
+- [X] T023 [US6] Run `bun bench/memory-consolidation.bench.ts claude-cli/haiku`; expect procedure → 1 skill, 0 restating facts and `learned 11/11, false 0, secrets leaked 0/2`; record in `docs/ARCHITECTURE.md` §8 and `.agent/memory/server.md`
 
 ---
 

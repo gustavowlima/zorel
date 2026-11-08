@@ -35,7 +35,7 @@ export const canonical = (t: string) => {
 }
 
 // Words too common to find anything (English and Portuguese, after normalize): matching them ranks noise.
-const STOPWORDS = new Set(
+export const STOPWORDS = new Set(
   "the and you for with that this are was were not but have has had what from can your our they them then than there here will would should could about into just also its ".concat(
     "que para com uma por mais nao isso esse essa este esta ele ela eles elas dos das nos nas foi ser tem como mas seu sua meu minha voce aqui ali pra pelo pela sobre quando onde"
   ).split(" ")

@@ -7,7 +7,7 @@
 import { join } from "node:path"
 import { type Agent, type Chat, MENTION_RE, type Memory, type Message, type Project } from "@zorel/contracts"
 import { Option, Schema } from "effect"
-import { normalize } from "./db.ts"
+import { normalize, STOPWORDS } from "./db.ts"
 import type { Turn, TurnMessage, TurnTools } from "./engines.ts"
 
 export const WINDOW = 30 // messages kept verbatim after a consolidation
@@ -280,6 +280,7 @@ export const CONSOLIDATION_SYSTEM = [
   '- "confirm": the ids (m1, m2…) of existing memories the stretch confirms again. An empty list is the norm.',
   '- "skills": procedures worth repeating — something solved in several steps, a way out of a dead end, or the user correcting how to do something. An empty list is the norm.',
   '  - "title": a short name for the procedure. "text": concise steps, up to 15 lines. Don\'t repeat existing skills.',
+  "  - A memory must not restate a skill you propose in the same answer: the skill already keeps those steps.",
   "Messages marked (learned) were already learned from: use them for the summary only, never as evidence.",
   'When the prompt says no summary is needed, answer "summary": "" and only look for memories, confirmations and skills.'
 ].join("\n")
@@ -402,22 +403,31 @@ export function parseConsolidation(text: string, allowed: ReadonlyArray<string>,
   if (!reply || (needSummary && !reply.summary.trim())) return undefined
   const inScope = <T extends { scope: Scope; text: string }>(x: T) => allowed.includes(x.scope) && x.text.trim() !== ""
   const quoted = (evidence: ReadonlyArray<unknown> = []) => evidence.flatMap((n) => (typeof n === "number" ? [said(n)].filter((t) => t !== undefined) : []))
+  const skills = (reply.skills ?? [])
+    .flatMap((raw) => Option.toArray(decodeSkill(raw)))
+    .filter((k) => inScope(k) && k.title.trim() !== "")
+    .map((k) => ({ scope: k.scope, title: k.title.trim(), text: k.text.trim() }))
+  // A fact whose every content word is in a skill of the same answer only restates that skill's steps.
+  const inSkills = skills.map((k) => contentWords(`${k.title} ${k.text}`))
+  const restates = (text: string) => {
+    const w = contentWords(text)
+    return w.size > 0 && inSkills.some((k) => [...w].every((x) => k.has(x)))
+  }
   return {
     summary: reply.summary.trim(),
     memories: (reply.memories ?? []).flatMap((raw) => Option.toArray(decodeMemory(raw))).flatMap((m) => {
       const proof = quoted(m.evidence)
-      if (!inScope(m) || !proof.length || !grounded(m.text, proof.join("\n"), agents)) return []
+      if (!inScope(m) || !proof.length || !grounded(m.text, proof.join("\n"), agents) || restates(m.text)) return []
       const replaces = ref(m.replaces)
       const evidence = (m.evidence ?? []).filter((n): n is number => typeof n === "number" && said(n) !== undefined)
       return [{ scope: m.scope, text: m.text.trim(), keywords: (m.keywords ?? "").trim().slice(0, KEYWORDS_MAX), evidence, ...mappedOf(m.entities, m.relations), ...(replaces !== undefined && { replaces }) }]
     }),
     confirm: (reply.confirm ?? []).flatMap((id) => [ref(id)].filter((n) => n !== undefined)),
-    skills: (reply.skills ?? [])
-      .flatMap((raw) => Option.toArray(decodeSkill(raw)))
-      .filter((k) => inScope(k) && k.title.trim() !== "")
-      .map((k) => ({ scope: k.scope, title: k.title.trim(), text: k.text.trim() }))
+    skills
   }
 }
+// The words that carry meaning: normalized, 3+ letters, no stopwords, a final -s off words of 4+ letters.
+const contentWords = (t: string) => new Set(normalize(t).split(" ").filter((w) => w.length > 2 && !STOPWORDS.has(w)).map((w) => (w.length >= 4 && w.endsWith("s") ? w.slice(0, -1) : w)))
 
 // Pages are read in parts: past this, a read gets the start and the page's headings, to read one by its section.
 export const PAGE_READ_CHARS = 24_000
