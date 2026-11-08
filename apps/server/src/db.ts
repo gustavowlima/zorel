@@ -889,6 +889,24 @@ export const repository = (db: Db, pagesDir?: string) => {
       )
     },
 
+    // What was said in other chats of a project (or of chats without one), best match first, as an excerpt around the
+    // matching words. The chat's own messages after `exclude.after` are left out (they are in the turn's window).
+    recallMessages: (projectId: string | null, query: string, exclude: { chatId: string; after: number }, limit: number) => {
+      const match = ftsQuery(query)
+      if (!match) return Effect.succeed([] as Array<{ id: string; chatId: string; chatTitle: string; role: "user" | "assistant"; agentId: string | null; at: number; text: string }>)
+      return orDie(
+        db
+          .all<{ id: string; chat_id: string; title: string; role: "user" | "assistant"; agent_id: string | null; at: number; text: string }>(
+            sql`SELECT m.id, m.chat_id, c.title, m.role, m.agent_id, m.at, snippet(message_index, 1, '', '', '…', 32) AS text
+                FROM message_index JOIN messages m ON m.id = message_index.id JOIN chats c ON c.id = m.chat_id
+                WHERE message_index MATCH ${match} AND ${projectId ? sql`c.project_id = ${projectId}` : sql`c.project_id IS NULL`}
+                  AND NOT (m.chat_id = ${exclude.chatId} AND m.at > ${exclude.after})
+                ORDER BY bm25(message_index) LIMIT ${limit}`
+          )
+          .pipe(Effect.map((rows) => rows.map((r) => ({ id: r.id, chatId: r.chat_id, chatTitle: r.title, role: r.role, agentId: r.agent_id, at: r.at, text: r.text.slice(0, 300) }))))
+      )
+    },
+
     // ---------- MCP servers ----------
     mcpServers: () => orDie(db.select().from(mcpServers).orderBy(asc(mcpServers.createdAt)).pipe(Effect.map((r) => r.map(toMcpServer)))),
     mcpServer,

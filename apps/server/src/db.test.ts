@@ -469,3 +469,66 @@ test("twins: another name or a plural or a close spelling, not a longer name hol
   expect(twins(p("memory"), p("memory map"))).toBe(false)
   expect(twins(p("bus"), p("bu"))).toBe(false)
 })
+
+test("recall brings what was said in the project's other chats, never another project's, the window, a secret or a forgotten fact", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const P = yield* r.createProject({ name: "P", brief: "" })
+      const Q = yield* r.createProject({ name: "Q", brief: "" })
+      const said = [
+        ["The staging password rotates every 30 days", "how often does the staging password rotate?"],
+        ["Billing deploys to Fly.io from the release branch", "where does billing deploy?"],
+        ["Postgres backups run nightly at 03:00 UTC", "when do the postgres backups run?"],
+        ["Image uploads are capped at 12 megabytes by the CDN", "what is the image upload cap?"],
+        ["The mobile app supports Android 10 and newer", "which Android versions does the mobile app support?"],
+        ["Customer emails go through Postmark", "do customer emails use Postmark?"],
+        ["The search cluster namespace is search-prod-eu", "what is the search cluster namespace?"],
+        ["Invoices are kept for seven years", "how long are invoices kept?"],
+        ["Headings use the Söhne font", "which font do headings use?"],
+        ["Checkout saturates at 1,800 requests per second", "when does checkout saturate?"]
+      ] as const
+      const seed = (projectId: string) =>
+        Effect.gen(function* () {
+          const c = (yield* r.createChat({ projectId, agentIds: [], model: "x/y", title: "Ops notes" }))!
+          for (const [text] of said) yield* r.addMessage({ chatId: c.id, role: "user", agentId: null, text, steps: [] } as any)
+          return c
+        })
+      const a = yield* seed(P.id)
+      const inP = (yield* r.createChat({ projectId: P.id, agentIds: [], model: "x/y" }))!
+      const inQ = (yield* r.createChat({ projectId: Q.id, agentIds: [], model: "x/y" }))!
+      const ask = (chatId: string, projectId: string, q: string) => recall(r, ["user", `project:${projectId}`], q, [], { projectId, chatId, after: 0 })
+      let found = 0
+      for (const [text, q] of said) if ((yield* ask(inP.id, P.id, q)).excerpts.some((e) => e.chatId === a.id && text.includes(e.text.replace(/…/g, "").trim().slice(0, 20)))) found++
+      expect(found).toBeGreaterThanOrEqual(9)
+      let leaked = 0
+      for (const [, q] of said) leaked += (yield* ask(inQ.id, Q.id, q)).excerpts.length
+      expect(leaked).toBe(0) // P's chat never reaches Q
+      const first = (yield* ask(inP.id, P.id, said[0][1])).excerpts[0]!
+      expect(first).toMatchObject({ chatTitle: "Ops notes", author: "user" })
+      // This chat's own messages after `after` are in the window: never recalled.
+      yield* r.addMessage({ chatId: inP.id, role: "user", agentId: null, text: "The kiwi deploy uses blue green", steps: [] } as any)
+      expect((yield* ask(inP.id, P.id, "kiwi")).excerpts).toEqual([])
+      // A message holding a credential, or a forgotten fact's text, never comes back.
+      yield* r.addMessage({ chatId: a.id, role: "user", agentId: null, text: "The walrus admin password is Hunter2!Walrus", steps: [] } as any) // gitleaks:allow (fake)
+      expect((yield* ask(inP.id, P.id, "walrus admin")).excerpts).toEqual([])
+      const old = (yield* r.addMemory({ scope: `project:${P.id}`, text: "Invoices are kept for seven years", state: "active", origin: "auto", chatId: null }))!
+      yield* r.updateMemory(old.id, { state: "forgotten" })
+      expect((yield* ask(inP.id, P.id, "how long are invoices kept?")).excerpts).toEqual([])
+      // Deleting the chat removes what it said.
+      yield* r.removeChat(a.id)
+      expect((yield* ask(inP.id, P.id, said[1][1])).excerpts).toEqual([])
+    })
+  ))
+
+test("recall fuses its sources: a fact found by the map and by its words outranks one found by words alone", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const scope = "project:p"
+      const both = (yield* r.addMemory({ scope, text: "Deploys use the deploy script on Vercel", state: "active", origin: "auto", chatId: null }))!
+      yield* r.linkMemory(both.id, scope, mappedOf([{ name: "Deploy", type: "subject" }], []))
+      const words = (yield* r.addMemory({ scope, text: "Deploy deploy deploy checklist lives in the wiki", state: "active", origin: "auto", chatId: null }))!
+      const got = (yield* recall(r, [scope], "how do we deploy?", [])).ranked.map((x) => x.id)
+      expect(got.indexOf(both.id)).toBeLessThan(got.indexOf(words.id))
+      expect(got).toContain(words.id)
+    })
+  ))
