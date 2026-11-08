@@ -19,7 +19,7 @@
 
 ## Phase 1: Setup
 
-- [ ] T001 Record the "before" numbers: run `bun bench/memory-recall.bench.ts 1000` and `bun test` from `apps/server`, and paste the Part 1 table and the Dedupe block into a `## Before` section at the end of `specs/001-memory-token-efficiency/quickstart.md`
+- [X] T001 Record the "before" numbers: run `bun bench/memory-recall.bench.ts 1000` and `bun test` from `apps/server`, and paste the Part 1 table and the Dedupe block into a `## Before` section at the end of `specs/001-memory-token-efficiency/quickstart.md`
 
 ---
 
@@ -35,12 +35,12 @@ No shared prerequisite: each story touches its own files. Stories can start afte
 
 **Independent Test**: `bun bench/memory-recall.bench.ts 1000` prints the four reach lines; `--check` fails below the recorded floor.
 
-- [ ] T002 [US1] Add `bench/extract-needle-map.ts` in `apps/server/bench/`: for the 25 `NEEDLES` (export them from `apps/server/bench/memory-recall.bench.ts`), call the app's own map extraction (`MAP_SYSTEM` + `parseMapItems` from `apps/server/src/chat.ts`, same model choice as `mapEarlierFacts`) and write `{ text, entities, relations }[]` to `apps/server/bench/fixtures/needle-map.json`; run it once and commit the fixture (never at bench time)
-- [ ] T003 [US1] In `apps/server/bench/memory-recall.bench.ts`, make `noiseFact` return `{ text, topics }` with the list words it picked (`W.lang`, `W.tool`, `W.style`, `W.day`) and file every noise fact with `r.linkMemory(id, scope, { entities: topics.map(name => ({ name, type: "concept" })), relations: [] })`
-- [ ] T004 [US1] In `apps/server/bench/memory-recall.bench.ts`, file each needle with `r.linkMemory` using its entry in `fixtures/needle-map.json` (fail loudly if a needle has no entry)
-- [ ] T005 [US1] In `apps/server/bench/memory-recall.bench.ts`, for each paraphrased query classify how the needle reached the turn: `map` (in `recall()`'s association part), `words` (FTS part), `pin` (pinned only), `none`; print rows `para: reach by map`, `by words`, `by pin`, `total without pin`, `total`, and list the misses with what came first
-- [ ] T006 [US1] In `apps/server/bench/memory-recall.bench.ts` `--check`, fail when `total without pin` at 1,000 is below a `PARA_FLOOR` constant set to the measured value, keeping the existing leak and budget checks
-- [ ] T007 [US1] Record the result: the four numbers and whether SC-001 (≥ 20/25 without pin) is met in `docs/ARCHITECTURE.md` §8 (after the A4.3 paragraph) and `.agent/memory/server.md`
+- [X] T002 [US1] Add `bench/extract-needle-map.ts` in `apps/server/bench/`: for the 25 `NEEDLES` (export them from `apps/server/bench/memory-recall.bench.ts`), call the app's own map extraction (`MAP_SYSTEM` + `parseMapItems` from `apps/server/src/chat.ts`, same model choice as `mapEarlierFacts`) and write `{ text, entities, relations }[]` to `apps/server/bench/fixtures/needle-map.json`; run it once and commit the fixture (never at bench time)
+- [X] T003 [US1] In `apps/server/bench/memory-recall.bench.ts`, make `noiseFact` return `{ text, topics }` with the list words it picked (`W.lang`, `W.tool`, `W.style`, `W.day`) and file every noise fact with `r.linkMemory(id, scope, { entities: topics.map(name => ({ name, type: "concept" })), relations: [] })`
+- [X] T004 [US1] In `apps/server/bench/memory-recall.bench.ts`, file each needle with `r.linkMemory` using its entry in `fixtures/needle-map.json` (fail loudly if a needle has no entry)
+- [X] T005 [US1] In `apps/server/bench/memory-recall.bench.ts`, for each paraphrased query classify how the needle reached the turn: `map` (in `recall()`'s association part), `words` (FTS part), `pin` (pinned only), `none`; print rows `para: reach by map`, `by words`, `by pin`, `total without pin`, `total`, and list the misses with what came first
+- [X] T006 [US1] In `apps/server/bench/memory-recall.bench.ts` `--check`, fail when `total without pin` at 1,000 is below a `PARA_FLOOR` constant set to the measured value, keeping the existing leak and budget checks
+- [X] T007 [US1] Record the result: the four numbers and whether SC-001 (≥ 20/25 without pin) is met in `docs/ARCHITECTURE.md` §8 (after the A4.3 paragraph) and `.agent/memory/server.md`
 
 **Checkpoint**: the map's recall is a number in CI. It decides US5.
 
@@ -108,7 +108,7 @@ No shared prerequisite: each story touches its own files. Stories can start afte
 
 **Goal**: halve the pin budget if, and only if, US1 showed recall holds.
 
-**Depends on**: T007 (US1 result). If SC-001 was missed, do only T026.
+**Depends on**: T007 (US1 result). If SC-001 was missed, do only T026. **US1 result: missed (6/25) → only T026.**
 
 - [ ] T024 [US5] In `apps/server/src/context.ts`, set `MEMORY_BUDGET` to 4,000 (from 8,000)
 - [ ] T025 [US5] Run the recall bench at 1,000; keep the change only if `memory layer chars in prompt` ≤ ~4,000 and `total` reach is not below the 8,000-budget run; otherwise revert T024
@@ -118,6 +118,7 @@ No shared prerequisite: each story touches its own files. Stories can start afte
 
 ## Phase 9: Polish & Cross-Cutting
 
+- [ ] T029 [US1] Bring `prepare()` back under 5 ms p95 at 1,000 mapped memories: `linksAmong` (`apps/server/src/db.ts`) co-mention self-join costs ~16 ms (found by T005)
 - [ ] T027 Run `bun run test`, `bun run typecheck`, `bun run lint` from the repo root and `bun bench/memory-recall.bench.ts 1000 --check` from `apps/server`; all green
 - [ ] T028 Add a `## After` table next to `## Before` in `specs/001-memory-token-efficiency/quickstart.md` with every SC's before/after number, and append a line per changed rule to `.agent/memory/changelog/server.md`
 
