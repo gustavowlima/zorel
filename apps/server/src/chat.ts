@@ -4,10 +4,10 @@ import { type Agent, type Chat, type Memory, namedSkills, type Project } from "@
 import { Context, Data, Effect, Layer, Stream } from "effect"
 import { join } from "node:path"
 import {
-  buildTurn, CONSOLIDATION_SYSTEM, consolidationPrompt, type Mapped, mappedOf, namedPoints, spread, HISTORY_CHARS, KEEP_CHARS, MAX_AFTER, parseConsolidation, pinned, RETRIEVED, reviewed, scopesOf, similar, WINDOW, withinBudget
+  buildTurn, CONSOLIDATION_SYSTEM, consolidationPrompt, type Mapped, mappedOf, namedPoints, spread, HISTORY_CHARS, KEEP_CHARS, MAX_AFTER, parseConsolidation, pinned, reviewed, scopesOf, similar, WINDOW, withinBudget
 } from "./context.ts"
 import { hasCredential, redact } from "./observability.ts"
-import { Store, type Repository } from "./db.ts"
+import { normalize, Store, type Repository } from "./db.ts"
 import { knowledgeOf, learningOf, memoryModeOf } from "./team.ts"
 import { cheapModel, Engines, type EngineEvent, type TurnTools } from "./engines.ts"
 
@@ -37,7 +37,8 @@ export const members = (store: Repository, chat: Chat) =>
 export const memoryModelFor = (store: Repository, chatModel: string) =>
   Effect.map(store.preference("memoryModel"), (chosen) => chosen || process.env.ZOREL_MEMORY_MODEL || cheapModel(chatModel))
 
-const ASSOCIATED = 5 // facts recalled by association each turn, besides the RETRIEVED found by their words
+const STREAM = 10 // candidates each recall source (map, facts by words, past messages) brings to the fusion
+const EXCERPTS = 5 // past-message excerpts at most per turn
 const RECALL_CHARS = 2_000 // the most the recalled facts take in a turn
 
 // A bounded piece of a past message around the words that matched, with who said it and where.
@@ -64,7 +65,7 @@ export interface Recalled {
 // messages after `after` (they are in the window).
 export const recall = (store: Repository, scopes: ReadonlyArray<string>, query: string, exclude: ReadonlyArray<string>, messages?: { projectId: string | null; chatId: string; after: number }) =>
   Effect.gen(function* () {
-    const byWords = yield* store.searchMemories(scopes, query, exclude, RETRIEVED)
+    const byWords = yield* store.searchMemories(scopes, query, exclude, STREAM)
     const points = yield* store.entityNames(scopes)
     const seeds = namedPoints(query, points)
     let byAssociation: Memory[] = []
@@ -86,18 +87,54 @@ export const recall = (store: Repository, scopes: ReadonlyArray<string>, query: 
         s.score += activation.get(entityId) ?? 0
         score.set(memory.id, s)
       }
-      byAssociation = [...score.values()].sort((a, b) => b.score - a.score || b.memory.confirmedAt - a.memory.confirmedAt).slice(0, ASSOCIATED).map((s) => s.memory)
+      byAssociation = [...score.values()].sort((a, b) => b.score - a.score || b.memory.confirmedAt - a.memory.confirmedAt).slice(0, STREAM).map((s) => s.memory)
     }
+    const excerpts = messages ? yield* pastMessages(store, scopes, query, messages, [...byAssociation, ...byWords]) : []
+    // Reciprocal rank fusion (k = 60): an item found by several sources outranks one found by one at the same place.
+    type Item = { kind: "fact"; memory: Memory } | { kind: "message"; excerpt: Excerpt }
+    const fused = new Map<string, { item: Item; score: number }>()
+    const vote = (id: string, item: Item, rank: number) => {
+      const f = fused.get(id) ?? { item, score: 0 }
+      f.score += 1 / (60 + rank + 1)
+      fused.set(id, f)
+    }
+    byAssociation.forEach((m, r) => vote(m.id, { kind: "fact", memory: m }, r))
+    byWords.forEach((m, r) => vote(m.id, { kind: "fact", memory: m }, r))
+    excerpts.forEach((e, r) => vote(e.id, { kind: "message", excerpt: e }, r))
+    const at = (i: Item) => (i.kind === "fact" ? i.memory.confirmedAt : i.excerpt.at)
+    const order = [...fused.values()].sort((x, y) => y.score - x.score || (x.item.kind === "fact" ? 0 : 1) - (y.item.kind === "fact" ? 0 : 1) || at(y.item) - at(x.item)).map((f) => f.item)
     let used = 0
-    const seen = new Set<string>()
-    const facts = [...byAssociation, ...byWords].filter((m) => {
-      if (seen.has(m.id)) return false
-      seen.add(m.id)
-      used += m.text.length + 3
+    let shown = 0
+    const within = order.filter((i) => {
+      if (i.kind === "message" && ++shown > EXCERPTS) return false
+      used += i.kind === "fact" ? i.memory.text.length + 3 : i.excerpt.text.length + i.excerpt.chatTitle.length + i.excerpt.author.length + 24
       return used <= RECALL_CHARS
     })
-    const recalled: Recalled = { facts, excerpts: [], ranked: facts.map((m) => ({ kind: "fact", id: m.id, chatId: null })) }
+    const recalled: Recalled = {
+      facts: within.flatMap((i) => (i.kind === "fact" ? [i.memory] : [])),
+      excerpts: within.flatMap((i) => (i.kind === "message" ? [i.excerpt] : [])),
+      ranked: order.map((i) => (i.kind === "fact" ? { kind: "fact", id: i.memory.id, chatId: null } : { kind: "message", id: i.excerpt.id, chatId: i.excerpt.chatId }))
+    }
     return recalled
+  })
+
+// Past messages that matched, as excerpts: never one holding a credential, a forgotten fact's text, or what a recalled
+// fact already says. Up to STREAM candidates; the turn shows at most EXCERPTS.
+const pastMessages = (store: Repository, scopes: ReadonlyArray<string>, query: string, where: { projectId: string | null; chatId: string; after: number }, facts: ReadonlyArray<Memory>) =>
+  Effect.gen(function* () {
+    const rows = yield* store.recallMessages(where.projectId, query, { chatId: where.chatId, after: where.after }, STREAM)
+    if (!rows.length) return []
+    const forgotten = (yield* store.forgottenMemories(scopes)).map((m) => normalize(m.text)).filter(Boolean)
+    const names = new Map<string, string>()
+    const kept: Excerpt[] = []
+    for (const r of rows) {
+      const plain = normalize(r.text)
+      if (forgotten.some((f) => plain.includes(f)) || facts.some((f) => similar(f.text, r.text))) continue
+      if (yield* Effect.promise(() => hasCredential(r.text))) continue
+      if (r.agentId && !names.has(r.agentId)) names.set(r.agentId, (yield* store.agent(r.agentId))?.name ?? "agent")
+      kept.push({ id: r.id, chatId: r.chatId, chatTitle: r.chatTitle, author: r.role === "user" ? "user" : (names.get(r.agentId ?? "") ?? "agent"), at: r.at, text: r.text })
+    }
+    return kept
   })
 
 // The names on a chat's map that stand for its project and its agents (so "Zorel" is the project's point, not a concept).
@@ -125,6 +162,8 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
     // Only skills named with $handle come with their steps; the rest are listed and read on demand (a search match
     // on every message sent up to two whole recipes each turn, mostly unused).
     const named = namedSkills(last, all)
+    // Facts and what was said in the project's other chats (this chat's window is already in the turn).
+    const recalled = yield* recall(store, scopes, query, fixed.map((m) => m.id), { projectId: chat.projectId, chatId: chat.id, after: chat.summaryUntil })
     return buildTurn({
       chat,
       model,
@@ -133,7 +172,8 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
       members: yield* members(store, chat),
       pinned: fixed,
       activeIds: active.map((m) => m.id),
-      retrieved: (yield* recall(store, scopes, query, fixed.map((m) => m.id))).facts,
+      retrieved: recalled.facts,
+      excerpts: recalled.excerpts,
       skills: { all, relevant: named },
       pages: knowledgeOf(agent) === "none" ? [] : yield* store.pinnedPages(scopes), // no access: no page in its context
       canPropose: memoryModeOf(agent) !== "read",
