@@ -44,10 +44,12 @@ memory benchmarks. No open questions remain.
 
 ## R3. Large tool results (Story 3)
 
-- **Found**: Zorel's own tools already cut, but lose the rest: MCP results at 40,000 chars
-  (`src/tools.ts:44`, with a Portuguese marker `[… resultado cortado]` that breaks the
-  English-to-model rule) and browser snapshots at 30,000 chars (`src/browser.ts:449`). An agent
-  cannot reach what was cut, and a 40k result (~10k tokens) is re-sent at every later step.
+- **Found**: the gateway's tool call (`src/runtime.ts` `call`, ~line 780–835) returns the raw
+  `CallToolResult` to the agent: **MCP results reach the agent whole, with no limit**. The
+  40,000-char cut in `resultText` (`src/tools.ts:44`, with a Portuguese marker
+  `[… resultado cortado]` that breaks the English-to-model rule) only shapes the step shown in the
+  app and routines. Browser snapshots are cut at 30,000 chars (`src/browser.ts:449`) and the rest is
+  lost. Any large result is re-sent at every later step of the turn.
 - **Decision**: one function for both paths: over `COMPACT_AT` (16,000 chars ≈ 4k tokens) the
   agent gets the first `COMPACT_HEAD` (3,000 chars) + a line with the full size and a handle; the
   full text is kept for the turn (in memory, per chat, last 20 results). A new internal tool
