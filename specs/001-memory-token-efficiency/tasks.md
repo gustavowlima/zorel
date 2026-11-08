@@ -84,9 +84,9 @@ No shared prerequisite: each story touches its own files. Stories can start afte
 
 **Independent Test**: two turns with different recalled facts produce prompts identical up to `<context>` on every sessionless path.
 
-- [ ] T018 [US4] In `apps/server/src/engines.ts`, sessionless paths (`--system-prompt` CLI at ~line 301, Codex `developer_instructions` at ~369, effect/ai `Prompt.make` at ~477, ACP `prompt:` at ~563 and ~577): use `turn.stable` (fallback `system`) as the system part and append `turn.dynamic` as a `<context>…</context>` block after the transcript (in the last user message for `Prompt.make`); native sessions unchanged
-- [ ] T019 [US4] Test in `apps/server/src/engines.test.ts`: build two turns with `buildTurn` differing only in `retrieved`; for each sessionless path the rendered prompt is identical up to `<context>` and differs after it
-- [ ] T020 [US4] Record the change and the prefix test in `docs/ARCHITECTURE.md` §7 (context) and `.agent/memory/server.md`
+- [X] T018 [US4] In `apps/server/src/engines.ts`, sessionless paths (`--system-prompt` CLI at ~line 301, Codex `developer_instructions` at ~369, effect/ai `Prompt.make` at ~477, ACP `prompt:` at ~563 and ~577): use `turn.stable` (fallback `system`) as the system part and append `turn.dynamic` as a `<context>…</context>` block after the transcript (in the last user message for `Prompt.make`); native sessions unchanged
+- [X] T019 [US4] Test in `apps/server/src/engines.test.ts`: build two turns with `buildTurn` differing only in `retrieved`; for each sessionless path the rendered prompt is identical up to `<context>` and differs after it
+- [X] T020 [US4] Record the change and the prefix test in `docs/ARCHITECTURE.md` §7 (context) and `.agent/memory/server.md`
 
 **Checkpoint**: per-turn recall never sits before cached content.
 

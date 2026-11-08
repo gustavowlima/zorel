@@ -43,7 +43,7 @@ export interface TurnTools {
 
 export interface Turn {
   readonly model: string // "<provider>/<model>"
-  readonly system: string // stable + dynamic: what a sessionless engine receives
+  readonly system: string // stable + dynamic (sessionless engines get stable, and dynamic after the message: sessionless())
   readonly stable?: string // part that opens a native session
   readonly frame?: string // the stable part without the memories: what a native session is tied to
   readonly dynamic?: string // part sent with the message each turn in a native session
@@ -288,6 +288,16 @@ export function transcript(messages: ReadonlyArray<TurnMessage>): string {
   if (!before.length) return withFiles(last)
   const lines = before.map((m) => `<${m.role}>\n${withFiles(m)}\n</${m.role}>`).join("\n")
   return `Conversation so far, oldest first:\n${lines}\n\nNew message from the user:\n${withFiles(last)}`
+}
+
+// A sessionless engine gets the stable part as its system prompt and the per-turn part (skill bodies, summary,
+// recalled memories) in a <context> block after the new message, so what the provider caches (system, tools, the
+// conversation's start) stays the same from one turn to the next. A turn without `stable` (internal tasks) is as is.
+export function sessionless(t: Turn): Turn {
+  if (t.stable === undefined) return t
+  const last = t.messages.at(-1)!
+  const messages = t.dynamic ? [...t.messages.slice(0, -1), { ...last, text: `${last.text}\n\n<context>\n${t.dynamic}\n</context>` }] : t.messages
+  return { ...t, system: t.stable, messages }
 }
 
 const GATEWAY = "zorel"
@@ -553,7 +563,8 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
     Effect.gen(function* () {
       const secrets = yield* Secrets
       return {
-        run: (t: Turn) => {
+        run: (turn: Turn) => {
+          const t = sessionless(turn)
           const { provider } = splitModel(t.model)
           if (provider === "claude-cli") return cli("claude", claudeArgs(t), transcript(t.messages), t.cwd, claudeParser())
           if (provider === "codex-cli") return cli("codex", codexArgs(t), transcript(t.messages), t.cwd, codexParser())
