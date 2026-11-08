@@ -52,10 +52,10 @@ No shared prerequisite: each story touches its own files. Stories can start afte
 
 **Independent Test**: Dedupe block shows ≥ 8/11 merged, reversed meaning kept; db tests green.
 
-- [ ] T008 [P] [US2] Add `canonical(text)` next to `normalize` in `apps/server/src/db.ts`: normalized words in order, minus articles/possessives (`the a an their his her my its`, `o a os as um uma meu minha seu sua`), a leading `the user` / `user` / `the person` / `a pessoa`, and a trailing `s` on words of 4+ letters
-- [ ] T009 [US2] In `addMemory` (`apps/server/src/db.ts`), before the insert: load the active facts of the same scope and owner and kind, and if one has the same `canonical` key, bump its `confirmedAt` and return `undefined` (as the exact-duplicate path does); `ponytail:` comment on the scan (add an indexed column past ~10k facts per scope)
-- [ ] T010 [US2] Tests in `apps/server/src/db.test.ts`: dropped article, plural and "The user uses…" merge; "Prefers TypeScript over JavaScript" vs the reverse, "deploys on Fridays" vs "never deploys on Fridays", "port 8080" vs "port 8081", another owner, another scope and a forgotten fact all stay separate
-- [ ] T011 [US2] Run the recall bench, check the Dedupe block (≥ 8/11, reversed kept) and record before/after in `docs/ARCHITECTURE.md` §8 and `.agent/memory/server.md`
+- [X] T008 [P] [US2] Add `canonical(text)` next to `normalize` in `apps/server/src/db.ts`: normalized words in order, minus articles/possessives (`the a an their his her my its`, `o a os as um uma meu minha seu sua`), a leading `the user` / `user` / `the person` / `a pessoa`, and a trailing `s` on words of 4+ letters
+- [X] T009 [US2] In `addMemory` (`apps/server/src/db.ts`), before the insert: load the active facts of the same scope and owner and kind, and if one has the same `canonical` key, bump its `confirmedAt` and return `undefined` (as the exact-duplicate path does); `ponytail:` comment on the scan (add an indexed column past ~10k facts per scope)
+- [X] T010 [US2] Tests in `apps/server/src/db.test.ts`: dropped article, plural and "The user uses…" merge; "Prefers TypeScript over JavaScript" vs the reverse, "deploys on Fridays" vs "never deploys on Fridays", "port 8080" vs "port 8081", another owner, another scope and a forgotten fact all stay separate
+- [X] T011 [US2] Run the recall bench, check the Dedupe block (≥ 8/11, reversed kept) and record before/after in `docs/ARCHITECTURE.md` §8 and `.agent/memory/server.md`
 
 **Checkpoint**: duplicates by spelling are gone; meaning-level ones stay with consolidation.
 
