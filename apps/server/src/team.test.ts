@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { type Agent, DEFAULT_PERMISSIONS } from "@zorel/contracts"
-import { createInput, createInputs, effectiveAccess, findAgent, learningOf, narrower, updateInput, visibleTo, withheldTools } from "./team.ts"
+import { createInput, createInputs, effectiveAccess, findAgent, learningOf, narrower, staleWrite, updateInput, visibleTo, withheldTools } from "./team.ts"
 
 const agent = (over: Partial<Agent>): Agent => ({
   id: "a1", projectId: null, name: "Code Reviewer", title: "", description: "", instructions: "x", model: "claude-cli/claude-sonnet-5-5",
@@ -86,4 +86,11 @@ test("an agent can't change what it learns or sees: those are the user's to set"
   const changes = updateInput({ memory: "auto", knowledge: "read", title: "Lead" }, agent({ memory: "read", knowledge: "none" }), "workspace")
   expect(JSON.stringify(changes)).not.toContain("memory")
   expect(JSON.stringify(changes)).not.toContain("knowledge")
+})
+
+test("a page is changed only after reading it, and only if nobody changed it since", () => {
+  const page = { id: "p1", updatedAt: 100 }
+  expect(staleWrite(new Map(), page)).toContain("Read the page first")
+  expect(staleWrite(new Map([["p1", 90]]), page)).toContain("changed since you read it")
+  expect(staleWrite(new Map([["p1", 100]]), page)).toBeUndefined()
 })

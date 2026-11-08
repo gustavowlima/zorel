@@ -613,7 +613,7 @@ test("pages by agents: writing in the project becomes a version, search and read
   expect((await api((c) => c.pages.list())).find((p) => p.id === page.id)!.body).toBe("We deploy on Vercel.")
   await api((c) => c.pages.update({ params: { id: page.id }, payload: { pinned: true } }))
   await send(chat.id, { text: "hi" })
-  expect(turns.at(-1)!.system).toContain(`- Deploy [${page.id}]`)
+  expect(turns.at(-1)!.system).toContain(`### Deploy [${page.id}]\nWe deploy on Vercel.`)
 })
 
 test("agent permissions: connector per agent, always-allow saved, and requesting access", async () => {
@@ -755,7 +755,7 @@ test("memory mode and knowledge access gate the tools and the context, not only 
 
   await send(chat.id, { text: "hi" })
   expect(names()).toEqual(expect.arrayContaining(["zorel_knowledge_write", "zorel_knowledge_read", "zorel_knowledge_search", "zorel_propose_skill"]))
-  expect(turns.at(-1)!.system).toContain(`- Runbook [${page.id}]`)
+  expect(turns.at(-1)!.system).toContain(`### Runbook [${page.id}]\nRestart nginx`)
   expect(turns.at(-1)!.system).toContain("propose it with zorel_propose_skill")
 
   await api((c) => c.agents.update({ params: { id: agent.id }, payload: { memory: "read", knowledge: "read" } }))

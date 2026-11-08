@@ -394,6 +394,15 @@ export const BUILDER = {
 
 // Knowledge pages (phase 3b): search and read freely; write to the project's or your own pages directly (each
 // write is a version the user can restore); a page about the user waits for the user's OK.
+// A change to an existing page replaces its whole body: only after this chat read it, and only if nobody changed
+// it since (another agent, the person, a sync from its file), so an agent never overwrites what it hasn't seen.
+export function staleWrite(readAt: ReadonlyMap<string, number>, page: { readonly id: string; readonly updatedAt: number }): string | undefined {
+  const seen = readAt.get(page.id)
+  if (seen === undefined) return "Read the page first with zorel_knowledge_read: a change replaces its whole text."
+  if (seen !== page.updatedAt) return "The page changed since you read it. Read it again and redo your change on the new text."
+  return undefined
+}
+
 export const KNOWLEDGE_TOOLS = [
   {
     name: "zorel_knowledge_search",
@@ -410,7 +419,7 @@ export const KNOWLEDGE_TOOLS = [
   {
     name: "zorel_knowledge_write",
     description:
-      "Create or update a knowledge page in Markdown: a decision and why, a how-to that worked, a gotcha, a reference. page: an existing page's id to update (send the whole new body; the user approves a change to an existing page first). scope: 'project' (default), 'agent' (your own notes) or 'user' (about the user: they approve it first). Keep pages short and current; update instead of duplicating.",
+      "Create or update a knowledge page in Markdown: a decision and why, a how-to that worked, a gotcha, a reference. page: an existing page's id to update (read it first, then send the whole new body; the user approves a change to an existing page first). scope: 'project' (default), 'agent' (your own notes) or 'user' (about the user: they approve it first). Keep pages short and current; update instead of duplicating.",
     inputSchema: {
       properties: { page: { type: "string" }, title: { type: "string" }, body: { type: "string" }, scope: { type: "string", enum: ["project", "agent", "user"] } },
       required: ["title", "body"]

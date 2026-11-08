@@ -101,3 +101,4 @@
 2026-11-08 | linksAmong pairs co-mentions in JS, single IN for relations | prepare p50 19.7 → 4.3 ms at 1k mapped memories
 2026-11-08 | recalled section opens with UNTRUSTED_NOTICE; noClose() on everything inside <context> | spec 002 US3: recalled text could close the block and read as instructions
 2026-11-08 | message_index FTS5 + recall fuses map, fact FTS and past-message excerpts by RRF k=60 (10 per source, 5 excerpts shown) | spec 002 US1/US2: conversations were never recalled; LongMemEval-S 0 → 0.940 hit@5
+2026-11-08 | pinned pages carry their text (2,000 chars); page writes refused unless read and unchanged since; empty search says not to guess | ideas from Mastra Knowledge: a standing rule cost a tool call; blind whole-page overwrites

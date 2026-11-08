@@ -479,7 +479,7 @@ export const repository = (db: Db, pagesDir?: string) => {
         ? orDie(db.select().from(pages).where(and(inArray(pages.scope, [...scopes]), sql`(${pages.id} = ${ref} OR lower(${pages.title}) = lower(${ref}))`)).limit(1).pipe(Effect.map(first)))
         : Effect.succeed(undefined),
     pinnedPages: (scopes: ReadonlyArray<string>) =>
-      scopes.length ? orDie(db.select({ id: pages.id, scope: pages.scope, title: pages.title }).from(pages).where(and(eq(pages.pinned, true), inArray(pages.scope, [...scopes])))) : Effect.succeed([]),
+      scopes.length ? orDie(db.select({ id: pages.id, scope: pages.scope, title: pages.title, body: pages.body, updatedAt: pages.updatedAt }).from(pages).where(and(eq(pages.pinned, true), inArray(pages.scope, [...scopes]))).orderBy(asc(pages.createdAt))) : Effect.succeed([]),
 
     // ---------- routines (phase 7) ----------
     routines: () => orDie(db.select().from(routines).orderBy(asc(routines.createdAt))),
