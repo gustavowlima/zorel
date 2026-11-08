@@ -453,3 +453,17 @@ test("sessionless engines: two turns that recall different memories send the sam
   const plain = { model: "claude-cli/haiku", system: "S", messages: [{ role: "user" as const, text: "x" }], cwd: "/tmp" }
   expect(sessionless(plain)).toBe(plain)
 })
+
+test("consolidation: a fact that only restates a skill proposed in the same answer is dropped", () => {
+  const reply = JSON.stringify({
+    summary: "S",
+    memories: [
+      { scope: "project", text: "Runs bun test --bail from apps/server", evidence: [1] },
+      { scope: "project", text: "The e2e suite needs Docker", evidence: [1] }
+    ],
+    skills: [{ scope: "project", title: "Run the tests", text: "1. cd apps/server\n2. Run `bun test --bail` (the root picks up the e2e suite)." }]
+  })
+  const r = parseConsolidation(reply, ["project"], () => "always run bun test --bail from apps/server, the e2e suite needs Docker")
+  expect(r?.memories.map((m) => m.text)).toEqual(["The e2e suite needs Docker"])
+  expect(r?.skills.map((k) => k.title)).toEqual(["Run the tests"])
+})
