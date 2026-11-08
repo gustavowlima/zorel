@@ -18,7 +18,7 @@ Reviewed on 2026-11-04.
 
 **Name (2026-11-04):** the project was called **Zero** and became **Zorel** ("Zero" collided with other products and had no domain; zorel.dev belongs to the author). What already existed keeps working: the `~/.zero` folder (with `zero.db`) stays in use when it exists and `~/.zorel` does not, without being moved, because the database stores absolute paths of attachments and accounts; keychain secrets are read from the old service `dev.zero.app` and copied to `dev.zorel.app`; browser preferences `zero.*` are copied to `zorel.*`; `zero-*.db` backups keep being pruned; agents exported as `zero.agent` are still imported. The desktop app changes its appId (`dev.zorel.app`), so Electron's data folder is new (logins in the agents' tabs start over).
 
-**Purpose:** Zorel is, **now**, an agent platform **for code**: desktop and local web, projects, a team of agents, its own memory and context. **Later**, it evolves toward **hosted and automation**, without a rewrite, because the doors for that stay open from now on (D17).
+**Purpose (revised 2026-11-08):** Zorel is a **general agent platform**, not a code-only tool: agents for any kind of work (research, writing, operations, the person's own tools through connectors, routines) as well as code, like Tucano and OpenBot. Desktop and local web, projects, a team of agents, its own memory and context; the code workspace (diffs, checkpoints, terminal) is one capability among others. **Later**, it evolves toward **hosted and automation**, without a rewrite, because the doors for that stay open from now on (D17).
 
 ---
 
