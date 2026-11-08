@@ -95,8 +95,8 @@ constitution requires `bun run test` green.
 
 ## Phase 8: Polish & Cross-Cutting
 
-- [ ] T020 Run `bun run test`, `bun run typecheck`, `bun run lint` from the repo root and `bun bench/memory-recall.bench.ts 1000 --check` from `apps/server`; all green
-- [ ] T021 Add `## After` to `specs/002-conversation-recall/quickstart.md` with every SC's before/after; append one line per changed rule to `.agent/memory/changelog/server.md`; credit ai-memory (MIT) for the observation-stream and RRF ideas in `docs/ARCHITECTURE.md` §8
+- [X] T020 Run `bun run test`, `bun run typecheck`, `bun run lint` from the repo root and `bun bench/memory-recall.bench.ts 1000 --check` from `apps/server`; all green
+- [X] T021 Add `## After` to `specs/002-conversation-recall/quickstart.md` with every SC's before/after; append one line per changed rule to `.agent/memory/changelog/server.md`; credit ai-memory (MIT) for the observation-stream and RRF ideas in `docs/ARCHITECTURE.md` §8
 
 ---
 

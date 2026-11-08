@@ -98,9 +98,9 @@ export const recall = (store: Repository, scopes: ReadonlyArray<string>, query: 
       f.score += 1 / (60 + rank + 1)
       fused.set(id, f)
     }
-    byAssociation.forEach((m, r) => vote(m.id, { kind: "fact", memory: m }, r))
-    byWords.forEach((m, r) => vote(m.id, { kind: "fact", memory: m }, r))
-    excerpts.forEach((e, r) => vote(e.id, { kind: "message", excerpt: e }, r))
+    for (const [r, m] of byAssociation.entries()) vote(m.id, { kind: "fact", memory: m }, r)
+    for (const [r, m] of byWords.entries()) vote(m.id, { kind: "fact", memory: m }, r)
+    for (const [r, e] of excerpts.entries()) vote(e.id, { kind: "message", excerpt: e }, r)
     const at = (i: Item) => (i.kind === "fact" ? i.memory.confirmedAt : i.excerpt.at)
     const order = [...fused.values()].sort((x, y) => y.score - x.score || (x.item.kind === "fact" ? 0 : 1) - (y.item.kind === "fact" ? 0 : 1) || at(y.item) - at(x.item)).map((f) => f.item)
     let used = 0

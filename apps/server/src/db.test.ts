@@ -475,6 +475,7 @@ test("recall brings what was said in the project's other chats, never another pr
     Effect.gen(function* () {
       const P = yield* r.createProject({ name: "P", brief: "" })
       const Q = yield* r.createProject({ name: "Q", brief: "" })
+      const say = (chatId: string, text: string) => r.addMessage({ chatId, role: "user", agentId: null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 })
       const said = [
         ["The staging password rotates every 30 days", "how often does the staging password rotate?"],
         ["Billing deploys to Fly.io from the release branch", "where does billing deploy?"],
@@ -490,7 +491,7 @@ test("recall brings what was said in the project's other chats, never another pr
       const seed = (projectId: string) =>
         Effect.gen(function* () {
           const c = (yield* r.createChat({ projectId, agentIds: [], model: "x/y", title: "Ops notes" }))!
-          for (const [text] of said) yield* r.addMessage({ chatId: c.id, role: "user", agentId: null, text, steps: [] } as any)
+          for (const [text] of said) yield* say(c.id, text)
           return c
         })
       const a = yield* seed(P.id)
@@ -506,10 +507,10 @@ test("recall brings what was said in the project's other chats, never another pr
       const first = (yield* ask(inP.id, P.id, said[0][1])).excerpts[0]!
       expect(first).toMatchObject({ chatTitle: "Ops notes", author: "user" })
       // This chat's own messages after `after` are in the window: never recalled.
-      yield* r.addMessage({ chatId: inP.id, role: "user", agentId: null, text: "The kiwi deploy uses blue green", steps: [] } as any)
+      yield* say(inP.id, "The kiwi deploy uses blue green")
       expect((yield* ask(inP.id, P.id, "kiwi")).excerpts).toEqual([])
       // A message holding a credential, or a forgotten fact's text, never comes back.
-      yield* r.addMessage({ chatId: a.id, role: "user", agentId: null, text: "The walrus admin password is Hunter2!Walrus", steps: [] } as any) // gitleaks:allow (fake)
+      yield* say(a.id, "The walrus admin password is Hunter2!Walrus") // gitleaks:allow (fake)
       expect((yield* ask(inP.id, P.id, "walrus admin")).excerpts).toEqual([])
       const old = (yield* r.addMemory({ scope: `project:${P.id}`, text: "Invoices are kept for seven years", state: "active", origin: "auto", chatId: null }))!
       yield* r.updateMemory(old.id, { state: "forgotten" })
