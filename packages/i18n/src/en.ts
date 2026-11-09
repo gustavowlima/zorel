@@ -651,6 +651,7 @@ export const en = {
     sections: "Settings sections",
     providers: "Providers",
     mcp: "Connectors",
+    channels: "Channels",
     storage: "Storage",
     audit: "Audit log",
     processes: "Processes",
@@ -671,6 +672,7 @@ export const en = {
       storage: "What Zorel keeps on this computer",
       audit: "Who changed what, and when",
       mcp: "GitHub, Notion and other tools agents use",
+      channels: "Talk to Zorel from Telegram",
       processes: "What runs in the background now"
     }
   },
@@ -925,6 +927,27 @@ export const en = {
       live: "Live",
       parts: { app: "App window and agent browser", server: "Server", agents: "Agent sessions", terminals: "Terminals", connections: "Connections", other: "Other processes" }
     }
+  },
+  channels: {
+    telegram: "Telegram",
+    telegramIntro: "Message Zorel from your phone through your own Telegram bot. Each Telegram chat becomes a Zorel chat; replies come back there, and approvals wait for you in the app. Only accounts you pair can use it.",
+    token: "Bot token",
+    tokenHint: "Create a bot with",
+    paste: "Paste the token",
+    tokenSaved: "Bot connected",
+    tokenSavedHint: "The token is in your system's keychain. Zorel checks for messages while it's open.",
+    tokenFromEnv: "Token set in the environment",
+    remove: "Remove",
+    removeTitle: "Remove the bot token?",
+    removeBody: "Zorel stops reading the bot's messages. Paired accounts stay paired.",
+    paired: { one: "1 paired account", other: "{count} paired accounts" },
+    pairHint: "Get a code, then send it to your bot from the Telegram account to pair.",
+    pairWith: "Send this to your bot within 10 minutes (one use): /pair {code}",
+    pair: "Get pairing code",
+    unpair: "Unpair all",
+    unpairTitle: "Unpair every account?",
+    unpairBody: "They can't talk to Zorel until paired again.",
+    saveFailed: "Couldn't save the token. Try again."
   },
   connectors: {
     title: "Connectors",

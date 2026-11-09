@@ -107,3 +107,4 @@
 2026-11-08 | pins halve to 4,000 chars once the local model is ready (pinBudget) | spec 001 SC-005 unblocked by spec 003: memory layer ~2,190 → ~1,325 tokens/turn, reach 25/25
 2026-11-08 | outside-text rule in instructions; MCP/browser results with instruction-like text get a warning line (guarded) | spec 004: tool results could steer the agent unmarked
 2026-11-08 | MCP tools deferred behind zorel_find_tools/zorel_use_tool past 10k chars of definitions | spec 005: every MCP tool cost tokens in every request
+2026-11-08 | Telegram channel: paired accounts talk to Zorel through the runtime | spec 007: first external channel
