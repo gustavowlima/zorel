@@ -16,6 +16,7 @@ const WORK = "/work"
 const PROJECTS = "/projects"
 const MAX_OUTPUT = 30_000 // characters of command output handed back to the model
 const MAX_FILE = 200_000
+const MAX_CLI_OUTPUT = 2_000_000 // what runCli keeps of stdout: a file this long was cut
 
 export type Engine = "podman" | "docker"
 export interface EngineStatus {
@@ -46,7 +47,7 @@ export const runCli: Runner = async (bin, args, opts = {}) => {
     : null
   const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
   if (timer) clearTimeout(timer)
-  return { code, stdout: stdout.slice(-2_000_000), stderr: stderr.slice(-200_000), ...(late ? { late } : {}) }
+  return { code, stdout: stdout.slice(-MAX_CLI_OUTPUT), stderr: stderr.slice(-200_000), ...(late ? { late } : {}) }
 }
 
 // What an engine's failed `info` means for the person, first match wins.
@@ -103,12 +104,20 @@ export interface Lent {
 export const installOf = (dataDir: string) => new Bun.CryptoHasher("sha1").update(dataDir).digest("hex").slice(0, 6)
 export const containerName = (dataDir: string, agentId: string, projectId: string | null) => `zorel-${installOf(dataDir)}-${agentId.slice(0, 8)}-${(projectId ?? "none").slice(0, 8)}`
 
+// What a container was made with (a label on it): the lent folder and whether it's read-only. A chat at another access
+// level or on another folder gets the container made again (its /work stays: it's a folder on this computer).
+export const mountOf = (lent: Lent | null) => (lent ? `${lent.path}:${lent.readOnly ? "ro" : "rw"}` : "none")
+
 export function runArgs(o: { engine: Engine; name: string; install: string; agentId: string; work: string; lent: Lent | null; platform?: string }): string[] {
   const keepId = o.engine === "podman" && (o.platform ?? process.platform) === "linux" // rootless: files stay the person's
-  const lent = o.lent ? ["-v", `${o.lent.path}:${PROJECTS}/${folderName(o.lent.path)}${o.lent.readOnly ? ":ro" : ""}`] : []
+  const at = o.lent && `${PROJECTS}/${folderName(o.lent.path)}`
+  // The repository's .git stays read-only even in a writable folder: Zorel's own git on this computer reads its config
+  // and hooks, so a hook or core.fsmonitor written from the container would run here, outside any sandbox.
+  const git = o.lent && !o.lent.readOnly && existsSync(join(o.lent.path, ".git")) && statSync(join(o.lent.path, ".git")).isDirectory() ? ["-v", `${join(o.lent.path, ".git")}:${at}/.git:ro`] : []
+  const lent = o.lent ? ["-v", `${o.lent.path}:${at}${o.lent.readOnly ? ":ro" : ""}`, ...git] : []
   return [
     "run", "-d", "--name", o.name, "--hostname", "computer",
-    "--label", `zorel.install=${o.install}`, "--label", `zorel.agent=${o.agentId}`,
+    "--label", `zorel.install=${o.install}`, "--label", `zorel.agent=${o.agentId}`, "--label", `zorel.mount=${mountOf(o.lent)}`,
     "--init", "--memory", "3g", "--cpus", "2",
     ...(keepId ? ["--userns=keep-id"] : []),
     "-w", WORK, "-v", `${o.work}:${WORK}`, ...lent,
@@ -197,9 +206,13 @@ export class Computers {
     const current = this.starting.get(name)
     if (current) return current.then(() => name)
     const job = (async () => {
-      const state = await this.run(engine, ["inspect", "-f", "{{.State.Running}}", name], { timeoutMs: 15_000 })
-      if (state.code === 0 && state.stdout.trim() === "true") return
-      if (state.code === 0) {
+      const state = await this.run(engine, ["inspect", "-f", '{{.State.Running}}|{{index .Config.Labels "zorel.mount"}}', name], { timeoutMs: 15_000 })
+      const [running, mount] = state.stdout.trim().split("|")
+      if (state.code === 0 && mount !== mountOf(c.lent)) {
+        // Made for another folder or access level: made again, so "ask" really is read-only.
+        await this.run(engine, ["rm", "-f", name], { timeoutMs: 60_000 })
+      } else if (state.code === 0 && running === "true") return
+      else if (state.code === 0) {
         const r = await this.run(engine, ["start", name], { timeoutMs: 60_000 })
         if (r.code !== 0) throw new Error(`Couldn't start the computer: ${r.stderr.trim().split("\n").at(-1)}`)
         return
@@ -248,10 +261,11 @@ export class Computers {
       if (!old) return textResult("old_text can't be empty. To create or rewrite the file, use computer_write.", true)
       const read = await this.exec(engine, name, `cat -- ${q(path)}`, 30)
       if (read.code !== 0) return textResult(read.stderr.trim() || "Couldn't read it.", true)
+      if (read.stdout.length >= MAX_CLI_OUTPUT) return textResult("The file is too large to edit this way (it would be cut). Use computer_run with sed or a script.", true)
       const count = read.stdout.split(old).length - 1
       if (!count) return textResult("The stretch isn't in the file. Read it again and copy it exactly.", true)
       if (count > 1 && args.replace_all !== true) return textResult(`The stretch appears ${count} times. Include more context or pass replace_all.`, true)
-      const next = args.replace_all === true ? read.stdout.split(old).join(String(args.new_text ?? "")) : read.stdout.replace(old, String(args.new_text ?? ""))
+      const next = args.replace_all === true ? read.stdout.split(old).join(String(args.new_text ?? "")) : read.stdout.replace(old, () => String(args.new_text ?? "")) // a function: $& and $$ in the new text stay as written
       const w = await this.exec(engine, name, `cat > ${q(path)}`, 30, next)
       return w.code === 0 ? textResult(`Edited ${path} (${args.replace_all === true ? count : 1} replacement${count > 1 && args.replace_all === true ? "s" : ""}).`) : textResult(w.stderr.trim(), true)
     },
@@ -276,6 +290,7 @@ export class Computers {
 
   // Everything of this agent goes: its containers (any project) and its folders.
   async erase(agentId: string): Promise<void> {
+    if (!/^[A-Za-z0-9_-]+$/.test(agentId)) throw new Error("Not an agent id.") // never a path: it names a folder to delete
     const { engine } = await this.status()
     if (engine) {
       const ids = (await this.run(engine, ["ps", "-aq", "--filter", `label=zorel.install=${installOf(this.dataDir)}`, "--filter", `label=zorel.agent=${agentId}`], { timeoutMs: 15_000 })).stdout.split("\n").filter(Boolean)

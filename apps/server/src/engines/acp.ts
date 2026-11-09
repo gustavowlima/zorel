@@ -17,7 +17,7 @@ import { basename, dirname, join, resolve } from "node:path"
 import type { Access } from "@zorel/contracts"
 import { Stream } from "effect"
 import { commandStep, type EngineEvent, type NativeStep, STEP_DETAIL_MAX, STEP_TITLE_MAX } from "../engines.ts"
-import { approvalFor } from "./policy.ts"
+import { approvalFor, decideCommand } from "./policy.ts"
 import { type Approver, type NativeApproval, withoutAppEnv } from "./session.ts"
 
 export interface AcpTurn {
@@ -200,8 +200,14 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
         send({ id: m.id, result: answer })
       }
       if (call.kind === "fetch" && !t.web) return reply(CANCELLED)
-      if (t.access !== "ask" || !t.approve) return reply(permission(options, t.access))
-      // "Ask first": the person decides on the turn's approval card while the agent waits.
+      // "Ask first" asks for everything; at workspace a risky command (push, rm -rf, curl…) asks as it does under the
+      // other engines: the confinement keeps writes in the folder but leaves the network open.
+      const raw = call.rawInput?.command
+      const command = Array.isArray(raw) ? raw.join(" ") : typeof raw === "string" ? raw : String(call.title ?? "")
+      const asks = t.access === "ask" || (t.access === "workspace" && call.kind === "execute" && decideCommand("workspace", command, t.cwd, true) === "ask")
+      if (!asks) return reply(permission(options, t.access))
+      if (!t.approve) return reply(CANCELLED)
+      // The person decides on the turn's approval card while the agent waits.
       const title = String(call.title ?? "A tool call")
       void t.approve(approvalFor(CARD_KIND[String(call.kind)] ?? "tool", title, title, call.rawInput ?? call, t.cwd)).then(
         (ok) => reply(ok ? permission(options, "workspace") : CANCELLED),

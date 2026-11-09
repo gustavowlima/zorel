@@ -19,6 +19,8 @@ test("destructive tools ask unless allowed for good or the server is trusted", (
   expect(mcpRoute(p(), { id: "s1", mode: "auto" }, del, false).approve).toBe(false)
   expect(mcpRoute(p(), server, del, false).approve).toBe(true)
   expect(mcpRoute(p({ always: ["s1:delete_page"] }), server, del, false).approve).toBe(false)
+  // "Ask first" asks for a destructive tool even on a trusted server.
+  expect(mcpRoute(p(), { id: "s1", mode: "auto" }, del, true).approve).toBe(true)
   expect(mcpRoute(p(), { id: "s1", mode: "read" }, { name: "create", cls: "write" }, true).approve).toBe(false) // not exposed at all
 })
 

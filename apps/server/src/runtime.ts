@@ -486,9 +486,11 @@ export const makeRuntime = Effect.gen(function* () {
       const known = runningPreview(plan)
       if (known) return show(known)
       const s = await step(`Preview ${plan.label}`, PREVIEW_TOOL.name)
-      if (effectiveAccess(chat, agent) !== "full") {
+      const alwaysKey = plan.key.slice(plan.key.indexOf("|") + 1)
+      // "Always" for this command, chosen on an earlier card, holds from then on.
+      if (effectiveAccess(chat, agent) !== "full" && !perms.always.includes(alwaysKey)) {
         const card = { kind: "tool" as const, tool: PREVIEW_TOOL.name, summary: `${nameOf(agent)} wants to run the dev server: ${plan.line}`, args: plan.line, cwd: plan.dir }
-        const outcome = await run(askApproval(chat, row, agent, s, card, plan.key.slice(plan.key.indexOf("|") + 1)))
+        const outcome = await run(askApproval(chat, row, agent, s, card, alwaysKey))
         if (outcome === "denied" || outcome === "expired") {
           await finish(s, "refused")
           return textResult("The user declined to run it. Ask them to start the server, or go on without the preview.", true)
