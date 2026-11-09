@@ -11,7 +11,7 @@ import { stretchOf } from "./chat.ts"
 import { routerModel } from "./router.ts"
 import { ftsQuery } from "./db.ts"
 import { Secrets } from "./secrets.ts"
-import { classify, compact, COMPACT_HEAD, exposedName, guarded, injectionWarning, needsApproval, readResult, textResult } from "./tools.ts"
+import { classify, compact, sharedPrefix, COMPACT_HEAD, exposedName, guarded, injectionWarning, needsApproval, readResult, textResult } from "./tools.ts"
 
 const feed = (p: Parser, file: string) =>
   Bun.file(new URL(`./fixtures/${file}`, import.meta.url)).text().then((t) => [...t.split("\n").flatMap((l) => p.line(l)), ...p.end(0, "")] as EngineEvent[])
@@ -560,4 +560,17 @@ test("the outside-text rule is in the instructions only when the turn has tools"
     })
   expect(turnWith(true).stable).toContain(OUTSIDE_TEXT_RULE)
   expect(turnWith(false).stable).not.toContain(OUTSIDE_TEXT_RULE)
+})
+
+test("a namespace word every tool of a server shares is skipped to find the verb; reading alone stays strict", () => {
+  const desktop = ["desktop_snapshot", "desktop_click", "desktop_list_apps", "desktop_close_app", "desktop_clipboard_get", "desktop_find", "desktop_type"]
+  const prefix = sharedPrefix(desktop)
+  expect(prefix).toBe("desktop")
+  const cls = Object.fromEntries(desktop.map((n) => [n, classify({ name: n }, prefix)]))
+  expect(cls).toEqual({ desktop_snapshot: "read", desktop_click: "write", desktop_list_apps: "read", desktop_close_app: "write", desktop_clipboard_get: "write", desktop_find: "read", desktop_type: "write" })
+  expect(classify({ name: "desktop_snapshot" })).toBe("write") // without the prefix known, as before
+  expect(classify({ name: "status_update" })).toBe("write") // "status" reads only as the whole name
+  expect(classify({ name: "status" })).toBe("read")
+  expect(sharedPrefix(["search_docs", "delete_page", "search_pages"])).toBeUndefined()
+  expect(sharedPrefix(["gh_get", "gh_list"])).toBeUndefined() // too few to call it a namespace
 })

@@ -236,7 +236,10 @@ const CONNECTORS: ReadonlyArray<Connector> = [
   { id: "huggingface", name: "Hugging Face", url: "https://huggingface.co/mcp", auth: "none", icon: siHuggingface },
   { id: "context7", name: "Context7", url: "https://mcp.context7.com/mcp", auth: "none" },
   { id: "figma", name: "Figma", url: "http://127.0.0.1:3845/mcp", auth: "none", icon: siFigma },
-  { id: "playwright", name: "Playwright", command: "npx -y @playwright/mcp@latest", auth: "none" }
+  { id: "playwright", name: "Playwright", command: "npx -y @playwright/mcp@latest", auth: "none" },
+  // Desktop apps through the OS accessibility tree (vercel-labs/agent-desktop, Apache-2.0): downloaded by npx only
+  // when connected, pinned so an update never arrives unseen. macOS asks for the Accessibility permission first.
+  { id: "agent-desktop", name: "Desktop apps", command: "npx -y agent-desktop@1.2.0 mcp", auth: "none" }
 ]
 const matches = (c: Connector, s: McpServer) => (c.url ? s.url === c.url : [s.command, ...s.args].join(" ") === c.command)
 const WAIT_MS = 5 * 60_000
