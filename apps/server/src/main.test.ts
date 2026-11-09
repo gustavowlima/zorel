@@ -42,6 +42,7 @@ const PRICES = { anthropic: { "claude-sonnet-5-5": { cost: { input: 2, output: 1
 
 // ---------- test MCP server ----------
 const toolCalls: string[] = []
+let manyTools = 0 // > 0: the server also lists this many filler tools (deferred tools)
 const mcp = Bun.serve({
   port: 0,
   async fetch(req) {
@@ -49,7 +50,8 @@ const mcp = Bun.serve({
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
         { name: "search_docs", description: "Searches the docs", inputSchema: { type: "object", properties: { q: { type: "string" } } } },
-        { name: "delete_page", description: "Deletes a page", inputSchema: { type: "object", properties: { id: { type: "string" } } } }
+        { name: "delete_page", description: "Deletes a page", inputSchema: { type: "object", properties: { id: { type: "string" } } } },
+        ...Array.from({ length: manyTools }, (_, i) => ({ name: `get_report_${i}`, description: `Gets report number ${i} of the quarterly finance dashboard, with every column described at length so the definitions weigh what real servers' do.`, inputSchema: { type: "object", properties: { period: { type: "string" } } } }))
       ]
     }))
     server.setRequestHandler(CallToolRequestSchema, async (r) => {
@@ -882,4 +884,24 @@ test("zorel_remember: the approval setting decides (undo keeps, review proposes)
   await api((c) => c.agents.update({ params: { id: agent.id }, payload: { memory: "read" } }))
   await send(chat.id, { text: "hi" })
   expect(turns.at(-1)!.tools!.defs.map((d) => d.name)).not.toContain("zorel_remember")
+})
+
+test("many MCP tools: the turn lists find/use instead, and a found tool is called through the same path", async () => {
+  manyTools = 80
+  try {
+    const project = await api((c) => c.projects.create({ payload: { name: "Big", brief: "" } }))
+    await api((c) => c.tools.create({ payload: { projectId: project.id, name: "docs", command: "", args: [], url: `http://localhost:${mcp.port}/mcp`, env: {}, mode: "read" } }))
+    const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [], model: "claude-cli/sonnet" } }))
+    const found = dones((await send(chat.id, { text: 'tool:zorel_find_tools {"query":"search the docs"}' })).events)[0]!
+    const listed = turns.at(-1)!.tools!.defs.map((d) => d.name)
+    expect(listed).toEqual(expect.arrayContaining(["zorel_find_tools", "zorel_use_tool"]))
+    expect(listed).not.toContain("docs__search_docs") // not listed: found on demand
+    expect(found.text).toContain("docs__search_docs: Searches the docs")
+    const used = dones((await send(chat.id, { text: 'tool:zorel_use_tool {"name":"docs__search_docs","arguments":{"q":"deploy"}}' })).events)[0]!
+    expect(used.text).toContain("result of search_docs")
+    const unknown = dones((await send(chat.id, { text: 'tool:zorel_use_tool {"name":"docs__nope"}' })).events)[0]!
+    expect(unknown.text).toContain("Find it with zorel_find_tools first")
+  } finally {
+    manyTools = 0
+  }
 })

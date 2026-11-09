@@ -17,7 +17,7 @@ import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
 import { cardText, TOO_LARGE } from "./engines/policy.ts"
-import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, READ_RESULT_TOOL, REMEMBER_TOOL, staleWrite, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo } from "./team.ts"
+import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, READ_RESULT_TOOL, REMEMBER_TOOL, staleWrite, FIND_TOOLS_TOOL, USE_TOOL_TOOL, MCP_DEFER_CHARS, findTools, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
@@ -396,6 +396,7 @@ export const makeRuntime = Effect.gen(function* () {
     const perms = permissionsOf(agent)
     const askFirst = effectiveAccess(chat, agent) === "ask"
     const defs: ToolDef[] = []
+    const mcpDefs: ToolDef[] = [] // the MCP servers' tools: listed, or found on demand when there are many
     const withheld = withheldTools(agent) // by the agent's memory mode and knowledge access
     const step = (title: string, tool: string) => run(store.addStep({ turnId: row.id, kind: "tool", title, tool, files: [], status: "running" }).pipe(Effect.tap((s) => publish(chat.id, ev("step-started", { step: s })))))
     const finish = (s: WorkStep, status: WorkStep["status"], output = "") =>
@@ -412,9 +413,13 @@ export const makeRuntime = Effect.gen(function* () {
         if (!r.expose) continue
         const name = exposedName(s.name, t.name)
         routes.set(name, { server: s.id, tool: t.name, approve: r.approve, writes: t.cls !== "read", alwaysKey: r.alwaysKey })
-        defs.push({ name, description: t.description, inputSchema: t.inputSchema })
+        mcpDefs.push({ name, description: t.description, inputSchema: t.inputSchema })
       }
     }
+    // Many MCP tools cost tokens in every request: past MCP_DEFER_CHARS the agent finds them on demand instead.
+    const deferred = JSON.stringify(mcpDefs).length > MCP_DEFER_CHARS
+    if (deferred) for (const t of [FIND_TOOLS_TOOL, USE_TOOL_TOOL]) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    else defs.push(...mcpDefs)
     // The chat's browser: Zorel's own tools, always there. Reading never asks; acting asks when the agent's
     // access is "ask", like any tool that writes.
     if (perms.browser) for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
@@ -768,6 +773,16 @@ export const makeRuntime = Effect.gen(function* () {
 
     const call: Session["call"] = async (name, args) => {
       if (withheld.has(name)) return textResult(`You don't have ${name}: the user turned it off for you.`, true)
+      if (deferred && name === FIND_TOOLS_TOOL.name) {
+        const found = findTools(mcpDefs, typeof args.query === "string" ? args.query : "")
+        return textResult(found.length ? found.map((t) => `- ${t.name}: ${t.description ?? ""}\n  arguments: ${JSON.stringify(t.inputSchema)}`).join("\n") : "No tool matches. Try other words (the service's name, or the action).")
+      }
+      if (deferred && name === USE_TOOL_TOOL.name) {
+        const inner = typeof args.name === "string" ? args.name : ""
+        if (!routes.has(inner)) return textResult(`No tool "${inner}". Find it with zorel_find_tools first.`, true)
+        const inputs = args.arguments && typeof args.arguments === "object" && !Array.isArray(args.arguments) ? (args.arguments as Record<string, unknown>) : {}
+        return call(inner, inputs) // the same path: routes, approvals, outside-text warning, large results
+      }
       if (KNOWLEDGE_TOOLS.some((t) => t.name === name)) return knowledgeCall(name, args)
       if (name === ROUTINES_TOOL.name) return routinesCall(args)
       if (SKILL_TOOLS.some((t) => t.name === name)) return skillCall(name, args)

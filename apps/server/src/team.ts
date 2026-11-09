@@ -134,6 +134,29 @@ export const REMEMBER_TOOL = {
   writes: false
 } as const
 
+// MCP tools on demand (reference apps defer them): past MCP_DEFER_CHARS of definitions, a turn lists these two instead
+// of every server's tools, and the agent finds and calls what it needs.
+export const MCP_DEFER_CHARS = 10_000
+export const FIND_TOOLS_TOOL = {
+  name: "zorel_find_tools",
+  description:
+    "Find tools of the connected services (MCP servers) by what you need, e.g. 'create github issue' or 'search slack messages'. Returns each match's name, what it does and its arguments; call one with zorel_use_tool.",
+  inputSchema: { properties: { query: { type: "string" } }, required: ["query"] },
+  writes: false
+} as const
+export const USE_TOOL_TOOL = {
+  name: "zorel_use_tool",
+  description: "Call a tool found with zorel_find_tools. name: its exact name; arguments: an object matching its arguments. Approvals apply as for any tool.",
+  inputSchema: { properties: { name: { type: "string" }, arguments: { type: "object" } }, required: ["name"] },
+  writes: true
+} as const
+// The deferred tools best matching a query: by the query's words in name and description, name counting double.
+export function findTools<T extends { name: string; description?: string | undefined }>(tools: ReadonlyArray<T>, query: string, limit = 8): T[] {
+  const words = query.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2)
+  const score = (t: T) => words.reduce((n, w) => n + (t.name.toLowerCase().includes(w) ? 2 : 0) + ((t.description ?? "").toLowerCase().includes(w) ? 1 : 0), 0)
+  return tools.map((t) => [t, score(t)] as const).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, limit).map(([t]) => t)
+}
+
 // A result of Zorel's own tools too long to send whole (tools.ts compact): read the rest by position or by a text.
 export const READ_RESULT_TOOL = {
   name: "zorel_read_result",
