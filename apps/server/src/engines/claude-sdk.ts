@@ -101,7 +101,8 @@ export function permissions(access: Access, cwd: string, approve: Approver, web 
     if (tool.startsWith("mcp__")) return allow // the gateway applies the server's mode and its approvals
     if (WEB_TOOLS.includes(tool)) return web ? allow : deny // the agent's web permission
     if (tool === "Skill") return skills ? allow : deny // reading a skill; what it then does goes through the rules above
-    const path = typeof input.file_path === "string" ? input.file_path : (blockedPath ?? undefined)
+    // Read/Edit/Write name it file_path; Grep and Glob name it path.
+    const path = typeof input.file_path === "string" ? input.file_path : typeof input.path === "string" ? input.path : (blockedPath ?? undefined)
     let decision: "allow" | "ask"
     let request: NativeApproval
     if (tool === "Bash") {

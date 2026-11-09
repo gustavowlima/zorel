@@ -16,7 +16,8 @@ import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type Sessio
 // Access level → Codex sandbox and approval policy (ARCHITECTURE §9.2). The shell is on in the app-server:
 // commands run in Codex's sandbox and what leaves it asks through Zorel.
 const SANDBOX: Record<Access, string> = { workspace: "workspace-write", ask: "read-only", full: "danger-full-access" }
-const APPROVAL: Record<Access, string> = { workspace: "on-request", ask: "on-request", full: "never" }
+// "Ask first": untrusted asks before every command that isn't a known read, as the other engines ask for each one.
+const APPROVAL: Record<Access, string> = { workspace: "on-request", ask: "untrusted", full: "never" }
 // A function, not a constant: engines.ts imports this module, so CODEX_DISABLED isn't ready at load time.
 const appServerDisabled = () => CODEX_DISABLED.filter((f) => f !== "shell_tool" && f !== "unified_exec")
 

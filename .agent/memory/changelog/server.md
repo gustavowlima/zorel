@@ -115,3 +115,4 @@
 2026-11-06 | Step.at (text length when a step began); the batch's text is flushed before a native step; gateway tools wait (≤400 ms, settled()) for words written before the call | the chat lays replies out text, steps, text… as they happened; a step in a batch used to land before words written first
 2026-11-09 | agents' own Linux computer (Podman first, Docker fallback), 5 computer_* tools, project folder lent | spec 009: Zorel had no isolated computer; a reference app's is Docker-only
 2026-11-09 | Processes: servers only from a chat's own shells/sessions; preview test no longer leaks a server per run | the screen listed every listener in the repo folder; 68 orphaned test servers had piled up
+2026-11-09 | browser acts/pointer, risky by page names, own tabs only; ACP risky asks; container remount + .git ro; desktop risky words/keys | functional review
