@@ -755,6 +755,8 @@ export const en = {
     youHold: "You're using the browser: the agents wait until you hand it back.",
     agentsMayUse: "The agents use this browser. Click or type on the page to take over.",
     handBack: "Hand back",
+    fullScreen: "Full screen",
+    exitFullScreen: "Exit full screen",
     page: "Page: {title}",
     empty: "No page open",
     emptyHint: "Type an address above, or ask an agent to open one. Sites you sign into here stay signed in.",

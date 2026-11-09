@@ -7,7 +7,7 @@ import { t } from "@zorel/i18n"
 import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react"
 import { agentsAtom, useList } from "../client.ts"
 import { agentName, agentTone } from "../labels.ts"
-import { AgentAvatar, AgentPointer, ArrowRight, Button, ChevronRight, cx, Globe, IconButton, Input, Plus, RefreshCw, Spinner, Tooltip, X } from "@/ui"
+import { AgentAvatar, AgentPointer, ArrowRight, Button, ChevronRight, cx, Globe, IconButton, Input, Maximize2, Minimize2, Plus, RefreshCw, Spinner, Tooltip, X } from "@/ui"
 
 type Tab = { id: string; title: string; url: string; active: boolean }
 type Frame =
@@ -16,6 +16,7 @@ type Frame =
   | { t: "key"; key: string }
   | { t: "text"; text: string }
   | { t: "nav"; url: string }
+  | { t: "open"; url: string }
   | { t: "back" | "forward" | "reload" | "newtab" | "release" }
   | { t: "tab" | "close"; id: string }
 
@@ -57,6 +58,7 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
   const [address, setAddress] = useState("")
   const [error, setError] = useState<string>()
   const [act, setAct] = useState<Act>()
+  const [full, setFull] = useState(false) // the browser over the whole window, to drive it at a usable size
   const [idle, setIdle] = useState(true)
   const agents = useList(agentsAtom)
   const ws = useRef<WebSocket>(null)
@@ -118,8 +120,7 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new request opens it
   useEffect(() => {
     if (!openUrl) return
-    send({ t: "newtab" })
-    send({ t: "nav", url: openUrl.url })
+    send({ t: "open", url: openUrl.url }) // opening a page isn't taking the browser from the agents
   }, [openUrl])
 
   const at = (e: MouseEvent<HTMLElement>) => {
@@ -128,7 +129,14 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
   }
 
   return (
-    <section aria-label={t("browser.title")} className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <section
+      aria-label={t("browser.title")}
+      className={cx("flex min-h-0 min-w-0 flex-1 flex-col", full && "fixed inset-0 z-50 bg-canvas")}
+      // Esc leaves full screen, except on the page itself (there it's the page's key).
+      onKeyDown={(e) => {
+        if (full && e.key === "Escape" && !(e.target as HTMLElement).closest("[role=application]")) setFull(false)
+      }}
+    >
       {/* Tabs, then the toolbar: back, forward, reload, the address, who holds it. */}
       <div className="flex items-center gap-1 border-b border-subtle px-2 py-1.5">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
@@ -148,6 +156,11 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
             </IconButton>
           </Tooltip>
         </div>
+        <Tooltip content={full ? t("browser.exitFullScreen") : t("browser.fullScreen")}>
+          <IconButton label={full ? t("browser.exitFullScreen") : t("browser.fullScreen")} size="xs" onPress={() => setFull(!full)}>
+            {full ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+          </IconButton>
+        </Tooltip>
       </div>
       <form
         className="flex items-center gap-1 border-b border-subtle px-2 py-1.5"
@@ -195,7 +208,7 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
         )}
       </div>
       {error && <p className="px-3 py-1.5 text-sm text-danger">{error}</p>}
-      <div className="flex min-h-0 flex-1 items-start justify-center overflow-auto bg-code p-2">
+      <div className={cx("flex min-h-0 flex-1 justify-center overflow-auto bg-code p-2", full ? "items-center" : "items-start")}>
         {active && frame ? (
           <div
             role="application"
@@ -203,7 +216,8 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
             // biome-ignore lint/a11y/noNoninteractiveTabindex: a remote page drawn as frames (role application): it takes focus so keys go to the page
             tabIndex={0}
             className="relative w-full cursor-default overflow-hidden rounded-control border border-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            style={{ aspectRatio: "1280 / 800" }}
+            // Full screen: as large as the window allows at the page's 16:10, so a position on it is a position on the page.
+            style={{ aspectRatio: "1280 / 800", ...(full && { width: "min(100%, calc((100vh - 9.5rem) * 1.6))" }) }}
             onMouseDown={(e) => {
               e.currentTarget.focus()
               send({ t: "click", ...at(e), button: e.button === 2 ? "right" : "left", clicks: e.detail === 2 ? 2 : 1 })
