@@ -277,7 +277,7 @@ function Connectors({ servers }: { servers: ReadonlyArray<McpServer> }) {
   }, [waiting, signedIn, invalidate])
   return (
     <Section title={t("connectors.title")} description={t("connectors.intro")}>
-      <div className="grid items-start gap-2 sm:grid-cols-2">
+      <div className="grid items-start gap-2 xl:grid-cols-2">
         {CONNECTORS.map((c) => {
           const server = servers.find((s) => matches(c, s))
           // attention: the service refused what Zorel holds, or an OAuth sign-in never finished.

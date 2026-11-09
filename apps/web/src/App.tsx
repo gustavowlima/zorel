@@ -122,14 +122,15 @@ function Screen({ route }: { route: Route }) {
     case "builder":
       return <BuilderView key={route.projectId ?? "global"} projectId={route.projectId} />
     case "new-agent":
-      return <AgentView projectId={route.projectId} />
+      // Keyed: each agent (and a new one) is its own form, so nothing of the last one (its tab, its draft) carries over.
+      return <AgentView key={`new:${route.projectId ?? "global"}`} projectId={route.projectId} />
     case "project": {
       const project = projects.find((p) => p.id === route.id)
       return project ? <ProjectView project={project} tab={route.tab} /> : <NotFound />
     }
     case "agent": {
       const agent = agents.find((a) => a.id === route.id)
-      return agent ? <AgentView agent={agent} projectId={agent.projectId} tab={route.tab} /> : <NotFound />
+      return agent ? <AgentView key={agent.id} agent={agent} projectId={agent.projectId} tab={route.tab} /> : <NotFound />
     }
     case "chat": {
       const chat = chats.find((c) => c.id === route.id)
