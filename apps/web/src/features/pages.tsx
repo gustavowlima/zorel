@@ -11,7 +11,7 @@ import { agentsAtom, mutations, pagesAtom, pageVersionsAtom, projectsAtom, useLi
 import { scopeLabel } from "../labels.ts"
 import { MemorySwitch } from "./memory.tsx"
 import { go } from "../state.ts"
-import { BookOpen, Button, ConfirmDialog, column, cx, EmptyState, Field, Input, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Textarea, Trash2, Undo2 } from "@/ui"
+import { BookOpen, Button, ChevronRight, ConfirmDialog, column, cx, EmptyState, Field, Input, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Textarea, Trash2, Undo2 } from "@/ui"
 
 const prose = "prose-chat leading-relaxed" // the same Markdown look as the chat
 
@@ -46,7 +46,8 @@ export function PagesView({ selected }: { selected?: string | undefined }) {
         </>
       }
     >
-      <nav aria-label={t("pages.pages")} className="flex w-96 shrink-0 flex-col gap-3 overflow-y-auto border-r border-subtle py-4 pr-3 pl-4">
+      {/* A narrow window shows one side at a time: the list, or the open page with a way back to it. */}
+      <nav aria-label={t("pages.pages")} className={cx("w-full shrink-0 flex-col gap-3 overflow-y-auto border-subtle py-4 pr-3 pl-4 md:flex md:w-96 md:border-r", page || creating ? "hidden" : "flex")}>
         {scopes.length > 1 && (
           <Select
             size="sm"
@@ -80,7 +81,13 @@ export function PagesView({ selected }: { selected?: string | undefined }) {
           {list.length === 0 && <p className="px-2 py-6 text-center text-muted">{pages.length ? t("knowledge.noMatch") : t("pages.empty")}</p>}
         </ul>
       </nav>
-      <div className="min-w-0 flex-1 overflow-y-auto">
+      <div className={cx("min-w-0 flex-1 overflow-y-auto md:block", page || creating ? "block" : "hidden")}>
+        {(page || creating) && (
+          <Button size="sm" variant="ghost" className="mt-3 ml-4 text-muted md:hidden" onPress={() => (creating ? setCreating(false) : go({ view: "pages" }))}>
+            <ChevronRight className="size-3.5 rotate-180" />
+            {t("pages.pages")}
+          </Button>
+        )}
         {creating ? (
           <NewPage onDone={(id) => {
             setCreating(false)

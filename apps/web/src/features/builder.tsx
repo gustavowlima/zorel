@@ -131,7 +131,8 @@ function Conversation({ chat, reviewing }: { chat: Chat; reviewing: boolean }) {
   const empty = state.ready && state.messages.length === 0 && !state.live && state.pending === 0
 
   return (
-    <section aria-label={t("builder.conversation")} className="order-2 flex w-104 shrink-0 flex-col border-l border-subtle">
+    // A narrow window: the conversation alone (the explanation steps aside); while a proposal is reviewed, the review.
+    <section aria-label={t("builder.conversation")} className={cx("order-2 min-h-0 flex-1 flex-col border-subtle md:flex md:w-104 md:flex-none md:shrink-0 md:border-l", reviewing ? "hidden" : "flex")}>
       {empty ? (
         // Before the first message: what to say, and a few starting points.
         <div className="flex flex-1 flex-col items-center justify-center gap-5 px-8 text-center">
@@ -324,7 +325,7 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
             onDecline={() => choose(open, "denied")}
           />
         ) : (
-          <section aria-label={t("builder.proposal")} className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+          <section aria-label={t("builder.proposal")} className="hidden min-w-0 flex-1 flex-col overflow-y-auto md:flex">
             <div className="m-auto flex w-full max-w-xl flex-col gap-10 px-7 py-7">
             {finishing ? (
               <p className="text-sm text-muted">{t("builder.creating")}</p>

@@ -26,9 +26,10 @@ export function Screen({ title, subtitle, actions, children, bodyClassName }: { 
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader className={HEADER}>
         <h1 className="truncate text-lg font-semibold">{title}</h1>
-        {subtitle && <span className="min-w-0 flex-1 truncate text-muted">{subtitle}</span>}
-        {!subtitle && <span className="flex-1" />}
-        {actions && <div className="flex items-center gap-2">{actions}</div>}
+        {/* A phone keeps the title and the actions: the subtitle steps aside, and the actions wrap instead of being cut. */}
+        {subtitle && <span className="hidden min-w-0 flex-1 truncate text-muted sm:block">{subtitle}</span>}
+        <span className={cn("flex-1", subtitle && "sm:hidden")} />
+        {actions && <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>}
       </PageHeader>
       {/* A plain body scrolls, and keeps its scrollbar's room even when it doesn't, so the centered column doesn't
           shift as a page grows past the window (a tab to the next). A body laid out by the screen does its own. */}
@@ -184,7 +185,8 @@ export function ListRow({
         <span className="truncate font-medium">{title}</span>
         {hint && <span className={cn("truncate text-sm", hintTone === "warning" ? "text-warning" : hintTone === "success" ? "text-success" : "text-muted")}>{hint}</span>}
       </span>
-      {aside && <span className="pointer-events-none relative shrink-0 text-sm text-muted tabular-nums">{aside}</span>}
+      {/* At most a bit under half the row: in a narrow window the title keeps its room and the aside ends with "…". */}
+      {aside && <span className="pointer-events-none relative max-w-[45%] min-w-0 shrink-0 truncate text-sm text-muted tabular-nums">{aside}</span>}
       {trailing && <span className="relative flex shrink-0 items-center gap-2">{trailing}</span>}
       <ChevronRight className="pointer-events-none relative size-4 shrink-0 text-muted" />
     </div>

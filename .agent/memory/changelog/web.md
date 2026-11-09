@@ -77,3 +77,4 @@
 2026-11-09 | Memory page: one header across views, approval moved into Review, rows use pin + ⋯ menu | impeccable layout/critique pass
 2026-11-09 | Memory: undo receipt for Forget/Discard/Move; 8 per group in All with See all; DESIGN.md accent #0071e3 | critique follow-ups chosen by the user
 2026-11-09 | audit+polish: AgentView keyed, missing connector/audit strings, settings nav row on narrow, headings | impeccable audit
+2026-11-09 | narrow-window adaptation across screens; connector ids typed by their descriptions | impeccable adapt + harden
