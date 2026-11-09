@@ -26,7 +26,7 @@ export function ChannelsSection() {
     <Section title={t("channels.telegram")} description={<span className="block max-w-prose">{t("channels.telegramIntro")}</span>}>
       <Rows>
         {status.fromEnv ? (
-          <SettingRow title={t("channels.tokenFromEnv")} hint={<code className="font-mono text-sm">TELEGRAM_BOT_TOKEN</code>} />
+          <SettingRow title={t("channels.tokenFromEnv")} hint={<code className="font-mono text-sm">{"TELEGRAM_BOT_TOKEN"}</code>} />
         ) : status.tokenSet ? (
           <SettingRow title={t("channels.tokenSaved")} hint={t("channels.tokenSavedHint")}>
             <ConfirmButton size="sm" variant="ghost" title={t("channels.removeTitle")} description={t("channels.removeBody")} confirmLabel={t("channels.remove")} onConfirm={() => saveToken("")}>
@@ -46,7 +46,7 @@ export function ChannelsSection() {
               <span className="text-sm text-muted">
                 {t("channels.tokenHint")}{" "}
                 <a className="text-accent-text underline" href="https://t.me/BotFather" target="_blank" rel="noreferrer">
-                  @BotFather
+                  {"@BotFather"}
                 </a>
               </span>
             </span>
@@ -62,7 +62,7 @@ export function ChannelsSection() {
             hint={status.pairing ? t("channels.pairWith", { code: status.pairing.code }) : t("channels.pairHint")}
           >
             {status.pairing ? (
-              <code className="rounded bg-control px-2 py-1 font-mono text-base">/pair {status.pairing.code}</code>
+              <code className="rounded bg-control px-2 py-1 font-mono text-base">{`/pair ${status.pairing.code}`}</code>
             ) : (
               <Button size="sm" variant="secondary" onPress={() => void pair({ reactivityKeys: ["telegram"] })}>
                 {t("channels.pair")}
