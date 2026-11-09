@@ -10,6 +10,8 @@ import { join } from "node:path"
 import { prepare, recall } from "../src/chat.ts"
 import { type Mapped, MEMORY_BUDGET, pinned, RETRIEVED, scopesOf } from "../src/context.ts"
 import { type Repository, Store } from "../src/db.ts"
+import { ensure, settled, startVectors } from "../src/vectors.ts"
+import { homedir } from "node:os"
 import { type Needle, NEEDLES } from "./needles.ts"
 
 // The real map of each needle (extract-needle-map.ts, frozen); a needle without one fails the run.
@@ -17,6 +19,8 @@ const NEEDLE_MAP = new Map((await Bun.file(join(import.meta.dir, "fixtures", "ne
 for (const n of NEEDLES) if (!NEEDLE_MAP.has(n.text)) throw new Error(`no map for needle "${n.text}": run bench/extract-needle-map.ts`)
 // The lowest paraphrased reach without pinning (map + words) at 1,000 memories that --check accepts.
 const PARA_FLOOR = 15
+const VECTORS = process.argv.includes("--vectors")
+const FLOOR = VECTORS ? 25 : PARA_FLOOR // with the local model (spec 003), measured 25/25
 
 // ---------- deterministic data ----------
 let seed = 42
@@ -171,7 +175,13 @@ const bench = (total: number, r: Repository, dataDir: string) =>
         return yield* time(prepare(r, c, A0, "claude-cli/haiku", dataDir, undefined))
       })
 
-    // Pinned set is the same for every query (recency only): compute once, as prepare does.
+    // --vectors: the local model (spec 003) gives every fact its vector before the questions.
+    if (VECTORS) {
+      yield* Effect.promise(() => startVectors(join(homedir(), ".cache", "zorel")))
+      ensure(yield* r.activeMemories(scopes))
+      yield* Effect.promise(settled)
+    }
+        // Pinned set is the same for every query (recency only): compute once, as prepare does.
     const active = yield* r.activeMemories(scopes)
     const [, activeMs] = yield* time(r.activeMemories(scopes))
     const pin = pinned(active)
@@ -240,7 +250,7 @@ const bench = (total: number, r: Repository, dataDir: string) =>
     }
   })
 
-const sizes = (process.argv[2] ?? "100,1000,10000").split(",").map(Number)
+const sizes = (process.argv[2]?.startsWith("--") ? "100,1000,10000" : (process.argv[2] ?? "100,1000,10000")).split(",").map(Number)
 const results = []
 for (const total of sizes) {
   seed = 42
@@ -275,7 +285,7 @@ for (const k of ["lex", "para"] as const) {
   row(`${k}: MRR`, (r) => (r.res[k].rr / Q).toFixed(3))
   row(`${k}: reaches the prompt (pinned or retrieved)`, (r) => `${r.res[k].prompt}/${Q}`)
 }
-row("para: reach by map", (r) => `${r.reach.map}/${Q}`)
+row(VECTORS ? "para: reach by map or meaning" : "para: reach by map", (r) => `${r.reach.map}/${Q}`)
 row("para: reach by words", (r) => `${r.reach.words}/${Q}`)
 row("para: reach by pin only", (r) => `${r.reach.pin}/${Q}`)
 row("para: total without pin", (r) => `${r.reach.map + r.reach.words}/${Q}`)
@@ -302,7 +312,7 @@ for (const m of last.paraMisses) console.log(`- ${m}`)
 if (process.argv.includes("--check")) {
   const broken = results.flatMap((r) => [
     ...(r.res.lex.prompt < Q ? [`${r.total}: ${Q - r.res.lex.prompt} needles asked in their own words missed the prompt`] : []),
-    ...(r.total === 1000 && r.reach.map + r.reach.words < PARA_FLOOR ? [`${r.total}: paraphrased reach without pin ${r.reach.map + r.reach.words}/${Q}, below ${PARA_FLOOR}`] : []),
+    ...(r.total === 1000 && r.reach.map + r.reach.words < FLOOR ? [`${r.total}: paraphrased reach without pin ${r.reach.map + r.reach.words}/${Q}, below ${FLOOR}`] : []),
     ...(r.leaks.length ? [`${r.total}: ${r.leaks.length} leaks`] : []),
     ...(r.bobPinned ? [`${r.total}: another owner's memories pinned`] : []),
     ...(r.pinnedChars > MEMORY_BUDGET ? [`${r.total}: pinned ${r.pinnedChars} chars, over the budget`] : [])

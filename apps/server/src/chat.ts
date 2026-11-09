@@ -8,6 +8,7 @@ import {
 } from "./context.ts"
 import { hasCredential, redact } from "./observability.ts"
 import { normalize, Store, type Repository } from "./db.ts"
+import { nearest, vectorsReady } from "./vectors.ts"
 import { knowledgeOf, learningOf, memoryModeOf } from "./team.ts"
 import { cheapModel, Engines, type EngineEvent, type TurnTools } from "./engines.ts"
 
@@ -39,6 +40,7 @@ export const memoryModelFor = (store: Repository, chatModel: string) =>
 
 const STREAM = 10 // candidates each recall source (map, facts by words, past messages) brings to the fusion
 const EXCERPTS = 5 // past-message excerpts at most per turn
+const MEANING_MIN = 0.25 // cosine below this isn't "about the same thing" for all-MiniLM-L6-v2
 const RECALL_CHARS = 2_000 // the most the recalled facts take in a turn
 
 // A bounded piece of a past message around the words that matched, with who said it and where.
@@ -89,7 +91,10 @@ export const recall = (store: Repository, scopes: ReadonlyArray<string>, query: 
       }
       byAssociation = [...score.values()].sort((a, b) => b.score - a.score || b.memory.confirmedAt - a.memory.confirmedAt).slice(0, STREAM).map((s) => s.memory)
     }
-    const excerpts = messages ? yield* pastMessages(store, scopes, query, messages, [...byAssociation, ...byWords]) : []
+    // By meaning (vectors.ts): only once the local model is ready; facts not processed yet are queued, not awaited.
+    const facts = vectorsReady() ? (yield* store.activeMemories(scopes)).filter((m) => !exclude.includes(m.id)) : []
+    const byMeaning = facts.length ? yield* Effect.promise(() => nearest(query, facts, STREAM, MEANING_MIN)) : []
+    const excerpts = messages ? yield* pastMessages(store, scopes, query, messages, [...byAssociation, ...byWords, ...byMeaning]) : []
     // Reciprocal rank fusion (k = 60): an item found by several sources outranks one found by one at the same place.
     type Item = { kind: "fact"; memory: Memory } | { kind: "message"; excerpt: Excerpt }
     const fused = new Map<string, { item: Item; score: number }>()
@@ -100,6 +105,7 @@ export const recall = (store: Repository, scopes: ReadonlyArray<string>, query: 
     }
     for (const [r, m] of byAssociation.entries()) vote(m.id, { kind: "fact", memory: m }, r)
     for (const [r, m] of byWords.entries()) vote(m.id, { kind: "fact", memory: m }, r)
+    for (const [r, m] of byMeaning.entries()) vote(m.id, { kind: "fact", memory: m }, r)
     for (const [r, e] of excerpts.entries()) vote(e.id, { kind: "message", excerpt: e }, r)
     const at = (i: Item) => (i.kind === "fact" ? i.memory.confirmedAt : i.excerpt.at)
     const order = [...fused.values()].sort((x, y) => y.score - x.score || (x.item.kind === "fact" ? 0 : 1) - (y.item.kind === "fact" ? 0 : 1) || at(y.item) - at(x.item)).map((f) => f.item)

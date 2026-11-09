@@ -22,6 +22,7 @@ import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
+import { startVectors } from "./vectors.ts"
 import { freePort, outputTail, PREVIEW_TOOL, previewFolder, previewKey, previewLine, previewUrl, waitForPort } from "./preview.ts"
 import { managerOf, scriptsOf, shellAlive, startShell } from "./terminals.ts"
 import { compact, exposedName, type GatewayHandle, NO_TOOLS, readResult, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
@@ -1576,6 +1577,8 @@ export const makeRuntime = Effect.gen(function* () {
   }
   // Facts kept before the memory's map existed are filed on it in the background, a little after start.
   yield* Effect.forkDetach(Effect.sleep("20 seconds").pipe(Effect.andThen(mapEarlierFacts()), Effect.provide(services), Effect.ignore))
+  // Recall by meaning: the local model loads (and downloads once) in the background; turns never wait for it.
+  if (process.env.NODE_ENV !== "test") yield* Effect.forkDetach(Effect.promise(() => startVectors(dataDir))) // tests never download it
   // The map sleeps once a day (and a little after start): orphan points go, twins merge.
   yield* Effect.forkDetach(Effect.sleep("1 minute").pipe(Effect.andThen(Effect.repeat(store.sleepMap(), Schedule.spaced("1 day"))), Effect.ignore))
   return service

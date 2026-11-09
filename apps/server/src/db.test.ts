@@ -7,6 +7,7 @@ import { Effect } from "effect"
 import { canonical, sameName, Store, twins } from "./db.ts"
 import { LEGACY_MIGRATIONS } from "./migrate.ts"
 import { recall } from "./chat.ts"
+import { setEmbedder, settled } from "./vectors.ts"
 import { mappedOf } from "./context.ts"
 
 const run = <A>(path: string, f: (r: typeof Store.Service) => Effect.Effect<A>) =>
@@ -533,3 +534,36 @@ test("recall fuses its sources: a fact found by the map and by its words outrank
       expect(got).toContain(words.id)
     })
   ))
+
+test("recall by meaning: a fact sharing no word with the question comes back, never another project's; without a model, nothing changes", async () => {
+  // A fake model: words of one idea point the same way.
+  const ideas = [["penicillin", "antibiotic", "allergic"], ["volvo", "car", "drive"]]
+  const vec = (t: string) => {
+    const v = new Float32Array(3)
+    for (const w of t.toLowerCase().split(/\W+/)) {
+      const i = ideas.findIndex((xs) => xs.includes(w))
+      if (i >= 0) v[i]! += 1
+    }
+    if (!v.some(Boolean)) v[2] = 1 // about nothing we know
+    const n = Math.hypot(...v) || 1
+    return v.map((x) => x / n)
+  }
+  try {
+    await run(":memory:", (r) =>
+      Effect.gen(function* () {
+        const pen = (yield* r.addMemory({ scope: "project:p", text: "Is allergic to penicillin", state: "active", origin: "auto", chatId: null }))!
+        yield* r.addMemory({ scope: "project:q", text: "Drives a Volvo", state: "active", origin: "auto", chatId: null })
+        const ask = (q: string) => recall(r, ["user", "project:p"], q, []).pipe(Effect.map((x) => x.facts.map((m) => m.id)))
+        setEmbedder(undefined)
+        expect(yield* ask("which antibiotic can't I take?")).toEqual([]) // no model: words and map only
+        setEmbedder(async (ts) => ts.map(vec))
+        yield* ask("which antibiotic can't I take?") // queues the facts' vectors
+        yield* Effect.promise(settled)
+        expect(yield* ask("which antibiotic can't I take?")).toEqual([pen.id])
+        expect(yield* ask("what car do I own?")).toEqual([]) // project q's fact never comes
+      })
+    )
+  } finally {
+    setEmbedder(undefined)
+  }
+})
