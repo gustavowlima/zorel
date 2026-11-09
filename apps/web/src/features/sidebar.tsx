@@ -35,63 +35,62 @@ const emptyKey = (projectId: string) => `e:${projectId}`
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
 const idOf = (key: NavKey) => String(key).slice(2)
 
-type Place = { key: string; icon: ReactNode; label: string; active?: boolean; go: () => void; count?: number; kbd?: string }
+type Place = { key: string; icon: ReactNode; label: string; active?: boolean; go: () => void; count?: number }
 
-// The app's places: New chat and Search as rows (words and a shortcut); then Needs you (with what waits for you),
-// Agents, Routines and Memory as one row of icons, each named by its tooltip (Pages is a view of Memory). Skills live
-// in Settings. Folded, the column holds the same icons. The current one has the open chat's wash.
+// The app's places, named: Needs you (with what waits for you), Agents, Routines and Memory (Pages is a view of
+// Memory); Skills live in Settings. New chat and Search are icons in the head. Folded, all are icons in a column,
+// New chat and Search first. The current one has the open chat's wash.
 function Places({ route, folded }: { route: Route; folded: boolean }) {
   const memories = useList(memoriesAtom)
   const approvals = useList(approvalsAtom)
   const needsYou = approvals.length + memories.filter((m) => m.state === "pending").length
-  const primary: Place[] = [
-    { key: "new", icon: <SquarePen />, label: t("nav.newChat"), active: route.view === "home" && !route.projectId, go: () => go({ view: "home" }) },
-    { key: "search", icon: <Search />, label: t("common.search"), go: openPalette, kbd: MAC ? "⌘K" : "Ctrl K" }
-  ]
-  const icons: Place[] = [
+  const places: Place[] = [
     { key: "inbox", icon: <Inbox />, label: t("nav.needsYou"), active: route.view === "inbox", go: () => go({ view: "inbox" }), count: needsYou },
     { key: "agents", icon: <Bot />, label: t("nav.agents"), active: ["agents", "agent", "new-agent", "builder"].includes(route.view), go: () => go({ view: "agents" }) },
     { key: "routines", icon: <AlarmClock />, label: t("nav.routines"), active: route.view === "routines", go: () => go({ view: "routines" }) },
     // Pages is a view of Memory (its header's switch): Memory stays current there.
     { key: "memory", icon: <Brain />, label: t("nav.memory"), active: route.view === "memory" || route.view === "pages", go: () => go({ view: "memory" }) }
   ]
-  const rail = (p: Place, placement: "right" | "top") => (
-    <RailItem key={p.key} label={p.label} active={!!p.active} onPress={p.go} count={p.count} placement={placement}>
-      {p.icon}
-    </RailItem>
-  )
-  if (folded)
+  if (folded) {
+    const start: Place[] = [
+      { key: "new", icon: <SquarePen />, label: t("nav.newChat"), active: route.view === "home" && !route.projectId, go: () => go({ view: "home" }) },
+      { key: "search", icon: <Search />, label: t("common.search"), go: openPalette }
+    ]
+    const rail = (p: Place) => (
+      <RailItem key={p.key} label={p.label} active={!!p.active} onPress={p.go} count={p.count}>
+        {p.icon}
+      </RailItem>
+    )
     return (
       <div className="flex shrink-0 flex-col items-start gap-1 pl-2">
-        {primary.map((p) => rail(p, "right"))}
+        {start.map(rail)}
         <span aria-hidden="true" className="my-1 ml-2 h-px w-6 bg-subtle" />
-        {icons.map((p) => rail(p, "right"))}
+        {places.map(rail)}
       </div>
     )
+  }
   return (
-    <div className="flex shrink-0 flex-col gap-2 pr-2.5 pl-2">
-      <div className="flex flex-col gap-0.5">
-        {primary.map((p) => (
-          <NavItem
-            key={p.key}
-            icon={p.icon}
-            active={!!p.active}
-            onPress={p.go}
-            aria-label={p.label}
-            className={cx("h-9", p.active && "border-transparent bg-control-hover")}
-            trailing={p.kbd ? <kbd className="font-sans text-sm text-dim">{p.kbd}</kbd> : undefined}
-          >
-            {p.label}
-          </NavItem>
-        ))}
-      </div>
-      <div className="flex items-center gap-1 pl-1">{icons.map((p) => rail(p, "top"))}</div>
+    <div className="flex shrink-0 flex-col gap-0.5 pr-2.5 pl-2">
+      {places.map((p) => (
+        <NavItem
+          key={p.key}
+          icon={p.icon}
+          active={!!p.active}
+          onPress={p.go}
+          aria-label={p.count ? `${p.label} (${p.count})` : p.label}
+          className={cx("h-9", p.active && "border-transparent bg-control-hover")}
+          trailing={p.count ? <Count n={p.count} /> : undefined}
+        >
+          {p.label}
+        </NavItem>
+      ))}
     </div>
   )
 }
 
-// The top: the brand and the fold (⌘B). Folded, only the button that opens it again.
-function Head({ folded, onToggle }: { folded: boolean; onToggle: () => void }) {
+// The top: the brand, New chat and Search (⌘K) as icons, and the fold (⌘B). Folded, only the button that opens it
+// again (New chat and Search then sit at the top of the icon column).
+function Head({ route, folded, onToggle }: { route: Route; folded: boolean; onToggle: () => void }) {
   const label = folded ? t("nav.showSidebar") : t("nav.hideSidebar")
   const button = (
     <Tooltip content={label} placement={folded ? "right" : "bottom"}>
@@ -101,10 +100,21 @@ function Head({ folded, onToggle }: { folded: boolean; onToggle: () => void }) {
     </Tooltip>
   )
   if (folded) return <div className="flex h-13 shrink-0 items-center pl-2">{button}</div>
+  const newChat = route.view === "home" && !route.projectId
   return (
-    <div className="flex h-13 shrink-0 items-center gap-2.5 pr-2.5 pl-4.5">
-      <Logo className="size-5 shrink-0" />
+    <div className="flex h-13 shrink-0 items-center gap-1 pr-2.5 pl-4.5">
+      <Logo className="mr-1.5 size-5 shrink-0" />
       <span className="min-w-0 flex-1 truncate font-semibold">{t("app.name")}</span>
+      <Tooltip content={t("nav.newChat")} placement="bottom">
+        <IconButton label={t("nav.newChat")} onPress={() => go({ view: "home" })} className={cx("text-muted", newChat && "bg-control-hover text-fg")}>
+          <SquarePen />
+        </IconButton>
+      </Tooltip>
+      <Tooltip content={`${t("common.search")} (${MAC ? "⌘K" : "Ctrl K"})`} placement="bottom">
+        <IconButton label={t("common.search")} onPress={openPalette} className="text-muted">
+          <Search />
+        </IconButton>
+      </Tooltip>
       {button}
     </div>
   )
@@ -373,7 +383,7 @@ export function Sidebar({
 
   return (
     <nav aria-label={t("nav.label")} className={cx("flex shrink-0 flex-col overflow-hidden pb-3", folded ? "w-14" : "w-67")}>
-      <Head folded={folded} onToggle={onToggle} />
+      <Head route={route} folded={folded} onToggle={onToggle} />
       <Places route={route} folded={folded} />
 
       {/* Chats (without a project) first, then Projects; each section folds, and the list scrolls under the places.

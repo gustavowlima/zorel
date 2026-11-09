@@ -73,3 +73,4 @@
 2026-11-06 | the page rhythm reaches the rest: page and skill readers/editors and the Builder take the same column (column() in ui/layout.tsx), 28px around instead of 40/32 and one width for both readers | the user asked whether every screen had it; three still kept their own margins
 2026-11-09 | Own computer row in agent permissions | spec 009
 2026-11-09 | Skills moved into Settings; Needs you/Agents/Routines/Memory as an icon row; side panel toggle after the agents in the chat header | user request
+2026-11-09 | sidebar: New chat and Search as icons in the head row; the places back as named rows | user preferred names over an icon row
