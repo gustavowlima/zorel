@@ -1255,7 +1255,10 @@ export const en = {
     title: "Zorel {version}",
     progress: "Downloading… {percent}%",
     readyShort: "Ready to install",
-    restart: "Restart"
+    restart: "Restart",
+    installing: "Updating… Zorel closes and opens again by itself.",
+    failed: "It didn't install: {reason}",
+    retry: "Try again"
   },
   workspace: {
     folder: "Folder",

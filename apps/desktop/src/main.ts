@@ -27,7 +27,9 @@ let quitting = false
 // the app, or it is quitting on an error. One question at a time, however many times Quit is pressed.
 let confirmQuit = true
 let asking = false
-let update: { version: string; ready: boolean; percent?: number } | null = null // the newest release: downloading (percent), then ready
+// The newest release: downloading (percent), then ready; installing once Restart was pressed (it can't be pressed
+// again), and why an install failed (the button comes back to try again).
+let update: { version: string; ready: boolean; percent?: number; installing?: boolean; error?: string } | null = null
 const icon = () => nativeImage.createFromPath(join(appDir, "assets", "icon.png"))
 
 // Fewer idle processes: no spare renderer kept warm, no media-key or cast services the app never uses.
@@ -176,11 +178,12 @@ function updates() {
     return !r ? "failed" : r.isUpdateAvailable ? "available" : "latest"
   })
   ipcMain.handle("update:install", (e) => {
-    if (!win || e.sender !== win.webContents || !update?.ready) return false
+    if (!win || e.sender !== win.webContents || !update?.ready || update.installing) return false
+    tell({ version: update.version, ready: true, installing: true })
     // The installer (or the updater) closes Zorel to swap it: no question in its way.
     // ponytail: stays off for this run if the install then fails; reset it from the installer's exit if that matters.
     confirmQuit = false
-    if (manual) return runInstaller()
+    if (manual) return runInstaller((error) => update && tell({ version: update.version, ready: true, error }))
     quitting = true
     server?.kill("SIGTERM")
     autoUpdater.quitAndInstall()
@@ -241,7 +244,8 @@ async function askToQuit() {
 
 // The release's install.sh, in its own process group so it outlives Zorel (it quits the app, then reopens it). The
 // repository comes from the build's update settings (app-update.yml, written by electron-builder).
-function runInstaller() {
+// `failed`: the installer ended without replacing Zorel (it's still running), with its last line as the reason.
+function runInstaller(failed: (reason: string) => void) {
   const config = (() => {
     try {
       return readFileSync(join(process.resourcesPath, "app-update.yml"), "utf8")
@@ -252,10 +256,20 @@ function runInstaller() {
   const field = (k: string) => new RegExp(`^${k}: *(\\S+)`, "m").exec(config)?.[1]
   const owner = field("owner")
   const repo = field("repo")
-  if (!owner || !repo) return false
+  if (!owner || !repo) {
+    failed("No update settings in this build.")
+    return false
+  }
   const script = `https://github.com/${owner}/${repo}/releases/latest/download/install.sh`
-  const log = openSync(join(app.getPath("logs"), "update.log"), "a")
-  spawn("/bin/sh", ["-c", `curl -fsSL "${script}" | ZOREL_REPO="${owner}/${repo}" sh`], { detached: true, stdio: ["ignore", log, log] }).unref()
+  const logPath = join(app.getPath("logs"), "update.log")
+  const log = openSync(logPath, "a")
+  const child = spawn("/bin/sh", ["-c", `curl -fsSL "${script}" | ZOREL_REPO="${owner}/${repo}" sh`], { detached: true, stdio: ["ignore", log, log] })
+  child.on("exit", (code) => {
+    if (code === 0) return
+    const last = readFileSync(logPath, "utf8").trim().split(/[\r\n]+/).filter((l) => /\w/.test(l) && !/%\s*$/.test(l)).at(-1)
+    failed(last?.replace(/^\W+/, "").slice(0, 200) || "The update didn't install.")
+  })
+  child.unref()
   return true
 }
 
