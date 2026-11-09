@@ -385,15 +385,15 @@ function ChatHeader({
         )}
         {workspace && <RunControl chatId={chat.id} onOpen={onRun} />}
         <ChatProcesses chatId={chat.id} />
-        {/* One control for the side panel (Changes, Files, Browser, Terminal live in its tabs); what this chat
-            changed shows on it. */}
+        <TeamPicker chat={chat} />
+        {/* One control for the side panel, after the agents (Changes, Files, Browser, Terminal live in its tabs); what
+            this chat changed shows on it. */}
         <Tooltip content={panelOpen ? t("workspace.closePanel") : t("workspace.openPanel")}>
           <Button size="sm" variant={panelOpen ? "secondary" : "ghost"} aria-expanded={panelOpen} aria-label={panelOpen ? t("workspace.closePanel") : t("workspace.openPanel")} onPress={onPanel} shape="pill">
             <PanelRight />
             {delta.added + delta.removed > 0 && <Delta {...delta} />}
           </Button>
         </Tooltip>
-        <TeamPicker chat={chat} />
         <Menu
           label={t("common.more")}
           trigger={

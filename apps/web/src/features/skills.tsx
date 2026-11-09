@@ -12,9 +12,10 @@ import { go } from "../state.ts"
 import { NewMemory, Reader } from "./knowledge.tsx"
 import { ReadingState } from "./reading.tsx"
 import { UsedBy, UsedByBadge, useUsedBy } from "./used-by.tsx"
-import { Button, Column, cx, Dialog, EmptyState, FolderOpen, Layers, Plus, Rows, Screen, SearchInput, Section, Segmented, SettingRow, Switch, Tab, TabList, Tabs } from "@/ui"
+import { Button, Column, cx, Dialog, EmptyState, FolderOpen, Layers, Plus, Rows, SearchInput, Section, Segmented, SettingRow, Switch, Tab, TabList, Tabs } from "@/ui"
 
-export function SkillsView({ selected, computer }: { selected?: string | undefined; computer?: boolean | undefined }) {
+// The skills' page lives in Settings (its "Skills" section, 2026-11-09): this is its body, without a screen header.
+export function SkillsBody({ selected, computer }: { selected?: string | undefined; computer?: boolean | undefined }) {
   const reading = useReading(memoriesAtom)
   const files = useList(fileSkillsAtom)
   const projects = useList(projectsAtom)
@@ -61,29 +62,25 @@ export function SkillsView({ selected, computer }: { selected?: string | undefin
     )
 
   return (
-    <Screen
-      title={t("skills.title")}
-      subtitle={t("skills.subtitle")}
-      bodyClassName="flex flex-col"
-      actions={
-        !computer && (
-          <>
-            <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("common.search")} />
-            <Button size="sm" variant="secondary" onPress={() => setCreating(true)}>
-              <Plus />
-              {t("skills.new")}
-            </Button>
-          </>
-        )
-      }
-    >
-      <div className="border-b border-subtle px-4 pt-2">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex items-end gap-3 border-b border-subtle px-4 pt-2">
+        <div className="min-w-0 flex-1">
         <Tabs selectedKey={computer ? "computer" : "zorel"} onSelectionChange={(k) => go(k === "computer" ? { view: "skills", computer: true } : { view: "skills" })}>
           <TabList label={t("skills.title")}>
             <Tab id="zorel">{pending.length ? `${t("skills.tabZorel")} · ${pending.length}` : t("skills.tabZorel")}</Tab>
             <Tab id="computer">{onComputer ? `${t("skills.tabComputer")} · ${t("skills.inUse", { count: onComputer })}` : t("skills.tabComputer")}</Tab>
           </TabList>
         </Tabs>
+        </div>
+        {!computer && (
+          <div className="flex items-center gap-2 pb-2">
+            <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("common.search")} />
+            <Button size="sm" variant="secondary" onPress={() => setCreating(true)}>
+              <Plus />
+              {t("skills.new")}
+            </Button>
+          </div>
+        )}
       </div>
       {computer ? (
         <div className="gutter-stable min-h-0 flex-1 overflow-y-auto">
@@ -115,7 +112,7 @@ export function SkillsView({ selected, computer }: { selected?: string | undefin
           </div>
         </div>
       )}
-    </Screen>
+    </div>
   )
 }
 
