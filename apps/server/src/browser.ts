@@ -792,7 +792,10 @@ export const BrowserSocket = HttpRouter.add(
     let writing = false
     let waiting: Uint8Array | undefined
     const sendFrame = (jpeg: Uint8Array) => {
-      if (writing) return void (waiting = jpeg)
+      if (writing) {
+        waiting = jpeg
+        return
+      }
       writing = true
       Effect.runFork(
         Effect.ignore(write(jpeg)).pipe(
