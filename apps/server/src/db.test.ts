@@ -1,11 +1,14 @@
 import { Database } from "bun:sqlite"
 import { expect, test } from "bun:test"
-import { existsSync, readdirSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
-import { Store } from "./db.ts"
+import { canonical, sameName, Store, twins } from "./db.ts"
 import { LEGACY_MIGRATIONS } from "./migrate.ts"
+import { recall } from "./chat.ts"
+import { setEmbedder, settled } from "./vectors.ts"
+import { mappedOf } from "./context.ts"
 
 const run = <A>(path: string, f: (r: typeof Store.Service) => Effect.Effect<A>) =>
   Effect.runPromise(Effect.scoped(Effect.gen(function* () { return yield* f(yield* Store) }).pipe(Effect.provide(Store.layer(path)))))
@@ -29,6 +32,32 @@ test("memories: dedupe by normalized text, FTS search by scope, excludes those a
       expect((yield* r.searchMemories(scopes, "netlify", [], 5)).map((m) => m.id)).toEqual([a.id])
       yield* r.removeProject(p.id)
       expect(yield* r.memory(a.id)).toBeUndefined()
+    })
+  ))
+
+test("memories: the same fact in other small words confirms the existing one; another meaning, owner or scope stays apart", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const add = (text: string, scope = "project:p", extra: { owner?: string } = {}) => r.addMemory({ scope, text, state: "active", origin: "auto", chatId: null, ...extra })
+      // Merged: dropped article, plural, third-person rewrite.
+      expect(yield* add("The API runs on port 8080")).toBeDefined()
+      expect(yield* add("API runs on port 8080")).toBeUndefined()
+      expect(yield* add("Deploys happen on Fridays")).toBeDefined()
+      expect(yield* add("Deploys happen on Friday")).toBeUndefined()
+      expect(yield* add("Uses Neovim as the editor", "user")).toBeDefined()
+      expect(yield* add("The user uses Neovim as their editor", "user")).toBeUndefined()
+      // Kept apart: reversed order, a negation, another number, another owner, another scope.
+      expect(yield* add("Prefers TypeScript over JavaScript")).toBeDefined()
+      expect(yield* add("Prefers JavaScript over TypeScript")).toBeDefined()
+      expect(yield* add("Never deploys happen on Fridays")).toBeDefined()
+      expect(yield* add("The API runs on port 8081")).toBeDefined()
+      expect(yield* add("The user uses Neovim as their editor", "user", { owner: "bob" })).toBeDefined()
+      expect(yield* add("API runs on port 8080", "project:q")).toBeDefined()
+      // A forgotten fact is not "the same" as a new one.
+      const old = (yield* add("Likes emojis", "user"))!
+      yield* r.updateMemory(old.id, { state: "forgotten" })
+      expect(yield* add("Likes the emojis", "user")).toBeDefined()
+      expect(canonical("The user uses Neovim as their editor")).toBe(canonical("Uses Neovim as the editor"))
     })
   ))
 
@@ -212,3 +241,332 @@ test("pages: every edit a version; search by words in scopes; pinned titles", ()
       expect((yield* r.pinnedPages(["project:p1"])).map((p) => p.title)).toEqual(["Deploy"])
     })
   ))
+
+test("skills by agent: search and lists hide what's limited to other agents; an agent's own scope and the unlimited ones stay", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const p = yield* r.createProject({ name: "Site", brief: "" })
+      const scope = `project:${p.id}`
+      const some = (title: string, agents: string[], s = scope) => r.addMemory({ scope: s, kind: "skill", title, text: `${title} steps for deploy`, state: "active", origin: "manual", chatId: null, agents })
+      yield* some("Rev deploy", ["rev"])
+      yield* some("Shared deploy", [])
+      yield* some("Own deploy", ["other"], "agent:dev") // the agent scope isn't limited by the list
+      const titles = (xs: ReadonlyArray<{ title: string }>) => xs.map((m) => m.title).sort()
+      const scopes = [scope, "agent:dev"]
+      expect(titles(yield* r.activeMemories(scopes, "skill", undefined, "rev"))).toEqual(["Own deploy", "Rev deploy", "Shared deploy"])
+      expect(titles(yield* r.activeMemories(scopes, "skill", undefined, "dev"))).toEqual(["Own deploy", "Shared deploy"])
+      expect(titles(yield* r.activeMemories(scopes, "skill", undefined, null))).toEqual(["Own deploy", "Shared deploy"])
+      expect(titles(yield* r.activeMemories(scopes, "skill"))).toEqual(["Own deploy", "Rev deploy", "Shared deploy"]) // no agent given: unfiltered
+      expect(titles(yield* r.searchMemories(scopes, "deploy", [], 10, "skill", undefined, "dev"))).toEqual(["Own deploy", "Shared deploy"])
+      expect(titles(yield* r.searchMemories(scopes, "deploy", [], 10, "skill", undefined, "rev"))).toEqual(["Own deploy", "Rev deploy", "Shared deploy"])
+      // only a skill can be limited
+      const fact = (yield* r.addMemory({ scope, text: "A fact", state: "active", origin: "manual", chatId: null, agents: ["rev"] }))!
+      expect(fact.agents).toEqual([])
+      // editing the list
+      const rev = (yield* r.activeMemories([scope], "skill")).find((m) => m.title === "Rev deploy")!
+      yield* r.updateMemory(rev.id, { agents: [] })
+      expect(titles(yield* r.activeMemories([scope], "skill", undefined, "dev"))).toEqual(["Rev deploy", "Shared deploy"])
+    })
+  ))
+
+// Pages as Markdown files: the folder is the truth, the rows index it.
+const runWithPages = <A>(dir: string, f: (r: typeof Store.Service) => Effect.Effect<A>) =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function* () { return yield* f(yield* Store) }).pipe(Effect.provide(Store.layer(":memory:", dir)))))
+
+test("pages as files: written, renamed, pinned and removed through Zorel; edits, new files and deletes from outside come back", () => {
+  const dir = mkdtempSync(join(tmpdir(), "zorel-pages-"))
+  const at = (f: string) => join(dir, ...f.split("/"))
+  return runWithPages(dir, (r) =>
+    Effect.gen(function* () {
+      const p = yield* r.createProject({ name: "Zorel App", brief: "" })
+      const scope = `project:${p.id}`
+      const a = yield* r.savePage({ scope, title: "Deploy runbook", body: "1. bun test" })
+      expect(a.file).toBe("projects/zorel-app/Deploy runbook.md")
+      expect(readFileSync(at(a.file!), "utf8")).toBe(`---\nid: ${a.id}\nscope: ${scope}\npinned: false\n---\n1. bun test\n`)
+
+      // Renamed: the file follows; a name that can't be a file name keeps the title in the front matter.
+      const b = yield* r.savePage({ id: a.id, scope, title: "Deploy: prod/staging", body: "1. bun test" })
+      expect(b.file).toBe("projects/zorel-app/Deploy prod staging.md")
+      expect(existsSync(at(a.file!))).toBe(false)
+      expect(readFileSync(at(b.file!), "utf8")).toContain('title: "Deploy: prod/staging"')
+      yield* r.pinPage(a.id, true)
+      expect(readFileSync(at(b.file!), "utf8")).toContain("pinned: true")
+      expect(yield* r.syncPages(true)).toEqual({ imported: 0, updated: 0, written: 0, removed: 0 }) // our own writes: nothing to do
+
+      // Edited in an editor: the page takes it, as a version by "outside".
+      writeFileSync(at(b.file!), readFileSync(at(b.file!), "utf8").replace("1. bun test", "1. bun test\n2. tag"))
+      expect((yield* r.syncPages(true)).updated).toBe(1)
+      expect((yield* r.page(a.id))!.body).toBe("1. bun test\n2. tag")
+      expect((yield* r.pageVersions(a.id))[0]!.by).toBe("outside")
+
+      // A new file in you/: a page about the user, with an id and scope written into it.
+      mkdirSync(at("you"), { recursive: true })
+      writeFileSync(at("you/Writing style.md"), "Short sentences.")
+      expect((yield* r.syncPages(true)).imported).toBe(1)
+      const style = (yield* r.pages()).find((x) => x.title === "Writing style")!
+      expect(style).toMatchObject({ scope: "user", body: "Short sentences." })
+      expect(readFileSync(at("you/Writing style.md"), "utf8")).toContain(`id: ${style.id}`)
+
+      // Moved and renamed outside: still the same page (its id), at its new place.
+      mkdirSync(at("projects/zorel-app/ops"), { recursive: true })
+      renameSync(at(b.file!), at("projects/zorel-app/ops/Release.md"))
+      yield* r.syncPages(true)
+      expect((yield* r.page(a.id))).toMatchObject({ title: "Deploy: prod/staging", file: "projects/zorel-app/ops/Release.md" })
+
+      // Deleted while watched: the page goes. At start, a missing file is written again instead.
+      rmSync(at("you/Writing style.md"))
+      expect((yield* r.syncPages(false)).written).toBe(1)
+      expect(existsSync(at("you/Writing style.md"))).toBe(true)
+      rmSync(at("you/Writing style.md"))
+      expect((yield* r.syncPages(true)).removed).toBe(1)
+      expect(yield* r.page(style.id)).toBeUndefined()
+
+      // Removing the project removes its pages' files.
+      yield* r.removeProject(p.id)
+      expect(existsSync(at("projects/zorel-app/ops/Release.md"))).toBe(false)
+    })
+  ).finally(() => rmSync(dir, { recursive: true, force: true }))
+})
+
+test("memory map: a fact's entities are found by name, alias or close spelling; a project's facts hang off its point; forgotten facts leave the map", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const p = yield* r.createProject({ name: "Zorel", brief: "" })
+      const scope = `project:${p.id}`
+      const known = [{ id: p.id, name: "Zorel", type: "project" as const }]
+      const add = (text: string, state: "active" | "pending" = "active") => Effect.map(r.addMemory({ scope, text, state, origin: "auto", chatId: null }), (m) => m!)
+      const a = yield* add("Deploys go to Vercel on Fridays")
+      yield* r.linkMemory(a.id, scope, { entities: [{ name: "Deploy", type: "subject" }, { name: "Vercel", type: "concept" }], relations: [["Deploy", "goes to", "Vercel"]] }, known)
+      const b = yield* add("Previews run on vercel.com for every PR", "pending")
+      yield* r.linkMemory(b.id, scope, { entities: [{ name: "vercel.com", type: "concept" }, { name: "Previews", type: "subject" }], relations: [] }, known)
+      const c = yield* add("The landing copy is short")
+      yield* r.linkMemory(c.id, "user", { entities: [{ name: "Vercel", type: "concept" }], relations: [] }) // another scope: its own Vercel
+
+      const map = yield* r.entitiesIn([scope])
+      const byName = (n: string) => map.find((e) => e.name === n)!
+      expect(map.map((e) => e.name).sort()).toEqual(["Deploy", "Previews", "Vercel", "Zorel"])
+      expect(byName("Zorel")).toMatchObject({ type: "project", facts: 2 }) // the project's point holds both facts
+      expect(byName("Vercel")).toMatchObject({ type: "concept", facts: 2, weight: 2 }) // "vercel.com" is the same Vercel
+      expect(byName("Previews").pending).toBe(1) // only a pending fact mentions it
+      expect((yield* r.entitiesIn(["user"])).map((e) => e.name)).toEqual(["Vercel"]) // maps don't mix
+
+      yield* r.updateMemory(b.id, { state: "forgotten" })
+      expect((yield* r.entitiesIn([scope])).map((e) => e.name).sort()).toEqual(["Deploy", "Vercel", "Zorel"])
+    })
+  ))
+
+test("same name: one spelling holds the other whole, or most letter pairs match; short names must be equal", () => {
+  expect(sameName("vercel", "vercel com")).toBe(true)
+  expect(sameName("postgres", "postgresql")).toBe(true) // Dice on letter pairs
+  expect(sameName("deploy", "deployment")).toBe(false) // not a whole word inside, too few shared pairs
+  expect(sameName("ai", "ai sdk")).toBe(false) // short: exact only
+})
+
+test("recall by association finds a fact its words don't (the measure for A2): deploy → Vercel → its build rule", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const p = yield* r.createProject({ name: "Shop", brief: "" })
+      const scope = `project:${p.id}`
+      const fact = (text: string, entities: string[], relations: Array<[string, string, string]> = []) =>
+        Effect.gen(function* () {
+          const m = (yield* r.addMemory({ scope, text, state: "active", origin: "manual", chatId: null }))!
+          yield* r.linkMemory(m.id, scope, { entities: entities.map((name) => ({ name, type: "concept" as const })), relations }, [])
+          return m
+        })
+      const deploy = yield* fact("Deploys go to Vercel on Fridays", ["Deploy", "Vercel"], [["Deploy", "goes to", "Vercel"]])
+      const build = yield* fact("Builds need NODE_VERSION 22 set in the dashboard", ["Vercel", "Node"]) // never says "deploy"
+      yield* fact("Lunch is at noon", ["Lunch"])
+      const query = "how do we deploy?"
+      const byWords = (yield* r.searchMemories([scope], query, [], 5)).map((m) => m.id)
+      expect(byWords).toContain(deploy.id)
+      expect(byWords).not.toContain(build.id) // its words don't match
+      const recalled = (yield* recall(r, [scope], query, [])).facts.map((m) => m.text)
+      expect(recalled).toContain("Builds need NODE_VERSION 22 set in the dashboard") // association does
+      expect(recalled).not.toContain("Lunch is at noon")
+    })
+  ))
+
+test("aliases and categories let a question in other words reach the fact (paraphrase without embeddings)", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const m = (yield* r.addMemory({ scope: "user", text: "Drinks green tea in the morning", state: "active", origin: "auto", chatId: null }))!
+      yield* r.linkMemory(m.id, "user", mappedOf([{ name: "Green tea", type: "concept", aliases: ["chá verde"], category: "Beverage" }], []))
+      expect((yield* r.searchMemories(["user"], "which hot beverage do I like?", [], 5)).length).toBe(0) // its words don't match
+      expect((yield* recall(r, ["user"], "which hot beverage do I like?", [])).facts.map((x) => x.id)).toEqual([m.id]) // its category does
+      expect((yield* recall(r, ["user"], "quero um chá verde?", [])).facts.map((x) => x.id)).toEqual([m.id]) // and its other name
+    })
+  ))
+
+test("a bridge between two projects' points: on both maps, and recall crosses it to that point's own facts only", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const add = (scope: string, text: string, ents: Array<{ name: string; type: "concept" | "subject" }>, rels: Array<[string, string, string]> = []) =>
+        Effect.gen(function* () {
+          const m = (yield* r.addMemory({ scope, text, state: "active", origin: "auto", chatId: null }))!
+          yield* r.linkMemory(m.id, scope, mappedOf(ents, rels))
+          return m
+        })
+      yield* add("project:a", "Billing runs on Stripe", [{ name: "Billing", type: "subject" }, { name: "Stripe", type: "concept" }], [["Billing", "runs on", "Stripe"]])
+      const webhooks = yield* add("project:b", "Stripe webhooks need the signing secret", [{ name: "Stripe", type: "concept" }, { name: "Webhooks", type: "concept" }])
+      const unrelated = yield* add("project:b", "Webhooks retry three times", [{ name: "Webhooks", type: "concept" }, { name: "Retry", type: "concept" }])
+      const pointIn = (scope: string) => Effect.map(r.entitiesIn([scope]), (es) => es.find((e) => e.name === "Stripe")!.id)
+      const [a, b] = [yield* pointIn("project:a"), yield* pointIn("project:b")]
+      const before = (yield* recall(r, ["user", "project:a"], "how is billing set up?", [])).facts.map((m) => m.id)
+      expect(before).not.toContain(webhooks.id)
+      yield* r.connectEntities(b, a)
+      expect((yield* r.bridgesOf([a])).others.map((o) => o.id)).toEqual([b])
+      const after = (yield* recall(r, ["user", "project:a"], "how is billing set up?", [])).facts.map((m) => m.id)
+      expect(after).toContain(webhooks.id) // the other side's point's own fact
+      expect(after).not.toContain(unrelated.id) // not the rest of that project's map
+      yield* r.disconnectEntities(a, b)
+      expect((yield* r.bridgesOf([a])).links).toEqual([])
+      yield* r.connectEntities(a, b)
+      const project = yield* r.createProject({ name: "B", brief: "" })
+      yield* r.linkMemory(webhooks.id, `project:${project.id}`, mappedOf([{ name: "Gone", type: "concept" }], []))
+      expect((yield* r.entitiesIn([`project:${project.id}`])).length).toBe(1)
+      yield* r.removeProject(project.id)
+      expect((yield* r.entitiesIn([`project:${project.id}`])).length).toBe(0) // a removed project takes its map along
+    })
+  ))
+
+test("the map's sleep: orphan points go, twins of one map merge (facts, relations, bridges)", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const add = (scope: string, text: string, ents: Array<{ name: string; type: "concept" | "subject"; aliases?: string[] }>, rels: Array<[string, string, string]> = []) =>
+        Effect.gen(function* () {
+          const m = (yield* r.addMemory({ scope, text, state: "active", origin: "auto", chatId: null }))!
+          yield* r.linkMemory(m.id, scope, mappedOf(ents, rels))
+          return m
+        })
+      const names = (scope: string) => Effect.map(r.entitiesIn([scope]), (es) => es.map((e) => e.name).sort())
+      // "PG" is its own point until a later fact calls Postgres "pg": then they're twins.
+      const first = yield* add("project:a", "PG needs the token", [{ name: "PG", type: "concept" }, { name: "Token", type: "concept" }], [["PG", "needs", "Token"]])
+      yield* add("project:a", "Data lives in Postgres", [{ name: "Postgres", type: "concept", aliases: ["pg"] }, { name: "Data", type: "subject" }], [["Data", "lives in", "Postgres"]])
+      yield* add("project:a", "Postgres runs on Fridays backups", [{ name: "Postgres", type: "concept" }])
+      const other = yield* add("project:b", "Releases go out on deploy day", [{ name: "Release", type: "concept" }])
+      const pg = (yield* r.entitiesIn(["project:a"])).find((e) => e.name === "PG")!.id
+      yield* r.connectEntities(pg, (yield* r.entitiesIn(["project:b"]))[0]!.id)
+      yield* add("project:c", "Stays", [{ name: "Kept", type: "concept" }])
+      const kept = (yield* r.entitiesIn(["project:c"]))[0]!.id
+      yield* r.connectEntities(pg, kept)
+      yield* r.removeMemory(other.id) // its point is left with no fact
+      expect(yield* r.sleepMap()).toEqual({ removed: 1, merged: 1 })
+      expect(yield* names("project:a")).toEqual(["Data", "Postgres", "Token"])
+      expect(yield* names("project:b")).toEqual([])
+      const map = yield* r.entitiesIn(["project:a"])
+      const postgres = map.find((e) => e.name === "Postgres")!
+      expect(postgres.memory_ids.split(",")).toContain(first.id) // the twin's fact moved over
+      expect((yield* r.linksAmong(map.map((e) => e.id))).map((l) => l.rel)).toContain("needs") // and its relation
+      expect((yield* r.bridgesOf([postgres.id])).others.map((o) => o.id)).toEqual([kept]) // and its bridge
+      expect(yield* r.sleepMap()).toEqual({ removed: 0, merged: 0 })
+    })
+  ))
+
+test("twins: another name or a plural, never a close spelling nor a longer name holding it", () => {
+  const p = (normalized: string, aliases: string[] = []) => ({ normalized, aliases })
+  expect(twins(p("postgres", ["pg"]), p("pg"))).toBe(true)
+  expect(twins(p("deploys"), p("deploy"))).toBe(true)
+  // Look-alikes that are different things: a merge can't be undone, so spelling alone never merges.
+  expect(twins(p("react"), p("preact"))).toBe(false)
+  expect(twins(p("python 2"), p("python 3"))).toBe(false)
+  expect(twins(p("kubernetes"), p("kubernets"))).toBe(false)
+  expect(twins(p("memory"), p("memory map"))).toBe(false)
+  expect(twins(p("bus"), p("bu"))).toBe(false)
+})
+
+test("recall brings what was said in the project's other chats, never another project's, the window, a secret or a forgotten fact", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const P = yield* r.createProject({ name: "P", brief: "" })
+      const Q = yield* r.createProject({ name: "Q", brief: "" })
+      const say = (chatId: string, text: string) => r.addMessage({ chatId, role: "user", agentId: null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 })
+      const said = [
+        ["The staging password rotates every 30 days", "how often does the staging password rotate?"],
+        ["Billing deploys to Fly.io from the release branch", "where does billing deploy?"],
+        ["Postgres backups run nightly at 03:00 UTC", "when do the postgres backups run?"],
+        ["Image uploads are capped at 12 megabytes by the CDN", "what is the image upload cap?"],
+        ["The mobile app supports Android 10 and newer", "which Android versions does the mobile app support?"],
+        ["Customer emails go through Postmark", "do customer emails use Postmark?"],
+        ["The search cluster namespace is search-prod-eu", "what is the search cluster namespace?"],
+        ["Invoices are kept for seven years", "how long are invoices kept?"],
+        ["Headings use the Söhne font", "which font do headings use?"],
+        ["Checkout saturates at 1,800 requests per second", "when does checkout saturate?"]
+      ] as const
+      const seed = (projectId: string) =>
+        Effect.gen(function* () {
+          const c = (yield* r.createChat({ projectId, agentIds: [], model: "x/y", title: "Ops notes" }))!
+          for (const [text] of said) yield* say(c.id, text)
+          return c
+        })
+      const a = yield* seed(P.id)
+      const inP = (yield* r.createChat({ projectId: P.id, agentIds: [], model: "x/y" }))!
+      const inQ = (yield* r.createChat({ projectId: Q.id, agentIds: [], model: "x/y" }))!
+      const ask = (chatId: string, projectId: string, q: string) => recall(r, ["user", `project:${projectId}`], q, [], { projectId, chatId, after: 0 })
+      let found = 0
+      for (const [text, q] of said) if ((yield* ask(inP.id, P.id, q)).excerpts.some((e) => e.chatId === a.id && text.includes(e.text.replace(/…/g, "").trim().slice(0, 20)))) found++
+      expect(found).toBeGreaterThanOrEqual(9)
+      let leaked = 0
+      for (const [, q] of said) leaked += (yield* ask(inQ.id, Q.id, q)).excerpts.length
+      expect(leaked).toBe(0) // P's chat never reaches Q
+      const first = (yield* ask(inP.id, P.id, said[0][1])).excerpts[0]!
+      expect(first).toMatchObject({ chatTitle: "Ops notes", author: "user" })
+      // This chat's own messages after `after` are in the window: never recalled.
+      yield* say(inP.id, "The kiwi deploy uses blue green")
+      expect((yield* ask(inP.id, P.id, "kiwi")).excerpts).toEqual([])
+      // A message holding a credential, or a forgotten fact's text, never comes back.
+      yield* say(a.id, "The walrus admin password is Hunter2!Walrus") // gitleaks:allow (fake)
+      expect((yield* ask(inP.id, P.id, "walrus admin")).excerpts).toEqual([])
+      const old = (yield* r.addMemory({ scope: `project:${P.id}`, text: "Invoices are kept for seven years", state: "active", origin: "auto", chatId: null }))!
+      yield* r.updateMemory(old.id, { state: "forgotten" })
+      expect((yield* ask(inP.id, P.id, "how long are invoices kept?")).excerpts).toEqual([])
+      // Deleting the chat removes what it said.
+      yield* r.removeChat(a.id)
+      expect((yield* ask(inP.id, P.id, said[1][1])).excerpts).toEqual([])
+    })
+  ))
+
+test("recall fuses its sources: a fact found by the map and by its words outranks one found by words alone", () =>
+  run(":memory:", (r) =>
+    Effect.gen(function* () {
+      const scope = "project:p"
+      const both = (yield* r.addMemory({ scope, text: "Deploys use the deploy script on Vercel", state: "active", origin: "auto", chatId: null }))!
+      yield* r.linkMemory(both.id, scope, mappedOf([{ name: "Deploy", type: "subject" }], []))
+      const words = (yield* r.addMemory({ scope, text: "Deploy deploy deploy checklist lives in the wiki", state: "active", origin: "auto", chatId: null }))!
+      const got = (yield* recall(r, [scope], "how do we deploy?", [])).ranked.map((x) => x.id)
+      expect(got.indexOf(both.id)).toBeLessThan(got.indexOf(words.id))
+      expect(got).toContain(words.id)
+    })
+  ))
+
+test("recall by meaning: a fact sharing no word with the question comes back, never another project's; without a model, nothing changes", async () => {
+  // A fake model: words of one idea point the same way.
+  const ideas = [["penicillin", "antibiotic", "allergic"], ["volvo", "car", "drive"]]
+  const vec = (t: string) => {
+    const v = new Float32Array(3)
+    for (const w of t.toLowerCase().split(/\W+/)) {
+      const i = ideas.findIndex((xs) => xs.includes(w))
+      if (i >= 0) v[i]! += 1
+    }
+    if (!v.some(Boolean)) v[2] = 1 // about nothing we know
+    const n = Math.hypot(...v) || 1
+    return v.map((x) => x / n)
+  }
+  try {
+    await run(":memory:", (r) =>
+      Effect.gen(function* () {
+        const pen = (yield* r.addMemory({ scope: "project:p", text: "Is allergic to penicillin", state: "active", origin: "auto", chatId: null }))!
+        yield* r.addMemory({ scope: "project:q", text: "Drives a Volvo", state: "active", origin: "auto", chatId: null })
+        const ask = (q: string) => recall(r, ["user", "project:p"], q, []).pipe(Effect.map((x) => x.facts.map((m) => m.id)))
+        setEmbedder(undefined)
+        expect(yield* ask("which antibiotic can't I take?")).toEqual([]) // no model: words and map only
+        setEmbedder(async (ts) => ts.map(vec))
+        yield* ask("which antibiotic can't I take?") // queues the facts' vectors
+        yield* Effect.promise(settled)
+        expect(yield* ask("which antibiotic can't I take?")).toEqual([pen.id])
+        expect(yield* ask("what car do I own?")).toEqual([]) // project q's fact never comes
+      })
+    )
+  } finally {
+    setEmbedder(undefined)
+  }
+})

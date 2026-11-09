@@ -1,0 +1,1 @@
+ALTER TABLE `chats` ADD `learned_until` integer DEFAULT 0 NOT NULL;

@@ -7,7 +7,7 @@ import { Store } from "./db.ts"
 
 const SERVICE = "dev.zorel.app"
 const LEGACY_SERVICE = "dev.zero.app" // before the rename to Zorel: read once, copied to SERVICE
-export const API_KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY"] as const
+export const API_KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "TELEGRAM_BOT_TOKEN"] as const // the last: the Telegram channel (telegram.ts)
 export const BROWSER_KEY = "browser-state-key" // the key the agents' saved browser logins are sealed with (browser.ts)
 
 export interface SecretStore {

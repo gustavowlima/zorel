@@ -6,7 +6,7 @@ import { useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, projectsAtom, useList } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
-import { AlarmClock, BookOpen, Bot, ChartColumn, type CommandItem, CommandPalette, Folder, Inbox, MessageCircle, Plus, Search, Settings, SquarePen } from "@/ui"
+import { AlarmClock, BookOpen, Bot, Brain, ChartColumn, type CommandItem, Layers, CommandPalette, Folder, Inbox, MessageCircle, Plus, Search, Settings, SquarePen } from "@/ui"
 
 const has = (text: string, q: string) => text.toLowerCase().includes(q.toLowerCase())
 
@@ -59,7 +59,9 @@ export function Palette({ onToggleSidebar }: { onToggleSidebar: () => void }) {
     { id: "agents", label: t("nav.agents"), text: t("nav.agents"), icon: <Bot />, onAction: () => go({ view: "agents" }) },
     { id: "new-agent", label: t("nav.newAgent"), text: t("nav.newAgent"), icon: <Plus />, onAction: () => go({ view: "new-agent", projectId: null }) },
     { id: "routines", label: t("nav.routines"), text: t("nav.routines"), icon: <AlarmClock />, onAction: () => go({ view: "routines" }) },
-    { id: "knowledge", label: t("nav.knowledge"), text: t("nav.knowledge"), icon: <BookOpen />, onAction: () => go({ view: "knowledge" }) },
+    { id: "memory", label: t("nav.memory"), text: `${t("nav.memory")} ${t("nav.knowledge")}`, icon: <Brain />, onAction: () => go({ view: "memory" }) },
+    { id: "pages", label: t("nav.pages"), text: `${t("nav.pages")} ${t("nav.knowledge")}`, icon: <BookOpen />, onAction: () => go({ view: "pages" }) },
+    { id: "skills", label: t("nav.skills"), text: t("nav.skills"), icon: <Layers />, onAction: () => go({ view: "skills" }) },
     { id: "usage", label: t("nav.usage"), text: t("nav.usage"), icon: <ChartColumn />, onAction: () => go({ view: "usage" }) },
     { id: "settings", label: t("nav.settings"), text: t("nav.settings"), icon: <Settings />, onAction: () => go({ view: "settings", tab: "general" }) },
     { id: "sidebar", label: t("palette.toggleSidebar"), text: t("palette.toggleSidebar"), icon: <MessageCircle />, onAction: onToggleSidebar }
