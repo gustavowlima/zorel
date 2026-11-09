@@ -25,7 +25,7 @@ import { projectFor } from "./chat.ts"
 import { startVectors } from "./vectors.ts"
 import { freePort, outputTail, PREVIEW_TOOL, previewFolder, previewKey, previewLine, previewUrl, waitForPort } from "./preview.ts"
 import { managerOf, scriptsOf, shellAlive, startShell } from "./terminals.ts"
-import { compact, exposedName, type GatewayHandle, NO_TOOLS, readResult, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
+import { compact, exposedName, guarded, type GatewayHandle, NO_TOOLS, readResult, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
 import { asMemory, picked, readSkill } from "./file-skills.ts"
 import { accessChange, browserRoute, mcpRoute, permissionsOf, REQUEST_ACCESS_TOOL, withAlways } from "./permissions.ts"
 
@@ -819,7 +819,7 @@ export const makeRuntime = Effect.gen(function* () {
         const out = resultText(r)
         legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
         await finish(s, r.isError ? "error" : "ok", out)
-        return compact(chat.id, r)
+        return compact(chat.id, guarded(r, `the browser (${name})`))
       }
       const route = routes.get(name)
       const server = route && (await run(store.mcpServer(route.server)))
@@ -845,7 +845,7 @@ export const makeRuntime = Effect.gen(function* () {
       const out = resultText(r)
       legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
       await finish(s, r.isError ? "error" : "ok", out)
-      return compact(chat.id, r)
+      return compact(chat.id, guarded(r, `${server.name} (${route.tool})`))
     }
     if (fixed) {
       fixed.update({ tools: defs, call })
