@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { DEFAULT_PERMISSIONS } from "@zorel/contracts"
-import { accessChange, browserRoute, mcpRoute, withAlways } from "./permissions.ts"
+import { accessChange, browserRoute, mcpRoute, privateHost, withAlways } from "./permissions.ts"
 
 const server = { id: "s1", mode: "approve" as const }
 const p = (over = {}) => ({ ...DEFAULT_PERMISSIONS, ...over })
@@ -41,4 +41,11 @@ test("an access request names what changes, or why it can't", () => {
   expect(accessChange(p(), "web", undefined, servers)).toBe("You already have web access.")
   expect(accessChange(p({ grants: { s1: "none" } }), "github", "read", servers)).toEqual({ label: "read GitHub", next: p({ grants: { s1: "read" } }) })
   expect(typeof accessChange(p(), "linear", "read", servers)).toBe("string")
+})
+
+test("a local-network page asks before an agent opens it; its own servers and the web don't", () => {
+  for (const u of ["http://192.168.0.1", "10.0.0.5:8080", "http://169.254.169.254/latest/meta-data", "http://nas.local", "http://router", "http://[fe80::1]"]) expect(privateHost(u)).toBe(true)
+  for (const u of ["http://localhost:5173", "http://127.0.0.1:3000", "https://example.com", "example.com/path", undefined, ""]) expect(privateHost(u)).toBe(false)
+  expect(browserRoute(p(), { url: "http://192.168.0.1" }, true, false)).toEqual({ approve: true, alwaysKey: null })
+  expect(browserRoute(p(), { ref: "e3" }, true, false).approve).toBe(false)
 })
