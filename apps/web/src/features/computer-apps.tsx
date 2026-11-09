@@ -38,7 +38,7 @@ export function ComputerApps({ value, onChange }: { value: ReadonlyArray<Desktop
   }
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium text-muted">{t("computer.title")}</h3>
+      <h2 className="text-sm font-medium text-muted">{t("computer.title")}</h2>
       <p className="max-w-prose text-sm text-dim">{t("computer.intro")}</p>
       <Rows>
         {!status.supported ? (
