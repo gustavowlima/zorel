@@ -103,7 +103,8 @@ export const AgentPermissions = Schema.Struct({
   browser: Schema.Boolean,
   grants: Schema.Record(Schema.String, Grant),
   always: Schema.Array(Schema.String.check(Schema.isMaxLength(200))).check(Schema.isMaxLength(200)),
-  apps: Schema.optional(Schema.Array(DesktopApp).check(Schema.isMaxLength(50))) // none when absent
+  apps: Schema.optional(Schema.Array(DesktopApp).check(Schema.isMaxLength(50))), // none when absent
+  computer: Schema.optional(Schema.Literals(["none", "container"])) // its own Linux computer (spec 009); none when absent
 })
 export type AgentPermissions = typeof AgentPermissions.Type
 export const DEFAULT_PERMISSIONS: AgentPermissions = { web: true, browser: true, grants: {}, always: [] }
@@ -439,6 +440,9 @@ export type MemoryVersion = typeof MemoryVersion.Type
 // A knowledge page (phase 3b): a longer Markdown note by scope (as memories). pinned: its title goes into every
 // turn's context in that scope.
 // file: its Markdown file inside the knowledge folder ("projects/zorel/Deploy.md"); null until written.
+// The container engine for agents' own computers (spec 009): podman, docker, or null with what to do.
+export const ComputerStatus = Schema.Struct({ engine: Schema.NullOr(Schema.Literals(["podman", "docker"])), problem: Schema.NullOr(Schema.String) })
+export type ComputerStatus = typeof ComputerStatus.Type
 // agent-desktop on this computer (spec 008). accessibility: macOS's permission (granted, denied, unknown).
 export const DesktopStatus = Schema.Struct({ supported: Schema.Boolean, installed: Schema.Boolean, version: Schema.String, accessibility: Schema.NullOr(Schema.String), suggestion: Schema.NullOr(Schema.String) })
 export type DesktopStatus = typeof DesktopStatus.Type
@@ -806,6 +810,9 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.put("maxRunning", "/api/preferences/max-running", { payload: Schema.Struct({ value: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 32 })) }), success: Preferences }))
       .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))
+      // An agent's own computer (spec 009): the container engine found, and erasing an agent's computers.
+      .add(HttpApiEndpoint.get("computer", "/api/computer", { success: ComputerStatus }))
+      .add(HttpApiEndpoint.post("eraseComputer", "/api/computer/erase/:id", { params: idParam }))
       // Computer apps (spec 008): agent-desktop's state, its in-app install, the macOS permission guide, open apps.
       .add(HttpApiEndpoint.get("desktop", "/api/desktop", { success: DesktopStatus }))
       .add(HttpApiEndpoint.post("installDesktop", "/api/desktop/install", { success: DesktopStatus, error: DesktopInstallFailed }))

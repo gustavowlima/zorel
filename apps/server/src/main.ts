@@ -25,6 +25,7 @@ import { Engines, listModels, splitModel } from "./engines.ts"
 import { claudeCommands } from "./engines/claude-sdk.ts"
 import { API_KEYS, mcpEnvName, oauthKey, Secrets } from "./secrets.ts"
 import { desktopCli, desktopStatus, installDesktop } from "./desktop.ts"
+import { computersFor } from "./computer.ts"
 import { isZorel } from "./desktop-apps.ts"
 import { newPairingCode, pairingCode, TELEGRAM_KEY, TelegramChannel, telegramUsers, unpairTelegram } from "./telegram.ts"
 import { Accounts } from "./accounts.ts"
@@ -873,6 +874,10 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
           store.setPreference(FAILOVER_TERMS, String(Date.now())).pipe(Effect.tap(() => audit.record(Actions.failoverTermsAccepted, { target: { id: FAILOVER_TERMS, name: "Failover" } }))),
           preferencesOf(store)
         )
+      )
+      .handle("computer", () => Effect.promise(() => computersFor(dataDir).status(true)))
+      .handle("eraseComputer", ({ params }) =>
+        Effect.promise(() => computersFor(dataDir).erase(params.id)).pipe(Effect.tap(() => audit.record(Actions.computerErased, { target: { id: params.id, name: params.id } })))
       )
       .handle("desktop", () => Effect.promise(() => desktopStatus(dataDir)))
       .handle("installDesktop", () =>

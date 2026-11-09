@@ -952,7 +952,15 @@ export const en = {
     use: "Read and use",
     remove: "Remove {name}",
     add: "Add app",
-    addPlaceholder: "An app's name, e.g. Notes"
+    addPlaceholder: "An app's name, e.g. Notes",
+    own: "Own computer",
+    ownContainer: "Linux container",
+    ownNone: "None: it works on this computer, inside its sandbox and its access level.",
+    ownReady: "An isolated Linux ({engine}) where it installs and runs anything without asking. The chat's project folder is lent to it; the first start downloads the system (a few minutes).",
+    ownChecking: "Checking for Podman or Docker…",
+    erase: "Erase",
+    eraseTitle: "Erase this agent's computer?",
+    eraseBody: "Its containers and everything installed in them go. The project folders lent to it stay as they are."
   },
   channels: {
     telegram: "Telegram",
