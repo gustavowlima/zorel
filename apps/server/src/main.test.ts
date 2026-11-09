@@ -177,7 +177,7 @@ async function send(chatId: string, body: { text: string; model?: string; attach
               yield* c.decide({ approvalId: e.approval.id, outcome: o === "always" ? "always" : o ? "approved" : "denied" })
             }
             if (e._tag === "turn-completed" || e._tag === "turn-failed" || e._tag === "interrupted") ended++
-            if (e._tag === "status" && e.status.state === "idle" && ended) yield* Deferred.succeed(idle, undefined)
+            if (e._tag === "status" && (e.status.state === "idle" || e.status.state === "failed") && ended) yield* Deferred.succeed(idle, undefined) // the chat at rest
           })
         ),
         Effect.forkChild
@@ -291,7 +291,7 @@ test("MCP tools: read mode hides writes; approve mode asks and respects the deci
   let r = await send(chat.id, { text: "tool:docs__search_docs" })
   let msg = dones(r.events)[0]!
   expect(msg.text).toBe("docs__search_docs => result of search_docs") // only the read one listed
-  expect(msg.steps.filter((s) => s.tool !== "reply")).toEqual([{ tool: "docs__search_docs", args: '{"q":"deploy"}', status: "ok", result: "result of search_docs" }]) // the reply's own time closes the list
+  expect(msg.steps.filter((s) => s.tool !== "reply")).toEqual([{ tool: "docs__search_docs", args: '{"q":"deploy"}', status: "ok", result: "result of search_docs", at: 0 }]) // the reply's own time closes the list; the tool ran before any words (at 0)
 
   await api((c) => c.tools.update({ params: { id: server.id }, payload: { mode: "approve" } }))
   r = await send(chat.id, { text: "tool:docs__delete_page" }, () => false)

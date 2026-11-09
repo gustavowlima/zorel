@@ -198,6 +198,9 @@ export interface LiveTurn {
   readonly model: string
   readonly text: string
   readonly steps: ReadonlyArray<WorkStep>
+  // Where the live text stood when each step began (by step id), so the reply is laid out text, steps, text… as it
+  // happens. Steps found in a snapshot (a reload mid-turn) have none: they go after the text.
+  readonly stepAt: Readonly<Record<string, number>>
   readonly startedAt: number
 }
 // Things that happen between messages and aren't stored as messages (this session only).
@@ -225,7 +228,9 @@ export interface ChatState {
 const emptyChat: ChatState = { ready: false, messages: [], pending: 0, live: undefined, approvals: [], receipts: [], notes: [], status: null }
 
 const withStep = (live: LiveTurn | undefined, step: WorkStep): LiveTurn | undefined =>
-  live?.turnId === step.turnId ? { ...live, steps: [...live.steps.filter((s) => s.id !== step.id), step] } : live
+  live?.turnId === step.turnId
+    ? { ...live, steps: [...live.steps.filter((s) => s.id !== step.id), step], stepAt: step.id in live.stepAt ? live.stepAt : { ...live.stepAt, [step.id]: live.text.length } }
+    : live
 
 export function reduceChat(s: ChatState, e: ChatEvent): ChatState {
   switch (e._tag) {
@@ -242,6 +247,7 @@ export function reduceChat(s: ChatState, e: ChatEvent): ChatState {
           model: running.model,
           text: snap.partial.find((p) => p.turnId === running.id)?.text ?? "",
           steps: snap.steps.filter((x) => x.turnId === running.id),
+          stepAt: {},
           startedAt: running.startedAt ?? Date.now()
         },
         approvals: snap.approvals,
@@ -255,7 +261,7 @@ export function reduceChat(s: ChatState, e: ChatEvent): ChatState {
     case "queued":
       return { ...s, pending: s.pending + 1 }
     case "turn-started":
-      return { ...s, live: { turnId: e.turn.id, agentId: e.turn.agentId, model: e.turn.model, text: "", steps: [], startedAt: e.turn.startedAt ?? Date.now() } }
+      return { ...s, live: { turnId: e.turn.id, agentId: e.turn.agentId, model: e.turn.model, text: "", steps: [], stepAt: {}, startedAt: e.turn.startedAt ?? Date.now() } }
     case "text":
       return s.live?.turnId === e.turnId ? { ...s, live: { ...s.live, text: s.live.text + e.delta } } : s
     case "step-started":

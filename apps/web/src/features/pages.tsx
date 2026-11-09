@@ -9,8 +9,9 @@ import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { agentsAtom, mutations, pagesAtom, pageVersionsAtom, projectsAtom, useList, useMutation, useReading } from "../client.ts"
 import { scopeLabel } from "../labels.ts"
+import { MemorySwitch } from "./memory.tsx"
 import { go } from "../state.ts"
-import { BookOpen, Button, ConfirmDialog, cx, EmptyState, Field, Input, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Textarea, Trash2, Undo2 } from "@/ui"
+import { BookOpen, Button, ConfirmDialog, column, cx, EmptyState, Field, Input, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Textarea, Trash2, Undo2 } from "@/ui"
 
 const prose = "prose-chat leading-relaxed" // the same Markdown look as the chat
 
@@ -28,12 +29,14 @@ export function PagesView({ selected }: { selected?: string | undefined }) {
   const scopes = [...new Set(pages.map((p) => p.scope))]
   const page = pages.find((p) => p.id === selected)
   return (
+    // Memory's third view: the same title and switch as its facts, so Pages reads as a tab of Memory.
     <Screen
-      title={t("pages.pages")}
+      title={t("memory.title")}
       subtitle={t("pages.subtitle", { count: pages.length })}
       bodyClassName="flex"
       actions={
         <>
+          <MemorySwitch value="pages" />
           <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("common.search")} />
           <Button size="sm" variant="secondary" onPress={() => setCreating(true)}>
             <Plus />
@@ -102,7 +105,7 @@ export function PageView({ page }: { page: Page }) {
   const save = () =>
     void update({ params: { id: page.id }, payload: { title: title.trim(), body }, reactivityKeys: ["pages"] }).then(() => setEditing(false))
   return (
-    <article className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-10 py-8">
+    <article className={cx(column(), "gap-5")}>
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span className="text-xs font-semibold tracking-wide text-accent-text uppercase">{t("pages.page")}</span>
@@ -209,7 +212,7 @@ export function NewPage({ onDone }: { onDone: (id?: string) => void }) {
   const [body, setBody] = useState("")
   return (
     <form
-      className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-10 py-8"
+      className={cx(column(), "gap-4")}
       onSubmit={(e) => {
         e.preventDefault()
         void create({ payload: { scope, title: title.trim(), body }, reactivityKeys: ["pages"] }).then((p) => onDone(p.id))
