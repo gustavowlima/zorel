@@ -8,11 +8,11 @@ web
 
 ## Users
 
-**Developers and small teams (2–5 people)** who work with AI agents on code projects.
+**Developers and small teams (2–5 people)** who work with AI agents on any kind of work: code, research, writing, operations and their own tools (decision 2026-11-08: not code-only).
 
 **Situation:** each person has their own subscriptions (Claude, ChatGPT) and API keys and coordinates several agents across several projects. Today each CLI lives in an isolated session, and the context has to be explained again when switching tool, model or teammate.
 
-**Job to be done:** take a code task from request to result with agents that know the project, pick up where it left off (any person, any model) and keep control over what the agents do.
+**Job to be done:** take a task (code or not) from request to result with agents that know the project, pick up where it left off (any person, any model) and keep control over what the agents do.
 
 **Open decision:** how the team shares Zorel before the hosted mode (phase 8 of the architecture). Options: a Zorel server reached over the team's network, or bringing part of phase 8 forward (login and simple roles). None of this decision is implemented.
 

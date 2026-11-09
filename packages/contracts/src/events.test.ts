@@ -9,7 +9,7 @@ describe("ChatEvent", () => {
   test("decodes a step with an edit and a handoff", () => {
     const step = decode({
       _tag: "step-finished",
-      step: { id: "s1", turnId: "t1", kind: "edit", title: "Edited context.ts", tool: null, files: ["apps/server/src/context.ts"], status: "ok", startedAt: 1, durationMs: 29_000, changes: [{ path: "apps/server/src/context.ts", added: 84, removed: 31, status: "modified" }], output: "" }
+      step: { id: "s1", turnId: "t1", kind: "edit", title: "Edited context.ts", detail: "apps/server/src/context.ts", tool: null, files: ["apps/server/src/context.ts"], status: "ok", startedAt: 1, durationMs: 29_000, changes: [{ path: "apps/server/src/context.ts", added: 84, removed: 31, status: "modified" }], output: "" }
     })
     expect(step._tag).toBe("step-finished")
     expect(decode({ _tag: "handoff", turnId: "t1", from: "a1", to: ["a2"], via: "start_task" })._tag).toBe("handoff")

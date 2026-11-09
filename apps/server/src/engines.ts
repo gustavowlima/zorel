@@ -43,9 +43,12 @@ export interface TurnTools {
 
 export interface Turn {
   readonly model: string // "<provider>/<model>"
-  readonly system: string // stable + dynamic: what a sessionless engine receives
+  readonly system: string // stable + dynamic (sessionless engines get stable, and dynamic after the message: sessionless())
   readonly stable?: string // part that opens a native session
+  readonly frame?: string // the stable part without the memories: what a native session is tied to
   readonly dynamic?: string // part sent with the message each turn in a native session
+  readonly memories?: ReadonlyArray<{ readonly id: string; readonly text: string }> // the memories in `stable`
+  readonly activeMemoryIds?: ReadonlyArray<string> // every memory still active in scope (in `stable` or not)
   readonly messages: ReadonlyArray<TurnMessage> // ends with a user message
   readonly cwd: string // empty directory: the CLI gets nobody's files
   readonly tools?: TurnTools | undefined
@@ -71,6 +74,9 @@ export interface EngineFailure {
 
 export type EngineEvent =
   | { readonly type: "text"; readonly delta: string }
+  // The engine is reasoning (Claude thinking blocks, Codex reasoning items, ACP thought chunks), one per sign of it.
+  // No content: Zorel only times it. Engines that don't show their reasoning never send it.
+  | { readonly type: "thinking" }
   | { readonly type: "done"; readonly usage: Usage }
   // The turn's tokens so far (engines that report them while it runs: Claude, Codex), for a reply's token limit.
   | { readonly type: "usage"; readonly usage: Usage }
@@ -83,10 +89,41 @@ export type EngineEvent =
 export interface NativeStep {
   readonly id: string
   readonly kind: "read" | "edit" | "run" | "search" | "tool"
-  readonly title: string // "Read src/a.ts", "bun test"
+  readonly title: string // a short summary: "Check git status", "Read a.ts"
+  readonly detail: string // what the summary stands for: the command, the path, the URL; "" when the title says it all
   readonly files: ReadonlyArray<string> // relative to the workspace
   readonly status: "running" | "ok" | "error" | "refused"
   readonly output: string // start of the result
+}
+
+export const STEP_TITLE_MAX = 120
+export const STEP_DETAIL_MAX = 300
+
+// A command with no description of its own: "Run git" over the whole command. A shell wrapper is looked through, so
+// the title names the real program: `/bin/zsh -lc '…'` (how Codex reports commands), `powershell -Command "…"`,
+// `cmd /c …`. Paths may use `/` or a backslash and may be quoted (`"C:\Program Files\Git\git.exe" status`).
+// A function declaration, not a const: codex.ts and acp.ts import this module while it is still loading.
+const WORD = /^("[^"]*"|'[^']*'|\S+)\s*([\s\S]*)$/
+const programName = (token: string) => (token.replace(/^["']|["']$/g, "").split(/[\\/]/).pop() ?? "").replace(/\.(?:exe|cmd|bat|com)$/i, "")
+
+function unwrapShell(text: string): string {
+  const [, shell = "", rest = ""] = WORD.exec(text) ?? []
+  const name = programName(shell).toLowerCase()
+  if (["sh", "bash", "zsh", "dash", "fish"].includes(name)) return /^-\w*c\s+(["'])([\s\S]*)\1$/.exec(rest)?.[2] ?? text
+  if (name === "powershell" || name === "pwsh") return /^(?:-(?!c(?:ommand)?\s)\w+\s+)*-c(?:ommand)?\s+(["']?)([\s\S]*?)\1$/i.exec(rest)?.[2] ?? text
+  if (name === "cmd") return /^(?:\/[dsq]\s+)*\/[ck]\s+(["']?)([\s\S]*?)\1$/i.exec(rest)?.[2] ?? text
+  return text
+}
+
+export function commandStep(command: string): Pick<NativeStep, "title" | "detail"> {
+  const text = command.trim()
+  const first = unwrapShell(text)
+    .trim()
+    .replace(/^cd\s+(?:\/d\s+)?(?:"[^"]*"|\S+)\s*(?:&&|;)\s*/i, "") // `cd dir &&` doesn't name the work
+    .replace(/^(?:\w+=\S*\s+)+/, "") // nor does `VAR=1`
+    .replace(/^&\s+/, "") // PowerShell's call operator
+  const program = programName(WORD.exec(first)?.[1] ?? "")
+  return { title: (program ? `Run ${program}` : "Run a command").slice(0, STEP_TITLE_MAX), detail: text.slice(0, STEP_DETAIL_MAX) }
 }
 
 // Seconds or milliseconds → milliseconds (CLIs report epoch seconds).
@@ -123,6 +160,7 @@ type Provider = {
   readonly key?: string // API key name (env or keychain)
   readonly bin?: string // subscription CLI
   readonly local?: true // local server: available only if it responds, and models come from it
+  readonly cheap?: string // its small, fast model: background calls (routing, memory) go there
 }
 
 // OpenAI-compatible base URLs. Ollama/LM Studio run locally and need no key.
@@ -134,13 +172,13 @@ const COMPAT: Record<string, () => string> = {
 }
 
 export const PROVIDERS: Record<string, Provider> = {
-  "claude-cli": { kind: "subscription", hint: "Claude Code logado (claude auth login)", suggestions: ["sonnet", "opus", "haiku"], bin: "claude" },
+  "claude-cli": { kind: "subscription", hint: "Claude Code logado (claude auth login)", suggestions: ["sonnet", "opus", "haiku"], bin: "claude", cheap: "haiku" },
   "codex-cli": { kind: "subscription", hint: "Codex signed in (codex login); 'default' uses its default model", suggestions: ["default"], bin: "codex" },
-  anthropic: { kind: "api", hint: "ANTHROPIC_API_KEY", suggestions: ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"], key: "ANTHROPIC_API_KEY" },
+  anthropic: { kind: "api", hint: "ANTHROPIC_API_KEY", suggestions: ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"], key: "ANTHROPIC_API_KEY", cheap: "claude-haiku-5-5" },
   openai: { kind: "api", hint: "OPENAI_API_KEY (OPENAI_BASE_URL opcional)", suggestions: [], key: "OPENAI_API_KEY" },
   openrouter: { kind: "api", hint: "OPENROUTER_API_KEY", suggestions: [], key: "OPENROUTER_API_KEY" },
   // ACP agents (phase 5): any CLI that speaks the Agent Client Protocol, through one adapter (engines/acp.ts).
-  "gemini-cli": { kind: "subscription", hint: "Gemini CLI logado (gemini, then sign in)", suggestions: ["default", "gemini-2.5-pro", "gemini-2.5-flash"], bin: "gemini" },
+  "gemini-cli": { kind: "subscription", hint: "Gemini CLI logado (gemini, then sign in)", suggestions: ["default", "gemini-2.5-pro", "gemini-2.5-flash"], bin: "gemini", cheap: "gemini-2.5-flash" },
   opencode: { kind: "subscription", hint: "OpenCode set up (opencode auth login); uses its own providers and keys", suggestions: ["default"], bin: "opencode" },
   ollama: { kind: "api", hint: "Ollama rodando (OLLAMA_URL)", suggestions: [], local: true },
   lmstudio: { kind: "api", hint: "LM Studio rodando (LMSTUDIO_URL)", suggestions: [], local: true }
@@ -149,6 +187,25 @@ export const PROVIDERS: Record<string, Provider> = {
 export function splitModel(id: string): { provider: string; model: string } {
   const i = id.indexOf("/")
   return { provider: id.slice(0, i), model: id.slice(i + 1) }
+}
+
+// The same provider's small model (same login, a fraction of the cost), else the model itself.
+export const cheapModel = (model: string) => {
+  const { provider } = splitModel(model)
+  const cheap = PROVIDERS[provider]?.cheap
+  return cheap ? `${provider}/${cheap}` : model
+}
+
+const ENGINE_NAMES: Record<string, string> = { "claude-cli": "Claude Code", "codex-cli": "Codex", "gemini-cli": "Gemini CLI", opencode: "OpenCode", anthropic: "Anthropic", openai: "OpenAI", openrouter: "OpenRouter", ollama: "Ollama", lmstudio: "LM Studio" }
+
+// "claude-cli/opus" → "Claude Code · Opus"; "claude-cli/claude-sonnet-5-5" → "Claude Code · Sonnet 5.5"; API models keep their id.
+// Saved as text on the timing steps, so it reads without the model list (the picker's own names come from it).
+export function engineLabel(id: string): string {
+  const { provider, model } = id.includes("/") ? splitModel(id) : { provider: id, model: "" }
+  const engine = ENGINE_NAMES[provider] ?? provider
+  const claude = /^claude-(opus|sonnet|haiku)-(\d+)-(\d+)/.exec(model)
+  const name = claude ? `${claude[1]!.charAt(0).toUpperCase()}${claude[1]!.slice(1)} ${claude[2]}.${claude[3]}` : model === "default" || !model ? "" : provider === "claude-cli" ? model.charAt(0).toUpperCase() + model.slice(1) : model
+  return name ? `${engine} · ${name}` : engine
 }
 
 // Models a local OpenAI-compatible server lists; undefined if it doesn't respond.
@@ -233,6 +290,16 @@ export function transcript(messages: ReadonlyArray<TurnMessage>): string {
   return `Conversation so far, oldest first:\n${lines}\n\nNew message from the user:\n${withFiles(last)}`
 }
 
+// A sessionless engine gets the stable part as its system prompt and the per-turn part (skill bodies, summary,
+// recalled memories) in a <context> block after the new message, so what the provider caches (system, tools, the
+// conversation's start) stays the same from one turn to the next. A turn without `stable` (internal tasks) is as is.
+export function sessionless(t: Turn): Turn {
+  if (t.stable === undefined) return t
+  const last = t.messages.at(-1)!
+  const messages = t.dynamic ? [...t.messages.slice(0, -1), { ...last, text: `${last.text}\n\n<context>\n${t.dynamic}\n</context>` }] : t.messages
+  return { ...t, system: t.stable, messages }
+}
+
 const GATEWAY = "zorel"
 
 export const claudeArgs = (t: Turn) => [
@@ -280,6 +347,7 @@ export function claudeParser(): Parser {
           wrote = true
           return [{ type: "text", delta: sep + d.text }]
         }
+        if ((e.type === "content_block_start" && e.content_block?.type === "thinking") || (e.type === "content_block_delta" && d?.type === "thinking_delta")) return [{ type: "thinking" }]
         return []
       }
       if (ev.type !== "result") return []
@@ -335,6 +403,7 @@ export function codexParser(): Parser {
         wrote = true
         return [{ type: "text", delta }]
       }
+      if ((ev.type === "item.started" || ev.type === "item.completed") && ev.item?.type === "reasoning") return [{ type: "thinking" }]
       if (ev.type === "turn.completed") {
         finished = true
         const u = ev.usage ?? {}
@@ -494,7 +563,8 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
     Effect.gen(function* () {
       const secrets = yield* Secrets
       return {
-        run: (t: Turn) => {
+        run: (turn: Turn) => {
+          const t = sessionless(turn)
           const { provider } = splitModel(t.model)
           if (provider === "claude-cli") return cli("claude", claudeArgs(t), transcript(t.messages), t.cwd, claudeParser())
           if (provider === "codex-cli") return cli("codex", codexArgs(t), transcript(t.messages), t.cwd, codexParser())

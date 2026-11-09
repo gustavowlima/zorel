@@ -120,6 +120,52 @@ export const MEMORY_TOOL = {
   writes: false
 } as const
 
+// Remember: the agent keeps a fact the person just said or confirmed (their words, not its guess), during the turn.
+// Its memory mode decides: "auto" keeps it (a note under the reply, with Undo), "ask" proposes it for review; "read"
+// doesn't get the tool. A correction of an existing memory always waits for review.
+export const REMEMBER_TOOL = {
+  name: "zorel_remember",
+  description:
+    "Keep a durable fact the user just told you or confirmed (a preference, a decision, how they work), so later chats know it. text: one short self-contained sentence in the third person (\"Prefers small PRs\"). about: 'user' (holds everywhere), 'project' (a fact or decision of this project) or 'agent' (how you should do your work). topics: the things it's about, named as they'd be anywhere (\"Deploy\", \"Vercel\"), so it's found by association later. replaces: the text of an existing memory it corrects, if any. Never your own guess, nothing temporary (\"this week\"), never a credential. Don't mention it in your reply: the user sees a note with Undo.",
+  inputSchema: {
+    properties: { text: { type: "string" }, about: { type: "string", enum: ["user", "project", "agent"] }, topics: { type: "array", items: { type: "string" } }, replaces: { type: "string" } },
+    required: ["text", "about"]
+  },
+  writes: false
+} as const
+
+// MCP tools on demand (reference apps defer them): past MCP_DEFER_CHARS of definitions, a turn lists these two instead
+// of every server's tools, and the agent finds and calls what it needs.
+export const MCP_DEFER_CHARS = 10_000
+export const FIND_TOOLS_TOOL = {
+  name: "zorel_find_tools",
+  description:
+    "Find tools of the connected services (MCP servers) by what you need, e.g. 'create github issue' or 'search slack messages'. Returns each match's name, what it does and its arguments; call one with zorel_use_tool.",
+  inputSchema: { properties: { query: { type: "string" } }, required: ["query"] },
+  writes: false
+} as const
+export const USE_TOOL_TOOL = {
+  name: "zorel_use_tool",
+  description: "Call a tool found with zorel_find_tools. name: its exact name; arguments: an object matching its arguments. Approvals apply as for any tool.",
+  inputSchema: { properties: { name: { type: "string" }, arguments: { type: "object" } }, required: ["name"] },
+  writes: true
+} as const
+// The deferred tools best matching a query: by the query's words in name and description, name counting double.
+export function findTools<T extends { name: string; description?: string | undefined }>(tools: ReadonlyArray<T>, query: string, limit = 8): T[] {
+  const words = query.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2)
+  const score = (t: T) => words.reduce((n, w) => n + (t.name.toLowerCase().includes(w) ? 2 : 0) + ((t.description ?? "").toLowerCase().includes(w) ? 1 : 0), 0)
+  return tools.map((t) => [t, score(t)] as const).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, limit).map(([t]) => t)
+}
+
+// A result of Zorel's own tools too long to send whole (tools.ts compact): read the rest by position or by a text.
+export const READ_RESULT_TOOL = {
+  name: "zorel_read_result",
+  description:
+    "Read more of a tool result that was shortened (it ends with a [Result shortened …] line giving its id). offset: where to start; length: how much (default 3000, at most 16000); or find: a text, to get only the lines that hold it.",
+  inputSchema: { properties: { id: { type: "string" }, offset: { type: "integer", minimum: 0 }, length: { type: "integer", minimum: 1, maximum: 16000 }, find: { type: "string" } }, required: ["id"] },
+  writes: false
+} as const
+
 // Skills: read a recipe when the task matches; propose a new one or a better version of one, with
 // the reason. Proposals wait for the person in Knowledge, who sees what changes before approving.
 export const SKILL_TOOLS = [
@@ -140,6 +186,20 @@ export const SKILL_TOOLS = [
     writes: false
   }
 ] as const
+
+// What an agent learns and sees (Agent.memory / Agent.knowledge; no agent: the defaults, "ask" and "write").
+type Learner = { readonly memory?: Agent["memory"] | undefined; readonly knowledge?: Agent["knowledge"] | undefined }
+export const memoryModeOf = (a: Learner | undefined): Agent["memory"] => a?.memory ?? "ask"
+export const knowledgeOf = (a: Learner | undefined): Agent["knowledge"] => a?.knowledge ?? "write"
+// Whether a chat learns is for the whole chat: one agent that doesn't learn ("read") keeps it from learning at all.
+// Whether what it learns waits for review is the person's one setting (Preferences.memoryApproval), not an agent's.
+export const learningOf = (members: ReadonlyArray<Learner>): "learn" | "read" => (members.some((m) => memoryModeOf(m) === "read") ? "read" : "learn")
+// The tools the agent doesn't get. The server refuses them even if the model names one anyway.
+export const withheldTools = (a: Learner | undefined): ReadonlySet<string> =>
+  new Set([
+    ...(memoryModeOf(a) === "read" ? ["zorel_propose_skill", REMEMBER_TOOL.name] : []),
+    ...(knowledgeOf(a) === "none" ? KNOWLEDGE_TOOLS.map((t) => t.name) : knowledgeOf(a) === "read" ? ["zorel_knowledge_write"] : [])
+  ])
 
 const RANK: Record<Access, number> = { ask: 0, workspace: 1, full: 2 }
 export const narrower = (a: Access, b: Access): Access => (RANK[a] <= RANK[b] ? a : b)
@@ -357,6 +417,15 @@ export const BUILDER = {
 
 // Knowledge pages (phase 3b): search and read freely; write to the project's or your own pages directly (each
 // write is a version the user can restore); a page about the user waits for the user's OK.
+// A change to an existing page replaces its whole body: only after this chat read it, and only if nobody changed
+// it since (another agent, the person, a sync from its file), so an agent never overwrites what it hasn't seen.
+export function staleWrite(readAt: ReadonlyMap<string, number>, page: { readonly id: string; readonly updatedAt: number }): string | undefined {
+  const seen = readAt.get(page.id)
+  if (seen === undefined) return "Read the page first with zorel_knowledge_read: a change replaces its whole text."
+  if (seen !== page.updatedAt) return "The page changed since you read it. Read it again and redo your change on the new text."
+  return undefined
+}
+
 export const KNOWLEDGE_TOOLS = [
   {
     name: "zorel_knowledge_search",
@@ -366,14 +435,14 @@ export const KNOWLEDGE_TOOLS = [
   },
   {
     name: "zorel_knowledge_read",
-    description: "Read a whole knowledge page. page: its id (from the search or the pinned list) or its exact title.",
-    inputSchema: { properties: { page: { type: "string" } }, required: ["page"] },
+    description: "Read a knowledge page. page: its id (from the search or the pinned list) or its exact title. section: a heading, to read only that part (search results name the section of each match); a long page comes back cut, with its headings.",
+    inputSchema: { properties: { page: { type: "string" }, section: { type: "string" } }, required: ["page"] },
     writes: false
   },
   {
     name: "zorel_knowledge_write",
     description:
-      "Create or update a knowledge page in Markdown: a decision and why, a how-to that worked, a gotcha, a reference. page: an existing page's id to update (send the whole new body). scope: 'project' (default), 'agent' (your own notes) or 'user' (about the user: they approve it first). Keep pages short and current; update instead of duplicating.",
+      "Create or update a knowledge page in Markdown: a decision and why, a how-to that worked, a gotcha, a reference. page: an existing page's id to update (read it first, then send the whole new body; the user approves a change to an existing page first). scope: 'project' (default), 'agent' (your own notes) or 'user' (about the user: they approve it first). Keep pages short and current; update instead of duplicating.",
     inputSchema: {
       properties: { page: { type: "string" }, title: { type: "string" }, body: { type: "string" }, scope: { type: "string", enum: ["project", "agent", "user"] } },
       required: ["title", "body"]

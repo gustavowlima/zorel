@@ -10,8 +10,8 @@ import type { Access, AccountWindow } from "@zorel/contracts"
 import { Effect, Queue, Stream } from "effect"
 import { spawn } from "node:child_process"
 import { existsSync, mkdirSync } from "node:fs"
-import { relative } from "node:path"
-import { type CliModel, claudeParser, classifyMessage, type EngineEvent, type NativeStep, splitModel, type TurnFile } from "#server/engines.ts"
+import { basename, relative } from "node:path"
+import { type CliModel, claudeParser, classifyMessage, type EngineEvent, type NativeStep, splitModel, STEP_DETAIL_MAX, STEP_TITLE_MAX, type TurnFile } from "#server/engines.ts"
 import { approvalFor, decideCommand, decideEdit, decideRead } from "#server/engines/policy.ts"
 import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type NativeApproval, withoutAppEnv } from "#server/engines/session.ts"
 
@@ -25,22 +25,60 @@ const DENIED = "The user denied this. Don't try it again without asking."
 const kindOf = (tool: string): NativeStep["kind"] =>
   tool === "Read" ? "read" : tool === "Glob" || tool === "Grep" ? "search" : tool === "Edit" || tool === "Write" ? "edit" : tool === "Bash" ? "run" : "tool"
 
+// A path as the step shows it: relative to the folder the agent works in.
+const relTo = (cwd: string, p: unknown) => (typeof p === "string" ? relative(cwd, p) || p : "")
+
+// A URL without its query and fragment (signed links and `?token=` stay out of the saved step); an unparsable one is
+// cut at its first `?` or `#` and at 80 characters.
+function bareUrl(raw: string): string {
+  try {
+    const u = new URL(raw)
+    return u.origin + u.pathname
+  } catch {
+    return raw.slice(0, 80).split(/[?#]/)[0]!
+  }
+}
+
+// A tool call as a summary plus what it stands for. Bash carries its own `description` ("Check git status"), so the
+// title is that and the command is the detail; the others are built from their input.
+export function describeTool(name: string, input: Record<string, any>, cwd: string): Pick<NativeStep, "title" | "detail"> {
+  const rel = (p: unknown) => relTo(cwd, p)
+  const text = (v: unknown) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "")
+  const one = (title: string, detail = "") => ({ title: title.slice(0, STEP_TITLE_MAX), detail: detail.slice(0, STEP_DETAIL_MAX) })
+  switch (name) {
+    case "Bash":
+      return one(text(input.description) || "Run a command", String(input.command ?? ""))
+    case "Read":
+    case "Edit":
+    case "Write": {
+      const file = rel(input.file_path)
+      return one(file ? `${name} ${basename(file)}` : name, file)
+    }
+    case "Grep":
+      return one(`Search for ${text(input.pattern)}`, rel(input.path))
+    case "Glob":
+      return one(`Find ${text(input.pattern)}`, rel(input.path))
+    case "WebFetch":
+      return one("Read a page", bareUrl(text(input.url)))
+    case "WebSearch":
+      return one("Search the web", text(input.query))
+    case "Task":
+      return one(text(input.description) || name)
+    default:
+      return one(name)
+  }
+}
+
 // Native tool calls as steps: `tool_use` in an assistant message starts one, its `tool_result` ends it.
 function stepTracker(cwd: string) {
   const open = new Map<string, NativeStep>()
-  const rel = (p: unknown) => (typeof p === "string" ? relative(cwd, p) || p : "")
-  const titleOf = (name: string, input: Record<string, any>) => {
-    if (name === "Bash") return String(input.command ?? "")
-    if (name === "Grep") return `Search ${input.pattern ?? ""}`
-    if (name === "Glob") return `Find ${input.pattern ?? ""}`
-    return `${name} ${rel(input.file_path)}`
-  }
+  const rel = (p: unknown) => relTo(cwd, p)
   return (m: SDKMessage): EngineEvent[] => {
     const content = (m.type === "assistant" || m.type === "user") && Array.isArray((m as any).message?.content) ? ((m as any).message.content as any[]) : []
     const out: EngineEvent[] = []
     for (const block of content) {
       if (block.type === "tool_use" && !String(block.name).startsWith("mcp__")) {
-        const step: NativeStep = { id: block.id, kind: kindOf(block.name), title: titleOf(block.name, block.input ?? {}).slice(0, 300), files: block.input?.file_path ? [rel(block.input.file_path)] : [], status: "running", output: "" }
+        const step: NativeStep = { id: block.id, kind: kindOf(block.name), ...describeTool(block.name, block.input ?? {}, cwd), files: block.input?.file_path ? [rel(block.input.file_path)] : [], status: "running", output: "" }
         open.set(block.id, step)
         out.push({ type: "step", step })
       } else if (block.type === "tool_result" && open.has(block.tool_use_id)) {

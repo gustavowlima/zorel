@@ -16,7 +16,7 @@ import { PendingTray, Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
-import { AgentAvatar, Button, Check, ChevronRight, cx, Dialog, EmptyState, Folder, IconTile, ListRow, PageHeader, Pencil, Rows, Section, Select, Sparkles, Spinner, Tag } from "@/ui"
+import { AgentAvatar, Button, Check, ChevronRight, column, cx, Dialog, EmptyState, Folder, HEADER, IconTile, ListRow, PageHeader, Pencil, Rows, Section, Select, Sparkles, Spinner, Tag } from "@/ui"
 
 const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builder.suggest.docs", "builder.suggest.team"] as const
 type Step = "describe" | "powers"
@@ -110,7 +110,7 @@ function BuilderHeader({ projectId }: { projectId: string | null }) {
 // The page header (in the desktop title bar like every screen's).
 function ScreenHeader({ title, subtitle, action }: { title: string; subtitle: string; action: ReactNode }) {
   return (
-    <PageHeader className="min-h-14 gap-x-4 gap-y-2 px-7 py-3">
+    <PageHeader className={HEADER}>
       <h1 className="truncate text-lg font-semibold">{title}</h1>
       <span className="min-w-0 flex-1 truncate text-muted">{subtitle}</span>
       {action}
@@ -153,7 +153,7 @@ function Conversation({ chat, reviewing }: { chat: Chat; reviewing: boolean }) {
       ) : (
         // The proposal is reviewed on the right: no second card for it inside the conversation.
         <>
-          <Timeline chat={chat} state={{ ...state, approvals: state.approvals.filter((a) => a.tool !== "zorel_create_agent") }} agents={agents} onView={() => {}} onEdit={() => {}} />
+          <Timeline chat={chat} state={{ ...state, approvals: state.approvals.filter((a) => a.tool !== "zorel_create_agent") }} agents={agents} onView={() => {}} onEdit={() => {}} onStop={() => void interrupt({ payload: { chatId: chat.id } })} />
           {/* While a proposal waits, the turn only shows "waiting": say where it is and what this box is for now. */}
           {reviewing && (
             <p className="mx-6 mb-2 flex items-start gap-2 rounded-card border border-subtle px-3 py-2.5 text-sm text-secondary">
@@ -325,7 +325,7 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
           />
         ) : (
           <section aria-label={t("builder.proposal")} className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-            <div className="m-auto flex w-full max-w-xl flex-col gap-8 px-8 py-10">
+            <div className="m-auto flex w-full max-w-xl flex-col gap-10 px-7 py-7">
             {finishing ? (
               <p className="text-sm text-muted">{t("builder.creating")}</p>
             ) : (
@@ -418,7 +418,7 @@ function StepPage({ title, hint, footer, children }: { title: string; hint: stri
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-8 py-10">
+        <div className={cx(column(), "gap-6")}>
           <div className="flex flex-col gap-1.5">
             <h2 className="text-lg font-semibold">{title}</h2>
             <p className="text-muted">{hint}</p>
@@ -427,7 +427,7 @@ function StepPage({ title, hint, footer, children }: { title: string; hint: stri
         </div>
       </div>
       <div className="shrink-0 border-t border-subtle">
-        <div className="mx-auto flex w-full max-w-2xl items-center gap-2 px-8 py-3">{footer}</div>
+        <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-7 py-3">{footer}</div>
       </div>
     </div>
   )
@@ -442,7 +442,7 @@ function ProposalReview({
   return (
     <section aria-label={t("builder.proposal")} className="flex min-w-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-8 py-8">
+        <div className={cx(column(true), "gap-6")}>
           <header className="flex items-center gap-4">
             <span className="flex -space-x-2">
               {drafts.map((d, i) => (

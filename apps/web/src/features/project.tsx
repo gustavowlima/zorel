@@ -9,7 +9,7 @@ import { agentTone, chatTitle, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
 import { AgentItem, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
-import { AgentAvatar, ArrowLeft, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, ChoiceCards, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, IconTile, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, RowHit, Rows, Screen, Section, Select, Tab, TabList, TabPanel, Tabs, Textarea, Tooltip, Trash2 } from "@/ui"
+import { AgentAvatar, ArrowLeft, column, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, ChoiceCards, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, IconTile, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, RowHit, Rows, Screen, Section, Select, Tab, TabList, TabPanel, Tabs, Textarea, Tooltip, Trash2 } from "@/ui"
 
 // The reason a folder was refused (WorkspaceInvalid), in words.
 const REASONS = ["relative", "missing", "not_directory", "forbidden"] as const
@@ -268,7 +268,7 @@ export function ProjectView({ project, tab }: { project: Project; tab: ProjectTa
         </>
       }
     >
-      <Tabs selectedKey={tab} onSelectionChange={(k) => go({ view: "project", id: project.id, tab: k as ProjectTab })} className="mx-auto w-full max-w-3xl gap-8 px-8 py-8">
+      <Tabs selectedKey={tab} onSelectionChange={(k) => go({ view: "project", id: project.id, tab: k as ProjectTab })} className={cx(column(), "gap-8")}>
         <TabList label={project.name}>
           <Tab id="overview">{t("project.overview")}</Tab>
           <Tab id="agents">{t("project.agents")}</Tab>
@@ -412,7 +412,7 @@ function Agents({ projectId }: { projectId: string }) {
   const working = useWorking()
   const del = useDeleteAgent()
   return (
-    <div className="flex flex-col gap-12">
+    <div className="flex flex-col gap-10">
       {/* Who a new chat in the project starts with: the faces to pick from, not a dropdown of names. */}
       <Section title={t("project.defaultAgent")} description={t("project.defaultAgentHint")}>
         {choices.length > TEAM_SHOWN ? (

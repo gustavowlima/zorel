@@ -95,11 +95,16 @@ export type Project = typeof Project.Type
 // card. Destructive tools (delete, send, publish, pay…) always ask unless allowed for good.
 export const Grant = Schema.Literals(["none", "read", "write"])
 export type Grant = typeof Grant.Type
+// An app on the person's computer given to an agent (spec 008): read only, or read and use.
+export const DesktopApp = Schema.Struct({ name: Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(100)), level: Schema.Literals(["read", "use"]) })
+export type DesktopApp = typeof DesktopApp.Type
 export const AgentPermissions = Schema.Struct({
   web: Schema.Boolean,
   browser: Schema.Boolean,
   grants: Schema.Record(Schema.String, Grant),
-  always: Schema.Array(Schema.String.check(Schema.isMaxLength(200))).check(Schema.isMaxLength(200))
+  always: Schema.Array(Schema.String.check(Schema.isMaxLength(200))).check(Schema.isMaxLength(200)),
+  apps: Schema.optional(Schema.Array(DesktopApp).check(Schema.isMaxLength(50))), // none when absent
+  computer: Schema.optional(Schema.Literals(["none", "container"])) // its own Linux computer (spec 009); none when absent
 })
 export type AgentPermissions = typeof AgentPermissions.Type
 export const DEFAULT_PERMISSIONS: AgentPermissions = { web: true, browser: true, grants: {}, always: [] }
@@ -124,9 +129,19 @@ export const Agent = Schema.Struct({
   // start; past a reply's, the reply stops and can go on (Continue).
   monthlyTokens: Schema.NullOr(Schema.Number),
   replyTokens: Schema.NullOr(Schema.Number),
+  // Whether the agent learns from its chats: "read" learns nothing (it only uses what's kept); "ask" (and the older
+  // "auto") learns. Whether what it learns waits for review is one setting for all agents (Preferences.memoryApproval).
+  memory: Schema.Literals(["auto", "ask", "read"]),
+  // Pages: "write" reads them and writes new ones (a change to an existing page waits for you), "read" only
+  // consults them, "none": no pinned pages in its context and no page tools.
+  knowledge: Schema.Literals(["write", "read", "none"]),
   createdAt: Schema.Number
 })
 export type Agent = typeof Agent.Type
+export const MemoryMode = Schema.Literals(["auto", "ask", "read"])
+export type MemoryMode = typeof MemoryMode.Type
+export const KnowledgeAccess = Schema.Literals(["write", "read", "none"])
+export type KnowledgeAccess = typeof KnowledgeAccess.Type
 // The agents that are teammates: not Zorel's own (the Builder), not archived.
 export const isTeammate = (a: Pick<Agent, "builtin" | "archivedAt">) => !a.builtin && !a.archivedAt
 export const TOKEN_LIMIT = Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 1000, maximum: 1_000_000_000 })))
@@ -139,7 +154,8 @@ export const AgentVersion = Schema.Struct({
   at: Schema.Number,
   profile: Schema.Struct({
     name: Schema.String, title: Schema.String, description: Schema.String, instructions: Schema.String, model: Schema.String,
-    accountId: Schema.NullOr(Schema.String), effort: Schema.NullOr(Effort), failover: FailoverList, access: Access, permissions: Schema.optional(AgentPermissions)
+    accountId: Schema.NullOr(Schema.String), effort: Schema.NullOr(Effort), failover: FailoverList, access: Access, permissions: Schema.optional(AgentPermissions),
+    memory: Schema.optional(MemoryMode), knowledge: Schema.optional(KnowledgeAccess) // absent in versions saved before they existed
   })
 })
 export type AgentVersion = typeof AgentVersion.Type
@@ -188,6 +204,7 @@ export const Chat = Schema.Struct({
   model: Schema.String, // leader's model for the next turn; other members use their own model
   summary: Schema.String, // summary of what left the window (consolidation)
   summaryUntil: Schema.Number, // `at` of the last message covered by the summary
+  learnedUntil: Schema.Number, // `at` of the last message memories were learned from (≥ summaryUntil once a quiet chat learned)
   failover: Schema.NullOr(FailoverList), // null: the lead agent's list
   position: Schema.NullOr(Schema.Number), // manual order inside its group; null: by recent activity, above the placed ones
   worktree: Schema.NullOr(Schema.String), // the git worktree the chat works in (its own branch); null: the project folder
@@ -306,13 +323,26 @@ export const FsOp = Schema.Struct({
 export const ProjectOrder = Schema.Struct({ ids: Schema.Array(Id) })
 export const ChatOrder = Schema.Struct({ projectId: Schema.NullOr(Id), ids: Schema.Array(Id) })
 
+// `tool` is the native kind ("read", "edit", "run", "search", "tool"), an MCP tool name, or one of the two timing
+// steps Zorel adds: "thought" (time spent reasoning, when the engine shows it) and "reply" (time writing the answer).
+// Those two are for the reader only: they never reach the model or the runaway guard.
 export const Step = Schema.Struct({
   tool: Schema.String,
-  args: Schema.String, // abbreviated JSON
+  args: Schema.String, // abbreviated JSON; for a native step, the command or the files (what the transcript keeps)
   status: Schema.Literals(["ok", "error", "refused"]),
-  result: Schema.String // start of the result
+  result: Schema.String, // start of the result
+  // Native steps only (reads, edits, commands): a short summary and what it stands for, as the live list showed them.
+  // Absent on MCP steps and on messages saved before they existed: read a missing one as "".
+  title: Schema.optional(Schema.String),
+  detail: Schema.optional(Schema.String),
+  ms: Schema.optional(Schema.Number), // how long it took; absent on MCP steps and on messages saved before it existed
+  // Where in the reply's text it began (characters): the chat lays the reply out as text, steps, text… in that order.
+  // Absent on Zorel's timing rows and on messages saved before it existed (their steps go above the text).
+  at: Schema.optional(Schema.Number)
 })
 export type Step = typeof Step.Type
+// The steps that did work: not Thought or Replied (counted and shown as work, they'd put a pill on every answer).
+export const workSteps = <S extends Pick<Step, "tool">>(steps: ReadonlyArray<S>) => steps.filter((s) => s.tool !== "thought" && s.tool !== "reply")
 // One run of an agent (a turn): the chat it was in (so its project), when, how it ended, its tokens and steps.
 // messageId: its reply in the chat (null when it wrote none, e.g. stopped before any text).
 export const AgentRun = Schema.Struct({
@@ -374,9 +404,12 @@ export const Memory = Schema.Struct({
   state: MemoryState,
   origin: Schema.Literals(["auto", "manual"]),
   chatId: Schema.NullOr(Id),
+  agentId: Schema.optionalKey(Schema.NullOr(Id)), // the agent that kept it; null or absent: learned from the chat
   replaces: Schema.optionalKey(Schema.NullOr(Id)), // a proposed improvement of this active skill
   reason: Schema.optionalKey(Schema.NullOr(Schema.String)), // why it was proposed
   essential: Schema.optionalKey(Schema.Boolean), // always in the prompt (the person marks it)
+  // Skills only: the agents that see it (prompt, search, $handle, zorel_read_skill). Absent or empty: all of them.
+  agents: Schema.optionalKey(Schema.Array(Id)),
   createdAt: Schema.Number,
   confirmedAt: Schema.Number
 })
@@ -389,15 +422,35 @@ export const FileSkill = Schema.Struct({
   description: Schema.String,
   source: Schema.Literals(["claude", "codex", "agents", "plugin"]),
   plugin: Schema.optionalKey(Schema.String),
-  enabled: Schema.Boolean
+  enabled: Schema.Boolean,
+  agents: Schema.optionalKey(Schema.Array(Id)) // the agents that use it; absent or empty: all of them
 })
 export type FileSkill = typeof FileSkill.Type
+// The memory's map in some scopes: its points (what facts are about; facts: how many living facts mention it,
+// pending: how many of those wait for review) and its links (a relation a fact states, or two points one fact names).
+export const MapPoint = Schema.Struct({ id: Id, scope: Schema.String, name: Schema.String, type: Schema.Literals(["project", "agent", "concept", "subject"]), weight: Schema.Number, facts: Schema.Number, pending: Schema.Number, memoryIds: Schema.Array(Id) })
+export type MapPoint = typeof MapPoint.Type
+// rel "": named together in a fact. bridge: a link the person made between two projects' maps.
+export const MapLink = Schema.Struct({ a: Id, b: Id, rel: Schema.String, bridge: Schema.optionalKey(Schema.Boolean) })
+export const MemoryMap = Schema.Struct({ points: Schema.Array(MapPoint), links: Schema.Array(MapLink) })
+export type MemoryMap = typeof MemoryMap.Type
 export const MemoryVersion = Schema.Struct({ id: Id, title: Schema.String, text: Schema.String, by: Schema.String, at: Schema.Number })
 export type MemoryVersion = typeof MemoryVersion.Type
 
 // A knowledge page (phase 3b): a longer Markdown note by scope (as memories). pinned: its title goes into every
 // turn's context in that scope.
-export const Page = Schema.Struct({ id: Id, scope: MemoryScope, title: Schema.String, body: Schema.String, pinned: Schema.Boolean, updatedAt: Schema.Number, createdAt: Schema.Number })
+// file: its Markdown file inside the knowledge folder ("projects/zorel/Deploy.md"); null until written.
+// The container engine for agents' own computers (spec 009): podman, docker, or null with what to do.
+export const ComputerStatus = Schema.Struct({ engine: Schema.NullOr(Schema.Literals(["podman", "docker"])), problem: Schema.NullOr(Schema.String) })
+export type ComputerStatus = typeof ComputerStatus.Type
+// agent-desktop on this computer (spec 008). accessibility: macOS's permission (granted, denied, unknown).
+export const DesktopStatus = Schema.Struct({ supported: Schema.Boolean, installed: Schema.Boolean, version: Schema.String, accessibility: Schema.NullOr(Schema.String), suggestion: Schema.NullOr(Schema.String) })
+export type DesktopStatus = typeof DesktopStatus.Type
+export class DesktopInstallFailed extends Schema.Error<DesktopInstallFailed>("zorel/DesktopInstallFailed")({ _tag: Schema.tag("DesktopInstallFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
+// Telegram channel: whether the bot token is set, how many accounts are paired, and the open pairing code.
+export const TelegramStatus = Schema.Struct({ tokenSet: Schema.Boolean, fromEnv: Schema.Boolean, users: Schema.Number, pairing: Schema.NullOr(Schema.Struct({ code: Schema.String, until: Schema.Number })) })
+export type TelegramStatus = typeof TelegramStatus.Type
+export const Page = Schema.Struct({ id: Id, scope: MemoryScope, title: Schema.String, body: Schema.String, pinned: Schema.Boolean, file: Schema.optionalKey(Schema.NullOr(Schema.String)), updatedAt: Schema.Number, createdAt: Schema.Number })
 export type Page = typeof Page.Type
 export const PageVersion = Schema.Struct({ id: Schema.String, n: Schema.Number, title: Schema.String, body: Schema.String, by: Schema.String, at: Schema.Number })
 export type PageVersion = typeof PageVersion.Type
@@ -506,12 +559,12 @@ export const NewProject = Schema.Struct({ name: Name, brief: LongText(8000), pat
 export const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: Schema.optional(LongText(8000)), path: Schema.optional(Schema.NullOr(FolderPath)), defaultAgentId: Schema.optional(Schema.NullOr(Id)) })
 const AgentTitle = Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(60))
 const AgentDescription = LongText(300)
-export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions) })
-export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions), archived: Schema.optional(Schema.Boolean), monthlyTokens: Schema.optional(TOKEN_LIMIT), replyTokens: Schema.optional(TOKEN_LIMIT) })
+export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions), memory: Schema.optional(MemoryMode), knowledge: Schema.optional(KnowledgeAccess) })
+export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions), archived: Schema.optional(Schema.Boolean), monthlyTokens: Schema.optional(TOKEN_LIMIT), replyTokens: Schema.optional(TOKEN_LIMIT), memory: Schema.optional(MemoryMode), knowledge: Schema.optional(KnowledgeAccess) })
 export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)) })
 export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
-export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000) })
-export const MemoryPatch = Schema.Struct({ state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)), essential: Schema.optional(Schema.Boolean) })
+export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000), agents: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) })
+export const MemoryPatch = Schema.Struct({ scope: Schema.optional(MemoryScope), state: Schema.optional(MemoryState), title: Schema.optional(LongText(80)), text: Schema.optional(Short(4000)), essential: Schema.optional(Schema.Boolean), agents: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) })
 // stdio: environment variables; http: headers. Values go to the system keychain.
 const McpEnv = Schema.Record(Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_-]*$/)), LongText(4000))
 export const NewMcpServer = Schema.Struct({
@@ -531,7 +584,13 @@ export const KeyInput = Schema.Struct({ value: LongText(500) }) // empty deletes
 // maxRunning: how many chats may have an agent working at once (the rest wait for a free slot); 0 = no limit.
 export const MAX_RUNNING_DEFAULT = 4
 export const MAX_RUNNING_CHOICES = [0, 1, 2, 3, 4, 6, 8, 12] as const
-export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number })
+// memoryApproval: what a new fact learned from a chat becomes. "review" (the default): it waits for the person;
+// "undo": it's kept at once, with a note in the chat and Undo. Corrections and skills always wait.
+export const MemoryApproval = Schema.Literals(["review", "undo"])
+export type MemoryApproval = typeof MemoryApproval.Type
+// memoryModel: the model that learns from chats (summary, memories, the map); "": automatic, each chat's provider's
+// small model (ZOREL_MEMORY_MODEL overrides the automatic one).
+export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number, memoryApproval: MemoryApproval, memoryModel: Schema.String })
 
 // Turns (send, events, interrupt, approve): see events.ts (RPC over WebSocket at /rpc).
 export const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
@@ -691,10 +750,16 @@ export const Api = HttpApi.make("zorel")
   .add(
     HttpApiGroup.make("memories")
       .add(HttpApiEndpoint.get("list", "/api/memories", { success: Schema.Array(Memory) }))
-      .add(HttpApiEndpoint.post("create", "/api/memories", { payload: NewMemory, success: Memory }))
-      .add(HttpApiEndpoint.patch("update", "/api/memories/:id", { params: idParam, payload: MemoryPatch, success: Memory, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.get("map", "/api/memories/map", { query: Schema.Struct({ scope: Schema.optional(Schema.String) }), success: MemoryMap }))
+      // A bridge between two maps ("related to"): recall in either crosses it, to that point and its own facts only.
+      .add(HttpApiEndpoint.post("connect", "/api/memories/map/links", { payload: Schema.Struct({ a: Id, b: Id }), error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
+      .add(HttpApiEndpoint.post("disconnect", "/api/memories/map/links/remove", { payload: Schema.Struct({ a: Id, b: Id }) }))
+      .add(HttpApiEndpoint.post("create", "/api/memories", { payload: NewMemory, success: Memory, error: HttpApiError.BadRequest }))
+      .add(HttpApiEndpoint.patch("update", "/api/memories/:id", { params: idParam, payload: MemoryPatch, success: Memory, error: [HttpApiError.NotFound, HttpApiError.BadRequest, HttpApiError.Conflict] }))
+      // Delete for good: only a forgotten one (the record that kept it from being learned again goes too).
+      .add(HttpApiEndpoint.delete("remove", "/api/memories/:id", { params: idParam, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
       .add(HttpApiEndpoint.get("versions", "/api/memories/:id/versions", { params: idParam, success: Schema.Array(MemoryVersion), error: HttpApiError.NotFound }))
-      .add(HttpApiEndpoint.post("restore", "/api/memories/:id/restore", { params: idParam, payload: Schema.Struct({ versionId: Id }), success: Memory, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("restore", "/api/memories/:id/restore", { params: idParam, payload: Schema.Struct({ versionId: Id }), success: Memory, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
   )
   .add(
     HttpApiGroup.make("tools")
@@ -736,11 +801,25 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.get("topTurns", "/api/usage/top", { query: { since: Schema.NumberFromString }, success: Schema.Array(TopTurn) }))
       .add(HttpApiEndpoint.get("preferences", "/api/preferences", { success: Preferences }))
       .add(HttpApiEndpoint.get("fileSkills", "/api/skills/files", { success: Schema.Array(FileSkill) }))
-      .add(HttpApiEndpoint.patch("pickFileSkill", "/api/skills/files", { payload: Schema.Struct({ path: Schema.String.check(Schema.isMaxLength(2000)), enabled: Schema.Boolean }), success: Schema.Array(FileSkill), error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.patch("pickFileSkill", "/api/skills/files", { payload: Schema.Struct({ path: Schema.String.check(Schema.isMaxLength(2000)), enabled: Schema.Boolean, agents: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) }), success: Schema.Array(FileSkill), error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
       // Pause everything: running turns stop, new ones wait queued, routines wait; false resumes.
       .add(HttpApiEndpoint.put("pause", "/api/pause", { payload: Schema.Struct({ paused: Schema.Boolean }) }))
       .add(HttpApiEndpoint.put("nativeSkills", "/api/preferences/native-skills", { payload: Schema.Struct({ enabled: Schema.Boolean }), success: Preferences }))
+      .add(HttpApiEndpoint.put("memoryApproval", "/api/preferences/memory-approval", { payload: Schema.Struct({ approval: MemoryApproval }), success: Preferences }))
+      .add(HttpApiEndpoint.put("memoryModel", "/api/preferences/memory-model", { payload: Schema.Struct({ model: Schema.Union([ModelId, Schema.Literal("")]) }), success: Preferences }))
       .add(HttpApiEndpoint.put("maxRunning", "/api/preferences/max-running", { payload: Schema.Struct({ value: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 32 })) }), success: Preferences }))
       .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))
+      // An agent's own computer (spec 009): the container engine found, and erasing an agent's computers.
+      .add(HttpApiEndpoint.get("computer", "/api/computer", { success: ComputerStatus }))
+      .add(HttpApiEndpoint.post("eraseComputer", "/api/computer/erase/:id", { params: idParam }))
+      // Computer apps (spec 008): agent-desktop's state, its in-app install, the macOS permission guide, open apps.
+      .add(HttpApiEndpoint.get("desktop", "/api/desktop", { success: DesktopStatus }))
+      .add(HttpApiEndpoint.post("installDesktop", "/api/desktop/install", { success: DesktopStatus, error: DesktopInstallFailed }))
+      .add(HttpApiEndpoint.post("desktopGuide", "/api/desktop/guide"))
+      .add(HttpApiEndpoint.get("desktopRunning", "/api/desktop/running", { success: Schema.Array(Schema.String) }))
+      // Telegram channel (spec 007): the bot token goes through setKey (TELEGRAM_BOT_TOKEN); pairing here.
+      .add(HttpApiEndpoint.get("telegram", "/api/channels/telegram", { success: TelegramStatus }))
+      .add(HttpApiEndpoint.post("telegramPair", "/api/channels/telegram/pair", { success: TelegramStatus }))
+      .add(HttpApiEndpoint.delete("telegramUnpair", "/api/channels/telegram/users", { success: TelegramStatus }))
   )

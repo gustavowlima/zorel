@@ -67,7 +67,7 @@ async function startServer() {
       [SESSION_ENV]: secret, // the server reads it and drops it from its env at once
       ZOREL_PARENT_PID: String(process.pid), // the server exits if this process dies without stopping it
       ZOREL_WEB_DIR: dev ? join(root, "apps/web/dist") : join(root, "web"),
-      ...(dev ? {} : { ZOREL_MIGRATIONS: join(root, "drizzle"), PLAYWRIGHT_BROWSERS_PATH: join(root, "browsers"), ZOREL_PLAYWRIGHT: join(root, "playwright-core") }) // the bundled Chromium
+      ...(dev ? {} : { ZOREL_MIGRATIONS: join(root, "drizzle"), PLAYWRIGHT_BROWSERS_PATH: join(root, "browsers"), ZOREL_PLAYWRIGHT: join(root, "playwright-core"), ZOREL_ONNX: join(root, "onnxruntime-node", "dist", "index.cjs") }) // the bundled Chromium; the local model's runtime
     },
     stdio: ["ignore", dev ? "inherit" : log, dev ? "inherit" : log]
   })

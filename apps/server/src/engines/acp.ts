@@ -16,7 +16,7 @@ import { homedir, tmpdir } from "node:os"
 import { basename, dirname, join, resolve } from "node:path"
 import type { Access } from "@zorel/contracts"
 import { Stream } from "effect"
-import type { EngineEvent, NativeStep } from "../engines.ts"
+import { commandStep, type EngineEvent, type NativeStep, STEP_DETAIL_MAX, STEP_TITLE_MAX } from "../engines.ts"
 import { approvalFor } from "./policy.ts"
 import { type Approver, type NativeApproval, withoutAppEnv } from "./session.ts"
 
@@ -172,7 +172,15 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
       pending.set(id, { resolve, reject })
       send({ id, method, params })
     })
-  const steps = new Map<string, { title: string; kind: NativeStep["kind"] }>()
+  // A command's title is its summary when the agent gave one that isn't the command itself; otherwise "Run git".
+  const labelOf = (u: Json): Pick<NativeStep, "title" | "detail" | "kind"> => {
+    const kind = kindOf(u.kind)
+    const title = String(u.title ?? "Tool")
+    if (kind !== "run") return { kind, title, detail: "" }
+    const command = typeof u.rawInput?.command === "string" ? u.rawInput.command : title
+    return command === title ? { kind, ...commandStep(command) } : { kind, title: title.slice(0, STEP_TITLE_MAX), detail: command.slice(0, STEP_DETAIL_MAX) }
+  }
+  const steps = new Map<string, Pick<NativeStep, "title" | "detail" | "kind">>()
   let refused = 0
 
   // The agent's messages: responses to ours, its notifications, and its own requests (permission).
@@ -208,12 +216,13 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
     if (m.method !== "session/update") return
     const u = m.params?.update ?? {}
     if (u.sessionUpdate === "agent_message_chunk" && u.content?.type === "text") push({ type: "text", delta: String(u.content.text ?? "") })
+    else if (u.sessionUpdate === "agent_thought_chunk") push({ type: "thinking" })
     else if (u.sessionUpdate === "tool_call") {
-      const step = { title: String(u.title ?? "Tool"), kind: kindOf(u.kind) }
+      const step = labelOf(u)
       steps.set(u.toolCallId, step)
       push({ type: "step", step: { id: u.toolCallId, ...step, files: (u.locations ?? []).map((l: Json) => String(l.path)), status: "running", output: "" } })
     } else if (u.sessionUpdate === "tool_call_update" && (u.status === "completed" || u.status === "failed")) {
-      const step = steps.get(u.toolCallId) ?? { title: String(u.title ?? "Tool"), kind: kindOf(u.kind) }
+      const step = steps.get(u.toolCallId) ?? labelOf(u)
       const text = (u.content ?? []).map((c: Json) => c?.content?.text ?? "").join("\n")
       push({ type: "step", step: { id: u.toolCallId, ...step, files: [], status: u.status === "completed" ? "ok" : "error", output: String(text).slice(0, 2000) } })
     }

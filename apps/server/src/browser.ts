@@ -23,7 +23,6 @@ import { DataDir } from "./chat.ts"
 import { Store } from "./db.ts"
 import { BROWSER_KEY, Secrets } from "./secrets.ts"
 
-export const MAX_SNAPSHOT_CHARS = 30_000
 // Where to find a browser, in order: Google Chrome, Microsoft Edge (on every Windows), then Playwright's Chromium
 // (bundled with the desktop app: PLAYWRIGHT_BROWSERS_PATH).
 const CHANNELS = ["chrome", "msedge", undefined] as const
@@ -446,7 +445,7 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
       const page = await page_()
       const snap = await page.ariaSnapshot({ mode: "ai" })
       const head = `Page: ${await pageLine(page)}\n`
-      return head + (snap.length > MAX_SNAPSHOT_CHARS ? `${snap.slice(0, MAX_SNAPSHOT_CHARS)}\n… (cut; scroll or narrow down)` : snap)
+      return head + snap // a long page is shortened for the agent like any large result (tools.ts compact)
     }
     case "browser_click": {
       const page = await page_()

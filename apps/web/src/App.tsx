@@ -6,7 +6,7 @@ import { useAtomValue } from "@effect/atom-react"
 import { t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { useEffect, useRef } from "react"
-import { agentsAtom, chatsAtom, modelsAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useStatuses } from "./client.ts"
+import { agentsAtom, chatsAtom, memoriesAtom, modelsAtom, mutations, pagesAtom, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading, useStatuses } from "./client.ts"
 import { AgentView } from "./features/agent.tsx"
 import { ChatView } from "./features/chat.tsx"
 import { HomeView } from "./features/home.tsx"
@@ -14,14 +14,15 @@ import { AgentsView } from "./features/agents.tsx"
 import { BuilderView } from "./features/builder.tsx"
 import { RoutinesView } from "./features/routines.tsx"
 import { InboxView } from "./features/inbox.tsx"
-import { KnowledgeView } from "./features/knowledge.tsx"
+import { MemoryView } from "./features/memory.tsx"
+import { PagesView } from "./features/pages.tsx"
 import { ProjectView } from "./features/project.tsx"
 import { SettingsView } from "./features/settings.tsx"
-import { Rail, Sidebar, TitleBar } from "./features/sidebar.tsx"
+import { SIDEBAR_FOLDED, SIDEBAR_WIDTH, Sidebar, TitleBar } from "./features/sidebar.tsx"
 import { UsageView } from "./features/usage.tsx"
 import { rememberModels } from "./labels.ts"
 import { go, type Route, useRoute, useSidebar } from "./state.ts"
-import { Button, CircleAlert, cx, EmptyState, Pause, SlideWidth, Spinner } from "@/ui"
+import { Button, CircleAlert, EmptyState, Pause, Spinner, Width } from "@/ui"
 import { useNotifications } from "./features/notify.tsx"
 import { Palette } from "./features/palette.tsx"
 
@@ -51,11 +52,17 @@ export function App() {
       {desktop && <TitleBar sidebarHidden={sidebar.hidden} />}
     <div className="flex min-h-0 flex-1">
       <Palette onToggleSidebar={sidebar.toggle} />
-      <Rail route={route} sidebar={sidebar} paused={paused} onPause={(p) => void setPause({ payload: { paused: p }, reactivityKeys: ["preferences"] })} />
-      {/* Closed, it keeps a 12px gutter so the card moves in the same spring (no jump). */}
-      <SlideWidth open={!sidebar.hidden} width={248} closed={12}>
-        <Sidebar route={route} activeProjectId={activeProjectId} />
-      </SlideWidth>
+      {/* One sidebar: open, or folded to its icons (⌘B); the card follows in the same spring. */}
+      <Width width={sidebar.hidden ? SIDEBAR_FOLDED : SIDEBAR_WIDTH} className="flex shrink-0 overflow-hidden">
+        <Sidebar
+          route={route}
+          activeProjectId={activeProjectId}
+          folded={sidebar.hidden}
+          onToggle={sidebar.toggle}
+          paused={paused}
+          onPause={(p) => void setPause({ payload: { paused: p }, reactivityKeys: ["preferences"] })}
+        />
+      </Width>
       {/* The content card: the whole height and the right edge of the window, rounded only toward the sidebar. */}
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-l-sheet border-l border-subtle bg-canvas">
@@ -101,7 +108,13 @@ function Screen({ route }: { route: Route }) {
     case "routines":
       return <RoutinesView />
     case "knowledge":
-      return <KnowledgeView selected={route.id} scope={route.scope} kind={route.kind} />
+      return <OldKnowledgeLink id={route.id} />
+    case "memory":
+      return <MemoryView key={route.tab ?? "all"} tab={route.tab} review={route.review} />
+    case "pages":
+      return <PagesView selected={route.id} />
+    case "skills":
+      return <SettingsView tab="skills" skill={{ selected: route.id, computer: route.computer }} />
     case "usage":
       return <UsageView key={route.agentId ?? "all"} agentId={route.agentId} />
     case "settings":
@@ -166,4 +179,19 @@ function useRefetchOnSettle() {
     if (changed.some((s) => s.state === "idle" || s.state === "failed")) invalidate(["chats", "memories", "usage", "approvals", "workspace"])
     else if (changed.some((s) => s.state === "waiting")) invalidate(["approvals"])
   }, [statuses, invalidate])
+}
+
+// A link from before Knowledge split (#/knowledge/<id>): once the lists are in, it goes where the item lives now.
+function OldKnowledgeLink({ id }: { id: string }) {
+  const memories = useReading(memoriesAtom)
+  const pages = useReading(pagesAtom)
+  const ready = !memories.loading && !pages.loading
+  useEffect(() => {
+    if (!ready) return
+    const m = memories.items.find((x) => x.id === id)
+    if (pages.items.some((p) => p.id === id)) go({ view: "pages", id })
+    else if (m?.kind === "skill") go({ view: "skills", id })
+    else go(m ? { view: "memory", ...(m.state === "pending" ? { review: true } : { tab: m.scope }) } : { view: "memory" })
+  }, [ready, id, memories.items, pages.items])
+  return null
 }

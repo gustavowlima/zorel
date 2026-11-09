@@ -6,6 +6,8 @@
 import type { Access, AgentPermissions, Grant, McpServer } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import type { ReactNode } from "react"
+import { ComputerApps } from "./computer-apps.tsx"
+import { OwnComputer } from "./own-computer.tsx"
 import { Globe, IconButton, MousePointerClick, Plug, Rows, Segmented, SettingRow, SquareTerminal, X } from "@/ui"
 
 // A server the agent was given nothing for follows the server's own mode (as on the server).
@@ -25,7 +27,8 @@ export function PermissionsEditor({
   value,
   onChange,
   servers,
-  showAlways = true
+  showAlways = true,
+  agentId
 }: {
   access: Access
   onAccess: (a: Access) => void
@@ -33,6 +36,7 @@ export function PermissionsEditor({
   onChange: (p: AgentPermissions) => void
   servers: ReadonlyArray<McpServer>
   showAlways?: boolean
+  agentId?: string | undefined // a saved agent: its computer can be erased
 }) {
   const alwaysLabel = (key: string) => {
     if (key === "browser") return t("agent.perm.alwaysBrowser")
@@ -81,6 +85,7 @@ export function PermissionsEditor({
             />
           }
         />
+        <OwnComputer value={value.computer ?? "none"} onChange={(computer) => onChange({ ...value, computer })} agentId={agentId} />
         {servers.map((s) => (
           <Power
             key={s.id}
@@ -99,6 +104,7 @@ export function PermissionsEditor({
         ))}
       </Rows>
       {servers.length === 0 && <p className="text-sm text-muted">{t("agent.perm.noConnectors")}</p>}
+      <ComputerApps value={value.apps ?? []} onChange={(apps) => onChange({ ...value, apps })} />
       {showAlways && value.always.length > 0 && (
         <section className="flex flex-col gap-2">
           <h3 className="text-sm font-medium text-muted">{t("agent.perm.always")}</h3>
