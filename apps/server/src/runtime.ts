@@ -728,7 +728,10 @@ export const makeRuntime = Effect.gen(function* () {
       const next = cron ? nextRun(cron) : { at: null }
       if ("error" in next) return textResult(`Not a cron pattern: ${next.error}`, true)
       const fields = { name, agent: target.name, prompt, cron, firstRun: next.at && new Date(next.at).toLocaleString() }
-      if (!(await ask(`${nameOf(agent)} proposes a routine: ${name}`, fields))) return textResult("The user declined. Don't propose it again unless they ask.", true)
+      // A routine's chat has no level of its own: it runs at the target's. Wider than the proposer's, the card says so.
+      const wider = target.id !== agent?.id && narrower(effectiveAccess({ access: null }, target), effectiveAccess(chat, agent)) !== effectiveAccess({ access: null }, target)
+      const title = `${nameOf(agent)} proposes a routine: ${name}${wider ? ` (run by ${target.name}, with more access than ${nameOf(agent)})` : ""}`
+      if (!(await ask(title, fields))) return textResult("The user declined. Don't propose it again unless they ask.", true)
       onWrite()
       const r = await run(createRoutineFor(store, target, { name, prompt, cron, webhook: false }).pipe(Effect.orDie))
       return textResult(`Created the routine ${r.name} (id ${r.id}); it runs in its own chat${r.nextRunAt ? `, first at ${new Date(r.nextRunAt).toISOString()}` : ""}.`)
