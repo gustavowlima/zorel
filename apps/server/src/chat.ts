@@ -4,11 +4,15 @@ import { type Agent, type Chat, type Memory, namedSkills, type Project } from "@
 import { Context, Data, Effect, Layer, Stream } from "effect"
 import { join } from "node:path"
 import {
-  buildTurn, CONSOLIDATION_SYSTEM, consolidationPrompt, type Mapped, mappedOf, namedPoints, spread, HISTORY_CHARS, KEEP_CHARS, MAX_AFTER, parseConsolidation, pinned, reviewed, scopesOf, similar, WINDOW, withinBudget
+  buildTurn, CONSOLIDATION_SYSTEM, LEAN_MEMORY_BUDGET, MEMORY_BUDGET, consolidationPrompt, type Mapped, mappedOf, namedPoints, spread, HISTORY_CHARS, KEEP_CHARS, MAX_AFTER, parseConsolidation, pinned, reviewed, scopesOf, similar, WINDOW, withinBudget
 } from "./context.ts"
 import { hasCredential, redact } from "./observability.ts"
 import { normalize, Store, type Repository } from "./db.ts"
 import { nearest, vectorsReady } from "./vectors.ts"
+
+// How much of the memory rides along pinned: the full budget until the local model is ready (without it, paraphrased
+// questions only reach unpinned facts by the map and words), half once it is.
+export const pinBudget = () => (vectorsReady() ? LEAN_MEMORY_BUDGET : MEMORY_BUDGET)
 import { knowledgeOf, learningOf, memoryModeOf } from "./team.ts"
 import { cheapModel, Engines, type EngineEvent, type TurnTools } from "./engines.ts"
 
@@ -159,7 +163,7 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
     const scopes = scopesOf(chat, agent?.id ?? null)
     const who = agent?.id ?? null // the skills restricted to other agents stay out of its prompt
     const active = yield* store.activeMemories(scopes)
-    const fixed = pinned(active)
+    const fixed = pinned(active, pinBudget())
     const messages = yield* store.messagesAfter(chat.id, chat.summaryUntil)
     const last = messages.at(-1)?.text ?? ""
     const query = messages.filter((m) => m.role === "user").slice(-QUERY_MESSAGES).map((m) => m.text).join("\n")

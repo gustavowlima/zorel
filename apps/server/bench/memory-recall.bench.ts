@@ -7,7 +7,7 @@ import { Effect } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { prepare, recall } from "../src/chat.ts"
+import { pinBudget, prepare, recall } from "../src/chat.ts"
 import { type Mapped, MEMORY_BUDGET, pinned, RETRIEVED, scopesOf } from "../src/context.ts"
 import { type Repository, Store } from "../src/db.ts"
 import { ensure, settled, startVectors } from "../src/vectors.ts"
@@ -184,7 +184,7 @@ const bench = (total: number, r: Repository, dataDir: string) =>
         // Pinned set is the same for every query (recency only): compute once, as prepare does.
     const active = yield* r.activeMemories(scopes)
     const [, activeMs] = yield* time(r.activeMemories(scopes))
-    const pin = pinned(active)
+    const pin = pinned(active, pinBudget())
     const pinnedIds = new Set(pin.map((m) => m.id))
     const pinnedChars = pin.reduce((n, m) => n + m.text.length + 3, 0)
 
@@ -243,7 +243,7 @@ const bench = (total: number, r: Repository, dataDir: string) =>
 
     return {
       total, inserted, noise, insertMs: needleMs + noiseMs, scopesSize: active.length,
-      activeMs, pinnedCount: pin.length, pinnedChars, needlesPinned: NEEDLES.filter((n) => pinnedIds.has(needleIds.get(n.text)!)).length,
+      activeMs, pinnedCount: pin.length, pinnedChars, budget: pinBudget(), needlesPinned: NEEDLES.filter((n) => pinnedIds.has(needleIds.get(n.text)!)).length,
       lat, searchLat, res, misses, reach, paraMisses, leaks, memChars, retrievedChars, promptChars, dedupe, crossOwnerSwallowed: bobsCopy === undefined, bobPinned,
       pinnedByScope: ['user', 'project', 'agent'].map((k) => pin.filter((m) => m.scope.startsWith(k)).length).join(' / '),
       activeByScope: ['user', 'project', 'agent'].map((k) => active.filter((m) => m.scope.startsWith(k)).length).join(' / ')
@@ -264,7 +264,7 @@ for (const total of sizes) {
 
 const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1)
 const Q = NEEDLES.length
-console.log(`\n## Part 1 — memory selection (budget ${MEMORY_BUDGET} chars, ${RETRIEVED} retrieved, ${Q} needles × 2 query types)\n`)
+console.log(`\n## Part 1 — memory selection (budget ${results[0]?.budget ?? MEMORY_BUDGET} chars, ${RETRIEVED} retrieved, ${Q} needles × 2 query types)\n`)
 console.log("| metric | " + results.map((r) => `${r.total}`).join(" | ") + " |")
 console.log("|---|" + results.map(() => "---").join("|") + "|")
 const row = (name: string, f: (r: (typeof results)[number]) => string) => console.log(`| ${name} | ${results.map(f).join(" | ")} |`)
@@ -274,7 +274,7 @@ row("active facts in chat scopes (user+project+agent)", (r) => `${r.scopesSize}`
 row("activeMemories() (loads all, every turn) ms", (r) => ms(r.activeMs))
 row("prepare() p50 / p95 / max ms", (r) => `${ms(pct(r.lat, 50))} / ${ms(pct(r.lat, 95))} / ${ms(Math.max(...r.lat))}`)
 row("searchMemories() p50 / p95 / max ms", (r) => `${ms(pct(r.searchLat, 50))} / ${ms(pct(r.searchLat, 95))} / ${ms(Math.max(...r.searchLat))}`)
-row("pinned memories / chars (budget respected?)", (r) => `${r.pinnedCount} / ${r.pinnedChars} (${r.pinnedChars <= MEMORY_BUDGET ? "yes" : "NO"})`)
+row("pinned memories / chars (budget respected?)", (r) => `${r.pinnedCount} / ${r.pinnedChars} (${r.pinnedChars <= r.budget ? "yes" : "NO"})`)
 row("active by scope user / project / agent", (r) => r.activeByScope)
 row("pinned by scope user / project / agent", (r) => r.pinnedByScope)
 row("needles that are pinned (recency)", (r) => `${r.needlesPinned}/${Q}`)
@@ -315,7 +315,7 @@ if (process.argv.includes("--check")) {
     ...(r.total === 1000 && r.reach.map + r.reach.words < FLOOR ? [`${r.total}: paraphrased reach without pin ${r.reach.map + r.reach.words}/${Q}, below ${FLOOR}`] : []),
     ...(r.leaks.length ? [`${r.total}: ${r.leaks.length} leaks`] : []),
     ...(r.bobPinned ? [`${r.total}: another owner's memories pinned`] : []),
-    ...(r.pinnedChars > MEMORY_BUDGET ? [`${r.total}: pinned ${r.pinnedChars} chars, over the budget`] : [])
+    ...(r.pinnedChars > r.budget ? [`${r.total}: pinned ${r.pinnedChars} chars, over the budget`] : [])
   ])
   if (broken.length) {
     console.error(`\nmemory check failed:\n${broken.map((b) => `- ${b}`).join("\n")}`)

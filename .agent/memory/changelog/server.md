@@ -104,3 +104,4 @@
 2026-11-08 | pinned pages carry their text (2,000 chars); page writes refused unless read and unchanged since; empty search says not to guess | ideas from Mastra Knowledge: a standing rule cost a tool call; blind whole-page overwrites
 2026-11-08 | map extraction and consolidation ask for everyday-word aliases and a plain category | paraphrase reach without pin 6/25 → 15/25 (Haiku filled aliases for 1/25 needles)
 2026-11-08 | recall adds a meaning source (local all-MiniLM-L6-v2, in-memory vectors) fused by RRF | spec 003: paraphrase reach without pin 15/25 → 25/25
+2026-11-08 | pins halve to 4,000 chars once the local model is ready (pinBudget) | spec 001 SC-005 unblocked by spec 003: memory layer ~2,190 → ~1,325 tokens/turn, reach 25/25
