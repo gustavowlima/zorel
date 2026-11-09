@@ -1,7 +1,7 @@
 // Phase 1 criteria (ARCHITECTURE §13): resend doesn't duplicate, interrupt keeps the partial,
 // kill -9 mid-turn becomes `interrupted` with the partial text on the next boot.
 import { expect, test } from "bun:test"
-import { type ChatEvent, ErrorCode } from "@zorel/contracts/events"
+import { type ChatEvent, type ChatStatus, ErrorCode } from "@zorel/contracts/events"
 import { Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -9,10 +9,10 @@ import { join } from "node:path"
 import { Accounts } from "./accounts.ts"
 import { Audit } from "./audit.ts"
 import { BrowserService } from "./browser.ts"
-import { DataDir } from "./chat.ts"
+import { consolidate, DataDir, mapEarlierFacts } from "./chat.ts"
 import { Store } from "./db.ts"
 import { Engines, type EngineEvent } from "./engines.ts"
-import { Runtime, runawayGuard } from "./runtime.ts"
+import { Runtime, replyTiming, runawayGuard } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
 import { Tools } from "./tools.ts"
 import { Pricing } from "./pricing.ts"
@@ -88,6 +88,53 @@ test("interrupting keeps the partial text and emits interrupted", () =>
     expect(msgs.at(-1)!.error).toBeTruthy()
   })))
 
+// The chat rests "failed" after a failed last turn (the sidebar says so until the next turn), idle after a good one.
+const Failing = Layer.succeed(Engines, { run: () => Stream.make<EngineEvent[]>({ type: "error", message: "upstream timed out" }) })
+const restingState = (engines: Layer.Layer<Engines>) =>
+  runWith(":memory:", engines, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const c = yield* collect(chat.id, (e) => e._tag === "status" && e.status.state !== "running")
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "hi" })
+    yield* c.done
+    const last = c.events.filter((e) => e._tag === "status").at(-1)
+    return last?._tag === "status" ? last.status.state : undefined
+  }))
+test("a failed last turn leaves the chat failed, a good one leaves it idle", async () => {
+  expect(await restingState(Failing)).toBe("failed")
+  expect(await restingState(Echo)).toBe("idle")
+})
+
+// Text, a step, more text, all inside one 100 ms batch: the step is saved where the text stood when it began, and the
+// live view gets the first words before the step (the chat lays the reply out in that order).
+const Interleaved = Layer.succeed(Engines, {
+  run: () => {
+    const step = { id: "s1", kind: "run" as const, title: "Run the tests", detail: "bun test", files: [] }
+    return Stream.make<EngineEvent[]>(
+      { type: "text", delta: "Let me check." },
+      { type: "step", step: { ...step, status: "running", output: "" } },
+      { type: "step", step: { ...step, status: "ok", output: "1 pass" } },
+      { type: "text", delta: " All green." },
+      { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }
+    )
+  }
+})
+test("a step keeps where the reply's text stood when it began, and goes out after the words before it", () =>
+  runWith(":memory:", Interleaved, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "hi" })
+    yield* c.done
+    const order = c.events.flatMap((e) => (e._tag === "text" ? [`text:${e.delta}`] : e._tag === "step-started" ? ["step"] : []))
+    expect(order).toEqual(["text:Let me check.", "step", "text: All green."])
+    const reply = (yield* store.messages(chat.id)).at(-1)!
+    expect(reply.text).toBe("Let me check. All green.")
+    expect(reply.steps.find((s) => s.tool === "run")?.at).toBe("Let me check.".length)
+  })))
+
 test("kill -9 mid-turn: on the next boot the turn becomes interrupted with the partial text", async () => {
   const dir = join(tmpdir(), `zorel-rt-${crypto.randomUUID()}`)
   mkdirSync(dir)
@@ -134,7 +181,7 @@ const Sessions = Layer.succeed(Engines, {
           return Stream.concat(Stream.make<EngineEvent[]>({ type: "text", delta: "part" }), Stream.never).pipe(
             Stream.onExit((exit) => Effect.sync(() => void (Exit.hasInterrupts(exit) && sessionLog.interrupts++)))
           )
-        return Stream.make<EngineEvent[]>({ type: "text", delta: "ok" }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+        return Stream.make<EngineEvent[]>({ type: "text", delta: "ok" }, { type: "done", usage: { inputTokens: input.prompt.includes("big") ? 70_000 : 1, outputTokens: 1 } })
       }
     }
   }
@@ -158,13 +205,29 @@ test("native session: opens once, later turns send only what is new, a stable-co
     expect(sessionLog.prompts[1]).toContain("second")
     expect(sessionLog.prompts[1]).not.toContain("first") // the session already has it
 
-    // A new user memory changes the stable context: new session, which gets the whole checkpoint.
-    yield* store.addMemory({ scope: "user", text: "Prefere respostas curtas", state: "active", origin: "manual", chatId: null })
+    // A new memory doesn't reopen it (that would resend the whole history): it comes as a note with the turn.
+    const m = (yield* store.addMemory({ scope: "user", text: "Prefere respostas curtas", state: "active", origin: "manual", chatId: null }))!
     yield* turnOnce("third")
+    expect(sessionLog.opened).toHaveLength(1)
+    expect(sessionLog.prompts[2]).toContain("- New: Prefere respostas curtas")
+    expect(sessionLog.prompts[2]).not.toContain("first")
+    // Forgotten again: nothing left to tell (the session never had it in its prompt).
+    yield* store.updateMemory(m.id, { state: "forgotten" })
+    yield* turnOnce("fourth")
+    expect(sessionLog.prompts[3]).not.toContain("Prefere")
+
+    // Grown past SESSION_MAX_CONTEXT: the next turn starts a fresh session with the checkpoint.
+    yield* turnOnce("big")
+    yield* turnOnce("fifth")
     expect(sessionLog.opened).toHaveLength(2)
-    expect(sessionLog.opened[1]).toContain("Prefere respostas curtas")
-    expect(sessionLog.prompts[2]).toContain("first")
-    expect(sessionLog.prompts[2]).toContain("third")
+    expect(sessionLog.prompts.at(-1)).toContain("first")
+
+    // A change of what the session is tied to (a pinned page, a new tool) reopens it too.
+    const page = yield* store.savePage({ scope: "user", title: "Style guide", body: "Short." })
+    yield* store.pinPage(page.id, true)
+    yield* turnOnce("sixth")
+    expect(sessionLog.opened).toHaveLength(3)
+    expect(sessionLog.opened[2]).toContain("Style guide")
   })))
 
 test("native session: interrupting stops the turn but keeps the session", () =>
@@ -184,6 +247,121 @@ test("native session: interrupting stops the turn but keeps the session", () =>
     yield* d.done
     expect(sessionLog.opened.length - before).toBe(1) // same session after the interrupt
     expect(sessionLog.prompts.at(-1)).not.toContain("slow") // the partial reply is already in the session
+  })))
+
+// Two agents, each with a session that can take a steer. A prompt ending in "slow" says "part @bee" and hangs (a turn to
+// stop); any other finishes with "ok:<who>". `steered` records what each session took mid-turn.
+const Steering = (steered: Array<[string, string]>, started: string[]) =>
+  Layer.succeed(Engines, {
+    run: () => Stream.make<EngineEvent[]>({ type: "error", message: "should use the session" }),
+    hasSession: () => true,
+    open: (o) => {
+      const who = o.system.includes("You are Bee") ? "bee" : "lee"
+      return {
+        alive: () => true,
+        close: Effect.void,
+        steer: async (text: string) => {
+          steered.push([who, text])
+          return true
+        },
+        turn: (input) => {
+          started.push(who)
+          if (input.prompt.trimEnd().endsWith("slow")) return Stream.concat(Stream.make<EngineEvent[]>({ type: "text", delta: "part @bee please" }), Stream.never) // only the last message counts: a new session's prompt carries the history
+          return Stream.make<EngineEvent[]>({ type: "text", delta: `ok:${who}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+        }
+      }
+    }
+  })
+
+const steerSetup = Effect.gen(function* () {
+  const store = yield* Store
+  const runtime = yield* Runtime
+  const lee = yield* store.createAgent({ projectId: null, name: "Lee", instructions: "I am Lee", model: "claude-cli/haiku" })
+  const bee = yield* store.createAgent({ projectId: null, name: "Bee", instructions: "I am Bee", model: "claude-cli/haiku" })
+  const chat = yield* store.createChat({ projectId: null, agentIds: [lee.id, bee.id], model: "claude-cli/haiku" })
+  return { store, runtime, lee, bee, chat }
+})
+// Starts Lee on a turn that hangs and waits until it has said something.
+const leeBusy = (chatId: string) =>
+  Effect.gen(function* () {
+    const runtime = yield* Runtime
+    const c = yield* collect(chatId, () => false)
+    yield* runtime.send({ chatId, clientId: crypto.randomUUID(), text: "@lee slow" })
+    while (!c.events.some((e) => e._tag === "text")) yield* Effect.sleep("10 millis")
+  })
+const waitFor = (ok: () => Effect.Effect<boolean, never, Store | Runtime>) =>
+  Effect.gen(function* () {
+    for (let i = 0; i < 300; i++) {
+      if (yield* ok()) return
+      yield* Effect.sleep("10 millis")
+    }
+    throw new Error("timed out")
+  })
+
+test("steer: a message for the agent that is working goes into its reply; the others it names are queued", () => {
+  const steered: Array<[string, string]> = []
+  return runWith(":memory:", Steering(steered, []), Effect.gen(function* () {
+    const { store, runtime, chat, bee } = yield* steerSetup
+    yield* leeBusy(chat.id)
+    // No one named: the lead (Lee) is the recipient, and Lee is the one running.
+    expect(yield* runtime.steer(chat.id, "keep going")).toEqual({ joined: true })
+    expect(steered).toEqual([["lee", "keep going"]])
+    expect((yield* store.messages(chat.id)).at(-1)).toMatchObject({ role: "user", text: "keep going" })
+    // Naming Bee too: it joins Lee's reply, and Bee gets a turn of its own, behind it.
+    expect(yield* runtime.steer(chat.id, "@lee @bee both")).toEqual({ joined: true })
+    expect(steered.at(-1)).toEqual(["lee", "@lee @bee both"])
+    expect((yield* store.activeTurns(chat.id)).filter((t) => t.state === "queued").map((t) => t.agentId)).toEqual([bee.id])
+    yield* runtime.interrupt(chat.id)
+  }))
+})
+
+test("steer: a message for another agent stops the running reply and runs that agent next, without chaining the stopped one", () => {
+  const steered: Array<[string, string]> = []
+  const started: string[] = []
+  return runWith(":memory:", Steering(steered, started), Effect.gen(function* () {
+    const { store, runtime, chat, bee } = yield* steerSetup
+    yield* leeBusy(chat.id)
+    expect(yield* runtime.steer(chat.id, "@bee do it")).toEqual({ joined: false })
+    expect(steered).toEqual([]) // Lee's reply wasn't the recipient's: nothing went into it
+    yield* waitFor(() => Effect.map(store.messages(chat.id), (m) => m.some((x) => x.text === "ok:bee")))
+    const msgs = yield* store.messages(chat.id)
+    // The stopped reply is saved before the message, then Bee answers.
+    expect(msgs.map((m) => m.text)).toEqual(["@lee slow", "part @bee please", "@bee do it", "ok:bee"])
+    // Lee's partial text names Bee, but a stopped reply calls no one: Bee ran once, for the person.
+    expect(started).toEqual(["lee", "bee"])
+    const beeTurns = (yield* store.turnsIn("completed")).filter((t) => t.agentId === bee.id)
+    expect(beeTurns.map((t) => t.depth)).toEqual([0])
+  }))
+})
+
+test("send now: a message of yours runs before the hand-offs already queued", () => {
+  const started: string[] = []
+  return runWith(":memory:", Steering([], started), Effect.gen(function* () {
+    const { store, runtime, chat, lee, bee } = yield* steerSetup
+    yield* leeBusy(chat.id)
+    // Three replies the agents handed to one another are waiting (depth > 0).
+    for (let i = 0; i < 3; i++) yield* store.enqueueTurn({ chatId: chat.id, agentId: lee.id, model: "claude-cli/haiku", clientId: null, depth: 1 })
+    expect(yield* runtime.steer(chat.id, "@bee now")).toEqual({ joined: false })
+    yield* waitFor(() => Effect.map(store.turnsIn("queued"), (q) => q.length === 0))
+    yield* waitFor(() => Effect.map(store.turnsIn("completed"), (c) => c.length === 4))
+    expect(started.slice(1)).toEqual(["bee", "lee", "lee", "lee"]) // after the stopped one: yours, then the chain
+  }))
+})
+
+test("nextQueued: your messages go first, each group in order; a wrap-up or a task result waits behind what it awaits", () =>
+  runWith(":memory:", Echo, Effect.gen(function* () {
+    const store = yield* Store
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const add = (depth: number) => store.enqueueTurn({ chatId: chat.id, agentId: null, model: "x/y", clientId: null, depth })
+    const chained = [yield* add(2), yield* add(1)]
+    const mine = [yield* add(0), yield* add(0)]
+    const order: string[] = []
+    for (let i = 0; i < 4; i++) {
+      const t = (yield* store.nextQueued(chat.id))!
+      order.push(t.id)
+      yield* store.finishTurn(t.id, { state: "completed", error: null, messageId: null })
+    }
+    expect(order).toEqual([mine[0]!.id, mine[1]!.id, chained[0]!.id, chained[1]!.id])
   })))
 
 test("accounts: the chat's account reaches the session as its login folder; switching accounts opens a new session", () =>
@@ -444,8 +622,8 @@ test("workspace: the agent works in the project folder; the turn records what it
       prompts.push(t.messages.map((m) => m.text).join("\n"))
       if (t.messages.length === 1) writeFileSync(join(t.cwd, "a.ts"), "export const a = 2\n")
       return Stream.make<EngineEvent[]>(
-        { type: "step", step: { id: "s1", kind: "edit", title: "Edit a.ts", files: ["a.ts"], status: "running", output: "" } },
-        { type: "step", step: { id: "s1", kind: "edit", title: "Edit a.ts", files: ["a.ts"], status: "ok", output: "" } },
+        { type: "step", step: { id: "s1", kind: "edit", title: "Edit a.ts", detail: "a.ts", files: ["a.ts"], status: "running", output: "" } },
+        { type: "step", step: { id: "s1", kind: "edit", title: "Edit a.ts", detail: "a.ts", files: ["a.ts"], status: "ok", output: "" } },
         { type: "text", delta: `cwd=${t.cwd}` },
         { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }
       )
@@ -460,6 +638,10 @@ test("workspace: the agent works in the project folder; the turn records what it
     const reply = (yield* store.messages(chat.id)).at(-1)!
     expect(reply.text).toBe(`cwd=${folder}`)
     expect(reply.changes).toEqual([{ path: "a.ts", added: 1, removed: 1, status: "modified" }])
+    // The saved step keeps the live list's summary and detail (the transcript keeps `args`), so a finished reply shows the same lines.
+    expect(reply.steps).toHaveLength(2)
+    expect(reply.steps[0]).toMatchObject({ tool: "edit", args: "a.ts", status: "ok", result: "", title: "Edit a.ts", detail: "a.ts" })
+    expect(reply.steps[1]).toMatchObject({ tool: "reply", title: "Replied" }) // the reply's own time closes the list
     const turn = (yield* store.turnRow(reply.turnId!))!
     expect(turn.treeBefore && turn.treeAfter && turn.treeBefore !== turn.treeAfter).toBe(true)
 
@@ -467,6 +649,67 @@ test("workspace: the agent works in the project folder; the turn records what it
     expect(prompts[1]).toContain("[Done in this turn: edited a.ts (+1 −1)]")
     rmSync(folder, { recursive: true, force: true })
   }))
+})
+
+test("timing steps: Thought before the tools, Replied after, both for the reader only (not the transcript)", () => {
+  const prompts: string[] = []
+  const thinking = Layer.succeed(Engines, {
+    run: (t) => {
+      prompts.push(t.messages.map((m) => m.text).join("\n"))
+      return Stream.make<EngineEvent[]>(
+        { type: "thinking" },
+        { type: "step", step: { id: "r1", kind: "run", title: "Check git status", detail: "git status", files: [], status: "running", output: "" } },
+        { type: "step", step: { id: "r1", kind: "run", title: "Check git status", detail: "git status", files: [], status: "ok", output: "clean" } },
+        { type: "text", delta: "all clean" },
+        { type: "done", usage: { inputTokens: 1, outputTokens: 1 } }
+      )
+    }
+  })
+  return runWith(":memory:", thinking, Effect.gen(function* () {
+    const store = yield* Store
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/opus" })
+    yield* sendAndWait(chat.id, "status?")
+    const reply = (yield* store.messages(chat.id)).at(-1)!
+    expect(reply.steps.map((s) => s.tool)).toEqual(["thought", "run", "reply"])
+    expect(reply.steps[0]).toMatchObject({ title: "Thought", detail: "Claude Code · Opus", status: "ok" })
+    expect(typeof reply.steps[0]!.ms).toBe("number")
+    expect(reply.steps[1]).toMatchObject({ args: "git status", title: "Check git status", detail: "git status" })
+    expect(reply.steps[2]).toMatchObject({ title: "Replied", detail: "Claude Code · Opus" })
+    yield* sendAndWait(chat.id, "again")
+    // The next prompt remembers the command, not the two timing steps.
+    expect(prompts[1]).toContain("ran `git status` (ok)")
+    expect(prompts[1]).not.toContain("Thought")
+    expect(prompts[1]).not.toContain("Replied")
+  }))
+})
+
+test("timing steps: no Thought when the engine showed no reasoning; no Replied without an answer", () => {
+  const t = replyTiming()
+  expect(t.steps([], "Codex", 10)).toEqual([])
+  t.text(100)
+  t.text(1600)
+  expect(t.steps([], "Codex", 2000)).toEqual([{ tool: "reply", args: "", status: "ok", result: "", title: "Replied", detail: "Codex", ms: 1500 }])
+  // Reasoning runs from its first sign to the next text or step; two spans add up.
+  const u = replyTiming()
+  u.thinking(0)
+  u.thinking(400)
+  u.step(1000)
+  u.thinking(5000)
+  u.text(5300)
+  const steps = u.steps([], "Codex", 5400)
+  expect(steps.map((s) => s.tool)).toEqual(["thought", "reply"])
+  expect(steps[0]!.ms).toBe(1300)
+  // Writing is timed on its own: text, a 5 s tool, text again adds up the writing, not the tool.
+  const w = replyTiming()
+  w.text(0)
+  w.text(1000)
+  w.step(1100) // the tool starts
+  w.text(6100) // it ended; the agent writes again
+  w.text(7100)
+  expect(w.steps([], "Codex", 7200).find((s) => s.tool === "reply")!.ms).toBe(2000)
+  // A failover starts the reply over.
+  u.reset()
+  expect(u.steps([], "Codex", 9000)).toEqual([])
 })
 
 test("runaway guard: the same step and result 4 times is a loop; 6 failures in a row is stuck", () => {
@@ -483,6 +726,37 @@ test("runaway guard: the same step and result 4 times is a loop; 6 failures in a
   expect(h({ kind: "run", title: "t5", status: "error", output: "" })).toContain("6 steps")
 })
 
+test("runaway guard: successful edits of one file are progress, failed ones and repeated commands are not", () => {
+  const edit = (status: string, output = "The file a.ts has been updated successfully.") => ({ kind: "edit", title: "Edit a.ts", detail: "a.ts", status, output })
+  const run = (output = "same") => ({ kind: "run", title: "Check git status", detail: "git status", status: "ok", output })
+  // The same successful edit, many times: the file changes each time, so it never trips.
+  const a = runawayGuard()
+  for (let i = 0; i < 12; i++) expect(a(edit("ok"))).toBeUndefined()
+  // The same failed edit does.
+  const b = runawayGuard()
+  for (let i = 0; i < 3; i++) expect(b(edit("error", "old_string not found"))).toBeUndefined()
+  expect(b(edit("error", "old_string not found"))).toContain("4 times")
+  // The same command with the same output does.
+  const c = runawayGuard()
+  for (let i = 0; i < 3; i++) expect(c(run())).toBeUndefined()
+  expect(c(run())).toContain("4 times")
+  // An edit between identical commands resets the count.
+  const d = runawayGuard()
+  for (let i = 0; i < 3; i++) expect(d(run())).toBeUndefined()
+  expect(d(edit("ok"))).toBeUndefined()
+  for (let i = 0; i < 3; i++) expect(d(run())).toBeUndefined()
+  expect(d(run())).toContain("4 times")
+  // A refused edit is not progress: an agent that keeps asking for what was denied is stopped.
+  const f = runawayGuard()
+  for (let i = 0; i < 3; i++) expect(f(edit("refused", "The user denied this."))).toBeUndefined()
+  expect(f(edit("refused", "The user denied this."))).toContain("4 times")
+  // A successful edit also clears the failure streak.
+  const e = runawayGuard()
+  for (let i = 0; i < 5; i++) expect(e({ kind: "run", title: `t${i}`, status: "error", output: "" })).toBeUndefined()
+  expect(e(edit("ok"))).toBeUndefined()
+  expect(e({ kind: "run", title: "t6", status: "error", output: "" })).toBeUndefined()
+})
+
 // zorel_start_task: the teammate works in its own chat and its answer comes back to the asking chat, where the
 // asking agent takes the next turn.
 const Delegating = Layer.succeed(Engines, {
@@ -491,8 +765,10 @@ const Delegating = Layer.succeed(Engines, {
       Effect.promise(async () => {
         const last = t.messages.at(-1)!.text
         let text = "thanks, got it"
-        if (last.startsWith("Task from")) text = "the answer is 42"
-        else if (last === "delegate") {
+        if (last.startsWith("Task from")) {
+          await new Promise((r) => setTimeout(r, 100)) // long enough for the asking chat to show it waits
+          text = "the answer is 42"
+        } else if (last === "delegate") {
           const r = await t.tools!.call("zorel_start_task", { agent: "@helper", task: "work out the answer" })
           text = r.isError ? `refused: ${JSON.stringify(r.content)}` : "started"
         }
@@ -506,8 +782,11 @@ test("start_task: the teammate's answer comes back to the asking chat and the as
     const store = yield* Store
     const runtime = yield* Runtime
     const lead = yield* store.createAgent({ projectId: null, name: "Lead", instructions: "", model: "x/y" })
-    yield* store.createAgent({ projectId: null, name: "Helper", instructions: "", model: "x/y" })
+    const helper = yield* store.createAgent({ projectId: null, name: "Helper", instructions: "", model: "x/y" })
     const chat = yield* store.createChat({ projectId: null, agentIds: [lead.id], model: "x/y", access: "workspace" })
+    const seen: ChatStatus[] = []
+    yield* Effect.forkDetach(Stream.runForEach(runtime.subscribeStatus, (s) => Effect.sync(() => s.chatId === chat.id && seen.push(s))))
+    yield* Effect.sleep("10 millis")
     yield* runtime.send({ chatId: chat.id, clientId: "task-1", text: "delegate" })
     let msgs = yield* store.messages(chat.id)
     for (let i = 0; i < 300 && msgs.length < 4; i++) {
@@ -517,6 +796,9 @@ test("start_task: the teammate's answer comes back to the asking chat and the as
     expect(msgs.map((m) => m.text.split("\n")[0])).toEqual(["delegate", "started", "the answer is 42", "thanks, got it"])
     expect(msgs[2]!.text).toContain("[Open the task](#/chat/")
     expect(yield* store.openTasks()).toEqual([]) // reported once
+    // While the task ran, the chat said the lead waits for the helper; once it reported back, nobody waits.
+    expect(seen.some((s) => s.waits?.[0]?.agentId === lead.id && s.waits[0].on[0] === helper.id && s.waits[0].taskChatId !== null)).toBe(true)
+    expect(seen.at(-1)?.waits).toEqual([])
     expect((yield* store.chats()).find((c) => c.id !== chat.id)?.access).toBe("workspace") // the chat's level carries over
     const runs = yield* store.agentRuns(lead.id) // its sessions' runs, newest first: the wrap-up, then the delegation
     expect(runs.map((r) => [r.chatId, r.state, r.preview])).toEqual([[chat.id, "completed", "thanks, got it"], [chat.id, "completed", "started"]])
@@ -749,3 +1031,113 @@ test("an archived agent answers no one in its chats", () =>
     const [reply] = yield* replies(chat.id)
     expect(reply?.agentId).toBeNull() // the chat's model answers, not the archived agent
   })))
+
+// Quiet learning (consolidate "quiet"): a short chat learns on the provider's small model, leaves its summary and
+// window alone, and never takes a message it already learned from as evidence again.
+const learnerModels: string[] = []
+const Learner = Layer.succeed(Engines, {
+  run: (t) => {
+    learnerModels.push(t.model)
+    const text = t.messages.at(-1)!.text
+    const tabs = /#(\d+) \[user\]( \(learned\))? I prefer tabs/.exec(text)
+    const fact = tabs?.[2] ? "Uses tabs in every project" : "Prefers tabs over spaces" // a second try on a learned message
+    const reply = { summary: "", memories: tabs ? [{ scope: "user", text: fact, keywords: "indent", evidence: [Number(tabs[1])] }] : [] }
+    return Stream.make<EngineEvent[]>({ type: "text", delta: JSON.stringify(reply) }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+  }
+})
+
+test("quiet learning: a short chat learns on the small model; the summary stays; a learned message is never evidence again", () =>
+  Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const store = yield* Store
+        const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/sonnet" })
+        const say = (role: "user" | "assistant", text: string) =>
+          Effect.andThen(Effect.sleep("2 millis"), store.addMessage({ chatId: chat.id, role, agentId: null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 }))
+        yield* say("user", "I prefer tabs over spaces")
+        yield* say("assistant", "Noted.")
+        expect(yield* consolidate(chat.id, "quiet")).toMatchObject({ learnedUntil: 0 }) // under QUIET_MIN: no call
+        expect(learnerModels).toEqual([])
+        yield* say("user", "thanks")
+        const after = yield* consolidate(chat.id, "quiet")
+        expect(learnerModels).toEqual(["claude-cli/haiku"])
+        expect(after.summary).toBe("")
+        expect(after.summaryUntil).toBe(0)
+        expect(after.learnedUntil).toBeGreaterThan(0)
+        expect((yield* store.memories()).map((m) => [m.text, m.state])).toEqual([["Prefers tabs over spaces", "pending"]])
+        yield* consolidate(chat.id, "quiet") // nothing new since: no call
+        expect(learnerModels.length).toBe(1)
+        yield* say("assistant", "Anything else?")
+        yield* say("user", "no")
+        yield* say("assistant", "Bye.")
+        yield* consolidate(chat.id, "quiet") // reads the tabs message again, as context only
+        expect(learnerModels.length).toBe(2)
+        expect((yield* store.memories()).map((m) => m.text)).toEqual(["Prefers tabs over spaces"])
+        // A model chosen in Settings learns instead of the automatic one.
+        yield* store.setPreference("memoryModel", "anthropic/claude-haiku-5-5")
+        for (const t of ["more", "words", "here"]) yield* say(t === "words" ? "assistant" : "user", t)
+        yield* consolidate(chat.id, "quiet")
+        expect(learnerModels.at(-1)).toBe("anthropic/claude-haiku-5-5")
+      })
+    ).pipe(Effect.provide(layer(":memory:", Learner)))
+  ))
+
+// Tools offered only when useful: reading ones wait for something to read; writing ones stay.
+const offered: string[][] = []
+const ToolLister = Layer.succeed(Engines, {
+  run: (t) => {
+    offered.push((t.tools?.defs ?? []).map((d) => d.name))
+    return Stream.make<EngineEvent[]>({ type: "text", delta: "ok" }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+  }
+})
+
+test("reading tools come once there's something to read: pages, skills, memories past the prompt", () =>
+  runWith(":memory:", ToolLister, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const turnOnce = (text: string) =>
+      Effect.gen(function* () {
+        const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+        yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text })
+        yield* c.done
+      })
+    yield* turnOnce("hi")
+    const first = offered.at(-1)!
+    for (const idle of ["zorel_knowledge_search", "zorel_knowledge_read", "zorel_read_skill", "zorel_search_memories"]) expect(first).not.toContain(idle)
+    for (const kept of ["zorel_knowledge_write", "zorel_propose_skill"]) expect(first).toContain(kept)
+    yield* store.savePage({ scope: "user", title: "Notes", body: "x" })
+    yield* store.addMemory({ scope: "user", kind: "skill", title: "Release", text: "1. tag", state: "active", origin: "manual", chatId: null })
+    yield* turnOnce("again")
+    for (const now of ["zorel_knowledge_search", "zorel_knowledge_read", "zorel_read_skill"]) expect(offered.at(-1)!).toContain(now)
+  })))
+
+// The facts kept before the map existed are filed on it in batches, once (a cursor keeps them from being read again).
+let mapCalls = 0
+const Mapper = Layer.succeed(Engines, {
+  run: (t) => {
+    mapCalls++
+    const n = (t.messages.at(-1)!.text.match(/^#\d+/gm) ?? []).length
+    const items = Array.from({ length: n }, (_, i) => ({ n: i + 1, entities: [{ name: "Deploy", type: "subject" }, { name: "Vercel", type: "concept" }], relations: [["Deploy", "goes to", "Vercel"]] }))
+    return Stream.make<EngineEvent[]>({ type: "text", delta: `ok ${JSON.stringify({ items })}` }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+  }
+})
+
+test("earlier facts go on the map once, on the small model", () =>
+  Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const store = yield* Store
+        const p = yield* store.createProject({ name: "Zorel", brief: "" })
+        yield* store.createChat({ projectId: p.id, agentIds: [], model: "claude-cli/sonnet" })
+        for (const text of ["Deploys go to Vercel", "Deploys happen on Fridays", "Previews deploy on Vercel"]) yield* store.addMemory({ scope: `project:${p.id}`, text, state: "active", origin: "manual", chatId: null })
+        yield* Effect.sleep("2 millis")
+        expect(yield* mapEarlierFacts()).toBe(3)
+        expect(mapCalls).toBe(1) // one batch
+        const map = yield* store.entitiesIn([`project:${p.id}`])
+        expect(map.map((e) => [e.name, Number(e.facts)]).sort()).toEqual([["Deploy", 3], ["Vercel", 3], ["Zorel", 3]])
+        expect(yield* mapEarlierFacts()).toBe(0) // nothing left: no call
+        expect(mapCalls).toBe(1)
+      })
+    ).pipe(Effect.provide(layer(":memory:", Mapper)))
+  ))

@@ -8,7 +8,13 @@ Parts of this project derive from:
   (apps/server/src/engines.ts), fixtures in apps/server/src/fixtures/, the per-turn context
   model with summary + memories + proposed skills and @mention routing with a handoff limit
   (apps/server/src/context.ts, chat.ts), and tool classification and the per-turn MCP gateway
-  (apps/server/src/tools.ts).
+  (apps/server/src/tools.ts). Computer apps (apps/server/src/desktop-apps.ts): the numbered window
+  list, picking a target by number or text, and the risky click and key rules, from src/core/apps.ts. An agent's own
+  computer (apps/server/src/computer.ts): folder checks, container arguments, output clipping and the
+  per-install name prefix, from src/core/computer.ts.
+
+- agent-desktop (https://github.com/vercel-labs/agent-desktop), Apache License 2.0, Copyright Vercel.
+  Not bundled: downloaded from its official release when the person installs it (apps/server/src/desktop.ts).
 
 - Lobe Icons (https://github.com/lobehub/lobe-icons), MIT License, Copyright LobeHub.
 - Open Bot Avatar (https://github.com/DominikScholz/open-bot-avatar), MIT License, Copyright Dominik Scholz: the agents' avatars.

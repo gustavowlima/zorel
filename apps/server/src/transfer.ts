@@ -7,6 +7,7 @@ import { Database } from "bun:sqlite"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative, resolve, sep } from "node:path"
+import { PAGES_DIR } from "./page-files.ts"
 
 export const FORMAT = 1
 export const PENDING = "import-pending.tar.gz"
@@ -104,6 +105,8 @@ export async function applyPendingImport(dataDir: string, dbPath: string): Promi
     mkdirSync(keep, { recursive: true })
     for (const f of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) if (existsSync(f)) renameSync(f, join(keep, f.split(sep).pop()!))
     if (existsSync(join(dataDir, "attachments"))) renameSync(join(dataDir, "attachments"), join(keep, "attachments"))
+    // The pages' files go with the old database; the imported one writes its own on start (syncPages).
+    if (existsSync(join(dataDir, PAGES_DIR))) renameSync(join(dataDir, PAGES_DIR), join(keep, PAGES_DIR))
     renameSync(join(dir, "zorel.db"), dbPath)
     if (existsSync(join(dir, "attachments"))) renameSync(join(dir, "attachments"), join(dataDir, "attachments"))
     const db = new Database(dbPath)

@@ -1,5 +1,5 @@
 # project
-updated: 2026-11-04
+updated: 2026-11-08
 
 ## summary
 
@@ -31,7 +31,7 @@ using subscriptions (official CLI: Claude Code, Codex, ACP) or API token (effect
 - usage (D15, ARCHITECTURE 10.2, phase 2c): turns data (tokens incl. cache, estimated cost via models.dev catalog, latencies, failover); limit windows per account (Claude rate_limit_event, Codex account/rateLimits/read) read 1 at a time, 4 min cache, backoff 5/10/20/40 min up to 1 h; alerts at 80%; budget at 100% asks for confirmation (does not block silently)
 - architecture validation (2026-11-03): Claude Agent SDK confirmed (setModel/interrupt only in streaming input; rewindFiles; switching model resets cache); harness decided by the account, not by the model name; new projects.path; desktop with server in background in phase 7; terms warning for Claude subscription via Agent SDK
 - decisions 2026-11-03: D16 own project (no fork; copy packages/effect-acp and effect-codex-app-server with NOTICE); D17 doors open for hosting (Actor, Drizzle+@effect/sql, Secrets, Workspace, memory owner/audience, versioned agent, Engine); D9 Drizzle 1.0 rc pinned on top of @effect/sql-sqlite-bun (Postgres later via @effect/sql-pg; FTS5 in plain sql; API contract separate from the tables)
-- purpose: code now; hosted + automation later (phase 8)
+- purpose (revised 2026-11-08, user decision): general agent platform like Tucano/OpenBot, any kind of agent and work (research, writing, operations, connectors, routines), code is one capability; hosted + automation later (phase 8). Replaces "code now"
 - D18 knowledge base (ARCHITECTURE 8.2, phase 3b): per-project/global collections linked to agents; sources upload/incremental local folder/URL; hybrid search FTS5+vectors with RRF; citations; embeddings Ollama or API via effect/ai EmbeddingModel; tool mode (zero.knowledge_search) or auto
 - local database: libSQL (@effect/sql-libsql) with native vectors (F32_BLOB, libsql_vector_idx, vector_top_k); validate in the phase 1 spike (native in Bun, FTS5); plan B bun:sqlite + brute force
 - memory management (8.1): pin/exclude from context, versions, visible retention, export/import, turn off per agent/project; context inspector "what the model saw" per answer
@@ -54,3 +54,6 @@ using subscriptions (official CLI: Claude Code, Codex, ACP) or API token (effect
 - alias in the server: `#server/*` (package.json "imports"), not tsconfig `paths`: the desktop bundles the server and only imports is resolved by the server's own package.json
 - commits in English from 2026-11-03 (user request); code comments in English too; earlier history stays in Portuguese
 - renamed Zero → Zorel (2026-11-04): packages @zorel/*, env ZOREL_*, tools zorel_*, MCP gateway "zorel", keychain dev.zorel.app, appId dev.zorel.app. Legacy kept: data in ~/.zero/zero.db keeps being used if it exists (not moved: the database stores absolute paths); keychain reads dev.zero.app and copies; localStorage zero.* copied to zorel.*; zero-* backups still pruned; import accepts "zero.agent". The repository folder stays dev/zero
+- spec-kit (github/spec-kit, CLI 0.12.4, 2026-11-08): `specify init --here --integration claude` adds `.claude/skills/speckit-*` and `.specify/` (scripts, templates, constitution). Per project only: the skills call `.specify/...` paths, so a global copy in ~/.claude/skills would break. CLI global via `uv tool install specify-cli`
+- goal (2026-11-08, user): make what exists robust, and be cheaper and more efficient than using Claude Code/Codex directly. Baseline 2026-11-08: raw `claude -p` trivial turn with the user's global setup = 37.8k input tokens (25.7k cache write), Zorel smallest turn 14.6k; Zorel real turns (114, Nov 4-5) median 368k input per turn summed over steps, 96.4% cache hit, median uncached 20k
+- vs CLI (2026-11-08, bench/vs-cli.bench.ts, Sonnet, 5 turns): Zorel 129k input / $0.067 / 19 s vs Claude Code bare 224k / $0.071 / 31 s vs as installed 611k / $0.230 / 53 s; all remember across sessions. Zorel's lower cache share is a one-time prefix write per project (~10k tokens) in the first turn, not a per-turn leak; amortized in real use.

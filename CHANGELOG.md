@@ -4,6 +4,37 @@ What changed in each version of Zorel. The format follows [Keep a Changelog](htt
 and versions follow [Semantic Versioning](https://semver.org) (while in 0.x, a minor version may change things). Each
 section is also the release's notes on GitHub.
 
+## [0.5.0] - 2026-11-09
+
+### Added
+
+- **Memory that works for you.** Agents keep facts while they reply (Keep, Move, Undo right in the chat) and file
+  them on a **map** of what they're about; each turn recalls by association, by meaning (a local model, no cloud)
+  and from the project's past chats. On LongMemEval-S retrieval, hit@5 goes from 0 to 0.940.
+- **Memory** has three views (Facts, Map, Pages) under one header: tabs per owner, a review of new and old facts,
+  pinned facts, and an Undo receipt when a fact is forgotten or moved.
+- **An agent's own Linux computer** (Podman first, Docker as fallback): it installs and runs anything in its own
+  container, with the project folder lent to it.
+- **Desktop apps** (agent-desktop), an optional install from inside Zorel: agents read and use your apps through
+  the accessibility tree.
+- **Telegram channel:** talk to your agents from Telegram after pairing with `/pair`.
+- **Twelve connectors beyond code**, and MCP tools loaded only when an agent needs them.
+
+### Changed
+
+- **One sidebar:** New chat and Search beside the logo, then Needs you, Agents, Routines and Memory; Skills moved to
+  Settings.
+- A reply reads as it happened: words and groups of steps in order, each turn's work a tree with a one-line summary.
+- Every screen shares one rhythm (header, column, sections), Pages included.
+- **Processes** shows only what a chat's own terminals and sessions started, plus Zorel itself.
+- Cheaper turns: large tool results are shortened (the rest read on demand), engines keep a stable prompt prefix,
+  and a fact said again in other words is merged.
+- Settings: the memory model sits under Advanced; the routing model choice is gone (automatic covers it).
+
+### Security
+
+- Text from tools, pages and recalled memory is marked as outside data: it can't give the agent orders.
+
 ## [0.4.0] - 2026-11-05
 
 ### Added
@@ -106,6 +137,9 @@ The first public version.
 - The local API requires a per-launch session secret; agents can't call it.
 - Imported workspaces arrive with routines and connectors off and full access capped.
 
+[0.5.0]: https://github.com/gustavowlima/zorel/releases/tag/v0.5.0
+[0.4.0]: https://github.com/gustavowlima/zorel/releases/tag/v0.4.0
+[0.3.0]: https://github.com/gustavowlima/zorel/releases/tag/v0.3.0
 [0.2.2]: https://github.com/gustavowlima/zorel/releases/tag/v0.2.2
 [0.2.1]: https://github.com/gustavowlima/zorel/releases/tag/v0.2.1
 [0.2.0]: https://github.com/gustavowlima/zorel/releases/tag/v0.2.0

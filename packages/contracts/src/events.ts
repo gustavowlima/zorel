@@ -62,7 +62,8 @@ export const WorkStep = Schema.Struct({
   id: Id,
   turnId: Id,
   kind: StepKind,
-  title: Schema.String, // short and readable: "Read context.ts", "Run bun test apps/server"
+  title: Schema.String, // a short summary: "Check git status", "Read context.ts"
+  detail: Schema.String, // what the summary stands for (the command, the path, the URL); "" when the title says it all
   tool: Schema.NullOr(Schema.String), // MCP or native tool name
   files: Schema.Array(Schema.String),
   status: Schema.Literals(["running", "waiting", "ok", "error", "refused"]), // waiting: approval pending
@@ -98,13 +99,19 @@ export type ApprovalOutcome = typeof ApprovalOutcome.Type
 
 // ---------- status of each chat (sidebar) ----------
 
+// An agent of this chat waiting on teammates: their answers to its @mention here (taskChatId null), or a task it
+// gave with zorel_start_task (taskChatId: the task's chat).
+export const AgentWait = Schema.Struct({ agentId: Id, on: Schema.Array(Id), taskChatId: Schema.NullOr(Id) })
+export type AgentWait = typeof AgentWait.Type
+
 export const ChatStatus = Schema.Struct({
   chatId: Id,
   state: Schema.Literals(["idle", "running", "waiting", "failed"]), // waiting: needs you
   agentId: Schema.NullOr(Id),
   label: Schema.String, // "Architect is writing migrations", "Coder waits for your OK"
   unread: Schema.Boolean,
-  updatedAt: Millis
+  updatedAt: Millis,
+  waits: Schema.optionalKey(Schema.Array(AgentWait)) // absent or empty: nobody waits on a teammate
 })
 export type ChatStatus = typeof ChatStatus.Type
 
@@ -142,6 +149,9 @@ export const ChatEvent = Schema.TaggedUnion({
   failover: { turnId: Id, switch: Switch }, // the turn moves to the next alternative; its partial text is dropped
   "model-switched": { turnId: Id, from: Schema.String, to: Schema.String, resentTokens: Schema.Number, fromCheckpoint: Schema.Boolean },
   learned: { pageIds: Schema.Array(Id), summary: Schema.String },
+  // An agent in "auto" memory mode saved facts from this chat on its own: the chat says what, and Undo forgets one
+  // (PATCH /api/memories/:id with state "forgotten"). Sent after the chat's consolidation, to anyone subscribed.
+  remembered: { memories: Schema.Array(Schema.Struct({ id: Id, scope: Schema.String, text: Schema.String })) },
   "context-usage": { turnId: Id, usage: ContextUsage },
   "turn-completed": { turn: Turn, message: Message },
   "turn-failed": { turn: Turn, message: Schema.NullOr(Message) },
@@ -167,6 +177,8 @@ export const ZorelRpc = RpcGroup.make(
   Rpc.make("send", { payload: SendPayload, success: Schema.Struct({ turnId: Id }), error: ChatNotFound }),
   Rpc.make("steer", {
     payload: { chatId: Id, text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100_000)), attachmentIds: Schema.optional(Schema.Array(Schema.String).check(Schema.isMaxLength(MAX_ATTACHMENTS))) },
+    // joined: the message went into the reply in progress; false: that reply was stopped and the message is a turn of its own.
+    success: Schema.Struct({ joined: Schema.Boolean }),
     error: ChatNotFound
   }),
   Rpc.make("interrupt", { payload: { chatId: Id } }),

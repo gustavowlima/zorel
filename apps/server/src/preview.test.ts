@@ -51,10 +51,13 @@ test("the page's URL, the reuse key and the output the agent reads", () => {
 test.skipIf(process.platform === "win32")("waits for the port a server started from the shell listens on", async () => {
   const port = await freePort()
   const server = `Bun.serve({ hostname: "127.0.0.1", port: Number(process.env.PORT), fetch: () => new Response("ok") })`
-  const shell = Bun.spawn(["sh", "-c", `exec bun -e '${server}' & wait`], { env: { ...process.env, PORT: String(port) }, stdout: "ignore", stderr: "ignore" })
+  // On SIGTERM the shell stops the server it started: killing only `sh` left the server running, one per test run.
+  const shell = Bun.spawn(["sh", "-c", `bun -e '${server}' & p=$!; trap 'kill $p' TERM; wait`], { env: { ...process.env, PORT: String(port) }, stdout: "ignore", stderr: "ignore" })
   try {
     expect(await waitForPort(shell.pid, port, () => shell.exitCode !== null, 15_000)).toBe(port)
   } finally {
     shell.kill()
+    await shell.exited
   }
+  expect(await fetch(`http://127.0.0.1:${port}/`).then(() => "still up", () => "gone")).toBe("gone") // no orphan left behind
 }, 20_000)

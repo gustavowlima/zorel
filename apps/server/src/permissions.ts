@@ -26,7 +26,7 @@ export function mcpRoute(p: AgentPermissions, server: Pick<McpServer, "id" | "mo
 
 // Clicks whose words commit to something in the world (buying, posting, deleting…) always wait for the person,
 // whatever the access level, and can't be allowed for good.
-const RISKY = /\b(buy|pay|purchase|checkout|order|place order|publish|post|send|submit|confirm|delete|remove|transfer|donate|subscribe|book|sign up|comprar|pagar|publicar|enviar|confirmar|apagar|excluir|remover|transferir|assinar)\b/i
+export const RISKY = /\b(buy|pay|purchase|checkout|order|place order|publish|post|send|submit|confirm|delete|remove|transfer|donate|subscribe|book|sign up|comprar|pagar|publicar|enviar|confirmar|apagar|excluir|remover|transferir|assinar)\b/i
 
 export function browserRoute(p: AgentPermissions, name: string, args: Record<string, unknown>, writes: boolean, askFirst: boolean): { approve: boolean; alwaysKey: string | null } {
   const label = typeof args.element === "string" ? args.element : ""

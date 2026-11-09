@@ -4,6 +4,7 @@
 // spans several areas (the lead then splits it and wraps up). Any failure falls back to the lead.
 import type { Agent, Message } from "@zorel/contracts"
 import { handleOf } from "./context.ts"
+import { cheapModel } from "./engines.ts"
 
 export const ROUTER_MESSAGES = 10
 
@@ -37,5 +38,6 @@ export function parseRoute(answer: string, team: ReadonlyArray<Agent>): { agent:
   }
 }
 
-// A cheap model for the call: ZOREL_ROUTER_MODEL, else the subscription's small model, else the chat's own.
-export const routerModel = (chatModel: string) => process.env.ZOREL_ROUTER_MODEL || (chatModel.startsWith("claude-cli/") ? "claude-cli/haiku" : chatModel)
+// A cheap model for the call: the one chosen in Settings, else ZOREL_ROUTER_MODEL, else the provider's small model,
+// else the chat's own.
+export const routerModel = (chatModel: string, chosen = "") => chosen || process.env.ZOREL_ROUTER_MODEL || cheapModel(chatModel)
