@@ -30,9 +30,24 @@ export function mcpRoute(p: AgentPermissions, server: Pick<McpServer, "id" | "mo
 export const RISKY = /\b(buy|pay|purchase|checkout|order|place order|publish|post|send|submit|confirm|delete|remove|transfer|donate|subscribe|book|sign up|comprar|pagar|publicar|enviar|confirmar|apagar|excluir|remover|transferir|assinar)\b/i
 
 // `names`: what the action commits to as the page names it (browser.ts actionNames), not the agent's own label.
+// A host on the local network (not this computer): a router's page, a NAS, a cloud's metadata service. An agent's own
+// servers stay on 127.0.0.1/localhost and don't ask.
+export function privateHost(url: unknown): boolean {
+  if (typeof url !== "string" || !url.trim()) return false // a click or a key has no address
+  let host: string
+  try {
+    host = new URL(String(url).includes("://") ? String(url) : `https://${url}`).hostname.toLowerCase().replace(/^\[|\]$/g, "")
+  } catch {
+    return false
+  }
+  if (host === "localhost" || /^127\./.test(host) || host === "::1") return false
+  return /^(10\.|192\.168\.|169\.254\.|0\.0\.0\.0$|172\.(1[6-9]|2\d|3[01])\.)/.test(host) || /^(fc|fd|fe80)/.test(host) || host.endsWith(".local") || host.endsWith(".internal") || !host.includes(".")
+}
+
 export function browserRoute(p: AgentPermissions, args: Record<string, unknown>, writes: boolean, askFirst: boolean, names = ""): { approve: boolean; alwaysKey: string | null } {
   const label = typeof args.element === "string" ? args.element : ""
   if (RISKY.test(`${label} ${names}`)) return { approve: true, alwaysKey: null }
+  if (privateHost(args.url)) return { approve: true, alwaysKey: null } // opening a local-network page always asks
   if (writes && askFirst) return { approve: !p.always.includes("browser"), alwaysKey: "browser" }
   return { approve: false, alwaysKey: null }
 }

@@ -112,7 +112,8 @@ export class Browsers {
   private browser: Promise<Browser> | undefined
   private contexts = new Map<string, Promise<BrowserContext>>()
   private chats = new Map<string, ChatBrowser>()
-  private screencast: { page: Page; cdp: CDPSession; chatId: string } | undefined
+  private readonly casts = new Map<string, { page: Page; cdp: CDPSession }>() // each watched chat's live view
+  private readonly watching = new Map<string, Promise<void>>() // one change of a chat's live view at a time
 
   constructor(
     private readonly stateDir: string,
@@ -223,6 +224,8 @@ export class Browsers {
   // accept the next one with browser_dialog) and reported in the next tool result.
   private async dialog(chatId: string, d: Dialog) {
     const c = this.chat(chatId)
+    // While a person holds the browser the dialog is theirs: the agent's next-dialog rule waits, and nothing is reported.
+    if (c.userControl) return void (await d.dismiss().catch(() => undefined))
     const how = c.nextDialog
     c.nextDialog = undefined
     if (how?.accept) await d.accept(how.text).catch(() => undefined)
@@ -330,21 +333,26 @@ export class Browsers {
     }
   }
 
-  // Screencasts the active tab of a chat that a panel watches (one screencast at a time: the last watched chat).
-  private async watch(chatId: string) {
+  // Screencasts the active tab of each chat a panel watches. Changes queue per chat, so two at once (a tab opening
+  // while a panel attaches) never leave a second CDP session behind.
+  private watch(chatId: string): Promise<void> {
+    const next = (this.watching.get(chatId) ?? Promise.resolve()).then(() => this.rewatch(chatId)).catch(() => undefined)
+    this.watching.set(chatId, next)
+    return next
+  }
+  private async rewatch(chatId: string) {
     const c = this.chat(chatId)
     const page = c.watchers.size && c.active ? c.tabs.get(c.active) : undefined
-    if (this.screencast?.page === page) return
-    if (!page && this.screencast && this.screencast.chatId !== chatId) return // another chat's live view: leave it
-    if (this.screencast) {
-      const old = this.screencast
-      this.screencast = undefined
-      await old.cdp.send("Page.stopScreencast").catch(() => undefined)
-      await old.cdp.detach().catch(() => undefined)
+    const current = this.casts.get(chatId)
+    if (current?.page === page) return
+    if (current) {
+      this.casts.delete(chatId)
+      await current.cdp.send("Page.stopScreencast").catch(() => undefined)
+      await current.cdp.detach().catch(() => undefined)
     }
     if (!page) return
     const cdp = await page.context().newCDPSession(page)
-    this.screencast = { page, cdp, chatId }
+    this.casts.set(chatId, { page, cdp })
     cdp.on("Page.screencastFrame", (f) => {
       void cdp.send("Page.screencastFrameAck", { sessionId: f.sessionId }).catch(() => undefined)
       const jpeg = Buffer.from(f.data, "base64")
@@ -687,6 +695,7 @@ export type PanelFrame =
   | { t: "key"; key: string }
   | { t: "text"; text: string }
   | { t: "nav"; url: string }
+  | { t: "open"; url: string } // a page the app opens (a server from the Terminal panel): a new tab, control unchanged
   | { t: "back" | "forward" | "reload" | "newtab" | "release" }
   | { t: "tab" | "close"; id: string }
 
@@ -707,7 +716,8 @@ export function parsePanelFrame(raw: string): PanelFrame | undefined {
       case "text":
         return typeof f.text === "string" && f.text.length <= 10_000 ? { t: "text", text: f.text } : undefined
       case "nav":
-        return typeof f.url === "string" && f.url.length <= 4000 ? { t: "nav", url: f.url } : undefined
+      case "open":
+        return typeof f.url === "string" && f.url.length <= 4000 ? { t: f.t, url: f.url } : undefined
       case "back":
       case "forward":
       case "reload":
@@ -725,6 +735,10 @@ export function parsePanelFrame(raw: string): PanelFrame | undefined {
 // What a panel frame does. Any input means a person is driving: the browser is theirs until "release".
 async function applyPanelFrame(b: Browsers, chatId: string, f: PanelFrame) {
   if (f.t === "release") return b.setControl(chatId, false)
+  if (f.t === "open") {
+    const url = normalizeUrl(f.url.trim())
+    return void (WEB.test(url) && (await b.newTab(chatId, url, YOU).then((id) => b.select(chatId, id))))
+  }
   b.setControl(chatId, true)
   if (f.t === "newtab") return void (await b.newTab(chatId, undefined, YOU))
   if (f.t === "tab") return b.select(chatId, f.id)
@@ -774,10 +788,29 @@ export const BrowserSocket = HttpRouter.add(
     const { write } = yield* socket.writer
     const reader = yield* socket.reader
     const run = (e: Effect.Effect<void, unknown>) => void Effect.runFork(Effect.ignore(e))
+    // A slow panel gets the newest frame, never a queue: while one is being written, only the latest waits.
+    let writing = false
+    let waiting: Uint8Array | undefined
+    const sendFrame = (jpeg: Uint8Array) => {
+      if (writing) return void (waiting = jpeg)
+      writing = true
+      Effect.runFork(
+        Effect.ignore(write(jpeg)).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              writing = false
+              const next = waiting
+              waiting = undefined
+              if (next) sendFrame(next)
+            })
+          )
+        )
+      )
+    }
     const detach = yield* Effect.promise(() =>
       b.attach(chatId, {
         state: (s) => run(write(JSON.stringify({ t: "state", ...s }))),
-        frame: (jpeg) => run(write(jpeg)),
+        frame: (jpeg) => sendFrame(jpeg),
         act: (a) => run(write(JSON.stringify({ t: "act", ...a })))
       })
     )
