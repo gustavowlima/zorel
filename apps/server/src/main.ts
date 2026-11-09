@@ -4,13 +4,13 @@ import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
 import { Api, CronInvalid, DesktopInstallFailed, GitFailed, isTeammate, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
 import { ZorelRpc } from "@zorel/contracts/events"
-import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
+import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER, SESSION_STDIN_ENV } from "@zorel/contracts/session"
 import { Effect, Layer, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
 import { HttpApiBuilder, HttpApiError } from "effect/http-api"
 import { randomBytes, timingSafeEqual } from "node:crypto"
-import { existsSync, mkdirSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, normalize, resolve, sep } from "node:path"
 import { ask, consolidate, DataDir, DbPath, prepare } from "./chat.ts"
@@ -130,6 +130,7 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
     const audit = yield* Audit
+    const dataDir = yield* DataDir
     return h
       .handle("list", () => store.agents())
       .handle("create", ({ payload }) =>
@@ -145,6 +146,8 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
           const archivedAt = archived === undefined ? undefined : archived ? (before?.archivedAt ?? Date.now()) : null
           const after = yield* found(store.updateAgent(params.id, { ...rest, ...(archivedAt !== undefined && { archivedAt }) }))
           if (before) yield* audit.record(Actions.agentUpdated, { target: after, ...changed(before, after, AGENT_FIELDS) })
+          // Archived: its computers stop (their files stay for a restore).
+          if (archived) yield* Effect.tryPromise(() => computersFor(dataDir).stopAgent(params.id)).pipe(Effect.ignore)
           return after
         })
       )
@@ -1065,8 +1068,11 @@ const hostname = (value: string | undefined) => {
     return "invalid"
   }
 }
-export const SESSION = process.env[SESSION_ENV] || randomBytes(SESSION_BYTES).toString("hex")
+// From the desktop app: one line on stdin, which it then closes. Else the environment (development), else a new one.
+const fromStdin = process.env[SESSION_STDIN_ENV] === "1" ? readFileSync(0, "utf8").trim() : ""
+export const SESSION = fromStdin || process.env[SESSION_ENV] || randomBytes(SESSION_BYTES).toString("hex")
 delete process.env[SESSION_ENV]
+delete process.env[SESSION_STDIN_ENV]
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
 const cookieOf = (cookie: string | undefined) => (cookie ?? "").split(/;\s*/).find((c) => c.startsWith(`${SESSION_COOKIE}=`))?.slice(SESSION_COOKIE.length + 1) ?? ""
 // Open without the secret: the web app's files, the login link, the OAuth return (state-bound) and routine webhooks (token-bound).
@@ -1234,6 +1240,7 @@ export async function start(o: StartOptions = {}) {
     BunRuntime.runMain
   )
   watchParent()
+  process.on("exit", () => computersFor(dataDir).stopAll()) // the containers this run used don't outlive it
   // The desktop app brings its own secret; elsewhere this link is how the owner's browser gets in.
   if (!process.env.ZOREL_PARENT_PID) console.info(`Open Zorel: ${process.env.ZOREL_WEB_ORIGIN ?? `http://127.0.0.1:${port}`}${LOGIN_PATH}?t=${SESSION}`)
   return `http://127.0.0.1:${port}`

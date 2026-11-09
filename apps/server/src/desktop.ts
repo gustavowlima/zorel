@@ -15,7 +15,18 @@ const TARGETS: Readonly<Record<string, string>> = {
   "linux-arm64": "aarch64-unknown-linux-gnu",
   "linux-x64": "x86_64-unknown-linux-gnu"
 }
-const releases = () => process.env.ZOREL_AGENT_DESKTOP_RELEASES ?? "https://github.com/vercel-labs/agent-desktop/releases/download" // tests: a fake
+// The official builds' SHA-256 (the release's checksums.txt, read when the version was pinned): a file swapped in the
+// release later is refused. A test release (ZOREL_AGENT_DESKTOP_RELEASES) brings its own checksums.txt.
+const PINNED: Readonly<Record<string, string>> = {
+  "aarch64-apple-darwin": "219813428bb1ad8decae172faed05c5964a2415170df402e2786ccfa6452ba82",
+  "x86_64-apple-darwin": "d9dc50226f28d7fc86a2f5b0945f0c206dff6c31e418907749f493b6f9e773e6",
+  "aarch64-pc-windows-msvc": "d6d8643310c2c13eace2261444d9e4c0d16ca09581f38500983104903604caa6",
+  "x86_64-pc-windows-msvc": "a4199f741a441cedd349bf56c5eba01783b1261258b498efeb7ec9945220c3e8",
+  "aarch64-unknown-linux-gnu": "68e8ebbb4f80e44485d2f1cf972943a38ee43108e2e0ce56bdfa641fd1599f68",
+  "x86_64-unknown-linux-gnu": "591ae7f4a38479dc045df97e27447c0c8b530441730ab6b990e27c813162af44"
+}
+const OFFICIAL = "https://github.com/vercel-labs/agent-desktop/releases/download"
+const releases = () => process.env.ZOREL_AGENT_DESKTOP_RELEASES ?? OFFICIAL // tests: a fake
 const exe = (platform = process.platform) => (platform === "win32" ? "agent-desktop.exe" : "agent-desktop")
 
 export const targetOf = (platform: string = process.platform, arch: string = process.arch) => TARGETS[`${platform}-${arch}`]
@@ -42,15 +53,27 @@ const download = async (url: string) => {
 }
 
 // Downloads, checks and unpacks this system's build. Errors are for the person ("isn't available for…").
-export async function installDesktop(dataDir: string): Promise<{ ok: true; version: string } | { ok: false; error: string }> {
+type Installed = { ok: true; version: string } | { ok: false; error: string }
+// One install at a time per data folder: a second press waits for the first and gets its answer.
+const installing = new Map<string, Promise<Installed>>()
+export function installDesktop(dataDir: string): Promise<Installed> {
+  const running = installing.get(dataDir)
+  if (running) return running
+  const job = install(dataDir).finally(() => installing.delete(dataDir))
+  installing.set(dataDir, job)
+  return job
+}
+
+async function install(dataDir: string): Promise<Installed> {
   const target = targetOf()
   if (!target) return { ok: false, error: `agent-desktop isn't available for ${process.platform} on ${process.arch}.` }
   const file = archiveOf(target)
   const base = `${releases()}/v${AGENT_DESKTOP_VERSION}`
   const work = mkdtempSync(join(dataDir, "tools-"))
   try {
-    const [archive, sums] = await Promise.all([download(`${base}/${file}`), download(`${base}/checksums.txt`)])
-    const want = checksumOf(new TextDecoder().decode(sums), file)
+    const official = releases() === OFFICIAL
+    const [archive, sums] = await Promise.all([download(`${base}/${file}`), official ? undefined : download(`${base}/checksums.txt`)])
+    const want = official ? PINNED[target] : sums && checksumOf(new TextDecoder().decode(sums), file)
     const got = new Bun.CryptoHasher("sha256").update(archive).digest("hex")
     if (!want || want !== got) return { ok: false, error: "The download didn't match the release's checksum, so it wasn't installed." }
     const into = join(work, "out")
@@ -64,6 +87,8 @@ export async function installDesktop(dataDir: string): Promise<{ ok: true; versi
     renameSync(into, dir) // the binary and its helper stay side by side, as agent-desktop needs
     return { ok: true, version: AGENT_DESKTOP_VERSION }
   } catch (e) {
+    // Windows keeps a running program's files locked: say what to do rather than the system's error code.
+    if ((e as { code?: string }).code === "EBUSY" || (e as { code?: string }).code === "EPERM") return { ok: false, error: "agent-desktop is running, so it couldn't be replaced. Let the agents finish, then try again." }
     return { ok: false, error: `Couldn't install agent-desktop: ${e instanceof Error ? e.message : String(e)}` }
   } finally {
     rmSync(work, { recursive: true, force: true })

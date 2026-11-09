@@ -113,13 +113,17 @@ export function runArgs(o: { engine: Engine; name: string; install: string; agen
   const at = o.lent && `${PROJECTS}/${folderName(o.lent.path)}`
   // The repository's .git stays read-only even in a writable folder: Zorel's own git on this computer reads its config
   // and hooks, so a hook or core.fsmonitor written from the container would run here, outside any sandbox.
-  const git = o.lent && !o.lent.readOnly && existsSync(join(o.lent.path, ".git")) && statSync(join(o.lent.path, ".git")).isDirectory() ? ["-v", `${join(o.lent.path, ".git")}:${at}/.git:ro`] : []
-  const lent = o.lent ? ["-v", `${o.lent.path}:${at}${o.lent.readOnly ? ":ro" : ""}`, ...git] : []
+  // --mount, not -v: a folder with ":" in its name would split -v's value.
+  const bind = (src: string, dst: string, readOnly: boolean) => ["--mount", `type=bind,src=${src},dst=${dst}${readOnly ? ",readonly" : ""}`]
+  const git = o.lent && !o.lent.readOnly && existsSync(join(o.lent.path, ".git")) && statSync(join(o.lent.path, ".git")).isDirectory() ? bind(join(o.lent.path, ".git"), `${at}/.git`, true) : []
+  const lent = o.lent && at ? [...bind(o.lent.path, at, o.lent.readOnly), ...git] : []
   return [
     "run", "-d", "--name", o.name, "--hostname", "computer",
     "--label", `zorel.install=${o.install}`, "--label", `zorel.agent=${o.agentId}`, "--label", `zorel.mount=${mountOf(o.lent)}`,
     "--init", "--memory", "3g", "--cpus", "2",
-    ...(keepId ? ["--userns=keep-id"] : []),
+    // keep-id as root: the person's own user is root inside (apt works) and owns what it writes in lent folders.
+    ...(keepId ? ["--userns=keep-id:uid=0,gid=0"] : []),
+    "--security-opt", "no-new-privileges", // nothing inside gains privileges through a setuid program
     "-w", WORK, "-v", `${o.work}:${WORK}`, ...lent,
     ...PORTS.flatMap((p) => ["-p", `127.0.0.1::${p}`]),
     IMAGE, "sleep", "infinity"
@@ -133,6 +137,7 @@ export function clipOutput(text: string, max = MAX_OUTPUT): string {
   return `${text.slice(0, head)}\n[… ${text.length - max} characters cut …]\n${text.slice(text.length - (max - head))}`
 }
 export function formatRun(r: Run, timeoutSeconds: number): string {
+  if (r.late && r.code !== 124) r = { ...r, code: 124 } // stopped from outside (the client hung): the same hint
   const out = Bun.stripANSI(r.stdout).trimEnd() // colors and cursor codes out
   const err = Bun.stripANSI(r.stderr).trimEnd()
   return clipOutput(
@@ -173,6 +178,8 @@ export interface ComputerCall {
 export class Computers {
   private engine: Promise<EngineStatus> | undefined
   private starting = new Map<string, Promise<void>>()
+  private readonly started = new Set<string>() // containers this run started or used: stopped when Zorel exits
+  private found: Engine | undefined
   private readonly run: Runner
   constructor(
     private readonly dataDir: string,
@@ -193,7 +200,7 @@ export class Computers {
   }
 
   status(fresh = false): Promise<EngineStatus> {
-    if (fresh || !this.engine) this.engine = detectEngine(this.run)
+    if (fresh || !this.engine) this.engine = detectEngine(this.run).then((s) => ((this.found = s.engine ?? undefined), s))
     return this.engine
   }
   private work(agentId: string, projectId: string | null) {
@@ -229,6 +236,7 @@ export class Computers {
     })().finally(() => this.starting.delete(name))
     this.starting.set(name, job)
     await job
+    this.started.add(name)
     return name
   }
 
@@ -288,15 +296,37 @@ export class Computers {
     }
   }
 
-  // Everything of this agent goes: its containers (any project) and its folders.
+  private async containersOf(engine: Engine, agentId: string, all: boolean) {
+    const r = await this.run(engine, ["ps", ...(all ? ["-a"] : []), "-q", "--filter", `label=zorel.install=${installOf(this.dataDir)}`, "--filter", `label=zorel.agent=${agentId}`], { timeoutMs: 15_000 })
+    return r.stdout.split("\n").filter(Boolean)
+  }
+
+  // Everything of this agent goes: its containers (any project) and its folders. An agent that had a computer needs
+  // the engine to answer (a stopped Podman machine): else its containers would stay while this says they're gone.
   async erase(agentId: string): Promise<void> {
     if (!/^[A-Za-z0-9_-]+$/.test(agentId)) throw new Error("Not an agent id.") // never a path: it names a folder to delete
-    const { engine } = await this.status()
+    const folder = join(this.dataDir, "computers", agentId)
+    const { engine, problem } = await this.status(true)
+    if (!engine && existsSync(folder)) throw new Error(`Couldn't reach the engine to remove the computer: ${problem}`)
     if (engine) {
-      const ids = (await this.run(engine, ["ps", "-aq", "--filter", `label=zorel.install=${installOf(this.dataDir)}`, "--filter", `label=zorel.agent=${agentId}`], { timeoutMs: 15_000 })).stdout.split("\n").filter(Boolean)
+      const ids = await this.containersOf(engine, agentId, true)
       if (ids.length) await this.run(engine, ["rm", "-f", ...ids], { timeoutMs: 60_000 })
     }
-    rmSync(join(this.dataDir, "computers", agentId), { recursive: true, force: true })
+    rmSync(folder, { recursive: true, force: true })
+  }
+
+  // An archived agent's computers stop (they keep their files; a later use starts them again).
+  async stopAgent(agentId: string): Promise<void> {
+    const engine = this.found
+    if (!engine) return
+    const ids = await this.containersOf(engine, agentId, false)
+    if (ids.length) await this.run(engine, ["stop", "-t", "3", ...ids], { timeoutMs: 60_000 })
+  }
+
+  // Zorel is exiting: the containers it used stop in the background (a `sleep infinity` would hold 3 GB otherwise).
+  stopAll(): void {
+    if (!this.found || !this.started.size) return
+    Bun.spawn([this.found, "stop", "-t", "3", ...this.started], { stdin: "ignore", stdout: "ignore", stderr: "ignore", windowsHide: true }).unref()
   }
 }
 
