@@ -138,7 +138,8 @@ export function commandFor(path: string, t: Pick<AcpTurn, "args" | "access" | "c
 // bubblewrap: everything read-only, then each root bound writable over it; devices and /proc as usual. Network and
 // process starts stay open, as on macOS. Exits with Zorel (--die-with-parent).
 export const bwrapArgs = (bwrap: string, roots: ReadonlyArray<string>) => [
-  bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", ...roots.flatMap((r) => ["--bind", r, r]), "--die-with-parent", "--"
+  // --unshare-pid: the agent's /proc shows its own processes only, never the server's (its environment, its memory).
+  bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--unshare-pid", "--proc", "/proc", ...roots.flatMap((r) => ["--bind", r, r]), "--die-with-parent", "--"
 ]
 
 export function acpRun(t: AcpTurn): Stream.Stream<EngineEvent> {

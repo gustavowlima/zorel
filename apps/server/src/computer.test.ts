@@ -32,11 +32,12 @@ test("only a folder inside home can be lent: not home itself, hidden ones, syste
 test("container arguments: local-only ports, the lent folder read-only when asked, keep-id for rootless Podman on Linux", () => {
   const base = { name: "zorel-abc-agent-proj", install: "abc", agentId: "agent", work: "/data/work", lent: { path: "/home/me/app", readOnly: true } }
   const mac = runArgs({ ...base, engine: "podman", platform: "darwin" })
-  expect(mac).toContain("/home/me/app:/projects/app:ro")
+  expect(mac).toContain("type=bind,src=/home/me/app,dst=/projects/app,readonly")
+  expect(mac).toContain("no-new-privileges")
   expect(mac).toContain("127.0.0.1::5173")
-  expect(mac).not.toContain("--userns=keep-id")
-  expect(runArgs({ ...base, engine: "podman", platform: "linux" })).toContain("--userns=keep-id")
-  expect(runArgs({ ...base, engine: "docker", platform: "linux" })).not.toContain("--userns=keep-id")
+  expect(mac).not.toContain("--userns=keep-id:uid=0,gid=0")
+  expect(runArgs({ ...base, engine: "podman", platform: "linux" })).toContain("--userns=keep-id:uid=0,gid=0")
+  expect(runArgs({ ...base, engine: "docker", platform: "linux" })).not.toContain("--userns=keep-id:uid=0,gid=0")
   expect(runArgs({ ...base, engine: "docker", lent: null }).some((a) => a.includes("/projects"))).toBe(false)
   expect(containerName("/data/a", "agent-123456789", null)).not.toBe(containerName("/data/b", "agent-123456789", null)) // two installs never share
   // A writable repo keeps its .git read-only (host git runs its hooks and config); the mount is labeled so a change of
@@ -44,7 +45,9 @@ test("container arguments: local-only ports, the lent folder read-only when aske
   const repo = mkdtempSync(join(tmpdir(), "zorel-repo-"))
   mkdirSync(join(repo, ".git"))
   const rw = runArgs({ ...base, engine: "docker", lent: { path: repo, readOnly: false } })
-  expect(rw).toContain(`${join(repo, ".git")}:/projects/${folderName(repo)}/.git:ro`)
+  expect(rw).toContain(`type=bind,src=${join(repo, ".git")},dst=/projects/${folderName(repo)}/.git,readonly`)
+  // A folder with ":" in its name stays one mount.
+  expect(runArgs({ ...base, engine: "docker", lent: { path: "/home/me/a:b", readOnly: false } })).toContain("type=bind,src=/home/me/a:b,dst=/projects/a-b")
   expect(rw).toContain(`zorel.mount=${mountOf({ path: repo, readOnly: false })}`)
   expect(mountOf({ path: repo, readOnly: true })).not.toBe(mountOf({ path: repo, readOnly: false }))
 })
@@ -55,6 +58,7 @@ test("command output keeps its start and, mostly, its end; a timeout says how to
   expect(clipped.startsWith("a".repeat(40))).toBe(true)
   expect(clipped.endsWith("z".repeat(50))).toBe(true)
   expect(formatRun({ code: 124, stdout: "", stderr: "" }, 30)).toContain("went past 30 s")
+  expect(formatRun({ code: 137, stdout: "", stderr: "", late: true }, 30)).toContain("went past 30 s") // killed from outside
   expect(formatRun({ code: 0, stdout: "\u001b[32mok\u001b[0m\n", stderr: "" }, 30)).toBe("exit code 0\n--- stdout ---\nok")
 })
 

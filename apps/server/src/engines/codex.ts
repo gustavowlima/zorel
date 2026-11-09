@@ -17,6 +17,8 @@ import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type Sessio
 // commands run in Codex's sandbox and what leaves it asks through Zorel.
 const SANDBOX: Record<Access, string> = { workspace: "workspace-write", ask: "read-only", full: "danger-full-access" }
 // "Ask first": untrusted asks before every command that isn't a known read, as the other engines ask for each one.
+// On Windows Codex's own sandbox is experimental: below full access it reads only, and each write asks through Zorel.
+export const sandboxFor = (access: Access, platform: string = process.platform) => (platform === "win32" && access === "workspace" ? SANDBOX.ask : SANDBOX[access])
 const APPROVAL: Record<Access, string> = { workspace: "on-request", ask: "untrusted", full: "never" }
 // A function, not a constant: engines.ts imports this module, so CODEX_DISABLED isn't ready at load time.
 const appServerDisabled = () => CODEX_DISABLED.filter((f) => f !== "shell_tool" && f !== "unified_exec")
@@ -248,7 +250,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
       ...(model && { model }),
       cwd: o.cwd,
       approvalPolicy: APPROVAL[o.access],
-      sandbox: SANDBOX[o.access],
+      sandbox: sandboxFor(o.access),
       ephemeral: true, // Zorel's context is the source of truth; resuming uses the checkpoint
       developerInstructions: o.system,
       config: {
