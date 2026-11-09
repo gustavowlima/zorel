@@ -8,7 +8,7 @@ import { go } from "../state.ts"
 import { agentOptions, callable, toJoin } from "./agent-options.ts"
 import { Composer, type ComposerSources, SendError } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
-import { agentTone, handleOf, modelLabel } from "../labels.ts"
+import { agentTone, modelLabel } from "../labels.ts"
 import { AgentAvatar, Folder, IconButton, Select, X } from "@/ui"
 
 const DEFAULT_MODEL: ModelChoice = { model: "claude-cli/sonnet", accountId: null, effort: null }

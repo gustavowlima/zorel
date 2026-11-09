@@ -36,6 +36,10 @@ export const serversAtom = Zorel.query("tools", "list", { reactivityKeys: ["serv
 export const signedInAtom = Zorel.query("tools", "signedIn", { reactivityKeys: ["servers"] })
 export const accountsAtom = Zorel.query("accounts", "list", { reactivityKeys: ["accounts"] })
 export const keysAtom = Zorel.query("settings", "keys", { reactivityKeys: ["keys"] })
+export const telegramAtom = Zorel.query("settings", "telegram", { reactivityKeys: ["telegram"] })
+export const desktopAtom = Zorel.query("settings", "desktop", { reactivityKeys: ["desktop"] })
+export const computerAtom = Zorel.query("settings", "computer", { reactivityKeys: ["computer"] })
+export const desktopRunningAtom = Zorel.query("settings", "desktopRunning", { reactivityKeys: ["desktop"] })
 export const auditAtom = (query: { kind?: AuditKind; q?: string; from?: number; to?: number; page?: number }) =>
   Zorel.query("settings", "audit", { query, reactivityKeys: ["audit"] })
 export const storageAtom = Zorel.query("settings", "storage", { reactivityKeys: ["storage"] })
@@ -45,6 +49,7 @@ export const fileSkillsAtom = Zorel.query("settings", "fileSkills", { reactivity
 export const commandsAtom = (id: string) => Zorel.query("chats", "commands", { params: { id }, reactivityKeys: ["chats"] })
 export const terminalsAtom = (id: string) => Zorel.query("chats", "terminals", { params: { id }, reactivityKeys: ["terminals"] })
 export const pagesAtom = Zorel.query("pages", "list", { reactivityKeys: ["pages"] })
+export const memoryMapAtom = (scope: string) => Zorel.query("memories", "map", { query: scope ? { scope } : {}, reactivityKeys: ["memories"] })
 export const memoryVersionsAtom = (id: string) => Zorel.query("memories", "versions", { params: { id }, reactivityKeys: ["memories"] })
 export const pageVersionsAtom = (id: string) => Zorel.query("pages", "versions", { params: { id }, reactivityKeys: ["pages"] })
 export const routinesAtom = Zorel.query("routines", "list", { reactivityKeys: ["routines"] })
@@ -108,6 +113,9 @@ export const mutations = {
   consolidate: Zorel.mutation("chats", "consolidate"),
   createMemory: Zorel.mutation("memories", "create"),
   updateMemory: Zorel.mutation("memories", "update"),
+  removeMemory: Zorel.mutation("memories", "remove"),
+  connectPoints: Zorel.mutation("memories", "connect"),
+  disconnectPoints: Zorel.mutation("memories", "disconnect"),
   createServer: Zorel.mutation("tools", "create"),
   updateServer: Zorel.mutation("tools", "update"),
   removeServer: Zorel.mutation("tools", "remove"),
@@ -117,6 +125,11 @@ export const mutations = {
   removeAccount: Zorel.mutation("accounts", "remove"),
   login: Zorel.mutation("accounts", "login"),
   setKey: Zorel.mutation("settings", "setKey"),
+  telegramPair: Zorel.mutation("settings", "telegramPair"),
+  installDesktop: Zorel.mutation("settings", "installDesktop"),
+  eraseComputer: Zorel.mutation("settings", "eraseComputer"),
+  desktopGuide: Zorel.mutation("settings", "desktopGuide"),
+  telegramUnpair: Zorel.mutation("settings", "telegramUnpair"),
   undo: Zorel.mutation("chats", "undo"),
   readLimits: Zorel.mutation("accounts", "limits"),
   cleanStorage: Zorel.mutation("settings", "cleanStorage"),
@@ -125,6 +138,8 @@ export const mutations = {
   closeConnection: Zorel.mutation("settings", "closeConnection"),
   pickFileSkill: Zorel.mutation("settings", "pickFileSkill"),
   nativeSkills: Zorel.mutation("settings", "nativeSkills"),
+  memoryApproval: Zorel.mutation("settings", "memoryApproval"),
+  memoryModel: Zorel.mutation("settings", "memoryModel"),
   maxRunning: Zorel.mutation("settings", "maxRunning"),
   acceptFailoverTerms: Zorel.mutation("settings", "acceptFailoverTerms"),
   send: Live.mutation("send"),
@@ -185,11 +200,16 @@ export interface LiveTurn {
   readonly model: string
   readonly text: string
   readonly steps: ReadonlyArray<WorkStep>
+  // Where the live text stood when each step began (by step id), so the reply is laid out text, steps, text… as it
+  // happens. Steps found in a snapshot (a reload mid-turn) have none: they go after the text.
+  readonly stepAt: Readonly<Record<string, number>>
   readonly startedAt: number
 }
 // Things that happen between messages and aren't stored as messages (this session only).
 export type Note =
   | { readonly at: number; readonly kind: "handoff"; readonly from: string | null; readonly to: ReadonlyArray<string>; readonly via: "mention" | "send_message" | "start_task" | "reply" | "limit" | "route"; readonly reason?: string | undefined }
+  // What an agent set to "saves on its own" kept after the chat, with the ids to undo it.
+  | { readonly at: number; readonly kind: "remembered"; readonly memories: ReadonlyArray<{ readonly id: string; readonly scope: string; readonly text: string }> }
   // A failover move in the running turn; once the reply is saved, the message carries it instead.
   | { readonly at: number; readonly kind: "failover"; readonly turnId: string; readonly switch: Switch }
 export interface Receipt {
@@ -210,7 +230,9 @@ export interface ChatState {
 const emptyChat: ChatState = { ready: false, messages: [], pending: 0, live: undefined, approvals: [], receipts: [], notes: [], status: null }
 
 const withStep = (live: LiveTurn | undefined, step: WorkStep): LiveTurn | undefined =>
-  live?.turnId === step.turnId ? { ...live, steps: [...live.steps.filter((s) => s.id !== step.id), step] } : live
+  live?.turnId === step.turnId
+    ? { ...live, steps: [...live.steps.filter((s) => s.id !== step.id), step], stepAt: step.id in live.stepAt ? live.stepAt : { ...live.stepAt, [step.id]: live.text.length } }
+    : live
 
 export function reduceChat(s: ChatState, e: ChatEvent): ChatState {
   switch (e._tag) {
@@ -227,6 +249,7 @@ export function reduceChat(s: ChatState, e: ChatEvent): ChatState {
           model: running.model,
           text: snap.partial.find((p) => p.turnId === running.id)?.text ?? "",
           steps: snap.steps.filter((x) => x.turnId === running.id),
+          stepAt: {},
           startedAt: running.startedAt ?? Date.now()
         },
         approvals: snap.approvals,
@@ -240,7 +263,7 @@ export function reduceChat(s: ChatState, e: ChatEvent): ChatState {
     case "queued":
       return { ...s, pending: s.pending + 1 }
     case "turn-started":
-      return { ...s, live: { turnId: e.turn.id, agentId: e.turn.agentId, model: e.turn.model, text: "", steps: [], startedAt: e.turn.startedAt ?? Date.now() } }
+      return { ...s, live: { turnId: e.turn.id, agentId: e.turn.agentId, model: e.turn.model, text: "", steps: [], stepAt: {}, startedAt: e.turn.startedAt ?? Date.now() } }
     case "text":
       return s.live?.turnId === e.turnId ? { ...s, live: { ...s.live, text: s.live.text + e.delta } } : s
     case "step-started":
@@ -254,6 +277,8 @@ export function reduceChat(s: ChatState, e: ChatEvent): ChatState {
     }
     case "handoff":
       return { ...s, notes: [...s.notes, { at: Date.now(), kind: "handoff", from: e.from, to: e.to, via: e.via, reason: e.reason }] }
+    case "remembered":
+      return { ...s, notes: [...s.notes, { at: Date.now(), kind: "remembered", memories: e.memories }] }
     case "failover":
       // The turn starts over on the next route: drop what the failed one wrote.
       return {

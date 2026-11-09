@@ -64,7 +64,7 @@ function useRows(list: ProcessList): Row[] {
   const then = (p: Promise<unknown>) => p.finally(() => invalidate(["processes"]))
   return [
     ...Object.values(statuses)
-      .filter((s) => s.state !== "idle")
+      .filter((s) => s.state === "running" || s.state === "waiting") // a failed chat has nothing left to stop
       .map((s): Row => ({
         key: `turn:${s.chatId}`,
         kind: "turn",

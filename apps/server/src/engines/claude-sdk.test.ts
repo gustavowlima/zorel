@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { resolveSettings } from "@anthropic-ai/claude-agent-sdk"
-import { childEnv, commandOf, mergeResults, SANDBOX_FLAG, SANDBOX_POLICY, settingsLayers, steerGate } from "./claude-sdk.ts"
+import { childEnv, commandOf, describeTool, mergeResults, SANDBOX_FLAG, SANDBOX_POLICY, settingsLayers, steerGate } from "./claude-sdk.ts"
 
 const commands = [{ name: "review", description: "", argumentHint: null }, { name: "plugin:fix", description: "", argumentHint: null }]
 
@@ -251,3 +251,44 @@ describe("childEnv", () => {
     expect(Number(e.MCP_TOOL_TIMEOUT)).toBeGreaterThan(30 * 60_000)
   })
 })
+
+describe("describeTool", () => {
+  const cwd = "/work/zero"
+  test("a command is summed up by its own description, with the command as the detail", () => {
+    expect(describeTool("Bash", { command: "git status --short", description: "Check git status" }, cwd)).toEqual({ title: "Check git status", detail: "git status --short" })
+  })
+
+  test("a command without a description is \"Run a command\" over the whole command", () => {
+    expect(describeTool("Bash", { command: "ls; cat a" }, cwd)).toEqual({ title: "Run a command", detail: "ls; cat a" })
+    expect(describeTool("Bash", { command: "ls", description: "   " }, cwd).title).toBe("Run a command")
+  })
+
+  test("a file tool names the file and keeps the relative path", () => {
+    expect(describeTool("Read", { file_path: "/work/zero/specs/006/spec.md" }, cwd)).toEqual({ title: "Read spec.md", detail: "specs/006/spec.md" })
+    expect(describeTool("Edit", { file_path: "/work/zero/a.ts" }, cwd)).toEqual({ title: "Edit a.ts", detail: "a.ts" })
+    expect(describeTool("Write", {}, cwd)).toEqual({ title: "Write", detail: "" })
+  })
+
+  test("search and find carry the pattern, and the path when there is one", () => {
+    expect(describeTool("Grep", { pattern: "specify", path: "/work/zero/apps" }, cwd)).toEqual({ title: "Search for specify", detail: "apps" })
+    expect(describeTool("Glob", { pattern: "**/*.ts" }, cwd)).toEqual({ title: "Find **/*.ts", detail: "" })
+  })
+
+  test("web tools, tasks and anything else", () => {
+    expect(describeTool("WebFetch", { url: "https://a.dev/x" }, cwd)).toEqual({ title: "Read a page", detail: "https://a.dev/x" })
+    // No query or fragment is saved: signed links and `?token=` stay out of the step.
+    expect(describeTool("WebFetch", { url: "https://a.dev/x/y?token=abc&sig=1#top" }, cwd).detail).toBe("https://a.dev/x/y")
+    expect(describeTool("WebFetch", { url: "not a url?token=abc" }, cwd).detail).toBe("not a url")
+    expect(describeTool("WebSearch", { query: "effect 4 layers" }, cwd)).toEqual({ title: "Search the web", detail: "effect 4 layers" })
+    expect(describeTool("Task", { description: "Explore the repo" }, cwd)).toEqual({ title: "Explore the repo", detail: "" })
+    expect(describeTool("Task", {}, cwd).title).toBe("Task")
+    expect(describeTool("Skill", {}, cwd)).toEqual({ title: "Skill", detail: "" })
+  })
+
+  test("the title is cut at 120 characters and the detail at 300", () => {
+    const step = describeTool("Bash", { command: "x".repeat(500), description: `${"y ".repeat(100)}` }, cwd)
+    expect(step.title.length).toBe(120)
+    expect(step.detail.length).toBe(300)
+  })
+})
+

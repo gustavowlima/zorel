@@ -15,7 +15,7 @@ import { Socket } from "effect/socket"
 import { Store } from "./db.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
-import { cwdsOf, listeners, listProcs, type Proc, subtree } from "./procs.ts"
+import { listeners, listProcs, type Proc, subtree } from "./procs.ts"
 
 export const MAX_TERMINALS = 12 // live shells at once, across chats
 const MAX_INPUT = 64 * 1024 // one input frame (a paste)
@@ -245,24 +245,23 @@ export interface LocalServer {
   readonly ports: ReadonlyArray<number>
 }
 
-// The servers under any of these folders, each with the folder it belongs to. A server belongs to a folder when it
-// runs there (macOS, Linux) or was started from a process of that folder (`owned`: a shell or an agent session →
-// its folder), which is how Windows places them. One read of the ports and the process table for all folders.
-export async function serversUnder(roots: ReadonlyArray<string>, owned: ReadonlyMap<number, string> = new Map(), table?: ReadonlyArray<Proc>): Promise<Array<LocalServer & { root: string }>> {
-  if (!roots.length && !owned.size) return []
+// The servers Zorel's own processes started, each with the folder it belongs to: under one of a chat's shells or agent
+// sessions (`owned` → that chat's folder), on every system. A process that only happens to run in the folder (the
+// person's own dev server, an editor's helper, a VM started from there) isn't the chat's: it showed up as noise.
+// One read of the ports and the process table for all folders.
+export async function serversUnder(owned: ReadonlyMap<number, string>, table?: ReadonlyArray<Proc>): Promise<Array<LocalServer & { root: string }>> {
+  if (!owned.size) return []
   const ports = listeners()
   if (!ports.size) return []
   const procs = table ?? (await listProcs())
   const byOwner = new Map<number, string>()
   for (const [pid, root] of owned) for (const d of subtree(procs, pid)) byOwner.set(d, root)
-  const cwds = cwdsOf([...ports.keys()])
   const out: Array<LocalServer & { root: string }> = []
   for (const [pid, list] of ports) {
     // An agent's CLI or a terminal's shell listening itself (Claude Code keeps a local port of its own) is that
     // session, not a server someone started: only what runs under it counts.
     if (owned.has(pid)) continue
-    const cwd = cwds.get(pid)
-    const root = byOwner.get(pid) ?? (cwd ? roots.find((r) => cwd === r || cwd.startsWith(`${r}/`) || cwd.startsWith(`${r}\\`)) : undefined)
+    const root = byOwner.get(pid)
     if (root) out.push({ pid, command: procs.find((p) => p.pid === pid)?.name ?? "?", ports: list, root })
   }
   return out.sort((a, b) => a.ports[0]! - b.ports[0]!)

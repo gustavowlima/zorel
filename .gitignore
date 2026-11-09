@@ -7,3 +7,7 @@ dist
 
 # wrangler (Cloudflare CLI) state and temp files
 .wrangler/
+.claude/*.log
+
+# Spec Kit: current-feature pointer, per machine
+.specify/feature.json

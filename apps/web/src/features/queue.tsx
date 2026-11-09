@@ -61,6 +61,7 @@ export function useQueue(chatId: string, busy: boolean, ready: boolean, send: (t
 export function QueuePanel({
   items,
   busy,
+  ahead,
   joinsTurn,
   onSendNow,
   onEdit,
@@ -68,6 +69,7 @@ export function QueuePanel({
 }: {
   items: ReadonlyArray<Queued>
   busy: boolean // a turn runs: items can be sent now (an idle chat drains the queue by itself)
+  ahead: number // replies queued or running ahead of these messages
   joinsTurn: (item: Queued) => boolean // sending it adds it to the running reply (else it stops the reply first)
   onSendNow: (item: Queued) => void
   onEdit: (item: Queued) => void
@@ -76,6 +78,7 @@ export function QueuePanel({
   if (!items.length) return null
   return (
     <ol aria-label={t("queue.label")} className="mx-3 flex flex-col divide-y divide-subtle rounded-t-card border border-b-0 border-subtle bg-surface px-3">
+      {busy && ahead > 0 && <li className="flex min-h-7 items-center text-xs text-dim">{t("queue.ahead", { count: ahead })}</li>}
       {items.map((item) => (
         <li key={item.id} className="flex min-h-control items-center gap-2 py-1">
           <CornerDownRight className="size-4 shrink-0 text-muted" />

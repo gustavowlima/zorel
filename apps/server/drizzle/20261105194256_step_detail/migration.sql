@@ -1,0 +1,1 @@
+ALTER TABLE `steps` ADD `detail` text DEFAULT '' NOT NULL;

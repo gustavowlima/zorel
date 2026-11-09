@@ -7,9 +7,20 @@ import { Effect } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { prepare } from "../src/chat.ts"
-import { MEMORY_BUDGET, pinned, RETRIEVED, scopesOf } from "../src/context.ts"
+import { pinBudget, prepare, recall } from "../src/chat.ts"
+import { type Mapped, MEMORY_BUDGET, pinned, RETRIEVED, scopesOf } from "../src/context.ts"
 import { type Repository, Store } from "../src/db.ts"
+import { ensure, settled, startVectors } from "../src/vectors.ts"
+import { homedir } from "node:os"
+import { type Needle, NEEDLES } from "./needles.ts"
+
+// The real map of each needle (extract-needle-map.ts, frozen); a needle without one fails the run.
+const NEEDLE_MAP = new Map((await Bun.file(join(import.meta.dir, "fixtures", "needle-map.json")).json() as Array<{ text: string } & Mapped>).map((x) => [x.text, x]))
+for (const n of NEEDLES) if (!NEEDLE_MAP.has(n.text)) throw new Error(`no map for needle "${n.text}": run bench/extract-needle-map.ts`)
+// The lowest paraphrased reach without pinning (map + words) at 1,000 memories that --check accepts.
+const PARA_FLOOR = 15
+const VECTORS = process.argv.includes("--vectors")
+const FLOOR = VECTORS ? 25 : PARA_FLOOR // with the local model (spec 003), measured 25/25
 
 // ---------- deterministic data ----------
 let seed = 42
@@ -36,29 +47,36 @@ const W = {
   cmd: ["bun test", "make lint", "cargo clippy", "go vet", "ruff check", "tsc --noEmit"],
   day: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 }
-const noiseFact = (scope: string): string => {
+// A noise fact and the list words it was made of: each becomes a point on the map, so noise competes there too.
+const noiseFact = (scope: string): { text: string; topics: string[] } => {
+  const topics: string[] = []
+  const topic = (xs: ReadonlyArray<string>) => { const w = pick(xs); topics.push(w); return w }
   const n = Math.floor(rnd() * 1000)
+  const text = make(scope, n, topic)
+  return { text, topics: [...new Set(topics)] }
+}
+const make = (scope: string, n: number, topic: (xs: ReadonlyArray<string>) => string): string => {
   if (scope === "user")
     return pick([
-      () => `Prefers ${pick(W.style)} when discussing ${pick(W.lang)} code (${n})`,
-      () => `Uses ${pick(W.tool)} as the main editor for ${pick(W.lang)} projects, setup ${n}`,
-      () => `Has meetings on ${pick(W.day)} mornings and prefers async updates, slot ${n}`,
-      () => `Likes ${pick(W.style)} and reviews pull requests in batches of ${n % 9 + 2}`,
-      () => `Learning ${pick(W.lang)} on weekends, chapter ${n}`
+      () => `Prefers ${topic(W.style)} when discussing ${topic(W.lang)} code (${n})`,
+      () => `Uses ${topic(W.tool)} as the main editor for ${topic(W.lang)} projects, setup ${n}`,
+      () => `Has meetings on ${topic(W.day)} mornings and prefers async updates, slot ${n}`,
+      () => `Likes ${topic(W.style)} and reviews pull requests in batches of ${n % 9 + 2}`,
+      () => `Learning ${topic(W.lang)} on weekends, chapter ${n}`
     ])()
   if (scope.startsWith("project"))
     return pick([
-      () => `The ${pick(W.svc)} service deploys to ${pick(W.host)} through ${pick(W.ci)} (pipeline ${n})`,
-      () => `The ${pick(W.svc)} service stores its data in ${pick(W.db)}, cluster ${n}`,
-      () => `The ${pick(W.team)} team owns the ${pick(W.svc)} module since sprint ${n}`,
-      () => `Releases of ${pick(W.svc)} happen ${pick(W.cadence)}, train ${n}`,
-      () => `Port ${3000 + n} serves the ${pick(W.svc)} API in development`,
-      () => `Feature flag ${pick(W.svc)}_v${n} gates the new ${pick(W.svc)} flow`
+      () => `The ${topic(W.svc)} service deploys to ${topic(W.host)} through ${topic(W.ci)} (pipeline ${n})`,
+      () => `The ${topic(W.svc)} service stores its data in ${topic(W.db)}, cluster ${n}`,
+      () => `The ${topic(W.team)} team owns the ${topic(W.svc)} module since sprint ${n}`,
+      () => `Releases of ${topic(W.svc)} happen ${topic(W.cadence)}, train ${n}`,
+      () => `Port ${3000 + n} serves the ${topic(W.svc)} API in development`,
+      () => `Feature flag ${topic(W.svc)}_v${n} gates the new ${topic(W.svc)} flow`
     ])()
   return pick([
-    () => `When reviewing ${pick(W.lang)} code, check ${pick(W.thing)} first (rule ${n})`,
-    () => `Run ${pick(W.cmd)} before opening a pull request for ${pick(W.svc)} (rule ${n})`,
-    () => `For the ${pick(W.svc)} module, prefer small commits and mention ticket ${n}`
+    () => `When reviewing ${topic(W.lang)} code, check ${topic(W.thing)} first (rule ${n})`,
+    () => `Run ${topic(W.cmd)} before opening a pull request for ${topic(W.svc)} (rule ${n})`,
+    () => `For the ${topic(W.svc)} module, prefer small commits and mention ticket ${n}`
   ])()
 }
 const noiseSkill = () => {
@@ -66,36 +84,6 @@ const noiseSkill = () => {
   const n = Math.floor(rnd() * 1000)
   return { title: `Ship a ${s} hotfix #${n}`, text: `1. Branch from main.\n2. Run ${pick(W.cmd)}.\n3. Deploy ${s} to ${pick(W.host)}.\n4. Post in #${pick(W.team)}.` }
 }
-
-// Planted facts: [scope kind, text, lexical query, paraphrase query (no shared content words)]
-type Needle = { scope: "user" | "project" | "agent"; text: string; lex: string; para: string }
-const NEEDLES: Needle[] = [
-  { scope: "user", text: "Daughter's name is Marina and she starts school in March.", lex: "when does Marina start school?", para: "when do classes begin for my kid?" },
-  { scope: "user", text: "Prefers dark roast coffee without sugar.", lex: "how do I like my coffee roast?", para: "what hot drink should you bring me in the morning?" },
-  { scope: "user", text: "Runs a half marathon every October in Lisbon.", lex: "which marathon do I run in Lisbon?", para: "what race am I training for this autumn?" },
-  { scope: "user", text: "Is allergic to penicillin.", lex: "am I allergic to penicillin?", para: "which antibiotic can't I take?" },
-  { scope: "user", text: "Reads code reviews on an iPad during the commute.", lex: "where do I read code reviews on the iPad?", para: "what device do I use on the train?" },
-  { scope: "user", text: "Speaks Portuguese at home and English at work.", lex: "do I speak Portuguese at home?", para: "which tongue does my family use?" },
-  { scope: "user", text: "Hates being interrupted with notifications before 10am.", lex: "can you send notifications before 10am?", para: "is it okay to ping me early?" },
-  { scope: "user", text: "Drives a 2019 Volvo XC40 hybrid.", lex: "which Volvo do I drive?", para: "what car do I own?" },
-  { scope: "project", text: "The billing service deploys to Fly.io from the release branch.", lex: "where does billing deploy?", para: "how do payments go live?" },
-  { scope: "project", text: "Postgres backups run nightly at 03:00 UTC to an S3 bucket named zorel-pg-archive.", lex: "when do the postgres backups run?", para: "what time is the database snapshot taken?" },
-  { scope: "project", text: "The staging environment password rotates every 30 days.", lex: "how often does the staging password rotate?", para: "when do pre-production credentials change?" },
-  { scope: "project", text: "Image uploads are capped at 12 megabytes by the CDN.", lex: "what is the image upload cap?", para: "how big can a picture be?" },
-  { scope: "project", text: "The mobile app supports Android 10 and newer only.", lex: "which Android versions does the app support?", para: "what's the minimum phone OS?" },
-  { scope: "project", text: "Customer emails are sent through Postmark, never SES.", lex: "do customer emails go through Postmark?", para: "which provider delivers our transactional mail?" },
-  { scope: "project", text: "Kubernetes namespace for the search cluster is search-prod-eu.", lex: "what namespace is the search cluster in?", para: "where does the lookup engine run in k8s?" },
-  { scope: "project", text: "Invoices must be kept for seven years for tax compliance.", lex: "how long must invoices be kept?", para: "what is our retention period for bills?" },
-  { scope: "project", text: "The design system uses Inter for body text and Söhne for headings.", lex: "which font for headings in the design system?", para: "what typeface do titles use?" },
-  { scope: "project", text: "Load tests showed the checkout endpoint saturates at 1,800 requests per second.", lex: "when does the checkout endpoint saturate?", para: "what's the throughput ceiling of the purchase API?" },
-  { scope: "project", text: "The analytics warehouse is BigQuery, dataset events_v2.", lex: "which BigQuery dataset is the analytics warehouse?", para: "where is telemetry stored for reporting?" },
-  { scope: "project", text: "Legal approved the new privacy policy on 2026-09-14.", lex: "when did legal approve the privacy policy?", para: "did the lawyers sign off on the data notice?" },
-  { scope: "agent", text: "When writing SQL migrations, always add a down migration and test it on a copy of production.", lex: "how should I write SQL migrations?", para: "what's the rule for schema changes?" },
-  { scope: "agent", text: "Before touching the auth module, read docs/auth-threat-model.md.", lex: "what to read before the auth module?", para: "anything to review before changing login code?" },
-  { scope: "agent", text: "The flaky test in payments_spec retries three times on CI; ignore single failures.", lex: "is the payments spec test flaky?", para: "a checkout check broke once in the pipeline, should I worry?" },
-  { scope: "agent", text: "Translations live in locales/*.json and must keep keys sorted alphabetically.", lex: "where do translations live?", para: "how do I add a new language string?" },
-  { scope: "agent", text: "Use pnpm, not npm, in the legacy dashboard repository.", lex: "pnpm or npm in the legacy dashboard?", para: "which package manager for the old admin panel?" }
-]
 
 // Near-duplicates: [original, variant, should the app treat them as the same memory?]
 const NEAR_DUPES: Array<[string, string, string]> = [
@@ -138,7 +126,10 @@ const bench = (total: number, r: Repository, dataDir: string) =>
     const needleIds = new Map<string, string>()
     let inserted = 0
     const [, needleMs] = yield* time(Effect.forEach(NEEDLES, (n) =>
-      r.addMemory({ scope: scopeOf(n.scope), text: n.text, state: "active", origin: "manual", chatId: null }).pipe(Effect.map((m) => { needleIds.set(n.text, m!.id); inserted++ }))
+      r.addMemory({ scope: scopeOf(n.scope), text: n.text, state: "active", origin: "manual", chatId: null }).pipe(
+        Effect.tap((m) => r.linkMemory(m!.id, m!.scope, NEEDLE_MAP.get(n.text)!)),
+        Effect.map((m) => { needleIds.set(n.text, m!.id); inserted++ })
+      )
     ))
     // Canaries: same words as needles, but must never reach a P0/A0/alice chat.
     const canaries = new Map<string, string>() // id → why it must not leak
@@ -165,7 +156,9 @@ const bench = (total: number, r: Repository, dataDir: string) =>
         } else {
           const scope = x < 0.3 ? "user" : x < 0.8 ? `project:${pick(projects).id}` : `agent:${pick(agents).id}`
           const bob = scope === "user" && rnd() < 0.25
-          const m = yield* r.addMemory({ scope, text: noiseFact(scope), state, origin: "auto", chatId: null, ...(bob ? { owner: "bob" } : {}) })
+          const f = noiseFact(scope)
+          const m = yield* r.addMemory({ scope, text: f.text, state, origin: "auto", chatId: null, ...(bob ? { owner: "bob" } : {}) })
+          if (m) yield* r.linkMemory(m.id, scope, { entities: f.topics.map((name) => ({ name, type: "concept" as const })), relations: [] })
           if (m) inserted++
           if (m && bob) bobIds.add(m.id)
         }
@@ -182,10 +175,16 @@ const bench = (total: number, r: Repository, dataDir: string) =>
         return yield* time(prepare(r, c, A0, "claude-cli/haiku", dataDir, undefined))
       })
 
-    // Pinned set is the same for every query (recency only): compute once, as prepare does.
+    // --vectors: the local model (spec 003) gives every fact its vector before the questions.
+    if (VECTORS) {
+      yield* Effect.promise(() => startVectors(join(homedir(), ".cache", "zorel")))
+      ensure(yield* r.activeMemories(scopes))
+      yield* Effect.promise(settled)
+    }
+        // Pinned set is the same for every query (recency only): compute once, as prepare does.
     const active = yield* r.activeMemories(scopes)
     const [, activeMs] = yield* time(r.activeMemories(scopes))
-    const pin = pinned(active)
+    const pin = pinned(active, pinBudget())
     const pinnedIds = new Set(pin.map((m) => m.id))
     const pinnedChars = pin.reduce((n, m) => n + m.text.length + 3, 0)
 
@@ -194,6 +193,10 @@ const bench = (total: number, r: Repository, dataDir: string) =>
     const leaks: string[] = []
     let memChars: number[] = [], retrievedChars: number[] = [], promptChars: number[] = []
     const misses: string[] = []
+    // How each paraphrased needle reaches the turn: by the map (recall's association part), by its words (FTS), only
+    // because it is pinned, or not at all. Recall runs without excluding the pinned, to see what it finds on its own.
+    const reach = { map: 0, words: 0, pin: 0, none: 0 }
+    const paraMisses: string[] = []
     for (const kind of ["lex", "para"] as const)
       for (const n of NEEDLES) {
         const q = n[kind]
@@ -211,6 +214,13 @@ const bench = (total: number, r: Repository, dataDir: string) =>
         for (const m of [...found, ...pin]) {
           if (canaries.has(m.id)) leaks.push(`${canaries.get(m.id)}: "${m.text.slice(0, 50)}" for "${q}"`)
           if (!scopes.includes(m.scope)) leaks.push(`scope ${m.scope} for "${q}"`)
+        }
+        if (kind === "para") {
+          const recalled = (yield* recall(r, scopes, q, [])).facts
+          const byWords = (yield* r.searchMemories(scopes, q, [], RETRIEVED)).some((m) => m.id === id)
+          const how = !recalled.some((m) => m.id === id) ? (pinnedIds.has(id) ? "pin" : "none") : byWords ? "words" : "map"
+          reach[how]++
+          if (how === "none" || how === "pin") paraMisses.push(`${how}: "${q}" → first: ${recalled[0]?.text.slice(0, 50) ?? "(nothing)"}`)
         }
         memChars.push(turn.parts.memories)
         retrievedChars.push(found.reduce((s, m) => s + m.text.length + 3, 0))
@@ -233,14 +243,14 @@ const bench = (total: number, r: Repository, dataDir: string) =>
 
     return {
       total, inserted, noise, insertMs: needleMs + noiseMs, scopesSize: active.length,
-      activeMs, pinnedCount: pin.length, pinnedChars, needlesPinned: NEEDLES.filter((n) => pinnedIds.has(needleIds.get(n.text)!)).length,
-      lat, searchLat, res, misses, leaks, memChars, retrievedChars, promptChars, dedupe, crossOwnerSwallowed: bobsCopy === undefined, bobPinned,
+      activeMs, pinnedCount: pin.length, pinnedChars, budget: pinBudget(), needlesPinned: NEEDLES.filter((n) => pinnedIds.has(needleIds.get(n.text)!)).length,
+      lat, searchLat, res, misses, reach, paraMisses, leaks, memChars, retrievedChars, promptChars, dedupe, crossOwnerSwallowed: bobsCopy === undefined, bobPinned,
       pinnedByScope: ['user', 'project', 'agent'].map((k) => pin.filter((m) => m.scope.startsWith(k)).length).join(' / '),
       activeByScope: ['user', 'project', 'agent'].map((k) => active.filter((m) => m.scope.startsWith(k)).length).join(' / ')
     }
   })
 
-const sizes = (process.argv[2] ?? "100,1000,10000").split(",").map(Number)
+const sizes = (process.argv[2]?.startsWith("--") ? "100,1000,10000" : (process.argv[2] ?? "100,1000,10000")).split(",").map(Number)
 const results = []
 for (const total of sizes) {
   seed = 42
@@ -254,7 +264,7 @@ for (const total of sizes) {
 
 const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1)
 const Q = NEEDLES.length
-console.log(`\n## Part 1 — memory selection (budget ${MEMORY_BUDGET} chars, ${RETRIEVED} retrieved, ${Q} needles × 2 query types)\n`)
+console.log(`\n## Part 1 — memory selection (budget ${results[0]?.budget ?? MEMORY_BUDGET} chars, ${RETRIEVED} retrieved, ${Q} needles × 2 query types)\n`)
 console.log("| metric | " + results.map((r) => `${r.total}`).join(" | ") + " |")
 console.log("|---|" + results.map(() => "---").join("|") + "|")
 const row = (name: string, f: (r: (typeof results)[number]) => string) => console.log(`| ${name} | ${results.map(f).join(" | ")} |`)
@@ -264,7 +274,7 @@ row("active facts in chat scopes (user+project+agent)", (r) => `${r.scopesSize}`
 row("activeMemories() (loads all, every turn) ms", (r) => ms(r.activeMs))
 row("prepare() p50 / p95 / max ms", (r) => `${ms(pct(r.lat, 50))} / ${ms(pct(r.lat, 95))} / ${ms(Math.max(...r.lat))}`)
 row("searchMemories() p50 / p95 / max ms", (r) => `${ms(pct(r.searchLat, 50))} / ${ms(pct(r.searchLat, 95))} / ${ms(Math.max(...r.searchLat))}`)
-row("pinned memories / chars (budget respected?)", (r) => `${r.pinnedCount} / ${r.pinnedChars} (${r.pinnedChars <= MEMORY_BUDGET ? "yes" : "NO"})`)
+row("pinned memories / chars (budget respected?)", (r) => `${r.pinnedCount} / ${r.pinnedChars} (${r.pinnedChars <= r.budget ? "yes" : "NO"})`)
 row("active by scope user / project / agent", (r) => r.activeByScope)
 row("pinned by scope user / project / agent", (r) => r.pinnedByScope)
 row("needles that are pinned (recency)", (r) => `${r.needlesPinned}/${Q}`)
@@ -275,6 +285,11 @@ for (const k of ["lex", "para"] as const) {
   row(`${k}: MRR`, (r) => (r.res[k].rr / Q).toFixed(3))
   row(`${k}: reaches the prompt (pinned or retrieved)`, (r) => `${r.res[k].prompt}/${Q}`)
 }
+row(VECTORS ? "para: reach by map or meaning" : "para: reach by map", (r) => `${r.reach.map}/${Q}`)
+row("para: reach by words", (r) => `${r.reach.words}/${Q}`)
+row("para: reach by pin only", (r) => `${r.reach.pin}/${Q}`)
+row("para: total without pin", (r) => `${r.reach.map + r.reach.words}/${Q}`)
+row("para: total", (r) => `${r.reach.map + r.reach.words + r.reach.pin}/${Q}`)
 row("memory layer chars in prompt avg (≈ tokens = /4)", (r) => `${avg(r.memChars).toFixed(0)} (~${(avg(r.memChars) / 4).toFixed(0)} tok)`)
 row("retrieved section chars avg / max (outside budget)", (r) => `${avg(r.retrievedChars).toFixed(0)} / ${Math.max(...r.retrievedChars)}`)
 row("whole system prompt chars avg", (r) => avg(r.promptChars).toFixed(0))
@@ -289,15 +304,18 @@ console.log(`\n### Leaks at ${last.total}\n`)
 for (const l of [...new Set(last.leaks)]) console.log(`- ${l}`)
 console.log(`\n### Misses at ${last.total} (not pinned, not in top ${RETRIEVED})\n`)
 for (const m of last.misses) console.log(`- ${m}`)
+console.log(`\n### Paraphrased needles not reached by map or words at ${last.total}\n`)
+for (const m of last.paraMisses) console.log(`- ${m}`)
 
 // --check (CI): fail when an invariant breaks. Asked in the needles' own words, every one reaches the prompt; no
 // memory crosses a scope or an owner; the pinned layer stays within its budget.
 if (process.argv.includes("--check")) {
   const broken = results.flatMap((r) => [
     ...(r.res.lex.prompt < Q ? [`${r.total}: ${Q - r.res.lex.prompt} needles asked in their own words missed the prompt`] : []),
+    ...(r.total === 1000 && r.reach.map + r.reach.words < FLOOR ? [`${r.total}: paraphrased reach without pin ${r.reach.map + r.reach.words}/${Q}, below ${FLOOR}`] : []),
     ...(r.leaks.length ? [`${r.total}: ${r.leaks.length} leaks`] : []),
     ...(r.bobPinned ? [`${r.total}: another owner's memories pinned`] : []),
-    ...(r.pinnedChars > MEMORY_BUDGET ? [`${r.total}: pinned ${r.pinnedChars} chars, over the budget`] : [])
+    ...(r.pinnedChars > r.budget ? [`${r.total}: pinned ${r.pinnedChars} chars, over the budget`] : [])
   ])
   if (broken.length) {
     console.error(`\nmemory check failed:\n${broken.map((b) => `- ${b}`).join("\n")}`)

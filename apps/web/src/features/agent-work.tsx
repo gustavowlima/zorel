@@ -3,7 +3,7 @@
 // with its project and chat, when, how long, how it ended and its tokens; pressing one opens that chat on its reply
 // (its steps are there, under the reply). Each chat is one session of the agent (one engine session
 // per chat), so a run names the chat it continued.
-import type { Agent, AgentRun, Chat } from "@zorel/contracts"
+import { type Agent, type AgentRun, type Chat, workSteps } from "@zorel/contracts"
 import type { ChatStatus } from "@zorel/contracts/events"
 import { formatAge, formatCompact, formatDuration, t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
@@ -110,7 +110,7 @@ function RunRow({ run: r, agent, chat, project }: { run: AgentRun; agent: Agent;
   const meta = [
     r.state === "running" ? t("agent.work.running") : formatAge(r.endedAt ?? r.startedAt ?? Date.now()),
     took !== null && took >= 1000 && formatDuration(took),
-    t("activity.steps", { count: r.steps.length }),
+    t("activity.steps", { count: workSteps(r.steps).length }),
     errors > 0 && t("activity.errors", { count: errors }),
     r.inputTokens + r.outputTokens > 0 && t("agent.tokens", { n: formatCompact(r.inputTokens + r.outputTokens) })
   ].filter(Boolean)

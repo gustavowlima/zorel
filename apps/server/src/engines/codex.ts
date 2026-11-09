@@ -8,8 +8,8 @@
 import { Effect, Queue, Stream } from "effect"
 import { mkdirSync } from "node:fs"
 import type { Access, AccountWindow, FailureReason } from "@zorel/contracts"
-import { relative } from "node:path"
-import { type CliModel, classifyMessage, CODEX_DISABLED, type EngineEvent, type EngineFailure, type NativeStep, splitModel, toMillis, type Usage } from "#server/engines.ts"
+import { basename, relative } from "node:path"
+import { type CliModel, classifyMessage, CODEX_DISABLED, commandStep, type EngineEvent, type EngineFailure, type NativeStep, splitModel, STEP_DETAIL_MAX, STEP_TITLE_MAX, toMillis, type Usage } from "#server/engines.ts"
 import { approvalFor } from "#server/engines/policy.ts"
 import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type SessionTurnInput, withoutAppEnv } from "#server/engines/session.ts"
 
@@ -24,10 +24,10 @@ const appServerDisabled = () => CODEX_DISABLED.filter((f) => f !== "shell_tool" 
 export function codexStep(item: Json, cwd: string): NativeStep | undefined {
   const done = (s: unknown) => (s === "completed" ? "ok" : s === "declined" ? "refused" : s === "failed" ? "error" : "running") as NativeStep["status"]
   if (item?.type === "commandExecution")
-    return { id: String(item.id), kind: "run", title: String(item.command ?? "").slice(0, 300), files: [], status: done(item.status), output: String(item.aggregatedOutput ?? "").slice(0, 4000) }
+    return { id: String(item.id), kind: "run", ...commandStep(String(item.command ?? "")), files: [], status: done(item.status), output: String(item.aggregatedOutput ?? "").slice(0, 4000) }
   if (item?.type === "fileChange") {
     const files = (item.changes ?? []).map((c: Json) => relative(cwd, String(c.path)) || String(c.path))
-    return { id: String(item.id), kind: "edit", title: `Edit ${files.join(", ")}`.slice(0, 300), files, status: done(item.status), output: "" }
+    return { id: String(item.id), kind: "edit", title: `Edit ${files.map((f: string) => basename(f)).join(", ")}`.slice(0, STEP_TITLE_MAX), detail: files.join(", ").slice(0, STEP_DETAIL_MAX), files, status: done(item.status), output: "" }
   }
   return undefined
 }

@@ -61,20 +61,26 @@ describe("shellCommand", () => {
   })
 })
 
-// A process listening in a chat's folder is a server, unless it is the chat's session itself (an agent CLI that keeps
-// a port of its own): that one shows once, as the session.
-test.skipIf(process.platform === "win32")("servers: a listener in the folder counts, the session's own process doesn't", async () => {
+// A server counts when one of a chat's own processes (a shell, an agent session) started it; one that only runs in the
+// same folder doesn't, and neither does the session listening itself.
+test.skipIf(process.platform === "win32")("servers: what a chat's process started counts, a stranger in the folder doesn't", async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "zorel-srv-")))
-  const child = Bun.spawn(["bun", "-e", "Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('ok') }); setInterval(() => {}, 1000)"], { cwd: root, stdout: "ignore", stderr: "ignore" })
+  const serve = "Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('ok') }); setInterval(() => {}, 1000)"
+  const shell = Bun.spawn(["sh", "-c", `bun -e "${serve}" & p=$!; trap 'kill $p' TERM; wait`], { cwd: root, stdout: "ignore", stderr: "ignore" })
+  const stranger = Bun.spawn(["bun", "-e", serve], { cwd: root, stdout: "ignore", stderr: "ignore" })
   try {
+    const owned = new Map([[shell.pid, root]])
     let found: Awaited<ReturnType<typeof serversUnder>> = []
     for (let i = 0; i < 50 && !found.length; i++) {
       await Bun.sleep(100)
-      found = (await serversUnder([root])).filter((s) => s.pid === child.pid)
+      found = await serversUnder(owned)
     }
-    expect(found.length).toBe(1)
-    expect((await serversUnder([root], new Map([[child.pid, root]]))).filter((s) => s.pid === child.pid)).toEqual([])
+    expect(found.map((s) => s.root)).toEqual([root]) // the shell's server
+    expect(found.some((s) => s.pid === stranger.pid)).toBe(false) // same folder, not started by the chat
+    expect(found.some((s) => s.pid === shell.pid)).toBe(false) // the session itself isn't a server
   } finally {
-    child.kill()
+    shell.kill()
+    stranger.kill()
+    await Promise.all([shell.exited, stranger.exited])
   }
 }, 20_000)

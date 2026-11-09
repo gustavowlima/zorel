@@ -12,6 +12,7 @@
     "@effect/ai-openai-compat": "4.1.2",
     "@effect/platform-bun": "4.1.2",
     "@effect/sql-sqlite-bun": "4.1.2",
+    "@huggingface/transformers": "4.3.2",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@secretlint/core": "13.0.7",
     "@secretlint/secretlint-rule-preset-recommend": "13.0.7",
