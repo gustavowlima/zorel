@@ -37,6 +37,8 @@ export const signedInAtom = Zorel.query("tools", "signedIn", { reactivityKeys: [
 export const accountsAtom = Zorel.query("accounts", "list", { reactivityKeys: ["accounts"] })
 export const keysAtom = Zorel.query("settings", "keys", { reactivityKeys: ["keys"] })
 export const telegramAtom = Zorel.query("settings", "telegram", { reactivityKeys: ["telegram"] })
+export const desktopAtom = Zorel.query("settings", "desktop", { reactivityKeys: ["desktop"] })
+export const desktopRunningAtom = Zorel.query("settings", "desktopRunning", { reactivityKeys: ["desktop"] })
 export const auditAtom = (query: { kind?: AuditKind; q?: string; from?: number; to?: number; page?: number }) =>
   Zorel.query("settings", "audit", { query, reactivityKeys: ["audit"] })
 export const storageAtom = Zorel.query("settings", "storage", { reactivityKeys: ["storage"] })
@@ -123,6 +125,8 @@ export const mutations = {
   login: Zorel.mutation("accounts", "login"),
   setKey: Zorel.mutation("settings", "setKey"),
   telegramPair: Zorel.mutation("settings", "telegramPair"),
+  installDesktop: Zorel.mutation("settings", "installDesktop"),
+  desktopGuide: Zorel.mutation("settings", "desktopGuide"),
   telegramUnpair: Zorel.mutation("settings", "telegramUnpair"),
   undo: Zorel.mutation("chats", "undo"),
   readLimits: Zorel.mutation("accounts", "limits"),

@@ -6,6 +6,7 @@
 import type { Access, AgentPermissions, Grant, McpServer } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import type { ReactNode } from "react"
+import { ComputerApps } from "./computer-apps.tsx"
 import { Globe, IconButton, MousePointerClick, Plug, Rows, Segmented, SettingRow, SquareTerminal, X } from "@/ui"
 
 // A server the agent was given nothing for follows the server's own mode (as on the server).
@@ -99,6 +100,7 @@ export function PermissionsEditor({
         ))}
       </Rows>
       {servers.length === 0 && <p className="text-sm text-muted">{t("agent.perm.noConnectors")}</p>}
+      <ComputerApps value={value.apps ?? []} onChange={(apps) => onChange({ ...value, apps })} />
       {showAlways && value.always.length > 0 && (
         <section className="flex flex-col gap-2">
           <h3 className="text-sm font-medium text-muted">{t("agent.perm.always")}</h3>

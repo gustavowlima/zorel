@@ -109,3 +109,4 @@
 2026-11-08 | MCP tools deferred behind zorel_find_tools/zorel_use_tool past 10k chars of definitions | spec 005: every MCP tool cost tokens in every request
 2026-11-08 | Telegram channel: paired accounts talk to Zorel through the runtime | spec 007: first external channel
 2026-11-08 | tool classification skips a namespace prefix shared by all of a server's tools; snapshot/screenshot/status/version/wait/is read only alone | agent-desktop: every tool is desktop_*, all would have needed approval
+2026-11-08 | computer apps: in-app agent-desktop install (checksum), per-agent apps read/use, 7 tools, approvals on commits | spec 008 replaces the npx connector (needed Node, 67 tools, whole computer)

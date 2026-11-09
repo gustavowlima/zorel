@@ -2,7 +2,7 @@ import { discovered, pickedEntries, serializePicks } from "./file-skills.ts"
 import { listFolders } from "./folders.ts"
 import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, CronInvalid, GitFailed, isTeammate, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
+import { Api, CronInvalid, DesktopInstallFailed, GitFailed, isTeammate, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
 import { ZorelRpc } from "@zorel/contracts/events"
 import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
 import { Effect, Layer, Schema } from "effect"
@@ -24,6 +24,8 @@ import { PageSync } from "./page-sync.ts"
 import { Engines, listModels, splitModel } from "./engines.ts"
 import { claudeCommands } from "./engines/claude-sdk.ts"
 import { API_KEYS, mcpEnvName, oauthKey, Secrets } from "./secrets.ts"
+import { desktopCli, desktopStatus, installDesktop } from "./desktop.ts"
+import { isZorel } from "./desktop-apps.ts"
 import { newPairingCode, pairingCode, TELEGRAM_KEY, TelegramChannel, telegramUsers, unpairTelegram } from "./telegram.ts"
 import { Accounts } from "./accounts.ts"
 import { Actor } from "./access.ts"
@@ -873,6 +875,21 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
         Effect.andThen(
           store.setPreference(FAILOVER_TERMS, String(Date.now())).pipe(Effect.tap(() => audit.record(Actions.failoverTermsAccepted, { target: { id: FAILOVER_TERMS, name: "Failover" } }))),
           preferencesOf(store)
+        )
+      )
+      .handle("desktop", () => Effect.promise(() => desktopStatus(dataDir)))
+      .handle("installDesktop", () =>
+        Effect.promise(() => installDesktop(dataDir)).pipe(
+          Effect.flatMap((r) => (r.ok ? Effect.promise(() => desktopStatus(dataDir)) : Effect.fail(new DesktopInstallFailed({ message: r.error })))),
+          Effect.tap(() => audit.record(Actions.desktopInstalled, { target: { id: "agent-desktop", name: "agent-desktop" } }))
+        )
+      )
+      // macOS: opens System Settings with agent-desktop's guide to the Accessibility permission.
+      .handle("desktopGuide", () => Effect.promise(() => desktopCli(dataDir)(["permissions", "--guide"], 15_000)).pipe(Effect.asVoid))
+      // The apps open now (to pick from), never Zorel itself.
+      .handle("desktopRunning", () =>
+        Effect.promise(() => desktopCli(dataDir)(["list-apps"], 20_000)).pipe(
+          Effect.map((r) => [...new Set(((r.data?.apps ?? []) as Array<{ name?: string; presentation?: string }>).filter((a) => a.presentation === "foreground" && a.name && !isZorel(a.name)).map((a) => a.name!))].sort())
         )
       )
       .handle("telegram", () => telegramStatus)
