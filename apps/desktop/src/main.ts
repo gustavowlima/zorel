@@ -8,7 +8,7 @@ import { existsSync, openSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { join } from "node:path"
 import { app, BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, powerMonitor, powerSaveBlocker, session, shell, Tray } from "electron"
-import { SESSION_BYTES, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
+import { SESSION_BYTES, SESSION_HEADER, SESSION_STDIN_ENV } from "@zorel/contracts/session"
 import { autoUpdater } from "electron-updater"
 
 const dev = !app.isPackaged
@@ -64,13 +64,14 @@ async function startServer() {
     env: {
       ...process.env,
       PORT: String(port),
-      [SESSION_ENV]: secret, // the server reads it and drops it from its env at once
+      [SESSION_STDIN_ENV]: "1", // the secret comes on stdin, never in the environment (readable by any process of this user)
       ZOREL_PARENT_PID: String(process.pid), // the server exits if this process dies without stopping it
       ZOREL_WEB_DIR: dev ? join(root, "apps/web/dist") : join(root, "web"),
       ...(dev ? {} : { ZOREL_MIGRATIONS: join(root, "drizzle"), PLAYWRIGHT_BROWSERS_PATH: join(root, "browsers"), ZOREL_PLAYWRIGHT: join(root, "playwright-core"), ZOREL_ONNX: join(root, "onnxruntime-node", "dist", "index.cjs") }) // the bundled Chromium; the local model's runtime
     },
-    stdio: ["ignore", dev ? "inherit" : log, dev ? "inherit" : log]
+    stdio: ["pipe", dev ? "inherit" : log, dev ? "inherit" : log]
   })
+  server.stdin?.end(`${secret}\n`)
   server.once("exit", (code) => {
     if (quitting) return
     dialog.showErrorBox("Zorel", `The Zorel server stopped (code ${code}). See ${join(app.getPath("logs"), "server.log")}.`)
