@@ -223,7 +223,7 @@ export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; pr
           </TabPanel>
 
           <TabPanel id="tools">
-            <PermissionsEditor access={access} onAccess={(v) => set({ access: v })} value={permissions} onChange={(v) => set({ permissions: v })} servers={tools} />
+            <PermissionsEditor access={access} onAccess={(v) => set({ access: v })} value={permissions} onChange={(v) => set({ permissions: v })} servers={tools} agentId={agent?.id} />
           </TabPanel>
 
           {agent && (

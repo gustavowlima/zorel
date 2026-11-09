@@ -24,6 +24,7 @@ import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
 import { startVectors } from "./vectors.ts"
 import { desktopBin, desktopCli } from "./desktop.ts"
+import { checkFolder, COMPUTER_TOOL_NAMES, COMPUTER_TOOLS, computersFor, WRITING_COMPUTER_TOOLS } from "./computer.ts"
 import { CHANGING_DESKTOP_TOOLS, DESKTOP_TOOL_NAMES, DesktopApps, desktopTools } from "./desktop-apps.ts"
 import { freePort, outputTail, PREVIEW_TOOL, previewFolder, previewKey, previewLine, previewUrl, waitForPort } from "./preview.ts"
 import { managerOf, scriptsOf, shellAlive, startShell } from "./terminals.ts"
@@ -186,6 +187,7 @@ export const makeRuntime = Effect.gen(function* () {
   const engines = yield* Engines
   const dataDir = yield* DataDir
   const desktop = new DesktopApps(desktopCli(dataDir)) // the computer apps' last numbered lists (spec 008)
+  const computers = computersFor(dataDir) // agents' own Linux computers (spec 009)
   const { hub, gateway } = yield* Tools
   const browsers = yield* BrowserService
   const services = yield* Effect.context<Store | Engines | DataDir>()
@@ -432,6 +434,8 @@ export const makeRuntime = Effect.gen(function* () {
     // The chat's browser: Zorel's own tools, always there. Reading never asks; acting asks when the agent's
     // access is "ask", like any tool that writes.
     if (perms.browser) for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    // Its own Linux computer (spec 009): tools that run there, never on this machine.
+    if (perms.computer === "container") defs.push(...COMPUTER_TOOLS)
     // The person's computer apps given to this agent (spec 008), once agent-desktop is installed.
     const apps = desktopBin(dataDir) ? (perms.apps ?? []) : []
     defs.push(...desktopTools(apps))
@@ -822,6 +826,18 @@ export const makeRuntime = Effect.gen(function* () {
       if (name === PREVIEW_TOOL.name) return previewCall(args)
       if (name === ASK_TOOL.name) return askCall(args)
       if (TEAM_TOOLS.some((t) => t.name === name)) return teamCall(name, args)
+      if (COMPUTER_TOOL_NAMES.has(name) && perms.computer === "container") {
+        const s = await step(name === "computer_run" ? String(args.command ?? "").slice(0, 120) : `${name.replace("computer_", "")} ${String(args.path ?? "")}`.trim(), name)
+        // The chat's project folder is lent when it may be (inside home, not hidden, not Zorel's): read-only at "ask".
+        const project = projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined)
+        const lent = project?.path && !checkFolder(project.path, { dataDir }) ? { path: project.path, readOnly: askFirst } : null
+        if (WRITING_COMPUTER_TOOLS.has(name)) onWrite()
+        const r = guarded(await computers.call({ agentId: agent?.id ?? "none", projectId: chat.projectId, lent }, name, args), "your computer")
+        const out = resultText(r)
+        keep({ tool: name, args: JSON.stringify(args).slice(0, 300), status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
+        await finish(s, r.isError ? "error" : "ok", out)
+        return compact(chat.id, r)
+      }
       if ((DESKTOP_TOOL_NAMES as ReadonlyArray<string>).includes(name)) {
         const s = await step(`${name.replace("desktop_", "")} ${typeof args.app === "string" ? args.app : ""}`.trim(), name)
         const ask = async (summary: string) => {
