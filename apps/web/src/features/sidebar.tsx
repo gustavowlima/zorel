@@ -17,7 +17,7 @@ import { NewProjectButton } from "./project.tsx"
 import { byTurn, ordered, type Statuses, visibleChats } from "./sidebar-order.ts"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  ChevronRight, Fold, Marker, Menu, MoreHorizontal, NavItem, Search, Pause, Play, PanelLeftClose, PanelLeftOpen, AlarmClock, Bot, Brain, Layers, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, SquarePen, Tooltip, Trash2, useNavReorder, Width
+  ChevronRight, Fold, Marker, Menu, MoreHorizontal, NavItem, Search, Pause, Play, PanelLeftClose, PanelLeftOpen, AlarmClock, Bot, Brain, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, SquarePen, Tooltip, Trash2, useNavReorder, Width
 } from "@/ui"
 
 // Open and folded widths (App animates between them; the desktop title bar lines up with the open one).
@@ -37,59 +37,55 @@ const idOf = (key: NavKey) => String(key).slice(2)
 
 type Place = { key: string; icon: ReactNode; label: string; active?: boolean; go: () => void; count?: number; kbd?: string }
 
-// The app's places: what you start or look for (New chat, Search, Needs you, which counts everything that waits for
-// you), then where the team and what it knows live, quieter (Pages is a view of Memory). Open, each is a 36px row (the projects' height; icons at
-// x 19-39, words from x 49 like every row); folded, an icon with its name as a tooltip. The current one has the open
-// chat's wash.
+// The app's places: New chat and Search as rows (words and a shortcut); then Needs you (with what waits for you),
+// Agents, Routines and Memory as one row of icons, each named by its tooltip (Pages is a view of Memory). Skills live
+// in Settings. Folded, the column holds the same icons. The current one has the open chat's wash.
 function Places({ route, folded }: { route: Route; folded: boolean }) {
   const memories = useList(memoriesAtom)
   const approvals = useList(approvalsAtom)
   const needsYou = approvals.length + memories.filter((m) => m.state === "pending").length
   const primary: Place[] = [
     { key: "new", icon: <SquarePen />, label: t("nav.newChat"), active: route.view === "home" && !route.projectId, go: () => go({ view: "home" }) },
-    { key: "search", icon: <Search />, label: t("common.search"), go: openPalette, kbd: MAC ? "⌘K" : "Ctrl K" },
-    { key: "inbox", icon: <Inbox />, label: t("nav.needsYou"), active: route.view === "inbox", go: () => go({ view: "inbox" }), count: needsYou }
+    { key: "search", icon: <Search />, label: t("common.search"), go: openPalette, kbd: MAC ? "⌘K" : "Ctrl K" }
   ]
-  const library: Place[] = [
+  const icons: Place[] = [
+    { key: "inbox", icon: <Inbox />, label: t("nav.needsYou"), active: route.view === "inbox", go: () => go({ view: "inbox" }), count: needsYou },
     { key: "agents", icon: <Bot />, label: t("nav.agents"), active: ["agents", "agent", "new-agent", "builder"].includes(route.view), go: () => go({ view: "agents" }) },
     { key: "routines", icon: <AlarmClock />, label: t("nav.routines"), active: route.view === "routines", go: () => go({ view: "routines" }) },
     // Pages is a view of Memory (its header's switch): Memory stays current there.
-    { key: "memory", icon: <Brain />, label: t("nav.memory"), active: route.view === "memory" || route.view === "pages", go: () => go({ view: "memory" }) },
-    { key: "skills", icon: <Layers />, label: t("nav.skills"), active: route.view === "skills", go: () => go({ view: "skills" }) }
+    { key: "memory", icon: <Brain />, label: t("nav.memory"), active: route.view === "memory" || route.view === "pages", go: () => go({ view: "memory" }) }
   ]
+  const rail = (p: Place, placement: "right" | "top") => (
+    <RailItem key={p.key} label={p.label} active={!!p.active} onPress={p.go} count={p.count} placement={placement}>
+      {p.icon}
+    </RailItem>
+  )
   if (folded)
     return (
       <div className="flex shrink-0 flex-col items-start gap-1 pl-2">
-        {primary.map((p) => (
-          <RailItem key={p.key} label={p.label} active={!!p.active} onPress={p.go} count={p.count}>
-            {p.icon}
-          </RailItem>
-        ))}
+        {primary.map((p) => rail(p, "right"))}
         <span aria-hidden="true" className="my-1 ml-2 h-px w-6 bg-subtle" />
-        {library.map((p) => (
-          <RailItem key={p.key} label={p.label} active={!!p.active} onPress={p.go}>
-            {p.icon}
-          </RailItem>
-        ))}
+        {icons.map((p) => rail(p, "right"))}
       </div>
     )
-  const row = (p: Place, quiet: boolean) => (
-    <NavItem
-      key={p.key}
-      icon={p.icon}
-      active={!!p.active}
-      onPress={p.go}
-      aria-label={p.count ? `${p.label} (${p.count})` : p.label}
-      className={cx("h-9", p.active ? "border-transparent bg-control-hover" : quiet && "text-muted")}
-      trailing={p.kbd ? <kbd className="font-sans text-sm text-dim">{p.kbd}</kbd> : p.count ? <Count n={p.count} /> : undefined}
-    >
-      {p.label}
-    </NavItem>
-  )
   return (
-    <div className="flex shrink-0 flex-col gap-4 pr-2.5 pl-2">
-      <div className="flex flex-col gap-0.5">{primary.map((p) => row(p, false))}</div>
-      <div className="flex flex-col gap-0.5">{library.map((p) => row(p, true))}</div>
+    <div className="flex shrink-0 flex-col gap-2 pr-2.5 pl-2">
+      <div className="flex flex-col gap-0.5">
+        {primary.map((p) => (
+          <NavItem
+            key={p.key}
+            icon={p.icon}
+            active={!!p.active}
+            onPress={p.go}
+            aria-label={p.label}
+            className={cx("h-9", p.active && "border-transparent bg-control-hover")}
+            trailing={p.kbd ? <kbd className="font-sans text-sm text-dim">{p.kbd}</kbd> : undefined}
+          >
+            {p.label}
+          </NavItem>
+        ))}
+      </div>
+      <div className="flex items-center gap-1 pl-1">{icons.map((p) => rail(p, "top"))}</div>
     </div>
   )
 }

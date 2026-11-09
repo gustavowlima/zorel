@@ -663,6 +663,7 @@ export const en = {
     sections: "Settings sections",
     providers: "Providers",
     mcp: "Connectors",
+    skills: "Skills",
     channels: "Channels",
     storage: "Storage",
     audit: "Audit log",
@@ -682,6 +683,7 @@ export const en = {
       storage: "What Zorel keeps on this computer",
       audit: "Who changed what, and when",
       mcp: "GitHub, Notion and other tools agents use",
+      skills: "The recipes agents follow: Zorel's own and the ones on this computer",
       channels: "Talk to Zorel from Telegram",
       processes: "What runs in the background now"
     }

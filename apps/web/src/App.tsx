@@ -16,7 +16,6 @@ import { RoutinesView } from "./features/routines.tsx"
 import { InboxView } from "./features/inbox.tsx"
 import { MemoryView } from "./features/memory.tsx"
 import { PagesView } from "./features/pages.tsx"
-import { SkillsView } from "./features/skills.tsx"
 import { ProjectView } from "./features/project.tsx"
 import { SettingsView } from "./features/settings.tsx"
 import { SIDEBAR_FOLDED, SIDEBAR_WIDTH, Sidebar, TitleBar } from "./features/sidebar.tsx"
@@ -115,7 +114,7 @@ function Screen({ route }: { route: Route }) {
     case "pages":
       return <PagesView selected={route.id} />
     case "skills":
-      return <SkillsView selected={route.id} computer={route.computer} />
+      return <SettingsView tab="skills" skill={{ selected: route.id, computer: route.computer }} />
     case "usage":
       return <UsageView key={route.agentId ?? "all"} agentId={route.agentId} />
     case "settings":
