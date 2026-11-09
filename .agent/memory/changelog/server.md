@@ -116,3 +116,4 @@
 2026-11-09 | agents' own Linux computer (Podman first, Docker fallback), 5 computer_* tools, project folder lent | spec 009: Zorel had no isolated computer; Tucano's is Docker-only
 2026-11-09 | Processes: servers only from a chat's own shells/sessions; preview test no longer leaks a server per run | the screen listed every listener in the repo folder; 68 orphaned test servers had piled up
 2026-11-09 | browser acts/pointer, risky by page names, own tabs only; ACP risky asks; container remount + .git ro; desktop risky words/keys | functional review
+2026-11-09 | Antigravity engine via agy acp with Zorel-owned gemini dir (request-review) | user asked; agy honored the person's always-proceed

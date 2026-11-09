@@ -276,6 +276,7 @@ export const en = {
       "codex-cli": "Codex",
       "gemini-cli": "Gemini CLI",
       opencode: "OpenCode",
+      antigravity: "Antigravity",
       anthropic: "Anthropic",
       openai: "OpenAI",
       openrouter: "OpenRouter",

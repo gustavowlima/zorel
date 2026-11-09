@@ -77,14 +77,14 @@ function entriesOf(accounts: ReadonlyArray<ProviderAccount>, models: ReadonlyArr
       models: namesOf(provider)
     })
   }
-  // ACP agent CLIs (Gemini CLI, OpenCode): shown while installed; they use their own sign-in and models.
+  // ACP agent CLIs (Gemini CLI, OpenCode, Antigravity): shown while installed; they use their own sign-in and models.
   for (const provider of ACP_PROVIDERS) {
     if (!models.find((m) => m.provider === provider)?.available) continue
     entries.push({ key: provider, provider, label: providerLabel(provider), kind: "agent", account: undefined, badge: undefined, available: true, models: namesOf(provider) })
   }
   return entries
 }
-const ACP_PROVIDERS = ["gemini-cli", "opencode"]
+const ACP_PROVIDERS = ["gemini-cli", "opencode", "antigravity"]
 
 // The entry a choice belongs to: the chosen account, else the provider's default account, else the provider.
 const entryOf = (entries: ReadonlyArray<Entry>, v: ModelChoice) => {

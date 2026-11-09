@@ -9,6 +9,7 @@ import { DataDir } from "./chat.ts"
 import { type AccountRow, Store } from "./db.ts"
 import { type CliModel, splitModel } from "./engines.ts"
 import { readClaudeLimits, readClaudeModels } from "./engines/claude-sdk.ts"
+import { readAntigravityModels } from "./engines.ts"
 import { readCodexLimits, readCodexModels } from "./engines/codex.ts"
 
 const STATUS_TTL_MS = 30_000
@@ -85,7 +86,7 @@ export interface AccountsService {
   readonly cliModels: Effect.Effect<CliModels>
 }
 
-export type CliModels = Partial<Record<"claude-cli" | "codex-cli", ReadonlyArray<CliModel>>>
+export type CliModels = Partial<Record<"claude-cli" | "codex-cli" | "antigravity", ReadonlyArray<CliModel>>>
 const CLI_MODELS_KEY = "cliModels"
 const CLI_MODELS_TTL_MS = 60 * 60_000
 const CLI_MODELS_RETRY_MS = 5 * 60_000
@@ -225,11 +226,12 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
           if (saved && Date.now() - saved.at < CLI_MODELS_TTL_MS) return saved.models
           const previous = saved?.models ?? {}
           const read = Effect.promise(async () => {
-            const [claude, codex] = await Promise.allSettled([readClaudeModels(undefined), readCodexModels(join(root, defaultId("codex")))])
+            const [claude, codex, antigravity] = await Promise.allSettled([readClaudeModels(undefined), readCodexModels(join(root, defaultId("codex"))), readAntigravityModels()])
             const models: CliModels = { ...previous }
             if (claude.status === "fulfilled" && claude.value.length) models["claude-cli"] = claude.value
             if (codex.status === "fulfilled" && codex.value.length) models["codex-cli"] = codex.value
-            const failed = claude.status === "rejected" || codex.status === "rejected"
+            if (antigravity.status === "fulfilled" && antigravity.value.length) models.antigravity = antigravity.value
+            const failed = claude.status === "rejected" || codex.status === "rejected" || antigravity.status === "rejected"
             return { models, at: failed ? Date.now() - CLI_MODELS_TTL_MS + CLI_MODELS_RETRY_MS : Date.now() }
           }).pipe(Effect.tap((s) => store.setPreference(CLI_MODELS_KEY, JSON.stringify(s))))
           if (saved) {
