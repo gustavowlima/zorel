@@ -1,7 +1,5 @@
 import { expect, test } from "bun:test"
-import { execFileSync } from "node:child_process"
-import { createHash } from "node:crypto"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { AGENT_DESKTOP_VERSION, archiveOf, checksumOf, desktopBin, desktopStatus, installDesktop, targetOf } from "./desktop.ts"
@@ -9,16 +7,11 @@ import { DesktopApps, desktopTools, itemize, pick, riskyClick, riskyKey } from "
 import type { Cli } from "./desktop.ts"
 
 // A release server with this system's archive (a fake program and its helper) and a checksums.txt.
-function fakeRelease(tamper = false) {
-  const work = mkdtempSync(join(tmpdir(), "zorel-adrel-"))
+async function fakeRelease(tamper = false) {
   const exe = process.platform === "win32" ? "agent-desktop.exe" : "agent-desktop"
-  mkdirSync(join(work, "pkg"))
-  writeFileSync(join(work, "pkg", exe), "#!/bin/sh\necho '{\"ok\":true,\"data\":{}}'\n")
-  writeFileSync(join(work, "pkg", "agent-desktop-helper"), "helper")
   const file = archiveOf(targetOf()!)
-  execFileSync("tar", ["-czf", join(work, file), "-C", join(work, "pkg"), exe, "agent-desktop-helper"])
-  const archive = readFileSync(join(work, file))
-  const sum = createHash("sha256").update(archive).digest("hex")
+  const archive = await new Bun.Archive({ [exe]: "#!/bin/sh\necho '{\"ok\":true,\"data\":{}}'\n", "agent-desktop-helper": "helper" }, { compress: "gzip" }).bytes()
+  const sum = new Bun.CryptoHasher("sha256").update(archive).digest("hex")
   const sums = `${tamper ? "0".repeat(64) : sum}  ${file}\n${"1".repeat(64)}  other.tar.gz\n`
   const server = Bun.serve({
     port: 0,
@@ -38,7 +31,7 @@ test("agent-desktop installs from the release, checked against its checksum; a m
   expect(targetOf("win32", "x64")).toBe("x86_64-pc-windows-msvc")
   expect(targetOf("freebsd", "x64")).toBeUndefined()
   const data = mkdtempSync(join(tmpdir(), "zorel-ad-"))
-  const bad = fakeRelease(true)
+  const bad = await fakeRelease(true)
   process.env.ZOREL_AGENT_DESKTOP_RELEASES = bad.url
   try {
     expect(await installDesktop(data)).toEqual({ ok: false, error: "The download didn't match the release's checksum, so it wasn't installed." })
@@ -46,7 +39,7 @@ test("agent-desktop installs from the release, checked against its checksum; a m
   } finally {
     bad.stop()
   }
-  const good = fakeRelease()
+  const good = await fakeRelease()
   process.env.ZOREL_AGENT_DESKTOP_RELEASES = good.url
   try {
     expect(await installDesktop(data)).toEqual({ ok: true, version: AGENT_DESKTOP_VERSION })

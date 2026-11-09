@@ -3,7 +3,6 @@
 // by the text it sees; nothing moves the mouse. A click or key that sends, pays, publishes, schedules or deletes
 // waits for the person. The numbered list, picking a target, and the risky click and key rules derive from Tucano
 // (Apache-2.0, see NOTICE: src/core/apps.ts).
-import { execFile } from "node:child_process"
 import type { DesktopApp } from "@zorel/contracts"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { normalize } from "./db.ts"
@@ -153,7 +152,7 @@ const fail = (text: string) => textResult(text, true)
 
 // On a Mac, apps made with Chromium (Spotify, Slack…) show their screen to accessibility only when started with it
 // on; `open -a` also brings an open app forward. Elsewhere agent-desktop launches it.
-const openMac = (app: string) => new Promise<boolean>((resolve) => execFile("open", ["-a", app, "--args", "--force-renderer-accessibility"], { timeout: 15_000 }, (e) => resolve(!e)))
+const openMac = async (app: string) => (await Bun.spawn(["open", "-a", app, "--args", "--force-renderer-accessibility"], { stdout: "ignore", stderr: "ignore", timeout: 15_000 }).exited) === 0
 
 export interface DesktopCall {
   readonly key: string // whose last list this is (chat + agent)
