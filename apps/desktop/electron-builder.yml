@@ -35,6 +35,8 @@ extraResources:
   - { from: build/browsers, to: browsers }
   # playwright-core as files (the server loads it from here, ZOREL_PLAYWRIGHT): it can't live inside the binary.
   - { from: build/playwright-core, to: playwright-core }
+  # onnxruntime-node for recall by meaning (spec 003): one JS file + this platform's native binary (ZOREL_ONNX).
+  - { from: build/onnxruntime-node, to: onnxruntime-node }
 # Only the app's languages: drops ~40 MB of Chromium locales.
 electronLanguages: [en, pt-BR]
 # Updates: a GitHub release per version (electron-updater reads it), from the same repository install.sh uses.
