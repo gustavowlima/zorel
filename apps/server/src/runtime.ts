@@ -812,14 +812,17 @@ export const makeRuntime = Effect.gen(function* () {
         }
         if (builtin.writes) onWrite()
         const root = workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined))
-        const r = await runBrowserTool(browsers, chat.id, name as BrowserToolName, args, root, profileOf(agent?.id)).then(
-          (text) => textResult(text),
-          (e: unknown) => textResult(e instanceof Error ? e.message.split("\n")[0]! : String(e), true)
-        )
+        const r = guarded(
+          await runBrowserTool(browsers, chat.id, name as BrowserToolName, args, root, profileOf(agent?.id)).then(
+            (text) => textResult(text),
+            (e: unknown) => textResult(e instanceof Error ? e.message.split("\n")[0]! : String(e), true)
+          ),
+          `the browser (${name})`
+        ) // the warning, if any, shows in the step too
         const out = resultText(r)
         legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
         await finish(s, r.isError ? "error" : "ok", out)
-        return compact(chat.id, guarded(r, `the browser (${name})`))
+        return compact(chat.id, r)
       }
       const route = routes.get(name)
       const server = route && (await run(store.mcpServer(route.server)))
@@ -842,10 +845,11 @@ export const makeRuntime = Effect.gen(function* () {
           Effect.withSpan("tool.call", { attributes: { tool: name, server: server.name, turnId: row.id } })
         )
       )
-      const out = resultText(r)
+      const shownResult = guarded(r, `${server.name} (${route.tool})`) // the warning, if any, shows in the step too
+      const out = resultText(shownResult)
       legacy.push({ tool: name, args: shown, status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
       await finish(s, r.isError ? "error" : "ok", out)
-      return compact(chat.id, guarded(r, `${server.name} (${route.tool})`))
+      return compact(chat.id, shownResult)
     }
     if (fixed) {
       fixed.update({ tools: defs, call })
