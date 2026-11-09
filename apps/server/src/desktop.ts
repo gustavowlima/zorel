@@ -2,9 +2,7 @@
 // accessibility tree. Optional (spec 008): the person installs it from the app; Zorel downloads the official
 // release for this OS and processor, checks it against the release's checksums.txt and keeps it in its data
 // folder. No Node.js, no terminal. Pinned: a new version comes with a Zorel update, never unseen.
-import { execFile } from "node:child_process"
-import { createHash } from "node:crypto"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs"
 import { join } from "node:path"
 
 export const AGENT_DESKTOP_VERSION = "1.2.0"
@@ -42,8 +40,6 @@ const download = async (url: string) => {
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
   return new Uint8Array(await res.arrayBuffer())
 }
-const run = (file: string, args: ReadonlyArray<string>, cwd?: string) =>
-  new Promise<void>((resolve, reject) => execFile(file, [...args], { cwd, timeout: 60_000, windowsHide: true }, (e) => (e ? reject(e) : resolve())))
 
 // Downloads, checks and unpacks this system's build. Errors are for the person ("isn't available for…").
 export async function installDesktop(dataDir: string): Promise<{ ok: true; version: string } | { ok: false; error: string }> {
@@ -55,12 +51,11 @@ export async function installDesktop(dataDir: string): Promise<{ ok: true; versi
   try {
     const [archive, sums] = await Promise.all([download(`${base}/${file}`), download(`${base}/checksums.txt`)])
     const want = checksumOf(new TextDecoder().decode(sums), file)
-    const got = createHash("sha256").update(archive).digest("hex")
+    const got = new Bun.CryptoHasher("sha256").update(archive).digest("hex")
     if (!want || want !== got) return { ok: false, error: "The download didn't match the release's checksum, so it wasn't installed." }
-    writeFileSync(join(work, file), archive)
     const into = join(work, "out")
     mkdirSync(into)
-    await run("tar", ["-xzf", join(work, file), "-C", into]) // tar ships with macOS, Linux and Windows 10+
+    await new Bun.Archive(archive).extract(into) // Bun's own tar.gz reader: no system tar needed, Windows included
     if (!existsSync(join(into, exe()))) return { ok: false, error: "The release didn't hold the agent-desktop program." }
     if (process.platform !== "win32") chmodSync(join(into, exe()), 0o755)
     const dir = desktopDir(dataDir)
@@ -85,18 +80,17 @@ export type Cli = (args: ReadonlyArray<string>, timeoutMs?: number) => Promise<E
 
 export const desktopCli =
   (dataDir: string): Cli =>
-  (args, timeoutMs = 45_000) =>
-    new Promise((resolve) => {
-      const bin = desktopBin(dataDir)
-      if (!bin) return resolve({ ok: false, error: { code: "NOT_INSTALLED", message: "agent-desktop isn't installed." } })
-      execFile(bin, [...args], { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (_e, stdout, stderr) => {
-        try {
-          resolve(JSON.parse(String(stdout)) as Envelope)
-        } catch {
-          resolve({ ok: false, error: { code: "BAD_OUTPUT", message: (String(stderr) || String(stdout)).trim().slice(0, 300) || "no answer" } })
-        }
-      })
-    })
+  async (args, timeoutMs = 45_000) => {
+    const bin = desktopBin(dataDir)
+    if (!bin) return { ok: false, error: { code: "NOT_INSTALLED", message: "agent-desktop isn't installed." } }
+    const proc = Bun.spawn([bin, ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: timeoutMs, windowsHide: true })
+    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
+    try {
+      return JSON.parse(stdout) as Envelope
+    } catch {
+      return { ok: false, error: { code: "BAD_OUTPUT", message: (stderr || stdout).trim().slice(0, 300) || "no answer" } }
+    }
+  }
 
 export interface DesktopStatus {
   readonly supported: boolean
