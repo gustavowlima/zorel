@@ -905,3 +905,58 @@ test("many MCP tools: the turn lists find/use instead, and a found tool is calle
     manyTools = 0
   }
 })
+
+test("Telegram channel: strangers are turned away, a paired account talks to Zorel and gets the reply", async () => {
+  const inbox: Array<{ update_id: number; message: { text: string; chat: { id: number }; from: { id: number } } }> = []
+  const sent: Array<{ chat_id: number; text: string }> = []
+  let next = 1
+  const tg = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      const method = new URL(req.url).pathname.split("/").pop()
+      const body = (await req.json()) as { offset?: number; chat_id?: number; text?: string }
+      if (method === "getUpdates") {
+        const ready = inbox.filter((u) => u.update_id >= (body.offset ?? 0))
+        if (!ready.length) await Bun.sleep(100)
+        return Response.json({ ok: true, result: ready })
+      }
+      if (method === "sendMessage") sent.push({ chat_id: body.chat_id!, text: body.text! })
+      return Response.json({ ok: true, result: true })
+    }
+  })
+  const say = (from: number, text: string) => inbox.push({ update_id: next++, message: { text, chat: { id: from }, from: { id: from } } })
+  const replyTo = async (chat: number, has: string) => {
+    for (let i = 0; i < 200; i++) {
+      const m = sent.find((s) => s.chat_id === chat && s.text.includes(has))
+      if (m) return m.text
+      await Bun.sleep(50)
+    }
+    throw new Error(`no reply with "${has}" to ${chat}; got ${JSON.stringify(sent)}`)
+  }
+  process.env.ZOREL_TELEGRAM_API = `http://localhost:${tg.port}`
+  try {
+    expect((await api((c) => c.settings.telegram())).tokenSet).toBe(false)
+    await api((c) => c.settings.setKey({ params: { name: "TELEGRAM_BOT_TOKEN" }, payload: { value: "123:fake" } }))
+    say(777, "hello?")
+    expect(await replyTo(777, "This bot is private")).toContain("/pair")
+    const { pairing } = await api((c) => c.settings.telegramPair())
+    say(777, "/pair WRONG1")
+    await replyTo(777, "This bot is private")
+    say(42, `/pair ${pairing!.code}`)
+    expect(await replyTo(42, "Paired with Zorel")).toBeTruthy()
+    expect((await api((c) => c.settings.telegram())).users).toBe(1)
+    expect((await api((c) => c.settings.telegram())).pairing).toBeNull() // one use
+    say(42, "what's up")
+    expect(await replyTo(42, "echo: what's up")).toBe("echo: what's up")
+    expect((await api((c) => c.chats.list())).some((c) => c.title === "Telegram")).toBe(true)
+    say(777, "what's up") // still a stranger
+    await Bun.sleep(300)
+    expect(sent.filter((s) => s.chat_id === 777 && s.text.startsWith("echo")).length).toBe(0)
+    await api((c) => c.settings.telegramUnpair())
+    expect((await api((c) => c.settings.telegram())).users).toBe(0)
+  } finally {
+    await api((c) => c.settings.setKey({ params: { name: "TELEGRAM_BOT_TOKEN" }, payload: { value: "" } }))
+    delete process.env.ZOREL_TELEGRAM_API
+    tg.stop(true)
+  }
+}, 30_000)

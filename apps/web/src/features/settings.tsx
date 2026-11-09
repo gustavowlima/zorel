@@ -9,15 +9,16 @@ import { type ReactNode, useEffect, useState } from "react"
 import { mutations, preferencesAtom, useMutation } from "../client.ts"
 import { go, liveStepsOpen, SETTINGS_TABS, type SettingsTab, setLiveStepsOpen, setThemePref, themePref, type ThemePref } from "../state.ts"
 import { AuditSection } from "./audit.tsx"
+import { ChannelsSection } from "./channels.tsx"
 import { NotifySetting, SoundSetting } from "./notify.tsx"
 import { McpSection } from "./mcp.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { ProvidersSection } from "./providers.tsx"
 import { ProcessesSection } from "./processes.tsx"
 import { StorageSection } from "./storage.tsx"
-import { Activity, Button, HardDrive, History, NavItem, Plug, Rows, Screen, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch } from "@/ui"
+import { Activity, Button, HardDrive, History, MessageCircle, NavItem, Plug, Rows, Screen, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch } from "@/ui"
 
-const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
+const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, channels: <MessageCircle />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
 
 export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: string | undefined }) {
   return (
@@ -38,6 +39,7 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
           {tab === "storage" && <StorageSection />}
           {tab === "audit" && <AuditSection />}
           {tab === "mcp" && <McpSection projectId={null} />}
+          {tab === "channels" && <ChannelsSection />}
           {tab === "general" && <General />}
         </div>
       </div>

@@ -432,6 +432,9 @@ export type MemoryVersion = typeof MemoryVersion.Type
 // A knowledge page (phase 3b): a longer Markdown note by scope (as memories). pinned: its title goes into every
 // turn's context in that scope.
 // file: its Markdown file inside the knowledge folder ("projects/zorel/Deploy.md"); null until written.
+// Telegram channel: whether the bot token is set, how many accounts are paired, and the open pairing code.
+export const TelegramStatus = Schema.Struct({ tokenSet: Schema.Boolean, fromEnv: Schema.Boolean, users: Schema.Number, pairing: Schema.NullOr(Schema.Struct({ code: Schema.String, until: Schema.Number })) })
+export type TelegramStatus = typeof TelegramStatus.Type
 export const Page = Schema.Struct({ id: Id, scope: MemoryScope, title: Schema.String, body: Schema.String, pinned: Schema.Boolean, file: Schema.optionalKey(Schema.NullOr(Schema.String)), updatedAt: Schema.Number, createdAt: Schema.Number })
 export type Page = typeof Page.Type
 export const PageVersion = Schema.Struct({ id: Schema.String, n: Schema.Number, title: Schema.String, body: Schema.String, by: Schema.String, at: Schema.Number })
@@ -794,4 +797,8 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.put("maxRunning", "/api/preferences/max-running", { payload: Schema.Struct({ value: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 32 })) }), success: Preferences }))
       .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))
+      // Telegram channel (spec 007): the bot token goes through setKey (TELEGRAM_BOT_TOKEN); pairing here.
+      .add(HttpApiEndpoint.get("telegram", "/api/channels/telegram", { success: TelegramStatus }))
+      .add(HttpApiEndpoint.post("telegramPair", "/api/channels/telegram/pair", { success: TelegramStatus }))
+      .add(HttpApiEndpoint.delete("telegramUnpair", "/api/channels/telegram/users", { success: TelegramStatus }))
   )

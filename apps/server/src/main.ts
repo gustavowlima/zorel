@@ -24,6 +24,7 @@ import { PageSync } from "./page-sync.ts"
 import { Engines, listModels, splitModel } from "./engines.ts"
 import { claudeCommands } from "./engines/claude-sdk.ts"
 import { API_KEYS, mcpEnvName, oauthKey, Secrets } from "./secrets.ts"
+import { newPairingCode, pairingCode, TELEGRAM_KEY, TelegramChannel, telegramUsers, unpairTelegram } from "./telegram.ts"
 import { Accounts } from "./accounts.ts"
 import { Actor } from "./access.ts"
 import { Actions, Audit, changed } from "./audit.ts"
@@ -755,6 +756,12 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
     const store = yield* Store
     const audit = yield* Audit
     const runtime = yield* Runtime
+    const telegramStatus = Effect.map(telegramUsers.pipe(Effect.provideService(Store, store)), (users) => ({
+      tokenSet: !!secrets.get(TELEGRAM_KEY),
+      fromEnv: secrets.fromEnv(TELEGRAM_KEY),
+      users: users.length,
+      pairing: pairingCode() ?? null
+    }))
     const { hub } = yield* Tools
     const workspace = yield* Workspace
     // The folder of every chat (a worktree, the project's, or its own), servers found under them in one pass; then
@@ -868,6 +875,9 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
           preferencesOf(store)
         )
       )
+      .handle("telegram", () => telegramStatus)
+      .handle("telegramPair", () => Effect.sync(newPairingCode).pipe(Effect.andThen(telegramStatus)))
+      .handle("telegramUnpair", () => unpairTelegram.pipe(Effect.provideService(Store, store), Effect.andThen(telegramStatus)))
       .handle("keys", () => Effect.sync(() => API_KEYS.map((name) => ({ name, set: !!secrets.get(name), fromEnv: secrets.fromEnv(name) }))))
       // The value never reaches the audit log: only which key was set or cleared.
       .handle("setKey", ({ params, payload }) =>
@@ -1155,6 +1165,7 @@ export const AppLive = (webDir?: string) =>
     Login,
     HttpApiBuilder.layer(Api).pipe(Layer.provide([Projects, Agents, Chats, Memories, ToolsGroup, AccountsGroup, Settings, RoutinesGroup, PagesGroup])),
     RoutineScheduler,
+    TelegramChannel,
     RpcRoute,
     AttachmentUpload,
     AttachmentFile,

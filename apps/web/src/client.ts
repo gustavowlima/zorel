@@ -36,6 +36,7 @@ export const serversAtom = Zorel.query("tools", "list", { reactivityKeys: ["serv
 export const signedInAtom = Zorel.query("tools", "signedIn", { reactivityKeys: ["servers"] })
 export const accountsAtom = Zorel.query("accounts", "list", { reactivityKeys: ["accounts"] })
 export const keysAtom = Zorel.query("settings", "keys", { reactivityKeys: ["keys"] })
+export const telegramAtom = Zorel.query("settings", "telegram", { reactivityKeys: ["telegram"] })
 export const auditAtom = (query: { kind?: AuditKind; q?: string; from?: number; to?: number; page?: number }) =>
   Zorel.query("settings", "audit", { query, reactivityKeys: ["audit"] })
 export const storageAtom = Zorel.query("settings", "storage", { reactivityKeys: ["storage"] })
@@ -121,6 +122,8 @@ export const mutations = {
   removeAccount: Zorel.mutation("accounts", "remove"),
   login: Zorel.mutation("accounts", "login"),
   setKey: Zorel.mutation("settings", "setKey"),
+  telegramPair: Zorel.mutation("settings", "telegramPair"),
+  telegramUnpair: Zorel.mutation("settings", "telegramUnpair"),
   undo: Zorel.mutation("chats", "undo"),
   readLimits: Zorel.mutation("accounts", "limits"),
   cleanStorage: Zorel.mutation("settings", "cleanStorage"),
