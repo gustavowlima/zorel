@@ -200,7 +200,11 @@ export class Computers {
   }
 
   status(fresh = false): Promise<EngineStatus> {
-    if (fresh || !this.engine) this.engine = detectEngine(this.run).then((s) => ((this.found = s.engine ?? undefined), s))
+    if (fresh || !this.engine)
+      this.engine = detectEngine(this.run).then((s) => {
+        this.found = s.engine ?? undefined // known synchronously when Zorel exits (stopAll)
+        return s
+      })
     return this.engine
   }
   private work(agentId: string, projectId: string | null) {
