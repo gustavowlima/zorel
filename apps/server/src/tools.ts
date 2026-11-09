@@ -27,12 +27,24 @@ const words = (name: string) => name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLo
 
 // Annotations first; then the name. A sensitive word in any position beats a read verb,
 // because misclassifying as "read" would skip approval.
-export function classify(tool: { name: string; annotations?: { readOnlyHint?: boolean | undefined; destructiveHint?: boolean | undefined } | undefined }): ToolInfo["cls"] {
+// Verbs that only read when they are the whole name ("desktop_snapshot" → "snapshot"); in a longer name they may not
+// ("status_update" posts one), so they don't join READ.
+const READ_ALONE = new Set(["snapshot", "screenshot", "status", "version", "wait", "is"])
+
+// `prefix`: a word every tool of the server starts with (agent-desktop's "desktop_"), skipped to reach the verb.
+export function classify(tool: { name: string; annotations?: { readOnlyHint?: boolean | undefined; destructiveHint?: boolean | undefined } | undefined }, prefix?: string): ToolInfo["cls"] {
   if (tool.annotations?.readOnlyHint === true) return "read"
   if (tool.annotations?.destructiveHint === true) return "sensitive"
-  const w = words(tool.name)
+  const all = words(tool.name)
+  const w = prefix && all[0] === prefix && all.length > 1 ? all.slice(1) : all
   if (w.some((x) => SENSITIVE.has(x))) return "sensitive"
+  if (w.length === 1 && READ_ALONE.has(w[0]!)) return "read"
   return w[0] && READ.has(w[0]) ? "read" : "write"
+}
+// The first word all of a server's tools share (3 or more tools), if any: a namespace, not a verb.
+export function sharedPrefix(names: ReadonlyArray<string>): string | undefined {
+  const firsts = new Set(names.map((n) => words(n)[0]))
+  return names.length >= 3 && firsts.size === 1 ? [...firsts][0] : undefined
 }
 
 export const exposed = (mode: McpServer["mode"], cls: ToolInfo["cls"]) => mode !== "read" || cls === "read"
@@ -163,14 +175,16 @@ export class Hub {
 
   async tools(s: McpServer): Promise<RemoteTool[]> {
     const client = await this.connect(s)
-    const out: RemoteTool[] = []
+    const listed: Array<Awaited<ReturnType<Client["listTools"]>>["tools"][number]> = []
     let cursor: string | undefined
     do {
       const page = await client.listTools(cursor ? { cursor } : undefined, { timeout: CONNECT_MS })
-      for (const t of page.tools) out.push({ name: t.name, description: t.description ?? "", cls: classify(t), inputSchema: t.inputSchema as Record<string, unknown> })
+      listed.push(...page.tools)
       cursor = page.nextCursor
     } while (cursor)
-    return out
+    // Classified once the whole list shows whether the names share a namespace word ("desktop_…").
+    const prefix = sharedPrefix(listed.map((t) => t.name))
+    return listed.map((t) => ({ name: t.name, description: t.description ?? "", cls: classify(t, prefix), inputSchema: t.inputSchema as Record<string, unknown> }))
   }
 
   async call(s: McpServer, name: string, args: Record<string, unknown>): Promise<CallToolResult> {

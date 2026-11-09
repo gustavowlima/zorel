@@ -57,3 +57,4 @@
 2026-11-05 | Memory › Map (memory-map.tsx): canvas force map of GET /api/memories/map with type chips, zoom, hover-lit links and a point panel (facts + links); MapPoint.memoryIds | stage A3 of the memory map
 2026-11-08 | 12 connectors beyond code (Todoist, ClickUp, monday, Airtable, Intercom, Canva, Gamma, Webflow, Wix, PayPal, Square, Hugging Face) | general platform: the store was nearly all dev tools
 2026-11-08 | Settings › Channels (Telegram token, pairing) | spec 007
+2026-11-08 | connector "Desktop apps" (npx -y agent-desktop@1.2.0 mcp) | computer use, optional download
