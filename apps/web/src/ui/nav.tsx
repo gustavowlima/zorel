@@ -243,7 +243,7 @@ export function NavTreeItem({
             {hasChildItems && isExpanded && <span aria-hidden="true" className="pointer-events-none absolute top-7.5 -bottom-0.5 left-5 border-l border-strong" />}
             {hasChildItems && (
               // The icon column: the folder, which gives way to the arrow (it opens and closes the group) on hover or focus.
-              <Button slot="chevron" className={cn(glyphBox, "relative rounded-control outline-none data-hovered:text-fg")}>
+              <Button slot="chevron" className={cn(glyphBox, "relative rounded-control outline-none after:absolute after:-inset-1 after:content-[''] data-hovered:text-fg")}>
                 <span className="group-focus-within/row:hidden group-hover/row:hidden">{groupIcon?.(!!isExpanded)}</span>
                 <ChevronRight className={cn("hidden transition-transform duration-150 ease-out group-focus-within/row:block group-hover/row:block motion-reduce:transition-none", isExpanded && "rotate-90")} />
               </Button>
