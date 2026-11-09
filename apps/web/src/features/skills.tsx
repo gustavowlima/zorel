@@ -12,7 +12,7 @@ import { go } from "../state.ts"
 import { NewMemory, Reader } from "./knowledge.tsx"
 import { ReadingState } from "./reading.tsx"
 import { UsedBy, UsedByBadge, useUsedBy } from "./used-by.tsx"
-import { Button, Column, cx, Dialog, EmptyState, FolderOpen, Layers, Plus, Rows, SearchInput, Section, Segmented, SettingRow, Switch, Tab, TabList, Tabs } from "@/ui"
+import { Button, ChevronRight, Column, cx, Dialog, EmptyState, FolderOpen, Layers, Plus, Rows, SearchInput, Section, Segmented, SettingRow, Switch, Tab, TabList, Tabs } from "@/ui"
 
 // The skills' page lives in Settings (its "Skills" section, 2026-11-09): this is its body, without a screen header.
 export function SkillsBody({ selected, computer }: { selected?: string | undefined; computer?: boolean | undefined }) {
@@ -63,8 +63,9 @@ export function SkillsBody({ selected, computer }: { selected?: string | undefin
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-end gap-3 border-b border-subtle px-4 pt-2">
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-wrap items-end gap-x-3 border-b border-subtle px-4 pt-2">
+        {/* The tabs keep a row of their own in a narrow window; the search and New wrap under them. */}
+        <div className="w-full min-w-0 sm:w-auto sm:flex-1">
         <Tabs selectedKey={computer ? "computer" : "zorel"} onSelectionChange={(k) => go(k === "computer" ? { view: "skills", computer: true } : { view: "skills" })}>
           <TabList label={t("skills.title")}>
             <Tab id="zorel">{pending.length ? `${t("skills.tabZorel")} · ${pending.length}` : t("skills.tabZorel")}</Tab>
@@ -74,7 +75,7 @@ export function SkillsBody({ selected, computer }: { selected?: string | undefin
         </div>
         {!computer && (
           <div className="flex items-center gap-2 pb-2">
-            <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("common.search")} />
+            <SearchInput size="sm" className="w-40 sm:w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("common.search")} />
             <Button size="sm" variant="secondary" onPress={() => setCreating(true)}>
               <Plus />
               {t("skills.new")}
@@ -91,14 +92,27 @@ export function SkillsBody({ selected, computer }: { selected?: string | undefin
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          <nav aria-label={t("skills.tabZorel")} className="flex w-96 shrink-0 flex-col gap-4 overflow-y-auto border-r border-subtle py-4 pr-3 pl-4">
+          {/* A narrow window shows one side at a time: the list, or the open skill with a way back to it. */}
+          <nav aria-label={t("skills.tabZorel")} className={cx("w-full shrink-0 flex-col gap-4 overflow-y-auto border-subtle py-4 pr-3 pl-4 md:flex md:w-96 md:border-r", current || creating ? "hidden" : "flex")}>
             <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["memories"])} />
             {group(t("skills.waiting", { count: pending.length }), pending, "accent")}
             {group(t("skills.inUseGroup"), active)}
             {group(t("skills.archived"), archived)}
             {!reading.loading && skills.length > 0 && shown.length === 0 && <p className="px-2 py-6 text-center text-muted">{t("skills.noMatch")}</p>}
+            {/* A narrow window has no reader beside the list to say there are none. */}
+            {!reading.loading && !skills.length && (
+              <div className="md:hidden">
+                <EmptyState icon={<Layers />} title={t("skills.noneYet")} hint={t("skills.noneYetHint")} />
+              </div>
+            )}
           </nav>
-          <div className="min-w-0 flex-1 overflow-y-auto">
+          <div className={cx("min-w-0 flex-1 overflow-y-auto md:block", current || creating ? "block" : "hidden")}>
+            {(current || creating) && (
+              <Button size="sm" variant="ghost" className="mt-3 ml-4 text-muted md:hidden" onPress={() => (creating ? setCreating(false) : go({ view: "skills" }))}>
+                <ChevronRight className="size-3.5 rotate-180" />
+                {t("skills.listTitle")}
+              </Button>
+            )}
             {creating ? (
               <NewMemory kind="skill" onDone={(id) => {
                 setCreating(false)

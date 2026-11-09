@@ -54,10 +54,10 @@ function Overview({ report, measuring, onMeasure }: { report: StorageReport; mea
   const parts = report.categories.filter((c) => c.bytes > 0)
   return (
     <section className="flex flex-col gap-5">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
           <span className="text-sm text-muted">{t("storage.onThisComputer")}</span>
-          <span className="text-5xl font-semibold tracking-tight">{formatBytes(report.total)}</span>
+          <span className="text-5xl font-semibold tracking-tight whitespace-nowrap">{formatBytes(report.total)}</span>
           <span className="text-sm text-muted">
             {[measuring ? t("storage.measuring") : t("storage.measured", { age: formatAge(report.measuredAt) }), report.free !== null && t("storage.free", { size: formatBytes(report.free) })].filter(Boolean).join(" · ")}
           </span>
