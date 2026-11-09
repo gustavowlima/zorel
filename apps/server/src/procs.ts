@@ -4,7 +4,7 @@
 //
 // Linux reads /proc (no process spawned); macOS runs `ps` and `lsof`; Windows keeps one PowerShell open and asks it
 // for Win32_Process on each read (starting PowerShell costs ~0.3 s of CPU, too much to pay every few seconds).
-import { readdirSync, readFileSync, readlinkSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 import { cpus } from "node:os"
 
 export interface Proc {
@@ -159,23 +159,6 @@ export function listeners(): Map<number, number[]> {
   const out = new Map<number, number[]>()
   for (const { pid, port } of pairs) if (pid && port > 0 && pid !== process.pid) out.set(pid, [...new Set([...(out.get(pid) ?? []), port])].sort((a, b) => a - b))
   return out
-}
-
-// pid → working folder, where the system tells it (macOS: lsof; Linux: /proc; Windows: not without native code,
-// so there a process is placed by its parents only).
-export function cwdsOf(pids: ReadonlyArray<number>): Map<number, string> {
-  if (!pids.length || process.platform === "win32") return new Map()
-  if (process.platform === "linux")
-    return new Map(
-      pids.flatMap((pid) => {
-        try {
-          return [[pid, readlinkSync(`/proc/${pid}/cwd`)] as const]
-        } catch {
-          return []
-        }
-      })
-    )
-  return new Map([...parseLsof(run(["lsof", "-nP", "-a", "-p", pids.join(","), "-d", "cwd", "-Fpn"]))].flatMap(([pid, p]) => (p.names[0] ? [[pid, p.names[0]] as const] : [])))
 }
 
 // ---------- trees and CPU now ----------
