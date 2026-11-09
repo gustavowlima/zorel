@@ -9,7 +9,7 @@ import { agentsAtom, chatsAtom, memoriesAtom, memoryVersionsAtom, mutations, pro
 import { agentTone, chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { UsedBy, UsedByBadge, useUsedBy } from "./used-by.tsx"
-import { AgentAvatar, Button, cx, Field, Folder, Input, LineDiff, Pin, PinOff, Rows, Select, Textarea, Tooltip, Undo2, User } from "@/ui"
+import { AgentAvatar, Button, column, cx, Field, Folder, Input, LineDiff, Pin, PinOff, Rows, Select, Textarea, Tooltip, Undo2, User } from "@/ui"
 
 // Where a memory lives now: a skill in Skills, a fact in Memory.
 export const openMemory = (m: Pick<Memory, "id" | "kind">) => go(m.kind === "skill" ? { view: "skills", id: m.id } : { view: "memory" })
@@ -40,7 +40,7 @@ export function Reader({ memory: m }: { memory: Memory }) {
   const patch = (payload: { state?: Memory["state"]; title?: string; text?: string; essential?: boolean; agents?: string[] }) => update({ params: { id: m.id }, payload, reactivityKeys: ["memories"] })
 
   return (
-    <article className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-10 py-8">
+    <article className={cx(column(), "gap-5")}>
       <div className="flex flex-col gap-1.5">
         <span className="text-xs font-semibold tracking-wide text-accent-text uppercase">{skill ? t("knowledge.skill") : t("knowledge.fact")}</span>
         {skill && !editing && <h2 className="text-lg font-semibold">{m.title}</h2>}
@@ -199,7 +199,7 @@ export function NewMemory({ kind, onKind, onDone }: { kind: Memory["kind"]; onKi
   const skill = kind === "skill"
   return (
     <form
-      className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-10 py-8"
+      className={cx(column(), "gap-4")}
       onSubmit={(e) => {
         e.preventDefault()
         void create({ payload: { scope, kind, title: skill ? title.trim() : "", text: text.trim() }, reactivityKeys: ["memories"] }).then((m) => onDone(m.id))

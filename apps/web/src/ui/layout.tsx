@@ -1,5 +1,9 @@
 // Screen scaffolding shared by every page: a header bar (title, a muted line, actions) over a scrolling
 // body; sections with small muted headings; the empty state; a thin meter for shares and limits.
+//
+// One page rhythm (DESIGN.md › Layout): every header is HEADER (56px, the title 28px from the card's edge, the
+// actions 16px from the window's); a page's body is a Column (centered, 28px around, reading or wide); its sections
+// sit 40px apart, a page's tabs 32px above what they show, and a section's title 12px above its card.
 import { type ReactNode, useLayoutEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { Button as AriaButton } from "react-aria-components"
@@ -15,34 +19,43 @@ export function PageHeader({ className, children }: { className?: string; childr
   return <header className={cn("flex shrink-0 flex-wrap items-center border-b border-subtle", className)}>{children}</header>
 }
 
+export const HEADER = "min-h-14 gap-x-4 gap-y-2 py-3 pr-4 pl-7"
+
 export function Screen({ title, subtitle, actions, children, bodyClassName }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children: ReactNode; bodyClassName?: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageHeader className="min-h-14 gap-x-4 gap-y-2 px-7 py-3">
+      <PageHeader className={HEADER}>
         <h1 className="truncate text-lg font-semibold">{title}</h1>
         {subtitle && <span className="min-w-0 flex-1 truncate text-muted">{subtitle}</span>}
         {!subtitle && <span className="flex-1" />}
         {actions && <div className="flex items-center gap-2">{actions}</div>}
       </PageHeader>
-      <div className={cn("relative min-h-0 flex-1 overflow-auto", bodyClassName)}>{children}</div>
+      {/* A plain body scrolls, and keeps its scrollbar's room even when it doesn't, so the centered column doesn't
+          shift as a page grows past the window (a tab to the next). A body laid out by the screen does its own. */}
+      <div className={cn("relative min-h-0 flex-1 overflow-auto", bodyClassName ?? "gutter-stable")}>{children}</div>
     </div>
   )
 }
 
-// A centered reading column inside a Screen.
-export const Column = ({ children, className }: { children: ReactNode; className?: string }) => (
-  <div className={cn("mx-auto flex w-full max-w-3xl flex-col gap-8 px-7 py-7", className)}>{children}</div>
+// A page's column inside a Screen: centered, 28px around it, its sections 40px apart. Reading width (768px) for lists,
+// forms and readers; wide (1024px) for settings and dashboards. `column()` gives the same box to an element that must
+// be something else (a form, an article, a Tabs).
+export const column = (wide?: boolean) => cn("mx-auto flex w-full flex-col px-7 py-7", wide ? "max-w-5xl" : "max-w-3xl")
+export const Column = ({ children, className, wide }: { children: ReactNode; className?: string; wide?: boolean }) => (
+  <div className={cn(column(wide), "gap-10", className)}>{children}</div>
 )
 
 export function Section({ title, description, action, children, className }: { title: ReactNode; description?: ReactNode; action?: ReactNode; children?: ReactNode; className?: string }) {
   return (
     <section className={cn("flex flex-col gap-3", className)}>
-      <div className="flex items-end gap-3">
+      {/* The action centers on the title (and its line) and adds no height, so a section with a button starts its card
+          where one without does. */}
+      <div className="flex items-center gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h2 className="text-sm font-medium text-muted">{title}</h2>
           {description && <p className="text-sm text-dim">{description}</p>}
         </div>
-        {action}
+        {action && <div className="-my-1.5 flex shrink-0 items-center">{action}</div>}
       </div>
       {children}
     </section>
@@ -106,7 +119,7 @@ export function EmptyState({ icon, title, hint, action }: { icon?: ReactNode; ti
         </IconTile>
       )}
       <p className="font-medium text-fg">{title}</p>
-      {hint && <p className="max-w-sm text-muted">{hint}</p>}
+      {hint && <p className="max-w-sm text-pretty text-muted">{hint}</p>}
       {action && <div className="mt-2">{action}</div>}
     </div>
   )

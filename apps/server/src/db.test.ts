@@ -462,11 +462,14 @@ test("the map's sleep: orphan points go, twins of one map merge (facts, relation
     })
   ))
 
-test("twins: another name or a plural or a close spelling, not a longer name holding it", () => {
+test("twins: another name or a plural, never a close spelling nor a longer name holding it", () => {
   const p = (normalized: string, aliases: string[] = []) => ({ normalized, aliases })
   expect(twins(p("postgres", ["pg"]), p("pg"))).toBe(true)
   expect(twins(p("deploys"), p("deploy"))).toBe(true)
-  expect(twins(p("kubernetes"), p("kubernets"))).toBe(true)
+  // Look-alikes that are different things: a merge can't be undone, so spelling alone never merges.
+  expect(twins(p("react"), p("preact"))).toBe(false)
+  expect(twins(p("python 2"), p("python 3"))).toBe(false)
+  expect(twins(p("kubernetes"), p("kubernets"))).toBe(false)
   expect(twins(p("memory"), p("memory map"))).toBe(false)
   expect(twins(p("bus"), p("bu"))).toBe(false)
 })

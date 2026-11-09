@@ -110,3 +110,6 @@
 2026-11-08 | Telegram channel: paired accounts talk to Zorel through the runtime | spec 007: first external channel
 2026-11-08 | tool classification skips a namespace prefix shared by all of a server's tools; snapshot/screenshot/status/version/wait/is read only alone | agent-desktop: every tool is desktop_*, all would have needed approval
 2026-11-08 | computer apps: in-app agent-desktop install (checksum), per-agent apps read/use, 7 tools, approvals on commits | spec 008 replaces the npx connector (needed Node, 67 tools, whole computer)
+2026-11-05 | twins() no longer merges close spellings (Dice); the daily sleepMap catches each run's failure | "react"/"preact" and "python 2"/"python 3" merged, with no undo; a database error ended the daily repeat until a restart (Effect.ignore lets a defect through)
+2026-11-05 | the worker ends a chat "failed" (not idle) when its last turn failed (store.turnRow); zorel_list_agents counts only running/waiting as working | the sidebar never showed a failed chat: the status always went back to idle
+2026-11-06 | Step.at (text length when a step began); the batch's text is flushed before a native step; gateway tools wait (≤400 ms, settled()) for words written before the call | the chat lays replies out text, steps, text… as they happened; a step in a batch used to land before words written first

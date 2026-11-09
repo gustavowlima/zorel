@@ -23,7 +23,7 @@ export function McpSection({ projectId }: { projectId: string | null }) {
   const invalidate = useInvalidate()
   const [adding, setAdding] = useState(false)
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-10">
       {projectId === null && <Connectors servers={all} />}
       <Section
         title={projectId ? t("settings.mcp") : t("mcp.servers")}

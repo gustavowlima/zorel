@@ -16,7 +16,7 @@ import { ModelPicker } from "./model-picker.tsx"
 import { ProvidersSection } from "./providers.tsx"
 import { ProcessesSection } from "./processes.tsx"
 import { StorageSection } from "./storage.tsx"
-import { Activity, Button, DisclosurePill, HardDrive, History, MessageCircle, NavItem, Plug, Rows, Screen, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch } from "@/ui"
+import { Activity, Button, Column, DisclosurePill, HardDrive, History, MessageCircle, NavItem, Plug, Rows, Screen, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch } from "@/ui"
 
 const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, channels: <MessageCircle />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
 
@@ -31,9 +31,9 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
           </NavItem>
         ))}
       </nav>
-      <div className="relative min-w-0 flex-1 overflow-y-auto">
-        {/* One column for every page: it fills the space up to a reading width, then stays centered. */}
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-8 py-7">
+      <div className="gutter-stable relative min-w-0 flex-1 overflow-y-auto">
+        {/* One column for every page: it fills the space up to the wide width, then stays centered. */}
+        <Column wide>
           {tab === "providers" && <ProvidersSection provider={provider} />}
           {tab === "processes" && <ProcessesSection />}
           {tab === "storage" && <StorageSection />}
@@ -41,7 +41,7 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
           {tab === "mcp" && <McpSection projectId={null} />}
           {tab === "channels" && <ChannelsSection />}
           {tab === "general" && <General />}
-        </div>
+        </Column>
       </div>
     </Screen>
   )
