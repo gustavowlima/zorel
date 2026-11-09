@@ -217,7 +217,7 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
       })
     // The servers of a chat's folder (terminals.ts), placed also by the chat's own shells and agent sessions.
     const chatServers = (chatId: string, root: string) =>
-      Effect.promise(() => serversUnder([root], ownedBy(runtime, new Map([[chatId, root]])))).pipe(Effect.map((list) => list.map(({ root: _root, ...s }) => s)))
+      Effect.promise(() => serversUnder(ownedBy(runtime, new Map([[chatId, root]])))).pipe(Effect.map((list) => list.map(({ root: _root, ...s }) => s)))
     // A turn with workspace checkpoints, its project and whether its changes were undone.
     const turnWithTrees = (id: string) =>
       Effect.gen(function* () {
@@ -783,7 +783,7 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       const tree = (pid: number | undefined) => (pid ? subtree(procs, pid) : [])
       const owned = ownedBy(runtime, chatFolder)
       const inside = new Set([...owned.keys()].flatMap((pid) => tree(pid)))
-      const found = yield* Effect.promise(() => serversUnder([...folders.keys()], owned, procs))
+      const found = yield* Effect.promise(() => serversUnder(owned, procs))
       const servers = found.map(({ root, ...s }) => ({ ...s, ...folders.get(root)!, folder: root, nested: inside.has(s.pid), ...useOf(tree(s.pid), procs, cpu) }))
       const terminals = liveTerminals(procs).map(({ pid, ...t }) => ({ ...t, ...useOf(tree(pid), procs, cpu) }))
       const sessions = runtime.liveSessions().map(({ pid, ...s }) => ({ ...s, ...useOf(tree(pid), procs, cpu) }))
