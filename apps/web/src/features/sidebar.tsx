@@ -142,7 +142,7 @@ function Foot({ route, folded, paused, onPause }: { route: Route; folded: boolea
 // The desktop app's update (window.zorelDesktop.update): a card under the chats (the version, the download's
 // progress, then Restart) and, for when the chats are hidden, an accent download mark in the rail's corner. Nothing
 // in a browser.
-type Update = { version: string; ready: boolean; percent?: number } | null
+type Update = { version: string; ready: boolean; percent?: number; installing?: boolean; error?: string } | null
 const desktopUpdate = (window as { zorelDesktop?: { update?: { get: () => Promise<Update>; install: () => Promise<boolean>; on: (cb: (u: Update) => void) => () => void } } }).zorelDesktop?.update
 function useUpdate() {
   const [update, setUpdate] = useState<Update>(null)
@@ -160,7 +160,7 @@ function UpdateItem() {
   return (
     <span className="relative">
       <Tooltip content={label} placement="right">
-        <IconButton label={label} isDisabled={!update.ready} onPress={() => void desktopUpdate.install()} className={cx("relative size-10 rounded-card [&_svg]:size-5", update.ready ? "text-accent-text" : "text-dim")}>
+        <IconButton label={label} isDisabled={!update.ready || !!update.installing} onPress={() => void desktopUpdate.install()} className={cx("relative size-10 rounded-card [&_svg]:size-5", update.ready ? "text-accent-text" : "text-dim")}>
           <Download />
         </IconButton>
       </Tooltip>
@@ -179,13 +179,22 @@ function UpdateCard() {
         <Download className={cx("size-4 shrink-0", update.ready ? "text-accent-text" : "text-muted")} />
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{t("update.title", { version: update.version })}</span>
       </div>
-      {update.ready ? (
-        <div className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-sm text-muted">{t("update.readyShort")}</span>
-          <Button size="sm" variant="default" onPress={() => void desktopUpdate?.install()}>
-            {t("update.restart")}
-          </Button>
-        </div>
+      {update.installing ? (
+        // Restart pressed: Zorel downloads, closes and opens on the new version by itself; no second press.
+        <span className="flex items-center gap-2 text-sm text-muted">
+          <Spinner size={12} />
+          {t("update.installing")}
+        </span>
+      ) : update.ready ? (
+        <>
+          {update.error && <p className="text-sm text-warning">{t("update.failed", { reason: update.error })}</p>}
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-sm text-muted">{update.error ? "" : t("update.readyShort")}</span>
+            <Button size="sm" variant="default" onPress={() => void desktopUpdate?.install()}>
+              {update.error ? t("update.retry") : t("update.restart")}
+            </Button>
+          </div>
+        </>
       ) : (
         <>
           <Meter role="progressbar" value={percent / 100} label={t("update.downloading", { version: update.version })} />
