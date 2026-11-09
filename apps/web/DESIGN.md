@@ -18,7 +18,7 @@ colors:
   text-secondary: "#dbdcdf"
   text-muted: "#96989c"
   text-dim: "#8a8c90"
-  signal-blue: "#007cf7"
+  signal-blue: "#0071e3"
   signal-blue-hover: "#1f8fff"
   signal-blue-text: "#42a0ff"
   signal-blue-soft: "rgba(0, 124, 247, 0.16)"
