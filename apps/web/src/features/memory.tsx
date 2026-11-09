@@ -8,7 +8,7 @@ import { useAtomValue } from "@effect/atom-react"
 import { isTeammate, type Memory, type MemoryApproval } from "@zorel/contracts"
 import { AsyncResult } from "effect/reactivity"
 import { formatAge, formatDate, t } from "@zorel/i18n"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, memoriesAtom, mutations, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
@@ -43,6 +43,11 @@ export function MemorySwitch({ value, onFacts }: { value: "list" | "map" | "page
 }
 const STALE_DAYS = 60 // an active memory not confirmed for this long asks "Still true?" (it stays in the prompt meanwhile)
 const DAY = 86_400_000
+const GROUP_LIMIT = 8 // facts per owner in "All"; the owner's tab shows every one
+
+// What was just forgotten or moved, and how to put it back (the page's one receipt, gone after RECEIPT_MS).
+type Receipt = { id: string; label: string; text: string; undo: { state?: Memory["state"]; scope?: string } }
+const RECEIPT_MS = 8000
 const isStale = (m: Memory, now: number) => m.state === "active" && now - m.confirmedAt > STALE_DAYS * DAY
 
 export function MemoryView({ tab = "all", review = false }: { tab?: string | undefined; review?: boolean | undefined }) {
@@ -52,6 +57,13 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
   const invalidate = useInvalidate()
   const [query, setQuery] = useState("")
   const [asMap, setAsMap] = useState(() => localStorage.getItem(MAP_KEY) === "1")
+  const [receipt, setReceipt] = useState<Receipt>()
+  const update = useMutation(mutations.updateMemory)
+  useEffect(() => {
+    if (!receipt) return
+    const timer = setTimeout(() => setReceipt(undefined), RECEIPT_MS)
+    return () => clearTimeout(timer)
+  }, [receipt])
   const now = Date.now()
   const facts = reading.items.filter((m) => m.kind === "fact")
   const q = query.trim().toLowerCase()
@@ -103,7 +115,7 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
             }
           />
       ) : (
-      <Column>
+      <Column className="min-h-full">
         <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["memories"])} />
         {review ? (
           <>
@@ -114,10 +126,10 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
               </Button>
             </div>
             <Section title={t("memory.newTitle")} description={t("memory.newHint")}>
-              <Rows>{pending.length ? pending.map((m) => <FactRow key={m.id} memory={m} showScope />) : <p className="py-3 text-sm text-muted">{t("memory.nothingNew")}</p>}</Rows>
+              <Rows>{pending.length ? pending.map((m) => <FactRow key={m.id} memory={m} showScope onDone={setReceipt} />) : <p className="py-3 text-sm text-muted">{t("memory.nothingNew")}</p>}</Rows>
             </Section>
             <Section title={t("memory.staleTitle")} description={t("memory.staleHint", { days: STALE_DAYS })}>
-              <Rows>{stale.length ? stale.map((m) => <FactRow key={m.id} memory={m} showScope stale />) : <p className="py-3 text-sm text-muted">{t("memory.allConfirmed")}</p>}</Rows>
+              <Rows>{stale.length ? stale.map((m) => <FactRow key={m.id} memory={m} showScope stale onDone={setReceipt} />) : <p className="py-3 text-sm text-muted">{t("memory.allConfirmed")}</p>}</Rows>
             </Section>
             <Section title={t("memory.approval")}>
               <Rows>
@@ -162,11 +174,15 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
               )}
               {(tab === "all" || tab === "user") && <Teach />}
               {groups.map((s) => (
-                <OwnerGroup key={s} title={tab === "all" ? <span className="flex items-center gap-1.5"><ScopeIcon scope={s} agents={agents} />{ownerName(s, projects, agents)}</span> : undefined} hint={tab === "all" ? t(s === "user" ? "memory.seenByAll" : s.startsWith("agent:") ? "memory.seenByAgent" : "memory.seenByProject", { name: agents.find((a) => `agent:${a.id}` === s)?.name ?? ownerName(s, projects, agents) }) : undefined}>
-                  {shown.filter((m) => m.scope === s || tab === "forgotten").map((m) => (
-                    <FactRow key={m.id} memory={m} />
-                  ))}
-                </OwnerGroup>
+                <OwnerGroup
+                  key={s}
+                  scope={s}
+                  facts={shown.filter((m) => m.scope === s || tab === "forgotten")}
+                  limited={tab === "all" && !q}
+                  title={tab === "all" ? <span className="flex items-center gap-1.5"><ScopeIcon scope={s} agents={agents} />{ownerName(s, projects, agents)}</span> : undefined}
+                  hint={tab === "all" ? t(s === "user" ? "memory.seenByAll" : s.startsWith("agent:") ? "memory.seenByAgent" : "memory.seenByProject", { name: agents.find((a) => `agent:${a.id}` === s)?.name ?? ownerName(s, projects, agents) }) : undefined}
+                  onDone={setReceipt}
+                />
               ))}
               {!reading.loading && shown.length === 0 && (
                 <EmptyState
@@ -177,6 +193,25 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
               )}
               {tab === "forgotten" && shown.length > 0 && <p className="text-sm text-dim">{t("memory.forgottenHint")}</p>}
             </div>
+          </div>
+        )}
+        {receipt && (
+          // The receipt: what just left the list, and Undo puts it back where it was.
+          <div role="status" className="sticky bottom-0 mx-auto mt-auto flex w-full max-w-lg items-center gap-3 rounded-card border border-subtle bg-surface px-3.5 py-2 text-sm">
+            <span className="min-w-0 flex-1 truncate text-secondary">
+              <span className="text-fg">{receipt.label}</span>
+              {` · ${receipt.text}`}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onPress={() => {
+                setReceipt(undefined)
+                void update({ params: { id: receipt.id }, payload: receipt.undo, reactivityKeys: ["memories"] })
+              }}
+            >
+              {t("memory.undo")}
+            </Button>
           </div>
         )}
       </Column>
@@ -215,14 +250,22 @@ const ownerName = (scope: string, projects: ReadonlyArray<{ id: string; name: st
 }
 
 // An owner's facts: a Section (its h2 under the page's h1, the audience hint beneath, as in Settings) holding one Rows
-// card; inside one owner's tab the tab already names it, so the card stands alone.
-function OwnerGroup({ title, hint, children }: { title?: React.ReactNode; hint?: string | undefined; children: React.ReactNode }) {
-  return title ? (
+// card; inside one owner's tab the tab already names it, so the card stands alone. Limited (All, no search): the
+// pinned ones first, then GROUP_LIMIT in all, and "See all" opens the owner's tab.
+function OwnerGroup({ scope, facts, limited, title, hint, onDone }: { scope: string; facts: ReadonlyArray<Memory>; limited: boolean; title?: React.ReactNode; hint?: string | undefined; onDone: (r: Receipt) => void }) {
+  const ordered = limited ? [...facts].sort((a, b) => Number(b.essential) - Number(a.essential)).slice(0, GROUP_LIMIT) : facts
+  const rows = <Rows>{ordered.map((m) => <FactRow key={m.id} memory={m} onDone={onDone} />)}</Rows>
+  if (!title) return rows
+  return (
     <Section title={title} description={hint}>
-      <Rows>{children}</Rows>
+      {rows}
+      {ordered.length < facts.length && (
+        <Button size="sm" variant="ghost" className="-ml-2.5 mt-2 self-start text-muted" onPress={() => go({ view: "memory", tab: scope })}>
+          {t("memory.seeAll", { count: facts.length })}
+          <ChevronRight className="size-3.5" />
+        </Button>
+      )}
     </Section>
-  ) : (
-    <Rows>{children}</Rows>
   )
 }
 
@@ -323,7 +366,7 @@ export function MemoryChip({ memory: m }: { memory: Memory }) {
 }
 
 // One memory: its sentence, who and where it came from, and what can be done with it here.
-function FactRow({ memory: m, showScope = false, stale = false }: { memory: Memory; showScope?: boolean; stale?: boolean }) {
+function FactRow({ memory: m, showScope = false, stale = false, onDone }: { memory: Memory; showScope?: boolean; stale?: boolean; onDone: (r: Receipt) => void }) {
   const projects = useList(projectsAtom)
   const agents = useList(agentsAtom)
   const chats = useList(chatsAtom)
@@ -346,7 +389,10 @@ function FactRow({ memory: m, showScope = false, stale = false }: { memory: Memo
         throw e
       }
     )
-  const move = <MoveMenu memory={m} onMove={(scope) => void patch({ scope }).catch(() => {})} />
+  // Forget, Discard and Move take the fact off this list: the page shows a receipt that puts it back.
+  const forget = (label: string) => void patch({ state: "forgotten" }).then(() => onDone({ id: m.id, label, text: m.text, undo: { state: m.state } }), () => {})
+  const moveTo = (scope: string) => void patch({ scope }).then(() => onDone({ id: m.id, label: `${t("memory.movedTo")} ${ownerName(scope, projects, agents)}`, text: m.text, undo: { scope: m.scope } }), () => {})
+  const move = <MoveMenu memory={m} onMove={moveTo} />
   const destinations = moveDestinations(m, projects, agents)
   return (
     <div className="flex flex-col gap-1.5 py-3">
@@ -425,7 +471,7 @@ function FactRow({ memory: m, showScope = false, stale = false }: { memory: Memo
                   </Button>
                 )}
                 {!target && move}
-                <Button size="sm" variant="ghost" onPress={() => void patch({ state: "forgotten" }).catch(() => {})}>
+                <Button size="sm" variant="ghost" onPress={() => forget(t("memory.discarded"))}>
                   {t("inbox.discard")}
                 </Button>
               </>
@@ -438,7 +484,7 @@ function FactRow({ memory: m, showScope = false, stale = false }: { memory: Memo
                 <Button size="sm" variant="ghost" onPress={() => setEditing(true)}>
                   {t("common.edit")}
                 </Button>
-                <Button size="sm" variant="ghost" onPress={() => void patch({ state: "forgotten" }).catch(() => {})}>
+                <Button size="sm" variant="ghost" onPress={() => forget(t("memory.forgot"))}>
                   {t("knowledge.forget")}
                 </Button>
               </>
@@ -463,12 +509,12 @@ function FactRow({ memory: m, showScope = false, stale = false }: { memory: Memo
                   </MenuItem>
                   <MenuSeparator />
                   {destinations.map((d) => (
-                    <MenuItem key={d} icon={<ScopeIcon scope={d} agents={agents} />} onAction={() => void patch({ scope: d }).catch(() => {})}>
+                    <MenuItem key={d} icon={<ScopeIcon scope={d} agents={agents} />} onAction={() => moveTo(d)}>
                       {`${t("memory.moveTo")} ${ownerName(d, projects, agents)}`}
                     </MenuItem>
                   ))}
                   <MenuSeparator />
-                  <MenuItem icon={<X />} onAction={() => void patch({ state: "forgotten" }).catch(() => {})}>
+                  <MenuItem icon={<X />} onAction={() => forget(t("memory.forgot"))}>
                     {t("knowledge.forget")}
                   </MenuItem>
                 </Menu>
