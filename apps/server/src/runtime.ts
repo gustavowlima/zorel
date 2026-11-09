@@ -15,7 +15,7 @@ import { engineLabel, type EngineFailure, Engines, isImage, type NativeStep, spl
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
 import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
-import { BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
+import { actionNames, BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
 import { cardText, TOO_LARGE } from "./engines/policy.ts"
 import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, READ_RESULT_TOOL, REMEMBER_TOOL, staleWrite, FIND_TOOLS_TOOL, USE_TOOL_TOOL, MCP_DEFER_CHARS, findTools, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
@@ -478,7 +478,7 @@ export const makeRuntime = Effect.gen(function* () {
         const url = previewUrl(at, args.path)
         const opened = await browsers
           .newTab(chat.id, url, profileOf(agent?.id))
-          .then((tab) => browsers.select(chat.id, tab).then(() => true))
+          .then((tab) => (browsers.held(chat.id) ? true : browsers.select(chat.id, tab).then(() => true))) // a person holding it keeps their tab
           .catch(() => false) // no browser on this computer: the URL still works in the person's own
         const look = opened ? ` It's open in this chat's Browser panel${perms.browser ? "; read it with your browser tools" : ""}.` : ""
         return textResult(`Running at ${url} (port ${at}).${look} Its output is in the Terminal panel, tab "${plan.label}".`)
@@ -855,7 +855,9 @@ export const makeRuntime = Effect.gen(function* () {
       if (builtin) {
         const shown = JSON.stringify(args).slice(0, 300)
         const s = await step(browserStepTitle(name, args), name)
-        const gate = browserRoute(perms, name, args, builtin.writes, askFirst)
+        // Listing tabs only reads; opening, switching or closing one acts.
+        const writes = builtin.writes || (name === "browser_tabs" && (args.action ?? "list") !== "list")
+        const gate = browserRoute(perms, args, writes, askFirst, await actionNames(browsers, chat.id, name as BrowserToolName, args, profileOf(agent?.id)))
         if (gate.approve) {
           const card = cardText(JSON.stringify(args, null, 2))
           if (!card) return textResult(TOO_LARGE, true)
@@ -866,10 +868,10 @@ export const makeRuntime = Effect.gen(function* () {
             return textResult("The user declined this action. Don't try it again without asking.", true)
           }
         }
-        if (builtin.writes) onWrite()
+        if (writes) onWrite()
         const root = workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined))
         const r = guarded(
-          await runBrowserTool(browsers, chat.id, name as BrowserToolName, args, root, profileOf(agent?.id)).then(
+          await runBrowserTool(browsers, chat.id, name as BrowserToolName, args, root, profileOf(agent?.id), agent?.id ?? null).then(
             (text) => textResult(text),
             (e: unknown) => textResult(e instanceof Error ? e.message.split("\n")[0]! : String(e), true)
           ),

@@ -756,7 +756,24 @@ export const en = {
     handBack: "Hand back",
     page: "Page: {title}",
     empty: "No page open",
-    emptyHint: "Type an address above, or ask an agent to open one. Sites you sign into here stay signed in."
+    emptyHint: "Type an address above, or ask an agent to open one. Sites you sign into here stay signed in.",
+    // What an agent is doing in the browser, as it happens; the element's name follows in quotes.
+    doing: {
+      navigate: "{name} is opening",
+      read: "{name} is reading the page",
+      click: "{name} is clicking",
+      type: "{name} is typing in",
+      press: "{name} is pressing",
+      hover: "{name} is pointing at",
+      select: "{name} is choosing in",
+      scroll: "{name} is scrolling",
+      wait: "{name} is waiting for",
+      tabs: "{name} is using the tabs",
+      back: "{name} is going back",
+      upload: "{name} is attaching files to",
+      dialog: "{name} is answering a dialog",
+      steps: "{name} is doing a few steps"
+    }
   },
   storage: {
     move: {

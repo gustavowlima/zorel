@@ -23,10 +23,13 @@ test("destructive tools ask unless allowed for good or the server is trusted", (
 })
 
 test("risky clicks always ask; the rest asks only when the agent asks first", () => {
-  expect(browserRoute(p({ always: ["browser"] }), "browser_click", { element: "Place order" }, true, false)).toEqual({ approve: true, alwaysKey: null })
-  expect(browserRoute(p(), "browser_click", { element: "Next page" }, true, false).approve).toBe(false)
-  expect(browserRoute(p(), "browser_click", { element: "Next page" }, true, true).approve).toBe(true)
-  expect(browserRoute(p({ always: ["browser"] }), "browser_navigate", {}, true, true).approve).toBe(false)
+  expect(browserRoute(p({ always: ["browser"] }), { element: "Place order" }, true, false)).toEqual({ approve: true, alwaysKey: null })
+  expect(browserRoute(p(), { element: "Next page" }, true, false).approve).toBe(false)
+  expect(browserRoute(p(), { element: "Next page" }, true, true).approve).toBe(true)
+  // The agent's own label can't hide what the page calls the button.
+  expect(browserRoute(p({ always: ["browser"] }), { element: "button" }, true, false, "Place order")).toEqual({ approve: true, alwaysKey: null })
+  expect(browserRoute(p(), {}, true, false, "")).toEqual({ approve: false, alwaysKey: null })
+  expect(browserRoute(p({ always: ["browser"] }), {}, true, true).approve).toBe(false)
   expect(withAlways(withAlways(p(), "browser"), "browser").always).toEqual(["browser"])
 })
 
