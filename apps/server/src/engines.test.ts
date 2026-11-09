@@ -1,10 +1,13 @@
 import { expect, test } from "bun:test"
+import { mkdtempSync, readFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 process.env.ZOREL_API_ENGINE = "direct" // these tests drive the direct API engine against a mock server
 import { type Agent, DEFAULT_PERMISSIONS, type Memory, type Message, namedSkills, skillHandle } from "@zorel/contracts"
 import { Effect, Stream } from "effect"
 import { buildTurn, OUTSIDE_TEXT_RULE, PINNED_PAGES_CHARS, pinnedPagesText, UNTRUSTED_NOTICE, grounded, mappedOf, memoryNote, mentioned, namedPoints, parseConsolidation, pinned, readPage, reviewed, sectionOf, similar, spread, withinBudget } from "./context.ts"
-import { cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, sessionless, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
+import { ANTIGRAVITY_SETTINGS, antigravityDir, parseAntigravityModels, cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, sessionless, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
 import { codexFailure, codexStep, windowsOf } from "./engines/codex.ts"
 import { hasCredential, redact } from "./observability.ts"
 import { stretchOf } from "./chat.ts"
@@ -573,4 +576,18 @@ test("a namespace word every tool of a server shares is skipped to find the verb
   expect(classify({ name: "status" })).toBe("read")
   expect(sharedPrefix(["search_docs", "delete_page", "search_pages"])).toBeUndefined()
   expect(sharedPrefix(["gh_get", "gh_list"])).toBeUndefined() // too few to call it a namespace
+})
+
+test("Antigravity: its models from `agy models`, and a settings folder of Zorel's that asks before edits and commands", () => {
+  const out = "Fetching available models...\ngemini-3.8-flash-low\tGemini 3.8 Flash (Low)\nclaude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)\nError: something\n"
+  expect(parseAntigravityModels(out)).toEqual([
+    { id: "gemini-3.8-flash-low", name: "Gemini 3.8 Flash (Low)", note: "" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)", note: "" }
+  ])
+  const home = mkdtempSync(join(tmpdir(), "zorel-agy-"))
+  const dir = antigravityDir(home)
+  // The person's "always-proceed" never applies: Zorel's access level decides each edit and command.
+  expect(JSON.parse(readFileSync(join(dir, "antigravity-cli", "settings.json"), "utf8")).toolPermission).toBe("request-review")
+  expect(ANTIGRAVITY_SETTINGS.permissions.allow).toEqual(["mcp(zorel/*)"])
+  expect(JSON.parse(readFileSync(join(dir, "config", "mcp_config.json"), "utf8"))).toEqual({ mcpServers: {} })
 })
