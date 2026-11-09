@@ -1277,7 +1277,7 @@ export const makeRuntime = Effect.gen(function* () {
       const recent = (yield* store.messages(chat.id)).slice(-ROUTER_MESSAGES - 1)
       const text = recent.at(-1)?.role === "user" ? recent.at(-1)!.text : ""
       yield* setStatus(chat.id, "running", row.agentId, "")
-      const answer = yield* ask(routerModel(chat.model, (yield* store.preference("routerModel")) ?? ""), routerPrompt(team, recent.slice(0, -1), text)).pipe(
+      const answer = yield* ask(routerModel(chat.model), routerPrompt(team, recent.slice(0, -1), text)).pipe(
         Effect.provide(services),
         Effect.timeoutOption("20 seconds"),
         Effect.map((o) => (o._tag === "Some" ? o.value.text : "")),

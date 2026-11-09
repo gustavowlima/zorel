@@ -719,12 +719,10 @@ const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
 const FAILOVER_TERMS = "failover_terms_accepted_at"
 const MEMORY_APPROVAL = "memoryApproval" // "review" (default) or "undo": see Preferences
 const MEMORY_MODEL = "memoryModel" // "" (automatic) or a model id: see Preferences
-const ROUTER_MODEL = "routerModel" // "" (automatic) or a model id: see Preferences
 const preferencesOf = (store: Repository) =>
-  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills"), store.preference(MAX_RUNNING_KEY), store.preference(MEMORY_APPROVAL), store.preference(MEMORY_MODEL), store.preference(ROUTER_MODEL)]), ([v, p, n, m, a, mm, rm]) => ({
+  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills"), store.preference(MAX_RUNNING_KEY), store.preference(MEMORY_APPROVAL), store.preference(MEMORY_MODEL)]), ([v, p, n, m, a, mm]) => ({
     memoryApproval: a === "undo" ? ("undo" as const) : ("review" as const),
     memoryModel: mm ?? "",
-    routerModel: rm ?? "",
     failoverTermsAcceptedAt: v ? Number(v) : null,
     paused: p === "1",
     nativeSkills: n === "1",
@@ -869,7 +867,6 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       .handle("nativeSkills", ({ payload }) => Effect.andThen(store.setPreference("nativeSkills", payload.enabled ? "1" : "0"), preferencesOf(store)))
       .handle("memoryApproval", ({ payload }) => Effect.andThen(store.setPreference(MEMORY_APPROVAL, payload.approval), preferencesOf(store)))
       .handle("memoryModel", ({ payload }) => Effect.andThen(store.setPreference(MEMORY_MODEL, payload.model), preferencesOf(store)))
-      .handle("routerModel", ({ payload }) => Effect.andThen(store.setPreference(ROUTER_MODEL, payload.model), preferencesOf(store)))
       .handle("maxRunning", ({ payload }) => Effect.andThen(runtime.setMaxRunning(payload.value), preferencesOf(store)))
       .handle("acceptFailoverTerms", () =>
         Effect.andThen(
