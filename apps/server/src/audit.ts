@@ -24,6 +24,7 @@ export const Actions = {
   accountSignInStarted: action("account.signin_started", "account"),
   apiKeySet: action("api_key.set", "api_key"),
   apiKeyCleared: action("api_key.cleared", "api_key"),
+  desktopInstalled: action("desktop.installed", "tool"),
   mcpAdded: action("mcp_server.added", "mcp_server"),
   mcpUpdated: action("mcp_server.updated", "mcp_server"),
   mcpRemoved: action("mcp_server.removed", "mcp_server"),

@@ -58,3 +58,4 @@
 2026-11-08 | 12 connectors beyond code (Todoist, ClickUp, monday, Airtable, Intercom, Canva, Gamma, Webflow, Wix, PayPal, Square, Hugging Face) | general platform: the store was nearly all dev tools
 2026-11-08 | Settings › Channels (Telegram token, pairing) | spec 007
 2026-11-08 | connector "Desktop apps" (npx -y agent-desktop@1.2.0 mcp) | computer use, optional download
+2026-11-08 | Computer apps section in agent permissions; npx Desktop apps connector removed | spec 008

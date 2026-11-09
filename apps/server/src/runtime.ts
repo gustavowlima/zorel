@@ -23,6 +23,8 @@ import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
 import { startVectors } from "./vectors.ts"
+import { desktopBin, desktopCli } from "./desktop.ts"
+import { CHANGING_DESKTOP_TOOLS, DESKTOP_TOOL_NAMES, DesktopApps, desktopTools } from "./desktop-apps.ts"
 import { freePort, outputTail, PREVIEW_TOOL, previewFolder, previewKey, previewLine, previewUrl, waitForPort } from "./preview.ts"
 import { managerOf, scriptsOf, shellAlive, startShell } from "./terminals.ts"
 import { compact, exposedName, guarded, type GatewayHandle, NO_TOOLS, readResult, resultText, textResult, Tools, type Session, type ToolDef } from "./tools.ts"
@@ -183,6 +185,7 @@ export const makeRuntime = Effect.gen(function* () {
   const audit = yield* Audit
   const engines = yield* Engines
   const dataDir = yield* DataDir
+  const desktop = new DesktopApps(desktopCli(dataDir)) // the computer apps' last numbered lists (spec 008)
   const { hub, gateway } = yield* Tools
   const browsers = yield* BrowserService
   const services = yield* Effect.context<Store | Engines | DataDir>()
@@ -423,6 +426,9 @@ export const makeRuntime = Effect.gen(function* () {
     // The chat's browser: Zorel's own tools, always there. Reading never asks; acting asks when the agent's
     // access is "ask", like any tool that writes.
     if (perms.browser) for (const t of BROWSER_TOOLS) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
+    // The person's computer apps given to this agent (spec 008), once agent-desktop is installed.
+    const apps = desktopBin(dataDir) ? (perms.apps ?? []) : []
+    defs.push(...desktopTools(apps))
     // Only tools whose results can be shortened (MCP, browser) need a way to read the rest (tools.ts compact).
     if (defs.length) defs.push({ name: READ_RESULT_TOOL.name, description: READ_RESULT_TOOL.description, inputSchema: READ_RESULT_TOOL.inputSchema })
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
@@ -810,6 +816,19 @@ export const makeRuntime = Effect.gen(function* () {
       if (name === PREVIEW_TOOL.name) return previewCall(args)
       if (name === ASK_TOOL.name) return askCall(args)
       if (TEAM_TOOLS.some((t) => t.name === name)) return teamCall(name, args)
+      if ((DESKTOP_TOOL_NAMES as ReadonlyArray<string>).includes(name)) {
+        const s = await step(`${name.replace("desktop_", "")} ${typeof args.app === "string" ? args.app : ""}`.trim(), name)
+        const ask = async (summary: string) => {
+          const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: `${nameOf(agent)} wants to ${summary}`, args: JSON.stringify(args, null, 2).slice(0, 4000), cwd: null }))
+          return outcome === "approved" || outcome === "always"
+        }
+        if (CHANGING_DESKTOP_TOOLS.has(name)) onWrite()
+        const r = guarded(await desktop.call({ key: `${chat.id}:${agent?.id ?? "-"}`, apps, ask, askAll: askFirst }, name, args), `the app ${typeof args.app === "string" ? args.app : ""}`)
+        const out = resultText(r)
+        legacy.push({ tool: name, args: JSON.stringify(args).slice(0, 300), status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
+        await finish(s, r.isError ? "error" : "ok", out)
+        return compact(chat.id, r)
+      }
       const builtin = BROWSER_TOOLS.find((t) => t.name === name)
       if (builtin) {
         const shown = JSON.stringify(args).slice(0, 300)

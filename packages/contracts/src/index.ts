@@ -95,11 +95,15 @@ export type Project = typeof Project.Type
 // card. Destructive tools (delete, send, publish, pay…) always ask unless allowed for good.
 export const Grant = Schema.Literals(["none", "read", "write"])
 export type Grant = typeof Grant.Type
+// An app on the person's computer given to an agent (spec 008): read only, or read and use.
+export const DesktopApp = Schema.Struct({ name: Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(100)), level: Schema.Literals(["read", "use"]) })
+export type DesktopApp = typeof DesktopApp.Type
 export const AgentPermissions = Schema.Struct({
   web: Schema.Boolean,
   browser: Schema.Boolean,
   grants: Schema.Record(Schema.String, Grant),
-  always: Schema.Array(Schema.String.check(Schema.isMaxLength(200))).check(Schema.isMaxLength(200))
+  always: Schema.Array(Schema.String.check(Schema.isMaxLength(200))).check(Schema.isMaxLength(200)),
+  apps: Schema.optional(Schema.Array(DesktopApp).check(Schema.isMaxLength(50))) // none when absent
 })
 export type AgentPermissions = typeof AgentPermissions.Type
 export const DEFAULT_PERMISSIONS: AgentPermissions = { web: true, browser: true, grants: {}, always: [] }
@@ -432,6 +436,10 @@ export type MemoryVersion = typeof MemoryVersion.Type
 // A knowledge page (phase 3b): a longer Markdown note by scope (as memories). pinned: its title goes into every
 // turn's context in that scope.
 // file: its Markdown file inside the knowledge folder ("projects/zorel/Deploy.md"); null until written.
+// agent-desktop on this computer (spec 008). accessibility: macOS's permission (granted, denied, unknown).
+export const DesktopStatus = Schema.Struct({ supported: Schema.Boolean, installed: Schema.Boolean, version: Schema.String, accessibility: Schema.NullOr(Schema.String), suggestion: Schema.NullOr(Schema.String) })
+export type DesktopStatus = typeof DesktopStatus.Type
+export class DesktopInstallFailed extends Schema.Error<DesktopInstallFailed>("zorel/DesktopInstallFailed")({ _tag: Schema.tag("DesktopInstallFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
 // Telegram channel: whether the bot token is set, how many accounts are paired, and the open pairing code.
 export const TelegramStatus = Schema.Struct({ tokenSet: Schema.Boolean, fromEnv: Schema.Boolean, users: Schema.Number, pairing: Schema.NullOr(Schema.Struct({ code: Schema.String, until: Schema.Number })) })
 export type TelegramStatus = typeof TelegramStatus.Type
@@ -797,6 +805,11 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.put("maxRunning", "/api/preferences/max-running", { payload: Schema.Struct({ value: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 32 })) }), success: Preferences }))
       .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))
+      // Computer apps (spec 008): agent-desktop's state, its in-app install, the macOS permission guide, open apps.
+      .add(HttpApiEndpoint.get("desktop", "/api/desktop", { success: DesktopStatus }))
+      .add(HttpApiEndpoint.post("installDesktop", "/api/desktop/install", { success: DesktopStatus, error: DesktopInstallFailed }))
+      .add(HttpApiEndpoint.post("desktopGuide", "/api/desktop/guide"))
+      .add(HttpApiEndpoint.get("desktopRunning", "/api/desktop/running", { success: Schema.Array(Schema.String) }))
       // Telegram channel (spec 007): the bot token goes through setKey (TELEGRAM_BOT_TOKEN); pairing here.
       .add(HttpApiEndpoint.get("telegram", "/api/channels/telegram", { success: TelegramStatus }))
       .add(HttpApiEndpoint.post("telegramPair", "/api/channels/telegram/pair", { success: TelegramStatus }))

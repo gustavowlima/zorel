@@ -928,6 +928,22 @@ export const en = {
       parts: { app: "App window and agent browser", server: "Server", agents: "Agent sessions", terminals: "Terminals", connections: "Connections", other: "Other processes" }
     }
   },
+  computer: {
+    title: "Computer apps",
+    intro: "Apps on this computer the agent may use, like Notes, Calendar or Spotify: it reads a window through the system's accessibility and clicks and writes without moving your mouse. Anything that sends, pays, publishes, schedules or deletes waits for your approval.",
+    unsupported: "Not available on this system.",
+    needs: "Needs agent-desktop",
+    needsHint: "A small open-source program by Vercel Labs (version {version}). Zorel downloads the official release for this computer and checks it before keeping it.",
+    install: "Install",
+    installFailed: "Couldn't install agent-desktop. Check your connection and try again.",
+    noPermission: "Needs the Accessibility permission",
+    guide: "Open the guide",
+    read: "Read only",
+    use: "Read and use",
+    remove: "Remove {name}",
+    add: "Add app",
+    addPlaceholder: "An app's name, e.g. Notes"
+  },
   channels: {
     telegram: "Telegram",
     telegramIntro: "Message Zorel from your phone through your own Telegram bot. Each Telegram chat becomes a Zorel chat; replies come back there, and approvals wait for you in the app. Only accounts you pair can use it.",
