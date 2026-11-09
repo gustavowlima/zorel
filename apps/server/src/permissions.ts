@@ -20,7 +20,8 @@ export function mcpRoute(p: AgentPermissions, server: Pick<McpServer, "id" | "mo
   const grant = grantFor(p, server)
   const alwaysKey = `${server.id}:${tool.name}`
   const expose = grant === "write" || (grant === "read" && tool.cls === "read")
-  const asks = (tool.cls === "sensitive" && server.mode !== "auto") || (tool.cls === "write" && (server.mode === "approve" || askFirst))
+  // "Ask first" covers every tool that isn't a read, a sensitive one on an "auto" server too.
+  const asks = (tool.cls === "sensitive" && server.mode !== "auto") || (tool.cls === "write" && server.mode === "approve") || (tool.cls !== "read" && askFirst)
   return { expose, approve: expose && asks && !p.always.includes(alwaysKey), alwaysKey }
 }
 

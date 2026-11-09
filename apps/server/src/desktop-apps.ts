@@ -83,19 +83,24 @@ export function pick(target: string, items: ReadonlyArray<Item>): Item | { error
 
 // Desktop apps name scheduling by what it makes ("New Event"), not by a verb; a click with no name can't be judged.
 const CREATES = /\b(nov[oa]|criar|crie|new|create)\s+(evento|event|reuniao|meeting|compromisso|appointment)\b/
-export const riskyClick = (name: string) => !normalize(name) || RISKY.test(normalize(name)) || CREATES.test(normalize(name))
-// Return (which often sends), a send shortcut, or a bulk delete.
+// What the general list misses in desktop apps: trashing, discarding, archiving, scheduling, answering an invite, and
+// the paper-plane send icon (accents are already gone: normalize).
+const DESKTOP_RISKY = /\b(trash|lixo|lixeira|discard|descartar|erase|archive|arquivar|schedule|agendar|accept|aceitar|decline|recusar|paperplane)\b/
+export const riskyClick = (name: string) => !normalize(name) || RISKY.test(normalize(name)) || CREATES.test(normalize(name)) || DESKTOP_RISKY.test(normalize(name))
+// Return (which often sends; Shift+Return is a new line), a send shortcut, Space (presses the focused button), or a delete
+// (outside a text field it deletes the selected mail or note; text is written with desktop_type).
 export function riskyKey(combo: string): boolean {
   const parts = combo.replace(/\s+/g, "").toLowerCase().split("+")
   const key = parts.pop() ?? ""
   const mods = new Set(parts.map((m) => ({ command: "cmd", meta: "cmd", control: "ctrl", option: "alt" })[m] ?? m))
   const cmd = mods.has("cmd") || mods.has("ctrl")
   const RULES: Record<string, () => boolean> = {
-    return: () => mods.size === 0 || cmd,
-    enter: () => mods.size === 0 || cmd,
+    return: () => !mods.has("shift") || cmd,
+    enter: () => !mods.has("shift") || cmd,
     d: () => cmd && mods.has("shift"),
-    backspace: () => cmd || mods.has("alt"),
-    delete: () => cmd || mods.has("alt")
+    space: () => mods.size === 0,
+    backspace: () => true,
+    delete: () => true
   }
   return RULES[key]?.() ?? false
 }
@@ -220,7 +225,8 @@ export class DesktopApps {
       const it = this.item(c.key, app, args.target)
       if ("error" in it) return fail(it.error)
       const text = String(args.text ?? "")
-      if (c.askAll && !(await c.ask(`write "${text.slice(0, 200)}" into "${it.name || `#${it.n}`}" in ${app}`))) return fail("The user declined.")
+      // A line break typed into a chat or mail field is Return: it may send, so it asks like the key would.
+      if ((c.askAll || /[\r\n]/.test(text)) && !(await c.ask(`write "${text.slice(0, 200)}" into "${it.name || `#${it.n}`}" in ${app}`))) return fail("The user declined.")
       let r = await retried(this.cli, ["set-value", it.ref, text])
       if (!r.ok && this.platform !== "win32") r = await retried(this.cli, ["type", it.ref, text])
       return r.ok ? this.read(c.key, app) : fail(`Couldn't write into "${it.name || `#${it.n}`}": ${failure(r)}`)

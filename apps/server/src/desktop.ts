@@ -83,7 +83,8 @@ export const desktopCli =
   async (args, timeoutMs = 45_000) => {
     const bin = desktopBin(dataDir)
     if (!bin) return { ok: false, error: { code: "NOT_INSTALLED", message: "agent-desktop isn't installed." } }
-    const proc = Bun.spawn([bin, ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: timeoutMs, windowsHide: true })
+    // SIGKILL: a helper holding stdout open past a polite SIGTERM would hang the read below.
+    const proc = Bun.spawn([bin, ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: timeoutMs, killSignal: "SIGKILL", windowsHide: true })
     const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
     try {
       return JSON.parse(stdout) as Envelope

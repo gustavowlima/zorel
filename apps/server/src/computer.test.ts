@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { checkFolder, clipOutput, containerName, detectEngine, folderName, formatRun, problemOf, type Runner, runArgs } from "./computer.ts"
+import { checkFolder, clipOutput, Computers, containerName, detectEngine, folderName, formatRun, mountOf, problemOf, type Runner, runArgs } from "./computer.ts"
 
 test("the engine: Podman when it works, Docker when only it does, else what the person has to do", async () => {
   const runner =
@@ -39,6 +39,14 @@ test("container arguments: local-only ports, the lent folder read-only when aske
   expect(runArgs({ ...base, engine: "docker", platform: "linux" })).not.toContain("--userns=keep-id")
   expect(runArgs({ ...base, engine: "docker", lent: null }).some((a) => a.includes("/projects"))).toBe(false)
   expect(containerName("/data/a", "agent-123456789", null)).not.toBe(containerName("/data/b", "agent-123456789", null)) // two installs never share
+  // A writable repo keeps its .git read-only (host git runs its hooks and config); the mount is labeled so a change of
+  // folder or level makes the container again.
+  const repo = mkdtempSync(join(tmpdir(), "zorel-repo-"))
+  mkdirSync(join(repo, ".git"))
+  const rw = runArgs({ ...base, engine: "docker", lent: { path: repo, readOnly: false } })
+  expect(rw).toContain(`${join(repo, ".git")}:/projects/${folderName(repo)}/.git:ro`)
+  expect(rw).toContain(`zorel.mount=${mountOf({ path: repo, readOnly: false })}`)
+  expect(mountOf({ path: repo, readOnly: true })).not.toBe(mountOf({ path: repo, readOnly: false }))
 })
 
 test("command output keeps its start and, mostly, its end; a timeout says how to run long things", () => {
@@ -48,4 +56,8 @@ test("command output keeps its start and, mostly, its end; a timeout says how to
   expect(clipped.endsWith("z".repeat(50))).toBe(true)
   expect(formatRun({ code: 124, stdout: "", stderr: "" }, 30)).toContain("went past 30 s")
   expect(formatRun({ code: 0, stdout: "\u001b[32mok\u001b[0m\n", stderr: "" }, 30)).toBe("exit code 0\n--- stdout ---\nok")
+})
+
+test("erase takes an agent id, never a path", async () => {
+  await expect(new Computers(mkdtempSync(join(tmpdir(), "zorel-data-"))).erase("..")).rejects.toThrow("Not an agent id")
 })
