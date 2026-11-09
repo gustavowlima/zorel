@@ -4,7 +4,7 @@
 import type { McpServer, ToolInfo } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { type FormEvent, type ReactNode, useEffect, useState } from "react"
-import { type SimpleIcon, siAtlassian, siFigma, siGithub, siLinear, siNotion, siSentry, siStripe, siSupabase, siVercel } from "simple-icons"
+import { type SimpleIcon, siAirtable, siAtlassian, siClickup, siFigma, siGithub, siHuggingface, siIntercom, siLinear, siNotion, siPaypal, siSentry, siSquare, siStripe, siSupabase, siTodoist, siVercel, siWebflow, siWix } from "simple-icons"
 import { splitCommand } from "../labels.ts"
 import { AsyncResult } from "effect/reactivity"
 import { useAtomValue } from "@effect/atom-react"
@@ -220,6 +220,20 @@ const CONNECTORS: ReadonlyArray<Connector> = [
   { id: "vercel", name: "Vercel", url: "https://mcp.vercel.com", auth: "oauth", icon: siVercel },
   { id: "supabase", name: "Supabase", url: "https://mcp.supabase.com/mcp", auth: "oauth", icon: siSupabase },
   { id: "stripe", name: "Stripe", url: "https://mcp.stripe.com", auth: "oauth", icon: siStripe },
+  // Beyond code (2026-11-08): each URL answered 401 with OAuth metadata that advertises dynamic client registration.
+  // Asana, HubSpot, Box and Slack answer but don't register clients, so they're left out like GitHub's OAuth.
+  { id: "todoist", name: "Todoist", url: "https://ai.todoist.net/mcp", auth: "oauth", icon: siTodoist },
+  { id: "clickup", name: "ClickUp", url: "https://mcp.clickup.com/mcp", auth: "oauth", icon: siClickup },
+  { id: "monday", name: "monday.com", url: "https://mcp.monday.com/mcp", auth: "oauth" },
+  { id: "airtable", name: "Airtable", url: "https://mcp.airtable.com/mcp", auth: "oauth", icon: siAirtable },
+  { id: "intercom", name: "Intercom", url: "https://mcp.intercom.com/mcp", auth: "oauth", icon: siIntercom },
+  { id: "canva", name: "Canva", url: "https://mcp.canva.com/mcp", auth: "oauth" },
+  { id: "gamma", name: "Gamma", url: "https://mcp.gamma.app/mcp", auth: "oauth" },
+  { id: "webflow", name: "Webflow", url: "https://mcp.webflow.com/mcp", auth: "oauth", icon: siWebflow },
+  { id: "wix", name: "Wix", url: "https://mcp.wix.com/mcp", auth: "oauth", icon: siWix },
+  { id: "paypal", name: "PayPal", url: "https://mcp.paypal.com/mcp", auth: "oauth", icon: siPaypal },
+  { id: "square", name: "Square", url: "https://mcp.squareup.com/mcp", auth: "oauth", icon: siSquare },
+  { id: "huggingface", name: "Hugging Face", url: "https://huggingface.co/mcp", auth: "none", icon: siHuggingface },
   { id: "context7", name: "Context7", url: "https://mcp.context7.com/mcp", auth: "none" },
   { id: "figma", name: "Figma", url: "http://127.0.0.1:3845/mcp", auth: "none", icon: siFigma },
   { id: "playwright", name: "Playwright", command: "npx -y @playwright/mcp@latest", auth: "none" }
