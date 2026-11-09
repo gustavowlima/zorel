@@ -6,7 +6,7 @@
 // Run: bun bench/vs-cli.bench.ts [model, default sonnet] [--only installed,bare,zorel]
 import { type ChatEvent } from "@zorel/contracts/events"
 import { Deferred, Effect, Fiber, Layer, Stream } from "effect"
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { Accounts } from "../src/accounts.ts"
@@ -19,6 +19,7 @@ import { Pricing } from "../src/pricing.ts"
 import { Runtime } from "../src/runtime.ts"
 import { Secrets } from "../src/secrets.ts"
 import { Tools } from "../src/tools.ts"
+import { startVectors, vectorsReady } from "../src/vectors.ts"
 import { Workspace } from "../src/workspace.ts"
 
 const MODEL = process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : "sonnet"
@@ -35,9 +36,11 @@ const remembers = (text: string) => /thursday/i.test(text) && /cart\.js/i.test(t
 
 // One price table for every side (Zorel's catalog, copied from ~/.zorel): each side's own estimate isn't comparable.
 const PRICES = join(homedir(), ".zorel", "pricing.json")
+const MODELS = join(homedir(), ".cache", "zorel", "models")
 const dataDir = () => {
   const d = mkdtempSync(join(tmpdir(), "zorel-vs-data-"))
   if (existsSync(PRICES)) copyFileSync(PRICES, join(d, "pricing.json"))
+  if (existsSync(MODELS)) cpSync(MODELS, join(d, "models"), { recursive: true }) // the local model (spec 003), not downloaded again
   return d
 }
 
@@ -130,6 +133,8 @@ function zorel(): Promise<Turn[]> {
       Effect.gen(function* () {
         const store = yield* Store
         const p = yield* store.createProject({ name: "shop-cart", brief: "", path: dir })
+        yield* Effect.promise(() => startVectors(data)) // as in an app already open: the local model is loaded
+        console.error(`  local model ready: ${vectorsReady()}`)
         const first = yield* store.createChat({ projectId: p.id, agentIds: [], model })
         const turns: Turn[] = []
         for (const m of SESSION_ONE) turns.push(yield* ask(first.id, m))
