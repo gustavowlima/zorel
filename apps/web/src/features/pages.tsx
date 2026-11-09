@@ -67,9 +67,11 @@ export function PagesView({ selected }: { selected?: string | undefined }) {
                 }}
                 className={cx("h-auto w-full flex-col items-start gap-0.5 rounded-card border px-3 py-2.5 text-left font-normal whitespace-normal", p.id === selected ? "border-subtle bg-surface text-fg" : "border-transparent text-fg")}
               >
-                <span className="flex w-full items-center gap-1.5 truncate font-medium">
+                <span className="flex w-full min-w-0 items-center gap-1.5 font-medium">
                   {p.pinned && <Pin className="size-3 shrink-0 text-muted" />}
-                  {p.title}
+                  <span className="truncate" title={p.title}>
+                    {p.title}
+                  </span>
                 </span>
                 <span className="block w-full truncate text-sm text-muted">{[scopeLabel(p.scope, projects, agents), formatAge(p.updatedAt)].join(" · ")}</span>
               </Button>
