@@ -2,7 +2,7 @@
 // (OAuth in the browser, or a token, or nothing). Servers: mode, on/off, test the connection and see the tools each
 // mode exposes, add local (command) or remote (URL) servers. Secrets go to the system keychain.
 import type { McpServer, ToolInfo } from "@zorel/contracts"
-import { t } from "@zorel/i18n"
+import { type Messages, t } from "@zorel/i18n"
 import { type FormEvent, type ReactNode, useEffect, useState } from "react"
 import { type SimpleIcon, siAirtable, siAtlassian, siClickup, siFigma, siGithub, siHuggingface, siIntercom, siLinear, siNotion, siPaypal, siSentry, siSquare, siStripe, siSupabase, siTodoist, siVercel, siWebflow, siWix } from "simple-icons"
 import { splitCommand } from "../labels.ts"
@@ -210,7 +210,8 @@ function NewServer({ projectId, onDone }: { projectId: string | null; onDone: ()
 
 // The connectors: hosted MCP servers that sign in with OAuth (discovery + dynamic registration, oauth.ts), GitHub
 // with a token (its server doesn't register clients), and a few that need nothing. Writes wait for approval.
-type Connector = { id: string; name: string; url?: string; command?: string; auth: "oauth" | "token" | "none"; tokenUrl?: string; icon?: SimpleIcon }
+// The id is a key of connectors.about: a connector without its description doesn't compile.
+type Connector = { id: keyof Messages["connectors"]["about"]; name: string; url?: string; command?: string; auth: "oauth" | "token" | "none"; tokenUrl?: string; icon?: SimpleIcon }
 const CONNECTORS: ReadonlyArray<Connector> = [
   { id: "github", name: "GitHub", url: "https://api.githubcopilot.com/mcp/", auth: "token", tokenUrl: "https://github.com/settings/personal-access-tokens/new", icon: siGithub },
   { id: "notion", name: "Notion", url: "https://mcp.notion.com/mcp", auth: "oauth", icon: siNotion },
@@ -277,7 +278,7 @@ function Connectors({ servers }: { servers: ReadonlyArray<McpServer> }) {
   }, [waiting, signedIn, invalidate])
   return (
     <Section title={t("connectors.title")} description={t("connectors.intro")}>
-      <div className="grid items-start gap-2 xl:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-2 xl:grid-cols-2">
         {CONNECTORS.map((c) => {
           const server = servers.find((s) => matches(c, s))
           // attention: the service refused what Zorel holds, or an OAuth sign-in never finished.
@@ -344,7 +345,7 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
     }
   }
   const disconnect = () => server && void remove({ params: { id: server.id }, reactivityKeys: ["servers"] }).catch(() => setResult(FAILED()))
-  const hint: ReactNode = result && !busy ? result.text : waiting ? t("connectors.waiting") : status === "attention" ? t("connectors.attention") : t(`connectors.about.${c.id}` as "connectors.about.github")
+  const hint: ReactNode = result && !busy ? result.text : waiting ? t("connectors.waiting") : status === "attention" ? t("connectors.attention") : t(`connectors.about.${c.id}`)
   const menu = server && (
     <Menu
       label={t("connectors.actions", { name: c.name })}

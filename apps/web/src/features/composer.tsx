@@ -250,7 +250,7 @@ export function Composer({
     </form>
     {/* Under the box, outside it: the message's controls (model, access, context). The box keeps attach, the text,
         Stop and Send. */}
-    {tools && <div className="flex min-w-0 items-center gap-0.5 px-1">{tools}</div>}
+    {tools && <div className="flex min-w-0 flex-wrap items-center gap-0.5 px-1">{tools}</div>}
     </div>
   )
 }

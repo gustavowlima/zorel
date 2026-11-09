@@ -20,7 +20,7 @@ export function ChoiceCards<T extends string>({
   grid?: boolean
 }) {
   return (
-    <RadioGroup aria-label={label} value={value} onChange={(v) => onChange(v as T)} className={grid ? "grid gap-3 sm:grid-cols-2" : "flex flex-col gap-2"}>
+    <RadioGroup aria-label={label} value={value} onChange={(v) => onChange(v as T)} className={grid ? "grid grid-cols-1 gap-3 sm:grid-cols-2" : "flex flex-col gap-2"}>
       {options.map((o) => (
         <Radio
           key={o.value}
