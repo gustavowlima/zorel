@@ -138,7 +138,6 @@ export const mutations = {
   nativeSkills: Zorel.mutation("settings", "nativeSkills"),
   memoryApproval: Zorel.mutation("settings", "memoryApproval"),
   memoryModel: Zorel.mutation("settings", "memoryModel"),
-  routerModel: Zorel.mutation("settings", "routerModel"),
   maxRunning: Zorel.mutation("settings", "maxRunning"),
   acceptFailoverTerms: Zorel.mutation("settings", "acceptFailoverTerms"),
   send: Live.mutation("send"),

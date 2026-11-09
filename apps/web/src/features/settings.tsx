@@ -5,7 +5,7 @@ import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { t } from "@zorel/i18n"
 import { MAX_RUNNING_CHOICES, MAX_RUNNING_DEFAULT, type MemoryApproval } from "@zorel/contracts"
-import { type ReactNode, useEffect, useState } from "react"
+import { type ReactNode, useEffect, useId, useState } from "react"
 import { mutations, preferencesAtom, useMutation } from "../client.ts"
 import { go, liveStepsOpen, SETTINGS_TABS, type SettingsTab, setLiveStepsOpen, setThemePref, themePref, type ThemePref } from "../state.ts"
 import { AuditSection } from "./audit.tsx"
@@ -16,7 +16,7 @@ import { ModelPicker } from "./model-picker.tsx"
 import { ProvidersSection } from "./providers.tsx"
 import { ProcessesSection } from "./processes.tsx"
 import { StorageSection } from "./storage.tsx"
-import { Activity, Button, HardDrive, History, MessageCircle, NavItem, Plug, Rows, Screen, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch } from "@/ui"
+import { Activity, Button, DisclosurePill, HardDrive, History, MessageCircle, NavItem, Plug, Rows, Screen, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch } from "@/ui"
 
 const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, channels: <MessageCircle />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
 
@@ -53,25 +53,14 @@ export function SettingsView({ tab, provider }: { tab: SettingsTab; provider?: s
 function MemorySettings() {
   const prefs = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)
   const setMemory = useMutation(mutations.memoryModel)
-  const setRouter = useMutation(mutations.routerModel)
   const setApproval = useMutation(mutations.memoryApproval)
+  // The memory model stays automatic for nearly everyone: tucked under Advanced, open when one was chosen.
+  const [advanced, setAdvanced] = useState(false)
+  const advancedId = useId()
+  const showModel = advanced || !!prefs?.memoryModel
   return (
     <Section title={t("settings.modelsTitle")} description={<span className="block max-w-prose">{t("settings.memoryHint")}</span>}>
       <Rows>
-        <BackgroundModel
-          title={t("settings.memoryModel")}
-          model={prefs?.memoryModel ?? ""}
-          auto={t("settings.memoryModelAuto")}
-          chosen={t("settings.memoryModelChosen")}
-          onChange={(model) => void setMemory({ payload: { model }, reactivityKeys: ["preferences"] })}
-        />
-        <BackgroundModel
-          title={t("settings.routerModel")}
-          model={prefs?.routerModel ?? ""}
-          auto={t("settings.routerModelAuto")}
-          chosen={t("settings.routerModelChosen")}
-          onChange={(model) => void setRouter({ payload: { model }, reactivityKeys: ["preferences"] })}
-        />
         <SettingRow title={t("memory.approval")} hint={t("memory.approvalHint")}>
           <Select
             size="sm"
@@ -84,7 +73,25 @@ function MemorySettings() {
             ]}
           />
         </SettingRow>
+        {showModel && (
+          <div id={advancedId}>
+            <BackgroundModel
+              title={t("settings.memoryModel")}
+              model={prefs?.memoryModel ?? ""}
+              auto={t("settings.memoryModelAuto")}
+              chosen={t("settings.memoryModelChosen")}
+              onChange={(model) => void setMemory({ payload: { model }, reactivityKeys: ["preferences"] })}
+            />
+          </div>
+        )}
       </Rows>
+      {!prefs?.memoryModel && (
+        <div>
+          <DisclosurePill expanded={advanced} onToggle={() => setAdvanced(!advanced)} controls={advancedId}>
+            {t("settings.advanced")}
+          </DisclosurePill>
+        </div>
+      )}
     </Section>
   )
 }
