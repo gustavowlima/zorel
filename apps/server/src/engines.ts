@@ -285,6 +285,13 @@ function fileNote(f: TurnFile): string {
 }
 const withFiles = (m: TurnMessage) => (m.files?.length ? `${m.text}\n\n${m.files.map(fileNote).join("\n")}` : m.text)
 
+// ACP agents get text only: an attached image is named in the transcript but never seen. Said plainly, so the model
+// doesn't describe a picture it didn't get.
+export const imagesNotShown = (messages: ReadonlyArray<TurnMessage>) =>
+  messages.some((m) => m.files?.some(isImage))
+    ? "\n\n(Note from Zorel: the images attached in this conversation couldn't be shown to you; this agent takes text only. If asked about an image, say you couldn't see it.)"
+    : ""
+
 export function transcript(messages: ReadonlyArray<TurnMessage>): string {
   const last = messages.at(-1)!
   const before = messages.slice(0, -1)
@@ -604,7 +611,7 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
           const acp = ACP[provider]
           if (acp) {
             const { model } = splitModel(t.model)
-            return acpRun({ ...acp(model), model, cwd: t.cwd, prompt: `${t.system}\n\n${transcript(t.messages)}`, access: t.access ?? "workspace", web: t.web ?? false, gatewayUrl: t.tools?.url, approve: t.approve })
+            return acpRun({ ...acp(model), model, cwd: t.cwd, prompt: `${t.system}\n\n${transcript(t.messages)}${imagesNotShown(t.messages)}`, access: t.access ?? "workspace", web: t.web ?? false, gatewayUrl: t.tools?.url, approve: t.approve })
           }
           // An API-key model in a chat turn runs in OpenCode (files, shell, edits, its tools) when it's installed;
           // internal tasks (summaries, titles) and machines without it keep the direct API engine.
@@ -618,7 +625,7 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
               ...ACP.opencode!("default"),
               model: "default", // the injected config already names the model
               cwd: t.cwd,
-              prompt: `${t.system}\n\n${transcript(t.messages)}`,
+              prompt: `${t.system}\n\n${transcript(t.messages)}${imagesNotShown(t.messages)}`,
               access: t.access ?? "workspace",
               web: t.web ?? false,
               gatewayUrl: t.tools.url,

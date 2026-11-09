@@ -21,7 +21,8 @@ export function Segmented<K extends string>({ label, options, value, onChange, c
         <ToggleButton
           key={o.id}
           id={o.id}
-          className={cn("flex h-5.5 cursor-default items-center rounded-md px-2.5 text-sm text-muted outline-none transition-colors duration-150 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:text-fg data-selected:bg-surface data-selected:text-fg motion-reduce:transition-none", fill && "flex-1 justify-center")}
+          // 22px drawn (the 28px control row), 24px to press: the ::after reaches a pixel past each edge.
+          className={cn("relative flex h-5.5 cursor-default items-center rounded-md px-2.5 after:absolute after:inset-x-0 after:-inset-y-px after:content-[''] text-sm text-muted outline-none transition-colors duration-150 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:text-fg data-selected:bg-surface data-selected:text-fg motion-reduce:transition-none", fill && "flex-1 justify-center")}
         >
           {o.label}
         </ToggleButton>

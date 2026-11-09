@@ -7,7 +7,7 @@ process.env.ZOREL_API_ENGINE = "direct" // these tests drive the direct API engi
 import { type Agent, DEFAULT_PERMISSIONS, type Memory, type Message, namedSkills, skillHandle } from "@zorel/contracts"
 import { Effect, Stream } from "effect"
 import { buildTurn, OUTSIDE_TEXT_RULE, PINNED_PAGES_CHARS, pinnedPagesText, UNTRUSTED_NOTICE, grounded, mappedOf, memoryNote, mentioned, namedPoints, parseConsolidation, pinned, readPage, reviewed, sectionOf, similar, spread, withinBudget } from "./context.ts"
-import { ANTIGRAVITY_SETTINGS, antigravityDir, parseAntigravityModels, cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, sessionless, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
+import { ANTIGRAVITY_SETTINGS, antigravityDir, imagesNotShown, parseAntigravityModels, cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, sessionless, splitModel, transcript, type EngineEvent, type Parser, type Turn, type TurnFile, type TurnMessage } from "./engines.ts"
 import { codexFailure, codexStep, windowsOf } from "./engines/codex.ts"
 import { hasCredential, redact } from "./observability.ts"
 import { stretchOf } from "./chat.ts"
@@ -590,4 +590,11 @@ test("Antigravity: its models from `agy models`, and a settings folder of Zorel'
   expect(JSON.parse(readFileSync(join(dir, "antigravity-cli", "settings.json"), "utf8")).toolPermission).toBe("request-review")
   expect(ANTIGRAVITY_SETTINGS.permissions.allow).toEqual(["mcp(zorel/*)"])
   expect(JSON.parse(readFileSync(join(dir, "config", "mcp_config.json"), "utf8"))).toEqual({ mcpServers: {} })
+})
+
+test("ACP agents are told an attached image wasn't shown to them, and only then", () => {
+  const image: TurnFile = { name: "shot.png", mime: "image/png", path: "/x/shot.png" }
+  const said = (m: TurnMessage) => imagesNotShown([m])
+  expect(said({ role: "user", text: "look", files: [image] })).toContain("couldn't be shown")
+  expect(said({ role: "user", text: "hi" })).toBe("")
 })

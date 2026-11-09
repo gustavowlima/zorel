@@ -51,7 +51,8 @@ export function ComputerApps({ value, onChange }: { value: ReadonlyArray<Desktop
           </SettingRow>
         ) : (
           <>
-            {status.accessibility === "denied" && (
+            {/* Anything short of granted (denied, not asked yet, unknown) means clicks won't go through: say so. */}
+            {status.accessibility !== null && status.accessibility !== "granted" && (
               <SettingRow icon={<AppWindow />} title={<span className="text-warning">{t("computer.noPermission")}</span>} hint={status.suggestion ?? undefined}>
                 <Button size="sm" variant="secondary" onPress={() => void guide({ reactivityKeys: [] })}>
                   {t("computer.guide")}
