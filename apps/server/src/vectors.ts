@@ -28,6 +28,7 @@ export function startVectors(dataDir: string): Promise<void> {
         const data = out.data as Float32Array
         return texts.map((_, i) => data.slice(i * dim, (i + 1) * dim))
       }
+      await Effect.runPromise(Effect.logInfo("recall by meaning is on", { model: MODEL }))
       drain()
     } catch (e) {
       await Effect.runPromise(Effect.logWarning("recall by meaning is off: the local model didn't load", { error: String(e) }))

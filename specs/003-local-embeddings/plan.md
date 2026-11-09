@@ -61,5 +61,18 @@ apps/desktop/src/main.ts         # ZOREL_ONNX for the packaged server
 - [X] T004 [US1] `apps/server/src/runtime.ts`: `startVectors(dataDir)` in the background at boot
 - [X] T005 [US1] Test (`apps/server/src/db.test.ts`): with a fake embedder, a fact sharing no word with the question is recalled by meaning; another project's is not; with no embedder, recall is unchanged
 - [X] T006 [US1] `bench/memory-recall.bench.ts --vectors`: start the model, embed all facts, report reach; record SC-001/SC-002; `PARA_FLOOR` with vectors
-- [ ] T007 [US2] `apps/desktop/scripts/server.ts` + `scripts/onnx.ts` + `ZOREL_ONNX` in `apps/desktop/src/main.ts`; check by hand that the compiled server computes a vector (SC-004)
-- [ ] T008 Run LongMemEval-S (SC-005), `bun run test`, typecheck, lint; record in ARCHITECTURE §8, `.agent/memory/server.md`, changelog; licence of the new dependency in third-party licences
+- [X] T007 [US2] `apps/desktop/scripts/server.ts` + `scripts/onnx.ts` + `ZOREL_ONNX` in `apps/desktop/src/main.ts`; check by hand that the compiled server computes a vector (SC-004)
+- [X] T008 Run LongMemEval-S (SC-005), `bun run test`, typecheck, lint; record in ARCHITECTURE §8, `.agent/memory/server.md`, changelog; licence of the new dependency in third-party licences
+
+## Results (2026-11-08)
+
+| SC | before | after | met? |
+|---|---|---|---|
+| SC-001 paraphrase without pin (recall bench, 1,000) | 15/25 | 25/25 (`--vectors`), same words 25/25, 0 leaks | yes |
+| SC-002 prepare p95 at 1,000 | ~7 ms | 12.3 ms (≤ 15) | yes |
+| SC-003 model absent → unchanged | — | tests never load it; bench without `--vectors` and `--check` unchanged | yes |
+| SC-004 compiled server runs the model | — | `build/zorel-server` + `build/onnxruntime-node` logged "recall by meaning is on" (macOS arm64; Windows/Linux need their own build machine) | yes (macOS) |
+| SC-005 LongMemEval-S ≥ 0.940 | 0.940 | unchanged by construction (its haystack has no facts; messages keep word search) | yes |
+
+`bun run test` 320 pass; typecheck ok; lint 37 warnings (unchanged). App size: +85 MB on macOS arm64
+(build/onnxruntime-node), model 23 MB on first use.
