@@ -17,6 +17,8 @@ export const MAX_AFTER = 50 // more than this since the summary triggers a conso
 export const HISTORY_CHARS = 80_000
 export const KEEP_CHARS = 40_000
 export const MEMORY_BUDGET = 8_000 // characters of pinned memories in the prompt
+// Once recall by meaning works (spec 003), it finds what isn't pinned: half the pins, ~1k tokens less every turn.
+export const LEAN_MEMORY_BUDGET = 4_000
 export const RETRIEVED = 5 // memories retrieved by search each turn
 export const SKILL_TITLES = 30 // skills listed by title
 export const MAX_DEPTH = 3 // consecutive agent-to-agent replies with no human message in between

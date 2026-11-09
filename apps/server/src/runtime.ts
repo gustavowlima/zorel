@@ -6,7 +6,7 @@ import { type Access, type Agent, type Chat, type Effort, type FailoverTarget, t
 import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
 import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
-import { ask, consolidate, DataDir, knownNames, mapEarlierFacts, members, prepare } from "./chat.ts"
+import { ask, consolidate, DataDir, knownNames, mapEarlierFacts, members, pinBudget, prepare } from "./chat.ts"
 import { parseRoute, ROUTER_MESSAGES, routerModel, routerPrompt } from "./router.ts"
 import { grounded, handleOf, mappedOf, MAX_DEPTH, memoryNote, mentioned, pinned, readPage, scopesOf, sectionOf, similar, snippet } from "./context.ts"
 import { type AccountRow, normalize, Store, type Repository, type TurnRow } from "./db.ts"
@@ -382,7 +382,7 @@ export const makeRuntime = Effect.gen(function* () {
       const active = yield* store.activeMemories(scopes)
       const skills = (yield* store.activeMemories(scopes, "skill", undefined, who)).length + picked(yield* store.preference("fileSkills"), who).length
       const idle = new Set<string>()
-      if (active.length <= pinned(active).length) idle.add(MEMORY_TOOL.name) // every memory is in the prompt already
+      if (active.length <= pinned(active, pinBudget()).length) idle.add(MEMORY_TOOL.name) // every memory is in the prompt already
       if (!(yield* store.hasPages(scopes))) for (const t of ["zorel_knowledge_search", "zorel_knowledge_read"]) idle.add(t)
       if (!skills) idle.add("zorel_read_skill")
       return idle
