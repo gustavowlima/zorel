@@ -7,7 +7,7 @@
 // snapshot with [ref=eN] handles, act on a ref), and the Browser panel watches the chat's active tab live (CDP
 // screencast) and can take over: while a person holds the browser, every agent tool on that chat is refused.
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
 import { Context, Effect, Layer } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -29,6 +29,8 @@ const CHANNELS = ["chrome", "msedge", undefined] as const
 const ACTION_MS = 15_000
 const NAV_MS = 30_000
 const VIEWPORT = { width: 1280, height: 800 }
+const AIM_MS = 300 // a watched agent's cursor reaches the element before it acts, so the person sees where
+const ACT_FRESH_MS = 20_000 // a panel opened this soon after an action still shows it
 export const YOU = "you" // the profile of the tabs a person opens from the panel
 const IV_BYTES = 12 // AES-GCM nonce
 const TAG_BYTES = 16 // AES-GCM tag
@@ -49,12 +51,27 @@ interface ChatBrowser {
   lastFrame?: Uint8Array | undefined // a still page sends no new frames: a panel that attaches gets this one
   dialogs: string[] // alerts/confirms/prompts the page opened since the last tool result (told to the agent)
   nextDialog?: { accept: boolean; text?: string | undefined } | undefined // how to answer the next one (default: dismiss)
+  actor: string | null // the agent whose tool runs now (null: the chat's assistant)
+  lastAct?: BrowserAct | undefined // for a panel that attaches mid-work
+}
+
+// An agent at work in a chat's browser, for the panel: the tool, the element by its name and where it is (fractions
+// of the frame), then done. What it types never travels: it may be a password.
+export interface BrowserAct {
+  readonly agentId: string | null
+  readonly tool: string
+  readonly target?: string | undefined
+  readonly x?: number | undefined
+  readonly y?: number | undefined
+  readonly done?: boolean | undefined
+  readonly at: number
 }
 
 // A Browser panel attached to a chat: it gets state changes and the active tab's frames.
 export interface Watcher {
   readonly state: (s: { tabs: ReadonlyArray<TabInfo>; userControl: boolean }) => void
   readonly frame: (jpeg: Uint8Array) => void
+  readonly act: (a: BrowserAct) => void
 }
 
 export class BrowserError extends Error {}
@@ -95,7 +112,7 @@ export class Browsers {
   private browser: Promise<Browser> | undefined
   private contexts = new Map<string, Promise<BrowserContext>>()
   private chats = new Map<string, ChatBrowser>()
-  private screencast: { page: Page; cdp: CDPSession } | undefined
+  private screencast: { page: Page; cdp: CDPSession; chatId: string } | undefined
 
   constructor(
     private readonly stateDir: string,
@@ -140,13 +157,16 @@ export class Browsers {
     const state = await ctx.storageState({ indexedDB: true }).catch(() => undefined)
     if (!state) return
     mkdirSync(this.stateDir, { recursive: true })
-    writeFileSync(this.file(profile), seal(this.key, state), { mode: 0o600 })
+    // A whole file or none: a crash mid-write must not lose the profile's sign-ins.
+    const tmp = `${this.file(profile)}.${randomBytes(4).toString("hex")}.tmp`
+    writeFileSync(tmp, seal(this.key, state), { mode: 0o600 })
+    renameSync(tmp, this.file(profile))
   }
 
   private chat(chatId: string): ChatBrowser {
     let c = this.chats.get(chatId)
     if (!c) {
-      c = { tabs: new Map(), profiles: new Map(), active: undefined, userControl: false, watchers: new Set(), dialogs: [] }
+      c = { tabs: new Map(), profiles: new Map(), active: undefined, userControl: false, watchers: new Set(), dialogs: [], actor: null }
       this.chats.set(chatId, c)
     }
     return c
@@ -225,8 +245,25 @@ export class Browsers {
       if (!p) throw new BrowserError(`No tab ${tabId} in this chat. Call browser_tabs to list them.`)
       return p
     }
-    if (!c.active || !c.tabs.get(c.active)) await this.newTab(chatId, undefined, profile)
+    // An agent works in tabs of its own context only: never the person's (signed in as them) or another agent's.
+    const own = (id: string | undefined) => !!id && c.tabs.has(id) && (!profile || c.profiles.get(id) === profile)
+    if (!own(c.active)) {
+      const mine = [...c.tabs.keys()].find(own)
+      if (mine) await this.select(chatId, mine)
+      else await this.newTab(chatId, undefined, profile).then((id) => this.select(chatId, id))
+    }
     return c.tabs.get(c.active!)!
+  }
+
+  // A tab an agent names (browser_tabs select/close) must be one of its own.
+  ownTab(chatId: string, tabId: string, profile: string) {
+    const c = this.chat(chatId)
+    if (!c.tabs.has(tabId)) throw new BrowserError(`No tab ${tabId} in this chat. Call browser_tabs to list them.`)
+    if (c.profiles.get(tabId) !== profile) throw new BrowserError("That tab isn't yours: it belongs to the user or another agent.")
+  }
+
+  held(chatId: string) {
+    return this.chat(chatId).userControl
   }
 
   // Whose context the chat's active tab lives in.
@@ -252,6 +289,23 @@ export class Browsers {
     if (this.chat(chatId).userControl) throw new BrowserError("The user is controlling the browser right now. Wait for them to hand it back, then read the page again.")
   }
 
+  // Whose tool runs now in this chat (runBrowserTool), and what it does: sent to the chat's panels as it happens.
+  setActor(chatId: string, agentId: string | null) {
+    this.chat(chatId).actor = agentId
+  }
+
+  act(chatId: string, a: Omit<BrowserAct, "agentId" | "at">) {
+    const c = this.chat(chatId)
+    const next: BrowserAct = { ...a, agentId: c.actor, at: Date.now() }
+    // The cursor stays where the agent last pointed until it points elsewhere.
+    c.lastAct = next.x === undefined && c.lastAct?.agentId === next.agentId ? { ...next, x: c.lastAct.x, y: c.lastAct.y } : next
+    for (const w of c.watchers) w.act(c.lastAct)
+  }
+
+  watched(chatId: string) {
+    return this.chat(chatId).watchers.size > 0
+  }
+
   setControl(chatId: string, user: boolean) {
     const c = this.chat(chatId)
     if (c.userControl && !user) void this.save(this.activeProfile(chatId) ?? YOU) // what they signed into stays
@@ -267,8 +321,11 @@ export class Browsers {
     await this.watch(chatId)
     await this.notify(chatId)
     if (c.lastFrame) w.frame(c.lastFrame)
+    if (c.lastAct && Date.now() - c.lastAct.at < ACT_FRESH_MS) w.act(c.lastAct)
     return () => {
       c.watchers.delete(w)
+      // The last panel gone (closed, the window left, the connection dropped): the browser goes back to the agents.
+      if (!c.watchers.size && c.userControl) this.setControl(chatId, false)
       void this.watch(chatId)
     }
   }
@@ -278,6 +335,7 @@ export class Browsers {
     const c = this.chat(chatId)
     const page = c.watchers.size && c.active ? c.tabs.get(c.active) : undefined
     if (this.screencast?.page === page) return
+    if (!page && this.screencast && this.screencast.chatId !== chatId) return // another chat's live view: leave it
     if (this.screencast) {
       const old = this.screencast
       this.screencast = undefined
@@ -286,7 +344,7 @@ export class Browsers {
     }
     if (!page) return
     const cdp = await page.context().newCDPSession(page)
-    this.screencast = { page, cdp }
+    this.screencast = { page, cdp, chatId }
     cdp.on("Page.screencastFrame", (f) => {
       void cdp.send("Page.screencastFrameAck", { sessionId: f.sessionId }).catch(() => undefined)
       const jpeg = Buffer.from(f.data, "base64")
@@ -410,9 +468,10 @@ const pageLine = async (page: Page) => `${(await page.title().catch(() => "")) |
 
 // One tool call on the chat's browser; the text the model gets back (with any dialog the page opened meanwhile).
 // root: the chat's folder (uploads come only from inside it). profile: whose context a tab the agent opens uses.
-export async function runBrowserTool(b: Browsers, chatId: string, name: BrowserToolName, args: Record<string, unknown>, root?: string, profile?: string): Promise<string> {
+export async function runBrowserTool(b: Browsers, chatId: string, name: BrowserToolName, args: Record<string, unknown>, root?: string, profile?: string, agentId: string | null = null): Promise<string> {
   b.guard(chatId)
-  const text = await browserStep(b, chatId, name, args, root, profile)
+  b.setActor(chatId, agentId)
+  const text = await browserStep(b, chatId, name, args, root, profile).finally(() => b.act(chatId, { tool: name, done: true }))
   if (BROWSER_TOOLS.find((t) => t.name === name)?.writes) void b.save(b.activeProfile(chatId) ?? profileOf(undefined)) // a sign-in it just did stays
   const dialogs = b.takeDialogs(chatId)
   return dialogs.length ? `${text}\nDialogs: ${dialogs.join("; ")}` : text
@@ -432,8 +491,66 @@ export function stepOf(step: Record<string, unknown>): { name: BrowserToolName; 
   return undefined
 }
 
+// What an action is about, for the panel (never what's typed).
+const ABOUT: Partial<Record<BrowserToolName, (args: Record<string, unknown>) => string>> = {
+  browser_navigate: (a) => str(a.url),
+  browser_press: (a) => str(a.key),
+  browser_wait: (a) => str(a.text) || `${Number(a.seconds) || 1} s`,
+  browser_tabs: (a) => str(a.action) || "list"
+}
+
+// The element's name as a person reads it: its label, placeholder, title or text.
+const nameOf = (el: Element) =>
+  (el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.getAttribute("title") || el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 80)
+
+// The real names of what an action would commit to, read from the page (never the agent's own label): the element
+// a click lands on, the submit button of the form a typed Enter or a pressed Enter would send. browserRoute tests
+// them against RISKY, for browser_run's steps too.
+export async function actionNames(b: Browsers, chatId: string, name: BrowserToolName, args: Record<string, unknown>, profile?: string): Promise<string> {
+  const steps = name === "browser_run" ? (Array.isArray(args.steps) ? args.steps : []).slice(0, 20).flatMap((raw) => stepOf((raw ?? {}) as Record<string, unknown>) ?? []) : [{ name, args }]
+  if (!steps.some((s) => s.name === "browser_click" || s.name === "browser_press" || (s.name === "browser_type" && s.args.submit === true))) return ""
+  const page = await b.page(chatId, undefined, profile).catch(() => undefined)
+  if (!page) return ""
+  const submitOf = (el: Element | null) => {
+    const form = el && "form" in el ? (el as HTMLInputElement).form : el?.closest("form")
+    const button = form?.querySelector("button[type=submit], input[type=submit], button:not([type])")
+    return button ? (button.getAttribute("aria-label") || (button as HTMLInputElement).value || button.textContent || "").trim() : ""
+  }
+  const names = await Promise.all(
+    steps.map(async (s) => {
+      if (s.name === "browser_click") return page.getByRef(str(s.args.ref)).evaluate(nameOf).catch(() => "")
+      if (s.name === "browser_type" && s.args.submit === true) return page.getByRef(str(s.args.ref)).evaluate(submitOf).catch(() => "")
+      if (s.name === "browser_press" && /^(Enter|Space| )$/i.test(str(s.args.key)))
+        return page.evaluate(() => {
+          // Self-contained (it runs in the page): the focused element's name and its form's submit button.
+          const el = document.activeElement
+          const form = el?.closest("form")
+          const button = form?.querySelector("button[type=submit], input[type=submit], button:not([type])")
+          const own = el?.getAttribute("aria-label") || el?.textContent || ""
+          return `${own} ${button ? button.getAttribute("aria-label") || (button as HTMLInputElement).value || button.textContent || "" : ""}`.trim()
+        }).catch(() => "")
+      return ""
+    })
+  )
+  return names.join(" ").trim()
+}
+
+// Points the agent's cursor at an element (scrolled into view first, as the action itself would) and, when a panel
+// watches, waits a moment so the cursor is seen arriving before the page changes.
+async function aim(b: Browsers, chatId: string, page: Page, ref: string, tool: BrowserToolName) {
+  const target = page.getByRef(ref)
+  await target.scrollIntoViewIfNeeded({ timeout: ACTION_MS }).catch(() => undefined)
+  const [box, name] = await Promise.all([target.boundingBox({ timeout: ACTION_MS }).catch(() => null), target.evaluate(nameOf).catch(() => "")])
+  const size = page.viewportSize() ?? VIEWPORT
+  const fraction = (v: number, of: number) => Math.min(1, Math.max(0, v / of))
+  b.act(chatId, { tool, target: name || undefined, ...(box && { x: fraction(box.x + box.width / 2, size.width), y: fraction(box.y + box.height / 2, size.height) }) })
+  if (box && b.watched(chatId)) await page.waitForTimeout(AIM_MS)
+  return target
+}
+
 async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, args: Record<string, unknown>, root?: string, profile?: string): Promise<string> {
   const page_ = () => b.page(chatId, undefined, profile)
+  b.act(chatId, { tool: name, target: ABOUT[name]?.(args) })
   switch (name) {
     case "browser_navigate": {
       const page = await page_()
@@ -449,13 +566,13 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
     }
     case "browser_click": {
       const page = await page_()
-      await page.getByRef(str(args.ref)).click({ timeout: ACTION_MS })
+      await (await aim(b, chatId, page, str(args.ref), name)).click({ timeout: ACTION_MS })
       await page.waitForLoadState("domcontentloaded", { timeout: ACTION_MS }).catch(() => undefined)
       return `Clicked. Now: ${await pageLine(page)}`
     }
     case "browser_type": {
       const page = await page_()
-      const field = page.getByRef(str(args.ref))
+      const field = await aim(b, chatId, page, str(args.ref), name)
       await field.fill(str(args.text), { timeout: ACTION_MS })
       if (args.submit === true) await field.press("Enter", { timeout: ACTION_MS })
       return args.submit === true ? `Typed and submitted. Now: ${await pageLine(page)}` : "Typed."
@@ -478,8 +595,10 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
     case "browser_tabs": {
       const action = str(args.action) || "list"
       if (action === "new") await b.newTab(chatId, str(args.url) || undefined, profile)
-      else if (action === "select") await b.select(chatId, str(args.id))
-      else if (action === "close") await b.closeTab(chatId, str(args.id))
+      else if (action === "select" || action === "close") {
+        if (profile) b.ownTab(chatId, str(args.id), profile)
+        await (action === "select" ? b.select(chatId, str(args.id)) : b.closeTab(chatId, str(args.id)))
+      }
       const tabs = await b.tabs(chatId)
       return tabs.length ? tabs.map((t) => `${t.active ? "*" : " "} ${t.id}  ${t.title || "(untitled)"} — ${t.url}`).join("\n") : "No tabs."
     }
@@ -490,13 +609,13 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
     }
     case "browser_hover": {
       const page = await page_()
-      await page.getByRef(str(args.ref)).hover({ timeout: ACTION_MS })
+      await (await aim(b, chatId, page, str(args.ref), name)).hover({ timeout: ACTION_MS })
       return "Hovered."
     }
     case "browser_select": {
       const page = await page_()
       const values = Array.isArray(args.values) ? args.values.map(String) : [str(args.values)]
-      const chosen = await page.getByRef(str(args.ref)).selectOption(values, { timeout: ACTION_MS })
+      const chosen = await (await aim(b, chatId, page, str(args.ref), name)).selectOption(values, { timeout: ACTION_MS })
       return `Selected ${chosen.join(", ") || "nothing"}.`
     }
     case "browser_scroll": {
@@ -506,11 +625,14 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
     }
     case "browser_upload": {
       if (!root) throw new BrowserError("Uploads need a chat folder.")
-      const paths = (Array.isArray(args.paths) ? args.paths : []).map((p) => resolve(root, String(p)))
-      const outside = paths.find((p) => !(p === root || p.startsWith(root + sep)) || !existsSync(p))
+      // Real paths: a link inside the folder can't point the upload at a file outside it.
+      const real = (p: string) => (existsSync(p) ? realpathSync(p) : p)
+      const base = real(root)
+      const paths = (Array.isArray(args.paths) ? args.paths : []).map((p) => real(resolve(root, String(p))))
+      const outside = paths.find((p) => !(p === base || p.startsWith(base + sep)) || !existsSync(p))
       if (!paths.length || outside) throw new BrowserError(`Only existing files inside the chat's folder${outside ? ` (not ${outside})` : ""}.`)
       const page = await page_()
-      const target = page.getByRef(str(args.ref))
+      const target = await aim(b, chatId, page, str(args.ref), name)
       // A file input takes the files directly; a button that opens a picker gets them through the chooser.
       await target.setInputFiles(paths, { timeout: ACTION_MS }).catch(async () => {
         const [chooser] = await Promise.all([page.waitForEvent("filechooser", { timeout: ACTION_MS }), target.click({ timeout: ACTION_MS })])
@@ -525,6 +647,7 @@ async function browserStep(b: Browsers, chatId: string, name: BrowserToolName, a
     case "browser_run": {
       const steps = (Array.isArray(args.steps) ? args.steps : []).slice(0, 20)
       for (const [i, raw] of steps.entries()) {
+        b.guard(chatId) // the person may take over between two steps
         const step = stepOf((raw ?? {}) as Record<string, unknown>)
         if (!step || step.name === "browser_run") throw new BrowserError(`Step ${i + 1} is not one of navigate, click, type, press, hover, select, scroll, wait.`)
         try {
@@ -654,7 +777,8 @@ export const BrowserSocket = HttpRouter.add(
     const detach = yield* Effect.promise(() =>
       b.attach(chatId, {
         state: (s) => run(write(JSON.stringify({ t: "state", ...s }))),
-        frame: (jpeg) => run(write(jpeg))
+        frame: (jpeg) => run(write(jpeg)),
+        act: (a) => run(write(JSON.stringify({ t: "act", ...a })))
       })
     )
     const decoder = new TextDecoder()
