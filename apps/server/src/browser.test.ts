@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto"
 import { existsSync, mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Browsers, parsePanelFrame, runBrowserTool, seal, stepOf, unseal, webUrl } from "./browser.ts"
+import { actionNames, type BrowserAct, Browsers, parsePanelFrame, runBrowserTool, seal, stepOf, unseal, webUrl } from "./browser.ts"
 
 const KEY = randomBytes(32)
 
@@ -111,4 +111,37 @@ test.skipIf(!chrome)(
     await wrongKey.close()
   },
   60_000
+)
+
+test.skipIf(!chrome)(
+  "a watching panel sees the agent: who, the element's name, where (fractions), then done; risky names come from the page",
+  async () => {
+    const acts: BrowserAct[] = []
+    const detach = await b.attach("chat-3", { state: () => {}, frame: () => {}, act: (a) => acts.push(a) })
+    await runBrowserTool(b, "chat-3", "browser_navigate", { url: `http://127.0.0.1:${site.port}/` }, undefined, "agent-a", "agent-a")
+    const buy = /button "Buy" \[ref=(e\d+)\]/.exec(await runBrowserTool(b, "chat-3", "browser_snapshot", {}, undefined, "agent-a", "agent-a"))?.[1]
+    // The agent's own label says "button"; the page says Buy (RISKY), for a click and inside browser_run.
+    expect(await actionNames(b, "chat-3", "browser_click", { ref: buy, element: "button" }, "agent-a")).toBe("Buy")
+    expect(await actionNames(b, "chat-3", "browser_run", { steps: [{ click: buy }] }, "agent-a")).toBe("Buy")
+    acts.length = 0
+    await runBrowserTool(b, "chat-3", "browser_click", { ref: buy }, undefined, "agent-a", "agent-a")
+    const aimed = acts.find((a) => a.x !== undefined)
+    expect(aimed).toMatchObject({ agentId: "agent-a", tool: "browser_click", target: "Buy" })
+    expect(aimed!.x).toBeGreaterThan(0)
+    expect(aimed!.x).toBeLessThan(1)
+    expect(acts.at(-1)).toMatchObject({ tool: "browser_click", done: true })
+    expect(JSON.stringify(acts)).not.toContain("a@b.c") // what's typed never travels
+
+    // Another agent in the same chat works in a tab of its own, not agent-a's.
+    await runBrowserTool(b, "chat-3", "browser_snapshot", {}, undefined, "agent-b", "agent-b")
+    expect(b.activeProfile("chat-3")).toBe("agent-b")
+    const tabA = (await b.tabs("chat-3")).find((t) => !t.active)!.id
+    await expect(runBrowserTool(b, "chat-3", "browser_tabs", { action: "close", id: tabA }, undefined, "agent-b", "agent-b")).rejects.toThrow("isn't yours")
+
+    // A person took over and the panel went away: the browser goes back to the agents.
+    b.setControl("chat-3", true)
+    detach()
+    expect(b.held("chat-3")).toBe(false)
+  },
+  30_000
 )

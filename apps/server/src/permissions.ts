@@ -28,9 +28,10 @@ export function mcpRoute(p: AgentPermissions, server: Pick<McpServer, "id" | "mo
 // whatever the access level, and can't be allowed for good.
 export const RISKY = /\b(buy|pay|purchase|checkout|order|place order|publish|post|send|submit|confirm|delete|remove|transfer|donate|subscribe|book|sign up|comprar|pagar|publicar|enviar|confirmar|apagar|excluir|remover|transferir|assinar)\b/i
 
-export function browserRoute(p: AgentPermissions, name: string, args: Record<string, unknown>, writes: boolean, askFirst: boolean): { approve: boolean; alwaysKey: string | null } {
+// `names`: what the action commits to as the page names it (browser.ts actionNames), not the agent's own label.
+export function browserRoute(p: AgentPermissions, args: Record<string, unknown>, writes: boolean, askFirst: boolean, names = ""): { approve: boolean; alwaysKey: string | null } {
   const label = typeof args.element === "string" ? args.element : ""
-  if (name === "browser_click" && RISKY.test(label)) return { approve: true, alwaysKey: null }
+  if (RISKY.test(`${label} ${names}`)) return { approve: true, alwaysKey: null }
   if (writes && askFirst) return { approve: !p.always.includes("browser"), alwaysKey: "browser" }
   return { approve: false, alwaysKey: null }
 }

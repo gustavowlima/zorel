@@ -290,6 +290,12 @@ body {
 @media not ((hover: hover) and (pointer: fine)) { .pressable:hover { background-color: inherit; } }
 @media (prefers-reduced-motion: reduce) { .pressable { transition: none; } .pressable:active { transform: none; } }
 
+/* AgentPointer: the ring where an agent just acted. */
+@keyframes pointer-ring {
+  from { transform: scale(0.4); opacity: 0.9; }
+  to { transform: scale(1.5); opacity: 0; }
+}
+
 /* Reply markdown. */
 @keyframes shimmer {
   from { background-position: 100% 0; }

@@ -2,9 +2,12 @@
 // (GET /api/browser): the chat's tabs and whether a person holds it come as JSON, the active tab as JPEG frames.
 // Clicking, scrolling or typing on the page, or using the address bar, takes control: while it is held, the
 // agents' browser tools are refused; "Hand back" returns it. Positions go up as fractions of the frame.
+// While an agent works, its pointer moves over the page to where it acts, and the bar says what it's doing.
 import { t } from "@zorel/i18n"
 import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react"
-import { ArrowRight, Button, ChevronRight, cx, Globe, IconButton, Input, Plus, RefreshCw, Tooltip, X } from "@/ui"
+import { agentsAtom, useList } from "../client.ts"
+import { agentName, agentTone } from "../labels.ts"
+import { AgentAvatar, AgentPointer, ArrowRight, Button, ChevronRight, cx, Globe, IconButton, Input, Plus, RefreshCw, Spinner, Tooltip, X } from "@/ui"
 
 type Tab = { id: string; title: string; url: string; active: boolean }
 type Frame =
@@ -15,6 +18,29 @@ type Frame =
   | { t: "nav"; url: string }
   | { t: "back" | "forward" | "reload" | "newtab" | "release" }
   | { t: "tab" | "close"; id: string }
+
+// An agent's action, from the server (BrowserAct): its tool, the element's name and where it is, then done.
+type Act = { agentId: string | null; tool: string; target?: string; x?: number; y?: number; done?: boolean; at: number }
+const IDLE_MS = 3000 // the pointer and the line stay this long after the agent's last action
+
+// What the bar says for each tool (the element's name follows in quotes).
+const DOING: Readonly<Record<string, (name: string) => string>> = {
+  browser_navigate: (name) => t("browser.doing.navigate", { name }),
+  browser_snapshot: (name) => t("browser.doing.read", { name }),
+  browser_click: (name) => t("browser.doing.click", { name }),
+  browser_type: (name) => t("browser.doing.type", { name }),
+  browser_press: (name) => t("browser.doing.press", { name }),
+  browser_hover: (name) => t("browser.doing.hover", { name }),
+  browser_select: (name) => t("browser.doing.select", { name }),
+  browser_scroll: (name) => t("browser.doing.scroll", { name }),
+  browser_wait: (name) => t("browser.doing.wait", { name }),
+  browser_tabs: (name) => t("browser.doing.tabs", { name }),
+  browser_back: (name) => t("browser.doing.back", { name }),
+  browser_upload: (name) => t("browser.doing.upload", { name }),
+  browser_dialog: (name) => t("browser.doing.dialog", { name }),
+  browser_run: (name) => t("browser.doing.steps", { name })
+}
+const doingLine = (a: Act, name: string) => `${(DOING[a.tool] ?? DOING.browser_run!)(name)}${a.target ? ` “${a.target}”` : ""}`
 
 // A key event as Playwright names it ("Control+A", "Enter"); printable text without modifiers goes as text.
 function keyFrame(e: KeyboardEvent): Frame | undefined {
@@ -30,6 +56,9 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
   const [frame, setFrame] = useState<string>()
   const [address, setAddress] = useState("")
   const [error, setError] = useState<string>()
+  const [act, setAct] = useState<Act>()
+  const [idle, setIdle] = useState(true)
+  const agents = useList(agentsAtom)
   const ws = useRef<WebSocket>(null)
   const active = tabs.find((x) => x.active)
 
@@ -43,11 +72,12 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
     let last: string | undefined
     socket.onmessage = (e) => {
       if (typeof e.data === "string") {
-        const m = JSON.parse(e.data) as { t: string; tabs?: Tab[]; userControl?: boolean; message?: string }
+        const m = JSON.parse(e.data) as { t: string; tabs?: Tab[]; userControl?: boolean; message?: string } & Partial<Act>
         if (m.t === "state") {
           setTabs(m.tabs ?? [])
           setHeld(!!m.userControl)
         } else if (m.t === "error") setError(m.message)
+        else if (m.t === "act") setAct(m as Act)
         return
       }
       // The newest frame replaces the last one (its object URL is released).
@@ -61,6 +91,18 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
       if (last) URL.revokeObjectURL(last)
     }
   }, [chatId])
+  // The agent's last action shows until IDLE_MS after it's done.
+  useEffect(() => {
+    setIdle(!act)
+    if (!act?.done) return
+    const timer = setTimeout(() => setIdle(true), IDLE_MS)
+    return () => clearTimeout(timer)
+  }, [act])
+  const actor = act && agents.find((a) => a.id === act.agentId)
+  const actorName = act ? agentName(act.agentId, agents) : ""
+  const face = actor ? <AgentAvatar id={actor.id} name={actor.name} tone={agentTone(actor, agents)} size={16} /> : null
+  const working = !!act && !idle && !held
+
   // The address bar follows the active tab unless it is being edited.
   const editing = useRef(false)
   useEffect(() => {
@@ -142,9 +184,10 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
           <ArrowRight className="size-3.5" />
         </IconButton>
       </form>
-      {/* Who holds the browser: the agents, or you (then they wait). */}
-      <div className={cx("flex items-center gap-2 px-3 py-1.5 text-sm", held ? "bg-accent-soft text-accent-text" : "text-muted")}>
-        <span className="min-w-0 flex-1 truncate">{held ? t("browser.youHold") : t("browser.agentsMayUse")}</span>
+      {/* Who holds the browser: the agents (and what one is doing now), or you (then they wait). */}
+      <div aria-live="polite" className={cx("flex items-center gap-2 px-3 py-1.5 text-sm", held ? "bg-accent-soft text-accent-text" : working ? "text-secondary" : "text-muted")}>
+        {working && (act.done ? face : <Spinner size={12} />)}
+        <span className="min-w-0 flex-1 truncate">{held ? t("browser.youHold") : working ? doingLine(act, actorName) : t("browser.agentsMayUse")}</span>
         {held && (
           <Button size="sm" variant="secondary" onPress={() => send({ t: "release" })}>
             {t("browser.handBack")}
@@ -159,7 +202,7 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
             aria-label={t("browser.page", { title: active.title || active.url })}
             // biome-ignore lint/a11y/noNoninteractiveTabindex: a remote page drawn as frames (role application): it takes focus so keys go to the page
             tabIndex={0}
-            className="w-full cursor-default overflow-hidden rounded-control border border-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="relative w-full cursor-default overflow-hidden rounded-control border border-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent"
             style={{ aspectRatio: "1280 / 800" }}
             onMouseDown={(e) => {
               e.currentTarget.focus()
@@ -178,6 +221,20 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
             }}
           >
             <img src={frame} alt="" draggable={false} className="pointer-events-none size-full select-none object-contain" />
+            {act?.x !== undefined && act.y !== undefined && !held && (
+              <AgentPointer
+                x={act.x}
+                y={act.y}
+                pulse={act.at}
+                faded={idle}
+                label={
+                  <>
+                    {face}
+                    {actorName}
+                  </>
+                }
+              />
+            )}
           </div>
         ) : (
           <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
