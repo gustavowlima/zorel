@@ -15,7 +15,7 @@ import { go } from "../state.ts"
 import { ScopeIcon } from "./knowledge.tsx"
 import { MemoryMap } from "./memory-map.tsx"
 import { ReadingState } from "./reading.tsx"
-import { Brain, Button, Column, ConfirmDialog, cx, EmptyState, Input, LineDiff, Menu, MenuItem, Pin, PinOff, Plus, Rows, Screen, SearchInput, Segmented, Select, Tab, TabList, Tabs, Textarea, Tooltip } from "@/ui"
+import { Brain, Button, ChevronRight, Column, ConfirmDialog, cx, EmptyState, IconButton, Inbox, Input, LineDiff, Menu, MenuItem, MenuSeparator, MoreHorizontal, Notice, Pencil, Pin, PinOff, Plus, Rows, Screen, SearchInput, Section, Segmented, Select, SettingRow, Tab, TabList, Tabs, Textarea, Tooltip, X } from "@/ui"
 
 const MAP_KEY = "zorel.memory.map" // Facts as a list or a map, remembered on this computer
 
@@ -68,26 +68,30 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
 
   return (
     <Screen
-      title={t("memory.title")}
-      subtitle={t("memory.subtitle", { count: facts.filter((m) => m.state === "active").length })}
+      title={review ? t("memory.reviewTitle") : t("memory.title")}
+      subtitle={review ? t("memory.waiting", { count: waiting }) : t("memory.subtitle", { count: tab === "all" || tab === "forgotten" ? facts.filter((m) => m.state === "active").length : kept(tab) })}
       {...(asMap && !review && { bodyClassName: "flex flex-col" })}
       actions={
+        // The same two controls in Facts, Map and Pages, at the same place: the switch, then the search.
         <>
           {!review && <MemorySwitch value={asMap ? "map" : "list"} onFacts={setAsMap} />}
-          <Approval />
           <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("memory.search")} />
         </>
       }
     >
       {asMap && !review ? (
-        <>
-          <div className="px-7 pt-4">
+          <MemoryMap
+            key={tab}
+            scope={tab === "all" || tab === "forgotten" ? "" : tab}
+            toolbar={
             <Tabs selectedKey={tab === "forgotten" ? "all" : tab} onSelectionChange={(k) => go(k === "all" ? { view: "memory" } : { view: "memory", tab: String(k) })}>
               <TabList label={t("memory.title")}>
                 <Tab id="all">{t("memory.all")}</Tab>
-                <Tab id="user">{t("memory.aboutYou")}</Tab>
+                <Tab id="user" count={kept("user") || undefined}>
+                  {t("memory.aboutYou")}
+                </Tab>
                 {owners.map((s) => (
-                  <Tab key={s} id={s}>
+                  <Tab key={s} id={s} count={kept(s) || undefined}>
                     <span className="flex items-center gap-1.5">
                       <ScopeIcon scope={s} agents={agents} />
                       {ownerName(s, projects, agents)}
@@ -96,25 +100,30 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
                 ))}
               </TabList>
             </Tabs>
-          </div>
-          <MemoryMap key={tab} scope={tab === "all" || tab === "forgotten" ? "" : tab} />
-        </>
+            }
+          />
       ) : (
       <Column>
         <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["memories"])} />
         {review ? (
           <>
-            <div>
-              <Button size="sm" variant="ghost" onPress={() => go({ view: "memory" })}>
-                {t("memory.back")}
+            <div className="-mb-4">
+              <Button size="sm" variant="ghost" className="-ml-2.5 text-muted" onPress={() => go({ view: "memory" })}>
+                <ChevronRight className="size-3.5 rotate-180" />
+                {t("memory.title")}
               </Button>
             </div>
-            <Group title={t("memory.newTitle")} hint={t("memory.newHint")}>
-              {pending.length ? pending.map((m) => <FactRow key={m.id} memory={m} showScope />) : <p className="py-3 text-sm text-muted">{t("memory.nothingNew")}</p>}
-            </Group>
-            <Group title={t("memory.staleTitle")} hint={t("memory.staleHint", { days: STALE_DAYS })}>
-              {stale.length ? stale.map((m) => <FactRow key={m.id} memory={m} showScope stale />) : <p className="py-3 text-sm text-muted">{t("memory.allConfirmed")}</p>}
-            </Group>
+            <Section title={t("memory.newTitle")} description={t("memory.newHint")}>
+              <Rows>{pending.length ? pending.map((m) => <FactRow key={m.id} memory={m} showScope />) : <p className="py-3 text-sm text-muted">{t("memory.nothingNew")}</p>}</Rows>
+            </Section>
+            <Section title={t("memory.staleTitle")} description={t("memory.staleHint", { days: STALE_DAYS })}>
+              <Rows>{stale.length ? stale.map((m) => <FactRow key={m.id} memory={m} showScope stale />) : <p className="py-3 text-sm text-muted">{t("memory.allConfirmed")}</p>}</Rows>
+            </Section>
+            <Section title={t("memory.approval")}>
+              <Rows>
+                <Approval />
+              </Rows>
+            </Section>
           </>
         ) : (
           // The tabs 32px above what they show; the strip, the field and each owner's group 40px apart (DESIGN.md).
@@ -138,29 +147,26 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
             </Tabs>
             <div className="flex flex-col gap-10">
               {waiting > 0 && tab !== "forgotten" && (
-                <div role="status" className="flex items-center gap-3 rounded-card border border-accent-line bg-accent-faint px-3.5 py-2.5">
-                  <span aria-hidden="true" className="size-2 rounded-full bg-accent-text" />
-                  <span className="flex-1 text-sm">
-                    <span className="font-medium">{t("memory.waiting", { count: waiting })}</span>
-                    <span className="text-muted">{` · ${t("memory.waitingParts", { fresh: facts.filter((m) => m.state === "pending").length, old: facts.filter((m) => isStale(m, now)).length })}`}</span>
-                  </span>
-                  <Button size="sm" variant="default" onPress={() => go({ view: "memory", review: true })}>
-                    {t("memory.review")}
-                  </Button>
-                </div>
+                <Notice
+                  tone="neutral"
+                  icon={<Inbox />}
+                  title={t("memory.waiting", { count: waiting })}
+                  action={
+                    <Button size="sm" variant="default" onPress={() => go({ view: "memory", review: true })}>
+                      {t("memory.review")}
+                    </Button>
+                  }
+                >
+                  {t("memory.waitingParts", { fresh: facts.filter((m) => m.state === "pending").length, old: facts.filter((m) => isStale(m, now)).length })}
+                </Notice>
               )}
               {(tab === "all" || tab === "user") && <Teach />}
               {groups.map((s) => (
-                <Group
-                  key={s}
-                  title={tab === "all" ? ownerName(s, projects, agents) : undefined}
-                  icon={tab === "all" ? <ScopeIcon scope={s} agents={agents} /> : undefined}
-                  hint={tab === "all" ? t(s === "user" ? "memory.seenByAll" : s.startsWith("agent:") ? "memory.seenByAgent" : "memory.seenByProject", { name: agents.find((a) => `agent:${a.id}` === s)?.name ?? ownerName(s, projects, agents) }) : undefined}
-                >
+                <OwnerGroup key={s} title={tab === "all" ? <span className="flex items-center gap-1.5"><ScopeIcon scope={s} agents={agents} />{ownerName(s, projects, agents)}</span> : undefined} hint={tab === "all" ? t(s === "user" ? "memory.seenByAll" : s.startsWith("agent:") ? "memory.seenByAgent" : "memory.seenByProject", { name: agents.find((a) => `agent:${a.id}` === s)?.name ?? ownerName(s, projects, agents) }) : undefined}>
                   {shown.filter((m) => m.scope === s || tab === "forgotten").map((m) => (
                     <FactRow key={m.id} memory={m} />
                   ))}
-                </Group>
+                </OwnerGroup>
               ))}
               {!reading.loading && shown.length === 0 && (
                 <EmptyState
@@ -184,20 +190,18 @@ function Approval() {
   const prefs = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)
   const set = useMutation(mutations.memoryApproval)
   return (
-    <Tooltip content={t("memory.approvalHint")}>
-      <span>
-        <Select
-          size="sm"
-          aria-label={t("memory.approval")}
-          value={prefs?.memoryApproval ?? "review"}
-          onChange={(v) => void set({ payload: { approval: v as MemoryApproval }, reactivityKeys: ["preferences"] })}
-          options={[
-            { value: "review", label: t("memory.approvalReview") },
-            { value: "undo", label: t("memory.approvalUndo") }
-          ]}
-        />
-      </span>
-    </Tooltip>
+    <SettingRow title={t("memory.approvalTitle")} hint={t("memory.approvalHint")}>
+      <Select
+        size="sm"
+        aria-label={t("memory.approval")}
+        value={prefs?.memoryApproval ?? "review"}
+        onChange={(v) => void set({ payload: { approval: v as MemoryApproval }, reactivityKeys: ["preferences"] })}
+        options={[
+          { value: "review", label: t("memory.approvalReview") },
+          { value: "undo", label: t("memory.approvalUndo") }
+        ]}
+      />
+    </SettingRow>
   )
 }
 
@@ -210,19 +214,15 @@ const ownerName = (scope: string, projects: ReadonlyArray<{ id: string; name: st
   return projects.find((p) => `project:${p.id}` === scope)?.name ?? scope
 }
 
-function Group({ title, icon, hint, children }: { title?: string | undefined; icon?: React.ReactNode; hint?: string | undefined; children: React.ReactNode }) {
-  return (
-    <section className="flex flex-col gap-3">
-      {title && (
-        <h3 className="flex flex-wrap items-center gap-x-2 text-sm font-medium text-muted">
-          {icon}
-          {title}
-          {hint && <span className="font-normal text-dim">{`· ${hint}`}</span>}
-        </h3>
-      )}
-      {!title && hint && <p className="text-sm text-dim">{hint}</p>}
+// An owner's facts: a Section (its h2 under the page's h1, the audience hint beneath, as in Settings) holding one Rows
+// card; inside one owner's tab the tab already names it, so the card stands alone.
+function OwnerGroup({ title, hint, children }: { title?: React.ReactNode; hint?: string | undefined; children: React.ReactNode }) {
+  return title ? (
+    <Section title={title} description={hint}>
       <Rows>{children}</Rows>
-    </section>
+    </Section>
+  ) : (
+    <Rows>{children}</Rows>
   )
 }
 
@@ -233,7 +233,7 @@ function Teach() {
   const [busy, setBusy] = useState(false)
   return (
     <form
-      className="flex items-center gap-2 rounded-card border border-dashed border-strong px-3"
+      className="relative"
       onSubmit={(e) => {
         e.preventDefault()
         if (!text.trim() || busy) return
@@ -243,24 +243,21 @@ function Teach() {
           .finally(() => setBusy(false))
       }}
     >
-      <Plus className="size-4 shrink-0 text-dim" />
-      <Input
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        maxLength={500}
-        placeholder={t("memory.teach")}
-        aria-label={t("memory.teachLabel")}
-        className="h-10 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-      />
+      <Plus aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-dim" />
+      <Input value={text} onChange={(e) => setText(e.target.value)} maxLength={500} placeholder={t("memory.teach")} aria-label={t("memory.teachLabel")} disabled={busy} className="pl-9" />
     </form>
   )
 }
 
 // Move ▾: to you, a project or a teammate's notes (not where it is).
+// Where a fact can go: you, a project or a teammate's notes, never where it is.
+const moveDestinations = (m: Memory, projects: ReadonlyArray<{ id: string }>, agents: ReadonlyArray<Parameters<typeof isTeammate>[0] & { id: string }>) =>
+  ["user", ...projects.map((p) => `project:${p.id}`), ...agents.filter((a) => isTeammate(a)).map((a) => `agent:${a.id}`)].filter((s) => s !== m.scope)
+
 export function MoveMenu({ memory: m, onMove }: { memory: Memory; onMove: (scope: string) => void }) {
   const projects = useList(projectsAtom)
   const agents = useList(agentsAtom)
-  const destinations = ["user", ...projects.map((p) => `project:${p.id}`), ...agents.filter((a) => isTeammate(a)).map((a) => `agent:${a.id}`)].filter((s) => s !== m.scope)
+  const destinations = moveDestinations(m, projects, agents)
   return (
     <Menu
       label={t("memory.moveTo")}
@@ -350,6 +347,7 @@ function FactRow({ memory: m, showScope = false, stale = false }: { memory: Memo
       }
     )
   const move = <MoveMenu memory={m} onMove={(scope) => void patch({ scope }).catch(() => {})} />
+  const destinations = moveDestinations(m, projects, agents)
   return (
     <div className="flex flex-col gap-1.5 py-3">
       <div className="flex items-start gap-3">
@@ -404,7 +402,10 @@ function FactRow({ memory: m, showScope = false, stale = false }: { memory: Memo
                 {m.essential && (
                   <>
                     <span>·</span>
-                    <span className="text-accent-text">{t("knowledge.essential")}</span>
+                    <span className="inline-flex items-center gap-1 text-secondary">
+                      <Pin className="size-3" aria-hidden="true" />
+                      {t("knowledge.essential")}
+                    </span>
                   </>
                 )}
               </>
@@ -415,7 +416,7 @@ function FactRow({ memory: m, showScope = false, stale = false }: { memory: Memo
           <div className="flex shrink-0 items-center gap-0.5">
             {m.state === "pending" && (
               <>
-                <Button size="sm" variant="default" onPress={() => void patch({ state: "active" }).catch(() => {})}>
+                <Button size="sm" variant="secondary" onPress={() => void patch({ state: "active" }).catch(() => {})}>
                   {target ? t("knowledge.applyImprovement") : t("memory.keep")}
                 </Button>
                 {!target && (
@@ -445,17 +446,32 @@ function FactRow({ memory: m, showScope = false, stale = false }: { memory: Memo
             {m.state === "active" && !stale && (
               <>
                 <Tooltip content={t("knowledge.essentialHint")}>
-                  <Button size="sm" variant="ghost" aria-label={m.essential ? t("knowledge.notEssential") : t("knowledge.essential")} onPress={() => void patch({ essential: !m.essential }).catch(() => {})}>
-                    {m.essential ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
-                  </Button>
+                  <IconButton size="sm" label={m.essential ? t("knowledge.notEssential") : t("knowledge.essential")} className={m.essential ? "text-secondary" : "text-dim"} onPress={() => void patch({ essential: !m.essential }).catch(() => {})}>
+                    {m.essential ? <PinOff /> : <Pin />}
+                  </IconButton>
                 </Tooltip>
-                <Button size="sm" variant="ghost" onPress={() => setEditing(true)}>
-                  {t("common.edit")}
-                </Button>
-                {move}
-                <Button size="sm" variant="ghost" onPress={() => void patch({ state: "forgotten" }).catch(() => {})}>
-                  {t("knowledge.forget")}
-                </Button>
+                <Menu
+                  label={t("common.more")}
+                  trigger={
+                    <IconButton size="sm" label={t("common.more")} className="text-dim">
+                      <MoreHorizontal />
+                    </IconButton>
+                  }
+                >
+                  <MenuItem icon={<Pencil />} onAction={() => setEditing(true)}>
+                    {t("common.edit")}
+                  </MenuItem>
+                  <MenuSeparator />
+                  {destinations.map((d) => (
+                    <MenuItem key={d} icon={<ScopeIcon scope={d} agents={agents} />} onAction={() => void patch({ scope: d }).catch(() => {})}>
+                      {`${t("memory.moveTo")} ${ownerName(d, projects, agents)}`}
+                    </MenuItem>
+                  ))}
+                  <MenuSeparator />
+                  <MenuItem icon={<X />} onAction={() => void patch({ state: "forgotten" }).catch(() => {})}>
+                    {t("knowledge.forget")}
+                  </MenuItem>
+                </Menu>
               </>
             )}
             {m.state === "forgotten" && (

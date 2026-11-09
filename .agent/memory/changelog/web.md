@@ -74,3 +74,4 @@
 2026-11-09 | Own computer row in agent permissions | spec 009
 2026-11-09 | Skills moved into Settings; Needs you/Agents/Routines/Memory as an icon row; side panel toggle after the agents in the chat header | user request
 2026-11-09 | sidebar: New chat and Search as icons in the head row; the places back as named rows | user preferred names over an icon row
+2026-11-09 | Memory page: one header across views, approval moved into Review, rows use pin + ⋯ menu | impeccable layout/critique pass

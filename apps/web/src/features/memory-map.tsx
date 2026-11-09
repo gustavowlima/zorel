@@ -17,8 +17,9 @@ import { Brain, Button, cx, EmptyState, Link2, Maximize2, Menu, MenuItem, Minus,
 type Kind = MapPoint["type"]
 const NO_MAP: MapData = { points: [], links: [] }
 const KINDS: ReadonlyArray<Kind> = ["project", "agent", "concept", "subject"]
-// Identity colours (the agents' palette, never a state colour); the project is the accent text.
-const COLOR: Record<Kind, string> = { project: "--z-accent-text", agent: "--z-agent-1", concept: "--z-agent-2", subject: "--z-agent-4" }
+// Identity colours (the agents' palette, never a state colour); the project, the map's root, the lightest neutral
+// (the accent is kept for actions, focus and selection: the One Voice Rule).
+const COLOR: Record<Kind, string> = { project: "--z-text-secondary", agent: "--z-agent-1", concept: "--z-agent-2", subject: "--z-agent-4" }
 
 // A bridge's far end: a point of a project this map doesn't show (all maps: none is far).
 const far = (p: { scope: string }, scope: string) => !!scope && p.scope !== scope && p.scope !== "user"
@@ -30,7 +31,8 @@ interface Node extends MapPoint {
   vy: number
 }
 
-export function MemoryMap({ scope }: { scope: string }) {
+// toolbar: the owner tabs, on the same row as the kind filters (the row sits on the header's 28px edge).
+export function MemoryMap({ scope, toolbar }: { scope: string; toolbar?: React.ReactNode }) {
   const map = AsyncResult.getOrElse(useAtomValue(memoryMapAtom(scope)), () => NO_MAP)
   const [hidden, setHidden] = useState<ReadonlySet<Kind>>(new Set())
   const [selected, setSelected] = useState<string>()
@@ -258,17 +260,25 @@ export function MemoryMap({ scope }: { scope: string }) {
   const zoom = (f: number) => {
     view.current.k = Math.min(3, Math.max(0.3, view.current.k * f))
   }
+  const head = (filters?: React.ReactNode) => (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-7 pt-7">
+      <div className="min-w-0 flex-1">{toolbar}</div>
+      {filters}
+    </div>
+  )
   if (!points.length)
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <EmptyState icon={<Brain />} title={t("memory.mapEmpty")} hint={t("memory.mapEmptyHint")} />
-      </div>
+      <>
+        {head()}
+        <div className="flex flex-1 items-center justify-center">
+          <EmptyState icon={<Brain />} title={t("memory.mapEmpty")} hint={t("memory.mapEmptyHint")} />
+        </div>
+      </>
     )
   return (
-    <div className="flex min-h-0 flex-1">
-      <div className="relative min-w-0 flex-1">
-        <canvas ref={canvas} className="absolute inset-0 size-full cursor-grab" role="img" aria-label={t("memory.mapLabel", { points: points.length, links: links.length })} />
-        <div className="absolute top-3 left-4 flex gap-1.5">
+    <>
+    {head(
+        <div className="flex gap-1.5">
           {KINDS.map((k) => (
             <Button
               key={k}
@@ -283,6 +293,10 @@ export function MemoryMap({ scope }: { scope: string }) {
             </Button>
           ))}
         </div>
+    )}
+    <div className="flex min-h-0 flex-1">
+      <div className="relative min-w-0 flex-1">
+        <canvas ref={canvas} className="absolute inset-0 size-full cursor-grab" role="img" aria-label={t("memory.mapLabel", { points: points.length, links: links.length })} />
         <div className="absolute right-4 bottom-4 flex overflow-hidden rounded-control border border-strong bg-surface">
           <Button size="sm" variant="ghost" aria-label={t("memory.zoomOut")} onPress={() => zoom(1 / 1.2)}>
             <Minus />
@@ -294,10 +308,11 @@ export function MemoryMap({ scope }: { scope: string }) {
             <Plus />
           </Button>
         </div>
-        <p className="absolute bottom-4 left-4 text-xs text-dim">{t("memory.mapCount", { points: points.length, links: links.length })}</p>
+        <p className="absolute bottom-4 left-7 text-xs text-dim">{t("memory.mapCount", { points: points.length, links: links.length })}</p>
       </div>
       {point && <PointPanel point={point} points={points} links={links} labels={labels} onOpen={setSelected} onClose={() => setSelected(undefined)} />}
     </div>
+    </>
   )
 }
 

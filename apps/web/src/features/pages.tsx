@@ -35,13 +35,14 @@ export function PagesView({ selected }: { selected?: string | undefined }) {
       subtitle={t("pages.subtitle", { count: pages.length })}
       bodyClassName="flex"
       actions={
+        // New page first, so the switch and the search keep the place they have in Facts and Map.
         <>
-          <MemorySwitch value="pages" />
-          <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("common.search")} />
           <Button size="sm" variant="secondary" onPress={() => setCreating(true)}>
             <Plus />
             {t("pages.new")}
           </Button>
+          <MemorySwitch value="pages" />
+          <SearchInput size="sm" className="w-56" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} aria-label={t("common.search")} />
         </>
       }
     >
@@ -108,7 +109,6 @@ export function PageView({ page }: { page: Page }) {
     <article className={cx(column(), "gap-5")}>
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <span className="text-xs font-semibold tracking-wide text-accent-text uppercase">{t("pages.page")}</span>
           {editing ? (
             <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} aria-label={t("pages.titleField")} />
           ) : (
