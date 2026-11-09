@@ -2,6 +2,7 @@
 // from a computer with no public address. Only paired Telegram accounts get through: pairing is a one-time code shown
 // in Settings and sent to the bot as "/pair CODE" (10 minutes). Each Telegram chat is a Zorel chat; a message goes in
 // through the runtime like one typed in the app and the reply comes back. The token lives in the keychain.
+import type { ChatEvent } from "@zorel/contracts/events"
 import { Effect, Layer, Schedule, Stream } from "effect"
 import { Store } from "./db.ts"
 import { Runtime } from "./runtime.ts"
@@ -54,6 +55,18 @@ export const unpairTelegram = Effect.gen(function* () {
   yield* store.setPreference(USERS, "[]")
 })
 
+// What each chat event means on the Telegram side while a message waits for its reply: a note to send now, or the
+// reply that ends the wait. Turn events count only for this message's turn; events not listed mean nothing here.
+type Outcome = { readonly notify?: string; readonly reply?: string } | undefined
+type On<K extends ChatEvent["_tag"]> = (e: Extract<ChatEvent, { _tag: K }>, turnId: string | undefined) => Outcome
+const ON_EVENT: { readonly [K in ChatEvent["_tag"]]?: On<K> } = {
+  approval: (e) => ({ notify: `Waiting for your approval in Zorel: ${e.approval.summary}` }),
+  "turn-completed": (e, turnId) => (e.turn.id === turnId ? { reply: e.message.text } : undefined),
+  "turn-failed": (e, turnId) => (e.turn.id === turnId ? { reply: `The reply failed: ${e.turn.error ?? "unknown error"}` } : undefined),
+  interrupted: (e, turnId) => (e.turn.id === turnId ? { reply: e.message?.text ?? "Stopped." } : undefined)
+}
+const onEvent = (e: ChatEvent, turnId: string | undefined): Outcome => (ON_EVENT[e._tag] as On<ChatEvent["_tag"]> | undefined)?.(e as never, turnId)
+
 export const TelegramChannel = Layer.effectDiscard(
   Effect.gen(function* () {
     const store = yield* Store
@@ -61,6 +74,18 @@ export const TelegramChannel = Layer.effectDiscard(
     const secrets = yield* Secrets
     const say = (token: string, chat: number, text: string) =>
       Effect.forEach(text.match(new RegExp(`[\\s\\S]{1,${MAX_TEXT}}`, "g")) ?? [""], (part) => Effect.promise(() => call(token, "sendMessage", { chat_id: chat, text: part }).catch(() => undefined)), { discard: true })
+
+    // The bot's commands for a paired account: what each does, and the answer it sends.
+    const COMMANDS: Record<string, (chat: number) => Effect.Effect<string>> = {
+      "/start": () => Effect.succeed("Hi! Send a message to talk to Zorel; /new starts a new chat."),
+      "/new": (chat) =>
+        Effect.gen(function* () {
+          const map = json<Record<string, string>>(yield* store.preference(CHATS), {})
+          delete map[chat]
+          yield* store.setPreference(CHATS, JSON.stringify(map))
+          return "New chat. What's next?"
+        })
+    }
 
     // A paired person's message: into its Zorel chat, and the reply (or what stopped it) back.
     const relay = (token: string, u: Update, chatTg: number, text: string) =>
@@ -73,28 +98,24 @@ export const TelegramChannel = Layer.effectDiscard(
           yield* store.setPreference(CHATS, JSON.stringify({ ...map, [chatTg]: chatId }))
         }
         yield* Effect.promise(() => call(token, "sendChatAction", { chat_id: chatTg, action: "typing" }).catch(() => undefined))
-        let turnId = ""
-        const end = yield* runtime.subscribeChat(chatId).pipe(
-          Stream.tap((e) =>
-            e._tag === "snapshot"
-              ? runtime.send({ chatId: chatId!, clientId: `tg-${u.update_id}`, text }).pipe(
-                  Effect.tap((r) =>
-                    Effect.sync(() => {
-                      turnId = r.turnId
-                    })
-                  )
-                )
-              : Effect.void
+        // Subscribed first, then sent (on the snapshot), so no event of this turn is missed.
+        let turnId: string | undefined
+        const reply = yield* runtime.subscribeChat(chatId).pipe(
+          Stream.mapEffect((e) =>
+            Effect.gen(function* () {
+              if (e._tag === "snapshot") {
+                turnId = (yield* runtime.send({ chatId: chatId!, clientId: `tg-${u.update_id}`, text })).turnId
+                return undefined
+              }
+              const outcome = onEvent(e, turnId)
+              if (outcome?.notify) yield* say(token, chatTg, outcome.notify)
+              return outcome?.reply
+            })
           ),
-          Stream.filter((e) => (e._tag === "turn-completed" || e._tag === "turn-failed" || e._tag === "interrupted" ? e.turn.id === turnId : e._tag === "approval")),
-          Stream.tap((e) => (e._tag === "approval" ? say(token, chatTg, `Waiting for your approval in Zorel: ${e.approval.summary}`) : Effect.void)),
-          Stream.filter((e) => e._tag !== "approval"),
+          Stream.filter((r): r is string => r !== undefined),
           Stream.runHead
         )
-        const done = end._tag === "Some" ? end.value : undefined
-        const reply =
-          done?._tag === "turn-completed" ? done.message.text : done?._tag === "turn-failed" ? `The reply failed: ${done.turn.error ?? "unknown error"}` : done?._tag === "interrupted" ? (done.message?.text ?? "Stopped.") : "No reply."
-        yield* say(token, chatTg, reply.trim() || "(empty reply)")
+        yield* say(token, chatTg, (reply._tag === "Some" ? reply.value : "No reply.").trim() || "(empty reply)")
       }).pipe(Effect.catchCause((c) => Effect.logWarning("telegram relay failed", String(c))))
 
     const handle = (token: string, u: Update) =>
@@ -113,13 +134,8 @@ export const TelegramChannel = Layer.effectDiscard(
           }
           return yield* say(token, m.chat.id, "This bot is private. To use it, open Zorel › Settings › Channels and send /pair with the code shown there.")
         }
-        if (text === "/start") return yield* say(token, m.chat.id, "Hi! Send a message to talk to Zorel; /new starts a new chat.")
-        if (text === "/new") {
-          const map = json<Record<string, string>>(yield* store.preference(CHATS), {})
-          delete map[m.chat.id]
-          yield* store.setPreference(CHATS, JSON.stringify(map))
-          return yield* say(token, m.chat.id, "New chat. What's next?")
-        }
+        const command = COMMANDS[text]
+        if (command) return yield* say(token, m.chat.id, yield* command(m.chat.id))
         yield* Effect.forkDetach(relay(token, u, m.chat.id, text)) // a long reply doesn't hold the next messages
       })
 
