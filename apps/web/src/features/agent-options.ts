@@ -2,7 +2,7 @@
 // (not the Builder; the project's own and the global ones), the list itself (the chat's members first, in the chat's
 // order, then the rest, each with the line that says what it is or that it joins the chat), and who a message
 // calls that is not in the chat yet (they join when it is sent).
-import { type Agent, type AgentTeam, MENTION_RE, isTeammate } from "@zorel/contracts"
+import { type Agent, type AgentTeam, MENTION_RE, isTeammate, type Project } from "@zorel/contracts"
 
 export const CHAT_MEMBERS_MAX = 8 // NewChat/ChatPatch agentIds
 import { handleOf } from "../labels.ts"
@@ -61,3 +61,11 @@ export function withTeam<A extends Pick<Agent, "id">>(team: Pick<AgentTeam, "age
 
 // The teams a chat in this project can call or add (its own and the global ones).
 export const teamsIn = <T extends Pick<AgentTeam, "projectId">>(teams: ReadonlyArray<T>, projectId: string | null): T[] => teams.filter((x) => x.projectId === null || x.projectId === projectId)
+
+// Who a new chat in a project starts with: its agents, then its teams' members, once each, only those in reach (an
+// archived agent or a deleted team drops out), up to what a chat holds. The router then picks who answers each message.
+export function projectCrew<A extends Pick<Agent, "id">>(project: Pick<Project, "agentIds" | "teamIds"> | undefined, callable: ReadonlyArray<A>, teams: ReadonlyArray<Pick<AgentTeam, "id" | "agentIds">>): A[] {
+  if (!project) return []
+  const ids = [...project.agentIds, ...project.teamIds.flatMap((id) => teams.find((x) => x.id === id)?.agentIds ?? [])]
+  return [...new Set(ids)].flatMap((id) => callable.find((a) => a.id === id) ?? []).slice(0, CHAT_MEMBERS_MAX)
+}

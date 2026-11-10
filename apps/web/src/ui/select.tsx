@@ -80,11 +80,11 @@ export function Select({
         className={cn(
           variant === "ghost"
             ? "flex h-control-sm cursor-default items-center gap-1.5 rounded-control px-2.5 text-sm text-muted outline-none transition-colors duration-120 ease-out data-hovered:bg-control-hover data-hovered:text-fg data-pressed:bg-control-active popup-open:bg-control-hover popup-open:text-fg data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none"
-            : cn(field, "flex items-center justify-between gap-1.5 text-left popup-open:border-strong", size === "sm" ? "h-control-sm px-2.5 text-sm" : "h-control")
+            : cn(field, "flex items-center justify-between gap-1.5 text-left popup-open:border-fg/25", size === "sm" ? "h-control-sm px-2.5 text-sm" : "h-control")
         )}
       >
         {(chosen?.icon ?? icon) && <span className={cn("flex shrink-0", !chosen?.icon && "[&_svg]:size-4")}>{chosen?.icon ?? icon}</span>}
-        <SelectValue className="flex-1 truncate text-left data-placeholder:text-dim">{({ selectedText, defaultChildren }) => selectedText ?? defaultChildren}</SelectValue>
+        <SelectValue className="flex-1 truncate text-left data-placeholder:text-dim">{({ selectedText, defaultChildren }) => selectedText || defaultChildren}</SelectValue>
         <ChevronDownIcon className={cn("size-4 shrink-0 transition-transform duration-120 ease-out in-popup-open:rotate-180 motion-reduce:transition-none", variant === "ghost" ? "size-3.5 opacity-70" : "text-muted")} />
       </Button>
       <Popover offset={6} className={cn("z-50 w-(--trigger-width) overflow-hidden rounded-card border border-strong bg-float shadow-float backdrop-blur-xl backdrop-saturate-150 p-1 text-fg data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.98] data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none", searchable ? "min-w-64" : "min-w-40")}>

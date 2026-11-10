@@ -631,15 +631,21 @@ test("edit from here: the conversation goes back to before the message and it co
   expect((notUser as { _tag?: string })._tag).toBe("NotFound") // only a message of yours
 })
 
-test("a project's default agent: only a global one or one from the project", async () => {
+test("who joins a project's chats: agents and teams, only global ones or the project's own", async () => {
   const p = await api((c) => c.projects.create({ payload: { name: "Def", brief: "" } }))
   const other = await api((c) => c.projects.create({ payload: { name: "Other", brief: "" } }))
   const foreign = await api((c) => c.agents.create({ payload: { projectId: other.id, name: "Foreign", instructions: "", model: "claude-cli/sonnet" } }))
   const global = await api((c) => c.agents.create({ payload: { projectId: null, name: "Global", instructions: "", model: "claude-cli/sonnet" } }))
-  const bad = await api((c) => c.projects.update({ params: { id: p.id }, payload: { defaultAgentId: foreign.id } })).catch((e: unknown) => e)
+  const bad = await api((c) => c.projects.update({ params: { id: p.id }, payload: { agentIds: [global.id, foreign.id] } })).catch((e: unknown) => e)
   expect((bad as { _tag?: string })._tag).toBe("NotFound")
-  expect((await api((c) => c.projects.update({ params: { id: p.id }, payload: { defaultAgentId: global.id } }))).defaultAgentId).toBe(global.id)
-  expect((await api((c) => c.projects.list())).find((x) => x.id === p.id)!.defaultAgentId).toBe(global.id)
+  const otherTeam = await api((c) => c.agents.createTeam({ payload: { projectId: other.id, name: "Elsewhere", agentIds: [foreign.id] } }))
+  const badTeam = await api((c) => c.projects.update({ params: { id: p.id }, payload: { teamIds: [otherTeam.id] } })).catch((e: unknown) => e)
+  expect((badTeam as { _tag?: string })._tag).toBe("NotFound")
+  const team = await api((c) => c.agents.createTeam({ payload: { projectId: p.id, name: "Here", agentIds: [global.id] } }))
+  const saved = await api((c) => c.projects.update({ params: { id: p.id }, payload: { agentIds: [global.id], teamIds: [team.id] } }))
+  expect([saved.agentIds, saved.teamIds]).toEqual([[global.id], [team.id]])
+  const listed = (await api((c) => c.projects.list())).find((x) => x.id === p.id)!
+  expect([listed.agentIds, listed.teamIds]).toEqual([[global.id], [team.id]])
 })
 
 test("pages by agents: writing in the project becomes a version, search and read; the pinned one enters the context", async () => {

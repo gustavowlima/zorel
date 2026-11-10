@@ -4,16 +4,28 @@
 // tool that lists them. The server checks the same description again on save and before calling.
 import { type FlowNode, isRef, type JsonSchema, listToolFor, PORTS, type ValueRef } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
-import { useState } from "react"
+import { lazy, Suspense, useState } from "react"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { catalogAtom, mutations, useMutation } from "../client.ts"
-import { Button, IconButton, Input, Link2, Select, Switch, Textarea, Tooltip, Unlink } from "@/ui"
+import { Button, IconButton, Input, Link2, Segmented, Select, Spinner, Switch, Textarea, Tooltip, Unlink } from "@/ui"
 import { nodeTitle } from "./flow-kinds.tsx"
 import { kindOf, pathsFromSample, pathsFromSchema, type Prop, samples } from "./schema-rules.ts"
 import { fieldProblem as problemOf } from "./schema-rules.ts"
 
 type Args = Record<string, unknown>
+
+// The JSON mode, loaded when first opened; the mode last used is kept for the next form.
+const JsonArgs = lazy(() => import("./json-args.tsx"))
+type Mode = "form" | "json"
+const MODE_KEY = "zorel.argsMode"
+const savedMode = (): Mode => {
+  try {
+    return localStorage.getItem(MODE_KEY) === "json" ? "json" : "form"
+  } catch {
+    return "form"
+  }
+}
 
 export function SchemaForm({ schema, value, onChange, sources, serverId, tools, omit, agentId }: {
   schema: Record<string, unknown>
@@ -28,7 +40,16 @@ export function SchemaForm({ schema, value, onChange, sources, serverId, tools, 
   const s = schema as JsonSchema
   const required = new Set(s.required ?? [])
   const fields = Object.entries(s.properties ?? {}).filter(([k]) => k !== omit)
+  const [mode, setMode] = useState<Mode>(savedMode)
   if (!fields.length) return <p className="text-sm text-muted">{t("flows.form.noInputs")}</p>
+  const pick = (m: Mode) => {
+    setMode(m)
+    try {
+      localStorage.setItem(MODE_KEY, m)
+    } catch {}
+  }
+  // The field filled elsewhere (a destination's text) isn't one of the arguments here, in either mode.
+  const shown: JsonSchema = { ...s, properties: Object.fromEntries(fields), required: (s.required ?? []).filter((k) => k !== omit) }
   const set = (k: string, v: unknown) => {
     const next = { ...value }
     if (v === undefined || v === "") delete next[k]
@@ -37,9 +58,19 @@ export function SchemaForm({ schema, value, onChange, sources, serverId, tools, 
   }
   return (
     <div className="flex flex-col gap-4">
-      {fields.map(([k, prop]) => (
-        <SchemaField key={k} name={k} prop={prop} required={required.has(k)} value={value[k]} onChange={(v) => set(k, v)} sources={sources} serverId={serverId} lister={listToolFor(k, tools)} agentId={agentId} />
-      ))}
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm text-muted">{t("flows.form.args")}</span>
+        <Segmented label={t("flows.form.mode")} value={mode} onChange={pick} options={[{ id: "form", label: t("flows.form.asForm") }, { id: "json", label: "JSON" }]} />
+      </div>
+      {mode === "json" ? (
+        <Suspense fallback={<Spinner />}>
+          <JsonArgs key={fields.map(([k]) => k).join()} schema={shown} value={value} onChange={onChange} />
+        </Suspense>
+      ) : (
+        fields.map(([k, prop]) => (
+          <SchemaField key={k} name={k} prop={prop} required={required.has(k)} value={value[k]} onChange={(v) => set(k, v)} sources={sources} serverId={serverId} lister={listToolFor(k, tools)} agentId={agentId} />
+        ))
+      )}
     </div>
   )
 }

@@ -15,7 +15,8 @@ export function ChoiceCards<T extends string>({
   list = false
 }: {
   label: string
-  value: T
+  // null: nothing chosen yet (no radio on).
+  value: T | null
   onChange: (v: T) => void
   options: ReadonlyArray<{ value: T; title: string; description: string; icon?: ReactNode }>
   grid?: boolean
