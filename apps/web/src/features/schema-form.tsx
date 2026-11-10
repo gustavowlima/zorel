@@ -5,15 +5,17 @@
 import { type FlowNode, isRef, type JsonSchema, listToolFor, PORTS, type ValueRef } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { useState } from "react"
-import { mutations, useMutation } from "../client.ts"
+import { useAtomValue } from "@effect/atom-react"
+import { AsyncResult } from "effect/reactivity"
+import { catalogAtom, mutations, useMutation } from "../client.ts"
 import { Button, IconButton, Input, Link2, Select, Switch, Textarea, Tooltip, Unlink } from "@/ui"
 import { nodeTitle } from "./flow-kinds.tsx"
-import { kindOf, type Prop } from "./schema-rules.ts"
+import { kindOf, pathsFromSample, pathsFromSchema, type Prop, samples } from "./schema-rules.ts"
 import { fieldProblem as problemOf } from "./schema-rules.ts"
 
 type Args = Record<string, unknown>
 
-export function SchemaForm({ schema, value, onChange, sources, serverId, tools, omit }: {
+export function SchemaForm({ schema, value, onChange, sources, serverId, tools, omit, agentId }: {
   schema: Record<string, unknown>
   value: Args
   onChange: (next: Args) => void
@@ -21,6 +23,7 @@ export function SchemaForm({ schema, value, onChange, sources, serverId, tools, 
   serverId: string
   tools: ReadonlyArray<{ name: string; cls: string }>
   omit?: string // a field filled elsewhere (a destination's text)
+  agentId?: string // whose view of the connectors names an earlier tool step's output fields
 }) {
   const s = schema as JsonSchema
   const required = new Set(s.required ?? [])
@@ -35,13 +38,13 @@ export function SchemaForm({ schema, value, onChange, sources, serverId, tools, 
   return (
     <div className="flex flex-col gap-4">
       {fields.map(([k, prop]) => (
-        <SchemaField key={k} name={k} prop={prop} required={required.has(k)} value={value[k]} onChange={(v) => set(k, v)} sources={sources} serverId={serverId} lister={listToolFor(k, tools)} />
+        <SchemaField key={k} name={k} prop={prop} required={required.has(k)} value={value[k]} onChange={(v) => set(k, v)} sources={sources} serverId={serverId} lister={listToolFor(k, tools)} agentId={agentId} />
       ))}
     </div>
   )
 }
 
-function SchemaField({ name, prop, required, value, onChange, sources, serverId, lister }: {
+function SchemaField({ name, prop, required, value, onChange, sources, serverId, lister, agentId }: {
   name: string
   prop: Prop
   required: boolean
@@ -50,6 +53,7 @@ function SchemaField({ name, prop, required, value, onChange, sources, serverId,
   sources: ReadonlyArray<FlowNode>
   serverId: string
   lister: string | undefined
+  agentId: string | undefined
 }) {
   const ref = isRef(value) ? value : undefined
   const problem = problemOf(prop, required, value)
@@ -69,22 +73,40 @@ function SchemaField({ name, prop, required, value, onChange, sources, serverId,
           </Tooltip>
         )}
       </div>
-      {ref ? <FromStep value={ref} onChange={onChange} sources={sources} /> : <Literal name={label} prop={prop} value={value} onChange={onChange} serverId={serverId} lister={lister} />}
+      {ref ? <FromStep value={ref} onChange={onChange} sources={sources} agentId={agentId} /> : <Literal name={label} prop={prop} value={value} onChange={onChange} serverId={serverId} lister={lister} />}
       {prop.description && <span className="text-sm text-dim">{prop.description}</span>}
       {problem && <span className="text-sm text-danger">{problem}</span>}
     </div>
   )
 }
 
-function FromStep({ value, onChange, sources }: { value: ValueRef; onChange: (v: unknown) => void; sources: ReadonlyArray<FlowNode> }) {
+export function FromStep({ value, onChange, sources, agentId }: { value: ValueRef; onChange: (v: ValueRef | undefined) => void; sources: ReadonlyArray<FlowNode>; agentId?: string | undefined }) {
   const source = sources.find((n) => n.id === value.$from)
   return (
     <div className="flex gap-2">
       <Select aria-label={t("flows.form.fromStep")} className="min-w-0 flex-1" value={value.$from} onChange={($from) => onChange({ $from })} options={sources.map((n) => ({ value: n.id, label: nodeTitle(n) }))} />
-      {source && PORTS[source.kind].gives === "data" && (
-        <Input aria-label={t("flows.form.path")} placeholder={t("flows.form.pathHint")} className="w-36" value={value.path ?? ""} onChange={(e) => onChange({ $from: value.$from, ...(e.target.value.trim() && { path: e.target.value.trim() }) })} />
-      )}
+      {source && PORTS[source.kind].gives === "data" && <PathPick source={source} value={value} onChange={onChange} agentId={agentId} />}
     </div>
+  )
+}
+
+// Which field of a data step: picked from its output's shape when known (its tool's outputSchema or its last test),
+// else typed.
+function PathPick({ source, value, onChange, agentId }: { source: FlowNode; value: ValueRef; onChange: (v: ValueRef) => void; agentId?: string | undefined }) {
+  const tool = source.kind === "tool" ? source.config : undefined
+  const catalog = AsyncResult.getOrElse(useAtomValue(catalogAtom(tool?.serverId ?? "", agentId ?? "")), () => undefined)
+  const declared = tool && agentId ? catalog?.tools.find((x) => x.name === tool.tool)?.outputSchema : undefined
+  const paths = [...new Set([...pathsFromSchema(declared), ...pathsFromSample(samples.get(source.id))])]
+  const set = (path: string) => onChange({ $from: value.$from, ...(path.trim() && { path: path.trim() }) })
+  if (!paths.length) return <Input aria-label={t("flows.form.path")} placeholder={t("flows.form.pathHint")} className="w-36" value={value.path ?? ""} onChange={(e) => set(e.target.value)} />
+  return (
+    <Select
+      aria-label={t("flows.form.path")}
+      className="w-44"
+      value={value.path ?? ""}
+      onChange={set}
+      options={[{ value: "", label: t("flows.form.wholeValue") }, ...(value.path && !paths.includes(value.path) ? [value.path] : []).map((p) => ({ value: p, label: p })), ...paths.map((p) => ({ value: p, label: p }))]}
+    />
   )
 }
 

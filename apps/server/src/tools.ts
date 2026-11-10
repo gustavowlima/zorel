@@ -136,6 +136,7 @@ export function readResult(chatId: string, args: Record<string, unknown>): CallT
 
 export interface RemoteTool extends ToolInfo {
   readonly inputSchema: Record<string, unknown>
+  readonly outputSchema?: Record<string, unknown> | undefined // spec 013: the shape of its result, when declared
 }
 
 export class Hub {
@@ -184,7 +185,7 @@ export class Hub {
     } while (cursor)
     // Classified once the whole list shows whether the names share a namespace word ("desktop_…").
     const prefix = sharedPrefix(listed.map((t) => t.name))
-    return listed.map((t) => ({ name: t.name, description: t.description ?? "", cls: classify(t, prefix), inputSchema: t.inputSchema as Record<string, unknown> }))
+    return listed.map((t) => ({ name: t.name, description: t.description ?? "", cls: classify(t, prefix), inputSchema: t.inputSchema as Record<string, unknown>, ...(t.outputSchema && { outputSchema: t.outputSchema as Record<string, unknown> }) }))
   }
 
   // tools/call as is: the SDK's callTool also checks the result against the tool's outputSchema and throws

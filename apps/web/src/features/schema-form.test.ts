@@ -10,3 +10,10 @@ test("fieldProblem: required, whole numbers, limits; a value from an earlier ste
   expect(fieldProblem(n, false, 3)).toBeUndefined()
   expect(fieldProblem(n, true, { $from: "a" })).toBeUndefined()
 })
+
+test("output fields: from a schema or a sample, lists by their first item", async () => {
+  const { pathsFromSample, pathsFromSchema } = await import("./schema-rules.ts")
+  expect(pathsFromSchema({ type: "object", properties: { items: { type: "array", items: { type: "object", properties: { id: { type: "string" } } } }, total: { type: "number" } } })).toEqual(["items", "items.0", "items.0.id", "total"])
+  expect(pathsFromSample({ channels: [{ id: "C1", name: "general" }] })).toEqual(["channels", "channels.0", "channels.0.id", "channels.0.name"])
+  expect(pathsFromSample("text")).toEqual([])
+})

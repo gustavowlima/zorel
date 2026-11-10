@@ -85,3 +85,5 @@
 2026-11-10 | Teams section, agent form teams, Add a team in pickers, @team joins members; project label Team → Agents | spec 010
 2026-11-10 | Routines Week view, routine History and Settings dialogs, Today page, Your day settings, routine notices | spec 012
 2026-11-10 | spec 013 P1-b: flow editor (lazy React Flow canvas + List), step panels, schema form, tool picker, Run view, Needs you rows for uncertain writes and Ask me; Dialog scrolls its body | the routine flows UI; long dialogs overflowed the window
+2026-11-10 | New routine rebuilt on the flow model (Tucano's fields, no JSON); canvas drag flicker fixed (keep RF measured nodes) | the user saw the old form and the canvas flickered
+2026-11-10 | pt-BR interface (catalog + language setting, system default) | user request; PRODUCT.md said English only for now

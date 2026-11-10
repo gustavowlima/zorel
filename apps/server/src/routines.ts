@@ -17,7 +17,7 @@ import { type RoutineRow, type RunRow, Store } from "./db.ts"
 import { cheapModel, type Engines } from "./engines.ts"
 import { dayStartDue, inQuiet, localDate, localMinutes, nextScheduled, outcomeOf, REPORT_MAX, shouldTell, todayOf } from "./routine-runs.ts"
 import { type FinishedTurn, Runtime } from "./runtime.ts"
-import { freshItems, nextRun, parseTriage, runText, triageText, watchItems } from "./schedule.ts"
+import { filterItems, freshItems, nextRun, parseTriage, runText, triageText, watchItems } from "./schedule.ts"
 import type { Secrets } from "./secrets.ts"
 import { sayToPaired } from "./telegram.ts"
 import { activeOn, briefFrom, profileOf } from "./time-profile.ts"
@@ -306,7 +306,7 @@ const dayStarts = Effect.gen(function* () {
 // Watched connectors: each one due polls its tool; new items become a queued run (with them in the message). Only a
 // read tool is called, so polling never changes anything on the other side. A failed poll marks the routine failed
 // and tries again next time; the items seen stay.
-const watches = Effect.gen(function* () {
+export const watches = Effect.gen(function* () {
   const store = yield* Store
   const { hub } = yield* Tools
   if ((yield* Runtime).paused()) return
@@ -316,23 +316,37 @@ const watches = Effect.gen(function* () {
     const w = r.watch
     yield* store.updateRoutine(r.id, { watchAt: now })
     const server = yield* store.mcpServer(w.serverId)
+    // Every channel it watches (spec 013: the same tool with other inputs), read in turn.
     const polled = yield* Effect.promise(async () => {
       if (!server?.enabled) return { error: "connector missing or off" }
       const tool = (await hub.tools(server)).find((t) => t.name === w.tool)
       if (!tool) return { error: `no tool ${w.tool}` }
       if (tool.cls !== "read") return { error: `${w.tool} isn't read-only` }
-      const res = await hub.call(server, w.tool, { ...w.args })
-      return res.isError ? { error: resultText(res).slice(0, 200) } : { text: resultText(res) }
+      const items: unknown[] = []
+      for (const args of [w.args, ...(w.more ?? [])]) {
+        const res = await hub.call(server, w.tool, { ...args })
+        if (res.isError) return { error: resultText(res).slice(0, 200) }
+        items.push(...watchItems(resultText(res)))
+      }
+      return { items }
     }).pipe(Effect.catchCause((c) => Effect.succeed({ error: String(c).slice(0, 200) })))
     if ("error" in polled) {
       yield* Effect.logWarning("routine watch failed", { routineId: r.id, error: polled.error })
       yield* store.updateRoutine(r.id, { lastRunAt: now, lastStatus: "failed" })
       continue
     }
-    const { fresh, seen } = freshItems(r.watchSeen, watchItems(polled.text))
-    // Seen once queued (the run row keeps them): a full queue leaves them unseen, for the next poll.
-    const ran = fresh.length ? yield* runRoutine(r.id, `watch-${now}`, fresh, `New from ${server?.name ?? "the connector"} (${w.tool})`) : "queued"
-    if (ran === "queued" || ran === "started") yield* store.updateRoutine(r.id, { watchSeen: seen })
+    const { fresh, seen } = freshItems(r.watchSeen, polled.items)
+    const wanted = filterItems(fresh, w.filter)
+    const label = `New from ${server?.name ?? "the connector"} (${w.tool})`
+    // Seen once queued (the run row keeps them): a full queue leaves them unseen, for the next poll. A message trigger
+    // starts one run per message, one at a time (the queue).
+    const batches = w.each ? wanted.map((item) => [item]) : wanted.length ? [wanted] : []
+    let took = !batches.length // nothing new (or all filtered out): what's there now is seen
+    for (const [i, batch] of batches.entries()) {
+      const ran = yield* runRoutine(r.id, `watch-${now}-${i}`, batch, label)
+      if (ran === "queued" || ran === "started") took = true
+    }
+    if (took) yield* store.updateRoutine(r.id, { watchSeen: seen })
   }
 })
 

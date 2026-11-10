@@ -3,7 +3,7 @@
 // (audit.tsx), what runs in the background (processes.tsx), General (the theme and the preferences to come).
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
-import { t } from "@zorel/i18n"
+import { type LanguagePref, languagePref, setLanguagePref, t } from "@zorel/i18n"
 import { MAX_RUNNING_CHOICES, MAX_RUNNING_DEFAULT, type MemoryApproval } from "@zorel/contracts"
 import { type ReactNode, useEffect, useId, useState } from "react"
 import { mutations, preferencesAtom, useMutation } from "../client.ts"
@@ -227,6 +227,22 @@ function General() {
               setThemePref(v)
             }}
             options={(["system", "dark", "light"] as const).map((p) => ({ id: p, label: t(`appearance.${p}`) }))}
+          />
+        </SettingRow>
+        <SettingRow title={t("appearance.language")} hint={t("appearance.languageHint")}>
+          <Select
+            aria-label={t("appearance.language")}
+            value={languagePref()}
+            onChange={(v) => {
+              setLanguagePref(v as LanguagePref)
+              location.reload() // the language is read once per page load
+            }}
+            options={[
+              { value: "system", label: t("appearance.languageSystem") },
+              // Each language in its own words, so it can be found whatever the current one is.
+              { value: "en", label: "English" },
+              { value: "pt-BR", label: "Português (Brasil)" }
+            ]}
           />
         </SettingRow>
         <SettingRow title={t("appearance.liveSteps")} hint={t("appearance.liveStepsHint")}>

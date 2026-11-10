@@ -44,7 +44,7 @@ What other agent tools cannot truthfully say:
 - **Engines:** subscription → the owner's harness (Claude Agent SDK, Codex App Server, ACP); API key → OpenCode via ACP.
 - **Approvals at three levels per agent** (Workspace, Ask first, Full access) and a "Needs you" screen.
 - **Tools:** MCP per project, with a read / approval / automatic policy.
-- **Interface in English only for now**, with i18n from the start. User content is never translated.
+- **Interface in English and Brazilian Portuguese** (pt-BR since 2026-11-10; the system's language by default, Settings › General › Language to choose), i18n from the start. User content is never translated.
 - **Lightweight:** one process, one database file, no required external service.
 - **Provider terms:** Zorel never reads or stores the CLIs' login. Using a subscription through a third-party app is a gray area, and the user is warned about it.
 - **Technical details and phases:** `docs/ARCHITECTURE.md` at the repository root.

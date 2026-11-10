@@ -32,7 +32,7 @@ import { newPairingCode, pairingCode, TELEGRAM_KEY, TelegramChannel, telegramUse
 import { Accounts } from "./accounts.ts"
 import { Actor } from "./access.ts"
 import { Actions, Audit, changed } from "./audit.ts"
-import { LoggerLive } from "./observability.ts"
+import { LoggerLive, redact } from "./observability.ts"
 import { MAX_RUNNING_KEY, parseMaxRunning, Runtime, type RuntimeService } from "./runtime.ts"
 import { notices, resolveStep, RoutineScheduler, runRoutine } from "./routines.ts"
 import { optionsOf, savedArgsProblem, testToolStep, testTrigger, toolState } from "./flows.ts"
@@ -749,7 +749,7 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
           const perms = permissionsOf(agent)
           return yield* Effect.promise(() =>
             hub.tools(server).then(
-              (tools) => ({ tools: tools.map((t) => ({ name: t.name, description: t.description, cls: t.cls, inputSchema: t.inputSchema, state: toolState(server, hub.refused.has(server.id), t, perms) })), error: null }),
+              (tools) => ({ tools: tools.map((t) => ({ name: t.name, description: t.description, cls: t.cls, inputSchema: t.inputSchema, ...(t.outputSchema && { outputSchema: t.outputSchema }), state: toolState(server, hub.refused.has(server.id), t, perms) })), error: null }),
               (e: unknown) => ({ tools: [], error: e instanceof Error ? e.message : String(e) })
             )
           )
@@ -1404,11 +1404,11 @@ const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
           const nextRunAt = !r.enabled ? null : timed ? nextScheduled(timed, yield* zone, Date.now()) : yield* schedule(cron).pipe(Effect.mapError((e) => new FlowInvalid({ message: e.message, nodeId: triggerId, field: "cron" })))
           if (timed?.kind === "once" && nextRunAt === null) return yield* Effect.fail(new FlowInvalid({ message: "That time has already passed.", nodeId: triggerId, field: "date" }))
           const watching = t.on === "watch" || t.on === "message"
-          const watch = watching && t.serverId && t.tool ? { serverId: t.serverId, tool: t.tool, args: t.args ?? {} } : null
+          const watch = watching && t.serverId && t.tool ? { serverId: t.serverId, tool: t.tool, args: t.args ?? {}, ...(t.more?.length && { more: t.more }), ...(t.filter?.trim() && { filter: t.filter.trim() }), ...(t.on === "message" && { each: true }) } : null
           const prompt = payload.graph.nodes.find((n) => n.kind === "agent")?.config as { prompt?: string } | undefined
           const version = yield* store.addVersion(r.id, payload.graph)
           yield* store.updateRoutine(r.id, {
-            cron, nextRunAt, watch, schedule: timed, watchEvery: t.every ?? 5, ...(JSON.stringify(watch) !== JSON.stringify(r.watch) && { watchSeen: null, watchAt: null }),
+            cron, nextRunAt, watch, schedule: timed, watchEvery: t.every ?? 5, ...(channelsOf(watch) !== channelsOf(r.watch) && { watchSeen: null, watchAt: null }),
             onDayStart: t.on === "dayStart", lookFirst: watching && !!t.lookFirst, token: t.on === "webhook" ? (r.token ?? newToken()) : null,
             ...(prompt?.prompt && { prompt: prompt.prompt.slice(0, 8000) })
           })
@@ -1421,6 +1421,24 @@ const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
           const node = payload.graph.nodes.find((n) => n.id === payload.nodeId)
           if (node?.kind !== "tool") return yield* Effect.fail(new FlowInvalid({ message: "Only a connector tool step can be tested alone.", nodeId: payload.nodeId }))
           return yield* testToolStep(r, node).pipe(Effect.provide(services))
+        })
+      )
+      // A destination tested without sending (FR-016): checked like a save, then the arguments it would post, with the
+      // routine's last result in its text field.
+      .handle("testDelivery", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const r = yield* found(store.routine(params.id))
+          const agent = yield* store.agent(r.agentId)
+          yield* settingsOk(agent?.projectId ?? null, { delivery: { channels: [], connectors: [payload] } })
+          const text = (yield* store.lastReport(r.id))?.report || "(the routine's result)"
+          const shown = yield* Effect.promise(() => redact(JSON.stringify({ ...payload.args, [payload.textField]: text }, null, 2)))
+          return { output: shown, dry: true, error: null }
+        })
+      )
+      .handle("testNewTrigger", ({ payload }) =>
+        Effect.gen(function* () {
+          yield* found(store.agent(payload.agentId))
+          return yield* testTrigger({ watch: null, watchSeen: null, agentId: payload.agentId, prompt: payload.prompt }, payload.trigger, yield* zone).pipe(Effect.provide(services))
         })
       )
       .handle("testTrigger", ({ params, payload }) =>
@@ -1469,6 +1487,8 @@ const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
 )
 
 const runOut = ({ payload: _p, ...run }: RunRow) => run
+// What a watch reads (a change starts it over, its first poll only learning); its filter and runs-per-item don't.
+const channelsOf = (w: { serverId: string; tool: string; args: unknown; more?: unknown } | null) => (w ? JSON.stringify([w.serverId, w.tool, w.args, w.more ?? []]) : "")
 // The flow trigger kinds that run at set times other than cron (spec 013), as the routine's schedule column.
 const SCHEDULES: Partial<Record<string, (t: { date?: string | undefined; time?: string | undefined; day?: number | undefined }) => RoutineSchedule | null>> = {
   once: (t) => (t.date && t.time ? { kind: "once", date: t.date, time: t.time } : null),

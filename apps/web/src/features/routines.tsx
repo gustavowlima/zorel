@@ -5,30 +5,20 @@
 // also propose them from a chat (zorel_routines), as approval cards.
 // Spec 012: the page has a Week view (routine-week.tsx); each routine has Settings (when to tell the person, where,
 // urgent, look first) and a History of its runs (outcome, summary, what the person was told).
-import type { Agent, ConnectorDestination, McpServer, Routine, RoutineChannel, RoutineRun, RoutineTell, ToolInfo } from "@zorel/contracts"
+import type { Agent, ConnectorDestination, McpServer, Routine, RoutineChannel, RoutineRun, RoutineTell, } from "@zorel/contracts"
 import { isTeammate } from "@zorel/contracts"
 import { formatAge, formatTime, locale, t } from "@zorel/i18n"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { agentsAtom, mutations, pagesAtom, preferencesAtom, routineHistoryAtom, routinesAtom, serversAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { agentTone } from "../labels.ts"
 import { go } from "../state.ts"
-import { parse } from "./receipt-args.ts"
-import { AgentAvatar, AlarmClock, Bot, Button, CheckList, cx, Column, ConfirmDialog, Copy, Dialog, Dot, EmptyState, Field, History, IconButton, Input, Menu, MenuItem, MenuSeparator, MessageCircle, MoreHorizontal, Play, Plus, Rows, Screen, Section, Segmented, Select, Settings, SettingRow, Switch, Textarea, Tooltip, Trash2, Workflow } from "@/ui"
+import { AgentAvatar, AlarmClock, Bot, Button, CheckList, cx, Column, ConfirmDialog, Copy, Dialog, Dot, EmptyState, History, IconButton, Menu, MenuItem, MenuSeparator, MessageCircle, MoreHorizontal, Play, Plus, Rows, Screen, Section, Segmented, Select, Settings, SettingRow, Switch, Tooltip, Trash2, Workflow } from "@/ui"
 import { RoutineWeek, type Slot } from "./routine-week.tsx"
 import { ConnectorDestinations } from "./deliver-to.tsx"
+import { NewRoutine } from "./new-routine.tsx"
 
-const PRESETS = [
-  { value: "0 * * * *", key: "hourly" },
-  { value: "0 9 * * *", key: "daily" },
-  { value: "0 9 * * 1-5", key: "weekdays" },
-  { value: "0 9 * * 1", key: "weekly" },
-  { value: "dayStart", key: "dayStart" },
-  { value: "none", key: "onDemand" },
-  { value: "watch", key: "watch" },
-  { value: "custom", key: "custom" }
-] as const
 
 const when = (r: Routine, servers: ReadonlyArray<McpServer>) =>
   !r.enabled
@@ -118,7 +108,8 @@ export function RoutinesView() {
       )}
       <Dialog
         title={t("routines.new")}
-        size="lg"
+        size="xl"
+        anchor="top"
         isOpen={adding}
         onOpenChange={(o) => {
           setAdding(o)
@@ -210,7 +201,7 @@ export function AgentRoutines({ agent }: { agent: Agent }) {
           <RoutineItem key={r.id} routine={r} agent={agent} />
         ))}
       </Rows>
-      <Dialog title={t("routines.newFor", { name: agent.name })} size="lg" isOpen={adding} onOpenChange={setAdding}>
+      <Dialog title={t("routines.newFor", { name: agent.name })} size="xl" anchor="top" isOpen={adding} onOpenChange={setAdding}>
         {(close) => <NewRoutine agent={agent} onDone={close} />}
       </Dialog>
     </Section>
@@ -241,6 +232,11 @@ function RoutineItem({ routine: r, agent, showAgent, time }: { routine: Routine;
           <span className={cx("truncate font-medium", !r.enabled && "text-muted")}>{r.name}</span>
           <span className="truncate text-sm text-muted">{hint}</span>
         </span>
+        <Tooltip content={t("flows.edit")}>
+          <IconButton label={t("flows.edit")} onPress={() => go({ view: "routine-flow", id: r.id })}>
+            <Workflow />
+          </IconButton>
+        </Tooltip>
         <Tooltip content={t("routines.runNow")}>
           <IconButton
             label={t("routines.runNow")}
@@ -313,172 +309,6 @@ function RoutineItem({ routine: r, agent, showAgent, time }: { routine: Routine;
 // The routine's local webhook: POST JSON to it from a script or service on this computer to run it.
 const hookOf = (token: string) => `${location.origin}/api/hooks/${token}`
 
-// A slot from the week: "every <day> at <time>" (picked), "every day" and "weekdays" at that time, as cron patterns.
-const slotPresets = (s: Slot) => {
-  const time = `${String(Math.floor(s.minutes / 60)).padStart(2, "0")}:${String(s.minutes % 60).padStart(2, "0")}`
-  const at = `${s.minutes % 60} ${Math.floor(s.minutes / 60)}`
-  const day = new Date(2026, 10, 8 + s.weekday).toLocaleDateString(locale(), { weekday: "long" }) // Nov 8, 2026 is a Sunday
-  return [
-    { value: `${at} * * ${s.weekday}`, label: t("routines.presets.weeklyAt", { day, time }) },
-    { value: `${at} * * *`, label: t("routines.presets.dailyAt", { time }) },
-    { value: `${at} * * 1-5`, label: t("routines.presets.weekdaysAt", { time }) }
-  ]
-}
-
-function NewRoutine({ agent, slot, onDone }: { agent?: Agent; slot?: Slot; onDone: () => void }) {
-  const create = useMutation(mutations.createRoutine)
-  const agents = useList(agentsAtom)
-  const team = agents.filter((a) => isTeammate(a))
-  const [agentId, setAgentId] = useState(agent?.id ?? team[0]?.id ?? "")
-  const invalidate = useInvalidate()
-  const [name, setName] = useState("")
-  const [prompt, setPrompt] = useState("")
-  const fromSlot = slot ? slotPresets(slot) : []
-  const [preset, setPreset] = useState<string>(fromSlot[0]?.value ?? "0 9 * * 1-5")
-  const [custom, setCustom] = useState("")
-  const [webhook, setWebhook] = useState(false)
-  const [error, setError] = useState<string>()
-  const [busy, setBusy] = useState(false)
-  const [watch, setWatch] = useState<{ serverId: string; tool: string; args: string }>({ serverId: "", tool: "", args: "" })
-  const watching = preset === "watch"
-  const dayStart = preset === "dayStart"
-  const [lookFirst, setLookFirst] = useState(false)
-  const cron = preset === "none" || watching || dayStart ? null : preset === "custom" ? custom.trim() : preset
-  const args = parseArgs(watch.args)
-  const watchReady = !watching || (!!watch.serverId && !!watch.tool && args !== undefined)
-  return (
-    <form
-      className="flex flex-col gap-3"
-      onSubmit={(e) => {
-        e.preventDefault()
-        e.stopPropagation() // a dialog's form: its submit must not reach a form around the page
-        if (!agentId || !name.trim() || !prompt.trim() || cron === "" || !watchReady) return
-        setBusy(true)
-        setError(undefined)
-        const w = watching && args ? { serverId: watch.serverId, tool: watch.tool, args } : null
-        create({ payload: { agentId, name: name.trim(), prompt: prompt.trim(), cron, webhook, watch: w, onDayStart: dayStart, lookFirst: lookFirst && (watching || webhook) }, reactivityKeys: ["routines"] })
-          .then(() => {
-            invalidate(["chats"])
-            onDone()
-          })
-          .catch((err: unknown) => setError((err as { message?: string })?.message || t("routines.createFailed")))
-          .finally(() => setBusy(false))
-      }}
-    >
-      {!agent && (
-        <Field label={t("routines.agent")}>
-          <Select
-            aria-label={t("routines.agent")}
-            value={agentId}
-            onChange={setAgentId}
-            searchLabel={t("agents.search")}
-            emptyLabel={t("agents.noMatch")}
-            options={team.map((a) => ({ value: a.id, label: a.name, icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} /> }))}
-          />
-        </Field>
-      )}
-      <Field label={t("routines.name")}>
-        <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder={t("routines.namePlaceholder")} />
-      </Field>
-      <Field label={t("routines.prompt")} hint={t("routines.promptHint")}>
-        <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} maxLength={8000} />
-      </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label={t("routines.when")}>
-          <Select aria-label={t("routines.when")} value={preset} onChange={setPreset} options={[...fromSlot, ...PRESETS.map((p) => ({ value: p.value, label: t(`routines.presets.${p.key}`) }))]} />
-        </Field>
-        {preset === "custom" && (
-          <Field label={t("routines.cron")} hint={t("routines.cronHint")}>
-            <Input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="*/30 9-18 * * 1-5" className="font-mono" />
-          </Field>
-        )}
-      </div>
-      {watching && <WatchFields value={watch} onChange={setWatch} argsInvalid={args === undefined} />}
-      <Switch isSelected={webhook} onChange={setWebhook}>
-        {t("routines.webhook")}
-      </Switch>
-      {(watching || webhook) && (
-        <Switch isSelected={lookFirst} onChange={setLookFirst}>
-          {t("routines.lookFirst")}
-        </Switch>
-      )}
-      {(watching || webhook) && <p className="text-sm text-dim">{t("routines.outsideNote")}</p>}
-      {error && <p className="text-sm text-danger">{error}</p>}
-      <div className="flex justify-end gap-2">
-        <Button size="sm" variant="ghost" onPress={onDone}>
-          {t("common.cancel")}
-        </Button>
-        <Button size="sm" type="submit" isPending={busy} isDisabled={!agentId || !name.trim() || !prompt.trim() || cron === "" || !watchReady || busy}>
-          {t("routines.create")}
-        </Button>
-      </div>
-    </form>
-  )
-}
-
-// The tool's arguments as JSON (empty: none); undefined when it isn't a JSON object.
-const parseArgs = (text: string) => (text.trim() ? parse(text) : {})
-
-// What a watching routine polls: a connector, one of its read-only tools (polling must change nothing), and the
-// tool's arguments. The tools load when the connector is picked.
-function WatchFields({ value, onChange, argsInvalid }: { value: { serverId: string; tool: string; args: string }; onChange: (v: { serverId: string; tool: string; args: string }) => void; argsInvalid: boolean }) {
-  const servers = useList(serversAtom).filter((s) => s.enabled)
-  const inspect = useMutation(mutations.inspectServer)
-  const [tools, setTools] = useState<{ serverId: string; list: ReadonlyArray<ToolInfo>; error: string | null }>()
-  useEffect(() => {
-    if (!value.serverId) return
-    let live = true
-    inspect({ params: { id: value.serverId } }).then(
-      (r) => live && setTools({ serverId: value.serverId, list: r.tools.filter((x) => x.cls === "read"), error: r.error }),
-      (e: unknown) => live && setTools({ serverId: value.serverId, list: [], error: String(e) })
-    )
-    return () => {
-      live = false
-    }
-  }, [value.serverId, inspect])
-  // The first connector and its first read tool are picked, so the common case is one click.
-  const first = servers[0]?.id
-  useEffect(() => {
-    if (!value.serverId && first) onChange({ ...value, serverId: first })
-  }, [first, value, onChange])
-  const firstTool = tools?.serverId === value.serverId ? tools.list[0]?.name : undefined
-  useEffect(() => {
-    if (!value.tool && firstTool) onChange({ ...value, tool: firstTool })
-  }, [firstTool, value, onChange])
-  if (!servers.length)
-    return (
-      <p className="text-sm text-muted">
-        {t("routines.noConnectors")}{" "}
-        <Button size="sm" variant="ghost" onPress={() => go({ view: "settings", tab: "mcp" })}>
-          {t("routines.addConnector")}
-        </Button>
-      </p>
-    )
-  const loaded = tools?.serverId === value.serverId ? tools : undefined
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label={t("routines.connector")}>
-          <Select aria-label={t("routines.connector")} value={value.serverId} onChange={(serverId) => onChange({ ...value, serverId, tool: "" })} options={servers.map((s) => ({ value: s.id, label: s.name }))} />
-        </Field>
-        <Field label={t("routines.tool")} hint={loaded?.error ?? (loaded && !loaded.list.length ? t("routines.noReadTools") : t("routines.toolHint"))}>
-          <Select
-            aria-label={t("routines.tool")}
-            value={value.tool}
-            onChange={(tool) => onChange({ ...value, tool })}
-            searchLabel={t("routines.tool")}
-            emptyLabel={t("routines.noReadTools")}
-            options={(loaded?.list ?? []).map((x) => ({ value: x.name, label: x.name }))}
-          />
-        </Field>
-      </div>
-      <Field label={t("routines.args")} hint={argsInvalid ? t("routines.argsInvalid") : t("routines.argsHint")}>
-        <Textarea value={value.args} onChange={(e) => onChange({ ...value, args: e.target.value })} rows={2} className="font-mono" placeholder={'{ "state": "open" }'} />
-      </Field>
-    </div>
-  )
-}
-
 // A routine's delivery (spec 012): when the person is told (every run, when there is something, only in the brief),
 // where (notification, Telegram, a page it keeps up to date), urgent (pings in quiet hours), and look first.
 const TELLS: ReadonlyArray<RoutineTell> = ["something", "every", "brief"]
@@ -537,7 +367,7 @@ function RoutineSettings({ routine, agent, onDone }: { routine: Routine; agent: 
         </Rows>
       </Section>
       <Section title={t("deliver.section")} description={t("deliver.sectionHint")}>
-        <ConnectorDestinations agent={agent} value={connectors} onChange={setConnectors} />
+        <ConnectorDestinations agent={agent} routineId={routine.id} value={connectors} onChange={setConnectors} />
       </Section>
       {outside && <p className="text-sm text-dim">{t("routines.outsideNote")}</p>}
       {error && <p className="text-sm text-danger">{error}</p>}

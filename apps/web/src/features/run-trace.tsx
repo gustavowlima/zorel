@@ -67,6 +67,7 @@ export function RunTraceView({ routineId, runId }: { routineId: string; runId: s
         <Section title={t("flows.run.steps")} description={t("flows.run.stepsHint")}>
           {run.version ? <Steps routineId={routineId} runId={runId} version={run.version} steps={steps} /> : <p className="text-muted">{t("flows.run.noSteps")}</p>}
         </Section>
+        {run.version && live && steps.length > 0 && <p className="text-sm text-dim">{t("flows.run.resume", { n: steps.length - 1 })}</p>}
       </Column>
     </Screen>
   )

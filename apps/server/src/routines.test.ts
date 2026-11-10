@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { DELTA_RULE, freshItems, newToken, nextRun, OUTCOME_RULE, parseTriage, runText, triageText, watchItems } from "./schedule.ts"
+import { DELTA_RULE, filterItems, freshItems, newToken, nextRun, OUTCOME_RULE, parseTriage, runText, triageText, watchItems } from "./schedule.ts"
 
 test("nextRun: a pattern's next time, or why it isn't one", () => {
   const from = new Date("2026-11-03T08:59:00")
@@ -45,4 +45,14 @@ test("triage (spec 012): the items stay data, the answer is read leniently, anyt
   expect(parseTriage('{"act": true}')).toEqual({ act: true, why: "" })
   expect(parseTriage("I think yes")).toBeUndefined()
   expect(parseTriage('{"act": "maybe"}')).toBeUndefined()
+})
+
+test("filterItems (spec 013): any of the words, any case; no words keeps all", () => {
+  const items = [{ text: "Deploy FAILED" }, "lunch?", { text: "urgent: db down" }]
+  expect(filterItems(items, "deploy, urgent")).toEqual([{ text: "Deploy FAILED" }, { text: "urgent: db down" }])
+  expect(filterItems(items, "  ")).toEqual(items)
+})
+
+test("freshItems: an item read twice in one poll is new once", () => {
+  expect(freshItems([], [{ id: 1 }, { id: 1 }, { id: 2 }]).fresh).toEqual([{ id: 1 }, { id: 2 }])
 })

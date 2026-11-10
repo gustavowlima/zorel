@@ -1,7 +1,7 @@
 // Single contract between server and clients: everything crossing the network is typed here.
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup } from "effect/http-api"
-import { FlowGraph, RoutineSchedule } from "./flow.ts"
+import { FlowGraph, RoutineSchedule, TriggerConfig } from "./flow.ts"
 
 export * from "./flow.ts"
 
@@ -165,7 +165,16 @@ export type AgentVersion = typeof AgentVersion.Type
 
 // What a routine watches: a connector's read-only tool, called every few minutes; the routine runs when its result
 // has items it hasn't seen (a new issue, a failing monitor, an email).
-export const RoutineWatch = Schema.Struct({ serverId: Id, tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)), args: Schema.Record(Schema.String, Schema.Unknown) })
+// Spec 013: `more` watches other channels with the same tool (each its own inputs); `filter` keeps only items holding
+// one of its words; `each` starts one run per new item (a message trigger) instead of one for all.
+export const RoutineWatch = Schema.Struct({
+  serverId: Id,
+  tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+  args: Schema.Record(Schema.String, Schema.Unknown),
+  more: Schema.optional(Schema.Array(Schema.Record(Schema.String, Schema.Unknown)).check(Schema.isMaxLength(9))),
+  filter: Schema.optional(Schema.String.check(Schema.isMaxLength(500))),
+  each: Schema.optional(Schema.Boolean)
+})
 export type RoutineWatch = typeof RoutineWatch.Type
 // Spec 012. Where a routine's result goes, and when the person is told.
 export const RoutineChannel = Schema.Literals(["notify", "telegram", "page"])
@@ -251,7 +260,7 @@ export const CatalogTool = Schema.Struct({
 })
 export type CatalogTool = typeof CatalogTool.Type
 export const TriggerTest = Schema.Struct({
-  items: Schema.Array(Schema.Struct({ preview: Schema.String, verdict: Schema.Literals(["runs", "seen", "checked-out"]) })),
+  items: Schema.Array(Schema.Struct({ preview: Schema.String, verdict: Schema.Literals(["runs", "seen", "filtered", "checked-out"]) })),
   times: Schema.Array(Schema.Number), // a schedule's next times
   note: Schema.NullOr(Schema.String), // why the check let nothing through, or why the test couldn't run
   first: Schema.Boolean // a watch never checked yet: what's there now counts as seen
@@ -877,7 +886,11 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.post("testStep", "/api/routines/:id/flow/test-step", { params: idParam, payload: Schema.Struct({ graph: FlowGraph, nodeId: Schema.String }), success: StepTest, error: [HttpApiError.NotFound, FlowInvalid] }))
       // Test now for a trigger: what it would find now (a watch's new items and what the check would let through, or a
       // schedule's next times). Nothing runs and nothing is marked seen.
+      // The same for a routine not created yet (the New routine dialog): nothing is seen before, so a watch only learns.
+      .add(HttpApiEndpoint.post("testNewTrigger", "/api/routines/test-trigger", { payload: Schema.Struct({ agentId: Id, prompt: Schema.String.check(Schema.isMaxLength(8000)), trigger: TriggerConfig }), success: TriggerTest, error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("testTrigger", "/api/routines/:id/flow/test-trigger", { params: idParam, payload: Schema.Struct({ graph: FlowGraph }), success: TriggerTest, error: [HttpApiError.NotFound, FlowInvalid] }))
+      // A destination tested without sending: what it would post, with the last result as the text.
+      .add(HttpApiEndpoint.post("testDelivery", "/api/routines/:id/delivery/test", { params: idParam, payload: ConnectorDestination, success: StepTest, error: [HttpApiError.NotFound, RoutineInvalid] }))
       .add(HttpApiEndpoint.get("runDetail", "/api/routines/:id/runs/:runId", { params: Schema.Struct({ id: Schema.String, runId: Schema.String }), success: RunDetail, error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.get("stepOutput", "/api/routines/:id/runs/:runId/steps/:stepId/output", { params: Schema.Struct({ id: Schema.String, runId: Schema.String, stepId: Schema.String }), success: Schema.Struct({ text: Schema.String }), error: HttpApiError.NotFound }))
       // Every write that may have gone out when Zorel stopped, across routines (Needs you lists them).

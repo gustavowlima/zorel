@@ -3,10 +3,10 @@
 // steps can't take is refused while it's drawn (connectionProblem, the same rule the server checks on save).
 import "@xyflow/react/dist/style.css"
 import "./routine-flow.css"
-import { Background, BackgroundVariant, BaseEdge, type Connection, type Edge, EdgeLabelRenderer, type EdgeProps, getBezierPath, Handle, type Node, type NodeChange, type NodeProps, Panel, Position, ReactFlow, ReactFlowProvider, useReactFlow } from "@xyflow/react"
+import { applyNodeChanges, Background, BackgroundVariant, BaseEdge, type Connection, type Edge, EdgeLabelRenderer, type EdgeProps, getBezierPath, Handle, type Node, type NodeChange, type NodeProps, Panel, Position, ReactFlow, ReactFlowProvider, useReactFlow } from "@xyflow/react"
 import { connectionProblem, type FlowGraph, type FlowNode, PORTS } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
-import { createContext, memo, useContext, useRef, useState } from "react"
+import { createContext, memo, useContext, useEffect, useRef, useState } from "react"
 import { serversAtom, useList } from "../client.ts"
 import { cx, IconButton, Menu, MenuItem, Plus, Scan, Tag, ZoomIn, ZoomOut } from "@/ui"
 import { KindTile, kindIcon, nodeDetail, nodeTitle } from "./flow-kinds.tsx"
@@ -108,7 +108,19 @@ function Canvas({ graph, onGraph, selected, onSelect }: { graph: FlowGraph; onGr
     const out = graph.edges.filter((e) => e.from === n.id)
     return PORTS[n.kind].splits ? (["yes", "no"] as const).filter((b) => !out.some((e) => e.branch === b)) : out.length ? [] : ["next"]
   }
-  const nodes: StepNode[] = graph.nodes.map((n) => ({ id: n.id, type: "step", position: { x: n.x, y: n.y }, data: { step: n, detail: nodeDetail(n, servers), open: openOf(n) }, selected: n.id === selected, deletable: n.kind !== "trigger" }))
+  const built: StepNode[] = graph.nodes.map((n) => ({ id: n.id, type: "step", position: { x: n.x, y: n.y }, data: { step: n, detail: nodeDetail(n, servers), open: openOf(n) }, selected: n.id === selected, deletable: n.kind !== "trigger" }))
+  // React Flow keeps what it measured on its own nodes: rebuilt without it, every node hides and is measured again on
+  // each render (the flicker while dragging). So its nodes live here; the graph gives their content, and a drag moves
+  // them here and reaches the graph only when it ends.
+  const [nodes, setNodes] = useState<StepNode[]>(built)
+  const key = JSON.stringify(built.map((n) => [n.id, n.position, n.data, n.selected]))
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` is what changed in `built` (a new array every render)
+  useEffect(() => {
+    setNodes((prev) => built.map((n) => {
+      const old = prev.find((p) => p.id === n.id)
+      return old ? ({ ...old, data: n.data, selected: n.id === selected, deletable: n.data.step.kind !== "trigger", ...(!old.dragging && { position: n.position }) } as StepNode) : n
+    }))
+  }, [key])
   const edges: StepEdge[] = graph.edges.map((e) => ({ id: e.id, source: e.from, target: e.to, type: "step", ...(e.branch && { sourceHandle: e.branch }), data: e.branch ? { branch: e.branch } : {} }))
   const add: Add = (from, kind, branch) => {
     const next = insertAfter(graph, from, kind, branch)
@@ -122,9 +134,11 @@ function Canvas({ graph, onGraph, selected, onSelect }: { graph: FlowGraph; onGr
     return connectionProblem(from, to, (c.sourceHandle ?? undefined) as "yes" | "no" | undefined)
   }
   const onNodesChange = (changes: NodeChange<StepNode>[]) => {
+    setNodes((nds) => applyNodeChanges(changes.filter((c) => c.type !== "remove" && c.type !== "select"), nds))
     let g = graph
     for (const c of changes) {
-      if (c.type === "position" && c.position) g = { ...g, nodes: g.nodes.map((n) => (n.id === c.id ? { ...n, x: Math.round(c.position!.x), y: Math.round(c.position!.y) } : n)) }
+      // The drag's last position (dragging false) is the one kept.
+      if (c.type === "position" && c.position && c.dragging === false) g = { ...g, nodes: g.nodes.map((n) => (n.id === c.id ? { ...n, x: Math.round(c.position!.x), y: Math.round(c.position!.y) } : n)) }
       if (c.type === "remove") g = removeNode(g, c.id)
       if (c.type === "select" && c.selected) onSelect(c.id)
     }

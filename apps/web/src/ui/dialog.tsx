@@ -3,34 +3,38 @@
 import { t } from "@zorel/i18n"
 import type { ReactNode } from "react"
 import { Dialog as DialogPrimitive, DialogTrigger, Heading, Modal, ModalOverlay } from "react-aria-components"
+import { cn } from "@/lib/utils"
 import { Button, type ButtonProps } from "./button"
 
 const overlay =
   "fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4 data-entering:animate-in data-entering:fade-in-0 data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none"
-const sheet = "flex max-h-full w-full flex-col rounded-sheet border border-strong bg-raised p-5 text-fg outline-none data-entering:animate-in data-entering:zoom-in-95 motion-reduce:animate-none"
+const sheet = "flex max-h-full w-full flex-col rounded-sheet border border-strong bg-raised p-6 text-fg outline-none data-entering:animate-in data-entering:zoom-in-95 motion-reduce:animate-none"
 
 type Body = (close: () => void) => ReactNode
 
 function Content({ title, children }: { title: string; children: Body }) {
   return (
-    <DialogPrimitive className="flex min-h-0 flex-col gap-4 outline-none">
+    <DialogPrimitive className="flex min-h-0 flex-1 flex-col gap-4 outline-none">
       {({ close }) => (
         <>
           <Heading slot="title" className="text-lg font-semibold">
             {title}
           </Heading>
           {/* A long body scrolls inside the sheet; the title stays. */}
-          <div className="-mx-5 flex min-h-0 flex-col gap-4 overflow-auto px-5">{children(close)}</div>
+          <div className="-mx-6 flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-6">{children(close)}</div>
         </>
       )}
     </DialogPrimitive>
   )
 }
 
-export function Dialog({ title, children, isOpen, onOpenChange, size = "sm" }: { title: string; children: Body; isOpen?: boolean; onOpenChange?: (open: boolean) => void; size?: "sm" | "lg" }) {
+// sm 384px (a confirmation), lg 576px (a form), xl 672px (a form with choices side by side: a new routine).
+const WIDTH = { sm: "max-w-sm", lg: "max-w-xl", xl: "max-w-2xl" } as const
+// anchor "top": a dialog whose parts differ in height (tabs) keeps its title still and grows downward.
+export function Dialog({ title, children, isOpen, onOpenChange, size = "sm", anchor = "center" }: { title: string; children: Body; isOpen?: boolean; onOpenChange?: (open: boolean) => void; size?: keyof typeof WIDTH; anchor?: "center" | "top" }) {
   return (
-    <ModalOverlay isDismissable className={overlay} {...(isOpen !== undefined && { isOpen })} {...(onOpenChange && { onOpenChange })}>
-      <Modal className={`${sheet} ${size === "lg" ? "max-w-xl" : "max-w-sm"}`}>
+    <ModalOverlay isDismissable className={cn(overlay, anchor === "top" && "items-start sm:pt-[8vh]")} {...(isOpen !== undefined && { isOpen })} {...(onOpenChange && { onOpenChange })}>
+      <Modal className={`${sheet} ${WIDTH[size]}`}>
         <Content title={title}>{children}</Content>
       </Modal>
     </ModalOverlay>

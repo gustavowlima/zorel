@@ -2,7 +2,7 @@
 // from a computer with no public address. Only paired Telegram accounts get through: pairing is a one-time code shown
 // in Settings and sent to the bot as "/pair CODE" (10 minutes). Each Telegram chat is a Zorel chat; a message goes in
 // through the runtime like one typed in the app and the reply comes back. The token lives in the keychain.
-import type { ChatEvent } from "@zorel/contracts/events"
+import type { Approval, ChatEvent } from "@zorel/contracts/events"
 import { Effect, Layer, Schedule, Stream } from "effect"
 import { Store } from "./db.ts"
 import { Runtime } from "./runtime.ts"
@@ -37,6 +37,8 @@ async function call<T>(token: string, method: string, body: Record<string, unkno
 interface Update {
   update_id: number
   message?: { text?: string; chat: { id: number }; from?: { id: number; first_name?: string } }
+  // A tap on a card's button (spec 013: an "Ask me" or a routine's write, answered from Telegram).
+  callback_query?: { id: string; from: { id: number }; data?: string; message?: { chat: { id: number }; message_id: number } }
 }
 
 const json = <T>(text: string | undefined, fallback: T): T => {
@@ -62,6 +64,24 @@ export const sayToPaired = (text: string) =>
     const sent = yield* Effect.forEach(users, (chat) => Effect.forEach(parts, (part) => Effect.promise(() => call(token, "sendMessage", { chat_id: chat, text: part }).then(() => true, () => false))))
     return { sent: sent.some((r) => r.some(Boolean)) }
   })
+// A routine's card on Telegram (spec 013, FR-019): what it asks, with two buttons. The answer comes back as a
+// callback ("ap:<approval id>:y|n"), taken only from a paired account, and decides it like the app does.
+const CARD = "ap:"
+export const askOnTelegram = (a: Approval) =>
+  Effect.gen(function* () {
+    const token = (yield* Secrets).get(TELEGRAM_KEY)
+    const users = yield* telegramUsers
+    if (!token || !users.length) return
+    const question = a.kind === "question"
+    const text = [a.summary, a.args?.slice(0, 1500)].filter(Boolean).join("\n\n")
+    const keyboard = { inline_keyboard: [[{ text: question ? "Yes" : "Allow", callback_data: `${CARD}${a.id}:y` }, { text: question ? "No" : "Deny", callback_data: `${CARD}${a.id}:n` }]] }
+    yield* Effect.forEach(users, (chat) => Effect.promise(() => call(token, "sendMessage", { chat_id: chat, text: text.slice(0, MAX_TEXT), reply_markup: keyboard }).catch(() => undefined)), { discard: true })
+  })
+export const parseCard = (data: string | undefined): { id: string; approve: boolean } | undefined => {
+  const m = data ? /^ap:([0-9a-f-]{36}):([yn])$/.exec(data) : null
+  return m ? { id: m[1]!, approve: m[2] === "y" } : undefined
+}
+
 export const unpairTelegram = Effect.gen(function* () {
   const store = yield* Store
   yield* store.setPreference(USERS, "[]")
@@ -130,8 +150,19 @@ export const TelegramChannel = Layer.effectDiscard(
         yield* say(token, chatTg, (reply._tag === "Some" ? reply.value : "No reply.").trim() || "(empty reply)")
       }).pipe(Effect.catchCause((c) => Effect.logWarning("telegram relay failed", String(c))))
 
+    // A tap on a card: decided by a paired account only; the buttons go away either way.
+    const answer = (token: string, q: NonNullable<Update["callback_query"]>) =>
+      Effect.gen(function* () {
+        const card = parseCard(q.data)
+        const paired = (yield* telegramUsers).includes(q.from.id)
+        const said = !card || !paired ? "This isn't yours to answer." : yield* runtime.decide(card.id, card.approve ? "approved" : "denied").pipe(Effect.as(card.approve ? "Done: yes." : "Done: no."), Effect.catchTag("ApprovalNotFound", () => Effect.succeed("Already answered or expired.")))
+        yield* Effect.promise(() => call(token, "answerCallbackQuery", { callback_query_id: q.id, text: said }).catch(() => undefined))
+        if (q.message && card && paired) yield* Effect.promise(() => call(token, "editMessageReplyMarkup", { chat_id: q.message!.chat.id, message_id: q.message!.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined))
+      })
+
     const handle = (token: string, u: Update) =>
       Effect.gen(function* () {
+        if (u.callback_query) return yield* answer(token, u.callback_query)
         const m = u.message
         const text = m?.text?.trim()
         if (!m || !text || !m.from) return
@@ -156,7 +187,7 @@ export const TelegramChannel = Layer.effectDiscard(
       const token = secrets.get(TELEGRAM_KEY)
       if (!token) return yield* Effect.sleep("3 seconds") // a keychain read in memory: cheap
       const offset = Number(yield* store.preference(OFFSET)) || 0
-      const updates = yield* Effect.tryPromise(() => call<Update[]>(token, "getUpdates", { offset, timeout: POLL_S, allowed_updates: ["message"] }, (POLL_S + 10) * 1000))
+      const updates = yield* Effect.tryPromise(() => call<Update[]>(token, "getUpdates", { offset, timeout: POLL_S, allowed_updates: ["message", "callback_query"] }, (POLL_S + 10) * 1000))
       for (const u of updates) {
         yield* store.setPreference(OFFSET, String(u.update_id + 1)) // first: a message that breaks is never read twice
         yield* handle(token, u)

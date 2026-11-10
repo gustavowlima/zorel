@@ -9,7 +9,7 @@ import { agentName, chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { openMemory } from "./knowledge.tsx"
 import { AuthorAvatar } from "./people.tsx"
-import { Button, Check, Code, CodeBlock, Column, EmptyState, IconTile, Rows, Screen, ShieldAlert, Tab, TabList, Tabs, User } from "@/ui"
+import { Button, Check, Code, CodeBlock, Column, EmptyState, IconTile, Rows, Screen, ShieldAlert, Tab, TabList, Tabs, Textarea, User } from "@/ui"
 import { QuestionAnswer } from "./question.tsx"
 
 type Filter = "all" | "approvals" | "memories"
@@ -97,13 +97,15 @@ function ApprovalItem({ approval: a }: { approval: Approval }) {
   const chats = useList(chatsAtom)
   const decide = useMutation(mutations.decide)
   const [pending, setPending] = useState<"approved" | "always" | "denied">()
+  const [editing, setEditing] = useState<string>() // an "Ask me": the text the steps after it get, changed first
   const chat = chats.find((c) => c.id === a.chatId)
   const agent = agents.find((x) => x.id === a.agentId)
-  const choose = (outcome: "approved" | "always" | "denied") => {
+  const choose = (outcome: "approved" | "always" | "denied", reason?: string) => {
     setPending(outcome)
     // Already decided elsewhere: the refetch removes it from the list either way.
-    decide({ payload: { approvalId: a.id, outcome }, reactivityKeys: ["approvals", "agents"] }).catch(() => setPending(undefined))
+    decide({ payload: { approvalId: a.id, outcome, ...(reason?.trim() && { reason: reason.trim().slice(0, 2000) }) }, reactivityKeys: ["approvals", "agents"] }).catch(() => setPending(undefined))
   }
+  const askMe = a.kind === "question" && !!a.runStepId
   // An "Ask me" step of a routine (spec 013) is a yes or no, not a question to answer in words.
   if (a.kind === "question" && !a.runStepId)
     return (
@@ -119,6 +121,7 @@ function ApprovalItem({ approval: a }: { approval: Approval }) {
       context={<InChat chat={chat} />}
       at={a.createdAt}
       actions={
+        editing !== undefined ? null : (
         <>
           <Button size="sm" variant="default" isPending={pending === "approved"} isDisabled={!!pending} onPress={() => choose("approved")}>
             {t("approval.allow")}
@@ -131,11 +134,33 @@ function ApprovalItem({ approval: a }: { approval: Approval }) {
           <Button size="sm" variant="ghost" isDisabled={!!pending} onPress={() => choose("denied")}>
             {t("approval.deny")}
           </Button>
+          {askMe && (
+            <Button size="sm" variant="ghost" isDisabled={!!pending} onPress={() => setEditing(a.args)}>
+              {t("flows.ask.edit")}
+            </Button>
+          )}
         </>
+        )
       }
     >
       <p>{a.summary || t("approval.wantsTo", { agent: agentName(a.agentId, agents), tool: a.tool })}</p>
-      {a.runStepId && a.args ? <CodeBlock code={a.args.slice(0, 2000)} /> : <Code className="self-start">{a.tool}</Code>}
+      {editing !== undefined ? (
+        <div className="flex flex-col gap-2">
+          <Textarea aria-label={t("flows.ask.edit")} rows={6} value={editing} onChange={(e) => setEditing(e.target.value.slice(0, 2000))} />
+          <div className="flex gap-2">
+            <Button size="sm" isDisabled={!!pending || !editing.trim()} onPress={() => choose("approved", editing)}>
+              {t("flows.ask.approveEdited")}
+            </Button>
+            <Button size="sm" variant="ghost" onPress={() => setEditing(undefined)}>
+              {t("common.cancel")}
+            </Button>
+          </div>
+        </div>
+      ) : a.runStepId && a.args ? (
+        <CodeBlock code={a.args.slice(0, 2000)} />
+      ) : (
+        <Code className="self-start">{a.tool}</Code>
+      )}
     </Item>
   )
 }
