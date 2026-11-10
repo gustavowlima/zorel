@@ -34,6 +34,9 @@
   --z-bg-control-hover: rgba(255, 255, 255, 0.09);
   --z-bg-hover: #1a1c1f; /* rows and ghost controls on the frame and the canvas: a wash, not a control */
   --z-bg-control-active: rgba(255, 255, 255, 0.12);
+  /* Fields (Input, Textarea, a Select's body) are a faint veil with the hairline doing the outline: a control's 7%
+     read as a grey slab on a dialog, lighter than everything around it. */
+  --z-bg-field: rgba(255, 255, 255, 0.025);
   --z-bg-code: #111315;
   --z-border: rgba(255, 255, 255, 0.06);
   --z-border-strong: rgba(255, 255, 255, 0.1);
@@ -111,6 +114,7 @@
   --z-bg-control-hover: rgba(20, 20, 20, 0.1);
   --z-bg-hover: #e1e4ea;
   --z-bg-control-active: rgba(20, 20, 20, 0.14);
+  --z-bg-field: #ffffff;
   --z-bg-code: #f4f6fa;
   --z-border: rgba(20, 20, 20, 0.08);
   --z-border-strong: rgba(20, 20, 20, 0.14);
@@ -143,6 +147,7 @@
   --color-raised: var(--z-bg-raised);
   --color-float: var(--z-bg-float);
   --color-control: var(--z-bg-control);
+  --color-field: var(--z-bg-field);
   --color-control-hover: var(--z-bg-control-hover);
   --color-control-active: var(--z-bg-control-active);
   --color-subtle: var(--z-border);

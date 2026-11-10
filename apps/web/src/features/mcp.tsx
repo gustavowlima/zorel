@@ -44,6 +44,7 @@ export function McpSection({ projectId }: { projectId: string | null }) {
         <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["servers"])} />
         {!reading.loading && !reading.failed && servers.length === 0 && (
           <EmptyState
+            inset
             icon={<Plug />}
             title={t("mcp.empty")}
             hint={t("mcp.emptyHint")}
@@ -65,11 +66,11 @@ export function McpSection({ projectId }: { projectId: string | null }) {
       </Section>
       {/* Reference, quieter than the list. */}
       <Section title={t("mcp.modesTitle")}>
-        <dl className="grid grid-cols-3 gap-x-6 gap-y-1.5 text-sm">
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-4">
           {MODES.map((m) => (
             <div key={m} className="contents">
               <dt className="text-secondary">{t(`mcp.modes.${m}`)}</dt>
-              <dd className="col-span-2 text-muted">{t(`mcp.modeHints.${m}`)}</dd>
+              <dd className="mb-1.5 text-muted sm:col-span-3 sm:mb-0">{t(`mcp.modeHints.${m}`)}</dd>
             </div>
           ))}
         </dl>

@@ -1,15 +1,15 @@
 // Project: overview (name, brief: the stable context of every turn, and its chats), its agents, and the
 // MCP servers only its chats see. The chats themselves live in the sidebar tree.
 import type { FolderListing, Project } from "@zorel/contracts"
-import { isTeammate } from "@zorel/contracts"
 import { formatAge, t } from "@zorel/i18n"
 import { type KeyboardEvent, useEffect, useState } from "react"
-import { agentsAtom, chatsAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
+import { agentsAtom, chatsAtom, mutations, projectsAtom, teamsAtom, useList, useMutation, useStatuses } from "../client.ts"
 import { agentTone, chatTitle, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
+import { callable, projectCrew, teamsIn } from "./agent-options.ts"
 import { AgentItem, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
-import { AgentAvatar, ArrowLeft, column, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, ChevronRight, ChoiceCards, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, IconTile, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, RowHit, Rows, Screen, Section, Select, Tab, TabList, TabPanel, Tabs, Textarea, Tooltip, Trash2 } from "@/ui"
+import { AgentAvatar, ArrowLeft, column, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, CheckList, ChevronRight, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, RowHit, Rows, Screen, Section, Tab, TabList, TabPanel, Tabs, Textarea, Tooltip, Trash2, Users } from "@/ui"
 
 // The reason a folder was refused (WorkspaceInvalid), in words.
 const REASONS = ["relative", "missing", "not_directory", "forbidden"] as const
@@ -314,10 +314,8 @@ function Overview({ project }: { project: Project }) {
     setPathError(undefined)
   }, [project])
   const dirty = name !== project.name || brief !== project.brief || path.trim() !== (project.path ?? "")
-  // Who answers first leads the row.
-  const team = agents
-    .filter((a) => isTeammate(a) && (a.projectId === project.id || a.projectId === null))
-    .sort((a, b) => Number(b.id === project.defaultAgentId) - Number(a.id === project.defaultAgentId))
+  // Who takes part in the project's chats (its agents and its teams' members).
+  const team = projectCrew(project, callable(agents, project.id), teamsIn(useList(teamsAtom), project.id))
   return (
     <div className="flex flex-col gap-10">
       {/* The team first: who answers here is part of the project, not a setting buried in a tab. */}
@@ -336,7 +334,6 @@ function Overview({ project }: { project: Project }) {
               <Button key={a.id} size="sm" variant="secondary" shape="pill" className="pl-1" onPress={() => go({ view: "agent", id: a.id })}>
                 <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} />
                 {a.name}
-                {a.id === project.defaultAgentId && <span className="text-muted">· {t("project.answersFirst")}</span>}
               </Button>
             ))}
             {team.length > TEAM_SHOWN && (
@@ -408,47 +405,52 @@ function Agents({ projectId }: { projectId: string }) {
   const mine = agents.filter((a) => a.projectId === projectId)
   const project = useList(projectsAtom).find((p) => p.id === projectId)
   const update = useMutation(mutations.updateProject)
-  const choices = agents.filter((a) => isTeammate(a) && (a.projectId === projectId || a.projectId === null))
+  const choices = callable(agents, projectId)
+  const teams = teamsIn(useList(teamsAtom), projectId)
+  const crew = projectCrew(project, choices, teams)
+  const [failed, setFailed] = useState(false)
+  const save = (payload: { agentIds?: string[]; teamIds?: string[] }) => {
+    setFailed(false)
+    update({ params: { id: projectId }, payload, reactivityKeys: ["projects"] }).catch(() => setFailed(true))
+  }
   const working = useWorking()
   const del = useDeleteAgent()
   return (
     <div className="flex flex-col gap-10">
-      {/* Who a new chat in the project starts with: the faces to pick from, not a dropdown of names. */}
-      <Section title={t("project.defaultAgent")} description={t("project.defaultAgentHint")}>
-        {choices.length > TEAM_SHOWN ? (
-          <Select
-            className="max-w-sm"
-            aria-label={t("project.defaultAgent")}
-            searchLabel={t("agents.search")}
-            emptyLabel={t("agents.noMatch")}
-            value={project?.defaultAgentId ?? ""}
-            onChange={(v) => void update({ params: { id: projectId }, payload: { defaultAgentId: v || null }, reactivityKeys: ["projects"] })}
-            options={[
-              { value: "", label: t("project.plainChat"), icon: <MessageCircle className="size-4 text-muted" /> },
-              ...choices.map((a) => ({ value: a.id, label: a.name, icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} /> }))
-            ]}
-          />
-        ) : (
-          <ChoiceCards
-            grid
-            label={t("project.defaultAgent")}
-            value={project?.defaultAgentId ?? ""}
-            onChange={(v) => void update({ params: { id: projectId }, payload: { defaultAgentId: v || null }, reactivityKeys: ["projects"] })}
-            options={[
-              { value: "", title: t("project.plainChat"), description: t("project.plainChatHint"), icon: <IconTile size="lg" className="text-muted"><MessageCircle /></IconTile> },
-              ...choices.map((a) => ({
-                value: a.id,
-                title: a.name,
-                description: a.title || (a.projectId ? t("project.onlyHere") : t("agents.global")),
-                icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={40} />
-              }))
-            ]}
-          />
-        )}
+      {/* Who takes part in the project's chats: teams and agents, as many as you like; the router gives each message
+          to the one it fits, so there is no "who answers first" to pick. */}
+      <Section title={t("project.crew")} description={t("project.crewHint")}>
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-1.5 text-sm text-muted">
+            <span>{t("project.crewTeams")}</span>
+            {teams.length ? (
+              <CheckList
+                label={t("project.crewTeams")}
+                value={project?.teamIds ?? []}
+                onChange={(teamIds) => save({ teamIds })}
+                options={teams.map((x) => ({ value: x.id, label: <><Users className="size-4 text-muted" /> {x.name}</>, trailing: <span className="text-sm text-muted">{t("home.crew", { count: x.agentIds.length })}</span> }))}
+              />
+            ) : (
+              <p className="text-dim">{t("project.crewNoTeams")}</p>
+            )}
+          </div>
+          <div className="flex flex-col gap-1.5 text-sm text-muted">
+            <span>{t("project.crewAgents")}</span>
+            <CheckList
+              label={t("project.crewAgents")}
+              value={project?.agentIds ?? []}
+              onChange={(agentIds) => save({ agentIds })}
+              className="scroll-quiet max-h-80 overflow-y-auto"
+              options={choices.map((a) => ({ value: a.id, label: <><AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} /> {a.name}</>, trailing: <span className="truncate text-sm text-muted">{a.title || (a.projectId ? t("project.onlyHere") : t("agents.global"))}</span> }))}
+            />
+          </div>
+          {failed && <p className="text-sm text-danger">{t("project.crewFailed")}</p>}
+          <p className="text-sm text-dim">{crew.length ? t("project.crewCount", { count: crew.length }) : t("project.crewEmpty")}</p>
+        </div>
       </Section>
       <Section title={t("project.ownAgents")} description={t("project.ownAgentsHint")} action={mine.length > 0 && <NewAgentMenu projectId={projectId} />}>
         {mine.length === 0 ? (
-          <EmptyState icon={<Bot />} title={t("project.noAgents")} hint={t("project.noAgentsHint")} action={<NewAgentMenu projectId={projectId} />} />
+          <EmptyState icon={<Bot />} inset title={t("project.noAgents")} hint={t("project.noAgentsHint")} action={<NewAgentMenu projectId={projectId} />} />
         ) : (
           <Rows>
             {mine.map((a) => (

@@ -26,6 +26,31 @@ export function fieldProblem(p: Prop, required: boolean, v: unknown): string | u
 }
 
 
+// What's wrong with a tool's arguments written as JSON (the JSON mode of the form): each problem with the key it's
+// on, when it's on one. A value taken from an earlier step ({"$from": …}) is checked by the server, not here.
+export type ArgProblem = { readonly key?: string; readonly message: string }
+const typeOf = (v: unknown) => (Array.isArray(v) ? "array" : v === null ? "null" : typeof v === "number" ? (Number.isInteger(v) ? "integer" : "number") : typeof v)
+function typeProblem(p: Prop, v: unknown): string | undefined {
+  if (p.enum?.length) return p.enum.some((x) => x === v) ? undefined : t("flows.form.oneOf", { values: p.enum.map((x) => JSON.stringify(x)).join(", ") })
+  if (typeof p.type !== "string") return undefined
+  const got = typeOf(v)
+  return got === p.type || (p.type === "number" && got === "integer") ? undefined : t("flows.form.wrongType", { type: p.type })
+}
+export function argProblems(schema: JsonSchema, args: unknown): ArgProblem[] {
+  if (typeOf(args) !== "object") return [{ message: t("flows.form.notObject") }]
+  const a = args as Record<string, unknown>
+  const props = schema.properties ?? {}
+  const required = new Set(schema.required ?? [])
+  const missing = [...required].filter((k) => k in props && !(k in a)).map((k) => ({ message: t("flows.form.missing", { field: k }) }))
+  const wrong = Object.entries(a).flatMap(([k, v]): ArgProblem[] => {
+    const p = props[k]
+    if (!p) return [{ key: k, message: t("flows.form.unknown", { field: k }) }]
+    if (isRef(v)) return []
+    const problem = typeProblem(p, v) ?? fieldProblem(p, required.has(k), v)
+    return problem ? [{ key: k, message: problem }] : []
+  })
+  return [...missing, ...wrong]
+}
 // The fields a step's output can be read by (spec 013): from the tool's outputSchema when it declares one, else from
 // what its last test gave. A list reads its first item ("items.0.id"). Three levels deep at most.
 const DEPTH = 3

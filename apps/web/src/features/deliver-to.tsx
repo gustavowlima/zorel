@@ -10,7 +10,7 @@ import { AsyncResult } from "effect/reactivity"
 import { catalogAtom, mutations, serversAtom, useList, useMutation } from "../client.ts"
 import { Button, ChevronLeft, CodeBlock, Field, IconButton, Plus, Rows, Select, Send, SettingRow, Switch, Trash2 } from "@/ui"
 import { SchemaForm } from "./schema-form.tsx"
-import { type Picked, ToolPicker } from "./tool-picker.tsx"
+import { ConnectorTool, type Picked } from "./tool-picker.tsx"
 
 export const MAX_DESTINATIONS = 3
 
@@ -74,30 +74,18 @@ function NewDestination({ agent, routineId, onAdd }: { agent: Agent; routineId?:
   const [picked, setPicked] = useState<Picked>()
   const [args, setArgs] = useState<Record<string, unknown>>({})
   const [field, setField] = useState<string>()
-  if (!picked)
-    return (
-      <ToolPicker
-        agent={agent}
-        only="write"
-        onPick={(p) => {
-          setPicked(p)
-          setField(textFieldOf(p.tool.inputSchema))
-        }}
-      />
-    )
+  const choose = (p: Picked) => {
+    setPicked(p)
+    setArgs({})
+    setField(p.tool.name ? textFieldOf(p.tool.inputSchema) : undefined)
+  }
+  if (!picked?.tool.name) return <ConnectorTool agent={agent} need="post" serverId={picked?.server.id ?? ""} tool="" onPick={choose} />
   const props = (picked.tool.inputSchema as JsonSchema).properties ?? {}
   const textFields = Object.entries(props).filter(([, p]) => p.type === "string").map(([k]) => k)
   const missing = ((picked.tool.inputSchema as JsonSchema).required ?? []).some((f) => f !== field && (args[f] === undefined || args[f] === ""))
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate font-mono text-sm">
-          {picked.server.name} · {picked.tool.name}
-        </span>
-        <Button size="sm" variant="ghost" onPress={() => setPicked(undefined)}>
-          {t("flows.panel.change")}
-        </Button>
-      </div>
+      <ConnectorTool agent={agent} need="post" serverId={picked.server.id} tool={picked.tool.name} onPick={choose} />
       {textFields.length === 0 ? (
         <p className="text-sm text-danger">{t("deliver.noText")}</p>
       ) : (

@@ -97,13 +97,15 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
       .handle("update", ({ params, payload }) =>
         Effect.gen(function* () {
           const before = yield* store.project(params.id)
-          // The default agent must be one the project's chats can have: global, or of this project.
-          if (payload.defaultAgentId) {
-            const a = yield* store.agent(payload.defaultAgentId)
-            if (!a || (a.projectId !== null && a.projectId !== params.id)) return yield* notFound()
+          // Who joins its chats must be in reach of them: global, or of this project (agents and teams alike).
+          const near = (x: { projectId: string | null } | undefined) => !!x && (x.projectId === null || x.projectId === params.id)
+          for (const id of payload.agentIds ?? []) if (!near(yield* store.agent(id))) return yield* notFound()
+          if (payload.teamIds?.length) {
+            const teams = yield* store.teams()
+            if (!payload.teamIds.every((id) => near(teams.find((x) => x.id === id)))) return yield* notFound()
           }
           const after = yield* Effect.flatMap(withPath(payload), (p) => found(store.updateProject(params.id, p)))
-          if (before) yield* audit.record(Actions.projectUpdated, { target: after, ...changed(before, after, ["name", "brief", "path", "defaultAgentId"]) })
+          if (before) yield* audit.record(Actions.projectUpdated, { target: after, ...changed(before, after, ["name", "brief", "path", "agentIds", "teamIds"]) })
           return after
         })
       )

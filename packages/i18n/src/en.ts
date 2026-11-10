@@ -95,7 +95,8 @@ export const en = {
     project: "Project",
     noProject: "No project",
     answers: "{name} answers",
-    clearAgent: "Stop {name} answering: a plain chat",
+    crew: { one: "1 agent", other: "{count} agents" },
+    clearCrew: "Start without agents: a plain chat",
     searchProjects: "Search projects",
     placeholder: "Message · # call an agent",
     placeholderPlain: "Message"
@@ -430,10 +431,14 @@ export const en = {
     manage: "Manage"
   },
   project: {
-    defaultAgent: "Who answers a new chat",
-    defaultAgentHint: "Whoever you pick replies first in this project's new chats. You can still switch before sending.",
-    plainChat: "No agent",
-    plainChatHint: "A plain chat with the model you pick",
+    crew: "Who takes part in chats",
+    crewHint: "They join every new chat in this project. Each message goes to whoever it's about; mention someone with @ to call them directly.",
+    crewTeams: "Teams",
+    crewNoTeams: "No teams yet. Create one on the Agents screen.",
+    crewAgents: "Agents",
+    crewCount: { one: "New chats start with 1 agent.", other: "New chats start with {count} agents." },
+    crewEmpty: "No one picked: new chats start without agents.",
+    crewFailed: "Couldn't save who takes part. Try again.",
     onlyHere: "This project only",
     ownAgents: "This project's agents",
     ownAgentsHint: "They work only here. Global agents are on the Agents screen.",
@@ -466,7 +471,6 @@ export const en = {
     team: "Agents",
     teamHint: "Who works in this project's chats. Mention one with @.",
     manageTeam: "Manage",
-    answersFirst: "answers first",
     moreAgents: { one: "+{count} more", other: "+{count} more" },
     about: "About this project",
     noAgents: "No agents yet",
@@ -1531,11 +1535,10 @@ export const en = {
   },
   // Spec 013: the New routine dialog.
   newRoutine: {
-    parts: "Parts of the routine",
-    part: { basics: "Basics", when: "When", result: "Result" },
-    next: "Next",
-    promptHint: "As you'd write it in a message. It uses the tools and connectors it already has; what started the run comes with it.",
-    promptPlaceholder: "E.g. Sum up what's open for me and what changed since yesterday.",
+    steps: "Steps",
+    addStep: "Add a step",
+    startsEmpty: "Not chosen yet: pick when it runs.",
+    resultTitle: "Where the result goes",
     starts: "What starts it",
     start: { time: "At a time", arrives: "Something new", message: "A message", script: "A script calls", hand: "By hand" },
     startHint: {
@@ -1546,19 +1549,19 @@ export const en = {
       hand: "Only when you press Run now"
     },
     on: "On",
-    needsSomething: "needs something",
     restored: "Picked up where you left off.",
     startOver: "Start over",
     tellMeOn: "On",
     tellMe: "Tell me here",
     tellMeHint: "A notification here when a run finds something new. Change it in the routine's settings.",
     todo: {
+      starts: "Pick when it runs.",
+      connector: "Pick the connector to watch.",
       name: "Give it a name.",
-      prompt: "Say what it should do each run.",
       agent: "Pick the agent that runs it.",
       tool: "Pick the tool to watch.",
-      field: "Fill in what starts it."
-      ,destination: "Finish the destination, or go back."
+      field: "Fill in what starts it.",
+      destination: "Finish the destination, or go back."
     },
     repeat: "Repeats",
     repeats: { weekly: "Weekly", once: "Once", monthly: "Monthly", dayStart: "Day start" },
@@ -1631,7 +1634,6 @@ export const en = {
     },
     noConnector: "No connector",
     pickTool: "Pick a tool",
-    pickWatchHint: "A tool of a connector that only reads: what it lists is what's watched.",
     endHint: "Ends quietly: nothing new to tell.",
     kind: { trigger: "Trigger", tool: "Connector tool", agent: "Agent", check: "Look first", condition: "Condition", approval: "Ask me", end: "End" },
     kindHint: {
@@ -1739,6 +1741,17 @@ export const en = {
       toolGone: "The connector no longer has {tool}."
     },
     form: {
+      args: "Arguments",
+      mode: "Edit the arguments as",
+      asForm: "Form",
+      json: "Arguments as JSON",
+      jsonHint: "Ctrl+Space lists the tool's fields; hover a field to see what it takes.",
+      requiredShort: "required",
+      notObject: "The arguments are an object: { … }.",
+      missing: "{field} is required.",
+      unknown: "{field} isn't one of this tool's fields.",
+      oneOf: "One of {values}.",
+      wrongType: "Should be {type}.",
       noInputs: "This tool takes no inputs.",
       required: "Required.",
       whole: "A whole number.",
@@ -1756,16 +1769,19 @@ export const en = {
       pickFailed: "Nothing to pick: type the id."
     },
     picker: {
-      title: "Pick a tool",
-      search: "Search tools",
-      filter: "Show",
-      all: "All",
-      reads: "Reads",
-      writes: "Writes",
-      noConnectors: "No connectors yet. Add one in Settings › Connectors.",
+      connector: "Connector",
+      pickConnector: "Pick a connector",
+      addConnector: "Add a connector",
+      pickTool: "Pick a tool",
+      tool: { watch: "Read tool", message: "Tool that reads the messages", post: "Tool that posts", any: "Tool" },
+      none: {
+        watch: "This connector has no tool that only reads.",
+        message: "This connector has no tool that reads messages.",
+        post: "This connector has no tool that posts a message.",
+        any: "This connector has no tools."
+      },
+      noConnectors: "No connectors yet.",
       unreachable: "Didn't connect: {error}",
-      use: "Use {tool}",
-      cls: { read: "Reads", write: "Writes", sensitive: "Writes" },
       why: {
         "signed-out": "The sign-in expired.",
         off: "The connector is turned off.",
@@ -1857,7 +1873,7 @@ export const en = {
     prevWeek: "Previous week",
     nextWeek: "Next week",
     thisWeek: "Today",
-    legend: { needs: "Needs you", something: "Something new", nothing: "Nothing new, no ping", planned: "Next" },
+    legend: { dayStart: "Your day starts", needs: "Needs you", something: "Something new", nothing: "Nothing new, no ping", planned: "Next" },
     dayStartsAround: "Your day starts around {time}",
     quietFromTo: "quiet {from} – {to}",
     change: "Change",

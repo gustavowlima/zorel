@@ -5,7 +5,7 @@ import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
 import { agentsAtom, mutations, projectsAtom, teamsAtom, uploadAttachment, useList, useMutation } from "../client.ts"
 import { go } from "../state.ts"
-import { agentOptions, callable, teamsIn, toJoin } from "./agent-options.ts"
+import { agentOptions, callable, projectCrew, teamsIn, toJoin } from "./agent-options.ts"
 import { Composer, type ComposerSources, SendError } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import { agentTone, modelLabel } from "../labels.ts"
@@ -20,18 +20,19 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
   const send = useMutation(mutations.send)
   const updateChat = useMutation(mutations.updateChat)
   const [projectId, setProjectId] = useState<string | null>(initialProject ?? null)
-  const [agentId, setAgentId] = useState<string | null>(null)
+  const [crew, setCrew] = useState<ReadonlyArray<string>>([]) // who the chat starts with; the first leads
   const [choice, setChoice] = useState<ModelChoice>(DEFAULT_MODEL)
   const chat = useRef<Promise<string> | null>(null)
 
   const available = callable(agents, projectId)
   const teams = teamsIn(useList(teamsAtom), projectId)
-  const pickAgent = (id: string | null) => {
-    setAgentId(id)
-    const a = agents.find((x) => x.id === id)
+  // The lead's model is the chat's.
+  const startWith = (ids: ReadonlyArray<string>) => {
+    setCrew(ids)
+    const a = agents.find((x) => x.id === ids[0])
     if (a) setChoice({ model: a.model, accountId: a.accountId, effort: a.effort })
   }
-  const lead = available.find((a) => a.id === agentId)
+  const members = crew.flatMap((id) => available.find((a) => a.id === id) ?? [])
   // "#" in the box calls an agent (a chip, "@handle" in the text, as in a chat; typing filters, so a long team stays
   // usable). Who is named joins the new chat when the message is sent (see `callWith`).
   const sources: ComposerSources = {
@@ -42,25 +43,26 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
       icon: <AgentAvatar id={o.agent.id} name={o.agent.name} tone={agentTone(o.agent, agents)} size={16} />
     })).concat(teams.map((x) => ({ id: x.handle, label: x.name, hint: t("teams.option", { count: x.agentIds.length }), icon: <Users className="size-4" /> })))
   }
-  // A project's chat starts with its default agent (Agents tab of the project), if it has one.
-  const defaultAgent = projects.find((p) => p.id === projectId)?.defaultAgentId ?? null
+  // A project's chat starts with who takes part in it (Agents tab of the project): its agents and its teams' members.
+  const project = projects.find((p) => p.id === projectId)
+  const crewKey = projectCrew(project, available, teams).map((a) => a.id).join()
   useEffect(() => {
     setProjectId(initialProject ?? null)
     chat.current = null
   }, [initialProject])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new project or default resets the pick
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new project or a new crew resets the pick
   useEffect(() => {
-    pickAgent(agents.some((a) => a.id === defaultAgent) ? defaultAgent : null)
-  }, [projectId, defaultAgent, agents.length])
+    startWith(crewKey ? crewKey.split(",") : [])
+  }, [projectId, crewKey])
 
-  // Who is in the chat a message starts: the chosen lead (or the project's default), then everyone the text names.
-  // With no lead chosen, the first one named leads (and the chat takes its model).
+  // Who is in the chat a message starts: the crew, then everyone the text names. With no one yet, the first one
+  // named leads (and the chat takes its model).
   const callWith = (text: string) => {
-    const named = toJoin(text, agentId ? [agentId] : [], available, teams).slice(0, agentId ? 7 : 8) // a chat holds 8
-    return { agentIds: [...(agentId ? [agentId] : []), ...named.map((a) => a.id)], ...(!agentId && named[0] && { model: named[0].model }) }
+    const named = toJoin(text, members.map((a) => a.id), available, teams).slice(0, 8 - members.length) // a chat holds 8
+    return { agentIds: [...members.map((a) => a.id), ...named.map((a) => a.id)], ...(!members.length && named[0] && { model: named[0].model }) }
   }
   // One chat per draft, however many files are attached before sending.
-  const ensureChat = (call: { agentIds: string[]; model?: string } = { agentIds: agentId ? [agentId] : [] }) =>
+  const ensureChat = (call: { agentIds: string[]; model?: string } = { agentIds: members.map((a) => a.id) }) =>
     (chat.current ??= createChat({ payload: { projectId, ...choice, ...call }, reactivityKeys: ["chats"] }).then(
       (c) => c.id,
       (e: unknown) => {
@@ -71,9 +73,9 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
 
   const submit = async (text: string, attachmentIds: ReadonlyArray<string>) => {
     const call = callWith(text)
-    const created = chat.current !== null // a file was attached first: the chat exists with only its lead
+    const created = chat.current !== null // a file was attached first: the chat exists with only its crew
     const chatId = await ensureChat(call)
-    if (created && call.agentIds.length > (agentId ? 1 : 0)) {
+    if (created && call.agentIds.length > members.length) {
       try {
         await updateChat({ params: { id: chatId }, payload: call, reactivityKeys: ["chats", "context"] })
       } catch {
@@ -103,18 +105,21 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
               value={projectId ?? ""}
               onChange={(v) => {
                 setProjectId(v || null)
-                pickAgent(null)
               }}
               options={[{ value: "", label: t("home.noProject") }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
               searchLabel={t("home.searchProjects")}
             />
-            {lead && (
-              // Who answers, once picked ("#" in the box, or the project's default): its face and name, × goes back
-              // to a plain chat. Picking happens in the box itself, so there is no list of names here.
+            {members.length > 0 && (
+              // Who the chat starts with (the project's crew): their faces and who, × goes back to a plain chat. More
+              // join with "#" in the box, so there is no list of names here.
               <span className="flex h-control-sm items-center gap-1.5 rounded-full bg-control pr-0.5 pl-1 text-sm text-fg">
-                <AgentAvatar id={lead.id} name={lead.name} tone={agentTone(lead, agents)} size={20} />
-                <span className="max-w-40 truncate">{t("home.answers", { name: lead.name })}</span>
-                <IconButton label={t("home.clearAgent", { name: lead.name })} size="xs" shape="pill" onPress={() => pickAgent(null)}>
+                <span className="flex -space-x-1.5">
+                  {members.slice(0, 3).map((a) => (
+                    <AgentAvatar key={a.id} id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} />
+                  ))}
+                </span>
+                <span className="max-w-48 truncate">{members.length === 1 ? t("home.answers", { name: members[0]!.name }) : t("home.crew", { count: members.length })}</span>
+                <IconButton label={t("home.clearCrew")} size="xs" shape="pill" onPress={() => startWith([])}>
                   <X className="size-3.5" />
                 </IconButton>
               </span>

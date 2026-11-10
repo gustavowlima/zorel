@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { agentOptions, callable, teamsIn, toJoin, withTeam } from "./agent-options.ts"
+import { agentOptions, callable, projectCrew, teamsIn, toJoin, withTeam } from "./agent-options.ts"
 
 const agent = (id: string, name: string, o: { projectId?: string | null; builtin?: boolean } = {}) => ({ id, name, projectId: o.projectId ?? null, builtin: o.builtin ?? false })
 const lead = agent("a1", "Tech Leader")
@@ -76,5 +76,15 @@ describe("teams (spec 010)", () => {
   })
   test("teamsIn: the project's own and the global ones", () => {
     expect(teamsIn([{ projectId: null }, { projectId: "p1" }, { projectId: "p2" }], "p1")).toHaveLength(2)
+  })
+})
+
+describe("projectCrew", () => {
+  test("its agents, then its teams' members, once each, only those in reach, up to 8", () => {
+    const teams = [{ id: "t1", agentIds: ["a2", "a3", "gone"] }]
+    expect(projectCrew({ agentIds: ["a2", "a1"], teamIds: ["t1", "deleted"] }, [lead, dev, qa], teams).map((a) => a.id)).toEqual(["a2", "a1", "a3"])
+    expect(projectCrew(undefined, [lead], teams)).toEqual([])
+    const many = Array.from({ length: 10 }, (_, i) => agent(`m${i}`, `M${i}`))
+    expect(projectCrew({ agentIds: many.map((a) => a.id), teamIds: [] }, many, [])).toHaveLength(8)
   })
 })

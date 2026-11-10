@@ -1,21 +1,22 @@
-// New routine (spec 013): who runs it, what it does, what starts it, and where the result goes, in one dialog. What
-// starts it uses the editor's own trigger fields (a connector's tool and its inputs as a form, never JSON), and the
-// dialog saves a first version of its steps: trigger → the agent → end, refined later in the editor. A sentence at
-// the foot says what will happen.
-import { type Agent, type ConnectorDestination, type FlowGraph, isTeammate, validateFlow } from "@zorel/contracts"
+// New routine (spec 013) as a list of steps, in one dialog: a name and the agent on top, then the steps in order —
+// what starts it (nothing chosen until you choose: no time is set behind your back), the steps it takes (an
+// instruction to the agent, a connector's tool, a check, a yes/no split, an "Ask me"), and where the result goes.
+// Each card opens in place with its own fields (the editor's, shared), one at a time. Create saves the routine and
+// those steps as its first version; the canvas edits them later.
+import { type Agent, type ConnectorDestination, type FlowGraph, type FlowNode, isTeammate, PORTS, validateFlow } from "@zorel/contracts"
 import { locale, t } from "@zorel/i18n"
 import { type ReactNode, useEffect, useState } from "react"
-import { agentsAtom, mutations, useInvalidate, useList, useMutation } from "../client.ts"
+import { agentsAtom, mutations, serversAtom, useInvalidate, useList, useMutation } from "../client.ts"
 import { agentTone } from "../labels.ts"
-import { go } from "../state.ts"
-import { AgentAvatar, AlarmClock, Badge, History, ArrowRight, Bell, Button, ChoiceCards, CircleAlert, Clock, Code2, cx, Dot, Field, Input, Mail, MultiSegmented, Play, Segmented, Select, SettingRow, Sparkles, Switch, Tab, TabList, TabPanel, Tabs, Textarea } from "@/ui"
-import { ConnectorDestinations } from "./deliver-to.tsx"
-import { TestTrigger, WatchFields } from "./flow-panel.tsx"
 import type { Slot } from "./routine-week.tsx"
+import { AgentAvatar, AlarmClock, Badge, Bell, Button, ChevronDown, ChoiceCards, CircleAlert, Clock, Code2, cx, Field, History, IconButton, IconTile, Input, Mail, Menu, MenuItem, MenuSeparator, MultiSegmented, Play, Plus, RowHit, Segmented, Select, SettingRow, Sparkles, Switch, Tag, Trash2 } from "@/ui"
+import { ConnectorDestinations } from "./deliver-to.tsx"
+import { missingOf } from "./flow-editor.tsx"
+import { KindTile, kindIcon, nodeDetail, nodeTitle } from "./flow-kinds.tsx"
+import { ADDABLE, insertAfter, layout, orderOf, removeNode } from "./flow-model.ts"
+import { StepFields, TestTrigger, WatchFields } from "./flow-panel.tsx"
 
-type Trigger = Extract<FlowGraph["nodes"][number], { kind: "trigger" }>["config"]
-type Part = "basics" | "when" | "result"
-const PARTS: ReadonlyArray<Part> = ["basics", "when", "result"]
+type Trigger = Extract<FlowNode, { kind: "trigger" }>["config"]
 type Starts = "time" | "arrives" | "message" | "script" | "hand"
 type Repeat = "weekly" | "once" | "monthly" | "dayStart"
 const STARTS: ReadonlyArray<Starts> = ["time", "arrives", "message", "script", "hand"]
@@ -29,6 +30,7 @@ const dayName = (d: string, style: "short" | "long") => new Date(2026, 10, 8 + N
 const hhmm = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
 const tomorrow = () => new Date(Date.now() + 86_400_000).toLocaleDateString("en-CA")
+const INDENT = ["", "pl-6", "pl-12", "pl-18", "pl-24"] as const
 
 // A weekly schedule as cron: minute, hour, any day of the month, any month, these weekdays.
 export const weeklyCron = (days: ReadonlyArray<string>, time: string) => {
@@ -37,13 +39,38 @@ export const weeklyCron = (days: ReadonlyArray<string>, time: string) => {
   return `${m} ${h} * * ${list.length === 7 ? "*" : list.join(",")}`
 }
 
+// The first steps: what starts it (its kind chosen in its card), one instruction to the agent, the end.
+const FIRST: FlowGraph = layout({
+  nodes: [
+    { id: "trigger", kind: "trigger", x: 0, y: 0, config: { on: "manual" } },
+    { id: "agent1", kind: "agent", x: 0, y: 0, config: { prompt: "" } },
+    { id: "end1", kind: "end", x: 0, y: 0, config: {} }
+  ],
+  edges: [
+    { id: "e1", from: "trigger", to: "agent1" },
+    { id: "e2", from: "agent1", to: "end1" }
+  ]
+})
+// Where "Add a step" at the foot of the list goes: after the last step of the main path (the "yes" path through a
+// split), before its end.
+function lastStep(g: FlowGraph): string {
+  let at = "trigger"
+  for (;;) {
+    const next = g.edges.find((e) => e.from === at && (!e.branch || e.branch === "yes"))
+    const node = g.nodes.find((n) => n.id === next?.to)
+    if (!next || !node || node.kind === "end") return at
+    at = node.id
+  }
+}
+
 // The dialog's draft, per agent page (or the Routines page): kept while it's typed, cleared on Cancel and Create.
-type Draft = { agentId: string; name: string; prompt: string; starts: Starts; repeat: Repeat; days: string[]; time: string; date: string; day: number; watch: Trigger; lookFirst: boolean; destinations: ConnectorDestination[] }
+type Draft = { agentId: string; name: string; steps: FlowGraph; starts: Starts | null; repeat: Repeat; days: string[]; time: string; date: string; day: number; watch: Trigger; lookFirst: boolean; destinations: ConnectorDestination[] }
 const draftKey = (agentId: string | undefined) => `zorel.draft.newRoutine.${agentId ?? "any"}`
 function readDraft(agentId: string | undefined): Draft | undefined {
   try {
     const raw = localStorage.getItem(draftKey(agentId))
-    return raw ? (JSON.parse(raw) as Draft) : undefined
+    const d = raw ? (JSON.parse(raw) as Draft) : undefined
+    return d?.steps ? d : undefined // a draft from before the steps (its own prompt field) starts over
   } catch {
     return undefined
   }
@@ -62,14 +89,16 @@ export function NewRoutine({ agent, slot, onDone }: { agent?: Agent | undefined;
   const testNew = useMutation(mutations.testNewTrigger)
   const invalidate = useInvalidate()
   const agents = useList(agentsAtom)
+  const servers = useList(serversAtom)
   const team = agents.filter((a) => isTeammate(a))
   // What was typed before leaving the dialog (a "Sign in again" in the tool picker goes to Settings) comes back.
   const [draft] = useState(() => (slot ? undefined : readDraft(agent?.id)))
   const [agentId, setAgentId] = useState(draft?.agentId ?? agent?.id ?? team[0]?.id ?? "")
   const who = agents.find((a) => a.id === agentId)
   const [name, setName] = useState(draft?.name ?? "")
-  const [prompt, setPrompt] = useState(draft?.prompt ?? "")
-  const [starts, setStarts] = useState<Starts>(draft?.starts ?? "time")
+  const [steps, setSteps] = useState<FlowGraph>(draft?.steps ?? FIRST)
+  // A time slot picked on the week is a choice already made; otherwise nothing starts it until chosen.
+  const [starts, setStarts] = useState<Starts | null>(slot ? "time" : (draft?.starts ?? null))
   const [repeat, setRepeat] = useState<Repeat>(draft?.repeat ?? "weekly")
   const [days, setDays] = useState<ReadonlyArray<string>>(slot ? [String(slot.weekday)] : (draft?.days ?? WEEKDAYS))
   const [time, setTime] = useState(slot ? hhmm(slot.minutes) : (draft?.time ?? "09:00"))
@@ -81,15 +110,19 @@ export function NewRoutine({ agent, slot, onDone }: { agent?: Agent | undefined;
   const [restored, setRestored] = useState(!!draft)
   const [addingDestination, setAddingDestination] = useState(false)
   const [tried, setTried] = useState(false)
-  // Kept as it's typed; Cancel and Create clear it.
+  // The one card open: "trigger", a step's id, or "result".
+  const [open, setOpen] = useState<string | null>(slot ? "agent1" : "trigger")
+  const [error, setError] = useState<string>()
+  const [busy, setBusy] = useState(false)
+  const typed = !!name || steps !== FIRST || starts !== null
   useEffect(() => {
-    writeDraft(agent?.id, name || prompt ? { agentId, name, prompt, starts, repeat, days: [...days], time, date, day, watch, lookFirst, destinations: [...destinations] } : undefined)
-  }, [agent?.id, agentId, name, prompt, starts, repeat, days, time, date, day, watch, lookFirst, destinations])
+    writeDraft(agent?.id, typed ? { agentId, name, steps, starts, repeat, days: [...days], time, date, day, watch, lookFirst, destinations: [...destinations] } : undefined)
+  }, [agent?.id, typed, agentId, name, steps, starts, repeat, days, time, date, day, watch, lookFirst, destinations])
   const startOver = () => {
     writeDraft(agent?.id, undefined)
     setName("")
-    setPrompt("")
-    setStarts("time")
+    setSteps(FIRST)
+    setStarts(null)
     setRepeat("weekly")
     setDays(WEEKDAYS)
     setTime("09:00")
@@ -99,18 +132,16 @@ export function NewRoutine({ agent, slot, onDone }: { agent?: Agent | undefined;
     setLookFirst(false)
     setAgentId(agent?.id ?? team[0]?.id ?? "")
     setDestinations([])
-    setTab("basics")
+    setOpen("trigger")
     setRestored(false)
   }
   const cancel = () => {
     writeDraft(agent?.id, undefined)
     onDone()
   }
-  const [error, setError] = useState<string>()
-  const [busy, setBusy] = useState(false)
-  const [tab, setTab] = useState<Part>("basics")
 
   // What starts it, as the flow's trigger.
+  const watching = starts === "arrives" || starts === "message"
   const trigger: Trigger =
     starts === "time"
       ? repeat === "weekly"
@@ -120,63 +151,54 @@ export function NewRoutine({ agent, slot, onDone }: { agent?: Agent | undefined;
           : repeat === "monthly"
             ? { on: "monthly", day, time }
             : { on: "dayStart" }
-      : starts === "arrives" || starts === "message"
+      : watching
         ? { ...watch, on: starts === "message" ? "message" : "watch" }
         : starts === "script"
           ? { on: "webhook", lookFirst }
           : { on: "manual" }
-  const graph: FlowGraph = {
-    nodes: [
-      { id: "trigger", kind: "trigger", x: 0, y: 0, config: trigger },
-      { id: "agent", kind: "agent", x: 0, y: 120, config: { prompt: prompt.trim() } },
-      { id: "end", kind: "end", x: 0, y: 240, config: {} }
-    ],
-    edges: [
-      { id: "e1", from: "trigger", to: "agent" },
-      { id: "e2", from: "agent", to: "end" }
-    ]
-  }
+  const graph: FlowGraph = { ...steps, nodes: steps.nodes.map((n) => (n.kind === "trigger" ? { ...n, config: trigger } : n)) }
   const checked = validateFlow(graph)
   const past = starts === "time" && repeat === "once" && new Date(`${date}T${time}`).getTime() <= Date.now()
-  // Each part's own check, so its tab can say it needs something.
-  const basicsOk = !!agentId && !!name.trim() && !!prompt.trim()
-  const whenOk = (checked.ok || (!checked.ok && checked.nodeId === "agent")) && !past && !(starts === "time" && repeat === "weekly" && !days.length)
-  const ready = basicsOk && whenOk && checked.ok && !addingDestination
-  // Nothing is "missing" on a dialog just opened: the warnings wait until something was typed, another part opened,
-  // or Create tried.
-  const touched = tried || !!name || !!prompt || tab !== "basics"
-  const missing: Record<Part, boolean> = { basics: touched && !basicsOk, when: touched && !whenOk, result: false }
-  // The first thing still missing, said where the summary goes (a disabled Create must say why).
-  const watching = starts === "arrives" || starts === "message"
   const field = !checked.ok && checked.nodeId === "trigger" ? checked.field : undefined
-  // What's still missing, in order, each with the part it's in. The open part's own first, then the others'; a
-  // missing thing on another part is a link to it.
-  const checks: ReadonlyArray<{ part: Part; missing: boolean; text: () => string }> = [
-    { part: "result", missing: addingDestination, text: () => t("newRoutine.todo.destination") },
-    { part: "basics", missing: !name.trim(), text: () => t("newRoutine.todo.name") },
-    { part: "basics", missing: !prompt.trim(), text: () => t("newRoutine.todo.prompt") },
-    { part: "basics", missing: !agentId, text: () => t("newRoutine.todo.agent") },
-    { part: "when", missing: starts === "time" && repeat === "weekly" && !days.length, text: () => t("newRoutine.pickDay") },
-    { part: "when", missing: past, text: () => t("newRoutine.past") },
-    { part: "when", missing: watching && (field === "serverId" || field === "tool"), text: () => t("newRoutine.todo.tool") },
-    { part: "when", missing: !!field && !(watching && (field === "serverId" || field === "tool")), text: () => t("newRoutine.todo.field") }
+  const stepProblem = !checked.ok && checked.nodeId && checked.nodeId !== "trigger" ? checked : undefined
+  const problemNode = steps.nodes.find((n) => n.id === stepProblem?.nodeId)
+  // What's still missing, in order, each with the card it's in (pressing it opens that card).
+  const checks: ReadonlyArray<{ at: string | null; missing: boolean; text: () => string }> = [
+    { at: "result", missing: addingDestination, text: () => t("newRoutine.todo.destination") },
+    { at: null, missing: !name.trim(), text: () => t("newRoutine.todo.name") },
+    { at: null, missing: !agentId, text: () => t("newRoutine.todo.agent") },
+    { at: "trigger", missing: starts === null, text: () => t("newRoutine.todo.starts") },
+    { at: "trigger", missing: starts === "time" && repeat === "weekly" && !days.length, text: () => t("newRoutine.pickDay") },
+    { at: "trigger", missing: past, text: () => t("newRoutine.past") },
+    { at: "trigger", missing: watching && field === "serverId", text: () => t("newRoutine.todo.connector") },
+    { at: "trigger", missing: watching && field === "tool", text: () => t("newRoutine.todo.tool") },
+    { at: "trigger", missing: starts !== null && !!field && !(watching && (field === "serverId" || field === "tool")), text: () => t("newRoutine.todo.field") },
+    { at: stepProblem?.nodeId ?? null, missing: !!stepProblem, text: () => `${problemNode ? nodeTitle(problemNode) : ""}: ${missingOf(stepProblem?.field) ?? stepProblem?.problem ?? ""}` },
+    { at: null, missing: !checked.ok && !stepProblem && !field, text: () => (checked.ok ? "" : checked.problem) }
   ]
-  const first = checks.find((c) => c.missing && c.part === tab) ?? checks.find((c) => c.missing)
+  const first = checks.find((c) => c.missing)
   const todo = first?.text()
+  const ready = !first
+  // Nothing is "missing" on a dialog just opened: the warnings wait until something was typed or Create tried.
+  const touched = tried || typed
 
-  const submit = (steps: boolean) => {
+  // The routine's own prompt (it names the chat and is the fallback text): the first instruction to the agent.
+  const firstPrompt = orderOf(graph)
+    .map((i) => i.node)
+    .find((n): n is Extract<FlowNode, { kind: "agent" }> => n.kind === "agent" && !!n.config.prompt.trim())
+  const submit = () => {
+    setTried(true)
     if (!ready) return
     setBusy(true)
     setError(undefined)
     // The routine first (its chat, its delivery), then its steps as version 1: the trigger lives there.
-    create({ payload: { agentId, name: name.trim(), prompt: prompt.trim(), cron: null, webhook: false, ...(destinations.length > 0 && { delivery: { channels: ["notify"], connectors: [...destinations] } }) }, reactivityKeys: ["routines"] })
+    create({ payload: { agentId, name: name.trim(), prompt: (firstPrompt?.config.prompt ?? name).trim(), cron: null, webhook: false, ...(destinations.length > 0 && { delivery: { channels: ["notify"], connectors: [...destinations] } }) }, reactivityKeys: ["routines"] })
       .then((r) =>
         saveFlow({ params: { id: r.id }, payload: { graph, baseVersion: null }, reactivityKeys: ["routines"] }).then(
           () => {
             invalidate(["chats"])
             writeDraft(agent?.id, undefined)
             onDone()
-            if (steps) go({ view: "routine-flow", id: r.id })
           },
           (err: { message?: string }) => remove({ params: { id: r.id }, reactivityKeys: ["routines"] }).then(() => Promise.reject(err))
         )
@@ -185,156 +207,172 @@ export function NewRoutine({ agent, slot, onDone }: { agent?: Agent | undefined;
       .finally(() => setBusy(false))
   }
 
+  const toggle = (id: string) => setOpen((o) => (o === id ? null : id))
+  const add = (from: string, kind: (typeof ADDABLE)[number], branch?: "yes" | "no") => {
+    const next = insertAfter(steps, from, kind, branch)
+    setSteps(next.graph)
+    setOpen(next.id)
+  }
+  const flagged = (id: string) => touched && first?.at === id
+
   return (
     <form
       className="flex min-h-0 flex-1 flex-col"
       onSubmit={(e) => {
         e.preventDefault()
         e.stopPropagation() // a dialog's form: its submit must not reach a form around the page
-        submit(false)
+        submit()
       }}
       onKeyDown={(e) => {
-        // ⌘Enter / Ctrl+Enter creates from any part.
+        // ⌘Enter / Ctrl+Enter creates from anywhere in the dialog.
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
           e.preventDefault()
-          setTried(true)
-          submit(false)
+          submit()
         }
       }}
     >
-      {restored && (
-        <p className="mb-4 flex shrink-0 items-center gap-2 text-sm text-muted">
-          <History className="size-4 shrink-0" />
-          <span className="flex-1">{t("newRoutine.restored")}</span>
-          <Button size="sm" variant="ghost" onPress={startOver}>
-            {t("newRoutine.startOver")}
-          </Button>
-        </p>
-      )}
-      {/* The tabs stay on top and the foot below; only the part between them scrolls on a short window. */}
-      <Tabs selectedKey={tab} onSelectionChange={(k) => setTab(k as Part)} className="min-h-0 flex-1 gap-0">
-        <TabList label={t("newRoutine.parts")} className="shrink-0">
-          {PARTS.map((p) => (
-            <Tab key={p} id={p}>
-              {t(`newRoutine.part.${p}`)}
-              {missing[p] && (
-                <>
-                  <Dot tone="warning" />
-                  <span className="sr-only">{t("newRoutine.needsSomething")}</span>
-                </>
-              )}
-            </Tab>
-          ))}
-        </TabList>
-
-        <div className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6 pt-6 pb-6">
-        <TabPanel id="basics" className="flex flex-col gap-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label={t("routines.name")}>
-              <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder={t("routines.namePlaceholder")} />
-            </Field>
-            {!agent && (
-              <Field label={t("routines.agent")}>
-                <Select
-                  aria-label={t("routines.agent")}
-                  value={agentId}
-                  onChange={setAgentId}
-                  searchLabel={t("agents.search")}
-                  emptyLabel={t("agents.noMatch")}
-                  options={team.map((a) => ({ value: a.id, label: a.name, icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} /> }))}
-                />
-              </Field>
-            )}
-          </div>
-          <Field label={t("routines.prompt")} hint={t("newRoutine.promptHint")}>
-            <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={5} maxLength={8000} placeholder={t("newRoutine.promptPlaceholder")} />
+      {/* Only the part between the head and the foot scrolls on a short window. */}
+      <div className="-mx-6 flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 pb-6">
+        {restored && (
+          <p className="flex shrink-0 items-center gap-2 text-sm text-muted">
+            <History className="size-4 shrink-0" />
+            <span className="flex-1">{t("newRoutine.restored")}</span>
+            <Button size="sm" variant="ghost" onPress={startOver}>
+              {t("newRoutine.startOver")}
+            </Button>
+          </p>
+        )}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label={t("routines.name")}>
+            <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder={t("routines.namePlaceholder")} />
           </Field>
-        </TabPanel>
-
-        <TabPanel id="when" className="flex flex-col gap-6">
-          <ChoiceCards list label={t("newRoutine.starts")} value={starts} onChange={setStarts} options={STARTS.map((id) => ({ value: id, title: t(`newRoutine.start.${id}`), description: t(`newRoutine.startHint.${id}`), icon: START_ICON[id]() }))} />
-          {starts === "time" && (
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2 text-sm text-muted">
-                {t("newRoutine.repeat")}
-                <Segmented label={t("newRoutine.repeat")} value={repeat} onChange={setRepeat} options={REPEATS.map((id) => ({ id, label: t(`newRoutine.repeats.${id}`) }))} />
-              </div>
-              {repeat === "weekly" && (
-                <div className="flex flex-col gap-2 text-sm text-muted">
-                  {t("newRoutine.on")}
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <MultiSegmented label={t("newRoutine.days")} value={days} onChange={setDays} options={ROW.map((d) => ({ id: d, label: dayName(d, "short").slice(0, 3), title: dayName(d, "long") }))} />
-                    <span className="flex gap-1">
-                      <Button size="sm" variant="ghost" onPress={() => setDays(WEEKDAYS)}>
-                        {t("newRoutine.weekdays")}
-                      </Button>
-                      <Button size="sm" variant="ghost" onPress={() => setDays(EVERY_DAY)}>
-                        {t("newRoutine.everyDay")}
-                      </Button>
-                    </span>
-                  </div>
-                </div>
-              )}
-              {repeat !== "dayStart" && (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {repeat === "once" && (
-                    <Field label={t("flows.panel.date")}>
-                      <Input type="date" min={new Date().toLocaleDateString("en-CA")} value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
-                    </Field>
-                  )}
-                  {repeat === "monthly" && (
-                    <Field label={t("flows.panel.day")}>
-                      <Select value={String(day)} onChange={(v) => setDay(Number(v))} options={Array.from({ length: 31 }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))} />
-                    </Field>
-                  )}
-                  <Field label={t("flows.panel.time")}>
-                    <Input type="time" value={time} onChange={(e) => e.target.value && setTime(e.target.value)} />
-                  </Field>
-                </div>
-              )}
-            </div>
+          {!agent && (
+            <Field label={t("routines.agent")}>
+              <Select
+                aria-label={t("routines.agent")}
+                value={agentId}
+                onChange={setAgentId}
+                searchLabel={t("agents.search")}
+                emptyLabel={t("agents.noMatch")}
+                options={team.map((a) => ({ value: a.id, label: a.name, icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} /> }))}
+              />
+            </Field>
           )}
-          {watching && who && (
-            <div className="flex flex-col gap-4">
-              <WatchFields c={{ ...watch, on: starts === "message" ? "message" : "watch" }} set={setWatch} agent={who} />
-              {watch.tool && <TestTrigger run={() => testNew({ payload: { agentId, prompt: prompt.trim(), trigger } })} />}
-            </div>
-          )}
-          {starts === "script" && (
-            <Switch isSelected={lookFirst} onChange={setLookFirst}>
-              {t("flows.panel.lookFirst")}
-            </Switch>
-          )}
-        </TabPanel>
-
-        <TabPanel id="result" className="flex flex-col gap-6">
-          {who && (
-            <ConnectorDestinations
-              agent={who}
-              value={destinations}
-              onChange={setDestinations}
-              lead={
-                <SettingRow icon={<Bell />} title={t("newRoutine.tellMe")} hint={t("newRoutine.tellMeHint")}>
-                  <Badge tone="neutral">{t("newRoutine.tellMeOn")}</Badge>
-                </SettingRow>
-              }
-              onAdding={setAddingDestination}
-            />
-          )}
-        </TabPanel>
         </div>
-      </Tabs>
 
-      {/* The foot: what will happen (or what's still missing), and the actions, on one line. */}
+        <section aria-label={t("newRoutine.steps")} className="flex flex-col gap-2">
+          <h3 className="text-sm text-muted">{t("newRoutine.steps")}</h3>
+          <ol className="flex flex-col">
+            <Card
+              id="trigger"
+              open={open === "trigger"}
+              onToggle={toggle}
+              flagged={flagged("trigger")}
+              tile={<KindTile kind="trigger" size="sm" />}
+              title={t("newRoutine.starts")}
+              detail={starts === null ? t("newRoutine.startsEmpty") : summaryOf(starts, repeat, days, time, date, day)}
+              dim={starts === null}
+            >
+              <ChoiceCards list label={t("newRoutine.starts")} value={starts} onChange={setStarts} options={STARTS.map((id) => ({ value: id, title: t(`newRoutine.start.${id}`), description: t(`newRoutine.startHint.${id}`), icon: START_ICON[id]() }))} />
+              {starts === "time" && <TimeFields {...{ repeat, setRepeat, days, setDays, date, setDate, day, setDay, time, setTime }} />}
+              {watching && who && (
+                <div className="flex flex-col gap-4">
+                  <WatchFields c={trigger} set={setWatch} agent={who} />
+                  {watch.tool && <TestTrigger run={() => testNew({ payload: { agentId, prompt: (firstPrompt?.config.prompt ?? name).trim() || name || "-", trigger } })} />}
+                </div>
+              )}
+              {starts === "script" && (
+                <Switch isSelected={lookFirst} onChange={setLookFirst}>
+                  {t("flows.panel.lookFirst")}
+                </Switch>
+              )}
+            </Card>
+
+            {orderOf(steps)
+              .filter((i) => i.node.kind !== "trigger")
+              .map(({ node, depth, branch }) => (
+                <Card
+                  key={node.id}
+                  id={node.id}
+                  depth={depth}
+                  branch={branch}
+                  open={open === node.id}
+                  onToggle={node.kind === "end" ? undefined : toggle}
+                  flagged={flagged(node.id)}
+                  tile={<KindTile kind={node.kind} size="sm" />}
+                  title={nodeTitle(node)}
+                  detail={nodeDetail(node, servers)}
+                  dim={node.kind === "end"}
+                  actions={
+                    <>
+                      {node.kind !== "end" && <AddMenu label={t("flows.list.add")} paths={PORTS[node.kind].splits ? ["yes", "no"] : [undefined]} onAdd={(kind, path) => add(node.id, kind, path)} />}
+                      {(node.kind !== "end" || depth > 0) && (
+                        <IconButton label={t("flows.list.remove", { step: nodeTitle(node) })} onPress={() => setSteps(removeNode(steps, node.id))}>
+                          <Trash2 />
+                        </IconButton>
+                      )}
+                    </>
+                  }
+                >
+                  {who && <StepFields node={node} graph={graph} agent={who} routineId={undefined} onChange={(n) => setSteps({ ...steps, nodes: steps.nodes.map((x) => (x.id === n.id ? n : x)) })} />}
+                </Card>
+              ))}
+          </ol>
+          <AddMenu
+            label={t("newRoutine.addStep")}
+            paths={[undefined]}
+            onAdd={(kind) => add(lastStep(steps), kind)}
+            trigger={
+              <Button size="sm" variant="ghost" className="self-start">
+                <Plus />
+                {t("newRoutine.addStep")}
+              </Button>
+            }
+          />
+        </section>
+
+        {who && (
+          <ol className="flex flex-col">
+            <Card
+              id="result"
+              open={open === "result"}
+              onToggle={toggle}
+              flagged={flagged("result")}
+              tile={
+                <IconTile size="sm">
+                  <Bell />
+                </IconTile>
+              }
+              title={t("newRoutine.resultTitle")}
+              detail={[t("newRoutine.tellMe"), ...destinations.map((d) => d.tool)].join(" · ")}
+              first
+            >
+              <ConnectorDestinations
+                agent={who}
+                value={destinations}
+                onChange={setDestinations}
+                lead={
+                  <SettingRow icon={<Bell />} title={t("newRoutine.tellMe")} hint={t("newRoutine.tellMeHint")}>
+                    <Badge tone="neutral">{t("newRoutine.tellMeOn")}</Badge>
+                  </SettingRow>
+                }
+                onAdding={setAddingDestination}
+              />
+            </Card>
+          </ol>
+        )}
+      </div>
+
+      {/* The foot: what will happen (or what's still missing, which opens its card), and the actions. */}
       <div className="-mx-6 flex shrink-0 flex-wrap items-center gap-3 border-t border-subtle px-6 pt-4">
         <p role="status" aria-live="polite" className={cx("flex min-w-0 flex-1 basis-60 items-center gap-2", todo ? (touched ? "text-warning" : "text-muted") : "text-secondary")}>
           {todo && touched ? <CircleAlert className="size-4 shrink-0" /> : <Clock className="size-4 shrink-0 text-muted" />}
-          {first && first.part !== tab && touched ? (
-            <Button size="sm" variant="ghost" className="-ml-2 h-auto px-2 text-warning underline underline-offset-2" onPress={() => setTab(first.part)}>
+          {first && touched && first.at && first.at !== open ? (
+            <Button size="sm" variant="ghost" className="-ml-2 h-auto px-2 text-left text-warning underline underline-offset-2" onPress={() => setOpen(first.at)}>
               {todo}
             </Button>
           ) : (
-            <span>{todo ?? [summaryOf(starts, repeat, days, time, date, day), destinations.length > 0 && t("newRoutine.summary.posts", { tools: destinations.map((d) => d.tool).join(", ") })].filter(Boolean).join(" ")}</span>
+            <span>{todo ?? [starts && summaryOf(starts, repeat, days, time, date, day), destinations.length > 0 && t("newRoutine.summary.posts", { tools: destinations.map((d) => d.tool).join(", ") })].filter(Boolean).join(" ")}</span>
           )}
           {ready && <span className="shrink-0 text-sm text-dim">{MAC ? "⌘↵" : "Ctrl ↵"}</span>}
         </p>
@@ -343,13 +381,7 @@ export function NewRoutine({ agent, slot, onDone }: { agent?: Agent | undefined;
           <Button variant="ghost" onPress={cancel}>
             {t("common.cancel")}
           </Button>
-          {tab !== "result" && (
-            <Button variant="secondary" onPress={() => setTab(PARTS[PARTS.indexOf(tab) + 1]!)}>
-              {t("newRoutine.next")}
-              <ArrowRight />
-            </Button>
-          )}
-          <Button variant="default" type="submit" isPending={busy} isDisabled={!ready || busy}>
+          <Button variant="default" type="submit" isPending={busy} isDisabled={busy || (tried && !ready)}>
             {t("routines.create")}
           </Button>
         </div>
@@ -358,7 +390,130 @@ export function NewRoutine({ agent, slot, onDone }: { agent?: Agent | undefined;
   )
 }
 
-// What will happen, in one sentence (the foot of the dialog).
+// One card of the list: its head (a tile, what it is, one line about it) opens its fields below; a line joins it to
+// the card above. A split's paths are indented, each tagged yes or no.
+function Card({ id, open, onToggle, flagged, tile, title, detail, dim, depth = 0, branch, actions, first, children }: {
+  id: string
+  open: boolean
+  onToggle: ((id: string) => void) | undefined
+  flagged: boolean
+  tile: ReactNode
+  title: string
+  detail: string
+  dim?: boolean
+  depth?: number
+  branch?: "yes" | "no" | undefined
+  actions?: ReactNode
+  first?: boolean
+  children?: ReactNode
+}) {
+  return (
+    <li className={cx("flex flex-col", INDENT[Math.min(depth, INDENT.length - 1)])}>
+      {!first && id !== "trigger" && <span aria-hidden="true" className="ml-6 h-3 border-l border-subtle" />}
+      <div className={cx("rounded-card border", flagged ? "border-warning" : open ? "border-strong" : "border-subtle")}>
+        <div className="relative flex min-h-12 items-center gap-3 px-3 py-2">
+          {onToggle && <RowHit label={title} expanded={open} onPress={() => onToggle(id)} className="inset-x-0 inset-y-0 rounded-card" />}
+          {branch && (
+            <span className="pointer-events-none relative">
+              <Tag>{t(`flows.branch.${branch}`)}</Tag>
+            </span>
+          )}
+          <span className="pointer-events-none relative">{tile}</span>
+          <span className="pointer-events-none relative flex min-w-0 flex-1 flex-col">
+            <span className={cx("truncate font-medium", dim && "text-muted")}>{title}</span>
+            <span className={cx("truncate text-sm", flagged ? "text-warning" : "text-muted")}>{detail}</span>
+          </span>
+          {actions && <span className="relative flex shrink-0 items-center">{actions}</span>}
+          {onToggle && <ChevronDown className={cx("pointer-events-none relative size-4 shrink-0 text-muted transition-transform duration-120 ease-out motion-reduce:transition-none", open && "rotate-180")} />}
+        </div>
+        {open && children && <div className="flex flex-col gap-4 border-t border-subtle p-4">{children}</div>}
+      </div>
+    </li>
+  )
+}
+
+// Adding a step: after this one, or on a split's yes or no path.
+function AddMenu({ label, paths, onAdd, trigger }: { label: string; paths: ReadonlyArray<"yes" | "no" | undefined>; onAdd: (kind: (typeof ADDABLE)[number], path: "yes" | "no" | undefined) => void; trigger?: ReactNode }) {
+  return (
+    <Menu
+      label={label}
+      trigger={
+        trigger ?? (
+          <IconButton label={label}>
+            <Plus />
+          </IconButton>
+        )
+      }
+    >
+      {paths.map((path, i) => [
+        i > 0 && <MenuSeparator key={`sep-${path}`} />,
+        ...ADDABLE.filter((kind) => kind !== "end" || path).map((kind) => (
+          <MenuItem key={`${path ?? "next"}-${kind}`} icon={kindIcon(kind)} onAction={() => onAdd(kind, path)}>
+            {path ? t("flows.list.addOn", { kind: t(`flows.kind.${kind}`), path: t(`flows.branch.${path}`) }) : t(`flows.kind.${kind}`)}
+          </MenuItem>
+        ))
+      ])}
+    </Menu>
+  )
+}
+
+// At a time: how it repeats, on which days, at what time.
+function TimeFields({ repeat, setRepeat, days, setDays, date, setDate, day, setDay, time, setTime }: {
+  repeat: Repeat
+  setRepeat: (r: Repeat) => void
+  days: ReadonlyArray<string>
+  setDays: (d: ReadonlyArray<string>) => void
+  date: string
+  setDate: (d: string) => void
+  day: number
+  setDay: (d: number) => void
+  time: string
+  setTime: (t: string) => void
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2 text-sm text-muted">
+        {t("newRoutine.repeat")}
+        <Segmented label={t("newRoutine.repeat")} value={repeat} onChange={setRepeat} options={REPEATS.map((id) => ({ id, label: t(`newRoutine.repeats.${id}`) }))} />
+      </div>
+      {repeat === "weekly" && (
+        <div className="flex flex-col gap-2 text-sm text-muted">
+          {t("newRoutine.on")}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <MultiSegmented label={t("newRoutine.days")} value={days} onChange={setDays} options={ROW.map((d) => ({ id: d, label: dayName(d, "short").slice(0, 3), title: dayName(d, "long") }))} />
+            <span className="flex gap-1">
+              <Button size="sm" variant="ghost" onPress={() => setDays(WEEKDAYS)}>
+                {t("newRoutine.weekdays")}
+              </Button>
+              <Button size="sm" variant="ghost" onPress={() => setDays(EVERY_DAY)}>
+                {t("newRoutine.everyDay")}
+              </Button>
+            </span>
+          </div>
+        </div>
+      )}
+      {repeat !== "dayStart" && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {repeat === "once" && (
+            <Field label={t("flows.panel.date")}>
+              <Input type="date" min={new Date().toLocaleDateString("en-CA")} value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
+            </Field>
+          )}
+          {repeat === "monthly" && (
+            <Field label={t("flows.panel.day")}>
+              <Select value={String(day)} onChange={(v) => setDay(Number(v))} options={Array.from({ length: 31 }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))} />
+            </Field>
+          )}
+          <Field label={t("flows.panel.time")}>
+            <Input type="time" value={time} onChange={(e) => e.target.value && setTime(e.target.value)} />
+          </Field>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// What will happen, in one sentence (the start card and the foot of the dialog).
 // "Monday, Wednesday and Friday": the language's own list ("segunda, quarta e sexta").
 const listOf = (days: ReadonlyArray<string>) =>
   days.length === 7 ? t("newRoutine.everyDayLower") : days.length === 5 && WEEKDAYS.every((d) => days.includes(d)) ? t("newRoutine.weekdaysLower") : new Intl.ListFormat(locale(), { type: "conjunction" }).format(ROW.filter((d) => days.includes(d)).map((d) => dayName(d, "long")))

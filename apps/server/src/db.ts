@@ -272,7 +272,7 @@ export const repository = (db: Db, pagesDir?: string) => {
     projects: (): Effect.Effect<Project[]> =>
       orDie(
         db
-          .select({ id: projects.id, name: projects.name, brief: projects.brief, path: projects.path, defaultAgentId: projects.defaultAgentId, createdAt: projects.createdAt })
+          .select({ id: projects.id, name: projects.name, brief: projects.brief, path: projects.path, agentIds: projects.agentIds, teamIds: projects.teamIds, createdAt: projects.createdAt })
           .from(projects)
           .orderBy(sql`${projects.position} is not null`, asc(projects.position), desc(projects.createdAt))
       ),
@@ -282,11 +282,11 @@ export const repository = (db: Db, pagesDir?: string) => {
     project,
     createProject: (input: { name: string; brief: string; path?: string | null | undefined }) =>
       Effect.gen(function* () {
-        const p: Project = { id: crypto.randomUUID(), ...input, path: input.path ?? null, defaultAgentId: null, createdAt: now() }
+        const p: Project = { id: crypto.randomUUID(), ...input, path: input.path ?? null, agentIds: [], teamIds: [], createdAt: now() }
         yield* db.insert(projects).values(p)
         return p
       }).pipe(orDie),
-    updateProject: (id: string, input: { name?: string | undefined; brief?: string | undefined; path?: string | null | undefined; defaultAgentId?: string | null | undefined }) =>
+    updateProject: (id: string, input: { name?: string | undefined; brief?: string | undefined; path?: string | null | undefined; agentIds?: ReadonlyArray<string> | undefined; teamIds?: ReadonlyArray<string> | undefined }) =>
       Effect.gen(function* () {
         const set = defined(input)
         if (Object.keys(set).length) yield* db.update(projects).set(set).where(eq(projects.id, id))

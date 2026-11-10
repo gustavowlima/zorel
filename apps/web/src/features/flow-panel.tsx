@@ -6,15 +6,15 @@ import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { type ReactNode, useState } from "react"
 import { catalogAtom, mutations, serversAtom, useList, useMutation } from "../client.ts"
-import { Badge, Button, ChevronLeft, CodeBlock, Plus, Rows, SettingRow, Field, IconButton, Input, Play, Segmented, Select, Switch, Textarea, Trash2, X } from "@/ui"
+import { Badge, Button, CodeBlock, Plus, Rows, SettingRow, Field, IconButton, Input, Play, Segmented, Select, Switch, Textarea, Trash2, X } from "@/ui"
 import { KindTile, nodeTitle } from "./flow-kinds.tsx"
 import { earlierValues } from "./flow-model.ts"
 import { SchemaForm } from "./schema-form.tsx"
 import { samples } from "./schema-rules.ts"
-import { type Picked, ToolPicker } from "./tool-picker.tsx"
+import { ConnectorTool, type Picked, type ToolNeed } from "./tool-picker.tsx"
 
 type Of<K extends FlowNode["kind"]> = Extract<FlowNode, { kind: K }>
-type PanelProps<K extends FlowNode["kind"]> = { node: Of<K>; graph: FlowGraph; agent: Agent; routineId: string; set: (config: Of<K>["config"]) => void }
+type PanelProps<K extends FlowNode["kind"]> = { node: Of<K>; graph: FlowGraph; agent: Agent; routineId: string | undefined; set: (config: Of<K>["config"]) => void }
 
 export function StepPanel({ graph, node, agent, routineId, onChange, onRemove, onClose }: {
   graph: FlowGraph
@@ -25,7 +25,6 @@ export function StepPanel({ graph, node, agent, routineId, onChange, onRemove, o
   onRemove: () => void
   onClose: () => void
 }) {
-  const Panel = PANELS[node.kind] as (p: PanelProps<FlowNode["kind"]>) => ReactNode
   return (
     <aside aria-label={nodeTitle(node)} className="flex w-full flex-col gap-5 overflow-auto border-subtle p-5 md:w-88 md:shrink-0 md:border-l">
       <div className="flex items-center gap-2.5">
@@ -41,7 +40,7 @@ export function StepPanel({ graph, node, agent, routineId, onChange, onRemove, o
       <Field label={t("flows.panel.label")}>
         <Input value={node.label ?? ""} placeholder={nodeTitle({ ...node, label: undefined } as FlowNode)} onChange={(e) => onChange({ ...node, label: e.target.value.slice(0, 80) || undefined } as FlowNode)} />
       </Field>
-      <Panel node={node} graph={graph} agent={agent} routineId={routineId} set={(config) => onChange({ ...node, config } as FlowNode)} />
+      <StepFields node={node} graph={graph} agent={agent} routineId={routineId} onChange={onChange} />
       {node.kind !== "trigger" && (
         <Button size="sm" variant="ghost" className="self-start text-danger" onPress={onRemove}>
           <Trash2 />
@@ -50,6 +49,13 @@ export function StepPanel({ graph, node, agent, routineId, onChange, onRemove, o
       )}
     </aside>
   )
+}
+
+// A step's own settings, by kind: the side panel's body, and a step opened in New routine (no routine yet, so
+// nothing to test against: routineId undefined hides Test now).
+export function StepFields({ node, graph, agent, routineId, onChange }: { node: FlowNode; graph: FlowGraph; agent: Agent; routineId: string | undefined; onChange: (node: FlowNode) => void }) {
+  const Panel = PANELS[node.kind] as (p: PanelProps<FlowNode["kind"]>) => ReactNode
+  return <Panel node={node} graph={graph} agent={agent} routineId={routineId} set={(config) => onChange({ ...node, config } as FlowNode)} />
 }
 
 const ON = ["manual", "schedule", "once", "monthly", "dayStart", "watch", "message", "webhook"] as const
@@ -87,7 +93,7 @@ const PANELS: { [K in FlowNode["kind"]]: (p: PanelProps<K>) => ReactNode } = {
         )}
         {watching && <WatchFields c={c} set={set} agent={agent} />}
         {(c.on === "dayStart" || c.on === "webhook" || c.on === "manual") && <p className="text-sm text-muted">{t(`flows.triggerHint.${c.on}`)}</p>}
-        {c.on !== "dayStart" && c.on !== "webhook" && c.on !== "manual" && <TestTrigger run={() => testOf({ params: { id: routineId }, payload: { graph } })} />}
+        {routineId && c.on !== "dayStart" && c.on !== "webhook" && c.on !== "manual" && <TestTrigger run={() => testOf({ params: { id: routineId }, payload: { graph } })} />}
       </>
     )
   },
@@ -98,6 +104,7 @@ const PANELS: { [K in FlowNode["kind"]]: (p: PanelProps<K>) => ReactNode } = {
       <>
         <ToolChoice
           agent={agent}
+          need="any"
           serverId={c.serverId}
           tool={c.tool}
           args={c.args}
@@ -110,7 +117,7 @@ const PANELS: { [K in FlowNode["kind"]]: (p: PanelProps<K>) => ReactNode } = {
             <Field label={t("flows.panel.retries")} hint={t("flows.panel.retriesHint")}>
               <Select value={String(c.retries ?? 1)} onChange={(v) => set({ ...c, retries: Number(v) })} options={[0, 1, 2, 3].map((n) => ({ value: String(n), label: t("flows.panel.retryCount", { count: n }) }))} />
             </Field>
-            <TestStep routineId={routineId} graph={graph} nodeId={node.id} />
+            {routineId && <TestStep routineId={routineId} graph={graph} nodeId={node.id} />}
           </>
         )}
       </>
@@ -219,9 +226,10 @@ function OtherChannels({ agent, serverId, tool, more, onMore }: { agent: Agent; 
 }
 
 // The tool of a step: picked from the connectors, then its inputs as a form.
-function ToolChoice({ agent, readsOnly, serverId, tool, args, sources, onTool, onArgs }: {
+// The tool of a step or a watch: the connector, then its tool (the likeliest already chosen), then its inputs.
+function ToolChoice({ agent, need, serverId, tool, args, sources, onTool, onArgs }: {
   agent: Agent
-  readsOnly?: boolean
+  need: ToolNeed
   serverId: string
   tool: string
   args: Record<string, unknown>
@@ -229,44 +237,10 @@ function ToolChoice({ agent, readsOnly, serverId, tool, args, sources, onTool, o
   onTool: (p: Picked) => void
   onArgs: (args: Record<string, unknown>) => void
 }) {
-  // The picker opens in place, with its own way back: never a dialog over the dialog (New routine) or the panel.
-  const [picking, setPicking] = useState(false)
-  if (picking)
-    return (
-      <div className="flex flex-col gap-4">
-        <Button size="sm" variant="ghost" className="-ml-2 self-start" onPress={() => setPicking(false)}>
-          <ChevronLeft />
-          {t("deliver.back")}
-        </Button>
-        <ToolPicker
-          agent={agent}
-          only={readsOnly ? "read" : undefined}
-          onPick={(p) => {
-            onTool(p)
-            setPicking(false)
-          }}
-        />
-      </div>
-    )
-  if (!tool)
-    return (
-      <div className="flex flex-col gap-2">
-        <Button variant="secondary" className="self-start" onPress={() => setPicking(true)}>
-          <Plus />
-          {t("flows.pickTool")}
-        </Button>
-        {readsOnly && <span className="text-sm text-dim">{t("flows.pickWatchHint")}</span>}
-      </div>
-    )
   return (
     <>
-      <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate font-mono text-sm">{tool}</span>
-        <Button size="sm" variant="ghost" onPress={() => setPicking(true)}>
-          {t("flows.panel.change")}
-        </Button>
-      </div>
-      <ToolInputs agent={agent} serverId={serverId} tool={tool} args={args} sources={sources} onArgs={onArgs} />
+      <ConnectorTool agent={agent} need={need} serverId={serverId} tool={tool} onPick={onTool} />
+      {serverId && tool && <ToolInputs agent={agent} serverId={serverId} tool={tool} args={args} sources={sources} onArgs={onArgs} />}
     </>
   )
 }
@@ -288,7 +262,7 @@ export function WatchFields({ c, set, agent }: { c: Trigger; set: (c: Trigger) =
         {(
           <ToolChoice
             agent={agent}
-            readsOnly
+            need={c.on === "message" ? "message" : "watch"}
             serverId={c.serverId ?? ""}
             tool={c.tool ?? ""}
             args={c.args ?? {}}

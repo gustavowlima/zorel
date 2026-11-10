@@ -171,7 +171,7 @@ function FileSkills() {
       action={all.length > 0 && <span className="text-sm text-muted tabular-nums">{t("skills.inUse", { count: inUse })}</span>}
     >
       <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["fileSkills"])} />
-      {!reading.loading && !reading.failed && all.length === 0 && <EmptyState icon={<FolderOpen />} title={t("skills.noFiles")} hint={t("skills.noFilesHint")} />}
+      {!reading.loading && !reading.failed && all.length === 0 && <EmptyState inset icon={<FolderOpen />} title={t("skills.noFiles")} hint={t("skills.noFilesHint")} />}
       {all.length > 0 && (
         <div className="flex items-center gap-2">
           <SearchInput size="sm" className="flex-1" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("skills.search", { count: all.length })} aria-label={t("common.search")} />
