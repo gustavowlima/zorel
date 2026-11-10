@@ -13,7 +13,7 @@ import { DataDir } from "./chat.ts"
 import { type Repository, type RoutineRow, Store } from "./db.ts"
 import { Engines } from "./engines.ts"
 import { flowTiming, type FlowHooks, onFlowTurn, recoverDeliveries, resumeFlow, runFlow, testTrigger } from "./flows.ts"
-import { resolveStep, runRoutine, tick } from "./routines.ts"
+import { resolveStep, runRoutine, tick, watches } from "./routines.ts"
 import { Runtime, type RunStepApproval, type RuntimeService } from "./runtime.ts"
 import { createRoutineFor, freshItems } from "./schedule.ts"
 import { Secrets } from "./secrets.ts"
@@ -49,6 +49,7 @@ const mcp = Bun.serve({
 const sent: Array<{ text: string; outside: boolean }> = []
 const approvals: RunStepApproval[] = []
 let approvalAnswer: "approved" | "denied" | "expired" = "approved"
+let approvalReason: string | null = null
 let reply = "Two new items.\nOutcome: something new"
 const StubRuntime = Layer.effect(
   Runtime,
@@ -65,7 +66,7 @@ const StubRuntime = Layer.effect(
       requestApproval: (req: RunStepApproval) =>
         Effect.sync(() => {
           approvals.push(req)
-          return approvalAnswer
+          return { outcome: approvalAnswer, reason: approvalReason }
         }),
       finished: Stream.empty,
       subscribeStatus: Stream.empty,
@@ -101,6 +102,7 @@ beforeEach(() => {
   approvals.length = 0
   failNext.length = 0
   approvalAnswer = "approved"
+  approvalReason = null
   reply = "Two new items.\nOutcome: something new"
 })
 
@@ -353,4 +355,50 @@ test("Ask me: approved goes on, declined without a no path ends quietly, unanswe
   await go(runRoutine(r.id, `now-${Date.now() + 2}`))
   expect((await settled(r.id)).outcome).toBe("needs")
   expect(calls).toEqual([])
+})
+
+test("Ask me with the text edited first: the next step gets your text", async () => {
+  const askMe: FlowNode = { id: "ask", kind: "approval", ...at, config: { summary: "Post this?" } }
+  const g = chain(trigger(), think, askMe, post())
+  const graph = { ...g, edges: g.edges.map((e) => (e.from === "ask" ? { ...e, branch: "yes" as const } : e)) }
+  // the post takes what the step before gave: here the agent's text, unless you changed it
+  const r = await routineWith({ ...graph, nodes: graph.nodes.map((n) => (n.id === "post" ? { ...n, config: { ...(n.config as object), args: { channel: "C1", text: { $from: "think" } } } } : n)) as FlowNode[] })
+  approvalReason = "Two new items, both minor."
+  await go(runRoutine(r.id, `now-${Date.now()}`))
+  await settled(r.id)
+  // a field bound to the agent's step keeps the agent's words; the edited text flows on as the value before
+  expect(calls.find((c) => c.name === "post_message")!.args).toEqual({ channel: "C1", text: "Two new items." })
+  const free = await routineWith({ ...graph, nodes: graph.nodes.map((n) => (n.id === "post" ? { ...n, kind: "agent", config: { prompt: "Post it" } } : n)) as FlowNode[] })
+  sent.length = 0
+  await go(runRoutine(free.id, `now-${Date.now() + 1}`))
+  await settled(free.id)
+  expect(sent.at(-1)!.text).toContain("Two new items, both minor.")
+})
+
+test("a watch reads every channel; a message trigger starts one run per new message; the filter keeps what matters", async () => {
+  const r = await routineWith(chain(trigger("webhook"), { id: "fin", kind: "end", ...at, config: {} }))
+  listText = JSON.stringify({ items: [{ id: "m1", text: "deploy failed" }, { id: "m2", text: "lunch?" }] })
+  const watch = { serverId: server.id, tool: "list_items", args: { q: "a" }, more: [{ q: "b" }], filter: "deploy, urgent", each: true }
+  await go(withStore((s) => s.updateRoutine(r.id, { watch, watchSeen: [], watchAt: null })))
+  calls.length = 0
+  await go(watches)
+  // (other routines of this file watch too: only this one's calls count)
+  expect(calls.map((c) => c.args).filter((a) => ["a", "b"].includes((a as { q?: string }).q ?? ""))).toEqual([{ q: "a" }, { q: "b" }])
+  await waitFor(async () => (await go(withStore((s) => s.routineRunsOf(r.id)))).length >= 1)
+  const runs = await go(withStore((s) => s.routineRunsOf(r.id)))
+  // the same item read from both channels is one item; "lunch?" is filtered out
+  expect(runs).toHaveLength(1)
+  const test = await go(testTrigger((await go(withStore((s) => s.routine(r.id))))!, { on: "message", serverId: server.id, tool: "list_items", args: { q: "a" }, more: [{ q: "b" }], filter: "deploy" }, "UTC"))
+  expect(test.items.map((i) => i.verdict)).toEqual(["seen", "seen", "seen", "seen"])
+})
+
+test("the first agent step gets the last run's report (what changed since then), as a spec 012 run does", async () => {
+  const r = await routineWith(chain(trigger(), think))
+  await go(runRoutine(r.id, `now-${Date.now()}`))
+  await settled(r.id)
+  sent.length = 0
+  await go(runRoutine(r.id, `now-${Date.now() + 1}`))
+  await settled(r.id)
+  expect(sent.at(-1)!.text).toContain("The previous run")
+  expect(sent.at(-1)!.text).toContain("Two new items.")
 })

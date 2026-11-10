@@ -4,6 +4,7 @@ status: active
 updated: 2026-11-05
 
 ## current
+- New routine critique + layout (2026-11-10, 23/40 before): `Field` = label 8px above the control (was 6, off-scale), the hint outside the <label> (not in the control's name), 6px under it; `Dialog` padding 24px (was 20) and sizes sm 384 / lg 576 / xl 672; `ChoiceCards list` = one card, 40px radio rows (icon, title, line); `Segmented` (non-fill) and `MultiSegmented` hug their content (`self-start`) and share one selected look, `bg-control-active` (translucent: a `surface` fill was darker than a raised dialog and vanished there); `Dialog anchor="top"` keeps a tabbed dialog's title still while its height changes; a dialog body is flex-1 so a form can pin its foot and scroll its middle. Long forms in a dialog: 24px between groups, 12–16 inside, a bordered foot with the summary (or the first missing thing in warning) and 32px buttons. Destinations add in place (no dialog over a dialog).
 
 - --z-* tokens in apps/web/src/styles.css; dark default, light via [data-theme="light"]
 - @theme inline exposes tokens as utilities (bg-surface, text-muted, border-subtle, h-control*)

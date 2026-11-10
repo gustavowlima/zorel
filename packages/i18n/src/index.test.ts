@@ -29,3 +29,17 @@ test("formatters", () => {
   expect(formatAge(0, now)).toBe("") // missing timestamps from old data have no age
   expect(formatAge(1, now)).toBe("")
 })
+
+test("pt-BR has exactly en's keys, plurals where en has them, and the same {placeholders}", async () => {
+  const { en } = await import("./en.ts")
+  const { ptBR } = await import("./pt-BR.ts")
+  type Node = string | { readonly [k: string]: Node }
+  const leaves = (n: Node, path = ""): Array<[string, string]> => (typeof n === "string" ? [[path, n]] : Object.entries(n).flatMap(([k, v]) => leaves(v, path ? `${path}.${k}` : k)))
+  const a = new Map(leaves(en as Node))
+  const b = new Map(leaves(ptBR as Node))
+  expect([...b.keys()].filter((k) => !a.has(k))).toEqual([])
+  expect([...a.keys()].filter((k) => !b.has(k))).toEqual([])
+  const holes = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort()
+  const off = [...a].filter(([k, v]) => JSON.stringify(holes(v)) !== JSON.stringify(holes(b.get(k)!))).map(([k]) => k)
+  expect(off).toEqual([])
+})

@@ -106,6 +106,18 @@ const keyOf = (item: unknown) => {
 export function freshItems(seen: ReadonlyArray<string> | null, items: ReadonlyArray<unknown>): { fresh: unknown[]; seen: string[] } {
   const keys = items.map(keyOf)
   const known = new Set(seen ?? [])
-  const fresh = seen === null ? [] : items.filter((_, i) => !known.has(keys[i]!))
+  // An item twice in one read (two channels, a tool that repeats it) is new once.
+  const fresh = seen === null ? [] : items.filter((_, i) => !known.has(keys[i]!) && keys.indexOf(keys[i]!) === i)
   return { fresh, seen: [...new Set([...keys, ...(seen ?? [])])].slice(0, SEEN_KEPT) }
+}
+
+// Spec 013: the "only when…" filter of a watch: items holding one of its words or phrases (comma or line separated,
+// any case). No words: every item.
+export function filterItems(items: ReadonlyArray<unknown>, filter: string | undefined): unknown[] {
+  const words = (filter ?? "").split(/[,\n]/).map((w) => w.trim().toLowerCase()).filter(Boolean)
+  if (!words.length) return [...items]
+  return items.filter((item) => {
+    const text = (typeof item === "string" ? item : JSON.stringify(item)).toLowerCase()
+    return words.some((w) => text.includes(w))
+  })
 }

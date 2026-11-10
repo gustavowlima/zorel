@@ -5,11 +5,12 @@ import { formatTime, t } from "@zorel/i18n"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { type ReactNode, useState } from "react"
-import { catalogAtom, mutations, useMutation } from "../client.ts"
-import { Badge, Button, CodeBlock, Dialog, Field, IconButton, Input, Play, Segmented, Select, Switch, Textarea, Trash2, X } from "@/ui"
+import { catalogAtom, mutations, serversAtom, useList, useMutation } from "../client.ts"
+import { Badge, Button, ChevronLeft, CodeBlock, Plus, Rows, SettingRow, Field, IconButton, Input, Play, Segmented, Select, Switch, Textarea, Trash2, X } from "@/ui"
 import { KindTile, nodeTitle } from "./flow-kinds.tsx"
 import { earlierValues } from "./flow-model.ts"
 import { SchemaForm } from "./schema-form.tsx"
+import { samples } from "./schema-rules.ts"
 import { type Picked, ToolPicker } from "./tool-picker.tsx"
 
 type Of<K extends FlowNode["kind"]> = Extract<FlowNode, { kind: K }>
@@ -56,6 +57,7 @@ const EVERY = [1, 5, 15, 60] as const
 
 const PANELS: { [K in FlowNode["kind"]]: (p: PanelProps<K>) => ReactNode } = {
   trigger: ({ node, graph, agent, routineId, set }) => {
+    const testOf = useMutation(mutations.testTrigger)
     const c = node.config
     const watching = c.on === "watch" || c.on === "message"
     return (
@@ -83,30 +85,9 @@ const PANELS: { [K in FlowNode["kind"]]: (p: PanelProps<K>) => ReactNode } = {
             <Input type="time" value={c.time ?? ""} onChange={(e) => set({ ...c, time: e.target.value || undefined })} />
           </Field>
         )}
-        {watching && (
-          <ToolChoice
-            agent={agent}
-            readsOnly
-            serverId={c.serverId ?? ""}
-            tool={c.tool ?? ""}
-            args={c.args ?? {}}
-            sources={[]}
-            onTool={(p) => set({ ...c, serverId: p.server.id, tool: p.tool.name, args: {} })}
-            onArgs={(args) => set({ ...c, args })}
-          />
-        )}
-        {watching && (
-          <Field label={t("flows.panel.every")} hint={t("flows.panel.everyHint")}>
-            <Select value={String(c.every ?? 5)} onChange={(v) => set({ ...c, every: Number(v) as (typeof EVERY)[number] })} options={EVERY.map((m) => ({ value: String(m), label: t("flows.every", { count: m }) }))} />
-          </Field>
-        )}
-        {watching && (
-          <Switch isSelected={!!c.lookFirst} onChange={(lookFirst) => set({ ...c, lookFirst })}>
-            {t("flows.panel.lookFirst")}
-          </Switch>
-        )}
+        {watching && <WatchFields c={c} set={set} agent={agent} />}
         {(c.on === "dayStart" || c.on === "webhook" || c.on === "manual") && <p className="text-sm text-muted">{t(`flows.triggerHint.${c.on}`)}</p>}
-        {c.on !== "dayStart" && c.on !== "webhook" && c.on !== "manual" && <TestTrigger routineId={routineId} graph={graph} />}
+        {c.on !== "dayStart" && c.on !== "webhook" && c.on !== "manual" && <TestTrigger run={() => testOf({ params: { id: routineId }, payload: { graph } })} />}
       </>
     )
   },
@@ -137,9 +118,12 @@ const PANELS: { [K in FlowNode["kind"]]: (p: PanelProps<K>) => ReactNode } = {
   },
 
   agent: ({ node, agent, set }) => (
-    <Field label={t("flows.panel.prompt")} hint={t("flows.panel.promptHint", { agent: agent.name })}>
-      <Textarea rows={6} value={node.config.prompt} onChange={(e) => set({ prompt: e.target.value.slice(0, 8000) })} />
-    </Field>
+    <>
+      <Field label={t("flows.panel.prompt")} hint={t("flows.panel.promptHint", { agent: agent.name })}>
+        <Textarea rows={6} value={node.config.prompt} onChange={(e) => set({ prompt: e.target.value.slice(0, 8000) })} />
+      </Field>
+      <CanUse agent={agent} />
+    </>
   ),
 
   check: ({ node, set }) => (
@@ -192,6 +176,48 @@ const PANELS: { [K in FlowNode["kind"]]: (p: PanelProps<K>) => ReactNode } = {
   end: () => <p className="text-sm text-muted">{t("flows.endHint")}</p>
 }
 
+// What the step's agent may reach: its connectors with the grant it has (the same rule the server applies).
+function CanUse({ agent }: { agent: Agent }) {
+  const servers = useList(serversAtom).filter((s) => s.enabled && (s.projectId === null || s.projectId === agent.projectId))
+  const reach = servers.flatMap((s) => {
+    const grant = agent.permissions?.grants[s.id] ?? (s.mode === "read" ? "read" : "write")
+    return grant === "none" ? [] : [t(grant === "read" ? "flows.panel.readOnly" : "flows.panel.readWrite", { name: s.name })]
+  })
+  return (
+    <Rows>
+      <SettingRow title={t("flows.panel.agent")} hint={agent.name} />
+      <SettingRow title={t("flows.panel.canUse")} hint={reach.length ? reach.join(", ") : t("flows.panel.noConnectors")} />
+    </Rows>
+  )
+}
+
+// More channels for a watch (FR-014, US4): the same tool read with other inputs, each its own form.
+const MAX_MORE = 9
+function OtherChannels({ agent, serverId, tool, more, onMore }: { agent: Agent; serverId: string; tool: string; more: ReadonlyArray<Record<string, unknown>>; onMore: (m: Array<Record<string, unknown>>) => void }) {
+  return (
+    <div className="flex flex-col gap-3">
+      {more.map((args, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: the channels are edited in place, never reordered
+        <div key={i} className="flex flex-col gap-3 rounded-card border border-subtle p-3">
+          <div className="flex items-center justify-between text-sm text-muted">
+            {t("flows.panel.channel", { n: i + 2 })}
+            <IconButton size="xs" label={t("flows.panel.removeChannel")} onPress={() => onMore(more.filter((_, j) => j !== i))}>
+              <Trash2 />
+            </IconButton>
+          </div>
+          <ToolInputs agent={agent} serverId={serverId} tool={tool} args={args} sources={[]} onArgs={(a) => onMore(more.map((x, j) => (j === i ? a : x)))} />
+        </div>
+      ))}
+      {more.length < MAX_MORE && (
+        <Button size="sm" variant="ghost" className="self-start" onPress={() => onMore([...more, {}])}>
+          <Plus />
+          {t("flows.panel.addChannel")}
+        </Button>
+      )}
+    </div>
+  )
+}
+
 // The tool of a step: picked from the connectors, then its inputs as a form.
 function ToolChoice({ agent, readsOnly, serverId, tool, args, sources, onTool, onArgs }: {
   agent: Agent
@@ -203,29 +229,34 @@ function ToolChoice({ agent, readsOnly, serverId, tool, args, sources, onTool, o
   onTool: (p: Picked) => void
   onArgs: (args: Record<string, unknown>) => void
 }) {
+  // The picker opens in place, with its own way back: never a dialog over the dialog (New routine) or the panel.
   const [picking, setPicking] = useState(false)
-  const picker = (
-    <Dialog title={t("flows.picker.title")} size="lg" isOpen={picking} onOpenChange={setPicking}>
-      {(close) => (
+  if (picking)
+    return (
+      <div className="flex flex-col gap-4">
+        <Button size="sm" variant="ghost" className="-ml-2 self-start" onPress={() => setPicking(false)}>
+          <ChevronLeft />
+          {t("deliver.back")}
+        </Button>
         <ToolPicker
           agent={agent}
           only={readsOnly ? "read" : undefined}
           onPick={(p) => {
             onTool(p)
-            close()
+            setPicking(false)
           }}
         />
-      )}
-    </Dialog>
-  )
+      </div>
+    )
   if (!tool)
     return (
-      <>
+      <div className="flex flex-col gap-2">
         <Button variant="secondary" className="self-start" onPress={() => setPicking(true)}>
+          <Plus />
           {t("flows.pickTool")}
         </Button>
-        {picker}
-      </>
+        {readsOnly && <span className="text-sm text-dim">{t("flows.pickWatchHint")}</span>}
+      </div>
     )
   return (
     <>
@@ -236,7 +267,6 @@ function ToolChoice({ agent, readsOnly, serverId, tool, args, sources, onTool, o
         </Button>
       </div>
       <ToolInputs agent={agent} serverId={serverId} tool={tool} args={args} sources={sources} onArgs={onArgs} />
-      {picker}
     </>
   )
 }
@@ -246,13 +276,55 @@ function ToolInputs({ agent, serverId, tool, args, sources, onArgs }: { agent: A
   const found = catalog?.tools.find((x) => x.name === tool)
   if (!catalog) return null
   if (!found) return <p className="text-sm text-danger">{t("flows.panel.toolGone", { tool })}</p>
-  return <SchemaForm schema={found.inputSchema} value={args} onChange={onArgs} sources={sources} serverId={serverId} tools={catalog.tools} />
+  return <SchemaForm schema={found.inputSchema} value={args} onChange={onArgs} sources={sources} serverId={serverId} tools={catalog.tools} agentId={agent.id} />
+}
+
+type Trigger = Extract<FlowNode, { kind: "trigger" }>["config"]
+// What a watch reads and how (spec 013): the connector's read tool and its inputs (as a form), other channels, the
+// "only when" filter, how often, and the cheap check. The editor's trigger panel and New routine share it.
+export function WatchFields({ c, set, agent }: { c: Trigger; set: (c: Trigger) => void; agent: Agent }) {
+  return (
+    <>
+        {(
+          <ToolChoice
+            agent={agent}
+            readsOnly
+            serverId={c.serverId ?? ""}
+            tool={c.tool ?? ""}
+            args={c.args ?? {}}
+            sources={[]}
+            onTool={(p) => set({ ...c, serverId: p.server.id, tool: p.tool.name, args: {} })}
+            onArgs={(args) => set({ ...c, args })}
+          />
+        )}
+        {/* The rest only once there's a tool: what it reads decides what's worth setting. */}
+        {c.tool && c.serverId && (
+          <>
+        <OtherChannels agent={agent} serverId={c.serverId} tool={c.tool} more={c.more ?? []} onMore={(more) => set({ ...c, more: more.length ? more : undefined })} />
+        {(
+          <Field label={t("flows.panel.filter")} hint={t("flows.panel.filterHint")}>
+            <Input value={c.filter ?? ""} placeholder={t("flows.panel.filterPlaceholder")} onChange={(e) => set({ ...c, filter: e.target.value.slice(0, 500) || undefined })} />
+          </Field>
+        )}
+        {(
+          <Field label={t("flows.panel.every")} hint={t("flows.panel.everyHint")}>
+            <Select value={String(c.every ?? 5)} onChange={(v) => set({ ...c, every: Number(v) as (typeof EVERY)[number] })} options={EVERY.map((m) => ({ value: String(m), label: t("flows.every", { count: m }) }))} />
+          </Field>
+        )}
+        {(
+          <Switch isSelected={!!c.lookFirst} onChange={(lookFirst) => set({ ...c, lookFirst })}>
+            {t("flows.panel.lookFirst")}
+          </Switch>
+        )}
+          </>
+        )}
+    </>
+  )
 }
 
 // Test now for the trigger (FR-015): what it would find now. Nothing runs and nothing is marked seen.
-const VERDICT_TONE = { runs: "accent", seen: "neutral", "checked-out": "neutral" } as const
-function TestTrigger({ routineId, graph }: { routineId: string; graph: FlowGraph }) {
-  const test = useMutation(mutations.testTrigger)
+const VERDICT_TONE = { runs: "accent", seen: "neutral", filtered: "neutral", "checked-out": "neutral" } as const
+export function TestTrigger({ run }: { run: () => Promise<TriggerTest> }) {
   const [result, setResult] = useState<TriggerTest>()
   const [failed, setFailed] = useState(false)
   const [running, setRunning] = useState(false)
@@ -266,7 +338,7 @@ function TestTrigger({ routineId, graph }: { routineId: string; graph: FlowGraph
         onPress={() => {
           setRunning(true)
           setFailed(false)
-          void test({ params: { id: routineId }, payload: { graph } })
+          void run()
             .then(setResult)
             .catch(() => setFailed(true))
             .finally(() => setRunning(false))
@@ -314,7 +386,14 @@ function TestStep({ routineId, graph, nodeId }: { routineId: string; graph: Flow
         onPress={() => {
           setRunning(true)
           void test({ params: { id: routineId }, payload: { graph, nodeId } })
-            .then(setResult)
+            .then((r) => {
+              setResult(r)
+              // What it gave: its fields are offered to the steps after it.
+              if (!r.dry && !r.error)
+                try {
+                  samples.set(nodeId, JSON.parse(r.output))
+                } catch {}
+            })
             .catch(() => setResult({ output: "", dry: false, error: t("flows.panel.testFailed") }))
             .finally(() => setRunning(false))
         }}

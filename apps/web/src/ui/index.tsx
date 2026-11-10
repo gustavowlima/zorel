@@ -24,7 +24,7 @@ export { Menu, MenuItem, MenuSeparator } from "./menu"
 export { AgentPointer } from "./pointer"
 export { type CommandItem, CommandPalette, type CommandSection } from "./command"
 export { Fold, Marker, MotionConfig, SlideWidth, spring, Width } from "./motion"
-export { Segmented } from "./segmented"
+export { MultiSegmented, Segmented } from "./segmented"
 export { StepSlider } from "./slider"
 export { FileIcon } from "./file-icon"
 export { type FileStatus, StatusMark } from "./status-mark"
@@ -44,14 +44,18 @@ export { Switch } from "./switch"
 export { Tab, TabList, TabPanel, Tabs } from "./tabs"
 export { Tooltip } from "./tooltip"
 
+// A field: its label 8px above the control, a hint under it in the dim tone. The hint sits outside the <label>, so it
+// isn't read as part of the control's name.
 export function Field({ label, hint, children, className }: { label: string; hint?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    // biome-ignore lint/a11y/noLabelWithoutControl: `children` is always a control (Input, Select, Textarea, ModelPicker)
-    <label className={cx("flex flex-col gap-1.5 text-sm text-muted", className)}>
-      {label}
-      {children}
-      {hint && <span className="text-sm text-dim">{hint}</span>}
-    </label>
+    <div className={cx("flex flex-col gap-2", className)}>
+      {/* biome-ignore lint/a11y/noLabelWithoutControl: `children` is always a control (Input, Select, Textarea, ModelPicker) */}
+      <label className="flex flex-col gap-2 text-sm text-muted">
+        {label}
+        {children}
+      </label>
+      {hint && <span className="-mt-0.5 text-sm text-dim">{hint}</span>}
+    </div>
   )
 }
 

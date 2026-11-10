@@ -11,7 +11,7 @@ import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { type PointerEvent, useRef, useState } from "react"
 import { mutations, preferencesAtom, routineWeekAtom, useMutation, useReading, routinesAtom } from "../client.ts"
-import { go } from "../state.ts"
+import { go, type Route } from "../state.ts"
 import { lanesOf, moveCron } from "./week-lanes.ts"
 import { Button, ChevronLeft, ChevronRight, cx, Dot, IconButton, ListRow, Rows, Section, Tooltip } from "@/ui"
 
@@ -49,7 +49,9 @@ const LOOK: Record<"needs" | "something" | "nothing" | "planned", string> = {
 const CASCADE_PX = 14 // how far each overlapping block steps right
 const SNAP = 15 // minutes a drag moves by
 
-type Block = { key: string; day: number; minutes: number; title: string; meta: string; look: keyof typeof LOOK; chatId: string | undefined; routine?: Routine | undefined }
+// A planned run opens what it will run: a routine's steps (spec 013), else its chat.
+const plannedOpen = (r: Routine | undefined): Route | undefined => (!r ? undefined : r.version != null ? { view: "routine-flow", id: r.id } : { view: "chat", id: r.chatId })
+type Block = { key: string; day: number; minutes: number; title: string; meta: string; look: keyof typeof LOOK; open: Route | undefined; routine?: Routine | undefined }
 type Drag = { key: string; x: number; y: number; dx: number; dy: number; width: number }
 
 
@@ -69,11 +71,11 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
   const blockOf = (run: RoutineRun): Block | undefined => {
     const r = byId.get(run.routineId)
     if (!r || !run.outcome) return undefined
-    return { key: run.id, day: Math.floor((run.createdAt - from) / DAY), minutes: minutesOf(run.createdAt), title: r.name, meta: run.summary || t(`routines.runs.outcome.${run.outcome}`), look: run.outcome, chatId: r.chatId }
+    return { key: run.id, day: Math.floor((run.createdAt - from) / DAY), minutes: minutesOf(run.createdAt), title: r.name, meta: run.summary || t(`routines.runs.outcome.${run.outcome}`), look: run.outcome, open: run.version != null ? { view: "routine-run", id: r.id, runId: run.id } : { view: "chat", id: r.chatId } }
   }
   const blocks: Block[] = [
     ...runs.map(blockOf).filter((b): b is Block => !!b),
-    ...(week?.planned ?? []).map((p, i) => ({ key: `p${i}`, day: Math.floor((p.at - from) / DAY), minutes: minutesOf(p.at), title: byId.get(p.routineId)?.name ?? "", meta: t("routines.legend.planned"), look: "planned" as const, chatId: byId.get(p.routineId)?.chatId, routine: byId.get(p.routineId) }))
+    ...(week?.planned ?? []).map((p, i) => ({ key: `p${i}`, day: Math.floor((p.at - from) / DAY), minutes: minutesOf(p.at), title: byId.get(p.routineId)?.name ?? "", meta: t("routines.legend.planned"), look: "planned" as const, open: plannedOpen(byId.get(p.routineId)), routine: byId.get(p.routineId) }))
   ]
   const today = Math.floor((Date.now() - from) / DAY)
   const quiet = profile?.quietHours
@@ -206,7 +208,7 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
                             onPress={() => {
                               const wasDrag = dragged.current
                               dragged.current = false
-                              if (!wasDrag && b.chatId) go({ view: "chat", id: b.chatId })
+                              if (!wasDrag && b.open) go(b.open)
                             }}
                             className={cx(box, "inset-0 cursor-grab", LOOK[b.look], dragging && "ring-2 ring-accent")}
                           >
@@ -225,7 +227,7 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
                   }
                   return (
                     <Tooltip key={b.key} content={`${b.title}: ${b.meta}`}>
-                      <Button variant="ghost" aria-label={`${b.title}: ${b.meta}`} onPress={() => b.chatId && go({ view: "chat", id: b.chatId })} className={cx(box, LOOK[b.look], "hover:z-40")} style={style}>
+                      <Button variant="ghost" aria-label={`${b.title}: ${b.meta}`} onPress={() => b.open && go(b.open)} className={cx(box, LOOK[b.look], "hover:z-40")} style={style}>
                         {body}
                       </Button>
                     </Tooltip>
@@ -243,7 +245,7 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
               <Rows>
                 {needs.map((run) => {
                   const r = byId.get(run.routineId)
-                  return <ListRow key={run.id} label={run.summary} title={run.summary} hint={r?.name} onPress={() => r && go({ view: "chat", id: r.chatId })} />
+                  return <ListRow key={run.id} label={run.summary} title={run.summary} hint={r?.name} onPress={() => r && go(run.version != null ? { view: "routine-run", id: r.id, runId: run.id } : { view: "chat", id: r.chatId })} />
                 })}
               </Rows>
             </Section>

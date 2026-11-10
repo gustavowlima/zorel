@@ -3,7 +3,7 @@
 // Chaining: a reply that mentions another member queues that member's turn (up to MAX_DEPTH without a message from you).
 import { APPROVAL_MS } from "./engines/session.ts"
 import { type Access, type Agent, type Chat, type Effort, type FailoverTarget, type FailureReason, type FileChange, MAX_RUNNING_DEFAULT, type Memory, type Step, type Switch } from "@zorel/contracts"
-import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
+import { type Approval, ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
 import { Cause, Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
 import { ask, Busy, consolidate, DataDir, knownNames, mapEarlierFacts, members, NotFound, pinBudget, prepare } from "./chat.ts"
@@ -184,7 +184,7 @@ export interface RuntimeService {
   readonly decide: (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">, reason?: string) => Effect.Effect<void, ApprovalNotFound>
   // Spec 013: a routine flow's step waits for the person (a write, an "Ask me"), with no turn behind it. The card goes
   // to the routine's chat and Needs you like any other; "Always allow" saves the rule on the agent.
-  readonly requestApproval: (req: RunStepApproval) => Effect.Effect<ApprovalOutcome>
+  readonly requestApproval: (req: RunStepApproval) => Effect.Effect<{ readonly outcome: ApprovalOutcome; readonly reason: string | null }>
   readonly subscribeChat: (chatId: string) => Stream.Stream<ChatEvent, ChatNotFound>
   readonly subscribeStatus: Stream.Stream<ChatStatus>
   // Every turn that ended, in any chat (spec 012: routine runs read their outcome from it).
@@ -209,6 +209,8 @@ export interface RunStepApproval {
   readonly args: string // the card's text, masked
   readonly alwaysKey: string | null
   readonly expiresMs?: number | undefined
+  // Told once the card exists (spec 013: an "Ask me" also goes to Telegram, with its id to answer by).
+  readonly notify?: ((approval: Approval) => Effect.Effect<void>) | undefined
 }
 
 const STEP_RESULT_CHARS = 4000 // of each step's output kept with the reply (its review after the turn)
@@ -1759,12 +1761,16 @@ export const makeRuntime = Effect.gen(function* () {
         const d = yield* Deferred.make<ApprovalOutcome>()
         waiting.set(approval.id, d)
         yield* publish(req.chatId, ev("approval", { approval }))
+        if (req.notify) yield* req.notify(approval).pipe(Effect.catchCause((c) => Effect.logWarning("approval notice failed", String(c))))
         const outcome = yield* Deferred.await(d).pipe(
           Effect.timeoutOption(Duration.millis(wait)),
           Effect.flatMap((o) => (o._tag === "Some" ? Effect.succeed(o.value) : expire(req.chatId, approval.id))),
           Effect.ensuring(Effect.sync(() => waiting.delete(approval.id)))
         )
-        return outcome
+        // The person's words with the decision ("Edit the text first" on an Ask me): kept on the row by decide.
+        const reason = answers.get(approval.id) ?? null
+        answers.delete(approval.id)
+        return { outcome, reason }
       }),
 
     subscribeChat: (chatId) =>

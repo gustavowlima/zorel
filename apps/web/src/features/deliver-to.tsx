@@ -4,58 +4,73 @@
 // nothing new; the server checks the whole destination again on save.
 import { type Agent, type ConnectorDestination, type JsonSchema, textFieldOf } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
-import { useState } from "react"
+import { type ReactNode, useState } from "react"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
-import { catalogAtom, serversAtom, useList } from "../client.ts"
-import { Button, Dialog, Field, IconButton, Plus, Rows, Select, SettingRow, Switch, Trash2 } from "@/ui"
+import { catalogAtom, mutations, serversAtom, useList, useMutation } from "../client.ts"
+import { Button, ChevronLeft, CodeBlock, Field, IconButton, Plus, Rows, Select, Send, SettingRow, Switch, Trash2 } from "@/ui"
 import { SchemaForm } from "./schema-form.tsx"
 import { type Picked, ToolPicker } from "./tool-picker.tsx"
 
 export const MAX_DESTINATIONS = 3
 
-export function ConnectorDestinations({ agent, value, onChange }: { agent: Agent; value: ReadonlyArray<ConnectorDestination>; onChange: (next: ConnectorDestination[]) => void }) {
+// lead: rows shown before the destinations in the same card (New routine: "Tell me here"). Adding one happens in
+// place, as a step with its own way back, never as a dialog over the dialog.
+// onAdding: told when a destination is being added (New routine holds Create until it's added or dropped).
+export function ConnectorDestinations({ agent, routineId, value, onChange, lead, onAdding }: { agent: Agent; routineId?: string | undefined; value: ReadonlyArray<ConnectorDestination>; onChange: (next: ConnectorDestination[]) => void; lead?: ReactNode; onAdding?: (adding: boolean) => void }) {
   const servers = useList(serversAtom)
-  const [adding, setAdding] = useState(false)
-  return (
-    <div className="flex flex-col gap-3">
-      {value.length > 0 && (
-        <Rows>
-          {value.map((d, i) => (
-            <SettingRow key={`${d.serverId}:${d.tool}:${d.textField}:${JSON.stringify(d.args)}`} title={`${servers.find((s) => s.id === d.serverId)?.name ?? t("flows.noConnector")} · ${d.tool}`} hint={t("deliver.into", { field: d.textField })}>
-              <Switch isSelected={!!d.inThread} onChange={(inThread) => onChange(value.map((x, j) => (j === i ? { ...x, inThread } : x)))}>
-                {t("deliver.inThread")}
-              </Switch>
-              <IconButton label={t("deliver.remove", { tool: d.tool })} onPress={() => onChange(value.filter((_, j) => j !== i))}>
-                <Trash2 />
-              </IconButton>
-            </SettingRow>
-          ))}
-        </Rows>
-      )}
-      {value.length < MAX_DESTINATIONS && (
-        <Button size="sm" variant="secondary" className="self-start" onPress={() => setAdding(true)}>
-          <Plus />
-          {t("deliver.add")}
+  const [adding, setAddingState] = useState(false)
+  const setAdding = (v: boolean) => {
+    setAddingState(v)
+    onAdding?.(v)
+  }
+  if (adding)
+    return (
+      <div className="flex flex-col gap-4">
+        <Button size="sm" variant="ghost" className="-ml-2 self-start" onPress={() => setAdding(false)}>
+          <ChevronLeft />
+          {t("deliver.back")}
         </Button>
-      )}
-      <p className="text-sm text-dim">{t("deliver.hint")}</p>
-      <Dialog title={t("deliver.title")} size="lg" isOpen={adding} onOpenChange={setAdding}>
-        {(close) => (
-          <NewDestination
-            agent={agent}
-            onAdd={(d) => {
-              onChange([...value, d])
-              close()
-            }}
-          />
+        <NewDestination
+          agent={agent}
+          routineId={routineId}
+          onAdd={(d) => {
+            onChange([...value, d])
+            setAdding(false)
+          }}
+        />
+      </div>
+    )
+  return (
+    <div className="flex flex-col gap-2">
+      <Rows>
+        {lead}
+        {value.map((d, i) => (
+          <SettingRow key={`${d.serverId}:${d.tool}:${d.textField}:${JSON.stringify(d.args)}`} icon={<Send />} title={`${servers.find((s) => s.id === d.serverId)?.name ?? t("flows.noConnector")} · ${d.tool}`} hint={t("deliver.into", { field: d.textField })}>
+            <Switch isSelected={!!d.inThread} onChange={(inThread) => onChange(value.map((x, j) => (j === i ? { ...x, inThread } : x)))}>
+              {t("deliver.inThread")}
+            </Switch>
+            <IconButton label={t("deliver.remove", { tool: d.tool })} onPress={() => onChange(value.filter((_, j) => j !== i))}>
+              <Trash2 />
+            </IconButton>
+          </SettingRow>
+        ))}
+        {value.length < MAX_DESTINATIONS && (
+          <SettingRow icon={<Plus />} title={t("deliver.add")} hint={t("deliver.addHint")}>
+            <Button size="sm" variant="secondary" onPress={() => setAdding(true)}>
+              {t("deliver.choose")}
+            </Button>
+          </SettingRow>
         )}
-      </Dialog>
+      </Rows>
+      <p className="text-sm text-dim">{t("deliver.hint")}</p>
     </div>
   )
 }
 
-function NewDestination({ agent, onAdd }: { agent: Agent; onAdd: (d: ConnectorDestination) => void }) {
+function NewDestination({ agent, routineId, onAdd }: { agent: Agent; routineId?: string | undefined; onAdd: (d: ConnectorDestination) => void }) {
+  const test = useMutation(mutations.testDelivery)
+  const [tested, setTested] = useState<{ output: string; error?: string }>()
   const [picked, setPicked] = useState<Picked>()
   const [args, setArgs] = useState<Record<string, unknown>>({})
   const [field, setField] = useState<string>()
@@ -92,7 +107,24 @@ function NewDestination({ agent, onAdd }: { agent: Agent; onAdd: (d: ConnectorDe
       )}
       {field && <Inputs agent={agent} picked={picked} field={field} args={args} onArgs={setArgs} />}
       {field && <p className="text-sm text-muted">{t("deliver.preview", { tool: picked.tool.name, field })}</p>}
-      <div className="flex justify-end">
+      {tested?.output && <CodeBlock code={tested.output} />}
+      {tested?.error && <p className="text-sm text-danger">{tested.error}</p>}
+      <div className="flex justify-end gap-2">
+        {routineId && (
+        <Button
+          size="sm"
+          variant="secondary"
+          isDisabled={!field || missing}
+          onPress={() =>
+            field &&
+            void test({ params: { id: routineId }, payload: { serverId: picked.server.id, tool: picked.tool.name, args, textField: field } })
+              .then((r) => setTested({ output: r.output }))
+              .catch((e: { message?: string }) => setTested({ output: "", error: e?.message || t("flows.panel.testFailed") }))
+          }
+        >
+          {t("deliver.test")}
+        </Button>
+        )}
         <Button size="sm" isDisabled={!field || missing} onPress={() => field && onAdd({ serverId: picked.server.id, tool: picked.tool.name, args, textField: field })}>
           {t("deliver.addThis")}
         </Button>

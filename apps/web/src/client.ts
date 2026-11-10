@@ -114,6 +114,8 @@ export const mutations = {
   saveFlow: Zorel.mutation("routines", "saveFlow"),
   testStep: Zorel.mutation("routines", "testStep"),
   testTrigger: Zorel.mutation("routines", "testTrigger"),
+  testNewTrigger: Zorel.mutation("routines", "testNewTrigger"),
+  testDelivery: Zorel.mutation("routines", "testDelivery"),
   stepOutput: Zorel.mutation("routines", "stepOutput"),
   resolveStep: Zorel.mutation("routines", "resolveStep"),
   toolOptions: Zorel.mutation("tools", "options"),
