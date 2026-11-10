@@ -25,3 +25,22 @@ export function fieldProblem(p: Prop, required: boolean, v: unknown): string | u
   return undefined
 }
 
+
+// The fields a step's output can be read by (spec 013): from the tool's outputSchema when it declares one, else from
+// what its last test gave. A list reads its first item ("items.0.id"). Three levels deep at most.
+const DEPTH = 3
+const MAX_PATHS = 60
+export function pathsFromSchema(schema: unknown, prefix = "", depth = 0): string[] {
+  const s = schema as JsonSchema & { items?: unknown } | undefined
+  if (!s || depth >= DEPTH) return []
+  if (s.type === "array" && s.items) return [`${prefix}0`, ...pathsFromSchema(s.items, `${prefix}0.`, depth + 1)]
+  return Object.entries(s.properties ?? {}).flatMap(([k, p]) => [`${prefix}${k}`, ...pathsFromSchema(p, `${prefix}${k}.`, depth + 1)]).slice(0, MAX_PATHS)
+}
+export function pathsFromSample(value: unknown, prefix = "", depth = 0): string[] {
+  if (depth >= DEPTH || !value || typeof value !== "object") return []
+  if (Array.isArray(value)) return value.length ? [`${prefix}0`, ...pathsFromSample(value[0], `${prefix}0.`, depth + 1)] : []
+  return Object.entries(value).flatMap(([k, v]) => [`${prefix}${k}`, ...pathsFromSample(v, `${prefix}${k}.`, depth + 1)]).slice(0, MAX_PATHS)
+}
+
+// What each tool step gave in its last test here (in memory, per page): its fields are offered to the steps after.
+export const samples = new Map<string, unknown>()

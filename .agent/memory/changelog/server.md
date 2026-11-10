@@ -124,3 +124,4 @@
 2026-11-10 | routine runs: outcome marker, delta, queue (20), look first, delivery channels, time profile, day start, Today, week, history + retention | spec 012
 2026-11-10 | spec 013 P1-a: routine flows (versions, executor with step rows, resume, no double writes, approvals per run step, tool catalog/options/test step); Hub.call uses tools/call directly | the SDK callTool throws InvalidParams after running, which would make a write look never-sent
 2026-11-10 | spec 013 P2: once/monthly/message triggers, watch interval, trigger Test now, delivery to a connector as run steps, gone connector blocks turning on | the rest of spec 013
+2026-11-10 | spec 013 gaps: Telegram cards for routine approvals, several channels + filter + run per message, dedupe within a read, delivery dry test, outputSchema in the catalog | review against the spec found them missing

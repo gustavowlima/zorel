@@ -1181,6 +1181,9 @@ export const en = {
     noneYetHint: "Write one, turn on one you already use on this computer, or let the agents propose them as they work."
   },
   appearance: {
+    language: "Language",
+    languageHint: "The app's own words. What you and your agents write is never translated.",
+    languageSystem: "Same as the system",
     notifications: "Notifications",
     startup: "Startup",
     openAtLogin: "Open Zorel when you log in",
@@ -1526,6 +1529,58 @@ export const en = {
     atOnceHint: "When more want to work, they wait in line and start as soon as one finishes. Each agent is a process on this computer and spends from your subscription.",
     noLimit: "No limit"
   },
+  // Spec 013: the New routine dialog.
+  newRoutine: {
+    parts: "Parts of the routine",
+    part: { basics: "Basics", when: "When", result: "Result" },
+    next: "Next",
+    promptHint: "As you'd write it in a message. It uses the tools and connectors it already has; what started the run comes with it.",
+    promptPlaceholder: "E.g. Sum up what's open for me and what changed since yesterday.",
+    starts: "What starts it",
+    start: { time: "At a time", arrives: "Something new", message: "A message", script: "A script calls", hand: "By hand" },
+    startHint: {
+      time: "Weekly, once, monthly, or when your day starts",
+      arrives: "A new item in a connector: an issue, an email, a failed check",
+      message: "A new message in a connector's channel",
+      script: "A script or a git hook on this computer calls its address",
+      hand: "Only when you press Run now"
+    },
+    on: "On",
+    needsSomething: "needs something",
+    restored: "Picked up where you left off.",
+    startOver: "Start over",
+    tellMeOn: "On",
+    tellMe: "Tell me here",
+    tellMeHint: "A notification here when a run finds something new. Change it in the routine's settings.",
+    todo: {
+      name: "Give it a name.",
+      prompt: "Say what it should do each run.",
+      agent: "Pick the agent that runs it.",
+      tool: "Pick the tool to watch.",
+      field: "Fill in what starts it."
+      ,destination: "Finish the destination, or go back."
+    },
+    repeat: "Repeats",
+    repeats: { weekly: "Weekly", once: "Once", monthly: "Monthly", dayStart: "Day start" },
+    days: "Days of the week",
+    weekdays: "Mon–Fri",
+    everyDay: "Every day",
+    everyDayLower: "every day",
+    weekdaysLower: "Monday to Friday",
+    pickDay: "Pick at least one day.",
+    past: "That time has already passed: pick one still to come.",
+    summary: {
+      weekly: "Runs {days} at {time}, in your time zone.",
+      once: "Runs once, {date}, then turns itself off.",
+      monthly: "Runs on day {day} of each month at {time}; in a shorter month, on its last day.",
+      dayStart: "Runs once a day, when your day starts: your first activity of the day, or the time set in Settings › General.",
+      arrives: "Runs on what's new since the last check; what's there now doesn't start it.",
+      message: "Each new message starts its own run, one at a time. What's there now doesn't count.",
+      script: "Runs when a script on this computer calls its webhook (the address shows once it's created).",
+      hand: "Runs only when you press Run now."
+      ,posts: "Then posts with {tools}."
+    }
+  },
   // Spec 013: sending a routine's result to a connector.
   deliver: {
     section: "Send to a connector",
@@ -1541,7 +1596,11 @@ export const en = {
     fieldPick: "Pick an input",
     noText: "This tool has no input that takes text.",
     preview: "Each run calls {tool} with its result in {field} and the rest as set here.",
-    addThis: "Add"
+    addThis: "Add",
+    back: "Back",
+    addHint: "Post the result with a connector's tool, such as a message in a channel.",
+    choose: "Choose",
+    test: "Test without sending"
   },
   // Spec 013: a routine's steps (the editor), one run step by step, and the step picker.
   flows: {
@@ -1556,6 +1615,8 @@ export const en = {
     conflict: "These steps were saved somewhere else meanwhile. Reload to see the newer version.",
     reload: "Reload",
     showStep: "Show the step",
+    restored: "Your unsaved changes from before are back.",
+    discard: "Discard them",
     missing: {
       tool: "Pick the tool it uses.",
       prompt: "Say what the agent should do.",
@@ -1570,6 +1631,7 @@ export const en = {
     },
     noConnector: "No connector",
     pickTool: "Pick a tool",
+    pickWatchHint: "A tool of a connector that only reads: what it lists is what's watched.",
     endHint: "Ends quietly: nothing new to tell.",
     kind: { trigger: "Trigger", tool: "Connector tool", agent: "Agent", check: "Look first", condition: "Condition", approval: "Ask me", end: "End" },
     kindHint: {
@@ -1593,7 +1655,7 @@ export const en = {
     },
     every: { one: "every minute", other: "every {count} minutes" },
     monthlyAt: "Day {day} of each month, {time}",
-    verdict: { runs: "Would run", seen: "Already seen", "checked-out": "The check skips it" },
+    verdict: { runs: "Would run", seen: "Already seen", filtered: "The filter skips it", "checked-out": "The check skips it" },
     triggerHint: {
       manual: "Runs when you press Run now.",
       dayStart: "Runs once a day, at your first activity.",
@@ -1639,9 +1701,20 @@ export const en = {
       every: "Check",
       everyHint: "How often Zorel asks the connector what's new.",
       testTrigger: "Test now",
+      agent: "Agent",
+      canUse: "Can use",
+      readOnly: "{name}, read only",
+      readWrite: "{name}, read and write",
+      noConnectors: "No connectors",
+      filter: "Only when it mentions",
+      filterHint: "Words or phrases, separated by commas. Leave it empty to take everything new.",
+      filterPlaceholder: "deploy, urgent, @atlas",
+      channel: "Channel {n}",
+      addChannel: "Watch another channel",
+      removeChannel: "Stop watching this channel",
       firstLook: "The first look only learns what's there: from the next one, anything new runs.",
       nothingFound: "Nothing found right now.",
-      lookFirst: "Look first: a small model skips what needs nothing",
+      lookFirst: "Check first, and skip what needs nothing (a small, cheap model reads it before the agent)",
       change: "Change",
       retries: "If it fails",
       retriesHint: "A read tries again on any failure; a write only when it surely never reached the connector.",
@@ -1669,6 +1742,7 @@ export const en = {
       noInputs: "This tool takes no inputs.",
       required: "Required.",
       whole: "A whole number.",
+      wholeValue: "All of it",
       min: "At least {n}.",
       max: "At most {n}.",
       fromStep: "Use what an earlier step gave",
@@ -1715,8 +1789,10 @@ export const en = {
       tries: { one: "1 try", other: "{count} tries" },
       waiting: "Waiting for your OK in Needs you",
       showAll: "Show all",
-      output: "The whole output"
+      output: "The whole output",
+      resume: "If Zorel stops now, this run picks up at step {n}. A step that writes never runs twice: after a stop it waits for you."
     },
+    ask: { edit: "Edit the text first", approveEdited: "Approve with this text" },
     uncertain: {
       title: "This step may have sent something before Zorel stopped.",
       body: "It isn't sent again on its own. Send it again, skip it and go on, or stop the run.",
@@ -1761,6 +1837,7 @@ export const en = {
     argsInvalid: "Not a JSON object.",
     webhook: "Also run when a local script calls its webhook",
     create: "Create routine",
+    createWithSteps: "Create and add steps",
     createFailed: "Couldn't create the routine.",
     next: "Next {when}",
     onDemand: "On demand",

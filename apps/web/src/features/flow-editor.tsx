@@ -8,7 +8,7 @@ import { AsyncResult } from "effect/reactivity"
 import { lazy, Suspense, useEffect, useState } from "react"
 import { agentsAtom, mutations, routineFlowAtom, routinesAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
 import { go } from "../state.ts"
-import { ArrowLeft, Button, CircleAlert, cx, Column, EmptyState, IconButton, Notice, Screen, Segmented, Spinner } from "@/ui"
+import { ArrowLeft, Button, CircleAlert, cx, History, Column, EmptyState, IconButton, Notice, Screen, Segmented, Spinner } from "@/ui"
 import { nodeTitle } from "./flow-kinds.tsx"
 import { FlowList } from "./flow-list.tsx"
 import { StepPanel } from "./flow-panel.tsx"
@@ -29,6 +29,25 @@ const MISSING: Record<string, () => string> = {
   time: () => t("flows.missing.time")
 }
 const missingOf = (field: string | undefined) => (field ? MISSING[field]?.() : undefined)
+
+// Unsaved steps survive leaving the page (as the agent page's drafts do): kept per routine with the version they
+// were made on, and offered back only on that version.
+type Draft = { base: number | null; graph: FlowGraph }
+const draftKey = (id: string) => `zorel.draft.flow.${id}`
+function readDraft(id: string): Draft | undefined {
+  try {
+    const raw = localStorage.getItem(draftKey(id))
+    return raw ? (JSON.parse(raw) as Draft) : undefined
+  } catch {
+    return undefined
+  }
+}
+function writeDraft(id: string, draft: Draft | undefined) {
+  try {
+    if (draft) localStorage.setItem(draftKey(id), JSON.stringify(draft))
+    else localStorage.removeItem(draftKey(id))
+  } catch {}
+}
 
 const FlowCanvas = lazy(() => import("./routine-flow.tsx"))
 type View = "canvas" | "list"
@@ -58,9 +77,14 @@ export function FlowEditorView({ routineId }: { routineId: string }) {
 function Editor({ routineId, name, agent, initial, version: initialVersion }: { routineId: string; name: string; agent: Parameters<typeof StepPanel>[0]["agent"]; initial: FlowGraph; version: number | null }) {
   const save = useMutation(mutations.saveFlow)
   const invalidate = useInvalidate()
-  const [graph, setGraph] = useState(initial)
+  const [draft] = useState(() => {
+    const d = readDraft(routineId)
+    return d && d.base === initialVersion ? d : undefined
+  })
+  const [graph, setGraph] = useState(draft?.graph ?? initial)
   const [version, setVersion] = useState(initialVersion)
-  const [dirty, setDirty] = useState(false)
+  const [dirty, setDirty] = useState(!!draft)
+  const [restored, setRestored] = useState(!!draft)
   const [selected, setSelected] = useState<string>()
   const [view, setView] = useState<View>(savedView)
   const [saving, setSaving] = useState(false)
@@ -74,6 +98,13 @@ function Editor({ routineId, name, agent, initial, version: initialVersion }: { 
     setGraph(g)
     setDirty(true)
     setFailure(undefined)
+    writeDraft(routineId, { base: version, graph: g })
+  }
+  const discard = () => {
+    writeDraft(routineId, undefined)
+    setGraph(initial)
+    setDirty(false)
+    setRestored(false)
   }
   const checked = validateFlow(graph)
   const problem = checked.ok ? undefined : { ...checked, problem: missingOf(checked.field) ?? checked.problem }
@@ -88,6 +119,8 @@ function Editor({ routineId, name, agent, initial, version: initialVersion }: { 
       .then((r) => {
         setVersion(r.version)
         setDirty(false)
+        setRestored(false)
+        writeDraft(routineId, undefined)
         invalidate(["routines"])
       })
       .catch((e: { _tag?: string; message?: string; nodeId?: string }) => {
@@ -122,6 +155,20 @@ function Editor({ routineId, name, agent, initial, version: initialVersion }: { 
     >
       {/* On a phone an open step takes the screen; its close button brings the steps back. */}
       <div className={cx("min-h-0 min-w-0 flex-1 flex-col", node ? "hidden md:flex" : "flex")}>
+        {restored && (
+          <div className="px-4 pt-4">
+            <Notice
+              tone="neutral"
+              icon={<History />}
+              title={t("flows.restored")}
+              action={
+                <Button size="sm" variant="secondary" onPress={discard}>
+                  {t("flows.discard")}
+                </Button>
+              }
+            />
+          </div>
+        )}
         {(failure || (dirty && problem && problem.nodeId !== selected)) && (
           <div className="px-4 pt-4">
             <Notice

@@ -601,7 +601,7 @@ export const repository = (db: Db, pagesDir?: string) => {
     // The last finished run that reached the agent (its report is the next run's "what changed" baseline).
     lastReport: (routineId: string) =>
       orDie(
-        db.select().from(routineRuns).where(and(eq(routineRuns.routineId, routineId), eq(routineRuns.state, "done"), isNotNull(routineRuns.turnId), ne(routineRuns.report, "")))
+        db.select().from(routineRuns).where(and(eq(routineRuns.routineId, routineId), eq(routineRuns.state, "done"), or(isNotNull(routineRuns.turnId), isNotNull(routineRuns.version)), ne(routineRuns.report, "")))
           .orderBy(desc(routineRuns.createdAt)).limit(1).pipe(Effect.map(first))
       ),
     routineRunsOf: (routineId: string, before = Number.MAX_SAFE_INTEGER, limit = 50) =>

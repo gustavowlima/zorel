@@ -34,6 +34,8 @@ export const TriggerConfig = Schema.Struct({
   time: Schema.optional(LocalTime),
   day: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 31 }))),
   every: Schema.optional(WatchEvery),
+  more: Schema.optional(Schema.Array(Schema.Record(Schema.String, Schema.Unknown)).check(Schema.isMaxLength(9))), // other channels
+  filter: Schema.optional(Text(500)), // only items holding one of these words (comma separated)
   serverId: Schema.optional(Schema.String),
   tool: Schema.optional(Text(200)),
   args: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),

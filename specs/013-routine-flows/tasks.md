@@ -288,3 +288,25 @@ P2 = US4–US6.
   posts nothing, uncertain send, condition paths and default, Ask me approve/decline/expire), main.test.ts (P2 routes).
 - Screens checked on 4318: monthly trigger with Test now (Nov 30, Dec 31, Jan 31), the destination dialog (write
   tools only, text field found by itself, the connector's error shown).
+
+## Gaps closed (2026-11-10, after review against the spec)
+
+- FR-019: an "Ask me" and a routine's write approval also go to Telegram when paired: `askOnTelegram`, a message
+  with Yes/No (Allow/Deny) buttons (callback `ap:<id>:y|n`). Only a paired account's tap decides; the buttons go
+  away after it (`answerCallbackQuery`, `editMessageReplyMarkup`). `requestApproval` takes `notify` and returns
+  `{ outcome, reason }`.
+- US4 AS3: a watch reads several channels (`watch.more`, the same tool with other inputs). A message trigger
+  (`each`) starts one run per new message. `freshItems` counts an item read twice in one poll once; before this fix,
+  two channels returning the same item made two runs.
+- FR-014: the "Only when it mentions" filter (`watch.filter`, words separated by commas, `filterItems`). Test now
+  marks what it skips "filtered". Changing the filter doesn't reset what was seen; changing the channels does.
+- US5: a destination's "Test without sending" (`POST /api/routines/:id/delivery/test`). It checks the destination
+  like a save, then shows the arguments with the last result as the text.
+- An earlier step's output fields are picked from the tool's `outputSchema` (now in the catalog), or from what that
+  step's last test gave (`pathsFromSchema` / `pathsFromSample`); otherwise the field is typed.
+- Design details: "Edit the text first" on an Ask me (the edited text is what the next steps get); the Run view's
+  "If Zorel stops now, this run picks up at step N"; the agent panel's Agent and Can use; unsaved steps kept as a
+  draft per routine and version (`zorel.draft.flow.<id>`), offered back with Discard.
+- Checked end to end on 4318 with a real agent (Claude Code, Atlas): trigger, agent, condition, Ask me (26 s),
+  approved from Needs you with edited text, end. Telegram was not checked live (no bot paired): `parseCard` is
+  tested, the send isn't.

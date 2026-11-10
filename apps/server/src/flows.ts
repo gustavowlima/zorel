@@ -7,6 +7,7 @@
 // - The run ends through the routine's own finish (spec 012's outcome, delivery and queue).
 // The pure rules come first; routines.ts calls `runFlow`.
 import { ErrorCode, McpError, type CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import type { Approval } from "@zorel/contracts/events"
 import { type FlowGraph, type FlowNode, isRef, nextNode, PORTS, type RoutineOutcome } from "@zorel/contracts"
 export { listToolFor, textFieldOf } from "@zorel/contracts"
 import Ajv, { type ValidateFunction } from "ajv"
@@ -18,10 +19,12 @@ import { cheapModel, type Engines } from "./engines.ts"
 import { redact } from "./observability.ts"
 import { mcpRoute, permissionsOf } from "./permissions.ts"
 import { nextScheduled, outcomeOf } from "./routine-runs.ts"
+import { profileOf } from "./time-profile.ts"
 import { type FinishedTurn, Runtime } from "./runtime.ts"
-import { freshItems, nextRun, parseTriage, runText, triageText, watchItems } from "./schedule.ts"
+import { filterItems, freshItems, nextRun, parseTriage, runText, triageText, watchItems } from "./schedule.ts"
 import type { Secrets } from "./secrets.ts"
 import { effectiveAccess } from "./team.ts"
+import { askOnTelegram } from "./telegram.ts"
 import { type RemoteTool, resultText, Tools } from "./tools.ts"
 
 export const PREVIEW_MAX = 4000
@@ -130,6 +133,9 @@ interface Ctx {
   readonly last: unknown // the value the step before handed on
   readonly outside: boolean
   readonly wrote: { value: boolean }
+  // The last run's report, for the first agent step (it says what changed since then, as a spec 012 run does).
+  readonly previous?: { at: string; report: string } | undefined
+  readonly agentRan?: boolean
 }
 type Result =
   | { readonly kind: "done"; readonly output?: unknown; readonly branch?: "yes" | "no"; readonly outcome?: RoutineOutcome; readonly summary?: string }
@@ -146,6 +152,8 @@ export const onFlowTurn = (t: FinishedTurn) =>
     return d ? Deferred.succeed(d, t).pipe(Effect.asVoid) : Effect.void
   })
 const FLOW_PREFIX = "flow:"
+// The Telegram notice for a run step's card, with this run's services (requestApproval takes a plain effect).
+const telegramNotice = Effect.map(Effect.context<Store | Secrets>(), (ctx) => (a: Approval) => askOnTelegram(a).pipe(Effect.provideContext(ctx)))
 const clientIdOf = (step: StepRow) => `${FLOW_PREFIX}${step.id}:${step.attempt}`
 
 const HANDLERS: Record<FlowNode["kind"], (ctx: Ctx, node: FlowNode, step: StepRow) => Effect.Effect<Result, never, Env>> = {
@@ -183,9 +191,9 @@ const HANDLERS: Record<FlowNode["kind"], (ctx: Ctx, node: FlowNode, step: StepRo
           if (route.approve && attempt === step.attempt) {
             yield* store.updateRunStep(step.id, { state: "waiting" })
             const card = (yield* Effect.promise(() => redact(JSON.stringify(args, null, 2)))).slice(0, 12_000)
-            const outcome = yield* runtime.requestApproval({
+            const { outcome } = yield* runtime.requestApproval({
               chatId: ctx.r.chatId, runStepId: step.id, agentId: agent.id, kind: "tool", tool: c.tool,
-              summary: `${ctx.r.name}: ${agent.name} wants to use ${c.tool} on ${server.name}`, args: card, alwaysKey: route.alwaysKey
+              summary: `${ctx.r.name}: ${agent.name} wants to use ${c.tool} on ${server.name}`, args: card, alwaysKey: route.alwaysKey, notify: yield* telegramNotice
             })
             yield* store.updateRunStep(step.id, { state: "running" })
             if (outcome === "denied") return { kind: "stop", end: { outcome: "nothing", summary: `You declined ${c.tool}: nothing was sent`, report: "" } } as const
@@ -230,7 +238,7 @@ const HANDLERS: Record<FlowNode["kind"], (ctx: Ctx, node: FlowNode, step: StepRo
           : undefined
       if (!sent) {
         const source = ctx.last === undefined || ctx.last === null ? undefined : ctx.last
-        const text = runText(ctx.r.name, node.config.prompt, source, "From the step before")
+        const text = runText(ctx.r.name, node.config.prompt, source, "From the step before", ctx.agentRan ? undefined : ctx.previous)
         const ok = yield* runtime.send({ chatId: ctx.r.chatId, clientId, text }, { outside: ctx.outside }).pipe(
           Effect.as(true),
           Effect.catchCause((c) => Effect.logWarning("flow agent step failed to start", { routineId: ctx.r.id, cause: String(c) }).pipe(Effect.as(false)))
@@ -276,16 +284,17 @@ const HANDLERS: Record<FlowNode["kind"], (ctx: Ctx, node: FlowNode, step: StepRo
       if (node.kind !== "approval") return { kind: "failed", error: "Not an Ask me step" } as const
       const store = yield* Store
       yield* store.updateRunStep(step.id, { state: "waiting" })
-      const outcome = yield* (yield* Runtime).requestApproval({
+      const { outcome, reason } = yield* (yield* Runtime).requestApproval({
         chatId: ctx.r.chatId, runStepId: step.id, agentId: ctx.r.agentId, kind: "question", tool: "ask_me", summary: `${ctx.r.name}: ${node.config.summary}`,
-        args: (yield* Effect.promise(() => redact(textOf(ctx.last)))).slice(0, 4000), alwaysKey: null, expiresMs: node.config.expiresMinutes ? node.config.expiresMinutes * 60_000 : undefined
+        args: (yield* Effect.promise(() => redact(textOf(ctx.last)))).slice(0, 4000), alwaysKey: null, expiresMs: node.config.expiresMinutes ? node.config.expiresMinutes * 60_000 : undefined, notify: yield* telegramNotice
       })
       yield* store.updateRunStep(step.id, { state: "running" })
       if (outcome === "expired") return { kind: "stop", end: { outcome: "needs", summary: `No answer to "${node.config.summary}": the run ended`, report: "" } } as const
       const approved = outcome === "approved" || outcome === "always"
       // Declined with no "no" path: the run ends quietly.
       if (!approved && !nextNode(ctx.graph, node.id, "no")) return { kind: "stop", end: { outcome: "nothing", summary: `You said no to "${node.config.summary}"`, report: "" } } as const
-      return { kind: "done", branch: approved ? "yes" : "no" } as const
+      // Approved with the text edited first: the steps after it get that text instead.
+      return { kind: "done", branch: approved ? "yes" : "no", ...(approved && reason && { output: reason }) } as const
     })
 }
 
@@ -334,7 +343,10 @@ export const runFlow = (r: RoutineRow, run: RunRow, hooks: FlowHooks): Effect.Ef
     const byId = new Map(graph.nodes.map((n) => [n.id, n]))
     const outputs = new Map<string, unknown>()
     // ponytail: "wrote" is only known for this process's steps; a resumed tool-only run may end "nothing" instead of "something".
-    const ctxBase = { r, run, graph, outputs, outside: run.payload != null, wrote: { value: false } }
+    const last012 = yield* store.lastReport(r.id)
+    const zone = (yield* profileOf(store)).zone
+    const previous = last012 && last012.id !== run.id ? { at: new Date(last012.createdAt).toLocaleString("en-US", { timeZone: zone, dateStyle: "medium", timeStyle: "short" }), report: last012.report } : undefined
+    const ctxBase = { r, run, graph, outputs, outside: run.payload != null, wrote: { value: false }, previous }
     let last: unknown
     let lastAgent: { outcome: RoutineOutcome; summary: string; text: string } | undefined
     const steps = yield* store.stepsOfRun(run.id)
@@ -360,7 +372,7 @@ export const runFlow = (r: RoutineRow, run: RunRow, hooks: FlowHooks): Effect.Ef
       }
       const step = row ?? (yield* store.addRunStep({ runId: run.id, nodeId: node.id, input: (yield* Effect.promise(() => redact(textOf(last)))).slice(0, PREVIEW_MAX) }))
       row = undefined
-      const result = yield* HANDLERS[node.kind]({ ...ctxBase, last }, node, step).pipe(
+      const result = yield* HANDLERS[node.kind]({ ...ctxBase, last, agentRan: lastAgent !== undefined }, node, step).pipe(
         Effect.catchCause((c) => Effect.logWarning("flow step failed", { routineId: r.id, nodeId: node!.id, cause: String(c) }).pipe(Effect.as({ kind: "failed", error: "Something went wrong in this step." } as Result)))
       )
       const endedAt = Date.now()
@@ -378,6 +390,7 @@ export const runFlow = (r: RoutineRow, run: RunRow, hooks: FlowHooks): Effect.Ef
         outputs.set(node.id, result.output)
         last = result.output
       }
+      if (node.kind === "approval" && typeof result.output === "string") last = result.output // the text you edited before saying yes
       if (node.kind === "agent") lastAgent = { outcome: result.outcome ?? "something", summary: result.summary ?? "", text: textOf(result.output) }
       node = nextNode(graph, node.id, result.branch)
     }
@@ -454,7 +467,7 @@ export const testToolStep = (r: RoutineRow, node: Extract<FlowNode, { kind: "too
 // not marked seen and no run starts. A clock shows its next times.
 const PREVIEW_ITEM = 300
 const TIMES = 3
-export const testTrigger = (r: RoutineRow, c: Extract<FlowNode, { kind: "trigger" }>["config"], zone: string) =>
+export const testTrigger = (r: Pick<RoutineRow, "watch" | "watchSeen" | "agentId" | "prompt">, c: Extract<FlowNode, { kind: "trigger" }>["config"], zone: string) =>
   Effect.gen(function* () {
     const none = { items: [], times: [] as number[], note: null as string | null, first: false }
     const times = (next: (from: number) => number | null) => {
@@ -474,14 +487,20 @@ export const testTrigger = (r: RoutineRow, c: Extract<FlowNode, { kind: "trigger
     if (listed._tag === "Failure") return { ...none, note: `Didn't connect to ${server.name}: ${messageOf(listed.failure)}` }
     const tool = listed.success.find((t) => t.name === c.tool)
     if (tool?.cls !== "read") return { ...none, note: `${c.tool} isn't a tool that only reads.` }
-    const called = yield* Effect.tryPromise({ try: () => hub.call(server, tool.name, { ...(c.args ?? {}) }), catch: (e) => e }).pipe(Effect.result)
-    if (called._tag === "Failure") return { ...none, note: messageOf(called.failure) }
-    if (called.success.isError) return { ...none, note: resultText(called.success as CallToolResult).slice(0, 300) }
-    const items = watchItems(resultText(called.success as CallToolResult))
+    const items: unknown[] = []
+    for (const args of [c.args ?? {}, ...(c.more ?? [])]) {
+      const called = yield* Effect.tryPromise({ try: () => hub.call(server, tool.name, { ...args }), catch: (e) => e }).pipe(Effect.result)
+      if (called._tag === "Failure") return { ...none, note: messageOf(called.failure) }
+      if (called.success.isError) return { ...none, note: resultText(called.success as CallToolResult).slice(0, 300) }
+      items.push(...watchItems(resultText(called.success as CallToolResult)))
+    }
     // The same watch keeps what it has seen; a new or changed one starts from now (its first poll only learns).
-    const same = JSON.stringify(r.watch) === JSON.stringify({ serverId: c.serverId, tool: c.tool, args: c.args ?? {} })
+    const same = !!r.watch && r.watch.serverId === c.serverId && r.watch.tool === c.tool && JSON.stringify([r.watch.args, ...(r.watch.more ?? [])]) === JSON.stringify([c.args ?? {}, ...(c.more ?? [])])
     const seen = same ? r.watchSeen : null
-    const fresh = new Set(freshItems(seen, items).fresh)
+    const unseen = freshItems(seen, items).fresh
+    const wanted = new Set(filterItems(unseen, c.filter))
+    const filtered = new Set(unseen.filter((x) => !wanted.has(x)))
+    const fresh = wanted
     let verdict: "runs" | "checked-out" = "runs"
     let note: string | null = null
     if (fresh.size && c.lookFirst) {
@@ -493,7 +512,7 @@ export const testTrigger = (r: RoutineRow, c: Extract<FlowNode, { kind: "trigger
       }
     }
     const show = yield* Effect.forEach(items.slice(0, 50), (item) =>
-      Effect.promise(async () => ({ preview: (await redact(textOf(item))).slice(0, PREVIEW_ITEM), verdict: fresh.has(item) ? verdict : ("seen" as const) }))
+      Effect.promise(async () => ({ preview: (await redact(textOf(item))).slice(0, PREVIEW_ITEM), verdict: fresh.has(item) ? verdict : filtered.has(item) ? ("filtered" as const) : ("seen" as const) }))
     )
     return { items: show, times: [], note, first: seen === null }
   })
