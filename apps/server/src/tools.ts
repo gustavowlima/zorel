@@ -8,7 +8,7 @@ import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotoc
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
-import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { CallToolRequestSchema, CallToolResultSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import type { McpServer, ToolInfo } from "@zorel/contracts"
 import { Context, Effect, Layer } from "effect"
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
@@ -187,9 +187,12 @@ export class Hub {
     return listed.map((t) => ({ name: t.name, description: t.description ?? "", cls: classify(t, prefix), inputSchema: t.inputSchema as Record<string, unknown> }))
   }
 
+  // tools/call as is: the SDK's callTool also checks the result against the tool's outputSchema and throws
+  // InvalidParams when it doesn't fit, after the tool ran. A routine's write (spec 013) reads InvalidParams as "refused
+  // before running", so every protocol error here must be the server's own.
   async call(s: McpServer, name: string, args: Record<string, unknown>): Promise<CallToolResult> {
     const client = await this.connect(s)
-    return (await client.callTool({ name, arguments: args }, undefined, { timeout: CALL_MS })) as CallToolResult
+    return (await client.request({ method: "tools/call", params: { name, arguments: args } }, CallToolResultSchema, { timeout: CALL_MS })) as CallToolResult
   }
 
   async close(id: string) {

@@ -51,7 +51,7 @@ function keyFrame(e: KeyboardEvent): Frame | undefined {
   return { t: "key", key: [...mods, e.key === " " ? "Space" : e.key].join("+") }
 }
 
-export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { url: string } | undefined }) {
+export function BrowserPanel({ chatId, openUrl, newTab = 0 }: { chatId: string; openUrl?: { url: string } | undefined; newTab?: number }) {
   const [tabs, setTabs] = useState<ReadonlyArray<Tab>>([])
   const [held, setHeld] = useState(false)
   const [frame, setFrame] = useState<string>()
@@ -122,6 +122,12 @@ export function BrowserPanel({ chatId, openUrl }: { chatId: string; openUrl?: { 
     if (!openUrl) return
     send({ t: "open", url: openUrl.url }) // opening a page isn't taking the browser from the agents
   }, [openUrl])
+
+  // Browser asked for again from the side panel's +: a new tab.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new request opens one
+  useEffect(() => {
+    if (newTab) send({ t: "newtab" })
+  }, [newTab])
 
   const at = (e: MouseEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect()

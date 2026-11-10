@@ -4,11 +4,12 @@
 import { APPROVAL_MS } from "./engines/session.ts"
 import { type Access, type Agent, type Chat, type Effort, type FailoverTarget, type FailureReason, type FileChange, MAX_RUNNING_DEFAULT, type Memory, type Step, type Switch } from "@zorel/contracts"
 import { ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
-import { Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
+import { Cause, Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
-import { ask, consolidate, DataDir, knownNames, mapEarlierFacts, members, pinBudget, prepare } from "./chat.ts"
+import { ask, Busy, consolidate, DataDir, knownNames, mapEarlierFacts, members, NotFound, pinBudget, prepare } from "./chat.ts"
 import { parseRoute, ROUTER_MESSAGES, routerModel, routerPrompt } from "./router.ts"
-import { grounded, handleOf, mappedOf, MAX_DEPTH, memoryNote, mentioned, pinned, readPage, scopesOf, sectionOf, similar, snippet } from "./context.ts"
+import { activeMembers, teamsIn } from "./agent-teams.ts"
+import { grounded, handleOf, mappedOf, MAX_DEPTH, memoryNote, mentioned, mentionedTeams, pinned, readPage, scopesOf, sectionOf, similar, snippet } from "./context.ts"
 import { type AccountRow, normalize, Store, type Repository, type TurnRow } from "./db.ts"
 import { hasCredential } from "./observability.ts"
 import { engineLabel, type EngineFailure, Engines, isImage, type NativeStep, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
@@ -58,6 +59,19 @@ const ERRORS_MAX = 6 // this many failed steps in a row: stuck
 // A step is its kind, title and the start of its output; a different step or a success resets the counts.
 // A waiting status whose card is a question (zorel_ask_user): the app says "asks you" instead of "waits for your OK".
 export const QUESTION_LABEL = "question"
+
+// Background work (learning, the memory map) that must not stop the chat, and must not fail unseen either: an
+// expected "already running" or "chat gone" ends quietly; anything else is logged once, masked like every log line.
+export const quietly =
+  (what: string, chatId?: string) =>
+  <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<void, never, R> =>
+    self.pipe(
+      Effect.asVoid,
+      Effect.catchCause((cause) => {
+        const e = Cause.squash(cause)
+        return e instanceof Busy || e instanceof NotFound ? Effect.void : Effect.logWarning(`${what} failed`, { ...(chatId && { chatId }), cause: Cause.pretty(cause) })
+      })
+    )
 
 export function runawayGuard() {
   let last = ""
@@ -147,8 +161,12 @@ export interface SendInput {
   readonly attachmentIds?: ReadonlyArray<string> | undefined
 }
 
+export type FinishedTurn = { readonly turnId: string; readonly chatId: string; readonly clientId: string | null; readonly state: "completed" | "failed" | "interrupted"; readonly messageId: string; readonly error: string | null; readonly cost: number | null }
+
 export interface RuntimeService {
-  readonly send: (input: SendInput) => Effect.Effect<{ turnId: string }, ChatNotFound>
+  // opts.outside (spec 011): the text came from outside (a webhook or a watched connector); its turns run at "ask".
+  // Server-only: no RPC field sets it.
+  readonly send: (input: SendInput, opts?: { readonly outside?: boolean }) => Effect.Effect<{ turnId: string }, ChatNotFound>
   // Corrects the agent mid-turn when the engine supports it (Codex); otherwise queues it like `send`.
   readonly steer: (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) => Effect.Effect<{ readonly joined: boolean }, ChatNotFound>
   readonly interrupt: (chatId: string) => Effect.Effect<void>
@@ -164,13 +182,33 @@ export interface RuntimeService {
   readonly setPaused: (paused: boolean) => Effect.Effect<void>
   readonly setMaxRunning: (max: number) => Effect.Effect<void>
   readonly decide: (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">, reason?: string) => Effect.Effect<void, ApprovalNotFound>
+  // Spec 013: a routine flow's step waits for the person (a write, an "Ask me"), with no turn behind it. The card goes
+  // to the routine's chat and Needs you like any other; "Always allow" saves the rule on the agent.
+  readonly requestApproval: (req: RunStepApproval) => Effect.Effect<ApprovalOutcome>
   readonly subscribeChat: (chatId: string) => Stream.Stream<ChatEvent, ChatNotFound>
   readonly subscribeStatus: Stream.Stream<ChatStatus>
+  // Every turn that ended, in any chat (spec 012: routine runs read their outcome from it).
+  readonly finished: Stream.Stream<FinishedTurn>
   readonly busy: (chatId: string) => boolean // a turn is running in the chat now
+  // A chat was deleted (spec 011): its engine sessions close, its open event streams end, and what the server kept
+  // live for it goes.
+  readonly release: (chatId: string) => Effect.Effect<void>
   // Engine sessions kept open between turns (Claude Code, Codex: a process each), and closing one to free it; the
   // chat's next turn opens a new one from the resume point.
   readonly liveSessions: () => ReadonlyArray<{ key: string; chatId: string; agentId: string | null; provider: string; usedAt: number; pid: number | undefined }>
   readonly closeSession: (key: string) => Effect.Effect<void>
+}
+
+export interface RunStepApproval {
+  readonly chatId: string
+  readonly runStepId: string
+  readonly agentId: string | null
+  readonly kind: "tool" | "question"
+  readonly tool: string
+  readonly summary: string
+  readonly args: string // the card's text, masked
+  readonly alwaysKey: string | null
+  readonly expiresMs?: number | undefined
 }
 
 const STEP_RESULT_CHARS = 4000 // of each step's output kept with the reply (its review after the turn)
@@ -202,11 +240,15 @@ export const makeRuntime = Effect.gen(function* () {
     }
     return h
   }
-  const publish = (chatId: string, e: ChatEvent) => PubSub.publish(hubOf(chatId), e).pipe(Effect.asVoid)
+  // Chats deleted in the last hour (spec 011): a late event from a turn still ending doesn't bring their hub back.
+  // ponytail: in memory, enough since a restart starts with no hubs at all.
+  const gone = new Map<string, number>()
+  const publish = (chatId: string, e: ChatEvent) => (gone.has(chatId) ? Effect.void : PubSub.publish(hubOf(chatId), e).pipe(Effect.asVoid))
   // An agent in "auto" memory mode saved facts: the chat says what (and Undo forgets one).
   const remembered = (chatId: string, saved: ReadonlyArray<Memory>) =>
     publish(chatId, ev("remembered", { memories: saved.map((m) => ({ id: m.id, scope: m.scope, text: m.text })) }))
   const statusHub = yield* PubSub.unbounded<ChatStatus>()
+  const finishedHub = yield* PubSub.unbounded<FinishedTurn>()
   const statuses = new Map<string, ChatStatus>()
   const idle = (chatId: string): ChatStatus => ({ chatId, state: "idle", agentId: null, label: "", unread: false, updatedAt: Date.now() })
   // Who in the chat waits on a teammate: the @mention hand-off still collecting answers here, and the tasks it gave
@@ -221,6 +263,7 @@ export const makeRuntime = Effect.gen(function* () {
     })
   const setStatus = (chatId: string, state: ChatStatus["state"], agentId: string | null, label: string) =>
     Effect.gen(function* () {
+      if (gone.has(chatId)) return
       const status: ChatStatus = { chatId, state, agentId, label, unread: false, updatedAt: Date.now(), waits: yield* waitsOf(chatId) }
       statuses.set(chatId, status)
       yield* PubSub.publish(statusHub, status)
@@ -350,6 +393,9 @@ export const makeRuntime = Effect.gen(function* () {
   // chat id → a hand-off by mention waiting for its teammates' answers, to give the asker a wrap-up turn.
   const wraps = new Map<string, { askerId: string; waiting: Set<string>; covered: boolean; depth: number }>()
   const nameOf = (agent: Agent | undefined) => agent?.name ?? "Assistant"
+  // The level this turn works at (spec 011): text from outside (a webhook, a watched connector) and what it hands off
+  // run at "ask", the narrowest, whatever the agent's or the chat's level. Only ever narrows.
+  const turnAccess = (chat: Chat, agent: Agent | undefined, row: Pick<TurnRow, "outside">): Access => (row.outside ? "ask" : effectiveAccess(chat, agent))
   const run = <A>(e: Effect.Effect<A>) => Effect.runPromise(e)
 
   // ---------- previews: shared by zorel_preview (an agent) and the chat's Run (the person) ----------
@@ -402,7 +448,7 @@ export const makeRuntime = Effect.gen(function* () {
   const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, keep: (s: Step) => void, onWrite: () => void, fixed?: GatewayHandle, onFinished: (s: WorkStep) => void = () => {}, settled: () => Promise<void> = async () => {}) => {
     const routes = new Map<string, { server: string; tool: string; approve: boolean; writes: boolean; alwaysKey: string }>()
     const perms = permissionsOf(agent)
-    const askFirst = effectiveAccess(chat, agent) === "ask"
+    const askFirst = turnAccess(chat, agent, row) === "ask"
     const defs: ToolDef[] = []
     const mcpDefs: ToolDef[] = [] // the MCP servers' tools: listed, or found on demand when there are many
     const withheld = withheldTools(agent) // by the agent's memory mode and knowledge access
@@ -488,7 +534,7 @@ export const makeRuntime = Effect.gen(function* () {
       const s = await step(`Preview ${plan.label}`, PREVIEW_TOOL.name)
       const alwaysKey = plan.key.slice(plan.key.indexOf("|") + 1)
       // "Always" for this command, chosen on an earlier card, holds from then on.
-      if (effectiveAccess(chat, agent) !== "full" && !perms.always.includes(alwaysKey)) {
+      if (turnAccess(chat, agent, row) !== "full" && !perms.always.includes(alwaysKey)) {
         const card = { kind: "tool" as const, tool: PREVIEW_TOOL.name, summary: `${nameOf(agent)} wants to run the dev server: ${plan.line}`, args: plan.line, cwd: plan.dir }
         const outcome = await run(askApproval(chat, row, agent, s, card, alwaysKey))
         if (outcome === "denied" || outcome === "expired") {
@@ -520,7 +566,7 @@ export const makeRuntime = Effect.gen(function* () {
       for (let up = open.find((t) => t.id === chat.id); up?.taskOf; up = open.find((t) => t.id === up!.taskOf)) depth++
       if (depth >= MAX_TASK_DEPTH) return textResult("This is already a task inside a task: do it here, or answer with what you have.", true)
       const s = await step(`Task for ${target.name}`, TASK_TOOL.name)
-      const mine = effectiveAccess(chat, agent) // the level this chat gives the caller
+      const mine = turnAccess(chat, agent, row) // the level this turn gives the caller
       // The level the teammate works at in its task chat (it inherits this chat's): more than the caller's asks first.
       const theirs = effectiveAccess({ access: chat.access }, target)
       if (narrower(theirs, mine) !== theirs) {
@@ -531,7 +577,7 @@ export const makeRuntime = Effect.gen(function* () {
         }
       }
       const reply = args.reply !== false
-      const id = await run(startTask(chat, agent, target, task, reply))
+      const id = await run(startTask(chat, agent, target, task, reply, row.outside))
       tasked.set(row.id, new Set([...(tasked.get(row.id) ?? []), target.id]))
       await finish(s, "ok", `#/chat/${id}`)
       return textResult(reply ? `Started: ${target.name} works on it in its own chat. Its answer comes back here as a message, and you continue then.` : `Handed to ${target.name}, in its own chat.`)
@@ -542,7 +588,7 @@ export const makeRuntime = Effect.gen(function* () {
       const visible = visibleTo(all, chat.projectId)
       // The Builder (Zorel's own) does no work itself: what it proposes is capped at workspace, not at its own "ask";
       // and never above its own: a chat set wider lets it work there, not hand that level to the agents it creates.
-      const caller = { model: agent?.model ?? chat.model, effort: agent?.effort ?? chat.effort, access: agent?.builtin === "builder" ? ("workspace" as const) : narrower(effectiveAccess(chat, agent), agent?.access ?? "workspace") }
+      const caller = { model: agent?.model ?? chat.model, effort: agent?.effort ?? chat.effort, access: agent?.builtin === "builder" ? ("workspace" as const) : narrower(turnAccess(chat, agent, row), agent?.access ?? "workspace") }
       const working = (id: string) => [...statuses.values()].some((st) => st.agentId === id && (st.state === "running" || st.state === "waiting"))
       if (name === "zorel_list_agents") return textResult(listText(visible, working))
       const target = name === "zorel_create_agent" ? undefined : findAgent(visible, args.agent)
@@ -646,7 +692,8 @@ export const makeRuntime = Effect.gen(function* () {
         }
       }
       if ((await run(store.pendingCount(scopes))) >= MAX_PENDING_MEMORIES) return textResult("Too many memories already wait for the user's review. Go on without it.", true)
-      const kept = (await run(store.preference("memoryApproval"))) === "undo" && !target
+      // A turn that started with outside text never keeps a fact on its own: that text isn't the person (spec 011).
+      const kept = (await run(store.preference("memoryApproval"))) === "undo" && !target && !row.outside
       const s = await step(`${kept ? "Remember" : "Propose to remember"}: ${text.slice(0, 60)}`, REMEMBER_TOOL.name)
       const m = await run(store.addMemory({ scope: target?.scope ?? scope, kind: "fact", text, state: kept ? "active" : "pending", origin: "auto", chatId: chat.id, agentId: agent?.id ?? null, replaces: target?.id ?? null }))
       await finish(s, m ? "ok" : "refused", text)
@@ -729,7 +776,7 @@ export const makeRuntime = Effect.gen(function* () {
       if ("error" in next) return textResult(`Not a cron pattern: ${next.error}`, true)
       const fields = { name, agent: target.name, prompt, cron, firstRun: next.at && new Date(next.at).toLocaleString() }
       // A routine's chat has no level of its own: it runs at the target's. Wider than the proposer's, the card says so.
-      const wider = target.id !== agent?.id && narrower(effectiveAccess({ access: null }, target), effectiveAccess(chat, agent)) !== effectiveAccess({ access: null }, target)
+      const wider = target.id !== agent?.id && narrower(effectiveAccess({ access: null }, target), turnAccess(chat, agent, row)) !== effectiveAccess({ access: null }, target)
       const title = `${nameOf(agent)} proposes a routine: ${name}${wider ? ` (run by ${target.name}, with more access than ${nameOf(agent)})` : ""}`
       if (!(await ask(title, fields))) return textResult("The user declined. Don't propose it again unless they ask.", true)
       onWrite()
@@ -958,13 +1005,34 @@ export const makeRuntime = Effect.gen(function* () {
   // A route is { model, account }. The turn starts on the first ready one; when it fails before acting
   // and the reason is one failover helps with, it moves to the next. A limit holds the account until its
   // reset (persisted, so the primary comes back by itself); other errors skip the route for 10 min.
+  // Kept in the preferences (spec 011) so a restart doesn't try again a route still set aside: the default login at
+  // its limit (no account row to hold it) and any route skipped for another failure.
   const skipped = new Map<string, { until: number; reason: FailureReason }>()
+  const SET_ASIDE_KEY = "setAsideRoutes"
+  const savedRoutes = yield* store.preference(SET_ASIDE_KEY)
+  if (savedRoutes) {
+    try {
+      const now = Date.now()
+      for (const [key, v] of Object.entries(JSON.parse(savedRoutes) as Record<string, { until: number; reason: FailureReason }>)) if (typeof v?.until === "number" && v.until > now) skipped.set(key, v)
+    } catch {
+      yield* Effect.logWarning("set-aside routes unreadable: starting with none")
+    }
+  }
+  const setAside = (key: string, v: { until: number; reason: FailureReason }) =>
+    Effect.suspend(() => {
+      const now = Date.now()
+      skipped.set(key, v)
+      for (const [k, x] of skipped) if (x.until <= now) skipped.delete(k)
+      return store.setPreference(SET_ASIDE_KEY, JSON.stringify(Object.fromEntries(skipped)))
+    })
   const routeKey = (model: string, account: AccountRow | undefined) => (account ? `account:${account.id}` : `provider:${splitModel(model).provider}`)
   // Why this route can't be used now, and until when (undefined: ready).
   const held = (model: string, account: AccountRow | undefined): { until: number; reason: FailureReason } | undefined => {
     const now = Date.now()
     if (account?.limitedUntil && account.limitedUntil > now) return { until: account.limitedUntil, reason: "limit" }
-    const skip = skipped.get(routeKey(model, account))
+    const key = routeKey(model, account)
+    const skip = skipped.get(key)
+    if (skip && skip.until <= now) skipped.delete(key) // ready again (the saved copy drops it on the next write or start)
     return skip && skip.until > now ? skip : undefined
   }
   // Routes of this turn: its own model first, then the alternatives (the chat's list for the lead, when set;
@@ -993,7 +1061,7 @@ export const makeRuntime = Effect.gen(function* () {
       // Workspace (§9.1): the project folder is the agents' cwd; a checkpoint before the turn and one after
       // give its diff and its undo.
       const project = projectFor(chat, chat.projectId ? yield* store.project(chat.projectId) : undefined) // a worktree, when the chat has one
-      const access: Access = effectiveAccess(chat, agent)
+      const access: Access = turnAccess(chat, agent, row)
       const cwd = workspace.cwdOf(chatId, project)
       const treeBefore = yield* workspace.snapshot(project)
       let markSeen: (at: number) => void = () => {}
@@ -1006,7 +1074,7 @@ export const makeRuntime = Effect.gen(function* () {
           const cost = pricing.cost(route.model, acc.usage)
           const message = yield* store.addMessage({
             chatId, role: "assistant", agentId: agent?.id ?? null, text: acc.text, model: route.model, error, steps: timing.steps(acc.steps, engineLabel(route.model), Date.now()), switches,
-            turnId: row.id, changes, accountId: route.accountId, cost, inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens,
+            turnId: row.id, changes, accountId: route.accountId, cost, inputTokens: acc.usage.inputTokens, outputTokens: acc.usage.outputTokens, outside: row.outside,
             durationMs: started.startedAt ? Date.now() - started.startedAt : null
           })
           markSeen(message.at) // the session has everything up to its own reply
@@ -1014,6 +1082,7 @@ export const makeRuntime = Effect.gen(function* () {
           const turn = yield* store.finishTurn(row.id, { state, error, messageId: message.id, usage: acc.usage, cost, route: { ...route, switches }, ...(trees && { trees }) })
           const tag = state === "completed" ? "turn-completed" : state === "failed" ? "turn-failed" : "interrupted"
           yield* publish(chatId, ev(tag, { turn, message }))
+          yield* PubSub.publish(finishedHub, { turnId: row.id, chatId, clientId: row.clientId, state, messageId: message.id, error, cost })
         })
       const started = yield* store.startTurn(row.id)
       yield* publish(chatId, ev("turn-started", { turn: store.toTurn(started) }))
@@ -1216,7 +1285,8 @@ export const makeRuntime = Effect.gen(function* () {
           if (!f || result.acted || last) break
           // Failed before acting, for a reason another route can avoid: remember it and move on.
           if (f.reason === "limit" && account) yield* accounts.hold(account.id, f.until ?? Date.now() + 60 * 60_000)
-          else skipped.set(routeKey(r.model, account), { until: Date.now() + SKIP_MS, reason: f.reason })
+          // The default login at its limit is held until the reset, like an account; other failures, SKIP_MS.
+          else yield* setAside(routeKey(r.model, account), { until: f.reason === "limit" ? (f.until ?? Date.now() + 60 * 60_000) : Date.now() + SKIP_MS, reason: f.reason })
           const next = routes[i + 1]!
           const sw: Switch = { fromModel: r.model, fromAccountId: route.accountId, toModel: next.model, toAccountId: next.accountId, reason: f.reason, until: f.reason === "limit" ? (f.until ?? null) : null }
           switches.push(sw)
@@ -1247,11 +1317,24 @@ export const makeRuntime = Effect.gen(function* () {
   // Mentions in the reply queue the teammates (chaining, up to MAX_DEPTH consecutive replies). An agent that hands
   // work over by mention gets a wrap-up turn once every teammate it called has answered (their answers read together),
   // unless one of them already called it back. Past the limit the chain stops and the chat says so.
-  const enqueueAgent = (chat: Chat, team: ReadonlyArray<Agent>, a: Agent, depth: number) =>
+  // routeTeamId: an @team call; the router picks among the team's members in the chat when it starts (a = the first).
+  // outside: the turn handing off started with outside text (spec 011); what it hands off runs at "ask" too.
+  const enqueueAgent = (chat: Chat, team: ReadonlyArray<Agent>, a: Agent, depth: number, routeTeamId?: string, outside = false) =>
     Effect.gen(function* () {
       const isLead = a.id === team[0]?.id // the lead follows the chat's model; other members, their own
-      const t = yield* store.enqueueTurn({ chatId: chat.id, agentId: a.id, model: isLead ? chat.model : a.model, accountId: isLead ? chat.accountId : a.accountId, clientId: null, depth })
+      const t = yield* store.enqueueTurn({ chatId: chat.id, agentId: a.id, model: isLead ? chat.model : a.model, accountId: isLead ? chat.accountId : a.accountId, clientId: null, depth, outside, ...(routeTeamId && { route: true, routeTeamId }) })
       yield* publish(chat.id, ev("queued", { turn: store.toTurn(t) }))
+    })
+  // The teams a text calls (spec 010), each as the first of its active members in the chat (none there: no call).
+  // from: the agent handing off. A member's own team isn't called back (it would route to itself in a loop): it
+  // names the teammate instead.
+  const teamCalls = (chat: Chat, team: ReadonlyArray<Agent>, text: string, from?: string) =>
+    Effect.gen(function* () {
+      const called = mentionedTeams(text, teamsIn(yield* store.teams(), chat.projectId))
+      return called.flatMap((t) => {
+        const first = from && t.agentIds.includes(from) ? undefined : activeMembers(t, team)[0]
+        return first ? [{ first, teamId: t.id }] : []
+      })
     })
   const chain = (row: TurnRow, done: { text: string; agent: Agent | undefined; team: Agent[] } | undefined) =>
     Effect.gen(function* () {
@@ -1266,13 +1349,17 @@ export const makeRuntime = Effect.gen(function* () {
       const handed = tasked.get(row.id) ?? new Set<string>()
       tasked.delete(row.id)
       const next = done ? mentioned(done.text, team.filter((a) => a.id !== done.agent?.id && !handed.has(a.id))).slice(0, MAX_MENTIONS) : []
+      // @team in a hand-off: one routed turn per team, among its members already here.
+      const calls = done ? (yield* teamCalls(chat, team, done.text, done.agent?.id)).slice(0, MAX_MENTIONS - next.length) : []
       if (answering && next.some((a) => a.id === wrap!.askerId)) wrap!.covered = true
+      if (calls.length && row.depth + 1 >= MAX_DEPTH) yield* Effect.logInfo("team call stopped at the limit", { chatId: row.chatId, depth: row.depth })
+      else for (const c of calls) yield* enqueueAgent(chat, team, c.first, row.depth + 1, c.teamId, row.outside)
       if (next.length && row.depth + 1 >= MAX_DEPTH) {
         yield* Effect.logInfo("chaining stopped at the limit", { chatId: row.chatId, depth: row.depth })
         yield* publish(row.chatId, ev("handoff", { turnId: row.id, from: done?.agent?.id ?? null, to: [], via: "limit" }))
       } else if (next.length) {
         yield* publish(row.chatId, ev("handoff", { turnId: row.id, from: done?.agent?.id ?? null, to: next.map((a) => a.id), via: "mention" }))
-        for (const a of next) yield* enqueueAgent(chat, team, a, row.depth + 1)
+        for (const a of next) yield* enqueueAgent(chat, team, a, row.depth + 1, undefined, row.outside)
         // A first hand-off (not one made while answering another) waits for its answers to come back.
         if (!answering && done?.agent && !wraps.has(row.chatId)) wraps.set(row.chatId, { askerId: done.agent.id, waiting: new Set(next.map((a) => a.id)), covered: false, depth: row.depth + 1 })
       }
@@ -1281,13 +1368,14 @@ export const makeRuntime = Effect.gen(function* () {
         const asker = team.find((a) => a.id === wrap.askerId)
         if (asker && !wrap.covered && wrap.depth + 1 < MAX_DEPTH + 1) {
           yield* publish(row.chatId, ev("handoff", { turnId: row.id, from: done?.agent?.id ?? null, to: [asker.id], via: "reply" }))
-          yield* enqueueAgent(chat, team, asker, wrap.depth + 1)
+          yield* enqueueAgent(chat, team, asker, wrap.depth + 1, undefined, row.outside)
         }
       }
     })
 
   // ---------- tasks between agents (zorel_start_task) ----------
-  const startTask = (origin: Chat, by: Agent | undefined, target: Agent, task: string, reply: boolean) =>
+  // outside (spec 011): asked from a turn that started with outside text; the task's turns run at "ask" too.
+  const startTask = (origin: Chat, by: Agent | undefined, target: Agent, task: string, reply: boolean, outside = false) =>
     Effect.gen(function* () {
       const c = yield* store.createChat({
         // The asking chat's access level comes along: a chat's level covers the work it hands off, too.
@@ -1297,8 +1385,8 @@ export const makeRuntime = Effect.gen(function* () {
       const back = reply
         ? `Your final answer goes back to ${nameOf(by)}. Answer in this shape, short: Status: done | partial | blocked. Result: the result itself. Evidence: what you ran or read.`
         : "Nobody waits on the answer; just do the work."
-      yield* addUserMessage(c.id, `Task from ${nameOf(by)}, in "${origin.title}":\n\n${task}\n\n${back}`)
-      yield* enqueueFor(c, task, null)
+      yield* addUserMessage(c.id, `Task from ${nameOf(by)}, in "${origin.title}":\n\n${task}\n\n${back}`, undefined, outside)
+      yield* enqueueFor(c, task, null, outside)
       return c.id
     })
 
@@ -1313,13 +1401,14 @@ export const makeRuntime = Effect.gen(function* () {
       if (!origin || !self) return
       const link = `[Open the task](#/chat/${chatId})`
       const text = done?.text.trim() ? `${done.text.trim()}\n\n${link}` : `The task "${self.title}" ended without an answer. ${link}`
-      const message = yield* store.addMessage({ chatId: origin.id, role: "assistant", agentId: done?.agent?.id ?? self.agentIds[0] ?? null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 })
+      const outside = yield* store.hasOutside(chatId) // a task started from outside text reports back as such (spec 011)
+      const message = yield* store.addMessage({ chatId: origin.id, role: "assistant", agentId: done?.agent?.id ?? self.agentIds[0] ?? null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0, outside })
       yield* publish(origin.id, ev("message", { message }))
       const team = yield* members(store, origin)
       const asker = team.find((a) => a.id === task.taskBy)
       const isLead = !asker || asker.id === team[0]?.id
       const t = yield* store.enqueueTurn({
-        chatId: origin.id, agentId: asker?.id ?? team[0]?.id ?? null, model: isLead ? origin.model : asker.model, accountId: isLead ? origin.accountId : asker.accountId, clientId: null, depth: 1
+        chatId: origin.id, agentId: asker?.id ?? team[0]?.id ?? null, model: isLead ? origin.model : asker.model, accountId: isLead ? origin.accountId : asker.accountId, clientId: null, depth: 1, outside
       })
       yield* publish(origin.id, ev("queued", { turn: store.toTurn(t) }))
       yield* ensureWorker(origin.id)
@@ -1331,7 +1420,11 @@ export const makeRuntime = Effect.gen(function* () {
     Effect.gen(function* () {
       const chat = yield* store.chat(row.chatId)
       if (!chat) return row
-      const team = yield* members(store, chat)
+      const members_ = yield* members(store, chat)
+      // An @team call routes among that team's members in the chat; a team deleted meanwhile keeps the queued agent.
+      const called = row.routeTeamId ? (yield* store.teams()).find((t) => t.id === row.routeTeamId) : undefined
+      if (row.routeTeamId && !called) return { ...row, route: false }
+      const team = called ? activeMembers(called, members_) : members_
       const recent = (yield* store.messages(chat.id)).slice(-ROUTER_MESSAGES - 1)
       const text = recent.at(-1)?.role === "user" ? recent.at(-1)!.text : ""
       yield* setStatus(chat.id, "running", row.agentId, "")
@@ -1344,9 +1437,10 @@ export const makeRuntime = Effect.gen(function* () {
       const picked = parseRoute(answer, team)
       const agent = picked?.agent ?? team[0]
       if (!agent) return { ...row, route: false }
-      const isLead = agent.id === team[0]?.id
+      const isLead = agent.id === members_[0]?.id // the chat's lead follows the chat's model
       const next = yield* store.retargetTurn(row.id, { agentId: agent.id, model: isLead ? chat.model : agent.model, accountId: isLead ? chat.accountId : agent.accountId })
-      yield* publish(chat.id, ev("handoff", { turnId: row.id, from: null, to: [agent.id], via: "route", ...(picked?.reason && { reason: picked.reason }) }))
+      const reason = called ? [called.name, picked?.reason].filter(Boolean).join(" · ") : picked?.reason
+      yield* publish(chat.id, ev("handoff", { turnId: row.id, from: null, to: [agent.id], via: "route", ...(reason && { reason }) }))
       return next
     })
 
@@ -1379,7 +1473,7 @@ export const makeRuntime = Effect.gen(function* () {
       workers.delete(chatId)
       // A failed last turn leaves the chat "failed" (the sidebar says so) until its next turn starts.
       yield* setStatus(chatId, failed === undefined ? "idle" : "failed", failed ?? null, "")
-      yield* Effect.forkDetach(consolidate(chatId, "window", (saved) => remembered(chatId, saved)).pipe(Effect.provide(services), Effect.ignore))
+      yield* Effect.forkDetach(consolidate(chatId, "window", (saved) => remembered(chatId, saved)).pipe(Effect.provide(services), quietly("consolidation", chatId)))
       yield* learnWhenQuiet(chatId)
     }).pipe(Effect.ensuring(Effect.suspend(() => {
       workers.delete(chatId)
@@ -1400,7 +1494,7 @@ export const makeRuntime = Effect.gen(function* () {
     Effect.gen(function* () {
       yield* calmOff(chatId)
       // A finished one stays in the map until the chat's next turn: interrupting it then is a no-op.
-      quietTimers.set(chatId, yield* Effect.forkDetach(Effect.sleep(QUIET_AFTER).pipe(Effect.andThen(consolidate(chatId, "quiet", (saved) => remembered(chatId, saved)).pipe(Effect.provide(services), Effect.ignore)))))
+      quietTimers.set(chatId, yield* Effect.forkDetach(Effect.sleep(QUIET_AFTER).pipe(Effect.andThen(consolidate(chatId, "quiet", (saved) => remembered(chatId, saved)).pipe(Effect.provide(services), quietly("quiet consolidation", chatId))))))
     })
 
   const PAUSED_KEY = "paused"
@@ -1443,9 +1537,9 @@ export const makeRuntime = Effect.gen(function* () {
   for (const a of yield* store.openApprovals()) yield* store.resolveApproval(a.id, "expired", null, "expiry")
   for (const chatId of new Set((yield* store.turnsIn("queued")).map((t) => t.chatId))) yield* ensureWorker(chatId)
 
-  const addUserMessage = (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) =>
+  const addUserMessage = (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>, outside = false) =>
     Effect.gen(function* () {
-      const message = yield* store.addMessage({ chatId, role: "user", agentId: null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0, attachmentIds })
+      const message = yield* store.addMessage({ chatId, role: "user", agentId: null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0, attachmentIds, outside })
       yield* publish(chatId, ev("message", { message }))
     })
   // A message that names no one, right after you spoke to a teammate by name and it answered: it goes on with that
@@ -1469,13 +1563,15 @@ export const makeRuntime = Effect.gen(function* () {
       const team = yield* members(store, chat)
       const lead = team[0]
       const targets: Array<Agent | undefined> = mentioned(text, team).slice(0, MAX_MENTIONS)
-      const follow = targets.length ? undefined : yield* followUp(chat, team)
-      const route = !targets.length && !follow && team.length > 1
-      if (!targets.length) targets.push(follow ?? lead)
-      return { lead, targets, route }
+      const calls = (yield* teamCalls(chat, team, text)).slice(0, MAX_MENTIONS - targets.length)
+      const named = targets.length + calls.length > 0
+      const follow = named ? undefined : yield* followUp(chat, team)
+      const route = !named && !follow && team.length > 1
+      if (!named) targets.push(follow ?? lead)
+      return { lead, targets, route, calls }
     })
   // Queues a turn for each recipient, except `joined`: the agent whose running turn already took the message.
-  const enqueueRecipients = (chat: Chat, plan: { lead: Agent | undefined; targets: ReadonlyArray<Agent | undefined>; route: boolean }, clientId: string | null, joined?: string | null) =>
+  const enqueueRecipients = (chat: Chat, plan: { lead: Agent | undefined; targets: ReadonlyArray<Agent | undefined>; route: boolean; calls: ReadonlyArray<{ first: Agent; teamId: string }> }, clientId: string | null, joined?: string | null, outside = false) =>
     Effect.gen(function* () {
       let first: string | undefined
       for (const a of plan.targets) {
@@ -1484,7 +1580,17 @@ export const makeRuntime = Effect.gen(function* () {
         const isLead = !a || a.id === plan.lead?.id
         const t = yield* store.enqueueTurn({
           chatId: chat.id, agentId: a?.id ?? null, model: isLead ? chat.model : a.model, accountId: isLead ? chat.accountId : a.accountId,
-          clientId: first === undefined ? clientId : null, depth: 0, route: plan.route
+          clientId: first === undefined ? clientId : null, depth: 0, route: plan.route, outside
+        })
+        first ??= t.id
+        yield* publish(chat.id, ev("queued", { turn: store.toTurn(t) }))
+      }
+      // Each @team: one turn the router gives to the member who fits (the first one on any failure).
+      for (const c of plan.calls) {
+        const isLead = c.first.id === plan.lead?.id
+        const t = yield* store.enqueueTurn({
+          chatId: chat.id, agentId: c.first.id, model: isLead ? chat.model : c.first.model, accountId: isLead ? chat.accountId : c.first.accountId,
+          clientId: first === undefined ? clientId : null, depth: 0, route: true, routeTeamId: c.teamId, outside
         })
         first ??= t.id
         yield* publish(chat.id, ev("queued", { turn: store.toTurn(t) }))
@@ -1493,8 +1599,8 @@ export const makeRuntime = Effect.gen(function* () {
       return first
     })
   // Queues who answers this text: the mentioned members, or the lead.
-  const enqueueFor = (chat: Chat, text: string, clientId: string | null) =>
-    recipientsOf(chat, text).pipe(Effect.flatMap((plan) => enqueueRecipients(chat, plan, clientId)), Effect.map((id) => id!))
+  const enqueueFor = (chat: Chat, text: string, clientId: string | null, outside = false) =>
+    recipientsOf(chat, text).pipe(Effect.flatMap((plan) => enqueueRecipients(chat, plan, clientId, undefined, outside)), Effect.map((id) => id!))
 
   // ---------- API ----------
   const service: RuntimeService = {
@@ -1504,8 +1610,9 @@ export const makeRuntime = Effect.gen(function* () {
         return { key, chatId, agentId: agentId === "-" ? null : agentId, provider: live.provider, usedAt: live.used, pid: live.session.pid?.() }
       }),
     closeSession: (key) => (running.has(key.split(":")[0] ?? "") ? Effect.void : closeSession(key)), // never under a running turn
-    send: (input) =>
+    send: (input, opts) =>
       Effect.gen(function* () {
+        const outside = opts?.outside === true
         const existing = yield* store.turnByClientId(input.clientId)
         if (existing) return { turnId: existing.id } // resending the same clientId doesn't duplicate
         let chat = yield* store.chat(input.chatId)
@@ -1513,8 +1620,8 @@ export const makeRuntime = Effect.gen(function* () {
         if (input.model && input.model !== chat.model) chat = (yield* store.updateChat(chat.id, { model: input.model }))!
         if (chat.title === "New chat" || chat.title === "Novo chat") chat = (yield* store.updateChat(chat.id, { title: input.text.replace(/\s+/g, " ").slice(0, 60) }))!
         if (chat.resumeAt && !input.clientId.startsWith("resume:")) yield* store.setResumeAt(chat.id, null) // you went on yourself
-        yield* addUserMessage(chat.id, input.text, input.attachmentIds)
-        return { turnId: yield* enqueueFor(chat, input.text, input.clientId) }
+        yield* addUserMessage(chat.id, input.text, input.attachmentIds, outside)
+        return { turnId: yield* enqueueFor(chat, input.text, input.clientId, outside) }
       }),
 
     // "Send now". The message goes into the running reply only if that reply is the recipient's own (the one named, or
@@ -1642,6 +1749,24 @@ export const makeRuntime = Effect.gen(function* () {
         yield* publish(a.chatId, ev("approval-resolved", { approvalId, outcome, reason: reason ?? null, by: "user" }))
       }),
 
+    requestApproval: (req) =>
+      Effect.gen(function* () {
+        const wait = req.expiresMs ?? APPROVAL_MS
+        const approval = yield* store.addApproval({
+          chatId: req.chatId, turnId: null, runStepId: req.runStepId, stepId: null, agentId: req.agentId, kind: req.kind, tool: req.tool,
+          summary: req.summary, args: req.args, cwd: null, alwaysKey: req.agentId ? req.alwaysKey : null, expiresAt: Date.now() + wait
+        })
+        const d = yield* Deferred.make<ApprovalOutcome>()
+        waiting.set(approval.id, d)
+        yield* publish(req.chatId, ev("approval", { approval }))
+        const outcome = yield* Deferred.await(d).pipe(
+          Effect.timeoutOption(Duration.millis(wait)),
+          Effect.flatMap((o) => (o._tag === "Some" ? Effect.succeed(o.value) : expire(req.chatId, approval.id))),
+          Effect.ensuring(Effect.sync(() => waiting.delete(approval.id)))
+        )
+        return outcome
+      }),
+
     subscribeChat: (chatId) =>
       Stream.unwrap(
         Effect.gen(function* () {
@@ -1667,6 +1792,20 @@ export const makeRuntime = Effect.gen(function* () {
 
     busy: (chatId) => statuses.get(chatId)?.state === "running",
 
+    release: (chatId) =>
+      Effect.suspend(() => {
+        const now = Date.now()
+        for (const [id, at] of gone) if (now - at > 60 * 60_000) gone.delete(id)
+        gone.set(chatId, now)
+        statuses.delete(chatId)
+        const h = hubs.get(chatId)
+        hubs.delete(chatId)
+        const sessionsGo = Effect.forEach([...sessions.keys()].filter((k) => k.startsWith(`${chatId}:`)), closeSession, { discard: true })
+        return h ? Effect.andThen(PubSub.shutdown(h), sessionsGo) : sessionsGo
+      }),
+
+    finished: Stream.unwrap(Effect.map(PubSub.subscribe(finishedHub), Stream.fromSubscription)),
+
     subscribeStatus: Stream.unwrap(
       Effect.gen(function* () {
         const sub = yield* PubSub.subscribe(statusHub)
@@ -1675,7 +1814,7 @@ export const makeRuntime = Effect.gen(function* () {
     )
   }
   // Facts kept before the memory's map existed are filed on it in the background, a little after start.
-  yield* Effect.forkDetach(Effect.sleep("20 seconds").pipe(Effect.andThen(mapEarlierFacts()), Effect.provide(services), Effect.ignore))
+  yield* Effect.forkDetach(Effect.sleep("20 seconds").pipe(Effect.andThen(mapEarlierFacts()), Effect.provide(services), quietly("memory map backfill")))
   // Recall by meaning: the local model loads (and downloads once) in the background; turns never wait for it.
   if (process.env.NODE_ENV !== "test") yield* Effect.forkDetach(Effect.promise(() => startVectors(dataDir))) // tests never download it
   // The map sleeps once a day (and a little after start): orphan points go, twins merge. A failed night is logged and

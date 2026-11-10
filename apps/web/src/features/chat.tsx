@@ -8,14 +8,14 @@ import { AsyncResult } from "effect/reactivity"
 import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zorel/contracts/events"
 import { formatCompact, formatDuration, formatTime, locale, t } from "@zorel/i18n"
 import { memo, type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
-import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
+import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, teamsAtom, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
 import { agentName, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText, waitLabel } from "../labels.ts"
 import { ChatMarkdown } from "./chat-markdown.tsx"
 import { MemoryChip } from "./memory.tsx"
 import { MentionText } from "./mention.tsx"
 import { commandOf, extraArgs } from "./receipt-args.ts"
 import { go, liveStepsOpen } from "../state.ts"
-import { agentOptions, callable, toJoin } from "./agent-options.ts"
+import { agentOptions, callable, teamsIn, toJoin } from "./agent-options.ts"
 import { Composer, type ComposerOption, type ComposerSources, SendError } from "./composer.tsx"
 import { ContextMeter } from "./context-meter.tsx"
 import { QueuePanel, useQueue } from "./queue.tsx"
@@ -62,8 +62,10 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
   // message naming it is sent (not when picked, so a chip taken back leaves no stray member): the server only calls
   // members, so the send waits for that. The lead and the model stay.
   const available = callable(agents, chat.projectId)
+  // A team named with @ (spec 010) brings its members in; the server routes the message to the one who fits.
+  const teams = teamsIn(useList(teamsAtom), chat.projectId)
   const submit = async (text: string, attachmentIds: ReadonlyArray<string>) => {
-    const joining = toJoin(text, chat.agentIds, available)
+    const joining = toJoin(text, chat.agentIds, available, teams)
     if (joining.length) {
       try {
         await updateChat({ params: { id: chat.id }, payload: { agentIds: [...chat.agentIds, ...joining.map((a) => a.id)] }, reactivityKeys: ["chats", "context"] })
@@ -127,6 +129,8 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
     hint: o.hint,
     icon: <AuthorAvatar agent={o.agent} model={null} size={16} />
   }))
+  // Then the teams: `@team` reaches the member who fits.
+  for (const x of teams) people.push({ id: x.handle, label: x.name, hint: t("teams.option", { count: x.agentIds.length }), icon: <Users className="size-4" /> })
   const sourcesWith = (files: ReadonlyArray<WorkspaceFile>): ComposerSources => ({
     leads: people,
     // "@": the agents, then the project's files (the agent reads them with its tools).
@@ -149,7 +153,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
         team={team}
         delta={chatDelta(state.messages)}
         panelOpen={!!panel}
-        onPanel={() => setPanel(panel ? undefined : project?.path ? "git" : "changes")}
+        onPanel={() => setPanel(panel ? undefined : "changes")}
         workspace={!!project?.path}
         pins={pins}
         panel={panel}

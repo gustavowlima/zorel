@@ -3,13 +3,13 @@
 // moves to it.
 import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
-import { agentsAtom, mutations, projectsAtom, uploadAttachment, useList, useMutation } from "../client.ts"
+import { agentsAtom, mutations, projectsAtom, teamsAtom, uploadAttachment, useList, useMutation } from "../client.ts"
 import { go } from "../state.ts"
-import { agentOptions, callable, toJoin } from "./agent-options.ts"
+import { agentOptions, callable, teamsIn, toJoin } from "./agent-options.ts"
 import { Composer, type ComposerSources, SendError } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import { agentTone, modelLabel } from "../labels.ts"
-import { AgentAvatar, Folder, IconButton, Select, X } from "@/ui"
+import { AgentAvatar, Folder, IconButton, Select, Users, X } from "@/ui"
 
 const DEFAULT_MODEL: ModelChoice = { model: "claude-cli/sonnet", accountId: null, effort: null }
 
@@ -25,6 +25,7 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
   const chat = useRef<Promise<string> | null>(null)
 
   const available = callable(agents, projectId)
+  const teams = teamsIn(useList(teamsAtom), projectId)
   const pickAgent = (id: string | null) => {
     setAgentId(id)
     const a = agents.find((x) => x.id === id)
@@ -39,7 +40,7 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
       label: o.label,
       hint: o.hint,
       icon: <AgentAvatar id={o.agent.id} name={o.agent.name} tone={agentTone(o.agent, agents)} size={16} />
-    }))
+    })).concat(teams.map((x) => ({ id: x.handle, label: x.name, hint: t("teams.option", { count: x.agentIds.length }), icon: <Users className="size-4" /> })))
   }
   // A project's chat starts with its default agent (Agents tab of the project), if it has one.
   const defaultAgent = projects.find((p) => p.id === projectId)?.defaultAgentId ?? null
@@ -55,7 +56,7 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
   // Who is in the chat a message starts: the chosen lead (or the project's default), then everyone the text names.
   // With no lead chosen, the first one named leads (and the chat takes its model).
   const callWith = (text: string) => {
-    const named = toJoin(text, agentId ? [agentId] : [], available)
+    const named = toJoin(text, agentId ? [agentId] : [], available, teams).slice(0, agentId ? 7 : 8) // a chat holds 8
     return { agentIds: [...(agentId ? [agentId] : []), ...named.map((a) => a.id)], ...(!agentId && named[0] && { model: named[0].model }) }
   }
   // One chat per draft, however many files are attached before sending.

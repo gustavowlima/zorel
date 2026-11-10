@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { agentOptions, callable, toJoin } from "./agent-options.ts"
+import { agentOptions, callable, teamsIn, toJoin, withTeam } from "./agent-options.ts"
 
 const agent = (id: string, name: string, o: { projectId?: string | null; builtin?: boolean } = {}) => ({ id, name, projectId: o.projectId ?? null, builtin: o.builtin ?? false })
 const lead = agent("a1", "Tech Leader")
@@ -54,5 +54,27 @@ describe("toJoin", () => {
   })
   test("an agent that can't be called here is not offered to join", () => {
     expect(toJoin("@tester", [], [lead, dev])).toEqual([])
+  })
+})
+
+describe("teams (spec 010)", () => {
+  const ana = agent("a4", "Ana Júlia")
+  const callable = [lead, dev, qa, ana]
+  const crew = { name: "Front Crew", agentIds: ["a3", "gone", "a2"], projectId: null }
+
+  test("@team brings in its callable members in team order; ones in the chat or outside reach don't", () => {
+    expect(toJoin("@front-crew look", [], callable, [crew]).map((a) => a.id)).toEqual(["a3", "a2"])
+    expect(toJoin("@front-crew look", ["a2"], callable, [crew]).map((a) => a.id)).toEqual(["a3"])
+    expect(toJoin("`@front-crew`", [], callable, [crew])).toEqual([])
+    expect(toJoin("@tester and @front-crew", [], callable, [crew]).map((a) => a.id)).toEqual(["a3", "a2"]) // once each
+  })
+  test("adding a team: after the chat's members, without duplicates, up to the cap", () => {
+    expect(withTeam(crew, callable, ["a1", "a2"])).toMatchObject({ ids: ["a1", "a2", "a3"], overflow: 0 })
+    expect(withTeam(crew, callable, ["a1", "a2", "x", "y", "z", "w", "v"])).toMatchObject({ ids: ["a1", "a2", "x", "y", "z", "w", "v", "a3"], overflow: 0 })
+    expect(withTeam(crew, callable, ["a1", "x", "y", "z", "w", "v", "u"])).toMatchObject({ overflow: 1 })
+    expect(withTeam({ agentIds: [] }, callable, [])).toMatchObject({ ids: [], added: [], overflow: 0 })
+  })
+  test("teamsIn: the project's own and the global ones", () => {
+    expect(teamsIn([{ projectId: null }, { projectId: "p1" }, { projectId: "p2" }], "p1")).toHaveLength(2)
   })
 })

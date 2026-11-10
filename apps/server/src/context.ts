@@ -7,7 +7,7 @@
 import { join } from "node:path"
 import { type Agent, type Chat, MENTION_RE, type Memory, type Message, type Project } from "@zorel/contracts"
 import { Option, Schema } from "effect"
-import { normalize, STOPWORDS } from "./db.ts"
+import { handleFromName, normalize, STOPWORDS } from "./db.ts"
 import type { Turn, TurnMessage, TurnTools } from "./engines.ts"
 
 export const WINDOW = 30 // messages kept verbatim after a consolidation
@@ -30,13 +30,18 @@ export const scopesOf = (chat: Pick<Chat, "projectId">, agentId: string | null):
 ]
 
 // "Copywriter Sênior" → "copywriter-senior"
-export const handleOf = (a: Pick<Agent, "name">) => normalize(a.name).replace(/ /g, "-")
+export const handleOf = (a: Pick<Agent, "name">) => handleFromName(a.name)
 
-// Mentioned agents (@handle) in order of appearance; code in backticks doesn't count.
+// The handles a text calls (@handle), once each, in order of appearance; code in backticks doesn't count.
+const handlesIn = (text: string) => [...new Set([...text.replace(/```[\s\S]*?```|`[^`]*`/g, " ").matchAll(MENTION_RE)].map((m) => handleFromName(m[1]!)))]
+
+// Mentioned agents (@handle) in order of appearance.
 export function mentioned(text: string, agents: ReadonlyArray<Agent>): Agent[] {
-  const plain = text.replace(/```[\s\S]*?```|`[^`]*`/g, " ")
-  const handles = [...plain.matchAll(MENTION_RE)].map((m) => normalize(m[1]!).replace(/ /g, "-"))
-  return [...new Set(handles)].flatMap((h) => agents.filter((a) => handleOf(a) === h))
+  return handlesIn(text).flatMap((h) => agents.filter((a) => handleOf(a) === h))
+}
+// Mentioned teams (spec 010), by the same rule: a team's handle comes from its name.
+export function mentionedTeams<T extends { readonly name: string }>(text: string, teams: ReadonlyArray<T>): T[] {
+  return handlesIn(text).flatMap((h) => teams.filter((t) => handleFromName(t.name) === h))
 }
 
 // What goes in the prompt, up to the budget: the essential ones (the person marked them) first, then the most
