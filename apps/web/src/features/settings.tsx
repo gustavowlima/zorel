@@ -12,6 +12,7 @@ import { AuditSection } from "./audit.tsx"
 import { SkillsBody } from "./skills.tsx"
 import { ChannelsSection } from "./channels.tsx"
 import { NotifySetting, SoundSetting } from "./notify.tsx"
+import { YourDaySetting } from "./your-day.tsx"
 import { McpSection } from "./mcp.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { ProvidersSection } from "./providers.tsx"
@@ -247,6 +248,7 @@ function General() {
         <SoundSetting />
       </Rows>
     </Section>
+    <YourDaySetting />
     <AgentsSetting />
     <StartupSetting />
     <AboutSetting />

@@ -8,6 +8,7 @@ import { t } from "@zorel/i18n"
 import { useState } from "react"
 import { agentsAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
 import { exportAgent, importedAgent } from "./agent.tsx"
+import { TeamsSection } from "./teams.tsx"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { AgentAvatar, Archive, ArchiveRestore, Bot, Button, ChevronDown, Column, cx, MessageCircle, Settings, ConfirmDialog, Dot, Download, EmptyState, IconButton, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, SearchInput, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
@@ -199,6 +200,7 @@ export function AgentsView() {
       }
     >
       <Column>
+        {team.length > 0 && !q && <TeamsSection />}
         {team.length === 0 ? (
           <EmptyState
             icon={<Bot />}

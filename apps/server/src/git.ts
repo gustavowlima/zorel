@@ -3,6 +3,7 @@
 // CLI when it is installed and signed in). Messages are written by the person or drafted by the chat's model from
 // the diff, in the style of the repository's recent commits. Nothing here runs without the person pressing it.
 import type { GitStatus } from "@zorel/contracts"
+import { which } from "./cli-install.ts"
 
 const MAX_DIFF = 40_000 // diff text handed to the model for a draft
 const OUT_CAP = 2_000 // git's message kept for an error
@@ -17,7 +18,7 @@ async function run(cwd: string, cmd: string[], allowFail = false): Promise<strin
 }
 const git = (cwd: string, args: string[], allowFail = false) => run(cwd, ["git", ...args], allowFail)
 
-const ghPath = Bun.which("gh") // the GitHub CLI, if installed (looked up once)
+const ghPath = which("gh") // the GitHub CLI, if installed (looked up once)
 const gh = () => ghPath
 
 // "## main...origin/main [ahead 2, behind 1]" and one " M file" line per change.

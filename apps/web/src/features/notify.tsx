@@ -2,10 +2,12 @@
 // chat starts waiting for you, fails, or finishes while you look elsewhere (another chat, or the window hidden).
 // On by default once the person allowed them; the switch is in Settings › General. Clicking one opens the chat.
 // A sound can play for the same moments, on its own switch (it works with the system's notifications off).
+// Routine chats (spec 012) don't use those moments: a routine tells the person through its notices, only when its
+// run found something or needs them.
 import type { ChatStatus } from "@zorel/contracts/events"
 import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
-import { agentsAtom, chatsAtom, useList, useStatuses } from "../client.ts"
+import { agentsAtom, chatsAtom, routinesAtom, useInvalidate, useList, useNotice, useReading, useStatuses } from "../client.ts"
 import { chatTitle, noteworthy, statusLabel } from "../labels.ts"
 import { go, type Route } from "../state.ts"
 import { Button, SettingRow, Switch } from "@/ui"
@@ -62,11 +64,35 @@ export function useNotifications(route: Route) {
   const statuses = useStatuses()
   const chats = useList(chatsAtom)
   const agents = useList(agentsAtom)
+  const routines = useReading(routinesAtom).items
+  const invalidate = useInvalidate()
+  const notice = useNotice()
   const last = useRef<Record<string, ChatStatus["state"]>>({})
+  const shown = useRef<string>(undefined)
   useEffect(() => {
+    if (!notice || shown.current === notice.id) return
+    shown.current = notice.id
+    invalidate(["today", "routines"])
+    const looking = !document.hidden && route.view === "chat" && route.id === notice.chatId
+    if (looking) return
+    if (soundOn()) chime()
+    if (!enabled()) return
+    const n = new Notification(notice.title, { body: notice.outcome === "needs" ? t("notify.routineNeeds", { text: notice.text }) : notice.text, tag: notice.id })
+    n.onclick = () => {
+      window.focus()
+      go({ view: "chat", id: notice.chatId })
+      n.close()
+    }
+  }, [notice, route, invalidate])
+  useEffect(() => {
+    const routineChats = new Set(routines.map((r) => r.chatId))
     for (const s of Object.values(statuses)) {
       const kind = noteworthy(last.current[s.chatId], s.state)
       last.current[s.chatId] = s.state
+      if (routineChats.has(s.chatId)) {
+        if (kind) invalidate(["today", "routines"]) // a run ended: the history and Today read it
+        continue
+      }
       const looking = !document.hidden && route.view === "chat" && route.id === s.chatId
       if (!kind || looking) continue
       if (soundOn()) chime()
@@ -79,7 +105,7 @@ export function useNotifications(route: Route) {
         n.close()
       }
     }
-  }, [statuses, chats, agents, route])
+  }, [statuses, chats, agents, route, routines, invalidate])
 }
 
 // Settings › General: on/off (asking the system's permission the first time), a test, and in the desktop app the

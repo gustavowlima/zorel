@@ -22,6 +22,7 @@ import type { Approver } from "#server/engines/session.ts"
 import type { EngineSession } from "#server/engines/session.ts"
 import { Secrets, type SecretStore } from "./secrets.ts"
 import { resultText, type Session, type ToolDef } from "./tools.ts"
+import { which } from "./cli-install.ts"
 
 export interface TurnFile {
   readonly name: string
@@ -236,7 +237,7 @@ export async function listModels(secrets: SecretStore, cli: Partial<Record<strin
   const found = await Promise.all(entries.map(([id, p]) => (p.local ? probe(COMPAT[id]!()) : Promise.resolve(undefined))))
   return entries.flatMap(([provider, p], i) => {
     const local = found[i]
-    const available = p.local ? !!local : p.key ? !!secrets.get(p.key) : !!Bun.which(p.bin!)
+    const available = p.local ? !!local : p.key ? !!secrets.get(p.key) : !!which(p.bin!)
     const named = cli[provider]
     if (named?.length) {
       // Codex keeps "default" (its own pick) ahead of the listed models.
@@ -454,7 +455,7 @@ async function* runCli(bin: string, args: string[], stdin: string, cwd: string, 
 }
 
 const cli = (bin: string, args: string[], stdin: string, cwd: string, parser: Parser): Stream.Stream<EngineEvent> => {
-  const path = Bun.which(bin)
+  const path = which(bin)
   if (!path) return one({ type: "error", message: `${bin} isn't installed or isn't on the PATH.`, failure: { reason: "unavailable" } })
   return Stream.fromAsyncIterable(runCli(path, args, stdin, cwd, parser), (e) => e).pipe(Stream.catch((e) => one({ type: "error", message: String(e), failure: classifyMessage(String(e)) })))
 }
@@ -590,7 +591,7 @@ export const parseAntigravityModels = (out: string): CliModel[] =>
     return m ? [{ id: m[1]!, name: m[2]!.trim(), note: "" }] : []
   })
 export async function readAntigravityModels(): Promise<CliModel[]> {
-  const bin = Bun.which("agy")
+  const bin = which("agy")
   if (!bin) return []
   const proc = Bun.spawn([bin, "models"], { stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: 20_000, killSignal: "SIGKILL", windowsHide: true })
   const [out] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
@@ -617,7 +618,7 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
           // internal tasks (summaries, titles) and machines without it keep the direct API engine.
           const p = PROVIDERS[provider]
           // ZOREL_API_ENGINE=direct keeps the direct engine (tests, or if OpenCode misbehaves).
-          if (p?.kind === "api" && t.tools && process.env.ZOREL_API_ENGINE !== "direct" && Bun.which("opencode")) {
+          if (p?.kind === "api" && t.tools && process.env.ZOREL_API_ENGINE !== "direct" && which("opencode")) {
             const key = p.key ? secrets.get(p.key) : undefined
             if (p.key && !key) return one({ type: "error", message: `Set ${p.key} (in Settings or the environment) to use ${provider}.`, failure: { reason: "auth" } })
             const { model } = splitModel(t.model)

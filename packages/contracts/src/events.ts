@@ -80,7 +80,8 @@ export const ApprovalKind = Schema.Literals(["command", "edit", "tool", "network
 export const Approval = Schema.Struct({
   id: Id,
   chatId: Id,
-  turnId: Id,
+  turnId: Schema.NullOr(Id), // null: a routine flow's step asks (runStepId), not a turn
+  runStepId: Schema.optional(Schema.NullOr(Id)),
   stepId: Schema.NullOr(Id),
   agentId: Schema.NullOr(Id),
   kind: ApprovalKind,
@@ -173,6 +174,19 @@ export const SendPayload = {
   attachmentIds: Schema.optional(Schema.Array(Schema.String).check(Schema.isMaxLength(MAX_ATTACHMENTS))) // uploaded first (POST /api/chats/:id/attachments)
 }
 
+// What a routine run tells the person (spec 012): the web app turns it into a desktop notification.
+export const Notice = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literal("routine"),
+  runId: Schema.String,
+  routineId: Schema.String,
+  chatId: Schema.String,
+  title: Schema.String,
+  text: Schema.String,
+  outcome: Schema.Literals(["nothing", "something", "needs"])
+})
+export type Notice = typeof Notice.Type
+
 export const ZorelRpc = RpcGroup.make(
   Rpc.make("send", { payload: SendPayload, success: Schema.Struct({ turnId: Id }), error: ChatNotFound }),
   Rpc.make("steer", {
@@ -187,6 +201,7 @@ export const ZorelRpc = RpcGroup.make(
   Rpc.make("decide", { payload: { approvalId: Id, outcome: Schema.Literals(["approved", "always", "denied"]), reason: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))) }, error: ApprovalNotFound }),
   Rpc.make("subscribeChat", { payload: { chatId: Id }, success: ChatEvent, error: ChatNotFound, stream: true }),
   Rpc.make("subscribeStatus", { success: ChatStatus, stream: true }), // all chats: sidebar and "Needs you"
+  Rpc.make("notices", { success: Notice, stream: true }), // what routines tell the person (spec 012): desktop notifications
   Rpc.make("approvals", { success: Schema.Array(Approval) }), // open approvals of every chat ("Needs you")
   Rpc.make("runs", { payload: { chatId: Id }, success: Schema.Array(WorkStep) }) // commands the agents ran in this chat (terminal panel)
 )

@@ -14,6 +14,7 @@ import { basename, relative } from "node:path"
 import { type CliModel, claudeParser, classifyMessage, type EngineEvent, type NativeStep, splitModel, STEP_DETAIL_MAX, STEP_TITLE_MAX, type TurnFile } from "#server/engines.ts"
 import { approvalFor, decideCommand, decideEdit, decideRead } from "#server/engines/policy.ts"
 import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type NativeApproval, withoutAppEnv } from "#server/engines/session.ts"
+import { which } from "../cli-install.ts"
 
 const GATEWAY = "zorel"
 // Claude Code's own tools Zorel turns on: files and shell, plus web search and fetch when the agent may use the web.
@@ -357,7 +358,7 @@ export interface ClaudeSessionOptions {
 }
 
 export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | string {
-  const bin = Bun.which("claude")
+  const bin = which("claude")
   if (!bin) return "claude isn't installed or isn't on the PATH."
   mkdirSync(o.cwd, { recursive: true })
   const box = inbox()
@@ -544,7 +545,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
 const CLAUDE_WINDOWS = ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet"] as const
 // A Claude Code session that only answers control requests (usage, models); closed afterwards.
 async function withControl<A>(configDir: string | undefined, read: (q: Query) => Promise<A>, cwd?: string): Promise<A> {
-  const bin = Bun.which("claude")
+  const bin = which("claude")
   if (!bin) throw new Error("claude isn't installed or isn't on the PATH.")
   const box = inbox() // never gets a message
   // With a folder: that project's settings load too (its commands); without, none (limits, models).

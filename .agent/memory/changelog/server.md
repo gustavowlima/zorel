@@ -118,3 +118,9 @@
 2026-11-09 | browser acts/pointer, risky by page names, own tabs only; ACP risky asks; container remount + .git ro; desktop risky words/keys | functional review
 2026-11-09 | Antigravity engine via agy acp with Zorel-owned gemini dir (request-review) | user asked; agy honored the person's always-proceed
 2026-11-09 | stdin session secret, pinned agent-desktop, container hardening, per-chat screencast, local-network asks, browser full screen | review follow-ups
+2026-11-10 | in-app install for agy and OpenCode (official source, checksum); which() replaces Bun.which | user asked for Install; Bun.which ignored runtime PATH changes
+2026-11-10 | agent teams: tables, /api/teams, handle clash rule, @team routes via route_team_id | spec 010 (user asked for teams with routing)
+2026-11-10 | outside cap (webhook/watch turns at ask, facts to review), quietly() for background learning, setAsideRoutes persisted, release() on chat delete | spec 011, architecture review
+2026-11-10 | routine runs: outcome marker, delta, queue (20), look first, delivery channels, time profile, day start, Today, week, history + retention | spec 012
+2026-11-10 | spec 013 P1-a: routine flows (versions, executor with step rows, resume, no double writes, approvals per run step, tool catalog/options/test step); Hub.call uses tools/call directly | the SDK callTool throws InvalidParams after running, which would make a write look never-sent
+2026-11-10 | spec 013 P2: once/monthly/message triggers, watch interval, trigger Test now, delivery to a connector as run steps, gone connector blocks turning on | the rest of spec 013

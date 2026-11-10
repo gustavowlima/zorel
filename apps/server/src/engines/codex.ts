@@ -12,6 +12,7 @@ import { basename, relative } from "node:path"
 import { type CliModel, classifyMessage, CODEX_DISABLED, commandStep, type EngineEvent, type EngineFailure, type NativeStep, splitModel, STEP_DETAIL_MAX, STEP_TITLE_MAX, toMillis, type Usage } from "#server/engines.ts"
 import { approvalFor } from "#server/engines/policy.ts"
 import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type SessionTurnInput, withoutAppEnv } from "#server/engines/session.ts"
+import { which } from "../cli-install.ts"
 
 // Access level → Codex sandbox and approval policy (ARCHITECTURE §9.2). The shell is on in the app-server:
 // commands run in Codex's sandbox and what leaves it asks through Zorel.
@@ -196,7 +197,7 @@ export interface CodexSessionOptions {
 export const codexLoginHint = (home: string) => `Sign in to Zorel's Codex (once): run \`CODEX_HOME=${home} codex login\` in a terminal.`
 
 export function openCodexSession(o: CodexSessionOptions): EngineSession | string {
-  const bin = o.command?.[0] ?? Bun.which("codex")
+  const bin = o.command?.[0] ?? which("codex")
   if (!bin) return "codex isn't installed or isn't on the PATH."
   mkdirSync(o.cwd, { recursive: true })
   mkdirSync(o.home, { recursive: true })
@@ -391,7 +392,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
 // Reads the account's limit windows on demand: a short-lived app-server on the account's CODEX_HOME.
 // A short-lived app-server for one read (limits, models); killed afterwards.
 async function withAppServer<A>(home: string, command: ReadonlyArray<string> | undefined, read: (rpc: Rpc) => Promise<A>): Promise<A> {
-  const bin = command?.[0] ?? Bun.which("codex")
+  const bin = command?.[0] ?? which("codex")
   if (!bin) throw new Error("codex isn't installed or isn't on the PATH.")
   mkdirSync(home, { recursive: true })
   const rpc = Rpc.start(bin, command?.slice(1) ?? ["app-server"], home, childEnv(home))

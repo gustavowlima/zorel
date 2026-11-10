@@ -11,6 +11,7 @@ import { type CliModel, splitModel } from "./engines.ts"
 import { readClaudeLimits, readClaudeModels } from "./engines/claude-sdk.ts"
 import { readAntigravityModels } from "./engines.ts"
 import { readCodexLimits, readCodexModels } from "./engines/codex.ts"
+import { which } from "./cli-install.ts"
 
 const STATUS_TTL_MS = 30_000
 // Limit readings (ARCHITECTURE §10.2): cached 4 min; a failure waits 5, 10, 20, 40 min, then 1 h.
@@ -45,7 +46,7 @@ const COMMANDS: Record<AccountProvider, { bin: string; status: string[]; login: 
 }
 
 async function run(a: AccountRow, args: string[]) {
-  const bin = Bun.which(COMMANDS[a.provider as AccountProvider].bin)
+  const bin = which(COMMANDS[a.provider as AccountProvider].bin)
   if (!bin) return { code: -1, out: "" }
   if (a.home) mkdirSync(a.home, { recursive: true })
   const proc = Bun.spawn([bin, ...args], { env: envFor(a), stdin: "ignore", stdout: "pipe", stderr: "pipe" })
@@ -84,6 +85,7 @@ export interface AccountsService {
   // The models the default logins offer, with their real names ("opus" → "Opus 5.5"). Kept in preferences,
   // served at once and re-read in the background after an hour; a failed read keeps the last list.
   readonly cliModels: Effect.Effect<CliModels>
+  readonly forgetCliModels: Effect.Effect<void> // a CLI was just installed: read its models again
 }
 
 export type CliModels = Partial<Record<"claude-cli" | "codex-cli" | "antigravity", ReadonlyArray<CliModel>>>
@@ -151,7 +153,7 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
             const a = yield* store.account(id)
             if (!a) return "not-found" as const
             if (logins.has(id)) return "busy" as const
-            const bin = Bun.which(COMMANDS[a.provider as AccountProvider].bin)
+            const bin = which(COMMANDS[a.provider as AccountProvider].bin)
             if (!bin) return { url: null }
             if (a.home) mkdirSync(a.home, { recursive: true })
             // The CLI opens the provider's page in the browser itself; the URL is a fallback for the UI.
@@ -239,7 +241,8 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
             return previous
           }
           return (yield* read).models
-        })
+        }),
+        forgetCliModels: store.setPreference(CLI_MODELS_KEY, "")
       }
       return service
     })

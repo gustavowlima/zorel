@@ -42,7 +42,7 @@ export function useIsRepo(chatId: string) {
 
 type Step = "commit" | "push" | "pr" | "branch" | "draft" | "worktree"
 
-export function GitPanel({ chatId, worktree, after }: { chatId: string; worktree: string | null; after?: ReactNode }) {
+export function GitPanel({ chatId, worktree }: { chatId: string; worktree: string | null }) {
   const result = useAtomValue(gitAtom(chatId))
   const invalidate = useInvalidate()
   // Fresh each time the tab is shown (a shell or an agent may have committed meanwhile).
@@ -215,7 +215,6 @@ export function GitPanel({ chatId, worktree, after }: { chatId: string; worktree
         )}
       </Part>
 
-      {after}
 
       {s.commits.length > 0 && (
         <Part title={t("git.commits")}>

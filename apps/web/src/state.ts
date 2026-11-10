@@ -13,6 +13,9 @@ export type Route =
   | { view: "inbox" }
   | { view: "agents" }
   | { view: "routines" }
+  | { view: "routine-flow"; id: string } // spec 013: a routine's steps, on a canvas or as a list
+  | { view: "routine-run"; id: string; runId: string } // one run, step by step
+  | { view: "today" } // the morning brief (spec 012)
   | { view: "knowledge"; id: string } // an old link to one item: App sends it to Memory, Pages or Skills
   | { view: "memory"; tab?: string; review?: boolean } // tab: "user", "project:<id>", "agent:<id>" or "forgotten"; none: All
   | { view: "pages"; id?: string }
@@ -22,16 +25,17 @@ export type Route =
   | { view: "project"; id: string; tab: ProjectTab }
   | { view: "chat"; id: string; at?: string } // at: open on that message (a session's reply)
   | { view: "agent"; id: string; tab?: AgentTab } // tab: which one opens (Profile when absent)
-  | { view: "new-agent"; projectId: string | null }
+  | { view: "new-agent"; projectId: string | null; teamId?: string } // teamId: "New agent in this team"
   | { view: "builder"; projectId: string | null } // Build with AI: a screen of its own, not a chat
 
 const oneOf = <T extends string>(list: ReadonlyArray<T>, v: string | undefined, fallback: T): T => (list.includes(v as T) ? (v as T) : fallback)
 
 export function parseRoute(hash: string): Route {
-  const [, view, a, b] = hash.replace(/^#/, "").split("/")
+  const [, view, a, b, c] = hash.replace(/^#/, "").split("/")
   switch (view) {
     case "agents":
     case "routines":
+    case "today":
       return { view }
     case "inbox":
     case "usage":
@@ -57,10 +61,13 @@ export function parseRoute(hash: string): Route {
     case "chat":
       return a ? { view, id: a, ...(b && { at: b }) } : { view: "home" }
     case "agent":
-      if (a === "new") return { view: "new-agent", projectId: b && b !== "global" ? b : null }
+      if (a === "new") return { view: "new-agent", projectId: b && b !== "global" ? b : null, ...(c && { teamId: decodeURIComponent(c) }) }
       return a ? { view, id: a, ...(b && { tab: oneOf(AGENT_TABS, b, "profile") }) } : { view: "home" }
     case "new":
       return a ? { view: "home", projectId: a } : { view: "home" }
+    case "routine":
+      // #/routine/<id>/flow, #/routine/<id>/run/<runId>
+      return a && b === "run" && c ? { view: "routine-run", id: a, runId: c } : a ? { view: "routine-flow", id: a } : { view: "routines" }
     case "build":
       return { view: "builder", projectId: a && a !== "global" ? a : null } // "global": the same as no project, as for a new agent
     default:
@@ -89,11 +96,15 @@ export const hrefOf = (r: Route): string => {
     case "agent":
       return r.tab ? `#/agent/${r.id}/${r.tab}` : `#/agent/${r.id}`
     case "new-agent":
-      return `#/agent/new/${r.projectId ?? "global"}`
+      return `#/agent/new/${r.projectId ?? "global"}${r.teamId ? `/${encodeURIComponent(r.teamId)}` : ""}`
     case "builder":
       return r.projectId ? `#/build/${r.projectId}` : "#/build"
     case "usage":
       return r.agentId ? `#/usage/${r.agentId}` : "#/usage"
+    case "routine-flow":
+      return `#/routine/${r.id}/flow`
+    case "routine-run":
+      return `#/routine/${r.id}/run/${r.runId}`
     default:
       return `#/${r.view}`
   }

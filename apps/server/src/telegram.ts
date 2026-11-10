@@ -7,6 +7,7 @@ import { Effect, Layer, Schedule, Stream } from "effect"
 import { Store } from "./db.ts"
 import { Runtime } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
+import { noteActivity } from "./time-profile.ts"
 
 export const TELEGRAM_KEY = "TELEGRAM_BOT_TOKEN"
 const USERS = "telegramUsers" // JSON: paired Telegram user ids
@@ -50,6 +51,17 @@ export const telegramUsers = Effect.gen(function* () {
   const store = yield* Store
   return json<number[]>(yield* store.preference(USERS), [])
 })
+// Sends a text to every paired person (spec 012: a routine's result, the morning brief). Not paired, or no token:
+// nothing is sent and `sent` is false, so the caller falls back to the app's notification.
+export const sayToPaired = (text: string) =>
+  Effect.gen(function* () {
+    const token = (yield* Secrets).get(TELEGRAM_KEY)
+    const users = yield* telegramUsers
+    if (!token || !users.length) return { sent: false }
+    const parts = text.match(new RegExp(`[\\s\\S]{1,${MAX_TEXT}}`, "g")) ?? [""]
+    const sent = yield* Effect.forEach(users, (chat) => Effect.forEach(parts, (part) => Effect.promise(() => call(token, "sendMessage", { chat_id: chat, text: part }).then(() => true, () => false))))
+    return { sent: sent.some((r) => r.some(Boolean)) }
+  })
 export const unpairTelegram = Effect.gen(function* () {
   const store = yield* Store
   yield* store.setPreference(USERS, "[]")
@@ -136,6 +148,7 @@ export const TelegramChannel = Layer.effectDiscard(
         }
         const command = COMMANDS[text]
         if (command) return yield* say(token, m.chat.id, yield* command(m.chat.id))
+        yield* noteActivity(store) // the person is here (spec 012: their day starts)
         yield* Effect.forkDetach(relay(token, u, m.chat.id, text)) // a long reply doesn't hold the next messages
       })
 

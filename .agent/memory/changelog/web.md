@@ -78,3 +78,10 @@
 2026-11-09 | Memory: undo receipt for Forget/Discard/Move; 8 per group in All with See all; DESIGN.md accent #0071e3 | critique follow-ups chosen by the user
 2026-11-09 | audit+polish: AgentView keyed, missing connector/audit strings, settings nav row on narrow, headings | impeccable audit
 2026-11-09 | narrow-window adaptation across screens; connector ids typed by their descriptions | impeccable adapt + harden
+2026-11-09 | side panel: Home/Overview tab became the Pull request tab, Run list removed, panel opens on Changes | user: no need for a home, wants PR and Changes areas
+2026-11-09 | side panel tabs opened from a + menu and closable; Browser/Terminal again = new page/shell | user: choose what to open instead of fixed tabs
+2026-11-09 | providers page lists Gemini CLI, OpenCode, Antigravity | user thought Antigravity was not set up: it was only in the model picker
+2026-11-10 | Install button for agent CLIs; Gemini/Antigravity/LM Studio logos | user: no icons in the picker, wanted in-app install
+2026-11-10 | Teams section, agent form teams, Add a team in pickers, @team joins members; project label Team → Agents | spec 010
+2026-11-10 | Routines Week view, routine History and Settings dialogs, Today page, Your day settings, routine notices | spec 012
+2026-11-10 | spec 013 P1-b: flow editor (lazy React Flow canvas + List), step panels, schema form, tool picker, Run view, Needs you rows for uncertain writes and Ask me; Dialog scrolls its body | the routine flows UI; long dialogs overflowed the window
