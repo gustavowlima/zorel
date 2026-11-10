@@ -22,6 +22,6 @@ describe("ChatEvent", () => {
   })
 
   test("the RPC group has the procedures from the architecture", () => {
-    expect([...ZorelRpc.requests.keys()].sort()).toEqual(["approvals", "decide", "interrupt", "retry", "runs", "send", "steer", "subscribeChat", "subscribeStatus"])
+    expect([...ZorelRpc.requests.keys()].sort()).toEqual(["approvals", "decide", "interrupt", "notices", "retry", "runs", "send", "steer", "subscribeChat", "subscribeStatus"])
   })
 })

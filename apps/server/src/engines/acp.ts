@@ -19,6 +19,7 @@ import { Stream } from "effect"
 import { commandStep, type EngineEvent, type NativeStep, STEP_DETAIL_MAX, STEP_TITLE_MAX } from "../engines.ts"
 import { approvalFor, decideCommand } from "./policy.ts"
 import { type Approver, type NativeApproval, withoutAppEnv } from "./session.ts"
+import { which } from "../cli-install.ts"
 
 export interface AcpTurn {
   readonly bin: string
@@ -127,7 +128,7 @@ export function seatbeltProfile(roots: ReadonlyArray<string>): string {
 }
 
 // The command line for a turn: confined below "full"; undefined when it can't be confined here.
-export function commandFor(path: string, t: Pick<AcpTurn, "args" | "access" | "cwd" | "state">, platform = process.platform, bwrap = Bun.which("bwrap")): string[] | undefined {
+export function commandFor(path: string, t: Pick<AcpTurn, "args" | "access" | "cwd" | "state">, platform = process.platform, bwrap = which("bwrap")): string[] | undefined {
   if (t.access === "full") return [path, ...t.args]
   const roots = () => writableRoots(t.access, t.cwd, t.state ?? [])
   if (platform === "darwin" && existsSync(SANDBOX_EXEC)) return [SANDBOX_EXEC, "-p", seatbeltProfile(roots()), path, ...t.args]
@@ -147,7 +148,7 @@ export function acpRun(t: AcpTurn): Stream.Stream<EngineEvent> {
 }
 
 async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
-  const path = Bun.which(t.bin)
+  const path = which(t.bin)
   if (!path) {
     yield { type: "error", message: `${t.bin} is not installed or not on the PATH.`, failure: { reason: "unavailable" } }
     return

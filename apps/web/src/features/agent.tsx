@@ -5,7 +5,7 @@
 import { type Access, type Agent, type AgentPermissions, type AgentVersion, DEFAULT_PERMISSIONS, type FailoverTarget } from "@zorel/contracts"
 import { formatAge, formatCompact, t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
-import { agentsAtom, agentVersionsAtom, mutations, projectsAtom, serversAtom, useList, useMutation, useReading } from "../client.ts"
+import { agentsAtom, agentVersionsAtom, mutations, projectsAtom, serversAtom, teamsAtom, useList, useMutation, useReading } from "../client.ts"
 import { agentTone } from "../labels.ts"
 import { type AgentTab, go } from "../state.ts"
 import { AgentMemory } from "./agent-memory.tsx"
@@ -16,7 +16,7 @@ import { useArchive } from "./agents.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import {
-  AgentAvatar, Archive, ArchiveRestore, Button, ChartColumn, column, ConfirmDialog, cx, Download, Field, IconButton, Input, ListRow, Menu, MenuItem, MoreHorizontal, Notice, Rows, Screen, Section, Select, SettingRow, Tab, TabList,
+  AgentAvatar, Archive, ArchiveRestore, Button, ChartColumn, CheckList, column, ConfirmDialog, cx, Download, Field, IconButton, Input, ListRow, Menu, MenuItem, MoreHorizontal, Notice, Rows, Screen, Section, Select, SettingRow, Tab, TabList,
   TabPanel, Tabs, Textarea, Trash2, Undo2
 } from "@/ui"
 
@@ -62,7 +62,7 @@ function writeDraft(key: string, draft: Draft | undefined) {
   }
 }
 
-export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; projectId: string | null; tab?: AgentTab | undefined }) {
+export function AgentView({ agent, projectId, tab: opened, teamId }: { agent?: Agent; projectId: string | null; tab?: AgentTab | undefined; teamId?: string }) {
   const agents = useList(agentsAtom)
   const projects = useList(projectsAtom)
   const servers = useList(serversAtom)
@@ -77,6 +77,15 @@ export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; pr
   useEffect(() => {
     if (opened) setTab(opened) // opened again on another tab (the Agents screen's row: Work; its gear: Profile)
   }, [opened])
+  // Its teams (spec 010): saved with the profile, not kept in the draft. A global agent fits any team; a project's
+  // agent only that project's. undefined: untouched (what the server has, or the team "New agent" came from).
+  const allTeams = useList(teamsAtom)
+  const home = agent?.projectId ?? projectId
+  const teamsHere = allTeams.filter((x) => home === null || x.projectId === home)
+  const savedTeams = agent ? teamsHere.filter((x) => x.agentIds.includes(agent.id)).map((x) => x.id) : teamId ? [teamId] : []
+  const [pickedTeams, setPickedTeams] = useState<string[]>()
+  const teamIds = pickedTeams ?? savedTeams
+  const teamsChanged = pickedTeams !== undefined && [...pickedTeams].sort().join() !== [...savedTeams].sort().join()
   const termsPending = useTermsPending({ model: choice.model, accountId: choice.accountId }, failover)
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -92,16 +101,19 @@ export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; pr
   const project = projects.find((p) => p.id === (agent?.projectId ?? projectId))
   const tools = servers.filter((s) => s.projectId === null || s.projectId === project?.id)
   const changed = JSON.stringify(form) !== JSON.stringify(fromAgent(agent))
-  const dirty = !agent || changed
+  const dirty = !agent || changed || teamsChanged
   useEffect(() => writeDraft(key, changed && (agent || name.trim()) ? form : undefined), [key, changed, form, agent, name])
 
   const save = () => {
     setBusy(true)
-    const payload = { name: name.trim(), title: title.trim(), description: description.trim(), instructions, ...choice, failover, access, permissions }
+    const payload = { name: name.trim(), title: title.trim(), description: description.trim(), instructions, ...choice, failover, access, permissions, ...((teamsChanged || (!agent && teamIds.length > 0)) && { teamIds }) }
     const done = agent
       ? update({ params: { id: agent.id }, payload, reactivityKeys: ["agents"] })
       : create({ payload: { ...payload, projectId: project?.id ?? null }, reactivityKeys: ["agents"] }).then((a) => go({ view: "agent", id: a.id }))
-    void done.then(() => writeDraft(key, undefined)).finally(() => setBusy(false))
+    void done.then(() => {
+      writeDraft(key, undefined)
+      setPickedTeams(undefined)
+    }).finally(() => setBusy(false))
   }
 
   return (
@@ -189,6 +201,14 @@ export function AgentView({ agent, projectId, tab: opened }: { agent?: Agent; pr
                   <Field label={t("agent.description")} hint={t("agent.descriptionHint")}>
                     <Textarea value={description} onChange={(e) => set({ description: e.target.value })} rows={2} maxLength={300} placeholder={t("agent.descriptionPlaceholder")} />
                   </Field>
+                  {teamsHere.length > 0 && (
+                    // Not a Field: that's a <label>, and a group of boxes inside one would tick the first on any click.
+                    <div className="flex flex-col gap-1.5 text-sm text-muted">
+                      <span>{t("teams.pick")}</span>
+                      <CheckList label={t("teams.pick")} value={teamIds} onChange={setPickedTeams} options={teamsHere.map((x) => ({ value: x.id, label: x.name, trailing: <span className="text-sm text-muted">@{x.handle}</span> }))} />
+                      <span className="text-dim">{t("teams.pickHint")}</span>
+                    </div>
+                  )}
                 </div>
               </Rows>
             </Section>

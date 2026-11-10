@@ -1,0 +1,23 @@
+/* React Flow on Zorel's tokens (spec 013). Loaded only with the routine editor's canvas. */
+.zorel-flow {
+  --xy-background-color: var(--z-bg-canvas);
+  --xy-background-pattern-dots-color: var(--z-border-strong);
+  --xy-edge-stroke: var(--z-text-dim);
+  --xy-edge-stroke-selected: var(--z-accent-text);
+  --xy-edge-stroke-width: 1.5;
+  --xy-connectionline-stroke: var(--z-accent-text);
+  --xy-handle-background-color: var(--z-bg-surface);
+  --xy-handle-border-color: var(--z-text-dim);
+  --xy-selection-background-color: var(--z-accent-faint);
+  --xy-selection-border: 1px solid var(--z-accent-line);
+  --xy-attribution-background-color: transparent;
+  --xy-node-boxshadow-selected: none;
+  --xy-node-boxshadow-hover: none;
+}
+.zorel-flow .react-flow__handle {
+  width: 9px;
+  height: 9px;
+}
+.zorel-flow .react-flow__node {
+  cursor: default;
+}

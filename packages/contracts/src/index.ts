@@ -1,6 +1,9 @@
 // Single contract between server and clients: everything crossing the network is typed here.
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup } from "effect/http-api"
+import { FlowGraph, RoutineSchedule } from "./flow.ts"
+
+export * from "./flow.ts"
 
 const Id = Schema.String
 const Name = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(80))
@@ -164,6 +167,121 @@ export type AgentVersion = typeof AgentVersion.Type
 // has items it hasn't seen (a new issue, a failing monitor, an email).
 export const RoutineWatch = Schema.Struct({ serverId: Id, tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)), args: Schema.Record(Schema.String, Schema.Unknown) })
 export type RoutineWatch = typeof RoutineWatch.Type
+// Spec 012. Where a routine's result goes, and when the person is told.
+export const RoutineChannel = Schema.Literals(["notify", "telegram", "page"])
+export type RoutineChannel = typeof RoutineChannel.Type
+// Spec 013: a connector's write tool the result is posted with. textField takes the result; args hold the rest
+// (a channel's id). inThread: the reply goes into the triggering message's thread when the tool takes one.
+export const ConnectorDestination = Schema.Struct({
+  serverId: Id,
+  tool: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+  args: Schema.Record(Schema.String, Schema.Unknown),
+  textField: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+  inThread: Schema.optional(Schema.Boolean)
+})
+export type ConnectorDestination = typeof ConnectorDestination.Type
+export const RoutineDelivery = Schema.Struct({ channels: Schema.Array(RoutineChannel).check(Schema.isMaxLength(3)), pageId: Schema.optional(Id), connectors: Schema.optional(Schema.Array(ConnectorDestination).check(Schema.isMaxLength(3))) })
+export type RoutineDelivery = typeof RoutineDelivery.Type
+export const RoutineTell = Schema.Literals(["every", "something", "brief"]) // every run, when there's something, only in the brief
+export type RoutineTell = typeof RoutineTell.Type
+export const RoutineOutcome = Schema.Literals(["nothing", "something", "needs"])
+export type RoutineOutcome = typeof RoutineOutcome.Type
+export const RoutineTrigger = Schema.Literals(["schedule", "day_start", "now", "webhook", "watch"])
+export type RoutineTrigger = typeof RoutineTrigger.Type
+// One run: when, what started it, how it ended, and what the person was told. `report` only on the routine's history.
+export const RoutineRun = Schema.Struct({
+  id: Id,
+  routineId: Id,
+  trigger: RoutineTrigger,
+  label: Schema.NullOr(Schema.String),
+  state: Schema.Literals(["queued", "running", "done"]),
+  outcome: Schema.NullOr(RoutineOutcome),
+  summary: Schema.String,
+  report: Schema.optional(Schema.String),
+  turnId: Schema.NullOr(Schema.String),
+  messageId: Schema.NullOr(Schema.String),
+  triageTokens: Schema.Number,
+  cost: Schema.NullOr(Schema.Number),
+  held: Schema.Boolean,
+  deliveredAt: Schema.NullOr(Schema.Number),
+  deliveryNote: Schema.NullOr(Schema.String),
+  readAt: Schema.NullOr(Schema.Number),
+  createdAt: Schema.Number,
+  startedAt: Schema.NullOr(Schema.Number),
+  endedAt: Schema.NullOr(Schema.Number),
+  version: Schema.optional(Schema.NullOr(Schema.Number)) // spec 013: the flow version it ran on; null: a spec 012 run
+})
+export type RoutineRun = typeof RoutineRun.Type
+// Spec 013: one step of a flow run. uncertain: a write that may have gone out when the server stopped (the person
+// decides: send again, skip or stop).
+export const RunStepState = Schema.Literals(["running", "done", "failed", "skipped", "waiting", "uncertain"])
+export const RunStep = Schema.Struct({
+  id: Id,
+  runId: Id,
+  nodeId: Schema.String,
+  attempt: Schema.Number,
+  state: RunStepState,
+  branch: Schema.NullOr(Schema.String),
+  input: Schema.String, // previews, masked, ≤ 4000 characters
+  output: Schema.String,
+  full: Schema.Boolean, // the whole output is kept apart (GET …/steps/:stepId/output)
+  error: Schema.NullOr(Schema.String),
+  startedAt: Schema.Number,
+  endedAt: Schema.NullOr(Schema.Number)
+})
+export type RunStep = typeof RunStep.Type
+export const RunDetail = Schema.Struct({ run: RoutineRun, steps: Schema.Array(RunStep) })
+export type RunDetail = typeof RunDetail.Type
+export const RoutineFlow = Schema.Struct({ version: Schema.NullOr(Schema.Number), graph: FlowGraph })
+export type RoutineFlow = typeof RoutineFlow.Type
+// A flow the server won't save, naming the step and the field.
+export class FlowInvalid extends Schema.Error<FlowInvalid>("zorel/FlowInvalid")({ _tag: Schema.tag("FlowInvalid"), message: Schema.String, nodeId: Schema.optional(Schema.String), field: Schema.optional(Schema.String) }, { httpApiStatus: 400 }) {}
+// Saved on top of a version that isn't the current one (another tab saved first).
+export class FlowConflict extends Schema.Error<FlowConflict>("zorel/FlowConflict")({ _tag: Schema.tag("FlowConflict"), message: Schema.String, version: Schema.NullOr(Schema.Number) }, { httpApiStatus: 409 }) {}
+// A connector's tool for the step picker (spec 013), with whether this routine's agent can use it now.
+export const ToolState = Schema.Literals(["usable", "no-access", "read-only", "off", "signed-out"])
+export type ToolState = typeof ToolState.Type
+export const CatalogTool = Schema.Struct({
+  name: Schema.String,
+  description: Schema.String,
+  cls: Schema.Literals(["read", "write", "sensitive"]),
+  inputSchema: Schema.Record(Schema.String, Schema.Unknown),
+  outputSchema: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  state: ToolState
+})
+export type CatalogTool = typeof CatalogTool.Type
+export const TriggerTest = Schema.Struct({
+  items: Schema.Array(Schema.Struct({ preview: Schema.String, verdict: Schema.Literals(["runs", "seen", "checked-out"]) })),
+  times: Schema.Array(Schema.Number), // a schedule's next times
+  note: Schema.NullOr(Schema.String), // why the check let nothing through, or why the test couldn't run
+  first: Schema.Boolean // a watch never checked yet: what's there now counts as seen
+})
+export type TriggerTest = typeof TriggerTest.Type
+export const StepTest = Schema.Struct({ output: Schema.String, dry: Schema.Boolean, error: Schema.NullOr(Schema.String) })
+export type StepTest = typeof StepTest.Type
+// What came in since the last brief (the Today page), built from the runs without a model.
+export const Today = Schema.Struct({ from: Schema.Number, needs: Schema.Array(RoutineRun), found: Schema.Array(RoutineRun), quiet: Schema.Number })
+export type Today = typeof Today.Type
+export const RoutineWeek = Schema.Struct({ runs: Schema.Array(RoutineRun), planned: Schema.Array(Schema.Struct({ routineId: Id, at: Schema.Number })) })
+export type RoutineWeek = typeof RoutineWeek.Type
+const HourMinute = Schema.String.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/))
+export const QuietHours = Schema.Struct({ from: HourMinute, to: HourMinute })
+export type QuietHours = typeof QuietHours.Type
+// The person's time (spec 012): their zone, when their day usually starts (learned from the first activity of the
+// day unless set), and quiet hours that hold pings for the morning brief.
+export const TimeProfile = Schema.Struct({
+  timeZone: Schema.String,
+  quietHours: Schema.NullOr(QuietHours),
+  dayStartMinutes: Schema.Number, // the start in use, minutes after local midnight
+  dayStartSet: Schema.NullOr(Schema.Number), // set by hand; null: learned
+  learned: Schema.Number // how many days it was learned from
+})
+export type TimeProfile = typeof TimeProfile.Type
+export const TimeProfileInput = Schema.Struct({
+  timeZone: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+  quietHours: Schema.NullOr(QuietHours),
+  dayStartSet: Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1439 })))
+})
 // A routine (phase 7): an agent's recurring or triggered work, run as a message in its own chat. cron: when it
 // runs by itself (null: only on demand or by webhook). token: its local webhook (POST /api/hooks/:token).
 // watch: a connector it polls, running on what's new.
@@ -180,13 +298,30 @@ export const Routine = Schema.Struct({
   nextRunAt: Schema.NullOr(Schema.Number),
   lastRunAt: Schema.NullOr(Schema.Number),
   lastStatus: Schema.NullOr(Schema.Literals(["started", "skipped", "failed"])),
-  createdAt: Schema.Number
+  createdAt: Schema.Number,
+  onDayStart: Schema.Boolean,
+  dayRanOn: Schema.NullOr(Schema.String), // local date of the last day-start run
+  lookFirst: Schema.Boolean,
+  delivery: RoutineDelivery,
+  tell: RoutineTell,
+  urgent: Schema.Boolean,
+  version: Schema.optional(Schema.NullOr(Schema.Number)), // spec 013: its flow's current version; null: a spec 012 routine
+  schedule: Schema.optional(Schema.NullOr(RoutineSchedule)), // spec 013: once or monthly (cron stays for weekly)
+  watchEvery: Schema.optional(Schema.Number) // minutes between a watch's checks (1, 5, 15 or 60)
 })
 export type Routine = typeof Routine.Type
 const Cron = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(9), Schema.isMaxLength(100))
-export const NewRoutine = Schema.Struct({ agentId: Id, name: Name, prompt: Short(8000), cron: Schema.NullOr(Cron), webhook: Schema.Boolean, watch: Schema.optional(Schema.NullOr(RoutineWatch)) })
-export const RoutinePatch = Schema.Struct({ name: Schema.optional(Name), prompt: Schema.optional(Short(8000)), cron: Schema.optional(Schema.NullOr(Cron)), webhook: Schema.optional(Schema.Boolean), enabled: Schema.optional(Schema.Boolean) })
+const RoutineExtras = {
+  onDayStart: Schema.optional(Schema.Boolean), lookFirst: Schema.optional(Schema.Boolean), delivery: Schema.optional(RoutineDelivery),
+  tell: Schema.optional(RoutineTell), urgent: Schema.optional(Schema.Boolean)
+}
+export const NewRoutine = Schema.Struct({ agentId: Id, name: Name, prompt: Short(8000), cron: Schema.NullOr(Cron), webhook: Schema.Boolean, watch: Schema.optional(Schema.NullOr(RoutineWatch)), ...RoutineExtras })
+export const RoutinePatch = Schema.Struct({ name: Schema.optional(Name), prompt: Schema.optional(Short(8000)), cron: Schema.optional(Schema.NullOr(Cron)), webhook: Schema.optional(Schema.Boolean), enabled: Schema.optional(Schema.Boolean), ...RoutineExtras })
 // A cron pattern Zorel refuses (with croner's reason).
+// A routine's settings that don't fit together (spec 012), e.g. "look first" without a watched connector.
+export class RoutineInvalid extends Schema.Error<RoutineInvalid>("zorel/RoutineInvalid")({ _tag: Schema.tag("RoutineInvalid"), message: Schema.String }, { httpApiStatus: 400 }) {}
+// A webhook for a routine with 20 events already waiting (spec 012): refused, not queued.
+export class RoutineQueueFull extends Schema.Error<RoutineQueueFull>("zorel/RoutineQueueFull")({ _tag: Schema.tag("RoutineQueueFull"), message: Schema.String }, { httpApiStatus: 429 }) {}
 export class CronInvalid extends Schema.Error<CronInvalid>("zorel/CronInvalid")({ _tag: Schema.tag("CronInvalid"), message: Schema.String }, { httpApiStatus: 400 }) {}
 
 // A message that matched a search (Cmd+K): where it is and the words around the match.
@@ -446,6 +581,12 @@ export type ComputerStatus = typeof ComputerStatus.Type
 // agent-desktop on this computer (spec 008). accessibility: macOS's permission (granted, denied, unknown).
 export const DesktopStatus = Schema.Struct({ supported: Schema.Boolean, installed: Schema.Boolean, version: Schema.String, accessibility: Schema.NullOr(Schema.String), suggestion: Schema.NullOr(Schema.String) })
 export type DesktopStatus = typeof DesktopStatus.Type
+export class CliInstallFailed extends Schema.Error<CliInstallFailed>("zorel/CliInstallFailed")({ _tag: Schema.tag("CliInstallFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
+// A team's handle (from its name) is taken by an agent or another team the same chats can see; or an agent's name
+// would take a team's handle.
+export class TeamHandleTaken extends Schema.Error<TeamHandleTaken>("zorel/TeamHandleTaken")({ _tag: Schema.tag("TeamHandleTaken"), message: Schema.String }, { httpApiStatus: 409 }) {}
+// A member the team can't hold: outside its reach (a global team holds global agents only), or Zorel's own agent.
+export class TeamInvalid extends Schema.Error<TeamInvalid>("zorel/TeamInvalid")({ _tag: Schema.tag("TeamInvalid"), message: Schema.String }, { httpApiStatus: 400 }) {}
 export class DesktopInstallFailed extends Schema.Error<DesktopInstallFailed>("zorel/DesktopInstallFailed")({ _tag: Schema.tag("DesktopInstallFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
 // Telegram channel: whether the bot token is set, how many accounts are paired, and the open pairing code.
 export const TelegramStatus = Schema.Struct({ tokenSet: Schema.Boolean, fromEnv: Schema.Boolean, users: Schema.Number, pairing: Schema.NullOr(Schema.Struct({ code: Schema.String, until: Schema.Number })) })
@@ -559,8 +700,17 @@ export const NewProject = Schema.Struct({ name: Name, brief: LongText(8000), pat
 export const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: Schema.optional(LongText(8000)), path: Schema.optional(Schema.NullOr(FolderPath)), defaultAgentId: Schema.optional(Schema.NullOr(Id)) })
 const AgentTitle = Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(60))
 const AgentDescription = LongText(300)
-export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions), memory: Schema.optional(MemoryMode), knowledge: Schema.optional(KnowledgeAccess) })
-export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions), archived: Schema.optional(Schema.Boolean), monthlyTokens: Schema.optional(TOKEN_LIMIT), replyTokens: Schema.optional(TOKEN_LIMIT), memory: Schema.optional(MemoryMode), knowledge: Schema.optional(KnowledgeAccess) })
+export const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: LongText(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions), memory: Schema.optional(MemoryMode), knowledge: Schema.optional(KnowledgeAccess) , teamIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) })
+export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(LongText(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions), archived: Schema.optional(Schema.Boolean), monthlyTokens: Schema.optional(TOKEN_LIMIT), replyTokens: Schema.optional(TOKEN_LIMIT), memory: Schema.optional(MemoryMode), knowledge: Schema.optional(KnowledgeAccess) , teamIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) })
+// Teams (spec 010): a named, ordered group of agents. Organisation only: adding a team to a chat copies its members
+// (later changes to the team don't touch the chat); `@handle` routes to the member who fits (router.ts), the first
+// when none clearly does. handle: from the name, as an agent's; unique with the agents' in reach.
+export const TEAM_MAX = 20
+export const AgentTeam = Schema.Struct({ id: Id, projectId: Schema.NullOr(Id), name: Schema.String, handle: Schema.String, agentIds: Schema.Array(Id), createdAt: Schema.Number, updatedAt: Schema.Number })
+export type AgentTeam = typeof AgentTeam.Type
+const TeamAgentIds = Schema.Array(Id).check(Schema.isMaxLength(TEAM_MAX))
+export const NewAgentTeam = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, agentIds: TeamAgentIds })
+export const AgentTeamPatch = Schema.Struct({ name: Schema.optional(Name), agentIds: Schema.optional(TeamAgentIds) }) // agentIds replaces the list
 export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)) })
 export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
 export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: LongText(80), text: Short(4000), agents: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) })
@@ -590,7 +740,7 @@ export const MemoryApproval = Schema.Literals(["review", "undo"])
 export type MemoryApproval = typeof MemoryApproval.Type
 // memoryModel: the model that learns from chats (summary, memories, the map); "": automatic, each chat's provider's
 // small model (ZOREL_MEMORY_MODEL overrides the automatic one).
-export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number, memoryApproval: MemoryApproval, memoryModel: Schema.String })
+export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number, memoryApproval: MemoryApproval, memoryModel: Schema.String, timeProfile: TimeProfile })
 
 // Turns (send, events, interrupt, approve): see events.ts (RPC over WebSocket at /rpc).
 export const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
@@ -680,8 +830,12 @@ export const Api = HttpApi.make("zorel")
   .add(
     HttpApiGroup.make("agents")
       .add(HttpApiEndpoint.get("list", "/api/agents", { success: Schema.Array(Agent) }))
-      .add(HttpApiEndpoint.post("create", "/api/agents", { payload: NewAgent, success: Agent, error: HttpApiError.NotFound }))
-      .add(HttpApiEndpoint.patch("update", "/api/agents/:id", { params: idParam, payload: AgentPatch, success: Agent, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("create", "/api/agents", { payload: NewAgent, success: Agent, error: [HttpApiError.NotFound, TeamHandleTaken, TeamInvalid] }))
+      .add(HttpApiEndpoint.patch("update", "/api/agents/:id", { params: idParam, payload: AgentPatch, success: Agent, error: [HttpApiError.NotFound, TeamHandleTaken, TeamInvalid] }))
+      .add(HttpApiEndpoint.get("teams", "/api/teams", { success: Schema.Array(AgentTeam) }))
+      .add(HttpApiEndpoint.post("createTeam", "/api/teams", { payload: NewAgentTeam, success: AgentTeam, error: [HttpApiError.NotFound, TeamHandleTaken, TeamInvalid] }))
+      .add(HttpApiEndpoint.patch("updateTeam", "/api/teams/:id", { params: idParam, payload: AgentTeamPatch, success: AgentTeam, error: [HttpApiError.NotFound, TeamHandleTaken, TeamInvalid] }))
+      .add(HttpApiEndpoint.delete("removeTeam", "/api/teams/:id", { params: idParam }))
       .add(HttpApiEndpoint.delete("remove", "/api/agents/:id", { params: idParam }))
       // A chat with the Builder (created the first time), in a project or General.
       .add(HttpApiEndpoint.post("builder", "/api/agents/builder", { payload: Schema.Struct({ projectId: Schema.NullOr(Id), model: ModelId }), success: Chat, error: HttpApiError.NotFound }))
@@ -702,12 +856,34 @@ export const Api = HttpApi.make("zorel")
   .add(
     HttpApiGroup.make("routines")
       .add(HttpApiEndpoint.get("list", "/api/routines", { success: Schema.Array(Routine) }))
-      .add(HttpApiEndpoint.post("create", "/api/routines", { payload: NewRoutine, success: Routine, error: [HttpApiError.NotFound, CronInvalid] }))
-      .add(HttpApiEndpoint.patch("update", "/api/routines/:id", { params: idParam, payload: RoutinePatch, success: Routine, error: [HttpApiError.NotFound, CronInvalid] }))
+      .add(HttpApiEndpoint.post("create", "/api/routines", { payload: NewRoutine, success: Routine, error: [HttpApiError.NotFound, CronInvalid, RoutineInvalid] }))
+      .add(HttpApiEndpoint.patch("update", "/api/routines/:id", { params: idParam, payload: RoutinePatch, success: Routine, error: [HttpApiError.NotFound, CronInvalid, RoutineInvalid] }))
       .add(HttpApiEndpoint.delete("remove", "/api/routines/:id", { params: idParam }))
       .add(HttpApiEndpoint.post("run", "/api/routines/:id/run", { params: idParam, error: HttpApiError.NotFound }))
       // A local script or service starts it; the JSON body (if any) goes into the message.
-      .add(HttpApiEndpoint.post("hook", "/api/hooks/:token", { params: Schema.Struct({ token: Schema.String }), payload: Schema.optional(Schema.Unknown), error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("hook", "/api/hooks/:token", { params: Schema.Struct({ token: Schema.String }), payload: Schema.optional(Schema.Unknown), error: [HttpApiError.NotFound, RoutineQueueFull] }))
+      // Spec 012: a routine's history (newest first, 50 a page) and clearing it; the runs of a range (the week).
+      .add(HttpApiEndpoint.get("history", "/api/routines/:id/runs", { params: idParam, query: { before: Schema.optionalKey(Schema.NumberFromString) }, success: Schema.Array(RoutineRun), error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.delete("clearHistory", "/api/routines/:id/runs", { params: idParam, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.get("week", "/api/routine-runs", { query: { from: Schema.NumberFromString, to: Schema.NumberFromString }, success: RoutineWeek, error: HttpApiError.BadRequest }))
+      .add(HttpApiEndpoint.get("today", "/api/today", { success: Today }))
+      .add(HttpApiEndpoint.post("todayRead", "/api/today/read", { payload: Schema.Struct({ runIds: Schema.Array(Id).check(Schema.isMaxLength(100)) }) }))
+      .add(HttpApiEndpoint.post("activity", "/api/activity"))
+      // Spec 013: a routine's flow (synthesized for one saved before flows), saving a new version, an old version.
+      .add(HttpApiEndpoint.get("flow", "/api/routines/:id/flow", { params: idParam, success: RoutineFlow, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.put("saveFlow", "/api/routines/:id/flow", { params: idParam, payload: Schema.Struct({ graph: FlowGraph, baseVersion: Schema.NullOr(Schema.Number) }), success: Schema.Struct({ version: Schema.Number }), error: [HttpApiError.NotFound, FlowInvalid, FlowConflict] }))
+      .add(HttpApiEndpoint.get("flowVersion", "/api/routines/:id/flow/versions/:n", { params: Schema.Struct({ id: Schema.String, n: Schema.NumberFromString }), success: RoutineFlow, error: HttpApiError.NotFound }))
+      // Runs one tool step alone; a write tool is never called (dry: the arguments it would send).
+      .add(HttpApiEndpoint.post("testStep", "/api/routines/:id/flow/test-step", { params: idParam, payload: Schema.Struct({ graph: FlowGraph, nodeId: Schema.String }), success: StepTest, error: [HttpApiError.NotFound, FlowInvalid] }))
+      // Test now for a trigger: what it would find now (a watch's new items and what the check would let through, or a
+      // schedule's next times). Nothing runs and nothing is marked seen.
+      .add(HttpApiEndpoint.post("testTrigger", "/api/routines/:id/flow/test-trigger", { params: idParam, payload: Schema.Struct({ graph: FlowGraph }), success: TriggerTest, error: [HttpApiError.NotFound, FlowInvalid] }))
+      .add(HttpApiEndpoint.get("runDetail", "/api/routines/:id/runs/:runId", { params: Schema.Struct({ id: Schema.String, runId: Schema.String }), success: RunDetail, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.get("stepOutput", "/api/routines/:id/runs/:runId/steps/:stepId/output", { params: Schema.Struct({ id: Schema.String, runId: Schema.String, stepId: Schema.String }), success: Schema.Struct({ text: Schema.String }), error: HttpApiError.NotFound }))
+      // Every write that may have gone out when Zorel stopped, across routines (Needs you lists them).
+      .add(HttpApiEndpoint.get("uncertain", "/api/routine-steps/uncertain", { success: Schema.Array(Schema.Struct({ routineId: Id, runId: Id, stepId: Id, nodeId: Schema.String, at: Schema.Number })) }))
+      // A write that may have gone out: send it again, skip it, or stop the run.
+      .add(HttpApiEndpoint.post("resolveStep", "/api/routines/:id/runs/:runId/resolve", { params: Schema.Struct({ id: Schema.String, runId: Schema.String }), payload: Schema.Struct({ stepId: Id, choice: Schema.Literals(["again", "skip", "stop"]) }), error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
   )
   .add(
     HttpApiGroup.make("chats")
@@ -774,6 +950,10 @@ export const Api = HttpApi.make("zorel")
       // Connects and lists the tools, already classified; a connection failure comes in `error`.
       .add(HttpApiEndpoint.get("inspect", "/api/mcp/:id/tools", { params: idParam, success: Schema.Struct({ tools: Schema.Array(ToolInfo), error: Schema.NullOr(Schema.String) }), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.post("decide", "/api/approvals/:id", { params: idParam, payload: ApprovalDecision, error: HttpApiError.NotFound }))
+      // Spec 013: a connector's tools for the step picker, with each one's state for this agent; and the items a read
+      // tool lists, to pick an id by name.
+      .add(HttpApiEndpoint.get("catalog", "/api/mcp/:id/catalog", { params: idParam, query: { agentId: Schema.String }, success: Schema.Struct({ tools: Schema.Array(CatalogTool), error: Schema.NullOr(Schema.String) }), error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("options", "/api/mcp/:id/options", { params: idParam, payload: Schema.Struct({ tool: Schema.String, args: Schema.Record(Schema.String, Schema.Unknown) }), success: Schema.Array(Schema.Struct({ id: Schema.String, label: Schema.String })), error: [HttpApiError.NotFound, HttpApiError.BadRequest] }))
   )
   .add(
     HttpApiGroup.make("accounts")
@@ -806,6 +986,7 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.put("pause", "/api/pause", { payload: Schema.Struct({ paused: Schema.Boolean }) }))
       .add(HttpApiEndpoint.put("nativeSkills", "/api/preferences/native-skills", { payload: Schema.Struct({ enabled: Schema.Boolean }), success: Preferences }))
       .add(HttpApiEndpoint.put("memoryApproval", "/api/preferences/memory-approval", { payload: Schema.Struct({ approval: MemoryApproval }), success: Preferences }))
+      .add(HttpApiEndpoint.put("timeProfile", "/api/preferences/time", { payload: TimeProfileInput, success: Preferences, error: HttpApiError.BadRequest }))
       .add(HttpApiEndpoint.put("memoryModel", "/api/preferences/memory-model", { payload: Schema.Struct({ model: Schema.Union([ModelId, Schema.Literal("")]) }), success: Preferences }))
       .add(HttpApiEndpoint.put("maxRunning", "/api/preferences/max-running", { payload: Schema.Struct({ value: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 32 })) }), success: Preferences }))
       .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
@@ -816,6 +997,8 @@ export const Api = HttpApi.make("zorel")
       // Computer apps (spec 008): agent-desktop's state, its in-app install, the macOS permission guide, open apps.
       .add(HttpApiEndpoint.get("desktop", "/api/desktop", { success: DesktopStatus }))
       .add(HttpApiEndpoint.post("installDesktop", "/api/desktop/install", { success: DesktopStatus, error: DesktopInstallFailed }))
+      // An agent CLI with a single-program build (Antigravity, OpenCode): downloaded from its official source and checked.
+      .add(HttpApiEndpoint.post("installCli", "/api/cli/:id/install", { params: { id: Schema.Literals(["antigravity", "opencode"]) }, error: CliInstallFailed }))
       .add(HttpApiEndpoint.post("desktopGuide", "/api/desktop/guide"))
       .add(HttpApiEndpoint.get("desktopRunning", "/api/desktop/running", { success: Schema.Array(Schema.String) }))
       // Telegram channel (spec 007): the bot token goes through setKey (TELEGRAM_BOT_TOKEN); pairing here.

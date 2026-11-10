@@ -17,6 +17,7 @@
     "@secretlint/core": "13.0.7",
     "@secretlint/secretlint-rule-preset-recommend": "13.0.7",
     "@zorel/contracts": "workspace:*",
+    "ajv": "^8.20.0",
     "croner": "10.0.1",
     "drizzle-orm": "1.0.0-rc.5",
     "effect": "4.1.2",

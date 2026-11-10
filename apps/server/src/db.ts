@@ -1,9 +1,9 @@
 // Local database: SQLite via Drizzle over Effect's SqliteClient (D9). Every method returns an Effect;
 // a database error is a defect (orDie): the caller can do nothing but fail the request.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import { type Access, type Agent, type AgentPermissions, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type RoutineWatch, type Step, type Switch } from "@zorel/contracts"
+import { type Access, type Agent, type AgentPermissions, type AgentTeam, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type FlowGraph, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type RoutineDelivery, type RoutineTell, type RoutineWatch, type Step, type Switch } from "@zorel/contracts"
 import type { Approval, ApprovalOutcome, Turn, WorkStep } from "@zorel/contracts/events"
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
 import { LOCAL_ACTOR } from "./access.ts"
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator"
@@ -13,7 +13,7 @@ import { Context, Effect, Layer, Semaphore } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
 import type { EntityType, Mapped } from "./context.ts"
 import { fileTitle, hashOf, markdownFiles, pageText, parsePageText, readText, removeFile, slugOf, titleOfFile, writeAtomic } from "./page-files.ts"
-import { type AgentProfile, agents, agentVersions, entities, entityLinks, memoryEntities, memoryVersions, relations, pages, pageVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
+import { type AgentProfile, agents, agentTeamMembers, agentTeams, agentVersions, entities, entityLinks, memoryEntities, memoryVersions, relations, pages, pageVersions, routineRuns, routineRunSteps, routineVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
 
 // The part of an agent a version keeps (everything but its id, project and creation time).
 export const profileOf = (a: Agent): AgentProfile => ({
@@ -23,6 +23,8 @@ export const profileOf = (a: Agent): AgentProfile => ({
 
 // "Prefere PRs pequenos." and "prefere prs pequenos" are the same memory.
 export const normalize = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
+// "Copywriter Sênior" → "copywriter-senior": what `@` calls an agent or a team by.
+export const handleFromName = (name: string) => normalize(name).replace(/ /g, "-")
 
 // The same fact said with other small words: normalized words in order, without articles and possessives, without a
 // leading subject ("The user uses…" is "Uses…"), and a final -s off words of 4+ letters ("Fridays", "runs"). Order,
@@ -105,10 +107,15 @@ const toTurn = (r: typeof turns.$inferSelect): Turn => ({
 })
 const toStep = (r: typeof steps.$inferSelect): WorkStep => ({ ...r, files: JSON.parse(r.files), changes: JSON.parse(r.changes) })
 const toApproval = (r: typeof approvals.$inferSelect): Approval => ({
-  id: r.id, chatId: r.chatId, turnId: r.turnId, stepId: r.stepId, agentId: r.agentId, kind: r.kind, tool: r.tool,
+  id: r.id, chatId: r.chatId, turnId: r.turnId, runStepId: r.runStepId, stepId: r.stepId, agentId: r.agentId, kind: r.kind, tool: r.tool,
   summary: r.summary, args: r.args, cwd: r.cwd, alwaysKey: r.alwaysKey, createdAt: r.createdAt, expiresAt: r.expiresAt
 })
 export type TurnRow = typeof turns.$inferSelect
+export type RunRow = typeof routineRuns.$inferSelect
+export type RoutineRow = typeof routines.$inferSelect
+export type StepRow = typeof routineRunSteps.$inferSelect
+type RoutineSettings = { onDayStart: boolean; lookFirst: boolean; delivery: RoutineDelivery; tell: RoutineTell; urgent: boolean }
+const ROUTINE_DEFAULTS: RoutineSettings = { onDayStart: false, lookFirst: false, delivery: { channels: ["notify"] }, tell: "something", urgent: false }
 export type AccountRow = typeof providerAccounts.$inferSelect
 const defined = <T extends Record<string, unknown>>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>
 
@@ -234,6 +241,12 @@ export const repository = (db: Db, pagesDir?: string) => {
       const unique = [...new Set(agentIds)]
       if (unique.length) yield* tx.insert(chatMembers).values(unique.map((agentId, position) => ({ chatId, agentId, position })))
     })
+  const setTeamMembers = (tx: Pick<Db, "delete" | "insert">, teamId: string, agentIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      yield* tx.delete(agentTeamMembers).where(eq(agentTeamMembers.teamId, teamId))
+      const unique = [...new Set(agentIds)]
+      if (unique.length) yield* tx.insert(agentTeamMembers).values(unique.map((agentId, position) => ({ teamId, agentId, position })))
+    })
   // Messages with their attachments (one extra query per page of messages).
   const withFiles = <E>(q: Effect.Effect<ReadonlyArray<typeof messages.$inferSelect>, E>) =>
     orDie(
@@ -323,6 +336,54 @@ export const repository = (db: Db, pagesDir?: string) => {
         if (JSON.stringify(profileOf(after)) !== JSON.stringify(profileOf(before))) yield* addVersion(after, by)
         return after
       }).pipe(orDie),
+    // ---------- teams (spec 010) ----------
+    // Each with its members in order; oldest team first.
+    teams: (): Effect.Effect<AgentTeam[]> =>
+      orDie(
+        Effect.gen(function* () {
+          const rows = yield* db.select().from(agentTeams).orderBy(asc(agentTeams.createdAt))
+          const ms = yield* db.select().from(agentTeamMembers).orderBy(asc(agentTeamMembers.position))
+          return rows.map((t) => ({ ...t, handle: handleFromName(t.name), agentIds: ms.filter((m) => m.teamId === t.id).map((m) => m.agentId) }))
+        })
+      ),
+    createTeam: (input: { projectId: string | null; name: string; agentIds: ReadonlyArray<string> }) =>
+      orDie(
+        db.transaction((tx) =>
+          Effect.gen(function* () {
+            const t = { id: crypto.randomUUID(), projectId: input.projectId, name: input.name, createdAt: now(), updatedAt: now() }
+            yield* tx.insert(agentTeams).values(t)
+            yield* setTeamMembers(tx, t.id, input.agentIds)
+            return t.id
+          })
+        )
+      ),
+    updateTeam: (id: string, input: { name?: string | undefined; agentIds?: ReadonlyArray<string> | undefined }) =>
+      orDie(
+        db.transaction((tx) =>
+          Effect.gen(function* () {
+            yield* tx.update(agentTeams).set({ ...(input.name !== undefined && { name: input.name }), updatedAt: now() }).where(eq(agentTeams.id, id))
+            if (input.agentIds) yield* setTeamMembers(tx, id, input.agentIds)
+          })
+        )
+      ),
+    removeTeam: (id: string) => orDie(db.delete(agentTeams).where(eq(agentTeams.id, id))),
+    // Which teams hold an agent: it joins the new ones last, leaves the others, keeps its place in the rest.
+    setAgentTeams: (agentId: string, teamIds: ReadonlyArray<string>) =>
+      orDie(
+        db.transaction((tx) =>
+          Effect.gen(function* () {
+            const have = yield* tx.select().from(agentTeamMembers).where(eq(agentTeamMembers.agentId, agentId))
+            const keep = new Set(teamIds)
+            const drop = have.filter((m) => !keep.has(m.teamId)).map((m) => m.teamId)
+            if (drop.length) yield* tx.delete(agentTeamMembers).where(and(eq(agentTeamMembers.agentId, agentId), inArray(agentTeamMembers.teamId, drop)))
+            for (const teamId of [...keep].filter((t) => !have.some((m) => m.teamId === t))) {
+              const [{ n = -1 } = {}] = yield* tx.select({ n: sql<number>`coalesce(max(${agentTeamMembers.position}), -1)` }).from(agentTeamMembers).where(eq(agentTeamMembers.teamId, teamId))
+              yield* tx.insert(agentTeamMembers).values({ teamId, agentId, position: Number(n) + 1 })
+              yield* tx.update(agentTeams).set({ updatedAt: now() }).where(eq(agentTeams.id, teamId))
+            }
+          })
+        )
+      ),
     // The tokens (input + output) an agent's turns used since a time (its month, for its monthly limit).
     agentTokensSince: (agentId: string, since: number) =>
       orDie(
@@ -330,7 +391,17 @@ export const repository = (db: Db, pagesDir?: string) => {
           .select({ n: sql<number>`coalesce(sum(${turns.inputTokens} + ${turns.outputTokens}), 0)` })
           .from(turns)
           .where(and(eq(turns.agentId, agentId), gte(turns.createdAt, since)))
-          .pipe(Effect.map((r) => Number(r[0]?.n ?? 0)))
+          .pipe(
+            // The routines' cheap checks (spec 012) count toward the same month.
+            Effect.flatMap((r) =>
+              db
+                .select({ n: sql<number>`coalesce(sum(${routineRuns.triageTokens}), 0)` })
+                .from(routineRuns)
+                .innerJoin(routines, eq(routines.id, routineRuns.routineId))
+                .where(and(eq(routines.agentId, agentId), gte(routineRuns.createdAt, since)))
+                .pipe(Effect.map((t) => Number(r[0]?.n ?? 0) + Number(t[0]?.n ?? 0)))
+            )
+          )
       ),
     // Newest first.
     // An agent's runs, newest first (the last `limit`): the turn, and its reply's steps and first words.
@@ -485,13 +556,13 @@ export const repository = (db: Db, pagesDir?: string) => {
     routines: () => orDie(db.select().from(routines).orderBy(asc(routines.createdAt))),
     routine: (id: string) => orDie(db.select().from(routines).where(eq(routines.id, id)).pipe(Effect.map(first))),
     routineByToken: (token: string) => orDie(db.select().from(routines).where(eq(routines.token, token)).pipe(Effect.map(first))),
-    createRoutine: (input: { agentId: string; chatId: string; name: string; prompt: string; cron: string | null; token: string | null; nextRunAt: number | null; watch: RoutineWatch | null }) =>
+    createRoutine: (input: { agentId: string; chatId: string; name: string; prompt: string; cron: string | null; token: string | null; nextRunAt: number | null; watch: RoutineWatch | null } & { [K in keyof RoutineSettings]?: RoutineSettings[K] | undefined }) =>
       Effect.gen(function* () {
-        const r = { id: crypto.randomUUID(), ...input, watchSeen: null, watchAt: null, enabled: true, lastRunAt: null, lastStatus: null, createdAt: now() } as const
+        const r = { id: crypto.randomUUID(), ...ROUTINE_DEFAULTS, ...defined(input), watchSeen: null, watchAt: null, enabled: true, lastRunAt: null, lastStatus: null, dayRanOn: null, version: null, schedule: null, watchEvery: 5, createdAt: now() } as typeof routines.$inferSelect
         yield* db.insert(routines).values(r)
         return r
       }).pipe(orDie),
-    updateRoutine: (id: string, input: { [K in "name" | "prompt" | "cron" | "token" | "watch" | "watchSeen" | "watchAt" | "enabled" | "nextRunAt" | "lastRunAt" | "lastStatus"]?: (typeof routines.$inferInsert)[K] | undefined }) =>
+    updateRoutine: (id: string, input: { [K in "name" | "prompt" | "cron" | "token" | "watch" | "watchSeen" | "watchAt" | "enabled" | "nextRunAt" | "lastRunAt" | "lastStatus" | "onDayStart" | "dayRanOn" | "lookFirst" | "delivery" | "tell" | "urgent" | "version" | "schedule" | "watchEvery"]?: (typeof routines.$inferInsert)[K] | undefined }) =>
       Effect.gen(function* () {
         const set = defined(input)
         if (Object.keys(set).length) yield* db.update(routines).set(set).where(eq(routines.id, id))
@@ -502,6 +573,85 @@ export const repository = (db: Db, pagesDir?: string) => {
     // Enabled and watching a connector.
     watchingRoutines: () => orDie(db.select().from(routines).where(and(eq(routines.enabled, true), isNotNull(routines.watch)))),
     dueRoutines: (at: number) => orDie(db.select().from(routines).where(and(eq(routines.enabled, true), sql`${routines.nextRunAt} <= ${at}`))),
+    dayStartRoutines: () => orDie(db.select().from(routines).where(and(eq(routines.enabled, true), eq(routines.onDayStart, true)))),
+
+    // ---------- routine runs (spec 012) ----------
+    addRun: (input: { routineId: string; trigger: RunRow["trigger"]; state: RunRow["state"]; payload?: unknown; label?: string | null; version?: number | null }) =>
+      Effect.gen(function* () {
+        const row: RunRow = {
+          id: crypto.randomUUID(), routineId: input.routineId, trigger: input.trigger, payload: input.payload ?? null, label: input.label ?? null, state: input.state,
+          outcome: null, summary: "", report: "", turnId: null, messageId: null, triageTokens: 0, cost: null, held: false, deliveredAt: null, deliveryNote: null, readAt: null,
+          createdAt: now(), startedAt: input.state === "running" ? now() : null, endedAt: null, version: input.version ?? null
+        }
+        yield* db.insert(routineRuns).values(row)
+        return row
+      }).pipe(orDie),
+    updateRun: (id: string, set: Partial<Omit<RunRow, "id" | "routineId" | "createdAt">>) =>
+      Effect.gen(function* () {
+        const values = defined(set)
+        if (Object.keys(values).length) yield* db.update(routineRuns).set(values).where(eq(routineRuns.id, id))
+        return (yield* db.select().from(routineRuns).where(eq(routineRuns.id, id)))[0]
+      }).pipe(orDie),
+    routineRun: (id: string) => orDie(db.select().from(routineRuns).where(eq(routineRuns.id, id)).pipe(Effect.map(first))),
+    runByTurn: (turnId: string) => orDie(db.select().from(routineRuns).where(eq(routineRuns.turnId, turnId)).pipe(Effect.map(first))),
+    routineRunsIn: (state: RunRow["state"]) => orDie(db.select().from(routineRuns).where(eq(routineRuns.state, state)).orderBy(asc(routineRuns.createdAt))),
+    runningRun: (routineId: string) => orDie(db.select().from(routineRuns).where(and(eq(routineRuns.routineId, routineId), eq(routineRuns.state, "running"))).pipe(Effect.map(first))),
+    countQueued: (routineId: string) =>
+      orDie(db.select({ n: sql<number>`count(*)` }).from(routineRuns).where(and(eq(routineRuns.routineId, routineId), eq(routineRuns.state, "queued"))).pipe(Effect.map((r) => Number(r[0]?.n ?? 0)))),
+    // The last finished run that reached the agent (its report is the next run's "what changed" baseline).
+    lastReport: (routineId: string) =>
+      orDie(
+        db.select().from(routineRuns).where(and(eq(routineRuns.routineId, routineId), eq(routineRuns.state, "done"), isNotNull(routineRuns.turnId), ne(routineRuns.report, "")))
+          .orderBy(desc(routineRuns.createdAt)).limit(1).pipe(Effect.map(first))
+      ),
+    routineRunsOf: (routineId: string, before = Number.MAX_SAFE_INTEGER, limit = 50) =>
+      orDie(db.select().from(routineRuns).where(and(eq(routineRuns.routineId, routineId), lt(routineRuns.createdAt, before))).orderBy(desc(routineRuns.createdAt)).limit(limit)),
+    routineRunsBetween: (from: number, to: number) =>
+      orDie(db.select().from(routineRuns).where(and(gte(routineRuns.createdAt, from), lt(routineRuns.createdAt, to))).orderBy(asc(routineRuns.createdAt))),
+    readRoutineRuns: (ids: ReadonlyArray<string>) =>
+      orDie(db.update(routineRuns).set({ readAt: now() }).where(and(inArray(routineRuns.id, [...ids]), isNull(routineRuns.readAt))).pipe(Effect.asVoid)),
+    clearRoutineRuns: (routineId: string) => orDie(db.delete(routineRuns).where(and(eq(routineRuns.routineId, routineId), eq(routineRuns.state, "done"))).pipe(Effect.asVoid)),
+    // Retention (FR-017): finished runs older than `before` go, except each routine's newest `keep`.
+    pruneRoutineRuns: (before: number, keep = 50) =>
+      orDie(
+        db.run(sql`DELETE FROM routine_runs WHERE state = 'done' AND created_at < ${before} AND id NOT IN (
+          SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY routine_id ORDER BY created_at DESC, id DESC) AS n FROM routine_runs WHERE state = 'done') WHERE n <= ${keep})`).pipe(Effect.asVoid)
+      ),
+    // ---------- routine flows (spec 013) ----------
+    // A new version of a routine's flow, made current. ponytail: read-then-insert, one server owns the database.
+    addVersion: (routineId: string, graph: FlowGraph) =>
+      Effect.gen(function* () {
+        const last = yield* db.select({ n: sql<number>`max(${routineVersions.n})` }).from(routineVersions).where(eq(routineVersions.routineId, routineId))
+        const n = Number(last[0]?.n ?? 0) + 1
+        yield* db.insert(routineVersions).values({ routineId, n, graph, createdAt: now() })
+        yield* db.update(routines).set({ version: n }).where(eq(routines.id, routineId))
+        return n
+      }).pipe(orDie),
+    versionOf: (routineId: string, n: number) =>
+      orDie(db.select().from(routineVersions).where(and(eq(routineVersions.routineId, routineId), eq(routineVersions.n, n))).pipe(Effect.map((r) => r[0]?.graph))),
+    addRunStep: (input: { runId: string; nodeId: string; attempt?: number; input?: string; state?: StepRow["state"] }) =>
+      Effect.gen(function* () {
+        const row: StepRow = {
+          id: crypto.randomUUID(), runId: input.runId, nodeId: input.nodeId, attempt: input.attempt ?? 1, state: input.state ?? "running", branch: null,
+          input: input.input ?? "", output: "", outputFile: null, mayHaveWritten: false, error: null, startedAt: now(), endedAt: null
+        }
+        yield* db.insert(routineRunSteps).values(row)
+        return row
+      }).pipe(orDie),
+    updateRunStep: (id: string, set: Partial<Omit<StepRow, "id" | "runId" | "nodeId">>) =>
+      Effect.gen(function* () {
+        const values = defined(set)
+        if (Object.keys(values).length) yield* db.update(routineRunSteps).set(values).where(eq(routineRunSteps.id, id))
+        return (yield* db.select().from(routineRunSteps).where(eq(routineRunSteps.id, id)))[0]
+      }).pipe(orDie),
+    runStepsIn: (state: StepRow["state"]) => orDie(db.select().from(routineRunSteps).where(eq(routineRunSteps.state, state))),
+    runStep: (id: string) => orDie(db.select().from(routineRunSteps).where(eq(routineRunSteps.id, id)).pipe(Effect.map(first))),
+    stepsOfRun: (runId: string) => orDie(db.select().from(routineRunSteps).where(eq(routineRunSteps.runId, runId)).orderBy(asc(routineRunSteps.startedAt), asc(routineRunSteps.attempt))),
+    // Steps the person must settle (a write that may have gone out), across routines.
+    uncertainSteps: () => orDie(db.select().from(routineRunSteps).where(eq(routineRunSteps.state, "uncertain")).orderBy(asc(routineRunSteps.startedAt))),
+
+    messageText: (id: string) => orDie(db.select({ text: messages.text }).from(messages).where(eq(messages.id, id)).pipe(Effect.map((r) => r[0]?.text))),
+    setMessageText: (id: string, text: string) => orDie(db.update(messages).set({ text }).where(eq(messages.id, id)).pipe(Effect.asVoid)),
 
     // ---------- chats and messages ----------
     chats: () => orDie(db.select().from(chats).where(eq(chats.hidden, false)).orderBy(desc(chats.createdAt)).pipe(Effect.flatMap(withMembers))),
@@ -570,6 +720,16 @@ export const repository = (db: Db, pagesDir?: string) => {
     messages: (chatId: string) => withFiles(db.select().from(messages).where(eq(messages.chatId, chatId)).orderBy(asc(messages.at))),
     messagesAfter: (chatId: string, at: number) =>
       withFiles(db.select().from(messages).where(and(eq(messages.chatId, chatId), gt(messages.at, at))).orderBy(asc(messages.at))),
+    // Whether any message in (after, until] came from outside (spec 011): learning from it waits for review.
+    hasOutside: (chatId: string, after = 0, until = Number.MAX_SAFE_INTEGER) =>
+      orDie(
+        db
+          .select({ id: messages.id })
+          .from(messages)
+          .where(and(eq(messages.chatId, chatId), eq(messages.outside, true), gt(messages.at, after), lte(messages.at, until)))
+          .limit(1)
+          .pipe(Effect.map((r) => r.length > 0))
+      ),
     // attachmentIds: files uploaded to this chat beforehand; linked to the message here.
     addMessage: (
       input: Omit<Message, "id" | "at" | "attachments" | "switches" | "turnId" | "changes" | "revertedAt" | "accountId" | "cost" | "durationMs"> & {
@@ -580,12 +740,13 @@ export const repository = (db: Db, pagesDir?: string) => {
         changes?: ReadonlyArray<FileChange> | undefined
         accountId?: string | null | undefined
         cost?: number | null | undefined
+        outside?: boolean | undefined // text from outside (spec 011): kept on the row, not sent to the client
       }
     ) =>
       Effect.gen(function* () {
-        const { attachmentIds = [], switches = [], turnId = null, changes = [], accountId = null, cost = null, durationMs = null, ...rest } = input
+        const { attachmentIds = [], switches = [], turnId = null, changes = [], accountId = null, cost = null, durationMs = null, outside = false, ...rest } = input
         const base = { id: crypto.randomUUID(), ...rest, switches, turnId, changes, accountId, cost, durationMs, revertedAt: null, at: now() }
-        yield* db.insert(messages).values({ ...base, steps: JSON.stringify(base.steps) })
+        yield* db.insert(messages).values({ ...base, steps: JSON.stringify(base.steps), outside })
         let files: Attachment[] = []
         if (attachmentIds.length) {
           const linked = yield* db
@@ -960,8 +1121,8 @@ export const repository = (db: Db, pagesDir?: string) => {
     turnByClientId: (clientId: string) => orDie(db.select().from(turns).where(eq(turns.clientId, clientId)).pipe(Effect.map(first))),
     // route: the agent is picked (router.ts) when the turn starts; agentId is the fallback (the lead).
     retargetTurn: (id: string, to: { agentId: string; model: string; accountId: string | null }) =>
-      orDie(db.update(turns).set({ ...to, route: false }).where(eq(turns.id, id)).returning().pipe(Effect.map((r) => r[0]!))),
-    enqueueTurn: (input: { chatId: string; agentId: string | null; model: string; accountId?: string | null; clientId: string | null; depth: number; route?: boolean }) =>
+      orDie(db.update(turns).set({ ...to, route: false, routeTeamId: null }).where(eq(turns.id, id)).returning().pipe(Effect.map((r) => r[0]!))),
+    enqueueTurn: (input: { chatId: string; agentId: string | null; model: string; accountId?: string | null; clientId: string | null; depth: number; route?: boolean; routeTeamId?: string | null; outside?: boolean }) =>
       orDie(db.insert(turns).values({ id: crypto.randomUUID(), ...input, state: "queued", createdAt: now() }).returning().pipe(Effect.map((r) => r[0]!))),
     // What a chat runs next: your own messages (depth 0) before the replies that agents handed to one another (depth > 0),
     // each group in order of arrival. A message of yours never waits behind a chain it didn't start.

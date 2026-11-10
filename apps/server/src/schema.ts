@@ -1,6 +1,6 @@
 // Database schema (Drizzle). Mirrors the tables the MVP created with hand-written SQL, column by column,
 // so the existing database is adopted without copying (see migrate.ts). Changed something here? `bun run db:generate`.
-import type { AccountUsage, AgentPermissions, FailoverTarget, FileChange, RoutineWatch, Switch } from "@zorel/contracts"
+import type { AccountUsage, AgentPermissions, FailoverTarget, FileChange, FlowGraph, RoutineDelivery, RoutineSchedule, RoutineWatch, Switch } from "@zorel/contracts"
 import { sql } from "drizzle-orm"
 import { type AnySQLiteColumn, check, index, integer, primaryKey, real, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
 
@@ -121,6 +121,26 @@ export const chatMembers = sqliteTable(
   (t) => [primaryKey({ columns: [t.chatId, t.agentId] })]
 )
 
+// Teams (spec 010): a named, ordered group of agents, in a project or global. Organisation only: adding one to a
+// chat copies its members, `@team` routes to one of them (router.ts). Its handle comes from its name, like an agent's.
+export const agentTeams = sqliteTable("agent_teams", {
+  id: text().primaryKey(),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  name: text().notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull()
+})
+
+export const agentTeamMembers = sqliteTable(
+  "agent_team_members",
+  {
+    teamId: text("team_id").notNull().references(() => agentTeams.id, { onDelete: "cascade" }),
+    agentId: text("agent_id").notNull().references(() => agents.id, { onDelete: "cascade" }),
+    position: integer().notNull() // 0 = first: the team's fallback when routing fails
+  },
+  (t) => [primaryKey({ columns: [t.teamId, t.agentId] })]
+)
+
 export const messages = sqliteTable(
   "messages",
   {
@@ -141,6 +161,7 @@ export const messages = sqliteTable(
     inputTokens: integer("input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull().default(0),
     durationMs: integer("duration_ms"), // how long the turn took (the chat's turn summary)
+    outside: integer({ mode: "boolean" }).notNull().default(false), // text from outside (webhook, watch): never learned without review
     at: integer().notNull()
   },
   (t) => [index("messages_by_chat").on(t.chatId, t.at), check("messages_role", sql`${t.role} IN ('user', 'assistant')`)]
@@ -260,6 +281,8 @@ export const turns = sqliteTable(
     state: text({ enum: ["queued", "running", "completed", "failed", "interrupted"] }).notNull(),
     depth: integer().notNull().default(0), // consecutive agent replies without a message from you
     route: integer({ mode: "boolean" }).notNull().default(false), // who answers is picked (router.ts) when it starts
+    routeTeamId: text("route_team_id"), // routed among this team's members (an @team call); null: the chat's members
+    outside: integer({ mode: "boolean" }).notNull().default(false), // started by outside text (webhook, watch) or handed off from it: runs at "ask"
     createdAt: integer("created_at").notNull(),
     startedAt: integer("started_at"),
     endedAt: integer("ended_at"),
@@ -303,7 +326,9 @@ export const approvals = sqliteTable(
   {
     id: text().primaryKey(),
     chatId: text("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
-    turnId: text("turn_id").notNull().references(() => turns.id, { onDelete: "cascade" }),
+    // One of the two: a turn's tool call, or a routine flow's step (spec 013).
+    turnId: text("turn_id").references(() => turns.id, { onDelete: "cascade" }),
+    runStepId: text("run_step_id").references((): AnySQLiteColumn => routineRunSteps.id, { onDelete: "cascade" }),
     stepId: text("step_id"),
     agentId: text("agent_id"),
     kind: text({ enum: ["command", "edit", "tool", "network", "question"] }).notNull(), // question: zorel_ask_user
@@ -319,7 +344,7 @@ export const approvals = sqliteTable(
     decidedBy: text("decided_by", { enum: ["user", "rule", "expiry"] }),
     decidedAt: integer("decided_at")
   },
-  (t) => [index("approvals_open").on(t.outcome, t.chatId)]
+  (t) => [index("approvals_open").on(t.outcome, t.chatId), check("approvals_anchor", sql`(${t.turnId} IS NULL) <> (${t.runStepId} IS NULL)`)]
 )
 
 // Files sent with messages (ARCHITECTURE §12). Uploaded first (message_id null), linked when sent.
@@ -383,8 +408,82 @@ export const routines = sqliteTable("routines", {
   nextRunAt: integer("next_run_at"),
   lastRunAt: integer("last_run_at"),
   lastStatus: text("last_status", { enum: ["started", "skipped", "failed"] }),
-  createdAt: integer("created_at").notNull()
+  createdAt: integer("created_at").notNull(),
+  // Spec 012: runs once per local day at the person's first activity (or their usual start + 3 h).
+  onDayStart: integer("on_day_start", { mode: "boolean" }).notNull().default(false),
+  dayRanOn: text("day_ran_on"), // local date (YYYY-MM-DD) of the last day-start run
+  lookFirst: integer("look_first", { mode: "boolean" }).notNull().default(false), // a small model checks a watch's items first
+  delivery: text({ mode: "json" }).$type<RoutineDelivery>().notNull().default({ channels: ["notify"] }),
+  tell: text({ enum: ["every", "something", "brief"] }).notNull().default("something"),
+  urgent: integer({ mode: "boolean" }).notNull().default(false), // a "needs you" pings even in quiet hours
+  version: integer(), // spec 013: its flow's current version (routine_versions.n); null: a spec 012 routine
+  schedule: text({ mode: "json" }).$type<RoutineSchedule>(), // spec 013: once or monthly; null: cron (or no clock)
+  watchEvery: integer("watch_every").notNull().default(5) // minutes between a watch's checks: 1, 5, 15 or 60
 })
+
+// Spec 013: each saved state of a routine's flow. A run keeps the version it started on.
+export const routineVersions = sqliteTable(
+  "routine_versions",
+  {
+    routineId: text("routine_id").notNull().references(() => routines.id, { onDelete: "cascade" }),
+    n: integer().notNull(),
+    graph: text({ mode: "json" }).$type<FlowGraph>().notNull(),
+    createdAt: integer("created_at").notNull()
+  },
+  (t) => [primaryKey({ columns: [t.routineId, t.n] })]
+)
+
+// One run of a routine (spec 012): queued (an outside event waiting its turn), running, done. Its outcome comes
+// from the agent's last line; summary/report feed the brief and the next run's "what changed".
+export const routineRuns = sqliteTable(
+  "routine_runs",
+  {
+    id: text().primaryKey(),
+    routineId: text("routine_id").notNull().references(() => routines.id, { onDelete: "cascade" }),
+    trigger: text({ enum: ["schedule", "day_start", "now", "webhook", "watch"] }).notNull(),
+    payload: text({ mode: "json" }).$type<unknown>(), // the event's content while queued (a webhook body, new items)
+    label: text(), // what the payload is ("New from GitHub (list_runs)")
+    state: text({ enum: ["queued", "running", "done"] }).notNull(),
+    outcome: text({ enum: ["nothing", "something", "needs"] }),
+    summary: text().notNull().default(""),
+    report: text().notNull().default(""),
+    turnId: text("turn_id"),
+    messageId: text("message_id"),
+    triageTokens: integer("triage_tokens").notNull().default(0),
+    cost: real(),
+    held: integer({ mode: "boolean" }).notNull().default(false), // a ping held for the brief (quiet hours, "brief only")
+    deliveredAt: integer("delivered_at"),
+    deliveryNote: text("delivery_note"),
+    readAt: integer("read_at"),
+    createdAt: integer("created_at").notNull(),
+    startedAt: integer("started_at"),
+    endedAt: integer("ended_at"),
+    version: integer() // spec 013: the flow version it runs on; null: the spec 012 path
+  },
+  (t) => [index("routine_runs_queue").on(t.routineId, t.state, t.createdAt), index("routine_runs_by_time").on(t.createdAt)]
+)
+
+// Spec 013: one step of a flow run. may_have_written is set right before a write call goes out and cleared when its
+// answer comes back: still set after a restart means it may have reached the connector (state "uncertain").
+export const routineRunSteps = sqliteTable(
+  "routine_run_steps",
+  {
+    id: text().primaryKey(),
+    runId: text("run_id").notNull().references(() => routineRuns.id, { onDelete: "cascade" }),
+    nodeId: text("node_id").notNull(),
+    attempt: integer().notNull().default(1),
+    state: text({ enum: ["running", "done", "failed", "skipped", "waiting", "uncertain"] }).notNull(),
+    branch: text(),
+    input: text().notNull().default(""), // previews ≤ 4000, masked
+    output: text().notNull().default(""),
+    outputFile: text("output_file"), // the whole output when longer, under <dataDir>/runs
+    mayHaveWritten: integer("may_have_written", { mode: "boolean" }).notNull().default(false),
+    error: text(),
+    startedAt: integer("started_at").notNull(),
+    endedAt: integer("ended_at")
+  },
+  (t) => [index("routine_run_steps_by_run").on(t.runId, t.startedAt)]
+)
 
 // Knowledge pages (phase 3b): longer Markdown notes by scope ("user", "project:<id>",
 // "agent:<id>", as memories), searched with FTS (page_index, kept by triggers), every change kept as a version.

@@ -7,19 +7,20 @@ import { Button, type ButtonProps } from "./button"
 
 const overlay =
   "fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4 data-entering:animate-in data-entering:fade-in-0 data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none"
-const sheet = "w-full rounded-sheet border border-strong bg-raised p-5 text-fg outline-none data-entering:animate-in data-entering:zoom-in-95 motion-reduce:animate-none"
+const sheet = "flex max-h-full w-full flex-col rounded-sheet border border-strong bg-raised p-5 text-fg outline-none data-entering:animate-in data-entering:zoom-in-95 motion-reduce:animate-none"
 
 type Body = (close: () => void) => ReactNode
 
 function Content({ title, children }: { title: string; children: Body }) {
   return (
-    <DialogPrimitive className="flex flex-col gap-4 outline-none">
+    <DialogPrimitive className="flex min-h-0 flex-col gap-4 outline-none">
       {({ close }) => (
         <>
           <Heading slot="title" className="text-lg font-semibold">
             {title}
           </Heading>
-          {children(close)}
+          {/* A long body scrolls inside the sheet; the title stays. */}
+          <div className="-mx-5 flex min-h-0 flex-col gap-4 overflow-auto px-5">{children(close)}</div>
         </>
       )}
     </DialogPrimitive>

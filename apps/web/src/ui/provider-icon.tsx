@@ -1,7 +1,7 @@
-// Provider logos (claude, codex, opencode, openrouter, ollama) as inline SVG. Source: @lobehub/icons-static-svg
+// Provider logos (claude, codex, opencode, openrouter, ollama, gemini, antigravity, lmstudio) as inline SVG. Source: @lobehub/icons-static-svg
 // 1.102.0 (MIT, see NOTICE). Monochrome marks use currentColor, so they follow the theme.
 import { Box } from "lucide-react"
-import type { SVGProps } from "react"
+import { type SVGProps, useId } from "react"
 
 type Props = Omit<SVGProps<SVGSVGElement>, "children"> & { size?: number }
 
@@ -35,11 +35,52 @@ const Ollama = ({ size = 16, ...p }: Props) => (
   </svg>
 )
 
-export const PROVIDER_ICONS = { claude: Claude, codex: Codex, opencode: Opencode, openrouter: Openrouter, ollama: Ollama } as const
+// Gemini's spark in its colours (the gradients' ids are per instance: several logos can share a page).
+const Gemini = ({ size = 16, ...p }: Props) => {
+  const id = `g${useId().replace(/[^A-Za-z0-9_-]/g, "")}` // safe inside url(#…)
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" {...p}>
+      <path d={GEMINI} fill="#3186FF" />
+      <path d={GEMINI} fill={`url(#${id}0)`} />
+      <path d={GEMINI} fill={`url(#${id}1)`} />
+      <path d={GEMINI} fill={`url(#${id}2)`} />
+      <defs>
+        <linearGradient gradientUnits="userSpaceOnUse" id={`${id}0`} x1="7" x2="11" y1="15.5" y2="12">
+          <stop stopColor="#08B962" />
+          <stop offset="1" stopColor="#08B962" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient gradientUnits="userSpaceOnUse" id={`${id}1`} x1="8" x2="11.5" y1="5.5" y2="11">
+          <stop stopColor="#F94543" />
+          <stop offset="1" stopColor="#F94543" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient gradientUnits="userSpaceOnUse" id={`${id}2`} x1="3.5" x2="17.5" y1="13.5" y2="12">
+          <stop stopColor="#FABC12" />
+          <stop offset=".46" stopColor="#FABC12" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+    </svg>
+  )
+}
+const GEMINI = "M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z"
+
+const Antigravity = ({ size = 16, ...p }: Props) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true" {...p}>
+    <path d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z" />
+  </svg>
+)
+
+const Lmstudio = ({ size = 16, ...p }: Props) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true" {...p}>
+    <path fillOpacity=".3" d="M2.84 2a1.273 1.273 0 100 2.547h14.107a1.273 1.273 0 100-2.547H2.84zM7.935 5.33a1.273 1.273 0 000 2.548H22.04a1.274 1.274 0 000-2.547H7.935zM3.624 9.935c0-.704.57-1.274 1.274-1.274h14.106a1.274 1.274 0 010 2.547H4.898c-.703 0-1.274-.57-1.274-1.273zM1.273 12.188a1.273 1.273 0 100 2.547H15.38a1.274 1.274 0 000-2.547H1.273zM3.624 16.792c0-.704.57-1.274 1.274-1.274h14.106a1.273 1.273 0 110 2.547H4.898c-.703 0-1.274-.57-1.274-1.273zM13.029 18.849a1.273 1.273 0 100 2.547h9.698a1.273 1.273 0 100-2.547h-9.698z" />
+    <path d="M2.84 2a1.273 1.273 0 100 2.547h10.287a1.274 1.274 0 000-2.547H2.84zM7.935 5.33a1.273 1.273 0 000 2.548H18.22a1.274 1.274 0 000-2.547H7.935zM3.624 9.935c0-.704.57-1.274 1.274-1.274h10.286a1.273 1.273 0 010 2.547H4.898c-.703 0-1.274-.57-1.274-1.273zM1.273 12.188a1.273 1.273 0 100 2.547H11.56a1.274 1.274 0 000-2.547H1.273zM3.624 16.792c0-.704.57-1.274 1.274-1.274h10.286a1.273 1.273 0 110 2.547H4.898c-.703 0-1.274-.57-1.274-1.273zM13.029 18.849a1.273 1.273 0 100 2.547h5.78a1.273 1.273 0 100-2.547h-5.78z" />
+  </svg>
+)
+
+export const PROVIDER_ICONS = { claude: Claude, codex: Codex, opencode: Opencode, openrouter: Openrouter, ollama: Ollama, gemini: Gemini, antigravity: Antigravity, lmstudio: Lmstudio } as const
 export type ProviderIconName = keyof typeof PROVIDER_ICONS
 
 // The logo for a provider or a model id prefix ("claude-cli/opus" → claude). Unknown: a neutral box.
-const ALIASES: Record<string, ProviderIconName> = { "claude-cli": "claude", anthropic: "claude", "codex-cli": "codex", openai: "codex" }
+const ALIASES: Record<string, ProviderIconName> = { "claude-cli": "claude", anthropic: "claude", "codex-cli": "codex", openai: "codex", "gemini-cli": "gemini" }
 export function ProviderIcon({ provider, ...p }: Props & { provider: string }) {
   const key = (ALIASES[provider] ?? provider) as ProviderIconName
   const Icon = PROVIDER_ICONS[key]
