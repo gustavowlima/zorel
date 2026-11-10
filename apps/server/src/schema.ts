@@ -27,7 +27,8 @@ export const projects = sqliteTable("projects", {
   brief: text().notNull().default(""),
   path: text(), // workspace folder on disk (ARCHITECTURE §9.1); null: agents work in an empty Zorel folder
   position: integer(), // manual order in the sidebar; null: not placed yet (newest first, above the placed ones)
-  defaultAgentId: text("default_agent_id"), // a new chat in the project starts with this agent (null: the assistant)
+  agentIds: text("agent_ids", { mode: "json" }).$type<ReadonlyArray<string>>().notNull().default([]), // who joins a new chat here
+  teamIds: text("team_ids", { mode: "json" }).$type<ReadonlyArray<string>>().notNull().default([]), // teams whose members join it too
   createdAt: integer("created_at").notNull()
 })
 

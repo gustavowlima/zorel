@@ -111,7 +111,19 @@ export function Notice({ tone = "warning", icon, title, children, action, classN
   )
 }
 
-export function EmptyState({ icon, title, hint, action }: { icon?: ReactNode; title: ReactNode; hint?: ReactNode; action?: ReactNode }) {
+// inset: an empty list inside a section, a card the size of a row, not a page's centred block.
+export function EmptyState({ icon, title, hint, action, inset }: { icon?: ReactNode; title: ReactNode; hint?: ReactNode; action?: ReactNode; inset?: boolean }) {
+  if (inset)
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-3 rounded-card border border-dashed border-subtle px-4 py-3.5">
+        {icon && <IconTile className="text-muted">{icon}</IconTile>}
+        <div className="flex min-w-0 flex-1 basis-60 flex-col">
+          <p className="font-medium text-fg">{title}</p>
+          {hint && <p className="text-pretty text-sm text-muted">{hint}</p>}
+        </div>
+        {action}
+      </div>
+    )
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
       {icon && (
@@ -146,9 +158,10 @@ export const Code = ({ children, className }: { children: ReactNode; className?:
 
 // A whole row as one press target (the row's content stays on top, unpressable): on hover a faint wash that reaches
 // 6px from the group's edge.
-export const RowHit = ({ label, onPress, className }: { label: string; onPress: () => void; className?: string }) => (
+export const RowHit = ({ label, onPress, className, expanded }: { label: string; onPress: () => void; className?: string; expanded?: boolean }) => (
   <AriaButton
     aria-label={label}
+    {...(expanded !== undefined && { "aria-expanded": expanded })}
     onPress={onPress}
     className={cn("absolute -inset-x-2.5 inset-y-1 cursor-default rounded-control outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:bg-control data-pressed:bg-control-hover motion-reduce:transition-none", className)}
   />

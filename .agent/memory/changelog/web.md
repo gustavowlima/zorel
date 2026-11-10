@@ -87,3 +87,8 @@
 2026-11-10 | spec 013 P1-b: flow editor (lazy React Flow canvas + List), step panels, schema form, tool picker, Run view, Needs you rows for uncertain writes and Ask me; Dialog scrolls its body | the routine flows UI; long dialogs overflowed the window
 2026-11-10 | New routine rebuilt on the flow model (Tucano's fields, no JSON); canvas drag flicker fixed (keep RF measured nodes) | the user saw the old form and the canvas flickered
 2026-11-10 | pt-BR interface (catalog + language setting, system default) | user request; PRODUCT.md said English only for now
+2026-11-10 | tool choice is connector first (ConnectorTool), pt-BR rewritten for natural voice | user feedback
+2026-11-10 | New routine dialog is a step list (start unchosen, steps inline, add step), tabs removed | user: time was set before finishing; wanted steps like OpenBot
+2026-11-10 | tool arguments: Form | JSON modes (CodeMirror, schema-aware) | user asked for both
+2026-11-10 | week: dotted half-hour hover with time; day-start line in the legend | user asked
+2026-11-10 | project default agent replaced by a crew (agents + teams) | the internal router already chooses who answers; user wanted to pick several agents or teams

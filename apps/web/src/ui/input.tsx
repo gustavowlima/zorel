@@ -6,7 +6,7 @@ import { Search } from "./icons"
 
 // Also used by the Select trigger, so fields and selects share the same body.
 export const field =
-  "w-full rounded-control border border-subtle bg-control px-3 text-base text-fg outline-none placeholder:text-dim transition-colors data-hovered:border-strong data-focused:border-strong data-focus-visible:ring-2 data-focus-visible:ring-accent-soft data-disabled:opacity-50"
+  "w-full rounded-control border border-strong bg-field px-3 text-base text-fg outline-none placeholder:text-dim transition-colors data-hovered:border-fg/20 data-focused:border-fg/25 data-focus-visible:ring-2 data-focus-visible:ring-accent-soft data-disabled:opacity-50"
 
 type Props<T> = Omit<T, "className"> & { className?: string }
 

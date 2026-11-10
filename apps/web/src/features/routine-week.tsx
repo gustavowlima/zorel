@@ -64,6 +64,15 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
   const routines = useReading(routinesAtom).items
   const update = useMutation(mutations.updateRoutine)
   const [drag, setDrag] = useState<Drag>()
+  // The half hour under the pointer on an empty slot (where a click would start a new routine), drawn dotted with
+  // its time inside.
+  const [hover, setHover] = useState<{ day: number; minutes: number }>()
+  const hoverAt = (day: number) => (e: PointerEvent<HTMLDivElement>) => {
+    if (!(e.target as HTMLElement).closest("[data-week-slot]")) return setHover(undefined)
+    const y = e.clientY - e.currentTarget.getBoundingClientRect().top
+    const minutes = FIRST_HOUR * 60 + Math.floor(y / (HOUR_PX / 2)) * 30
+    if (hover?.day !== day || hover.minutes !== minutes) setHover({ day, minutes })
+  }
   const dragged = useRef(false) // the press that ends a drag isn't a click
   const byId = new Map<string, Routine>(routines.map((r) => [r.id, r]))
   const profile = prefs?.timeProfile
@@ -126,6 +135,7 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
           <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-fg" />{t("routines.legend.something")}</span>
           <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full border border-dim" />{t("routines.legend.nothing")}</span>
           <span className="flex items-center gap-1.5"><span className="h-1.5 w-3 rounded-sm border border-dashed border-dim" />{t("routines.legend.planned")}</span>
+          {profile && <span className="flex items-center gap-1.5"><span className="w-3 border-t border-dotted border-strong" />{t("routines.legend.dayStart")}</span>}
         </div>
         {profile && (
           <span className="ml-auto text-sm text-dim">
@@ -158,7 +168,7 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
               ))}
             </div>
             {DAYS.map((d) => (
-              <div key={`col-${d}`} className={cx("relative border-l border-subtle", d > 4 && "bg-canvas")} style={{ height: (LAST_HOUR - FIRST_HOUR) * HOUR_PX }}>
+              <div key={`col-${d}`} onPointerMove={onCreate && hoverAt(d)} onPointerLeave={() => setHover(undefined)} className={cx("relative border-l border-subtle", d > 4 && "bg-canvas")} style={{ height: (LAST_HOUR - FIRST_HOUR) * HOUR_PX }}>
                 {hours.map((h) => (
                   <div key={h} className="absolute inset-x-0 border-t border-subtle/50" style={{ top: (h - FIRST_HOUR) * HOUR_PX }} />
                 ))}
@@ -170,13 +180,19 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
                       <Button
                         key={`slot-${h}`}
                         variant="ghost"
+                        data-week-slot=""
                         aria-label={t("routines.newAt", { day, time: hm(h * 60) })}
                         onPress={(e) => onCreate({ weekday, minutes: h * 60 + (e.y >= HOUR_PX / 2 ? 30 : 0) })}
-                        className="absolute inset-x-0 h-auto rounded-none p-0 hover:bg-hover"
+                        className="absolute inset-x-0 h-auto rounded-none p-0 hover:bg-transparent data-hovered:bg-transparent data-pressed:bg-transparent"
                         style={{ top: (h - FIRST_HOUR) * HOUR_PX, height: HOUR_PX }}
                       />
                     )
                   })}
+                {hover?.day === d && !drag && (
+                  <div aria-hidden="true" className="pointer-events-none absolute inset-x-1 flex items-start rounded-md border border-dashed border-strong px-1.5 pt-0.5 text-xs text-muted tabular-nums" style={{ top: topOf(hover.minutes), height: HOUR_PX / 2 }}>
+                    {hm(hover.minutes)}
+                  </div>
+                )}
                 {quiet && <QuietBands from={toMinutes(quiet.from)} to={toMinutes(quiet.to)} />}
                 {profile && d < 5 && <div className="absolute inset-x-0 border-t border-dotted border-strong" style={{ top: topOf(profile.dayStartMinutes) }} />}
                 {lanesOf(blocks.filter((b) => b.day === d), (BLOCK_PX / HOUR_PX) * 60).map((b) => {

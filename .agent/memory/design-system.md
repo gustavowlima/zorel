@@ -38,8 +38,11 @@ updated: 2026-11-05
 - `* { border-color }` lives in @layer base: outside a layer it overrode Tailwind's border-* (all colored borders)
 - ui-baseline.json zeroed: screens without check:ui debt
 - token --font-mono (ui-monospace)
+- EmptyState: plain = a whole screen or pane (centred, py-16); `inset` = an empty list inside a Section (dashed card the height of a row, icon tile + text left, action right). Never the plain one inside a Section: it leaves a big void (project Tools/Agents tabs, 2026-11-10)
 
 ## avoid
+
+- a visual redesign of the whole app ("Team Desk", 2026-11-10: new fonts, palette, scale, chat spine): prototyped and dropped by the user, who kept this design; propose a redesign again only if asked
 
 - shadcn's bg-muted / bg-accent / bg-secondary: those names are ours (dimmed text, blue, secondary text). When adopting a component, swap for bg-control/bg-control-hover
 - Geist font and Nova preset neutral palette: removed; the font is Inter
@@ -76,6 +79,7 @@ updated: 2026-11-05
 - selection is blue: menus/lists focus = bg-accent-soft + icon text-accent-text (4.9:1); rail current = icon accent-text on accent-faint
 - dark neutrals set to the landing's graphite (2026-11-05, user choice): OKLCH hue 260 chroma 0.005; frame #0b0c0e, sidebar #0f1113 (a step above the rail), canvas #17181b, surface #1c1e21, raised #202225; replaces the stronger tint (chroma 0.013) of the same day
 - creating with several fields = centred Dialog (Dialog Rule): Add project (folder browser via GET /api/folders, desktop folder:pick IPC, name from the folder) and Add custom server (MCP)
+- field fill (2026-11-10, user: the grey input didn't harmonize): `field` (Input, Textarea, a Select's body) = `bg-field` (`--z-bg-field`: dark white 2.5%, light #fff) + `border-strong`, hover `border-fg/20`, focus `border-fg/25`. `bg-control` (7%) stays for buttons and pills only: on a raised dialog it read as a grey slab.
 - standard fields (2026-11-05): Input size md|sm (no h-control-* classes on fields), SearchInput (magnifier inside), OptionList/OptionRow for lists driven from a text field (composer menu, folder browser); check:ui rules hand-search, hand-listbox, input-height keep them out of screens
 - ported from the dropped design-system-pass worktree (2026-11-05): IconTile (sm/md/lg) and Notice in ui/layout.tsx; every hairline list uses Rows; check:ui hand-list and hand-notice (card alerts only; App.tsx offline strip is separate). Not ported: Appearance as a Select (DESIGN.md keeps the segmented control)
 - agent avatars (2026-11-05): open-bot-avatar 0.2.0 (MIT, published 2026-11-02: exception to the 2-week dependency rule, approved by the user) — shape by id among its 7 examples, inside a tile bg-agent-n/15; still SVG (cached per shape/tone/size) everywhere, live (mountAvatar) in the Builder review; NOTICE credits it

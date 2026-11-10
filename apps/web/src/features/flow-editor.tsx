@@ -28,7 +28,7 @@ const MISSING: Record<string, () => string> = {
   day: () => t("flows.missing.day"),
   time: () => t("flows.missing.time")
 }
-const missingOf = (field: string | undefined) => (field ? MISSING[field]?.() : undefined)
+export const missingOf = (field: string | undefined) => (field ? MISSING[field]?.() : undefined)
 
 // Unsaved steps survive leaving the page (as the agent page's drafts do): kept per routine with the version they
 // were made on, and offered back only on that version.
