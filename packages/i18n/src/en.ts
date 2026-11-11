@@ -2125,7 +2125,12 @@ export const en = {
     offline: "Not answering",
     lastSeen: "Not answering · last seen {time}",
     onServer: "On {name}",
-    back: "This computer"
+    back: "This computer",
+    install: "Install on another computer",
+    installHint: "A Linux computer you reach over SSH: Zorel's Installer sets it up there one command at a time, each one shown for your OK.",
+    installNoModel: "Connect an AI first (Providers): the Installer needs one to talk to you.",
+    installStart: "Start",
+    installFailed: "The Installer couldn't start. Try again."
   },
   people: {
     members: "Team",

@@ -863,6 +863,8 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.delete("remove", "/api/agents/:id", { params: idParam, error: LastAgent }))
       // A chat with the Builder (created the first time), in a project or General.
       .add(HttpApiEndpoint.post("builder", "/api/agents/builder", { payload: Schema.Struct({ projectId: Schema.NullOr(Id), model: ModelId }), success: Chat, error: HttpApiError.NotFound }))
+      // A chat with Zorel's Installer (spec 017): Zorel on another computer over SSH, each command approved.
+      .add(HttpApiEndpoint.post("installer", "/api/installer", { payload: Schema.Struct({ model: ModelId }), success: Chat }))
       // Its sessions' runs, newest first: each time it worked, in which chat, how long, its steps and tokens.
       .add(HttpApiEndpoint.get("runs", "/api/agents/:id/runs", { params: idParam, success: Schema.Array(AgentRun), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.get("versions", "/api/agents/:id/versions", { params: idParam, success: Schema.Array(AgentVersion), error: HttpApiError.NotFound }))

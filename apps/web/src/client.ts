@@ -102,6 +102,7 @@ export const mutations = {
   removeTeam: Zorel.mutation("agents", "removeTeam"),
   restoreAgent: Zorel.mutation("agents", "restore"),
   builder: Zorel.mutation("agents", "builder"),
+  installer: Zorel.mutation("agents", "installer"),
   pause: Zorel.mutation("settings", "pause"),
   rewind: Zorel.mutation("chats", "rewind"),
   createPage: Zorel.mutation("pages", "create"),

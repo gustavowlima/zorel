@@ -37,7 +37,22 @@ docker logs zorel   # the one-time setup link (valid 1 hour)
 Open the setup link, create the first owner, then add a passkey (or an authenticator code). After that the link
 stops working. If it expired, restart the container for a new one (only while there's no owner).
 
-## HTTPS with Caddy
+## Reaching it
+
+Zorel listens only on the machine's loopback (`127.0.0.1:4317`); it never changes the machine's network, firewall or
+DNS. How your devices reach it is yours to choose. Every way below carries the app's one WebSocket (`/rpc`) and HTTPS;
+the address you pick is `ZOREL_PUBLIC_URL`, and it must be HTTPS (sign-in cookies are `Secure`; plain HTTP works only
+on the machine itself).
+
+| Way | What it exposes | Notes |
+|---|---|---|
+| Reverse proxy with HTTPS (Caddy, below) | The machine's IP, port 443 | Simplest with a domain; keep the machine patched |
+| Tailscale (below) | No inbound port; a tailnet-only HTTPS name | Free plan: 6 users, non-commercial |
+| WireGuard (your own) | One UDP port that answers no unauthenticated packet | Free and open; each device needs the WireGuard app. Point a domain name at the private address and get a certificate by DNS validation (Caddy with a DNS plugin), so it's still HTTPS |
+| Headscale / NetBird | Like Tailscale, with coordination you host | The coordinator must be reachable from the internet |
+| Cloudflare Tunnel | No inbound port, IP hidden, a public HTTPS name | Free with a domain on Cloudflare; TLS ends at Cloudflare, so it can read the traffic |
+
+### HTTPS with Caddy
 
 ```caddyfile
 zorel.example.com {
@@ -46,15 +61,34 @@ zorel.example.com {
 ```
 
 Caddy gets the certificate and passes WebSockets through. Set `ZOREL_TRUSTED_PROXIES` to the address Caddy connects
-from (the Docker bridge, `172.17.0.1`, when Caddy runs on the host).
+from (the Docker bridge, `172.17.0.1`, when Caddy runs on the host). With nginx, pass the WebSocket upgrade:
 
-## Tailscale (no public domain)
+```nginx
+location / {
+  proxy_pass http://127.0.0.1:4317;
+  proxy_http_version 1.1;
+  proxy_set_header Upgrade $http_upgrade;
+  proxy_set_header Connection "upgrade";
+  proxy_set_header Host $host;
+}
+```
+
+### Tailscale (no public domain)
 
 ```sh
 tailscale serve --bg 4317
 ```
 
-Then `ZOREL_PUBLIC_URL=https://<machine>.<tailnet>.ts.net`. Only people in your tailnet reach it.
+Then `ZOREL_PUBLIC_URL=https://<machine>.<tailnet>.ts.net`. Only people in your tailnet reach it. Don't use
+`tailscale funnel`: it makes the server public.
+
+### Cloudflare Tunnel
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:4317   # or a named tunnel with your hostname
+```
+
+Then `ZOREL_PUBLIC_URL=https://<your hostname>`. Consider a Cloudflare Access policy in front of it as a second gate.
 
 ## The team
 
@@ -65,6 +99,15 @@ Then `ZOREL_PUBLIC_URL=https://<machine>.<tailnet>.ts.net`. Only people in your 
 - A project's people: in the project's settings, admins tick who belongs. Owners and admins see every project.
 
 ## From the desktop app
+
+**Install it from the app**: **Settings › General › Servers › Install on another computer** opens a chat with Zorel's
+Installer. Give it the computer's SSH address (`user@host`) and the HTTPS address you'll use; add the key it shows
+to `~/.ssh/authorized_keys` there; compare the computer's key when asked. It then checks the machine, gets the code,
+builds and runs the container on `127.0.0.1:4317` only, one command at a time, each shown for your OK, and ends with
+the setup link. Linux with Docker and git; on a team server only admins can use it.
+
+**Switch between them**: with a server added, the app's name at the top of the sidebar becomes where you are; press it
+for this computer and every server (with whether each answers now) or use ⌘1…⌘9 (Ctrl+1…9 on Windows and Linux).
 
 People can use the team server from a browser, or from the Zorel desktop app: **Settings › General › Servers**, paste
 the server's address or an invite link, **Connect** (or copy the link and use **Servers › Connect with the copied

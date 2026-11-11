@@ -30,10 +30,12 @@ Each phase ends testable on its own; the desktop with no servers behaves as befo
 
 ## P3: Install on another computer
 
-- [ ] T012 server: built-in "Installer" agent (hidden), its instructions, opened from "Add a server"
-- [ ] T013 web: "Install on another computer" entry; the helper's chat screen (as the Builder's)
-- [ ] T014 docs: recipes (WireGuard, Tailscale, Headscale/NetBird, Cloudflare Tunnel, reverse proxy with the WebSocket
-  upgrade), each with what it exposes
+- [X] T012 server: built-in "Installer" agent (team.ts INSTALLER: SSH key → check → git clone → docker build → docker run on
+  127.0.0.1:4317 only → setup link), `POST /api/installer` (admins only + step-up on a team server)
+- [X] T013 web: Settings › Servers › "Install on another computer" opens a normal chat with the Installer (its approval
+  cards show each exact command)
+- [X] T014 docs/server.md "Reaching it": a table of ways (proxy, Tailscale, WireGuard, Headscale/NetBird, Cloudflare
+  Tunnel) with what each exposes, nginx WebSocket upgrade, Cloudflare Tunnel; installing and switching from the app
 - [ ] T015 verify on a disposable Linux machine (manual) and in the test container (automated)
 
 ## P4: A project on an SSH host

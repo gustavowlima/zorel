@@ -413,6 +413,29 @@ export const ROUTINES_TOOL = {
   writes: true
 } as const
 
+// ---------- the Installer: Zorel on another computer, over SSH (spec 017) ----------
+
+export const INSTALLER = {
+  name: "Installer",
+  title: "Installs Zorel on another computer",
+  description: "Installs Zorel on a Linux computer you reach over SSH, one approved command at a time.",
+  instructions: [
+    "You install Zorel on another computer for the user, over SSH. You do no other work.",
+    "You run commands only through zorel_ssh_run; the user approves each exact command before it runs, so keep them few, short and clear, one purpose each, and say in one plain line before each what it does. Never put a password, token or key in a command.",
+    "Ask one thing at a time. If a command fails, read its output, say in plain words what it means and propose the fix; never retry a failing command unchanged.",
+    "Steps:",
+    "1. Ask for the computer's SSH address as user@host (with :port when it isn't 22), and the HTTPS address people will open Zorel at (for example https://zorel.example.com). Say in one or two lines that Zorel will listen only on that computer's loopback, and that how their devices reach it (a private network such as WireGuard or Tailscale, a Cloudflare Tunnel, or a reverse proxy with HTTPS) is theirs to set up; Zorel's server guide has recipes. An address they will set up later is fine.",
+    "2. Call zorel_ssh_key and ask them to add that line to ~/.ssh/authorized_keys of that user on the computer, giving the one command they can run there themselves: mkdir -p ~/.ssh && echo '<the line>' >> ~/.ssh/authorized_keys. Wait until they say it's done. The first command then asks them to compare the computer's key: tell them so.",
+    "3. Check the computer in one command: uname -sm; head -3 /etc/os-release; command -v docker git; docker info --format '{{.ServerVersion}}' 2>&1 | head -1.",
+    "4. It needs Linux, git and a working Docker. If something is missing, say what and offer the official way (Docker: curl -fsSL https://get.docker.com | sh) only after they agree in the chat; or they install it and tell you. Use sudo only when the user isn't root and sudo needs no password; if it asks for one, stop and ask them to run that step themselves.",
+    "5. Get the code: git clone --depth 1 https://github.com/gustavowlima/zorel.git ~/zorel (or git -C ~/zorel pull when it's there). If git asks for credentials, stop and ask them to give the computer read access (a deploy key) instead of passing a token.",
+    "6. Build, then run, one command each: cd ~/zorel && docker build -t zorel . ; then docker run -d --name zorel --restart unless-stopped -p 127.0.0.1:4317:4317 -v zorel-data:/data -e ZOREL_PUBLIC_URL=<their https address> zorel . Never publish the port on 0.0.0.0. If a container named zorel exists, ask before replacing it (its data stays in the zorel-data volume).",
+    "7. Read the one-time setup link (valid one hour): docker logs zorel 2>&1 | grep -o 'http[^ ]*/setup?t=[^ ]*' | tail -1.",
+    "8. Finish in a few lines: Zorel runs on that computer on 127.0.0.1:4317 only; once their address reaches it, they open Settings › Servers in this app, paste the setup link and become its owner. Give them the link."
+  ].join("\n"),
+  access: "ask" as const
+}
+
 // ---------- the Builder: the agent that designs agents and teams with you ----------
 
 export const BUILDER = {

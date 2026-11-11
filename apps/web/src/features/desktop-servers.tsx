@@ -3,7 +3,10 @@
 // an invite link, and forget one; a team server's window can only switch.
 import { t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
-import { Button, Input, Rows, Section, SettingRow, Tag, Trash2 } from "@/ui"
+import { modelsAtom, mutations, useList, useMutation } from "../client.ts"
+import { go } from "../state.ts"
+import { builderModel } from "./builder.tsx"
+import { Button, Input, Rows, Section, Server, SettingRow, Tag, Trash2 } from "@/ui"
 
 export type ServerState = { state: "online" | "offline"; seenAt: number | null }
 type Servers = {
@@ -66,6 +69,41 @@ export function ServersSetting() {
         </form>
       )}
       {error && <p className="text-sm text-danger">{t("servers.invalid")}</p>}
+      {bridge.add && <InstallElsewhere />}
     </Section>
+  )
+}
+
+// Zorel on another computer (spec 017): a chat with Zorel's Installer, which works over SSH one approved command at a
+// time and ends with the setup link to paste above.
+function InstallElsewhere() {
+  const models = useList(modelsAtom)
+  const start = useMutation(mutations.installer)
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const model = builderModel(models)
+  return (
+    <Rows>
+      <SettingRow title={t("servers.install")} hint={model ? t("servers.installHint") : t("servers.installNoModel")}>
+        <Button
+          size="sm"
+          variant="secondary"
+          isPending={busy}
+          isDisabled={!model || busy}
+          onPress={() => {
+            if (!model) return
+            setBusy(true)
+            setFailed(false)
+            start({ payload: { model }, reactivityKeys: ["chats", "agents"] })
+              .then((chat) => go({ view: "chat", id: chat.id }), () => setFailed(true))
+              .finally(() => setBusy(false))
+          }}
+        >
+          <Server />
+          {t("servers.installStart")}
+        </Button>
+      </SettingRow>
+      {failed && <p className="py-2 text-sm text-danger">{t("servers.installFailed")}</p>}
+    </Rows>
   )
 }

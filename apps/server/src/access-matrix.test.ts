@@ -44,8 +44,11 @@ test("SC-004: every API route is open, admin-only, checked against what it names
 })
 
 test("the server machine and its money are admins' (processes, folders, desktop, usage, erasing a computer)", () => {
-  for (const [method, path] of [["GET", "/api/processes"], ["DELETE", "/api/processes/servers/1"], ["GET", "/api/folders"], ["GET", "/api/desktop/apps"], ["GET", "/api/usage"], ["POST", "/api/computer/erase/a1"]] as const)
+  for (const [method, path] of [["GET", "/api/processes"], ["DELETE", "/api/processes/servers/1"], ["GET", "/api/folders"], ["GET", "/api/desktop/apps"], ["GET", "/api/usage"], ["POST", "/api/computer/erase/a1"], ["POST", "/api/installer"]] as const)
     expect(adminCheck(method, path, member)).toBe("admins_only")
+  // The Installer runs commands on other computers from this one (spec 017): an admin confirms it's them first.
+  expect(adminCheck("POST", "/api/installer", { role: "admin", sessionAt: 0 })).toBe("step_up")
+  expect(adminCheck("POST", "/api/installer", { role: "admin", sessionAt: Date.now() })).toBeUndefined()
 })
 
 test("ids of other kinds name what they belong to; words in those paths don't", () => {

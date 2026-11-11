@@ -46,7 +46,7 @@ import { permissionsOf } from "./permissions.ts"
 import { nextScheduled, plannedRuns, todayOf } from "./routine-runs.ts"
 import { briefFrom, noteActivity, profileOf, saveProfile, toContract } from "./time-profile.ts"
 import { createRoutineFor, newToken, nextRun } from "./schedule.ts"
-import { BUILDER } from "./team.ts"
+import { BUILDER, INSTALLER } from "./team.ts"
 import { handleClash, holds, invalidMembers, teamHandle } from "./agent-teams.ts"
 import { resultText, Tools } from "./tools.ts"
 import { billingOf, Pricing } from "./pricing.ts"
@@ -265,6 +265,18 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
           for (const old of yield* store.hiddenChats(payload.projectId, Date.now() - BUILDER_KEEP_MS)) yield* store.removeChat(old.id).pipe(Effect.andThen(runtime.release(old.id)))
           const chat = yield* store.createChat({ projectId: payload.projectId, agentIds: [builder.id], model: payload.model, hidden: true, ownerId: (yield* Actor).id })
           return (yield* store.updateChat(chat.id, { title: "Build agents" }))!
+        })
+      )
+      // Zorel's Installer (spec 017; admins only on a team server, server-routes.ts): a chat of its own with it. Like the
+      // Builder, an existing one gets Zorel's current instructions.
+      .handle("installer", ({ payload }) =>
+        Effect.gen(function* () {
+          const found = (yield* store.agents()).find((a) => a.builtin === "installer")
+          const existing = found && found.instructions !== INSTALLER.instructions ? yield* store.updateAgent(found.id, { instructions: INSTALLER.instructions, description: INSTALLER.description }, "Zorel") : found
+          const installer = existing ?? (yield* store.createAgent({ projectId: null, name: INSTALLER.name, title: INSTALLER.title, description: INSTALLER.description, instructions: INSTALLER.instructions, model: payload.model, access: INSTALLER.access, builtin: "installer" }))
+          if (!existing) yield* audit.record(Actions.agentCreated, { target: installer, after: { name: installer.name, model: installer.model, access: installer.access } })
+          const chat = yield* store.createChat({ projectId: null, agentIds: [installer.id], model: payload.model, ownerId: (yield* Actor).id })
+          return (yield* store.updateChat(chat.id, { title: "Install Zorel on another computer" }))!
         })
       )
       .handle("runs", ({ params }) => Effect.flatMap(store.agent(params.id), (a) => (a ? store.agentRuns(a.id) : notFound())))

@@ -673,7 +673,12 @@ export const part3 = {
     offline: "Não está respondendo",
     lastSeen: "Não está respondendo · visto às {time}",
     onServer: "Em {name}",
-    back: "Este computador"
+    back: "Este computador",
+    install: "Instalar em outro computador",
+    installHint: "Um computador Linux que você alcança por SSH: o Instalador do Zorel prepara tudo lá, um comando por vez, cada um mostrado para o seu OK.",
+    installNoModel: "Conecte uma IA antes (Provedores): o Instalador precisa de uma para conversar com você.",
+    installStart: "Começar",
+    installFailed: "O Instalador não conseguiu começar. Tente de novo."
   },
   people: {
     members: "Equipe",
