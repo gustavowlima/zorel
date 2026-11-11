@@ -15,6 +15,6 @@ export type ServerInfo = { mode: "server"; needsOwner: boolean }
 // Whether this Zorel is a team server: a local one has no such route.
 export const serverInfo = (): Promise<ServerInfo | undefined> =>
   fetch("/api/server", { credentials: "same-origin" }).then(
-    (r) => (r.ok ? (r.json() as Promise<ServerInfo>) : undefined),
+    (r) => (r.ok ? (r.json() as Promise<ServerInfo>).catch(() => undefined) : undefined), // not JSON: no such route, local
     () => undefined
   )

@@ -1270,6 +1270,8 @@ const OAuthCallback = HttpRouter.add(
 
 const WebRoute = (dir: string, server = false) =>
   HttpRouter.add("GET", "/*", (req) => {
+    // An API path no route answered is missing, not the app's page (the web app reads /api/server to tell modes apart).
+    if (new URL(req.url, "http://x").pathname.startsWith("/api/")) return Effect.succeed(HttpServerResponse.jsonUnsafe({ error: "not_found" }, { status: 404 }))
     const path = normalize(join(dir, decodeURIComponent(new URL(req.url, "http://x").pathname)))
     const file = path.startsWith(dir + sep) && existsSync(path) && !path.endsWith("/") && Bun.file(path).size > 0 ? path : join(dir, "index.html")
     // The app itself only with a session: without one it couldn't load anything, so say how to get one.
