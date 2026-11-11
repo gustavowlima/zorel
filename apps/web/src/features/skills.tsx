@@ -44,14 +44,13 @@ export function SkillsBody({ selected, file }: { selected?: string | undefined; 
   const zorelRow = (m: Memory) => (
     <SkillRow
       key={m.id}
-      active={m.id === selected}
       onPress={() => pick({ id: m.id })}
       title={m.title}
       from={[t("skills.zorel"), scopeLabel(m.scope, projects, agents), m.origin === "auto" ? (agentName(m) ? t("skills.proposedBy", { name: agentName(m)! }) : t("skills.fromChat")) : t("skills.added"), formatAge(Math.max(m.createdAt, m.confirmedAt))].join(" · ")}
       usedBy={m.agents ?? []}
     />
   )
-  const fileRow = (s: FileSkill) => <SkillRow key={s.path} active={s.path === file} onPress={() => pick({ file: s.path })} title={s.name} from={sourceOf(s)} usedBy={s.enabled ? (s.agents ?? []) : []} />
+  const fileRow = (s: FileSkill) => <SkillRow key={s.path} onPress={() => pick({ file: s.path })} title={s.name} from={sourceOf(s)} usedBy={s.enabled ? (s.agents ?? []) : []} />
   const group = (title: string, items: ReadonlyArray<ReactNode>, tone?: "accent") =>
     items.length > 0 && (
       <div className="flex flex-col gap-1">
@@ -67,6 +66,39 @@ export function SkillsBody({ selected, file }: { selected?: string | undefined; 
   const pending = shown.filter((m) => m.state === "pending")
   const nothing = !reading.loading && !skills.length && !files.length
 
+  // One pane: the list, or the open skill (or a new one) in its place with a way back to the list.
+  const back = () => (creating ? setCreating(false) : go({ view: "skills" }))
+  if (open)
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="px-4 pt-3">
+          <Button size="sm" variant="ghost" className="-ml-2.5 text-muted" onPress={back}>
+            <ChevronRight className="size-3.5 rotate-180" />
+            {t("skills.title")}
+          </Button>
+        </div>
+        {creating ? (
+          <NewMemory
+            kind="skill"
+            onDone={(id) => {
+              setCreating(false)
+              if (id) go({ view: "skills", id })
+            }}
+          />
+        ) : current ? (
+          <div key={current.id} className={SETTLE}>
+            <Reader memory={current} />
+          </div>
+        ) : (
+          currentFile && (
+            <div key={currentFile.path} className={SETTLE}>
+              <FileSkillView skill={currentFile} />
+            </div>
+          )
+        )}
+      </div>
+    )
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center justify-end gap-2 border-b border-subtle px-4 py-2">
@@ -76,60 +108,30 @@ export function SkillsBody({ selected, file }: { selected?: string | undefined; 
           {t("skills.new")}
         </Button>
       </div>
-      <div className="flex min-h-0 flex-1">
-        {/* A narrow window shows one side at a time: the list, or the open skill with a way back to it. */}
-        <nav aria-label={t("skills.title")} className={cn("w-full shrink-0 flex-col gap-4 overflow-y-auto border-subtle py-4 pr-3 pl-4 md:flex md:w-96 md:border-r", open ? "hidden" : "flex")}>
+      <nav aria-label={t("skills.title")} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
+        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4">
           <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["memories", "fileSkills"])} />
           {group(t("skills.waiting", { count: pending.length }), pending.map(zorelRow), "accent")}
           {group(t("skills.inUseGroup"), inUse.map((x) => x.node))}
           {group(t("skills.available"), shownFiles.filter((s) => !s.enabled).sort(byName).map(fileRow))}
           {group(t("skills.archived"), shown.filter((m) => m.state === "forgotten").map(zorelRow))}
           {q && !shown.length && !shownFiles.length && <p className="px-2 py-6 text-center text-muted">{t("skills.noMatch")}</p>}
-          {/* A narrow window has no reader beside the list to say there are none. */}
-          {nothing && (
-            <div className="md:hidden">
-              <EmptyState inset icon={<Layers />} title={t("skills.noneYet")} hint={t("skills.noneYetHint")} />
-            </div>
-          )}
+          {nothing && <EmptyState inset icon={<Layers />} title={t("skills.noneYet")} hint={t("skills.noneYetHint")} />}
           <NativeSkills />
-        </nav>
-        <div className={cn("min-w-0 flex-1 overflow-y-auto md:block", open ? "block" : "hidden")}>
-          {open && (
-            <Button size="sm" variant="ghost" className="mt-3 ml-4 text-muted md:hidden" onPress={() => (creating ? setCreating(false) : go({ view: "skills" }))}>
-              <ChevronRight className="size-3.5 rotate-180" />
-              {t("skills.title")}
-            </Button>
-          )}
-          {creating ? (
-            <NewMemory kind="skill" onDone={(id) => {
-              setCreating(false)
-              if (id) go({ view: "skills", id })
-            }} />
-          ) : current ? (
-            <div key={current.id} className={SETTLE}>
-              <Reader memory={current} />
-            </div>
-          ) : currentFile ? (
-            <div key={currentFile.path} className={SETTLE}>
-              <FileSkillView skill={currentFile} />
-            </div>
-          ) : (
-            <EmptyState icon={<Layers />} title={nothing ? t("skills.noneYet") : t("skills.selectOne")} {...(nothing && { hint: t("skills.noneYetHint") })} />
-          )}
         </div>
-      </div>
+      </nav>
     </div>
   )
 }
 
 // One skill in the list: its name, where it comes from, and who uses it (none: no badge).
-function SkillRow({ active, onPress, title, from, usedBy }: { active: boolean; onPress: () => void; title: string; from: string; usedBy: ReadonlyArray<string> }) {
+function SkillRow({ onPress, title, from, usedBy }: { onPress: () => void; title: string; from: string; usedBy: ReadonlyArray<string> }) {
   return (
     <li>
       <Button
         variant="ghost"
         onPress={onPress}
-        className={cn("h-auto w-full flex-col items-start gap-0.5 rounded-card border px-3 py-2.5 text-left font-normal whitespace-normal", active ? "border-subtle bg-surface text-fg" : "border-transparent text-fg")}
+        className="h-auto w-full flex-col items-start gap-0.5 rounded-card px-3 py-2.5 text-left font-normal whitespace-normal text-fg"
       >
         <span className="flex w-full items-center gap-2">
           <span className="min-w-0 flex-1 truncate font-medium">{title}</span>

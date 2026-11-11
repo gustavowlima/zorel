@@ -561,7 +561,6 @@ export const part2 = {
     archived: "Arquivadas",
     proposedBy: "Proposta por {name}",
     fromChat: "Aprendida em uma conversa",
-    selectOne: "Escolha uma skill para ler",
     noneYet: "Nenhuma skill ainda",
     noneYetHint: "Escreva uma, ative uma que você já usa neste computador ou deixe os agentes proporem enquanto trabalham."
   },

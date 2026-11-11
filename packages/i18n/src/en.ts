@@ -1210,7 +1210,6 @@ export const en = {
     archived: "Archived",
     proposedBy: "{name} proposed it",
     fromChat: "Learned in a chat",
-    selectOne: "Pick a skill to read it",
     noneYet: "No skills yet",
     noneYetHint: "Write one, turn on one you already use on this computer, or let the agents propose them as they work."
   },
