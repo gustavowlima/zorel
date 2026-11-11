@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test"
 import { type ChatEvent, type ChatStatus, ErrorCode } from "@zorel/contracts/events"
 import { Deferred, Effect, Exit, Fiber, Layer, Logger, Stream } from "effect"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Accounts } from "./accounts.ts"
@@ -1280,3 +1280,99 @@ test("two agents that edit the same folder without git: the second waits for the
     yield* runtime.interrupt(chat.id)
   }))
 })
+
+// Spec 017: the Installer's SSH tools. Fake OpenSSH programs on PATH stand in for a real host.
+const fakeOpenSsh = () => {
+  const bin = mkdtempSync(join(tmpdir(), "zorel-fake-openssh-"))
+  const ran = join(bin, "ran")
+  const script = (name: string, body: string) => {
+    writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`)
+    require("node:fs").chmodSync(join(bin, name), 0o755)
+  }
+  // -f <file> makes the key pair; -l -f - prints a fingerprint.
+  script("ssh-keygen", 'for a in "$@"; do if [ "$prev" = "-f" ] && [ "$a" != "-" ]; then echo key > "$a"; echo "ssh-ed25519 AAAA zorel" > "$a.pub"; fi; prev="$a"; done\ncase "$*" in *"-l"*) echo "256 SHA256:fakeprint h (ED25519)";; esac')
+  script("ssh-keyscan", 'echo "h.example ssh-ed25519 AAAAfake"')
+  script("ssh", `echo "$@" >> ${ran}\necho "Linux h.example"`)
+  return { bin, ran }
+}
+const RemoteRun = (command: string) =>
+  Layer.succeed(Engines, {
+    run: (t) =>
+      Stream.unwrap(
+        Effect.promise(async () => {
+          const r = await t.tools!.call("zorel_ssh_run", { target: "deploy@h.example", command })
+          const text = r.content.map((c) => ("text" in c ? c.text : "")).join("")
+          return Stream.make<EngineEvent[]>({ type: "text", delta: text }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
+        })
+      )
+  })
+const withFakeSsh = <A>(f: (ran: string) => Promise<A>) => {
+  if (process.platform === "win32") return Promise.resolve(undefined) // shell scripts stand in for ssh
+  rmSync(join(tmpdir(), "zorel-rt", "ssh"), { recursive: true, force: true }) // no host pinned by an earlier run
+  const { bin, ran } = fakeOpenSsh()
+  const path = process.env.PATH
+  process.env.PATH = `${bin}:${path}`
+  return f(ran).finally(() => {
+    process.env.PATH = path
+  })
+}
+const installerChat = Effect.gen(function* () {
+  const store = yield* Store
+  const installer = yield* store.createAgent({ projectId: null, name: "Installer", instructions: "Install Zorel", model: "x/y", builtin: "installer" })
+  return yield* store.createChat({ projectId: null, agentIds: [installer.id], model: "x/y" })
+})
+
+test("ssh: a new host is trusted only after the person compares its key; the command runs only once approved", () =>
+  withFakeSsh((ran) =>
+    runWith(":memory:", RemoteRun("uname -a"), Effect.gen(function* () {
+      const store = yield* Store
+      const runtime = yield* Runtime
+      const chat = yield* installerChat
+      const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+      yield* runtime.send({ chatId: chat.id, clientId: "ssh-1", text: "install" })
+      const nth = (n: number) => Effect.gen(function* () {
+        while (c.events.filter((e) => e._tag === "approval").length < n) yield* Effect.sleep("10 millis")
+        const e = c.events.filter((x) => x._tag === "approval")[n - 1]!
+        return e._tag === "approval" ? e.approval : undefined!
+      })
+      const trust = yield* nth(1)
+      expect([trust.kind, trust.summary]).toEqual(["network", "Trust h.example?"])
+      expect(trust.args).toContain("SHA256:fakeprint")
+      expect(require("node:fs").existsSync(ran)).toBe(false) // nothing ran yet
+      yield* runtime.decide(trust.id, "approved")
+      const cmd = yield* nth(2)
+      expect([cmd.kind, cmd.args]).toEqual(["command", "uname -a"])
+      yield* runtime.decide(cmd.id, "approved")
+      yield* c.done
+      expect((yield* store.messages(chat.id)).at(-1)!.text).toBe("exit 0\nLinux h.example")
+      expect(readFileSync(ran, "utf8")).toContain("deploy@h.example -- uname -a")
+    }))
+  ))
+
+test("ssh: a declined command never runs; an agent that isn't the Installer can't use the tool", () =>
+  withFakeSsh((ran) =>
+    runWith(":memory:", RemoteRun("rm -rf /tmp/x"), Effect.gen(function* () {
+      const store = yield* Store
+      const runtime = yield* Runtime
+      const chat = yield* installerChat
+      const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
+      yield* runtime.send({ chatId: chat.id, clientId: "ssh-2", text: "go" })
+      for (let decided = 0; decided < 2; ) {
+        const open = c.events.filter((e) => e._tag === "approval").length
+        if (open > decided) {
+          const e = c.events.filter((x) => x._tag === "approval")[decided]!
+          if (e._tag === "approval") yield* runtime.decide(e.approval.id, e.approval.kind === "network" ? "approved" : "denied")
+          decided++
+        } else yield* Effect.sleep("10 millis")
+      }
+      yield* c.done
+      expect((yield* store.messages(chat.id)).at(-1)!.text).toContain("declined this command")
+      expect(require("node:fs").existsSync(ran)).toBe(false)
+      // A plain agent calling it by name gets nothing.
+      const plain = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
+      const p = yield* collect(plain.id, (e) => e._tag === "turn-completed")
+      yield* runtime.send({ chatId: plain.id, clientId: "ssh-3", text: "go" })
+      yield* p.done
+      expect((yield* store.messages(plain.id)).at(-1)!.text).toBe("Not available here.")
+    }))
+  ))

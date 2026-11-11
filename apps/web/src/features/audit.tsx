@@ -36,7 +36,7 @@ const ACTIONS = new Set([
   "account.removed", "account.signin_started", "api_key.set", "api_key.cleared", "mcp_server.added", "mcp_server.updated", "mcp_server.removed",
   "failover_terms.accepted", "approval.approved", "approval.denied", "turn.undone", "storage.cleaned", "chat.access_changed", "desktop.installed", "cli.installed",
   "computer.erased", "git.committed", "git.pushed", "git.branched", "git.pr_created",
-  "git.merged", "git.discarded"
+  "git.merged", "git.discarded", "ssh.ran", "ssh.trusted"
 ])
 const ACCESS = new Set(["workspace", "ask", "full"])
 const FIELDS = new Set(["name", "brief", "path", "instructions", "model", "accountId", "effort", "failover", "access", "label", "mode", "enabled", "provider"])

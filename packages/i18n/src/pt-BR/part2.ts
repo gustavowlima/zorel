@@ -299,7 +299,9 @@ export const part2 = {
       git_branched: "Criou uma branch em {name}",
       git_pr_created: "Abriu um pull request para {name}",
       git_merged: "Juntou a cópia de um agente em {name}",
-      git_discarded: "Descartou a cópia de um agente de {name}"
+      git_discarded: "Descartou a cópia de um agente de {name}",
+      ssh_ran: "Rodou um comando em {name}",
+      ssh_trusted: "Confiou na chave de {name}"
     },
     fields: {
       name: "Nome",

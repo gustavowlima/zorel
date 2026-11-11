@@ -138,11 +138,11 @@ const OFFLINE = {
   en: { title: "isn't answering", hint: "Check that it's running and that this computer can reach it.", retry: "Try again" },
   pt: { title: "não está respondendo", hint: "Confira se ele está ligado e se este computador consegue alcançá-lo.", retry: "Tentar de novo" }
 } as const
-const escape = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!)
+const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!)
 function offlinePage(origin: string, name: string) {
   const t = OFFLINE[app.getLocale().toLowerCase().startsWith("pt") ? "pt" : "en"]
   const dark = nativeTheme.shouldUseDarkColors
-  const html = `<!doctype html><meta charset="utf-8"><title>${escape(name)}</title><body style="margin:0;height:100vh;display:grid;place-items:center;font:15px -apple-system,system-ui,sans-serif;background:${dark ? "#0d0d0d" : "#ececec"};color:${dark ? "#e8e8e8" : "#1a1a1a"}"><div style="text-align:center;max-width:420px;padding:24px"><p style="font-size:18px;font-weight:600;margin:0 0 8px">${escape(name)} ${t.title}</p><p style="opacity:.7;margin:0 0 20px">${t.hint}</p><a href="${escape(withShell(`${origin}/`))}" style="display:inline-block;padding:8px 16px;border-radius:999px;background:#2f6bff;color:#fff;text-decoration:none">${t.retry}</a></div></body>`
+  const html = `<!doctype html><meta charset="utf-8"><title>${escapeHtml(name)}</title><body style="margin:0;height:100vh;display:grid;place-items:center;font:15px -apple-system,system-ui,sans-serif;background:${dark ? "#0d0d0d" : "#ececec"};color:${dark ? "#e8e8e8" : "#1a1a1a"}"><div style="text-align:center;max-width:420px;padding:24px"><p style="font-size:18px;font-weight:600;margin:0 0 8px">${escapeHtml(name)} ${t.title}</p><p style="opacity:.7;margin:0 0 20px">${t.hint}</p><a href="${escapeHtml(withShell(`${origin}/`))}" style="display:inline-block;padding:8px 16px;border-radius:999px;background:#2f6bff;color:#fff;text-decoration:none">${t.retry}</a></div></body>`
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
 }
 

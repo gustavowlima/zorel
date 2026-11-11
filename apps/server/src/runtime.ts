@@ -26,6 +26,8 @@ import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
 import * as Git from "./git.ts"
+import * as Ssh from "./ssh.ts"
+import { REMOTE_KEY_TOOL, REMOTE_TOOLS } from "./ssh.ts"
 import { join } from "node:path"
 import { startVectors } from "./vectors.ts"
 import { desktopBin, desktopCli } from "./desktop.ts"
@@ -553,7 +555,7 @@ const makeRuntime = Effect.gen(function* () {
     // Each tool's description costs tokens in every session: the ones that only read something are offered once
     // there is something to read (memories past the prompt's budget, a page, a skill); writing ones stay.
     const useless = await run(idleTools(chat, agent, mem))
-    for (const t of [...TEAM_TOOLS, TASK_TOOL, ASK_TOOL, MEMORY_TOOL, REMEMBER_TOOL, ROUTINES_TOOL, PREVIEW_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])])
+    for (const t of [...TEAM_TOOLS, TASK_TOOL, ASK_TOOL, MEMORY_TOOL, REMEMBER_TOOL, ROUTINES_TOOL, PREVIEW_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : []), ...(agent?.builtin === "installer" ? REMOTE_TOOLS : [])])
       if (!withheld.has(t.name) && !useless.has(t.name)) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
       fixed?.update(NO_TOOLS)
@@ -733,6 +735,45 @@ const makeRuntime = Effect.gen(function* () {
       keep({ tool: name, args: "", status: "ok", result: out })
       await finish(s, "ok", out)
       return textResult(out)
+    }
+
+    // Another computer over SSH (spec 017): the Installer's only. Nothing runs without the person's OK on the exact
+    // command; a host seen for the first time is trusted only after they compare its key. Never from outside text.
+    const remoteCall = async (name: string, args: Record<string, unknown>) => {
+      if (agent?.builtin !== "installer" || row.outside) return textResult("Not available here.", true)
+      const dir = Ssh.sshDir(dataDir)
+      if (name === REMOTE_KEY_TOOL.name) return textResult(await Ssh.publicKey(dir))
+      const target = Ssh.targetFrom(String(args.target ?? ""))
+      const command = String(args.command ?? "").trim()
+      if (!target) return textResult("target must be user@host or user@host:port.", true)
+      if (!command || command.length > 4000) return textResult("command must be one command of at most 4000 characters.", true)
+      await Ssh.publicKey(dir)
+      const where = Ssh.targetText(target)
+      const actor = { type: "agent" as const, id: agent.id }
+      const allowed = (o: string) => o === "approved" || o === "always"
+      if (!Ssh.isKnown(dir, target)) {
+        const key = await Ssh.scanHost(target).catch(() => undefined)
+        if (!key) return textResult(`${target.host} didn't answer on port ${target.port}.`, true)
+        const s = await step(`Trust ${target.host}`, name, key.fingerprint)
+        const card = `${where} answered with this key:\n\n${key.fingerprint}\n\nOn that computer, \`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub\` shows its own. Trust it only if they match.`
+        if (!allowed(await run(askApproval(chat, row, agent, s, { kind: "network", tool: name, summary: `Trust ${target.host}?`, args: card, cwd: null })))) {
+          await finish(s, "refused")
+          return textResult("The user didn't trust that host's key. Don't connect to it again unless they ask.", true)
+        }
+        Ssh.trust(dir, key.line)
+        await run(audit.record(Actions.sshTrusted, { target: { id: where, name: where }, after: { fingerprint: key.fingerprint }, actor }))
+        await finish(s, "ok")
+      }
+      const s = await step(`On ${target.host}: ${command.replace(/\s+/g, " ").slice(0, 80)}`, name, where)
+      if (!allowed(await run(askApproval(chat, row, agent, s, { kind: "command", tool: name, summary: `Run on ${where}`, args: command, cwd: null })))) {
+        await finish(s, "refused")
+        return textResult("The user declined this command. Don't run it again without asking.", true)
+      }
+      onWrite()
+      const r = await Ssh.runRemote(dir, target, command)
+      await run(audit.record(Actions.sshRan, { target: { id: where, name: where }, after: { command: command.slice(0, 500), exit: r.code }, actor }))
+      await finish(s, r.code === 0 ? "ok" : "error", r.output)
+      return textResult(`exit ${r.code}\n${r.output}`, r.code !== 0)
     }
 
     const memoryCall = async (args: Record<string, unknown>) => {
@@ -958,6 +999,7 @@ const makeRuntime = Effect.gen(function* () {
       if (name === PREVIEW_TOOL.name) return previewCall(args)
       if (name === ASK_TOOL.name) return askCall(args)
       if (TEAM_TOOLS.some((t) => t.name === name)) return teamCall(name, args)
+      if (REMOTE_TOOLS.some((t) => t.name === name)) return remoteCall(name, args)
       if (COMPUTER_TOOL_NAMES.has(name) && perms.computer === "container") {
         const s = await step(name === "computer_run" ? String(args.command ?? "").slice(0, 120) : `${name.replace("computer_", "")} ${String(args.path ?? "")}`.trim(), name)
         // The chat's project folder is lent when it may be (inside home, not hidden, not Zorel's): read-only at "ask".

@@ -965,7 +965,9 @@ export const en = {
       git_branched: "Made a branch in {name}",
       git_pr_created: "Opened a pull request for {name}",
       git_merged: "Merged an agent's copy into {name}",
-      git_discarded: "Discarded an agent's copy of {name}"
+      git_discarded: "Discarded an agent's copy of {name}",
+      ssh_ran: "Ran a command on {name}",
+      ssh_trusted: "Trusted the key of {name}"
     },
     fields: {
       name: "Name",

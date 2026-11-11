@@ -19,9 +19,14 @@ Each phase ends testable on its own; the desktop with no servers behaves as befo
 
 ## P2: Approved SSH commands
 
-- [ ] T009 server: `ssh.ts` — key pair, public key, host fingerprint, `run` with BatchMode and Zorel's known_hosts
-- [ ] T010 server: `zorel_remote_run` for built-in helpers; approval card with the exact command; audit `ssh.ran`
-- [ ] T011 tests: against a local sshd container when Docker is present, else a fake `ssh` on PATH
+- [X] T009 server: `ssh.ts` — Zorel's key pair (`publicKey`), `scanHost` (SHA256 fingerprint), `trust`/`isKnown`
+  (Zorel's known_hosts), `runRemote` (BatchMode, StrictHostKeyChecking=yes, IdentitiesOnly, secret on stdin, output end)
+- [X] T010 server: tools `zorel_ssh_key` and `zorel_ssh_run`, offered only to the built-in "installer" agent and never
+  from outside text; a new host's fingerprint card (kind network) before anything; the exact command as a card (kind
+  command); audit `ssh.trusted` / `ssh.ran`
+- [X] T011 tests: ssh.test.ts (targets refuse option-like names, args, known_hosts, stdin secret via a fake ssh);
+  runtime tests (trust then run once approved; a declined command never runs; a plain agent gets nothing). A real
+  sshd container test is left to P3's manual check
 
 ## P3: Install on another computer
 

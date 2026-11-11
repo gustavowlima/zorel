@@ -46,7 +46,9 @@ export const Actions = {
   gitBranched: action("git.branched", "project"),
   gitPrCreated: action("git.pr_created", "project"),
   gitMerged: action("git.merged", "project"), // an agent's own worktree merged into the chat's folder (spec 016)
-  gitDiscarded: action("git.discarded", "project")
+  gitDiscarded: action("git.discarded", "project"),
+  sshRan: action("ssh.ran", "host"), // a command the person approved, run on another computer (spec 017)
+  sshTrusted: action("ssh.trusted", "host") // a host key the person compared and pinned
 } as const
 type Action = (typeof Actions)[keyof typeof Actions]
 

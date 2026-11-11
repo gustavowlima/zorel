@@ -134,7 +134,7 @@ export const Agent = Schema.Struct({
   failover: FailoverList,
   access: Access,
   permissions: AgentPermissions,
-  builtin: Schema.optionalKey(Schema.NullOr(Schema.Literal("builder"))), // Zorel's own agent: kept out of lists and pickers
+  builtin: Schema.optionalKey(Schema.NullOr(Schema.Literals(["builder", "installer"]))), // Zorel's own agents (the Builder, the Installer of spec 017): kept out of lists and pickers
   // Archived: out of the lists and pickers, answers no one and runs no routine; its history stays. Restorable.
   archivedAt: Schema.NullOr(Schema.Number),
   // Token limits (input + output): a month's (UTC) total, and one reply's. null: none. Over the month's, it doesn't

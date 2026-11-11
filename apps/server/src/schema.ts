@@ -48,7 +48,7 @@ export const agents = sqliteTable("agents", {
   failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>().notNull().default([]), // alternatives in order (§6.1)
   access: text({ enum: ["workspace", "ask", "full"] }).notNull().default("workspace"), // §9.2, chosen only by you
   permissions: text({ mode: "json" }).$type<AgentPermissions>().notNull().default({ web: true, browser: true, grants: {}, always: [] }),
-  builtin: text({ enum: ["builder"] }), // Zorel's own agent (the Builder): not a teammate, kept out of pickers
+  builtin: text({ enum: ["builder", "installer"] }), // Zorel's own agents (the Builder; the Installer, spec 017): not teammates, kept out of pickers
   archivedAt: integer("archived_at"), // archived: answers no one, out of lists; history kept
   monthlyTokens: integer("monthly_tokens"), // a month's (UTC) token limit; null: none
   replyTokens: integer("reply_tokens"), // one reply's token limit; null: none
