@@ -318,52 +318,62 @@ test("steer: a message for the agent that is working goes into its reply; the ot
   }))
 })
 
-test("steer: a message for another agent stops the running reply and runs that agent next, without chaining the stopped one", () => {
+test("steer: a message for another agent leaves the running reply alone; that agent answers at the same time", () => {
   const steered: Array<[string, string]> = []
   const started: string[] = []
   return runWith(":memory:", Steering(steered, started), Effect.gen(function* () {
-    const { store, runtime, chat, bee } = yield* steerSetup
+    const { store, runtime, chat, lee } = yield* steerSetup
     yield* leeBusy(chat.id)
     expect(yield* runtime.steer(chat.id, "@bee do it")).toEqual({ joined: false })
     expect(steered).toEqual([]) // Lee's reply wasn't the recipient's: nothing went into it
     yield* waitFor(() => Effect.map(store.messages(chat.id), (m) => m.some((x) => x.text === "ok:bee")))
-    const msgs = yield* store.messages(chat.id)
-    // The stopped reply is saved before the message, then Bee answers.
-    expect(msgs.map((m) => m.text)).toEqual(["@lee slow", "part @bee please", "@bee do it", "ok:bee"])
-    // Lee's partial text names Bee, but a stopped reply calls no one: Bee ran once, for the person.
+    // Bee answered while Lee is still at work (spec 016): only the recipients are touched.
+    expect((yield* store.activeTurns(chat.id)).filter((t) => t.state === "running").map((t) => t.agentId)).toEqual([lee.id])
     expect(started).toEqual(["lee", "bee"])
-    const beeTurns = (yield* store.turnsIn("completed")).filter((t) => t.agentId === bee.id)
-    expect(beeTurns.map((t) => t.depth)).toEqual([0])
+    yield* runtime.interrupt(chat.id)
+  }))
+})
+
+test("two agents called by one message work at the same time; Stop on one reply leaves the other", () => {
+  const started: string[] = []
+  return runWith(":memory:", Steering([], started), Effect.gen(function* () {
+    const { store, runtime, chat, lee, bee } = yield* steerSetup
+    const c = yield* collect(chat.id, () => false)
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "@lee @bee slow" })
+    yield* waitFor(() => Effect.map(store.activeTurns(chat.id), (ts) => ts.filter((t) => t.state === "running").length === 2))
+    expect(new Set(started)).toEqual(new Set(["lee", "bee"]))
+    // The chat's status names both at work.
+    yield* waitFor(() => Effect.succeed(c.events.some((e) => e._tag === "status" && (e.status.agentIds?.length ?? 0) === 2)))
+    const leeTurn = (yield* store.activeTurns(chat.id)).find((t) => t.agentId === lee.id)!
+    yield* runtime.interrupt(chat.id, leeTurn.id)
+    yield* waitFor(() => Effect.map(store.activeTurns(chat.id), (ts) => ts.map((t) => t.agentId).join() === bee.id))
+    yield* runtime.interrupt(chat.id)
   }))
 })
 
 test("send now: a message of yours runs before the hand-offs already queued", () => {
   const started: string[] = []
   return runWith(":memory:", Steering([], started), Effect.gen(function* () {
-    const { store, runtime, chat, lee, bee } = yield* steerSetup
+    const { store, runtime, chat, bee } = yield* steerSetup
     yield* leeBusy(chat.id)
-    // Three replies the agents handed to one another are waiting (depth > 0).
-    for (let i = 0; i < 3; i++) yield* store.enqueueTurn({ chatId: chat.id, agentId: lee.id, model: "claude-cli/haiku", clientId: null, depth: 1 })
+    // Three replies the agents handed to Bee are waiting (depth > 0).
+    for (let i = 0; i < 3; i++) yield* store.enqueueTurn({ chatId: chat.id, agentId: bee.id, model: "claude-cli/haiku", clientId: null, depth: 1 })
     expect(yield* runtime.steer(chat.id, "@bee now")).toEqual({ joined: false })
-    yield* waitFor(() => Effect.map(store.turnsIn("queued"), (q) => q.length === 0))
-    yield* waitFor(() => Effect.map(store.turnsIn("completed"), (c) => c.length === 4))
-    expect(started.slice(1)).toEqual(["bee", "lee", "lee", "lee"]) // after the stopped one: yours, then the chain
+    yield* waitFor(() => Effect.map(store.turnsIn("completed"), (c) => c.filter((t) => t.agentId === bee.id).length === 4))
+    const order = (yield* store.turnsIn("completed")).filter((t) => t.agentId === bee.id).sort((x, y) => (x.startedAt ?? 0) - (y.startedAt ?? 0))
+    expect(order.map((t) => t.depth)).toEqual([0, 1, 1, 1]) // yours first, then the hand-offs
+    yield* runtime.interrupt(chat.id)
   }))
 })
 
-test("nextQueued: your messages go first, each group in order; a wrap-up or a task result waits behind what it awaits", () =>
+test("queuedTurns: your messages go first, each group in order; a wrap-up or a task result waits behind what it awaits", () =>
   runWith(":memory:", Echo, Effect.gen(function* () {
     const store = yield* Store
     const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
     const add = (depth: number) => store.enqueueTurn({ chatId: chat.id, agentId: null, model: "x/y", clientId: null, depth })
     const chained = [yield* add(2), yield* add(1)]
     const mine = [yield* add(0), yield* add(0)]
-    const order: string[] = []
-    for (let i = 0; i < 4; i++) {
-      const t = (yield* store.nextQueued(chat.id))!
-      order.push(t.id)
-      yield* store.finishTurn(t.id, { state: "completed", error: null, messageId: null })
-    }
+    const order = (yield* store.queuedTurns(chat.id)).map((t) => t.id)
     expect(order).toEqual([mine[0]!.id, mine[1]!.id, chained[0]!.id, chained[1]!.id])
   })))
 

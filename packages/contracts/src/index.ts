@@ -751,7 +751,8 @@ const McpServerPatch = Schema.Struct({ mode: Schema.optional(ToolMode), enabled:
 const KeyInput = Schema.Struct({ value: Text(500) }) // empty deletes
 // One-time choices recorded on the server (the failover terms warning is shown once).
 // nativeSkills: Claude Code and Codex may use their own skills (the person's ~/.claude/skills, plugins, Codex's).
-// maxRunning: how many chats may have an agent working at once (the rest wait for a free slot); 0 = no limit.
+// maxRunning: how many agents may be at work at once, across chats (the rest wait for a free slot); 0 = no limit.
+// maxPerChat: how many of one chat's agents may work at once; 0 = no limit (the default).
 export const MAX_RUNNING_DEFAULT = 4
 export const MAX_RUNNING_CHOICES = [0, 1, 2, 3, 4, 6, 8, 12] as const
 // memoryApproval: what a new fact learned from a chat becomes. "review" (the default): it waits for the person;
@@ -760,7 +761,7 @@ export const MemoryApproval = Schema.Literals(["review", "undo"])
 export type MemoryApproval = typeof MemoryApproval.Type
 // memoryModel: the model that learns from chats (summary, memories, the map); "": automatic, each chat's provider's
 // small model (ZOREL_MEMORY_MODEL overrides the automatic one).
-export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number, memoryApproval: MemoryApproval, memoryModel: Schema.String, timeProfile: TimeProfile })
+export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number, maxPerChat: Schema.Number, memoryApproval: MemoryApproval, memoryModel: Schema.String, timeProfile: TimeProfile })
 
 // Turns (send, events, interrupt, approve): see events.ts (RPC over WebSocket at /rpc).
 const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
@@ -1013,6 +1014,8 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.put("timeProfile", "/api/preferences/time", { payload: TimeProfileInput, success: Preferences, error: HttpApiError.BadRequest }))
       .add(HttpApiEndpoint.put("memoryModel", "/api/preferences/memory-model", { payload: Schema.Struct({ model: Schema.Union([ModelId, Schema.Literal("")]) }), success: Preferences }))
       .add(HttpApiEndpoint.put("maxRunning", "/api/preferences/max-running", { payload: Schema.Struct({ value: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 32 })) }), success: Preferences }))
+      // How many of one chat's agents may work at once; 0 = no limit.
+      .add(HttpApiEndpoint.put("maxPerChat", "/api/preferences/max-per-chat", { payload: Schema.Struct({ value: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8 })) }), success: Preferences }))
       .add(HttpApiEndpoint.post("acceptFailoverTerms", "/api/preferences/failover-terms", { success: Preferences }))
       .add(HttpApiEndpoint.put("setKey", "/api/keys/:name", { params: { name: Schema.String }, payload: KeyInput, error: HttpApiError.NotFound }))
       // An agent's own computer (spec 009): the container engine found, and erasing an agent's computers.

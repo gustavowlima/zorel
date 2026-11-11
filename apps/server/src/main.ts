@@ -39,7 +39,7 @@ import { Accounts } from "./accounts.ts"
 import { Actor, LOCAL_ACTOR } from "./access.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { LoggerLive, redact } from "./observability.ts"
-import { MAX_RUNNING_KEY, parseMaxRunning, Runtime, type RuntimeService } from "./runtime.ts"
+import { MAX_PER_CHAT_KEY, MAX_RUNNING_KEY, parseMaxPerChat, parseMaxRunning, Runtime, type RuntimeService } from "./runtime.ts"
 import { notices, resolveStep, RoutineScheduler, runRoutine } from "./routines.ts"
 import { optionsOf, savedArgsProblem, testToolStep, testTrigger, toolState } from "./flows.ts"
 import { permissionsOf } from "./permissions.ts"
@@ -880,14 +880,15 @@ const FAILOVER_TERMS = "failover_terms_accepted_at"
 const MEMORY_APPROVAL = "memoryApproval" // "review" (default) or "undo": see Preferences
 const MEMORY_MODEL = "memoryModel" // "" (automatic) or a model id: see Preferences
 const preferencesOf = (store: Repository) =>
-  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills"), store.preference(MAX_RUNNING_KEY), store.preference(MEMORY_APPROVAL), store.preference(MEMORY_MODEL), profileOf(store)]), ([v, p, n, m, a, mm, time]) => ({
+  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills"), store.preference(MAX_RUNNING_KEY), store.preference(MEMORY_APPROVAL), store.preference(MEMORY_MODEL), profileOf(store), store.preference(MAX_PER_CHAT_KEY)]), ([v, p, n, m, a, mm, time, perChat]) => ({
     timeProfile: toContract(time),
     memoryApproval: a === "undo" ? ("undo" as const) : ("review" as const),
     memoryModel: mm ?? "",
     failoverTermsAcceptedAt: v ? Number(v) : null,
     paused: p === "1",
     nativeSkills: n === "1",
-    maxRunning: parseMaxRunning(m)
+    maxRunning: parseMaxRunning(m),
+    maxPerChat: parseMaxPerChat(perChat)
   }))
 
 // The processes a chat started (its shells, its agent sessions) → the chat's folder, to place the servers they run.
@@ -1035,6 +1036,7 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       )
       .handle("memoryModel", ({ payload }) => Effect.andThen(store.setPreference(MEMORY_MODEL, payload.model), preferencesOf(store)))
       .handle("maxRunning", ({ payload }) => Effect.andThen(runtime.setMaxRunning(payload.value), preferencesOf(store)))
+      .handle("maxPerChat", ({ payload }) => Effect.andThen(runtime.setMaxPerChat(payload.value), preferencesOf(store)))
       .handle("acceptFailoverTerms", () =>
         Effect.andThen(
           store.setPreference(FAILOVER_TERMS, String(Date.now())).pipe(Effect.tap(() => audit.record(Actions.failoverTermsAccepted, { target: { id: FAILOVER_TERMS, name: "Failover" } }))),
@@ -1139,7 +1141,7 @@ const RpcHandlers = ZorelRpc.toLayer(
     return {
       send: (p) => reach(p.chatId).pipe(Effect.tap(() => noteActivity(store)), Effect.flatMap((personId) => runtime.send(p, { personId }))), // the person is here (spec 012)
       steer: (p) => reach(p.chatId).pipe(Effect.andThen(runtime.steer(p.chatId, p.text, p.attachmentIds))),
-      interrupt: (p) => reach(p.chatId).pipe(Effect.andThen(runtime.interrupt(p.chatId)), Effect.ignore),
+      interrupt: (p) => reach(p.chatId).pipe(Effect.andThen(runtime.interrupt(p.chatId, p.turnId)), Effect.ignore),
       retry: (p) => reach(p.chatId).pipe(Effect.andThen(runtime.retry(p.chatId, p.messageId))),
       decide: (p) =>
         Effect.gen(function* () {

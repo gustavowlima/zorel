@@ -1148,8 +1148,9 @@ export const repository = (db: Db, pagesDir?: string) => {
     forgetPerson: (personId: string) => orDie(db.delete(projectMembers).where(eq(projectMembers.personId, personId))),
     // What a chat runs next: your own messages (depth 0) before the replies that agents handed to one another (depth > 0),
     // each group in order of arrival. A message of yours never waits behind a chain it didn't start.
-    nextQueued: (chatId: string) =>
-      orDie(db.select().from(turns).where(and(eq(turns.chatId, chatId), eq(turns.state, "queued"))).orderBy(asc(sql`${turns.depth} > 0`), asc(turns.createdAt)).limit(1).pipe(Effect.map(first))),
+    // A chat's queued turns in the order they start: a person's messages before hand-offs, oldest first.
+    queuedTurns: (chatId: string) =>
+      orDie(db.select().from(turns).where(and(eq(turns.chatId, chatId), eq(turns.state, "queued"))).orderBy(asc(sql`${turns.depth} > 0`), asc(turns.createdAt))),
     turnsIn: (state: TurnRow["state"]) => orDie(db.select().from(turns).where(eq(turns.state, state)).orderBy(asc(turns.createdAt))),
     activeTurns: (chatId: string) =>
       orDie(db.select().from(turns).where(and(eq(turns.chatId, chatId), inArray(turns.state, ["queued", "running"]))).orderBy(asc(turns.createdAt)).pipe(Effect.map((r) => r.map(toTurn)))),

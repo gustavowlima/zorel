@@ -42,6 +42,12 @@ export const parseMaxRunning = (stored: string | undefined | null): number => {
   const n = stored === undefined || stored === null || stored === "" ? MAX_RUNNING_DEFAULT : Number(stored)
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : MAX_RUNNING_DEFAULT
 }
+// How many of one chat's agents may work at once (Settings › General; 0 = no limit, the default).
+export const MAX_PER_CHAT_KEY = "maxPerChat"
+export const parseMaxPerChat = (stored: string | undefined | null): number => {
+  const n = Number(stored ?? 0)
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0
+}
 const WAITING_SLOT = "Waiting for a free slot"
 const MAX_SESSIONS = 8 // live engine processes; the least recently used one closes first
 // APPROVAL_MS (engines/session.ts): a card expires in 30 min and counts as denial
@@ -173,7 +179,7 @@ export interface RuntimeService {
   readonly send: (input: SendInput, opts?: { readonly outside?: boolean; readonly personId?: string }) => Effect.Effect<{ turnId: string }, ChatNotFound | ChatNeedsAgent>
   // Corrects the agent mid-turn when the engine supports it (Codex); otherwise queues it like `send`.
   readonly steer: (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) => Effect.Effect<{ readonly joined: boolean }, ChatNotFound>
-  readonly interrupt: (chatId: string) => Effect.Effect<void>
+  readonly interrupt: (chatId: string, turnId?: string) => Effect.Effect<void>
   readonly retry: (chatId: string, messageId: string) => Effect.Effect<void, ChatNotFound>
   // The chat's Run: the person starts the project's server (as zorel_preview does, with no approval: it's theirs).
   readonly preview: (chatId: string, input: { script?: string | undefined; command?: string | undefined; folder?: string | undefined }) => Effect.Effect<{ url: string } | { error: string }, ChatNotFound>
@@ -185,6 +191,7 @@ export interface RuntimeService {
   readonly paused: () => boolean
   readonly setPaused: (paused: boolean) => Effect.Effect<void>
   readonly setMaxRunning: (max: number) => Effect.Effect<void>
+  readonly setMaxPerChat: (max: number) => Effect.Effect<void>
   readonly decide: (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">, reason?: string, overrides?: ReadonlyArray<AgentOverride>) => Effect.Effect<void, ApprovalNotFound>
   // Spec 013: a routine flow's step waits for the person (a write, an "Ask me"), with no turn behind it. The card goes
   // to the routine's chat and Needs you like any other; "Always allow" saves the rule on the agent.
@@ -267,17 +274,42 @@ const makeRuntime = Effect.gen(function* () {
       const given = yield* Effect.forEach(tasks, (t) => Effect.map(store.chat(t.id), (c) => ({ agentId: t.taskBy!, on: c?.agentIds.slice(0, 1) ?? [], taskChatId: t.id })))
       return [...(wrap?.waiting.size ? [{ agentId: wrap.askerId, on: [...wrap.waiting], taskChatId: null }] : []), ...given.filter((w) => w.on.length)]
     })
-  const setStatus = (chatId: string, state: ChatStatus["state"], agentId: string | null, label: string) =>
+  // Several agents may work in a chat at once (spec 016): each running one keeps its own state and label here, and the
+  // chat's status says the one waiting on the person first, else the first at work, with everyone at work in
+  // `agentIds`. Idle or failed: the chat's whole state (its turns are over).
+  const working = new Map<string, Map<string, { agentId: string | null; state: "running" | "waiting"; label: string }>>()
+  const publishStatus = (chatId: string, state: ChatStatus["state"], agentId: string | null, label: string) =>
     Effect.gen(function* () {
       if (gone.has(chatId)) return
-      const status: ChatStatus = { chatId, state, agentId, label, unread: false, updatedAt: Date.now(), waits: yield* waitsOf(chatId) }
+      const at = [...(working.get(chatId)?.values() ?? [])]
+      const agentIds = at.flatMap((w) => (w.agentId ? [w.agentId] : []))
+      const status: ChatStatus = { chatId, state, agentId, label, unread: false, updatedAt: Date.now(), waits: yield* waitsOf(chatId), ...(agentIds.length > 1 && { agentIds }) }
       statuses.set(chatId, status)
       yield* PubSub.publish(statusHub, status)
       yield* publish(chatId, ev("status", { status }))
     })
+  const setStatus = (chatId: string, state: ChatStatus["state"], agentId: string | null, label: string) =>
+    Effect.suspend(() => {
+      if (state === "idle" || state === "failed") {
+        working.delete(chatId)
+        return publishStatus(chatId, state, agentId, label)
+      }
+      const at = working.get(chatId) ?? new Map()
+      working.set(chatId, at.set(agentId ?? "-", { agentId, state, label }))
+      const lead = [...at.values()].find((w) => w.state === "waiting") ?? [...at.values()][0]!
+      return publishStatus(chatId, lead.state, lead.agentId, lead.label)
+    })
+  // An agent's turn ended while others go on: the chat's status is theirs.
+  const clearStatus = (chatId: string, agentId: string | null) =>
+    Effect.suspend(() => {
+      const at = working.get(chatId)
+      if (!at?.delete(agentId ?? "-") || !at.size) return Effect.void
+      const lead = [...at.values()].find((w) => w.state === "waiting") ?? [...at.values()][0]!
+      return publishStatus(chatId, lead.state, lead.agentId, lead.label)
+    })
 
   // ---------- in-memory state (the database is the source; this only holds fibers and waits) ----------
-  const workers = new Map<string, { kicked: boolean }>()
+  const workers = new Map<string, { kicked: boolean; signal: Deferred.Deferred<void> }>()
 
   // ---------- native engine sessions (ARCHITECTURE §6, D6) ----------
   // One per (chat, agent). `seen` is the watermark: the `at` of the last message the session has.
@@ -322,7 +354,9 @@ const makeRuntime = Effect.gen(function* () {
   // after the watermark are sent; a new session gets the whole checkpoint (summary + recent messages).
   // Running turns whose session can take a correction mid-turn (only while the turn streams).
   // The running turn's way to take a message mid-reply, and whose turn it is (a message goes in only for its own agent).
+  // Keyed by chat and agent (several agents may be at work in one chat).
   const steering = new Map<string, { agentId: string | null; steer: (text: string) => Promise<boolean> }>()
+  const steerKey = (chatId: string, agentId: string | null) => `${chatId}:${agentId ?? "-"}`
   // Chats whose running turn a "send now" is stopping: the worker waits for the message to be queued before it picks the next turn.
   const holding = new Map<string, Deferred.Deferred<void>>()
 
@@ -387,11 +421,14 @@ const makeRuntime = Effect.gen(function* () {
             if (e.type === "done") current.context = e.usage.inputTokens
           })
         ),
-        Stream.onStart(Effect.sync(() => steer && steering.set(row.chatId, { agentId: row.agentId, steer }))),
-        Stream.ensuring(Effect.sync(() => steering.delete(row.chatId)))
+        Stream.onStart(Effect.sync(() => steer && steering.set(steerKey(row.chatId, row.agentId), { agentId: row.agentId, steer }))),
+        Stream.ensuring(Effect.sync(() => steering.delete(steerKey(row.chatId, row.agentId))))
       )
     })
-  const running = new Map<string, Fiber.Fiber<unknown, unknown>>()
+  // The turns at work, by chat: each one's agent and its fiber (Stop interrupts it).
+  const running = new Map<string, Map<string, { agentId: string | null; fiber: Fiber.Fiber<unknown, unknown> }>>()
+  const runsOf = (chatId: string) => running.get(chatId) ?? running.set(chatId, new Map()).get(chatId)!
+  const atWork = () => [...running.values()].reduce((n, m) => n + m.size, 0)
   // approval id → its waiter: the decision comes with the person's words (a question's answer, what to change in a
   // proposal) and, on an agent proposal, what they set before approving.
   const waiting = new Map<string, Deferred.Deferred<Decision>>()
@@ -1487,29 +1524,69 @@ const makeRuntime = Effect.gen(function* () {
     })
 
   // ---------- per-chat worker ----------
+  // One per chat with queued turns (spec 016). It starts every queued turn it can, a person's messages before
+  // hand-offs, oldest first: at most one per agent (a later turn of a busy agent waits, so each agent's turns keep their
+  // order), within the chat's limit (maxPerChat) and the global one (maxRunning, turns at work). Then it waits for a turn
+  // to end or for something new (a kick) and looks again. A turn that ends saves its reply and queues its hand-offs
+  // (chain) on its own, while the others go on. With one agent per chat this is the old one-turn-at-a-time loop.
   const worker = (chatId: string): Effect.Effect<void> =>
     Effect.gen(function* () {
       const self = workers.get(chatId)!
+      const runs = runsOf(chatId)
       let last: { text: string; agent: Agent | undefined } | undefined
-      let failed: string | null | undefined // the last turn failed: its agent (the chat rests "failed", not idle)
+      let failed: string | null | undefined // the last turn to end failed: its agent (the chat rests "failed", not idle)
+      // A turn's own fiber (Stop interrupts it) under a supervisor that, whatever happened, chains its hand-offs and
+      // wakes the worker.
+      const start = (row: TurnRow) =>
+        Effect.gen(function* () {
+          const fiber = yield* Effect.forkDetach(runTurn(row))
+          runs.set(row.id, { agentId: row.agentId, fiber })
+          yield* Effect.forkDetach(
+            Effect.gen(function* () {
+              const done = yield* Fiber.join(fiber).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+              runs.delete(row.id)
+              last = done
+              failed = (yield* store.turnRow(row.id))?.state === "failed" ? (row.agentId ?? null) : undefined
+              yield* clearStatus(chatId, row.agentId)
+              yield* chain(row, done) // also when it failed: a hand-off waiting on it must not wait forever
+            }).pipe(Effect.ensuring(Effect.suspend(() => Effect.andThen(wake(self), freeSlots))))
+          )
+        })
       while (true) {
-        const row = yield* store.nextQueued(chatId)
-        if (!row) {
-          if (self.kicked) {
-            self.kicked = false
-            continue
+        const hold = holding.get(chatId)
+        if (hold) yield* Deferred.await(hold) // a "send now" is queueing its message: it goes before whatever is queued
+        self.kicked = false
+        const signal = self.signal
+        const busy = new Set([...runs.values()].map((r) => r.agentId ?? "-"))
+        const queued = yield* store.queuedTurns(chatId)
+        let blocked = false // a queued turn waits only for the global limit
+        for (const turn of queued) {
+          if (maxPerChat > 0 && runs.size >= maxPerChat) break
+          if (full()) {
+            blocked = true
+            break
+          }
+          // Routed turns learn their agent first (one cheap call), so the one-per-agent rule sees the real one.
+          const row = turn.route ? yield* routeTurn(turn) : turn
+          const key = row.agentId ?? "-"
+          if (busy.has(key)) continue
+          busy.add(key)
+          if (!(yield* placed(row, runs))) continue // waits for a writer in its folder (placed says so)
+          yield* start(row)
+        }
+        if (!runs.size) {
+          if (self.kicked) continue
+          if (blocked) {
+            // Nothing of this chat at work and no place free: it waits in line, as a whole chat did before.
+            if (!waitingSlot.includes(chatId)) waitingSlot.push(chatId)
+            yield* setStatus(chatId, "running", null, WAITING_SLOT)
+            workers.delete(chatId)
+            return
           }
           break
         }
-        const fiber = yield* Effect.forkDetach(runTurn(row.route ? yield* routeTurn(row) : row))
-        running.set(chatId, fiber)
-        const done = yield* Fiber.join(fiber).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
-        running.delete(chatId)
-        last = done
-        failed = (yield* store.turnRow(row.id))?.state === "failed" ? (row.agentId ?? null) : undefined
-        yield* chain(row, done) // also when it failed: a hand-off waiting on it must not wait forever
-        const hold = holding.get(chatId)
-        if (hold) yield* Deferred.await(hold) // a "send now" is queueing its message: it goes before whatever is queued
+        if (!self.kicked) yield* Deferred.await(signal)
+        self.signal = yield* Deferred.make<void>()
       }
       yield* reportTask(chatId, last)
       workers.delete(chatId)
@@ -1518,9 +1595,16 @@ const makeRuntime = Effect.gen(function* () {
       yield* Effect.forkDetach(consolidate(chatId, "window", (saved) => remembered(chatId, saved)).pipe(Effect.provide(services), quietly("consolidation", chatId)))
       yield* learnWhenQuiet(chatId)
     }).pipe(Effect.ensuring(Effect.suspend(() => {
-      workers.delete(chatId)
+      if (!running.get(chatId)?.size) running.delete(chatId)
       return freeSlots
     })))
+  // Where a turn may work (spec 016): true to start it now. Set below with the agents' own worktrees.
+  const placed = (_row: TurnRow, _runs: ReadonlyMap<string, { agentId: string | null }>): Effect.Effect<boolean> => Effect.succeed(true)
+  const wake = (w: { kicked: boolean; signal: Deferred.Deferred<void> }) =>
+    Effect.suspend(() => {
+      w.kicked = true
+      return Deferred.succeed(w.signal, undefined).pipe(Effect.asVoid)
+    })
 
   // A chat that stays quiet for QUIET_AFTER learns from its latest messages (consolidate "quiet"), so a short chat
   // learns without waiting for its window to fill. Any new turn calls it off; the next idle schedules it again.
@@ -1541,33 +1625,35 @@ const makeRuntime = Effect.gen(function* () {
 
   const PAUSED_KEY = "paused"
   let paused = (yield* store.preference(PAUSED_KEY)) === "1"
-  // How many chats may have an agent working at once (Settings › General; 0 = no limit). A chat over the limit keeps its
-  // turn queued and waits in line, oldest first, until a worker ends (each agent is a CLI process and spends from the
-  // subscription). A worker is one chat's queue, run one turn at a time, so a slot is a chat at work.
+  // How many agents may be at work at once, across chats (Settings › General; 0 = no limit). A turn over the limit
+  // stays queued; a chat with nothing at work waits in line, oldest first, until a turn ends (each agent is a CLI
+  // process and spends from the subscription). maxPerChat caps one chat's agents at once (0 = no limit).
   let maxRunning = parseMaxRunning(yield* store.preference(MAX_RUNNING_KEY))
+  let maxPerChat = parseMaxPerChat(yield* store.preference(MAX_PER_CHAT_KEY))
   const waitingSlot: string[] = []
-  const full = () => maxRunning > 0 && workers.size >= maxRunning
+  const full = () => maxRunning > 0 && atWork() >= maxRunning
   const ensureWorker = (chatId: string): Effect.Effect<void> =>
-    Effect.suspend(() => {
-      if (paused) return Effect.void // the turn stays queued until resume
+    Effect.gen(function* () {
+      if (paused) return // the turn stays queued until resume
       const w = workers.get(chatId)
-      if (w) {
-        w.kicked = true
-        return Effect.void
-      }
+      if (w) return yield* wake(w)
       if (full()) {
-        if (waitingSlot.includes(chatId)) return Effect.void
+        if (waitingSlot.includes(chatId)) return
         waitingSlot.push(chatId)
-        return setStatus(chatId, "running", null, WAITING_SLOT)
+        return yield* setStatus(chatId, "running", null, WAITING_SLOT)
       }
-      workers.set(chatId, { kicked: false })
-      return calmOff(chatId).pipe(Effect.andThen(Effect.forkDetach(worker(chatId))), Effect.asVoid)
+      const inLine = waitingSlot.indexOf(chatId)
+      if (inLine >= 0) waitingSlot.splice(inLine, 1)
+      workers.set(chatId, { kicked: false, signal: yield* Deferred.make<void>() })
+      yield* calmOff(chatId)
+      yield* Effect.forkDetach(worker(chatId))
     })
-  // A slot freed (a worker ended, or the limit went up): the chats waiting in line start, oldest first.
-  const freeSlots: Effect.Effect<void> = Effect.suspend(() => {
-    const next: string[] = []
-    while (waitingSlot.length && (maxRunning === 0 || workers.size + next.length < maxRunning)) next.push(waitingSlot.shift()!)
-    return Effect.forEach(next, ensureWorker, { discard: true })
+  // A place freed (a turn ended, or a limit went up): chats waiting in line start, oldest first, and every worker
+  // looks again (one may have a turn waiting for a place).
+  const freeSlots: Effect.Effect<void> = Effect.gen(function* () {
+    if (paused) return
+    for (const w of workers.values()) yield* wake(w)
+    while (waitingSlot.length && !full()) yield* ensureWorker(waitingSlot[0]!)
   })
 
   // ---------- boot recovery ----------
@@ -1612,12 +1698,12 @@ const makeRuntime = Effect.gen(function* () {
       if (!named) targets.push(follow ?? lead)
       return { lead, targets, route, calls }
     })
-  // Queues a turn for each recipient, except `joined`: the agent whose running turn already took the message.
-  const enqueueRecipients = (chat: Chat, plan: { lead: Agent | undefined; targets: ReadonlyArray<Agent | undefined>; route: boolean; calls: ReadonlyArray<{ first: Agent; teamId: string }> }, clientId: string | null, joined?: string | null, outside = false) =>
+  // Queues a turn for each recipient, except `joined`: the agents whose running turns already took the message.
+  const enqueueRecipients = (chat: Chat, plan: { lead: Agent | undefined; targets: ReadonlyArray<Agent | undefined>; route: boolean; calls: ReadonlyArray<{ first: Agent; teamId: string }> }, clientId: string | null, joined?: ReadonlyArray<string | null>, outside = false) =>
     Effect.gen(function* () {
       let first: string | undefined
       for (const a of plan.targets) {
-        if (joined !== undefined && (a?.id ?? null) === joined) continue
+        if (joined?.includes(a?.id ?? null)) continue
         // The leader uses the chat model (the one you picked); other members use their own.
         const isLead = !a || a.id === plan.lead?.id
         const t = yield* enqueue({
@@ -1651,7 +1737,7 @@ const makeRuntime = Effect.gen(function* () {
         const [chatId = "", agentId = "-"] = key.split(":")
         return { key, chatId, agentId: agentId === "-" ? null : agentId, provider: live.provider, usedAt: live.used, pid: live.session.pid?.() }
       }),
-    closeSession: (key) => (running.has(key.split(":")[0] ?? "") ? Effect.void : closeSession(key)), // never under a running turn
+    closeSession: (key) => (running.get(key.split(":")[0] ?? "")?.size ? Effect.void : closeSession(key)), // never under a running turn
     send: (input, opts) =>
       Effect.gen(function* () {
         const outside = opts?.outside === true
@@ -1676,23 +1762,25 @@ const makeRuntime = Effect.gen(function* () {
         const chat = yield* store.chat(chatId)
         if (!chat) return yield* new ChatNotFound({ chatId })
         const plan = yield* recipientsOf(chat, text)
-        const live = steering.get(chatId)
+        // Only the recipients' replies are touched (spec 016): the other agents at work go on.
+        const to = new Set(plan.targets.map((a) => a?.id ?? null))
         // Images can't join a running turn: with attachments the message goes as a turn of its own.
-        const own = !attachmentIds?.length && live && plan.targets.some((a) => (a?.id ?? null) === live.agentId) ? live : undefined
-        const taken = own ? yield* Effect.promise(() => own.steer(text)) : false
-        if (own && taken) {
-          yield* addUserMessage(chatId, text, attachmentIds) // it joins the running turn
-          yield* enqueueRecipients(chat, plan, null, own.agentId)
+        const lives = attachmentIds?.length ? [] : [...to].flatMap((id) => steering.get(steerKey(chatId, id)) ?? [])
+        const joined: Array<string | null> = []
+        for (const live of lives) if (yield* Effect.promise(() => live.steer(text))) joined.push(live.agentId)
+        if (joined.length) {
+          yield* addUserMessage(chatId, text, attachmentIds) // it joins those running turns
+          yield* enqueueRecipients(chat, plan, null, joined)
           return { joined: true }
         }
-        // Not taken mid-turn: the running turn is stopped first and waited for, so its partial reply is saved before
-        // this message (the history stays in order). The worker is held meanwhile, or it would start the next queued
-        // hand-off before this message is queued. A stopped turn's partial text calls no one by mention.
-        const fiber = running.get(chatId)
-        const hold = fiber ? yield* Deferred.make<void>() : undefined
+        // Not taken mid-turn: the recipients' running turns are stopped first and waited for, so their partial replies
+        // are saved before this message (the history stays in order). The worker is held meanwhile, or it would start
+        // the next queued hand-off before this message is queued. A stopped turn's partial text calls no one by mention.
+        const fibers = [...(running.get(chatId)?.values() ?? [])].filter((r) => to.has(r.agentId)).map((r) => r.fiber)
+        const hold = fibers.length ? yield* Deferred.make<void>() : undefined
         if (hold) holding.set(chatId, hold)
         yield* Effect.gen(function* () {
-          if (fiber) yield* Fiber.interrupt(fiber)
+          for (const fiber of fibers) yield* Fiber.interrupt(fiber)
           yield* addUserMessage(chatId, text, attachmentIds)
           yield* enqueueRecipients(chat, plan, null)
         }).pipe(
@@ -1707,8 +1795,16 @@ const makeRuntime = Effect.gen(function* () {
         return { joined: false }
       }),
 
-    interrupt: (chatId) =>
+    interrupt: (chatId, turnId) =>
       Effect.gen(function* () {
+        // One reply: that turn stops (or, still queued, never starts); the others go on.
+        if (turnId) {
+          const run = running.get(chatId)?.get(turnId)
+          if (run) return yield* Fiber.interrupt(run.fiber)
+          const queued = (yield* store.activeTurns(chatId)).find((t) => t.id === turnId && t.state === "queued")
+          if (queued) yield* publish(chatId, ev("interrupted", { turn: yield* store.finishTurn(queued.id, { state: "interrupted", error: ErrorCode.cancelled, messageId: null }), message: null }))
+          return
+        }
         // Stopped while waiting for a free slot: it leaves the line (nothing of it ran).
         const inLine = waitingSlot.indexOf(chatId)
         if (inLine >= 0) {
@@ -1719,8 +1815,7 @@ const makeRuntime = Effect.gen(function* () {
           const turn = yield* store.finishTurn(t.id, { state: "interrupted", error: ErrorCode.cancelled, messageId: null })
           yield* publish(chatId, ev("interrupted", { turn, message: null }))
         }
-        const fiber = running.get(chatId)
-        if (fiber) yield* Fiber.interrupt(fiber)
+        for (const run of [...(running.get(chatId)?.values() ?? [])]) yield* Fiber.interrupt(run.fiber)
       }),
 
     remembered,
@@ -1761,15 +1856,18 @@ const makeRuntime = Effect.gen(function* () {
         yield* store.setPreference(MAX_RUNNING_KEY, String(maxRunning))
         yield* freeSlots // a higher limit lets the ones in line start now
       }),
+    setMaxPerChat: (max) =>
+      Effect.gen(function* () {
+        maxPerChat = Math.max(0, Math.floor(max))
+        yield* store.setPreference(MAX_PER_CHAT_KEY, String(maxPerChat))
+        yield* freeSlots // a higher cap lets a chat's waiting agents start now
+      }),
     setPaused: (next) =>
       Effect.gen(function* () {
         paused = next
         yield* store.setPreference(PAUSED_KEY, next ? "1" : "0")
         if (next) {
-          for (const chatId of new Set([...running.keys(), ...(yield* store.turnsIn("running")).map((t) => t.chatId)])) {
-            const fiber = running.get(chatId)
-            if (fiber) yield* Fiber.interrupt(fiber)
-          }
+          for (const runs of [...running.values()]) for (const run of [...runs.values()]) yield* Fiber.interrupt(run.fiber)
         } else for (const chatId of new Set((yield* store.turnsIn("queued")).map((t) => t.chatId))) yield* ensureWorker(chatId)
       }),
 

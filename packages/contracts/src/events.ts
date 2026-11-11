@@ -142,7 +142,8 @@ export const ChatStatus = Schema.Struct({
   label: Schema.String, // "Architect is writing migrations", "Coder waits for your OK"
   unread: Schema.Boolean,
   updatedAt: Millis,
-  waits: Schema.optionalKey(Schema.Array(AgentWait)) // absent or empty: nobody waits on a teammate
+  waits: Schema.optionalKey(Schema.Array(AgentWait)), // absent or empty: nobody waits on a teammate
+  agentIds: Schema.optionalKey(Schema.Array(Id)) // two or more agents at work at once (spec 016); absent: one or none
 })
 export type ChatStatus = typeof ChatStatus.Type
 
@@ -226,7 +227,8 @@ export const ZorelRpc = RpcGroup.make(
     success: Schema.Struct({ joined: Schema.Boolean }),
     error: ChatNotFound
   }),
-  Rpc.make("interrupt", { payload: { chatId: Id } }),
+  // turnId: stop that one reply (several agents may be at work in the chat); absent: everything in the chat.
+  Rpc.make("interrupt", { payload: { chatId: Id, turnId: Schema.optional(Id) } }),
   // A reply that failed, was stopped or hit its limit: the same agent (or the lead) answers again.
   Rpc.make("retry", { payload: { chatId: Id, messageId: Id }, error: ChatNotFound }),
   // overrides: on an agent proposal (zorel_create_agent), what the person set before approving, one per proposed agent
