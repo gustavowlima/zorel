@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { type FlowGraph, synthesizeFlow, validateFlow } from "@zorel/contracts"
-import { canMove, earlierValues, insertAfter, move, orderOf, removeNode } from "./flow-model.ts"
+import { canMove, earlierValues, insertAfter, move, moveTo, orderOf, removeNode } from "./flow-model.ts"
 
 const base = (): FlowGraph => synthesizeFlow({ prompt: "Sum up", cron: null, token: null, onDayStart: false, lookFirst: false, watch: null })
 const ids = (g: FlowGraph) => orderOf(g).map((i) => i.node.id)
@@ -33,6 +33,15 @@ describe("flow-model", () => {
     expect(ids(move(moved, "agent", -1))).toEqual(ids(g))
     const split = insertAfter(base(), "trigger", "condition").graph
     expect(canMove(split, "condition1", 1)).toBe(false)
+  })
+  test("moveTo drops a step before or after another on its path, and refuses across a split or past the trigger", () => {
+    const g = insertAfter(insertAfter(base(), "agent", "tool").graph, "tool1", "check").graph // trigger → agent → tool1 → check1 → end
+    expect(ids(moveTo(g, "check1", "agent", "before")!)).toEqual(["trigger", "check1", "agent", "tool1", "end"])
+    expect(ids(moveTo(g, "agent", "check1", "after")!)).toEqual(["trigger", "tool1", "check1", "agent", "end"])
+    expect(moveTo(g, "agent", "tool1", "before")).toBeUndefined() // already there
+    expect(moveTo(g, "agent", "trigger", "before")).toBeUndefined()
+    const split = insertAfter(g, "agent", "condition").graph
+    expect(moveTo(split, "tool1", "agent", "before")).toBeUndefined() // the split is in the way
   })
   test("earlierValues lists the steps before that give a value", () => {
     const g = insertAfter(base(), "agent", "tool").graph

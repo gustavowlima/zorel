@@ -16,7 +16,7 @@ const DEFAULTS: { [K in FlowKind]: Extract<FlowNode, { kind: K }>["config"] } = 
   end: {}
 }
 
-export function freshId(graph: FlowGraph, kind: FlowKind): string {
+function freshId(graph: FlowGraph, kind: FlowKind): string {
   const taken = new Set(graph.nodes.map((n) => n.id))
   for (let i = 1; ; i++) if (!taken.has(`${kind}${i}`)) return `${kind}${i}`
 }
@@ -24,7 +24,7 @@ const edgeId = (graph: FlowGraph) => {
   const taken = new Set(graph.edges.map((e) => e.id))
   for (let i = 1; ; i++) if (!taken.has(`e${i}`)) return `e${i}`
 }
-export const newNode = (graph: FlowGraph, kind: FlowKind): FlowNode => ({ id: freshId(graph, kind), kind, x: 0, y: 0, config: DEFAULTS[kind] }) as FlowNode
+const newNode = (graph: FlowGraph, kind: FlowKind): FlowNode => ({ id: freshId(graph, kind), kind, x: 0, y: 0, config: DEFAULTS[kind] }) as FlowNode
 
 const outOf = (g: FlowGraph, id: string) => g.edges.filter((e) => e.from === id)
 const intoOf = (g: FlowGraph, id: string) => g.edges.filter((e) => e.to === id)
@@ -69,7 +69,7 @@ function dropUnreached(g: FlowGraph): FlowGraph {
 
 // The List view's order: depth first from the trigger, the "yes" path before the "no" one; a step two paths share
 // shows once, at the first.
-export type ListItem = { readonly node: FlowNode; readonly depth: number; readonly branch?: "yes" | "no"; readonly parent?: string }
+type ListItem = { readonly node: FlowNode; readonly depth: number; readonly branch?: "yes" | "no"; readonly parent?: string }
 export function orderOf(graph: FlowGraph): ListItem[] {
   const trigger = graph.nodes.find((n) => n.kind === "trigger")
   const byId = new Map(graph.nodes.map((n) => [n.id, n]))
@@ -116,7 +116,25 @@ export function move(graph: FlowGraph, id: string, dir: 1 | -1): FlowGraph {
   return layout({ ...graph, edges })
 }
 
-// Positions on the canvas: one row per level, a split's "no" path one lane to the right.
+// Where a step lands when dropped before or after another: a run of single moves along its path, or nothing when
+// one of them isn't allowed (another path, past a split or the trigger).
+export function moveTo(graph: FlowGraph, id: string, target: string, position: "before" | "after"): FlowGraph | undefined {
+  const order = orderOf(graph).map((i) => i.node.id)
+  const from = order.indexOf(id)
+  const to = order.indexOf(target)
+  if (from < 0 || to < 0 || id === target) return undefined
+  const dir = to > from ? 1 : -1
+  const steps = dir === 1 ? to - from - (position === "before" ? 1 : 0) : from - to - (position === "after" ? 1 : 0)
+  if (steps <= 0) return undefined
+  let g = graph
+  for (let i = 0; i < steps; i++) {
+    if (!canMove(g, id, dir)) return undefined
+    g = move(g, id, dir)
+  }
+  return g
+}
+
+// Positions (kept in the saved graph; nothing draws them since the canvas went): one row per level, a split's "no" path one lane to the right.
 export function layout(graph: FlowGraph): FlowGraph {
   const at = new Map<string, { x: number; y: number }>()
   for (const item of orderOf(graph)) {

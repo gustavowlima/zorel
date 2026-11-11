@@ -31,15 +31,16 @@ const NAV_MS = 30_000
 const VIEWPORT = { width: 1280, height: 800 }
 const AIM_MS = 300 // a watched agent's cursor reaches the element before it acts, so the person sees where
 const ACT_FRESH_MS = 20_000 // a panel opened this soon after an action still shows it
-export const YOU = "you" // the profile of the tabs a person opens from the panel
+const YOU = "you" // the profile of the tabs a person opens from the panel
 const IV_BYTES = 12 // AES-GCM nonce
 const TAG_BYTES = 16 // AES-GCM tag
 
-export interface TabInfo {
+interface TabInfo {
   readonly id: string
   readonly title: string
   readonly url: string
   readonly active: boolean
+  readonly owner: string // whose browser it's in: an agent's profile (its id), "assistant", or "you"
 }
 
 interface ChatBrowser {
@@ -74,7 +75,7 @@ export interface Watcher {
   readonly act: (a: BrowserAct) => void
 }
 
-export class BrowserError extends Error {}
+class BrowserError extends Error {}
 
 // A context's name from an agent id (YOU for the person, "assistant" without an agent): also its file name.
 export const profileOf = (agentId: string | undefined) => (agentId ?? "assistant").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 64) || "assistant"
@@ -176,8 +177,36 @@ export class Browsers {
   async tabs(chatId: string): Promise<TabInfo[]> {
     const c = this.chat(chatId)
     return Promise.all(
-      [...c.tabs].map(async ([id, page]) => ({ id, url: page.url(), title: await page.title().catch(() => ""), active: id === c.active }))
+      [...c.tabs].map(async ([id, page]) => ({ id, url: page.url(), title: await page.title().catch(() => ""), active: id === c.active, owner: c.profiles.get(id) ?? YOU }))
     )
+  }
+
+  // Whether a browser (a profile) is one of this chat's: a person may open tabs in it (to sign in for that agent).
+  owns(chatId: string, profile: string) {
+    return profile === YOU || [...this.chat(chatId).profiles.values()].includes(profile)
+  }
+
+  // A small picture of each browser in the chat (its shown tab, else its latest one), for the panel's cards: taken
+  // by Chrome at a third of the size, so a card's preview is a few KB, not a full frame.
+  async previews(chatId: string): Promise<Record<string, string>> {
+    const c = this.chat(chatId)
+    // Each browser's picture: its shown tab, else its newest.
+    const pick = new Map<string, Page>()
+    for (const [id, page] of c.tabs) {
+      const owner = c.profiles.get(id) ?? YOU
+      if (c.profiles.get(c.active ?? "") !== owner || id === c.active) pick.set(owner, page)
+    }
+    const out: Record<string, string> = {}
+    await Promise.all(
+      [...pick].map(async ([owner, page]) => {
+        const cdp = await page.context().newCDPSession(page).catch(() => undefined)
+        if (!cdp) return
+        const shot = (await cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 55, clip: { x: 0, y: 0, width: VIEWPORT.width, height: VIEWPORT.height, scale: 0.3 } }).catch(() => undefined)) as { data: string } | undefined
+        await cdp.detach().catch(() => undefined)
+        if (shot) out[owner] = shot.data
+      })
+    )
+    return out
   }
 
   // Tells the chat's panels what changed (tabs, titles, control).
@@ -369,7 +398,7 @@ export class Browsers {
   }
 }
 
-export const normalizeUrl = (url: string) => (/^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`)
+const normalizeUrl = (url: string) => (/^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`)
 // Agents browse the web only: file:, chrome:, view-source: and the like would read this computer without asking.
 const WEB = /^https?:\/\//i
 export const webUrl = (url: string) => {
@@ -689,17 +718,20 @@ export class BrowserService extends Context.Service<BrowserService, Browsers>()(
 // ---------- the Browser panel's socket ----------
 
 // From the panel: input on the active tab (positions are fractions of the frame), navigation, tabs, control.
-export type PanelFrame =
+type PanelFrame =
   | { t: "click"; x: number; y: number; button?: "left" | "right"; clicks?: number }
   | { t: "wheel"; x: number; y: number; dx: number; dy: number }
   | { t: "key"; key: string }
   | { t: "text"; text: string }
   | { t: "nav"; url: string }
-  | { t: "open"; url: string } // a page the app opens (a server from the Terminal panel): a new tab, control unchanged
-  | { t: "back" | "forward" | "reload" | "newtab" | "release" }
-  | { t: "tab" | "close"; id: string }
+  | { t: "open"; url: string; owner?: string | undefined } // a page the app opens (a server from the Terminal panel): a new tab, control unchanged
+  | { t: "back" | "forward" | "reload" | "release" | "previews" }
+  | { t: "newtab"; owner?: string | undefined }
+  | { t: "tab" | "close" | "view"; id: string }
 
 const frac = (n: unknown) => (typeof n === "number" && n >= 0 && n <= 1 ? n : undefined)
+// A browser named by the panel: a profile's shape (profileOf), else none (the person's own).
+const ownerOf = (o: unknown) => (typeof o === "string" && /^[a-z0-9-]{1,64}$/.test(o) ? o : undefined)
 // One frame from the panel, or undefined when it isn't one of ours.
 export function parsePanelFrame(raw: string): PanelFrame | undefined {
   try {
@@ -716,34 +748,45 @@ export function parsePanelFrame(raw: string): PanelFrame | undefined {
       case "text":
         return typeof f.text === "string" && f.text.length <= 10_000 ? { t: "text", text: f.text } : undefined
       case "nav":
+        return typeof f.url === "string" && f.url.length <= 4000 ? { t: "nav", url: f.url } : undefined
       case "open":
-        return typeof f.url === "string" && f.url.length <= 4000 ? { t: f.t, url: f.url } : undefined
+        return typeof f.url === "string" && f.url.length <= 4000 ? { t: "open", url: f.url, owner: ownerOf(f.owner) } : undefined
+      case "newtab":
+        return { t: "newtab", owner: ownerOf(f.owner) }
       case "back":
       case "forward":
       case "reload":
-      case "newtab":
       case "release":
+      case "previews":
         return { t: f.t }
       case "tab":
       case "close":
+      case "view":
         return typeof f.id === "string" ? { t: f.t, id: f.id } : undefined
     }
   } catch {}
   return undefined
 }
 
-// What a panel frame does. Any input means a person is driving: the browser is theirs until "release".
-async function applyPanelFrame(b: Browsers, chatId: string, f: PanelFrame) {
+// What a panel frame does. Any input means a person is driving: the browser is theirs until "release". Looking is not
+// driving: "view" shows a tab and "previews" asks for the cards' pictures, both leave the agents at work.
+// A tab a person opens goes in the browser they're looking at (an agent's: to sign in for it), else their own.
+async function applyPanelFrame(b: Browsers, chatId: string, f: PanelFrame, reply: (msg: object) => void) {
   if (f.t === "release") return b.setControl(chatId, false)
+  if (f.t === "view") return b.select(chatId, f.id)
+  if (f.t === "previews") return reply({ t: "previews", previews: await b.previews(chatId) })
+  const into = (owner: string | undefined) => (owner && b.owns(chatId, owner) ? owner : YOU)
   if (f.t === "open") {
     const url = normalizeUrl(f.url.trim())
-    return void (WEB.test(url) && (await b.newTab(chatId, url, YOU).then((id) => b.select(chatId, id))))
+    return void (WEB.test(url) && (await b.newTab(chatId, url, into(f.owner)).then((id) => b.select(chatId, id))))
   }
   b.setControl(chatId, true)
-  if (f.t === "newtab") return void (await b.newTab(chatId, undefined, YOU))
+  if (f.t === "newtab") return void (await b.newTab(chatId, undefined, into(f.owner)))
   if (f.t === "tab") return b.select(chatId, f.id)
   if (f.t === "close") return b.closeTab(chatId, f.id)
-  const page = await b.page(chatId, undefined, YOU)
+  // A person drives the tab they're looking at, in whichever browser it is (an agent's: to sign in for it); with no
+  // tab yet, one of their own.
+  const page = await b.page(chatId, undefined, b.activeProfile(chatId) ?? YOU)
   const at = (x: number, y: number) => ({ x: x * VIEWPORT.width, y: y * VIEWPORT.height })
   switch (f.t) {
     case "click": {
@@ -823,7 +866,7 @@ export const BrowserSocket = HttpRouter.add(
         Effect.promise(async () => {
           for (const chunk of chunks) {
             const f = parsePanelFrame(typeof chunk === "string" ? chunk : decoder.decode(chunk))
-            if (f) await applyPanelFrame(b, chatId, f).catch((e: unknown) => run(write(JSON.stringify({ t: "error", message: e instanceof Error ? e.message.split("\n")[0] : String(e) }))))
+            if (f) await applyPanelFrame(b, chatId, f, (msg) => run(write(JSON.stringify(msg)))).catch((e: unknown) => run(write(JSON.stringify({ t: "error", message: e instanceof Error ? e.message.split("\n")[0] : String(e) }))))
           }
         })
       )

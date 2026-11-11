@@ -4,29 +4,17 @@
 import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
 import { Button, CornerDownRight, IconButton, Pencil, Tooltip, Trash2 } from "@/ui"
+import { storedJson, storeJson } from "../state.ts"
 
-export interface Queued {
+interface Queued {
   readonly id: string
   readonly text: string
   readonly attachmentIds: ReadonlyArray<string>
 }
 
 const keyOf = (chatId: string) => `zorel.queue.${chatId}`
-const load = (chatId: string): Queued[] => {
-  try {
-    return JSON.parse(localStorage.getItem(keyOf(chatId)) ?? "[]") as Queued[]
-  } catch {
-    return [] // storage blocked or broken: an empty queue
-  }
-}
-const save = (chatId: string, items: ReadonlyArray<Queued>) => {
-  try {
-    if (items.length) localStorage.setItem(keyOf(chatId), JSON.stringify(items))
-    else localStorage.removeItem(keyOf(chatId))
-  } catch {
-    // storage blocked: the queue lives until the tab closes
-  }
-}
+const load = (chatId: string): Queued[] => storedJson<Queued[]>(keyOf(chatId)) ?? []
+const save = (chatId: string, items: ReadonlyArray<Queued>) => storeJson(keyOf(chatId), items.length ? items : undefined)
 
 // `busy`: a turn is queued or running on the server. `send` starts a turn now.
 export function useQueue(chatId: string, busy: boolean, ready: boolean, send: (text: string, attachmentIds: ReadonlyArray<string>) => Promise<unknown>) {

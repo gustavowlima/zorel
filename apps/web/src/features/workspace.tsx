@@ -5,7 +5,7 @@ import type { Agent, Chat, FileChange, FsOp, Message, Project, WorkspaceFile } f
 import { useAtomValue } from "@effect/atom-react"
 import { formatTime, t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
-import { lazy, type PointerEvent as ReactPointerEvent, Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, type PointerEvent as ReactPointerEvent, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { diffAtom, fileTextAtom, filesAtom, localServersAtom, mutations, scriptsAtom, terminalsAtom, useInvalidate, useMutation, useReading } from "../client.ts"
 import { agentName } from "../labels.ts"
 import type { LineComment } from "./diff-view.tsx"
@@ -15,10 +15,11 @@ const FileView = lazy(() => import("./file-view.tsx"))
 // The text a line comment puts in the message box (kept out of the lazy chunk's default export).
 const commentText = (c: LineComment) =>
   t("diff.commentRef", { path: c.path, lines: c.start === c.end ? t("diff.line", { n: c.start }) : t("diff.lines", { from: c.start, to: c.end }), side: c.side === "deletions" ? t("diff.old") : t("diff.new"), text: c.text.trim() })
-import { Button, ChevronDown, ChevronRight, ChevronsDownUp, Columns2, ConfirmButton, ConfirmDialog, ContextMenu, Copy, cx, Dialog, EmptyState, ExternalLink, Field, File, FileIcon, FilePlus, FileTree, Folder, FolderOpen, GitBranch, Globe, GitPullRequest, IconButton, Input, Menu, MenuItem, MenuSeparator, PanelRight, Pencil, Pin, PinOff, Play, Plus, Popover, Rows2, SearchInput, Server, Spinner, Square, SquareTerminal, StatusMark, Tab, TabList, TabPanel, Tabs, Tooltip, Trash2, Undo2, X } from "@/ui"
+import { Button, parentOf, ChevronDown, ChevronRight, ChevronsDownUp, Columns2, ConfirmButton, ConfirmDialog, ContextMenu, Copy, cn, Dialog, EmptyState, ExternalLink, Field, File, FileIcon, FilePlus, FileTree, Folder, FolderOpen, GitBranch, Globe, GitPullRequest, IconButton, Input, Menu, MenuItem, MenuSeparator, PanelRight, Pencil, Pin, PinOff, Play, Plus, Popover, Rows2, SearchInput, Server, SETTLE, Spinner, Square, SquareTerminal, StatusMark, Tab, TabList, TabPanel, Tabs, Tooltip, Trash2, Undo2, X } from "@/ui"
 import { Shell } from "./shell.tsx"
 import { BrowserPanel } from "./browser.tsx"
 import { GitPanel, useIsRepo } from "./git.tsx"
+import { stored, store, storedJson } from "../state.ts"
 
 
 // turnId null: every turn closed in Changes (pressing the open one closes it).
@@ -91,13 +92,7 @@ export type SideTab = "changes" | "git" | "files" | "browser" | "terminal"
 export type ShellPin = { readonly session: string; readonly label: string }
 const SIDE_PINS_KEY = "zorel.pins.side"
 const SHELL_PINS_KEY = (chatId: string) => `zorel.pins.shell.${chatId}`
-const readJson = <A,>(key: string, fallback: A): A => {
-  try {
-    return (JSON.parse(store.get(key) ?? "null") as A) ?? fallback
-  } catch {
-    return fallback
-  }
-}
+const readJson = <A,>(key: string, fallback: A): A => storedJson<A>(key) ?? fallback
 
 export function usePins(chatId: string) {
   const [side, setSide] = useState<ReadonlyArray<SideTab>>(() => readJson(SIDE_PINS_KEY, []))
@@ -105,11 +100,11 @@ export function usePins(chatId: string) {
   useEffect(() => setShells(readJson(SHELL_PINS_KEY(chatId), [])), [chatId])
   const saveSide = (next: ReadonlyArray<SideTab>) => {
     setSide(next)
-    store.set(SIDE_PINS_KEY, JSON.stringify(next))
+    store(SIDE_PINS_KEY, JSON.stringify(next))
   }
   const saveShells = (next: ReadonlyArray<ShellPin>) => {
     setShells(next)
-    store.set(SHELL_PINS_KEY(chatId), JSON.stringify(next))
+    store(SHELL_PINS_KEY(chatId), JSON.stringify(next))
   }
   return {
     side,
@@ -170,7 +165,7 @@ export function SidePanel({
   pins: Pins
   shellFocus: { session: string } | undefined // a pinned shell was pressed: show it
 }) {
-  const [width, setWidth] = useState(() => Number(store.get(WIDTH_KEY)) || 560)
+  const [width, setWidth] = useState(() => Number(stored(WIDTH_KEY)) || 560)
   // Only the tabs the person opened (the panel starts on one); + opens more, × closes one.
   const [open, setOpen] = useState<ReadonlyArray<SideTab>>(() => [tab])
   useEffect(() => setOpen((all) => (all.includes(tab) ? all : [...all, tab])), [tab])
@@ -179,6 +174,12 @@ export function SidePanel({
   const folder = !!project?.path
   const kinds = SIDE_ORDER.filter((id) => folder || !FOLDER_ONLY.has(id))
   const shown = open.filter((id) => kinds.includes(id))
+  // Changes is a tab only once something changed: before that it's no pill up top, just the panel's middle (what the
+  // panel can open); with other tabs open, one of them shows instead.
+  const changed = messages.some((m) => m.changes.length && m.turnId)
+  const pills = shown.filter((id) => id !== "changes" || changed)
+  // An empty Changes asked for shows the first other open tab instead.
+  const current = !changed && tab === "changes" ? (pills[0] ?? tab) : tab
   const choose = (id: SideTab) => {
     if ((id === "browser" || id === "terminal") && open.includes(id)) setFresh((f) => ({ ...f, [id]: f[id] + 1 }))
     setOpen((all) => (all.includes(id) ? all : [...all, id]))
@@ -196,7 +197,7 @@ export function SidePanel({
   const resize = (next: number) => {
     const w = Math.min(max(), Math.max(MIN_WIDTH, Math.round(next)))
     setWidth(w)
-    store.set(WIDTH_KEY, String(w))
+    store(WIDTH_KEY, String(w))
   }
   const drag = (e: ReactPointerEvent<HTMLDivElement>) => {
     const startX = e.clientX
@@ -211,6 +212,31 @@ export function SidePanel({
     window.addEventListener("pointerup", up)
   }
 
+  const changesBody = (
+    <ChangesTab
+      messages={messages}
+      agents={agents}
+      focus={focus}
+      onFocus={onFocus}
+      onAddToChat={onAddToChat}
+      // Nothing changed yet: what else the panel can show, to open from the middle of it.
+      others={
+        <div className="flex flex-wrap justify-center gap-2">
+          {kinds
+            .filter((id) => id !== "changes")
+            .map((id) => {
+              const Icon = SIDE_ICON[id]
+              return (
+                <Button key={id} size="sm" variant="secondary" onPress={() => choose(id)}>
+                  <Icon />
+                  {sideLabel(id)}
+                </Button>
+              )
+            })}
+        </div>
+      }
+    />
+  )
   return (
     <aside aria-label={t("workspace.panel")} className="@container relative flex min-w-0 shrink-0 flex-col border-l border-subtle" style={{ width }}>
       {/* biome-ignore lint/a11y/useSemanticElements: a focusable splitter (ARIA window splitter); <hr> can't take focus or a value */}
@@ -231,7 +257,7 @@ export function SidePanel({
         }}
         className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize touch-none outline-none after:absolute after:inset-y-0 after:left-1 after:w-px after:bg-transparent hover:after:bg-accent focus-visible:after:bg-accent"
       />
-      <Tabs selectedKey={tab} onSelectionChange={(k) => onTab(k as SideTab)} className="min-h-0 flex-1 gap-0">
+      <Tabs selectedKey={current} onSelectionChange={(k) => onTab(k as SideTab)} className="min-h-0 flex-1 gap-0">
         <div className="flex items-center gap-2 border-b border-subtle px-3 py-2">
           {/* Right-click a tab: pin it to the chat's title row. */}
           <ContextMenu
@@ -243,7 +269,7 @@ export function SidePanel({
             }}
           >
             <TabList label={t("workspace.panel")} className="min-w-0 flex-nowrap overflow-x-auto">
-              {shown.map((id) => {
+              {pills.map((id) => {
                   const Icon = SIDE_ICON[id]
                   return (
                     <Tab key={id} id={id} onClose={() => closeTab(id)} closeLabel={t("workspace.closeTab", { name: sideLabel(id) })}>
@@ -282,9 +308,11 @@ export function SidePanel({
             <X className="size-3.5" />
           </IconButton>
         </div>
-        {shown.includes("changes") && (
+        {/* Nothing changed and nothing else open: the panel's middle, no tab. */}
+        {!changed && !pills.length && <div className={cn("min-h-0 flex-1 overflow-y-auto", SETTLE)}>{changesBody}</div>}
+        {changed && shown.includes("changes") && (
           <TabPanel id="changes" className="min-h-0 flex-1 overflow-y-auto">
-            <ChangesTab messages={messages} agents={agents} focus={focus} onFocus={onFocus} onAddToChat={onAddToChat} />
+            {changesBody}
           </TabPanel>
         )}
         {shown.includes("git") && (
@@ -329,16 +357,23 @@ function ChangesTab({
   agents,
   focus,
   onFocus,
-  onAddToChat
+  onAddToChat,
+  others
 }: {
   messages: ReadonlyArray<Message>
   agents: ReadonlyArray<Agent>
   focus: Focus | undefined
   onFocus: (f: Focus) => void
   onAddToChat: (text: string) => void
+  others?: ReactNode
 }) {
   const turns = messages.filter((m) => m.changes.length && m.turnId).reverse()
-  if (!turns.length) return <EmptyState icon={<File />} title={t("workspace.noChanges")} hint={t("workspace.noChangesHint")} />
+  if (!turns.length)
+    return (
+      <div className="flex min-h-full items-center justify-center">
+        <EmptyState icon={<File />} title={t("workspace.noChanges")} hint={t("workspace.noChangesHint")} action={others} />
+      </div>
+    )
   const current = focus ?? { turnId: turns[0]!.turnId!, path: null }
   return (
     <div className="flex flex-col">
@@ -367,7 +402,7 @@ function TurnFiles({ message, path, onPath, onAddToChat }: { message: Message; p
       <ul className="flex flex-col">
         {message.changes.map((c) => (
           <li key={c.path}>
-            <Button variant="ghost" className={cx("h-8 w-full justify-start gap-2 px-2 font-normal", path === c.path && "bg-surface")} onPress={() => onPath(path === c.path ? null : c.path)}>
+            <Button variant="ghost" className={cn("h-8 w-full justify-start gap-2 px-2 font-normal", path === c.path && "bg-surface")} onPress={() => onPath(path === c.path ? null : c.path)}>
               <StatusMark status={c.status} />
               <span className="min-w-0 flex-1 truncate text-left font-mono text-sm text-secondary">{c.path}</span>
               <Delta added={c.added} removed={c.removed} />
@@ -435,7 +470,6 @@ function treeOf(files: ReadonlyArray<WorkspaceFile>): Node[] {
 const openFiles = new Map<string, { tabs: string[]; tab: string }>()
 
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
-const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")))
 
 // The Files tab, as an editor's explorer: select (Shift / Cmd), F2 renames in place, Delete sends to Zorel's trash
 // with Undo, drag moves into a folder, double-click opens (a changed file opens its diff), right-click for the rest.
@@ -670,7 +704,7 @@ function FilesTab({ project, chat, messages, onFocus, onAddToChat }: { project: 
       </Tabs>
       {(deleted || error) && (
         <div role="status" className="sticky bottom-0 flex items-center gap-2 border-t border-subtle bg-canvas px-3 py-2 text-sm">
-          <span className={cx("min-w-0 flex-1", error ? "text-danger" : "text-secondary")}>{error ?? t("explorer.deleted", { count: deleted!.count })}</span>
+          <span className={cn("min-w-0 flex-1", error ? "text-danger" : "text-secondary")}>{error ?? t("explorer.deleted", { count: deleted!.count })}</span>
           {deleted && !error && (
             <Button size="sm" variant="ghost" className="h-6 px-2" onPress={() => void run({ op: "restore", id: deleted.id }).then((r) => r && setDeleted(undefined))}>
               <Undo2 className="size-3.5" />
@@ -791,26 +825,10 @@ const MAX_PANES = 4
 type Pane = { readonly key: string; readonly session: string | undefined; readonly ended: boolean; readonly run?: string | undefined }
 // label: the project script the tab runs ("dev"); a plain shell is "Shell n".
 type ShellTab = { readonly key: string; readonly dir: "row" | "col"; readonly panes: ReadonlyArray<Pane>; readonly label?: string | null | undefined }
-const store = {
-  get: (k: string) => {
-    try {
-      return localStorage.getItem(k)
-    } catch {
-      return null
-    }
-  },
-  set: (k: string, v: string) => {
-    try {
-      localStorage.setItem(k, v)
-    } catch {
-      // storage blocked: resets on reload
-    }
-  }
-}
 let paneCount = 0
 const newPane = (session?: string, run?: string): Pane => ({ key: `pane-${++paneCount}`, session, ended: false, run })
 
-export function TerminalPanel({
+function TerminalPanel({
   chatId,
   visible,
   onAddToChat,
@@ -842,7 +860,7 @@ export function TerminalPanel({
     restored.current = true
     const alive = new Set(sessionsResult.value.map((x) => x.id))
     const labelOf = (id: string | undefined) => sessionsResult.value.find((x) => x.id === id)?.label
-    const saved = JSON.parse(store.get(LAYOUT_KEY(chatId)) ?? "[]") as Array<{ dir: "row" | "col"; sessions: string[] }>
+    const saved = storedJson<Array<{ dir: "row" | "col"; sessions: string[] }>>(LAYOUT_KEY(chatId)) ?? []
     const placed = new Set<string>()
     const next: ShellTab[] = []
     for (const t of saved) {
@@ -862,7 +880,7 @@ export function TerminalPanel({
   }, [sessionsResult, chatId])
   // Remember the layout (which sessions share a tab, and how).
   useEffect(() => {
-    if (restored.current) store.set(LAYOUT_KEY(chatId), JSON.stringify(tabs.map((t) => ({ dir: t.dir, sessions: t.panes.flatMap((p) => (p.session ? [p.session] : [])) }))))
+    if (restored.current) store(LAYOUT_KEY(chatId), JSON.stringify(tabs.map((t) => ({ dir: t.dir, sessions: t.panes.flatMap((p) => (p.session ? [p.session] : [])) }))))
   }, [tabs, chatId])
 
   // A new tab: a plain shell, or one running a project script.
@@ -955,7 +973,7 @@ export function TerminalPanel({
                   {...(closable(s) && { onClose: () => close(s.panes.map((p) => p.key)) })}
                   closeLabel={t("workspace.closeShellNamed", { name: nameOf(s) })}
                 >
-                  <span data-shell-tab={s.key} className={cx("flex items-center gap-1.5 whitespace-nowrap", s.panes.every((p) => p.ended) && "text-dim")}>
+                  <span data-shell-tab={s.key} className={cn("flex items-center gap-1.5 whitespace-nowrap", s.panes.every((p) => p.ended) && "text-dim")}>
                     {s.label && <Play className="size-3" />}
                     {nameOf(s)}
                     {s.panes.length > 1 && <span className="text-dim">{` · ${s.panes.length}`}</span>}
@@ -999,7 +1017,7 @@ export function TerminalPanel({
           </Tooltip>
         </div>
         {tabs.map((s) => (
-          <TabPanel key={s.key} id={s.key} keepMounted className={cx("flex min-h-0 flex-1 gap-px bg-subtle", s.dir === "row" ? "flex-row" : "flex-col")}>
+          <TabPanel key={s.key} id={s.key} keepMounted className={cn("flex min-h-0 flex-1 gap-px bg-subtle", s.dir === "row" ? "flex-row" : "flex-col")}>
             {s.panes.map((p, i) => (
               <div key={p.key} className="group/pane relative flex min-h-0 min-w-0 flex-1">
                 <Shell

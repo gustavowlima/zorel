@@ -4,14 +4,14 @@
 // calls that is not in the chat yet (they join when it is sent).
 import { type Agent, type AgentTeam, MENTION_RE, isTeammate, type Project } from "@zorel/contracts"
 
-export const CHAT_MEMBERS_MAX = 8 // NewChat/ChatPatch agentIds
+const CHAT_MEMBERS_MAX = 8 // NewChat/ChatPatch agentIds
 import { handleOf } from "../labels.ts"
 import { handleKey } from "./mentions.ts"
 
 export const callable = <A extends Pick<Agent, "projectId" | "builtin" | "archivedAt">>(agents: ReadonlyArray<A>, projectId: string | null): A[] =>
   agents.filter((a) => isTeammate(a) && (a.projectId === null || a.projectId === projectId))
 
-export interface AgentOption<A> {
+interface AgentOption<A> {
   readonly agent: A
   readonly id: string // the handle the text carries after the "@"
   readonly label: string
@@ -49,7 +49,7 @@ export function toJoin<A extends Pick<Agent, "id" | "name">>(text: string, chatA
 }
 
 // A team's members who can be called here, in team order (archived and other projects' agents aren't in `callable`).
-export const teamAgents = <A extends Pick<Agent, "id">>(team: Pick<AgentTeam, "agentIds">, callable: ReadonlyArray<A>): A[] =>
+const teamAgents = <A extends Pick<Agent, "id">>(team: Pick<AgentTeam, "agentIds">, callable: ReadonlyArray<A>): A[] =>
   team.agentIds.flatMap((id) => callable.find((a) => a.id === id) ?? [])
 
 // Adding a whole team to a chat: its callable members not in the chat yet, after the ones there, up to the cap.

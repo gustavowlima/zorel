@@ -41,17 +41,12 @@ export const part2 = {
     signIn: "Entrar",
     add: "Adicionar conta",
     addAndSignIn: "Adicionar e entrar",
-    provider: "Provedor",
     name: "Nome",
     namePlaceholder: "ex.: Claude · trabalho",
     removeTitle: "Remover {name}?",
     removeBody: "Faz logout e exclui a pasta da conta. Agentes e conversas que a usavam passam para a conta padrão.",
     busy: "Já existe um login em andamento para esta conta.",
-    removeFailed: "Não foi possível remover esta conta.",
-    providers: {
-      claude: "Claude (assinatura)",
-      codex: "ChatGPT · Codex (assinatura)"
-    }
+    removeFailed: "Não foi possível remover esta conta."
   },
   providers: {
     signInAction: "Entrar",
@@ -101,6 +96,10 @@ export const part2 = {
     models: "Modelos"
   },
   browser: {
+    allBrowsers: "Todos os navegadores",
+    yours: "Seu navegador",
+    cardsHint: "Cada agente navega num navegador próprio: as abas dele e os logins separados dos outros.",
+    tabCount: { one: "1 aba", other: "{count} abas" },
     title: "Navegador",
     newTab: "Nova aba",
     closeTab: "Fechar aba",
@@ -293,7 +292,6 @@ export const part2 = {
   keys: {
     intro: "Guardadas no chaveiro do sistema. Assinaturas não precisam de chave: usam a CLI conectada.",
     fromEnv: "Definida no ambiente do servidor",
-    saved: "Salva",
     paste: "Cole a chave",
     clear: "Excluir chave",
     clearTitle: "Excluir a chave de API do {name}?",
@@ -441,13 +439,10 @@ export const part2 = {
     headers: "Headers",
     envHint: "NOME=valor, um por linha. Os valores vão para o chaveiro do sistema.",
     enabled: "{name} ativado",
-    off: "Desativado",
     test: "Testar",
-    testing: "Conectando…",
     failed: "Falha na conexão: {error}",
     hiddenInReadMode: "Oculta no modo só leitura",
     removeTitle: "Remover {name}?",
-    toolCount: { one: "1 ferramenta", other: "{count} ferramentas" },
     modes: {
       read: "Só leitura",
       approve: "Escrita com aprovação",
@@ -466,36 +461,19 @@ export const part2 = {
     }
   },
   skills: {
-    intro: "Aprendidas no trabalho ou adicionadas por você. Uma skill só entra no contexto de um agente quando a mensagem precisa dela.",
-    listTitle: "Skills do Zorel",
-    nativeTitle: "Skills dos seus modelos",
     native: "Deixar o Claude Code e o Codex usarem as próprias skills",
+    zorel: "Zorel",
+    available: "Neste computador, fora de uso",
+    useHere: "Usar nas conversas do Zorel",
+    useHereHint: "Lida do arquivo toda vez, então as edições aparecem na hora.",
     nativeHint: "As skills que você configurou neles (~/.claude/skills, plugins, as do Codex) funcionam nas conversas do Zorel como nos apps deles. Vale a partir da próxima sessão de cada conversa.",
-    files: "Deste computador",
-    filesHint: "Skills que você já tem para Claude Code, Codex e outros agentes, e as dos seus plugins. Ative as que os agentes do Zorel devem usar: elas são lidas do arquivo toda vez, então as edições aparecem na hora.",
-    inUse: { one: "1 em uso", other: "{count} em uso" },
     search: "Buscar em {count} skills",
-    show: "Mostrar",
-    showAll: "Todas",
-    showInUse: "Em uso",
     source: { claude: "Claude Code", agents: "Agentes", codex: "Codex", plugin: "Plugins do Claude Code" },
     use: "Usar {name}",
-    noFiles: "Nenhum arquivo de skill encontrado",
-    noFilesHint: "O Zorel procura em ~/.claude/skills, ~/.codex/skills, ~/.agents/skills e nos plugins do Claude Code.",
     noMatch: "Nenhuma skill encontrada.",
-    emptyHint: "Os agentes propõem skills enquanto trabalham, e você pode escrever uma em Skills.",
-    empty: "Nenhuma skill ainda",
     new: "Nova skill",
-    updateFailed: "Não foi possível alterar {name}. Tente de novo.",
-    review: "Revisar",
-    active: "{name} ativada",
-    pending: "Aguardando sua revisão",
-    learned: "Aprendida em uma conversa",
     added: "Adicionada por você",
     title: "Skills",
-    subtitle: "Receitas que os agentes seguem para cada tipo de tarefa",
-    tabZorel: "Skills do Zorel",
-    tabComputer: "Neste computador",
     waiting: { one: "1 proposta aguardando você", other: "{count} propostas aguardando você" },
     inUseGroup: "Em uso",
     archived: "Arquivadas",
@@ -537,7 +515,6 @@ export const part2 = {
     title: "Alternativas",
     menu: "Alternativas…",
     intro: "Quando o modelo falha antes de fazer qualquer coisa, o turno passa para o próximo desta lista, em ordem. O contexto vai junto.",
-    chatIntro: "Substitui a lista do agente principal nesta conversa.",
     useAgent: "Usar a lista do agente",
     add: "Adicionar alternativa",
     reorder: "Mover alternativa {n} (arraste ou use Enter e as setas)",
@@ -558,8 +535,7 @@ export const part2 = {
       network: "está inacessível",
       timeout: "demorou demais para responder"
     },
-    limitedUntil: "Limite atingido · volta às {time}",
-    usage: "{percent} usado · renova {time}"
+    limitedUntil: "Limite atingido · volta às {time}"
   },
   diff: {
     comment: "Comentar nestas linhas",
@@ -572,12 +548,9 @@ export const part2 = {
     new: "novo"
   },
   git: {
-    title: "Git",
     commits: "Histórico",
-    changes: "Alterações",
     ship: "Entregar",
     unpublished: "Ainda não publicada",
-    into: "pull requests para {base}",
     pushedCommit: "Enviado",
     notPushed: "Ainda não enviado",
     button: { one: "Git: {branch}, 1 arquivo alterado", other: "Git: {branch}, {count} arquivos alterados" },
@@ -587,7 +560,6 @@ export const part2 = {
     clean: "Tudo commitado",
     ahead: { one: "1 commit para enviar", other: "{count} commits para enviar" },
     behind: { one: "1 atrás", other: "{count} atrás" },
-    noRemote: "sem remote",
     message: "Mensagem do commit",
     messageHint: "O que mudou e por quê",
     write: "Escrever por mim",
@@ -626,7 +598,6 @@ export const part2 = {
     prOpen: "#{number} · {state}",
     updatesPr: "Atualiza o pull request #{number}",
     openOnGithub: "Abrir no GitHub",
-    noScripts: "Nenhum script no package.json",
     notRepo: "Esta pasta não é um repositório git: não há nada para commitar ou enviar."
   },
   // The Files panel (an editor's explorer on the chat's folder).
@@ -727,5 +698,5 @@ export const part2 = {
     renamed: "renomeado",
     loadingDiff: "Carregando diff…",
     turnBy: "{agent} · {time}"
-  },
+  }
 }

@@ -99,11 +99,9 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
           const before = yield* store.project(params.id)
           // Who joins its chats must be in reach of them: global, or of this project (agents and teams alike).
           const near = (x: { projectId: string | null } | undefined) => !!x && (x.projectId === null || x.projectId === params.id)
-          for (const id of payload.agentIds ?? []) if (!near(yield* store.agent(id))) return yield* notFound()
-          if (payload.teamIds?.length) {
-            const teams = yield* store.teams()
-            if (!payload.teamIds.every((id) => near(teams.find((x) => x.id === id)))) return yield* notFound()
-          }
+          const inReach = (ids: ReadonlyArray<string> | undefined, all: ReadonlyArray<{ id: string; projectId: string | null }>) => (ids ?? []).every((id) => near(all.find((x) => x.id === id)))
+          if (payload.agentIds?.length && !inReach(payload.agentIds, yield* store.agents())) return yield* notFound()
+          if (payload.teamIds?.length && !inReach(payload.teamIds, yield* store.teams())) return yield* notFound()
           const after = yield* Effect.flatMap(withPath(payload), (p) => found(store.updateProject(params.id, p)))
           if (before) yield* audit.record(Actions.projectUpdated, { target: after, ...changed(before, after, ["name", "brief", "path", "agentIds", "teamIds"]) })
           return after
@@ -1526,7 +1524,7 @@ export const services = (dbPath: string, dataDir: string, secrets?: Layer.Layer<
   return Layer.mergeAll(Layer.provideMerge(Runtime.layer, withAccounts), Actor.local)
 }
 
-export interface StartOptions {
+interface StartOptions {
   readonly port?: number
   readonly dataDir?: string
   readonly webDir?: string

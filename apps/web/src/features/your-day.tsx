@@ -8,9 +8,8 @@ import { AsyncResult } from "effect/reactivity"
 import { useEffect, useState } from "react"
 import { mutations, preferencesAtom, useMutation } from "../client.ts"
 import { Input, Rows, Section, Select, SettingRow, Switch } from "@/ui"
+import { hm, toMinutes } from "../labels.ts"
 
-const hm = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`
-const toMinutes = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5))
 const ZONES: ReadonlyArray<string> = (() => {
   try {
     return (Intl as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.("timeZone") ?? []

@@ -4,7 +4,7 @@
 // it can be tested.
 
 export type SummaryKind = "search" | "read" | "edit" | "run" | "tool" | "delegate"
-export const SUMMARY_ORDER: ReadonlyArray<SummaryKind> = ["search", "read", "edit", "run", "tool", "delegate"]
+const SUMMARY_ORDER: ReadonlyArray<SummaryKind> = ["search", "read", "edit", "run", "tool", "delegate"]
 
 // A step as both a saved one (`tool`, `args`) and a live one (`kind`, `files`) can describe it.
 export type SummaryStep = { kind: string; status: string; title: string; detail: string; files: ReadonlyArray<string> }
@@ -35,7 +35,7 @@ export function summarize(steps: ReadonlyArray<SummaryStep>) {
 // group, in order ("Let me look." · [3 steps] · "Found it." · [2 steps] · "Done."). Steps that don't know where they
 // began (messages saved before `at`, a reload mid-turn) form one group: above the text when none knows, after it when
 // some do.
-export type Piece<S> = { kind: "text"; text: string } | { kind: "steps"; key: string; steps: ReadonlyArray<S> }
+type Piece<S> = { kind: "text"; text: string } | { kind: "steps"; key: string; steps: ReadonlyArray<S> }
 export function interleave<S>(text: string, steps: ReadonlyArray<S>, atOf: (s: S) => number | undefined): Piece<S>[] {
   if (!steps.length) return text ? [{ kind: "text", text }] : []
   const placed = steps.flatMap((s, i) => {

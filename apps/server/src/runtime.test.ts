@@ -829,6 +829,7 @@ test("start_task: the teammate's answer comes back to the asking chat and the as
     expect(seen.some((s) => s.waits?.[0]?.agentId === lead.id && s.waits[0].on[0] === helper.id && s.waits[0].taskChatId !== null)).toBe(true)
     expect(seen.at(-1)?.waits).toEqual([])
     expect((yield* store.chats()).find((c) => c.id !== chat.id)?.access).toBe("workspace") // the chat's level carries over
+    expect((yield* store.chats()).find((c) => c.id !== chat.id)?.parentId).toBe(chat.id) // still under the asking chat after it reported back
     const runs = yield* store.agentRuns(lead.id) // its sessions' runs, newest first: the wrap-up, then the delegation
     expect(runs.map((r) => [r.chatId, r.state, r.preview])).toEqual([[chat.id, "completed", "thanks, got it"], [chat.id, "completed", "started"]])
   })))

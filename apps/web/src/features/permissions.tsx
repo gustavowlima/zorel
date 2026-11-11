@@ -11,7 +11,7 @@ import { OwnComputer } from "./own-computer.tsx"
 import { Globe, IconButton, MousePointerClick, Plug, Rows, Segmented, SettingRow, SquareTerminal, X } from "@/ui"
 
 // A server the agent was given nothing for follows the server's own mode (as on the server).
-export const grantOf = (p: AgentPermissions, s: McpServer): Grant => p.grants[s.id] ?? (s.mode === "read" ? "read" : "write")
+const grantOf = (p: AgentPermissions, s: McpServer): Grant => p.grants[s.id] ?? (s.mode === "read" ? "read" : "write")
 
 // Files and commands, in the words of the other rows: ask = reads, edits wait; workspace = reads and writes in its
 // folder; full = everything, without asking.

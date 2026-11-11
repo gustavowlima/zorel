@@ -8,7 +8,8 @@ import { AsyncResult } from "effect/reactivity"
 import { useEffect } from "react"
 import { catalogAtom, serversAtom, useList } from "../client.ts"
 import { go, type Route } from "../state.ts"
-import { Button, Field, Select, Spinner } from "@/ui"
+import { iconOfServer } from "./mcp.tsx"
+import { BrandMark, Button, Field, Select, Spinner } from "@/ui"
 
 export type Picked = { server: McpServer; tool: CatalogTool }
 // watch: something new (a read); message: a channel's messages (a read, messages first); post: a destination (a write
@@ -32,7 +33,7 @@ const rank = (need: ToolNeed, name: string) => {
   const i = LIKELY[need].findIndex((re) => re.test(name.toLowerCase()))
   return i === -1 ? LIKELY[need].length : i
 }
-export const likelyTools = (need: ToolNeed, tools: ReadonlyArray<CatalogTool>) =>
+const likelyTools = (need: ToolNeed, tools: ReadonlyArray<CatalogTool>) =>
   tools.filter((x) => FITS[need](x) && x.state === "usable").sort((a, b) => rank(need, a.name) - rank(need, b.name) || a.name.localeCompare(b.name))
 
 // Each reason a connector has nothing usable, and where it is fixed.
@@ -64,7 +65,7 @@ export function ConnectorTool({ agent, need, serverId, tool, onPick }: { agent: 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <Field label={t("flows.picker.connector")}>
-        <Select value={serverId} placeholder={t("flows.picker.pickConnector")} onChange={pickServer} options={servers.map((s) => ({ value: s.id, label: s.name }))} />
+        <Select value={serverId} placeholder={t("flows.picker.pickConnector")} onChange={pickServer} options={servers.map((s) => ({ value: s.id, label: s.name, icon: <BrandMark brand={iconOfServer(s)} variant="inline" /> }))} />
       </Field>
       {server && <ToolOf agent={agent} need={need} server={server} tool={tool} onPick={onPick} />}
     </div>

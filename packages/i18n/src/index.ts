@@ -14,11 +14,11 @@ type Paths<T, P extends string = ""> = {
   [K in keyof T & string]: T[K] extends Leaf ? `${P}${K}` : Paths<T[K], `${P}${K}.`>
 }[keyof T & string]
 export type MessageKey = Paths<Messages>
-export type Params = Readonly<Record<string, string | number>>
+type Params = Readonly<Record<string, string | number>>
 
 // The single place that decides the language: the person's choice on this computer (Settings › General), else the
 // system's (a Portuguese system gets pt-BR), else English. Read once per page load: changing it reloads the app.
-export const LANGUAGES = ["en", "pt-BR"] as const
+const LANGUAGES = ["en", "pt-BR"] as const
 export type Language = (typeof LANGUAGES)[number]
 export type LanguagePref = "system" | Language
 const CATALOGS: Record<Language, Tree> = { en, "pt-BR": ptBR }

@@ -64,7 +64,7 @@ export function DateRangeField({ label, value, onChange, clearLabel, openLabel, 
       <Popover
         offset={8}
         placement="bottom end"
-        className="z-50 rounded-sheet border border-strong bg-raised p-3 text-fg outline-none data-entering:animate-in data-entering:fade-in-0 data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none"
+        className="z-50 rounded-sheet border border-strong bg-float p-3 text-fg shadow-float outline-none backdrop-blur-xl backdrop-saturate-150 data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.98] data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none"
       >
         <Dialog className="outline-none">
           <RangeCalendar className="flex flex-col gap-2">

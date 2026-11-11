@@ -181,7 +181,7 @@ const childEnv = (home: string) => {
   return env
 }
 
-export interface CodexSessionOptions {
+interface CodexSessionOptions {
   readonly model: string // "<provider>/<model>"; "default" uses Codex's default
   readonly system: string // stable context → developerInstructions
   readonly cwd: string
@@ -194,7 +194,7 @@ export interface CodexSessionOptions {
   readonly command?: ReadonlyArray<string> // tests: a fake app-server instead of `codex`
 }
 
-export const codexLoginHint = (home: string) => `Sign in to Zorel's Codex (once): run \`CODEX_HOME=${home} codex login\` in a terminal.`
+const codexLoginHint = (home: string) => `Sign in to Zorel's Codex (once): run \`CODEX_HOME=${home} codex login\` in a terminal.`
 
 export function openCodexSession(o: CodexSessionOptions): EngineSession | string {
   const bin = o.command?.[0] ?? which("codex")

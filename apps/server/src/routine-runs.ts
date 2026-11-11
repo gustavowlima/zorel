@@ -7,7 +7,7 @@ import { Cron } from "croner"
 // ---------- the outcome ----------
 const OUTCOMES: Record<string, RoutineOutcome> = { "nothing new": "nothing", "something new": "something", "needs you": "needs" }
 const MARKER = /^[\s>*_`#-]*outcome\s*[:：]\s*[*_`]*\s*(nothing new|something new|needs you)\s*[*_`.]*\s*$/i
-export const SUMMARY_MAX = 200
+const SUMMARY_MAX = 200
 export const REPORT_MAX = 4000
 
 // The run's reply: its marker line removed, its outcome (none or unreadable: "something", so nothing is dropped)
@@ -24,7 +24,7 @@ export function outcomeOf(reply: string): { outcome: RoutineOutcome; marked: boo
 }
 
 // ---------- telling the person ----------
-export type Telling = "tell" | "hold" | "skip"
+type Telling = "tell" | "hold" | "skip"
 // What a finished (or waiting) run does with the person: tell now, hold for the brief, or nothing at all.
 const RULES: Record<RoutineOutcome, (tell: RoutineTell, urgent: boolean, quiet: boolean) => Telling> = {
   nothing: () => "skip",
@@ -80,9 +80,9 @@ export function zonedTime(date: string, minutes: number, zone: string): number {
 }
 
 // ---------- when the day starts ----------
-export const DAY_START_DEFAULT = 9 * 60
-export const LEARNED_MAX = 14
-export const CUTOFF = 3 * 60 // a day-start routine runs anyway this long after the usual start
+const DAY_START_DEFAULT = 9 * 60
+const LEARNED_MAX = 14
+const CUTOFF = 3 * 60 // a day-start routine runs anyway this long after the usual start
 export type DayStart = { readonly set: number | null; readonly learned: ReadonlyArray<number> }
 const median = (xs: ReadonlyArray<number>) => {
   const s = [...xs].sort((a, b) => a - b)
@@ -109,7 +109,7 @@ export function todayOf<R extends RunLike>(runs: ReadonlyArray<R>, from: number)
 
 // ---------- the week ----------
 type Planned = { readonly id: string; readonly enabled: boolean; readonly cron: string | null; readonly onDayStart: boolean; readonly schedule?: RoutineSchedule | null }
-export const PLANNED_MAX = 200
+const PLANNED_MAX = 200
 // The runs coming in [from, to): each cron in the person's zone, and day-start routines at the usual start.
 export function plannedRuns(routines: ReadonlyArray<Planned>, zone: string, start: number, from: number, to: number, cap = PLANNED_MAX): Array<{ routineId: string; at: number }> {
   const out: Array<{ routineId: string; at: number }> = []

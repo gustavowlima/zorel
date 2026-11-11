@@ -6,7 +6,7 @@ import { t } from "@zorel/i18n"
 import { useState } from "react"
 import { mutations, useMutation } from "../client.ts"
 import { readSet, writeSet } from "../state.ts"
-import { Button, ChoiceCards, ConfirmDialog, cx, Popover, Shield, ShieldAlert } from "@/ui"
+import { Button, ChoiceCards, ConfirmDialog, cn, Popover, Shield, ShieldAlert } from "@/ui"
 
 const LEVELS = ["own", "ask", "workspace", "full"] as const
 const CONFIRMED = "zorel.fullAccessConfirmed" // per browser; blocked storage: it asks again next time
@@ -28,7 +28,7 @@ export function AccessChip({ chat }: { chat: Chat }) {
         label={t("chatAccess.title")}
         placement="top start"
         trigger={
-          <Button size="sm" variant="ghost" aria-label={t("chatAccess.title")} className={cx("font-normal", full ? "text-warning" : "text-muted")}>
+          <Button size="sm" variant="ghost" aria-label={t("chatAccess.title")} className={cn("font-normal", full ? "text-warning" : "text-muted")}>
             {full ? <ShieldAlert /> : <Shield />}
             <span className="truncate">{labelOf(chat.access ?? "own")}</span>
           </Button>

@@ -17,7 +17,7 @@ import { mcpEnv, Secrets, type SecretStore } from "./secrets.ts"
 
 const CONNECT_MS = 20_000
 const CALL_MS = 5 * 60_000
-export const MAX_RESULT_CHARS = 40_000
+const MAX_RESULT_CHARS = 40_000
 
 // ---------- policy ----------
 
@@ -87,7 +87,7 @@ export function guarded(r: CallToolResult, source: string): CallToolResult {
 // A result of Zorel's own tools (MCP, browser) over COMPACT_AT characters reaches the agent as its first COMPACT_HEAD
 // and a handle; the whole text stays here, readable with zorel_read_result. A big result would otherwise be sent
 // again at every later step of the turn.
-export const COMPACT_AT = 16_000
+const COMPACT_AT = 16_000
 export const COMPACT_HEAD = 3_000
 const KEPT_PER_CHAT = 20
 const KEPT_CHATS = 50

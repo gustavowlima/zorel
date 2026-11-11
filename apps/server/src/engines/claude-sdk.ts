@@ -157,7 +157,7 @@ function inbox() {
 // Below full access the shell runs in Claude Code's OS sandbox where there is one (Seatbelt on macOS; bubblewrap and
 // socat on Linux): writes only inside the folder (and temp), no network, and no way for the model to step out of it.
 // Without one (Windows) the shell is held by decideCommand's read-only rule instead.
-export const canSandbox = (platform = process.platform, which = Bun.which) => platform === "darwin" || (platform === "linux" && !!which("bwrap") && !!which("socat"))
+const canSandbox = (platform = process.platform, which = Bun.which) => platform === "darwin" || (platform === "linux" && !!which("bwrap") && !!which("socat"))
 // Two layers, because the SDK filters `managedSettings` to restrictions only (what would widen is dropped without a
 // word): the policy tier holds what the user's own settings must never loosen; the flag layer (`sandbox` option)
 // carries what is a choice of Zorel's. `allowLocalBinding` (dev servers on localhost, tests that open a port) and
@@ -345,7 +345,7 @@ export function childEnv(configDir: string | undefined, platform: NodeJS.Platfor
   return env
 }
 
-export interface ClaudeSessionOptions {
+interface ClaudeSessionOptions {
   readonly model: string // "<provider>/<model>"
   readonly system: string // stable part of the context; a change means a new session
   readonly cwd: string

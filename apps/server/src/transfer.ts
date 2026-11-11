@@ -9,8 +9,8 @@ import { tmpdir } from "node:os"
 import { join, relative, resolve, sep } from "node:path"
 import { PAGES_DIR } from "./page-files.ts"
 
-export const FORMAT = 1
-export const PENDING = "import-pending.tar.gz"
+const FORMAT = 1
+const PENDING = "import-pending.tar.gz"
 export const MAX_IMPORT_BYTES = 2 * 1024 ** 3
 
 interface Manifest {

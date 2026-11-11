@@ -262,7 +262,7 @@ export const listText = (agents: ReadonlyArray<Agent>, working: (id: string) => 
 export const readText = (a: Agent) =>
   JSON.stringify({ id: a.id, handle: `@${handleOf(a)}`, name: a.name, title: a.title, description: a.description, instructions: a.instructions, model: a.model, effort: a.effort, failover: a.failover, access: a.access, scope: a.projectId ? "project" : "global" }, null, 2)
 
-export interface NewAgentInput {
+interface NewAgentInput {
   readonly projectId: string | null
   readonly name: string
   readonly title: string
@@ -321,7 +321,7 @@ export function createInput(args: Record<string, unknown>, caller: { model: stri
   }
 }
 
-export const MAX_TEAM = 8
+const MAX_TEAM = 8
 
 // One profile, or a team from `agents`: each checked like a single one; names must differ from each other.
 export function createInputs(args: Record<string, unknown>, caller: { model: string; effort: Effort | null; access: Access }, projectId: string | null, servers: ReadonlyArray<{ id: string; name: string }> = []): NewAgentInput[] {
@@ -340,7 +340,7 @@ export function createInputs(args: Record<string, unknown>, caller: { model: str
   return out
 }
 
-export type AgentChanges = Partial<Pick<Agent, "name" | "title" | "description" | "instructions" | "model" | "effort" | "access">>
+type AgentChanges = Partial<Pick<Agent, "name" | "title" | "description" | "instructions" | "model" | "effort" | "access">>
 
 // An update proposal: only the fields given, access only narrowed (never above the target's or the caller's).
 export function updateInput(args: Record<string, unknown>, target: Agent, callerAccess: Access): AgentChanges {

@@ -2,20 +2,21 @@
 import type { FlowKind, FlowNode, McpServer } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import type { ReactNode } from "react"
-import { Bot, CircleStop, cx, Filter, IconTile, ShieldCheck, Split, Wrench, Zap } from "@/ui"
+import { Bot, CircleStop, cn, Filter, IconTile, ShieldCheck, Split, Wrench, Zap } from "@/ui"
 
-// Only the trigger is blue (Single Voice); an "Ask me" is the one step that waits for you.
+// Each kind reads at a glance by its color: the trigger keeps the blue (where it starts), an "Ask me" the warning (the
+// one step that waits for you), the end stays quiet; the steps between take the chart series.
 const LOOK: Record<FlowKind, { icon: () => ReactNode; tile: string }> = {
   trigger: { icon: () => <Zap />, tile: "bg-accent-soft text-accent-text" },
-  tool: { icon: () => <Wrench />, tile: "" },
-  agent: { icon: () => <Bot />, tile: "" },
-  check: { icon: () => <Filter />, tile: "" },
-  condition: { icon: () => <Split />, tile: "" },
-  approval: { icon: () => <ShieldCheck />, tile: "text-warning" },
+  tool: { icon: () => <Wrench />, tile: "bg-series-3/15 text-series-3" },
+  agent: { icon: () => <Bot />, tile: "bg-series-7/15 text-series-7" },
+  check: { icon: () => <Filter />, tile: "bg-series-5/15 text-series-5" },
+  condition: { icon: () => <Split />, tile: "bg-series-2/15 text-series-2" },
+  approval: { icon: () => <ShieldCheck />, tile: "bg-warning/15 text-warning" },
   end: { icon: () => <CircleStop />, tile: "text-dim" }
 }
 export const KindTile = ({ kind, size = "md" }: { kind: FlowKind; size?: "sm" | "md" }) => (
-  <IconTile size={size} className={cx(LOOK[kind].tile)}>
+  <IconTile size={size} className={cn(LOOK[kind].tile)}>
     {LOOK[kind].icon()}
   </IconTile>
 )

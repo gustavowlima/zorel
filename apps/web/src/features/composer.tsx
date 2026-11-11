@@ -16,7 +16,7 @@ import { EditorContent, useEditor } from "@tiptap/react"
 import type { SuggestionKeyDownProps, SuggestionOptions, SuggestionProps } from "@tiptap/suggestion"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { attachmentUrl } from "../client.ts"
-import { ArrowUp, cx, File, IconButton, OptionList, OptionRow, pickFiles, Plus, Spinner, Square, Tooltip, X } from "@/ui"
+import { ArrowUp, cn, File, IconButton, OptionList, OptionRow, pickFiles, Plus, Spinner, Square, Tooltip, X } from "@/ui"
 
 // Something "@", "#", "$" or "/" can pick. `id` is what the text carries after the trigger (an agent's handle, a
 // skill's handle); commands run `run` instead of leaving a chip, and a command without `run` (the engine's own)
@@ -27,6 +27,7 @@ export interface ComposerOption {
   readonly hint?: string
   readonly icon?: ReactNode
   readonly run?: () => void
+  readonly tint?: string // an agent's identity tint (agentTint): its chip wears that color
 }
 
 // A reason to show as it is when a submit fails (the other failures read "Couldn't send").
@@ -120,11 +121,17 @@ export function Composer({
       Mention.configure({
         deleteTriggerWithBackspace: true,
         renderText: ({ node }) => `${node.attrs.mentionSuggestionChar}${node.attrs.id}`,
-        renderHTML: ({ node }) => [
+        renderHTML: ({ node }) => {
+          // An agent called with "@" or "#" wears its color (identity tint); a file or anyone without one, the blue.
+          const char = node.attrs.mentionSuggestionChar as string
+          const calls = char === "@" || char === "#"
+          const tint = calls ? (char === "@" ? live.current.sources?.agents : live.current.sources?.leads)?.find((o) => o.id === node.attrs.id)?.tint : undefined
+          return [
           "span",
-          { class: cx("rounded-control px-1 py-px font-medium", node.attrs.mentionSuggestionChar === "@" ? "bg-accent-soft text-accent-text" : "bg-surface text-fg"), "data-ref": node.attrs.mentionSuggestionChar },
+          { class: cn("rounded-control px-1 py-px font-medium", tint ? `tinted ${tint}` : calls ? "bg-accent-soft text-accent-text" : "bg-surface text-fg"), "data-ref": char },
           `${node.attrs.mentionSuggestionChar}${node.attrs.label ?? node.attrs.id}`
-        ],
+          ]
+        },
         suggestions: [suggestion("@", live, setMenu), suggestion("$", live, setMenu), suggestion("/", live, setMenu), suggestion("#", live, setMenu)]
       }),
       // Enter sends unless a list of options is open; Shift+Enter is a new line.
@@ -206,7 +213,7 @@ export function Composer({
         setDragging(false)
         attach(e.dataTransfer.files)
       }}
-      className={cx(
+      className={cn(
         "relative flex flex-col gap-1.5 rounded-card border bg-canvas p-1.5 pl-2 transition-colors duration-150 ease-out motion-reduce:transition-none",
         dragging ? "border-accent-line bg-accent-faint" : "border-strong"
       )}

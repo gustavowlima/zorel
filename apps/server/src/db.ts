@@ -80,7 +80,7 @@ const now = () => (last = Math.max(Date.now(), last + 1))
 
 type Row = Record<string, any>
 const toMessage = (r: typeof messages.$inferSelect, files: ReadonlyArray<Attachment> = []): Message => ({ ...r, steps: JSON.parse(r.steps), attachments: files })
-export type AttachmentRow = typeof attachments.$inferSelect
+type AttachmentRow = typeof attachments.$inferSelect
 const toMcpServer = (r: typeof mcpServers.$inferSelect): McpServer => ({ ...r, args: JSON.parse(r.args), envKeys: JSON.parse(r.envKeys) })
 const toMemory = (r: typeof memories.$inferSelect): Memory => {
   const { normalized: _, owner: _o, audience: _a, keywords: _k, ...m } = r
@@ -671,12 +671,12 @@ export const repository = (db: Db, pagesDir?: string) => {
         )
       ),
     chat,
-    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; access?: Access | null | undefined; hidden?: boolean | undefined; title?: string | undefined; taskOf?: string | null | undefined; taskBy?: string | null | undefined }) =>
+    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; access?: Access | null | undefined; hidden?: boolean | undefined; title?: string | undefined; taskOf?: string | null | undefined; taskBy?: string | null | undefined; parentId?: string | null | undefined }) =>
       Effect.gen(function* () {
         const id = crypto.randomUUID()
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: input.title ?? "New chat", model: input.model, accountId: input.accountId ?? null, effort: input.effort ?? null, access: input.access ?? null, hidden: input.hidden ?? false, taskOf: input.taskOf ?? null, taskBy: input.taskBy ?? null, createdAt: now() })
+            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: input.title ?? "New chat", model: input.model, accountId: input.accountId ?? null, effort: input.effort ?? null, access: input.access ?? null, hidden: input.hidden ?? false, taskOf: input.taskOf ?? null, taskBy: input.taskBy ?? null, parentId: input.parentId ?? null, createdAt: now() })
             yield* setMembers(tx, id, input.agentIds)
           })
         )
@@ -1291,7 +1291,7 @@ export const repository = (db: Db, pagesDir?: string) => {
 export type Repository = ReturnType<typeof repository>
 
 // Opens the database: adopt/backup (sync), enables foreign keys and applies pending migrations.
-export const openDb = Effect.gen(function* () {
+const openDb = Effect.gen(function* () {
   const db = yield* makeDb
   yield* db.run(sql`PRAGMA foreign_keys = ON`)
   yield* migrate(db, { migrationsFolder: migrationsDir() })

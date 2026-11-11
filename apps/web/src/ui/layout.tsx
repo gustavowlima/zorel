@@ -4,11 +4,11 @@
 // One page rhythm (DESIGN.md › Layout): every header is HEADER (56px, the title 28px from the card's edge, the
 // actions 16px from the window's); a page's body is a Column (centered, 28px around, reading or wide); its sections
 // sit 40px apart, a page's tabs 32px above what they show, and a section's title 12px above its card.
-import { type ReactNode, useLayoutEffect, useState } from "react"
+import { type CSSProperties, type ReactNode, useLayoutEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { Button as AriaButton } from "react-aria-components"
 import { cn } from "@/lib/utils"
-import { ChevronRight } from "./icons"
+import { ChevronRight, Plug } from "./icons"
 
 // A page's header bar. In the desktop app it moves up into the window's title bar (the #titlebar-slot the shell
 // renders): the card starts with the page itself. Elsewhere it is the card's top bar.
@@ -88,11 +88,37 @@ export function SettingRow({ icon, title, hint, children, className }: { icon?: 
 // The square that holds an icon beside a row or a heading: sm 28px, md 32px, lg 40px (empty states). A translucent
 // control tone, so it reads on the canvas and on a surface alike.
 const TILE = { sm: "size-7 rounded-control [&_svg]:size-4", md: "size-8 rounded-control [&_svg]:size-4", lg: "size-10 rounded-card [&_svg]:size-5" } as const
-export function IconTile({ size = "md", className, children }: { size?: keyof typeof TILE; className?: string; children: ReactNode }) {
+export function IconTile({ size = "md", className, style, children }: { size?: keyof typeof TILE | undefined; className?: string | undefined; style?: CSSProperties | undefined; children: ReactNode }) {
   return (
-    <span aria-hidden="true" className={cn("flex shrink-0 items-center justify-center bg-control text-secondary", TILE[size], className)}>
+    <span aria-hidden="true" style={style} className={cn("flex shrink-0 items-center justify-center bg-control text-secondary", TILE[size], className)}>
       {children}
     </span>
+  )
+}
+
+// A brand's mark (a connector's logo: simple-icons' path and hex) in its own color, or a plug when there is none.
+// tile: on a 14% wash of the color, lifted toward the text (Settings, a server's row); inline: the bare 16px mark (a
+// list's option). A near-black brand (GitHub, Notion, Vercel, Sentry) would vanish on the dark canvas, so it stays
+// neutral.
+export type Brand = { readonly hex: string; readonly path: string }
+function brandTint(hex: string): CSSProperties | undefined {
+  const [r, g, b] = [0, 2, 4].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number]
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.25 ? undefined : ({ "--tint": `#${hex}` } as CSSProperties)
+}
+export function BrandMark({ brand, variant = "tile" }: { brand: Brand | undefined; variant?: "tile" | "inline" }) {
+  const tint = brand && brandTint(brand.hex)
+  const mark = brand ? (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={cn(variant === "inline" && "size-4", variant === "inline" && tint && "tint-text")} style={variant === "inline" ? tint : undefined}>
+      <path d={brand.path} />
+    </svg>
+  ) : (
+    <Plug className={cn(variant === "inline" && "size-4 text-muted")} />
+  )
+  if (variant === "inline") return mark
+  return (
+    <IconTile style={tint} className={tint && "brand-tile!"}>
+      {mark}
+    </IconTile>
   )
 }
 

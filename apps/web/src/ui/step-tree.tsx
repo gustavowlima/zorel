@@ -8,6 +8,7 @@ import type { ReactNode } from "react"
 import { Button } from "react-aria-components"
 import { cn } from "@/lib/utils"
 import { ChevronRight } from "./icons"
+import { Fold } from "./motion"
 
 export function StepHead({
   open,
@@ -114,11 +115,11 @@ export function StepRow({
       ) : (
         <div className={row}>{content}</div>
       )}
-      {open && children && (
+      <Fold open={!!open && !!children}>
         <div {...(controls && { id: controls })} className="flex min-w-0 flex-col gap-1.5 pt-0.5 pr-2.5 pb-2.5 pl-11.5">
           {children}
         </div>
-      )}
+      </Fold>
     </li>
   )
 }
