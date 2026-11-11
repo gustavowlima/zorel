@@ -167,6 +167,7 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
       const logins = new Set<string>()
       const terminals = new Map<string, ReturnType<typeof Bun.spawn>>() // server sign-ins waiting for a pasted code
       const screens = new Map<string, string>() // what each of those CLIs printed (the tail)
+      const links = new Map<string, string>() // the sign-in link each of them printed
       const status = (a: AccountRow) =>
         Effect.promise(async () => {
           const hit = cache.get(a.id)
@@ -211,7 +212,8 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
           Effect.gen(function* () {
             const a = yield* store.account(id)
             if (!a) return "not-found" as const
-            if (logins.has(id)) return "busy" as const
+            // A sign-in already waiting for its pasted code shows again (the screen that asked for it was left).
+            if (logins.has(id)) return terminals.has(id) ? { url: links.get(id) ?? null, output: plain(screens.get(id) ?? "") } : ("busy" as const)
             const cli = CLIS[a.provider as AccountProvider]
             const bin = which(cli.bin)
             if (!bin) return { url: null }
@@ -222,7 +224,10 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
             })
             const seen = (text: string) => {
               const m = /https?:\/\/\S+/.exec(text)
-              if (m) resolveUrl(m[0])
+              if (m) {
+                if (!links.has(id)) links.set(id, m[0])
+                resolveUrl(m[0])
+              }
             }
             const decoder = new TextDecoder()
             const args = [bin, ...cli.login(a)]
@@ -250,6 +255,7 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
               logins.delete(id)
               terminals.delete(id)
               screens.delete(id)
+              links.delete(id)
               cache.delete(id)
               resolveUrl(null)
               const s = await cli.status(a)

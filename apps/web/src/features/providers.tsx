@@ -248,6 +248,8 @@ function SignIns({ provider, accounts }: { provider: AccountProvider; accounts: 
   const [adding, setAdding] = useState(false)
   const [label, setLabel] = useState("")
   const [error, setError] = useState<string>()
+  // What the sign-in started on "Add" returned (the link, the CLI's text): the new account's row shows it.
+  const [started, setStarted] = useState<Record<string, LoginStart>>({})
 
   // A sign-in finishes in the browser; poll until the CLI reports it.
   const pending = accounts.some((a) => a.loggingIn)
@@ -271,7 +273,7 @@ function SignIns({ provider, accounts }: { provider: AccountProvider; accounts: 
       }
     >
       {accounts.map((a) => (
-        <AccountRow key={a.id} account={a} />
+        <AccountRow key={a.id} account={a} started={started[a.id]} />
       ))}
       <Fold open={adding}>
         <form
@@ -283,8 +285,8 @@ function SignIns({ provider, accounts }: { provider: AccountProvider; accounts: 
               .then((a) => {
                 setLabel("")
                 setAdding(false)
-                // The CLI opens the provider's sign-in page in the browser.
-                return login({ params: { id: a.id }, reactivityKeys: ["accounts"] })
+                // The CLI opens the provider's sign-in page in the browser, or shows a link and asks for a code.
+                return login({ params: { id: a.id }, reactivityKeys: ["accounts"] }).then((r) => setStarted((s) => ({ ...s, [a.id]: r })))
               })
               .catch(() => setError(t("accounts.addFailed")))
           }}
@@ -311,21 +313,22 @@ function SignIns({ provider, accounts }: { provider: AccountProvider; accounts: 
   )
 }
 
-function AccountRow({ account: a }: { account: ProviderAccount }) {
+type LoginStart = { readonly url: string | null; readonly output?: string | undefined }
+
+function AccountRow({ account: a, started }: { account: ProviderAccount; started?: LoginStart | undefined }) {
   const login = useMutation(mutations.login)
   const remove = useMutation(mutations.removeAccount)
   const sendCode = useMutation(mutations.loginCode)
-  const [link, setLink] = useState<string>()
-  const [screen, setScreen] = useState<string>() // on a server: what the CLI shows (the link, a device code)
+  const [own, setOwn] = useState<LoginStart>()
+  const shown = own ?? started
+  const link = shown?.url ?? undefined
+  const screen = shown?.output // a CLI that asks for a code (on a server, or agy): what it shows
   const [code, setCode] = useState("")
   const [error, setError] = useState<string>()
   const signIn = () => {
     setError(undefined)
     login({ params: { id: a.id }, reactivityKeys: ["accounts"] }).then(
-      (r) => {
-        if (r.url) setLink(r.url)
-        setScreen(r.output)
-      },
+      (r) => setOwn(r),
       () => setError(t("accounts.busy"))
     )
   }
@@ -340,7 +343,7 @@ function AccountRow({ account: a }: { account: ProviderAccount }) {
           </span>
           <span className={cn("truncate text-sm", a.loggedIn ? "text-muted" : "text-warning")}>{a.loggedIn ? a.label : status}</span>
         </span>
-        <Button size="sm" variant={a.loggedIn ? "secondary" : "default"} isPending={a.loggingIn} isDisabled={a.loggingIn} onPress={signIn}>
+        <Button size="sm" variant={a.loggedIn ? "secondary" : "default"} isDisabled={a.loggingIn && !!screen} onPress={signIn}>
           {a.loggedIn ? t("providers.reconnect") : t("accounts.signIn")}
         </Button>
         {!a.isDefault && (
