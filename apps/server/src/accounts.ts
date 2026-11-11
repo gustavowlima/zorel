@@ -135,8 +135,8 @@ interface AccountsService {
   readonly hold: (id: string, until: number) => Effect.Effect<void>
   // A reading from a running session: its windows replace the ones with the same id.
   readonly observe: (id: string, windows: ReadonlyArray<AccountWindow>) => Effect.Effect<void>
-  // Reads all windows now from the CLI (§10.2): one reading at a time, cached 4 min, failures back off.
-  readonly refreshLimits: (id: string) => Effect.Effect<ProviderAccount | undefined>
+  // Reads all windows now from the CLI (§10.2): one reading at a time, cached 4 min (`fresh`: read anyway), failures back off.
+  readonly refreshLimits: (id: string, fresh?: boolean) => Effect.Effect<ProviderAccount | undefined>
   // The models the default logins offer, with their real names ("opus" → "Opus 5.5"). Kept in preferences,
   // served at once and re-read in the background after an hour; a failed read keeps the last list.
   readonly cliModels: Effect.Effect<CliModels>
@@ -288,13 +288,13 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
             const kept = (usageOf(a)?.windows ?? []).filter((w) => !windows.some((n) => n.id === w.id))
             yield* store.updateAccount(id, { usage: { windows: [...kept, ...windows], readAt: Date.now() } })
           }),
-        refreshLimits: (id) =>
+        refreshLimits: (id, force = false) =>
           Effect.gen(function* () {
             const a = yield* store.account(id)
             if (!a) return undefined
             const cached = usageOf(a)
             const backoff = failures.get(id)
-            const fresh = cached && Date.now() - cached.readAt < LIMITS_TTL_MS
+            const fresh = !force && cached && Date.now() - cached.readAt < LIMITS_TTL_MS
             const limits = CLIS[a.provider as AccountProvider].limits
             if (limits && !fresh && (!backoff || Date.now() >= backoff.next)) {
               const windows = yield* readingLock.withPermits(1)(Effect.tryPromise(() => limits(a)).pipe(Effect.option))

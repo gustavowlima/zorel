@@ -113,6 +113,9 @@ const NAMED_WINDOWS = { five_hour: 1, seven_day: 1, seven_day_opus: 1, seven_day
 export function windowLabel(id: string): string {
   if (has(NAMED_WINDOWS, id)) return t(`usage.windows.${id}` as MessageKey)
   if (id.startsWith("model:")) return id.slice(6)
+  // A length scoped to a group of models ("300m:Gemini" → "Gemini · 5 hours").
+  const scoped = /^(\d+m):(.+)$/.exec(id)
+  if (scoped) return `${scoped[2]} · ${windowLabel(scoped[1]!)}`
   const minutes = Number(id.replace(/m$/, ""))
   if (!Number.isFinite(minutes)) return id
   return minutes % 1440 === 0 ? t("usage.windows.days", { count: minutes / 1440 }) : t("usage.windows.hours", { count: Math.round(minutes / 60) })
@@ -122,7 +125,7 @@ export function windowLabel(id: string): string {
 const WINDOW_MINUTES: Record<string, number> = { five_hour: 300, seven_day: 10080, seven_day_opus: 10080, seven_day_sonnet: 10080, seven_day_oauth_apps: 10080 }
 export function windowMinutes(id: string): number | null {
   if (id.startsWith("model:")) return null
-  const minutes = WINDOW_MINUTES[id] ?? Number(id.replace(/m$/, ""))
+  const minutes = WINDOW_MINUTES[id] ?? Number(id.replace(/m(:.*)?$/, ""))
   return Number.isFinite(minutes) ? minutes : null
 }
 

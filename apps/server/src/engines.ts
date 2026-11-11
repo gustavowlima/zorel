@@ -617,15 +617,17 @@ export async function readAntigravityModels(): Promise<CliModel[]> {
 }
 
 // `agy -p /usage` prints "<group>\t<window> Limit Remaining\t<n>%\t<ISO reset>" per line (its official quota
-// command; no model call). Each becomes a window "model:<group> · <5h|7d>" with the share used.
-const ANTIGRAVITY_WINDOWS: Record<string, string> = { "Five Hour": "5h", Weekly: "7d" }
+// command; no model call). Each becomes a window "<minutes>m:<group>" (a length scoped to a model group) with the
+// share used; a window of an unknown length stays "model:<group> · <name>".
+const ANTIGRAVITY_WINDOWS: Record<string, number> = { "Five Hour": 300, Weekly: 10080 }
 export const parseAntigravityUsage = (out: string): AccountWindow[] =>
   out.split(/\r?\n/).flatMap((line) => {
     const m = /^([^\t]+)\t(.+?) Limit Remaining\t(\d+(?:\.\d+)?)%\t(\S+)$/.exec(line.trim())
     if (!m) return []
     const resets = Date.parse(m[4]!)
-    const window = ANTIGRAVITY_WINDOWS[m[2]!] ?? m[2]!
-    return [{ id: `model:${m[1]!.replace(/ models$/i, "")} · ${window}`, usedPercent: Math.max(0, Math.min(100, 100 - Number(m[3]))), resetsAt: Number.isFinite(resets) ? resets : null }]
+    const group = m[1]!.replace(/ models$/i, "")
+    const minutes = ANTIGRAVITY_WINDOWS[m[2]!]
+    return [{ id: minutes ? `${minutes}m:${group}` : `model:${group} · ${m[2]}`, usedPercent: Math.max(0, Math.min(100, 100 - Number(m[3]))), resetsAt: Number.isFinite(resets) ? resets : null }]
   })
 // An extra account (home) runs with HOME there and its file login (ANTIGRAVITY_FILE_LOGIN); null: the keychain login.
 export async function readAntigravityLimits(home: string | null): Promise<AccountWindow[]> {

@@ -408,7 +408,7 @@ function useReadOnOpen(subscriptions: ReadonlyArray<ProviderAccount>) {
     void (async () => {
       for (const id of ids ? ids.split(",") : []) {
         if (cancelled) return
-        await read({ params: { id }, reactivityKeys: ["accounts"] }).catch(() => undefined) // the last reading stays
+        await read({ params: { id }, query: {}, reactivityKeys: ["accounts"] }).catch(() => undefined) // the last reading stays
       }
     })()
     return () => {
@@ -423,7 +423,7 @@ function SubscriptionRow({ account: a }: { account: ProviderAccount }) {
   const [reading, setReading] = useState(false)
   const refresh = () => {
     setReading(true)
-    read({ params: { id: a.id }, reactivityKeys: ["accounts"] })
+    read({ params: { id: a.id }, query: { fresh: "1" }, reactivityKeys: ["accounts"] })
       .catch(() => undefined) // no reading now; the last one stays
       .finally(() => setReading(false))
   }

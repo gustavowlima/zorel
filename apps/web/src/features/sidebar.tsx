@@ -17,7 +17,7 @@ import { NewProjectButton } from "./project.tsx"
 import { byTurn, ordered, type Statuses, visibleChats } from "./sidebar-order.ts"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  ChevronRight, Fold, Marker, Menu, MoreHorizontal, NavItem, Popover, Search, Pause, Play, PanelLeftClose, PanelLeftOpen, AlarmClock, Bot, Brain, Button, ConfirmDialog, ContextMenu, ChartColumn, cn, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, SquarePen, Tooltip, Trash2, useNavReorder, Width
+  ChevronRight, Fold, Marker, Menu, MoreHorizontal, NavItem, Popover, Search, Pause, Play, PanelLeftClose, PanelLeftOpen, AlarmClock, Bot, Brain, Button, ConfirmDialog, ContextMenu, ChartColumn, cn, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, Meter, RefreshCw, Settings, Spinner, SquarePen, Tooltip, Trash2, useNavReorder, Width
 } from "@/ui"
 
 // Open and folded widths (App animates between them; the desktop title bar lines up with the open one).
@@ -668,13 +668,12 @@ function ChatItem({
 }
 
 // Usage at the foot: only the usage icon (with a dot in the tone of the account most at risk, when one is). Pressed,
-// a floating menu lists every connected account with what it has used: a subscription's limit windows as rings with
-// the logo inside, where the pace leads and when each window resets; an API key, as a key. "See all" opens Usage.
+// a floating menu lists every connected account: its logo and name, then each limit window with its share used (in
+// the tone of its pace) and when it resets. "Refresh" reads them all again now; "See all" opens Usage.
 const TONE_TEXT = { ok: "text-secondary", warning: "text-warning", critical: "text-danger" } as const
 const TONE_DOT = { ok: undefined, warning: "bg-warning", critical: "bg-danger" } as const
 type UsageRow = { account: ProviderAccount; windows: ReadonlyArray<{ w: AccountWindow; pace: Pace }>; worst: { w: AccountWindow; pace: Pace } | undefined }
-const limited = (windows: UsageRow["windows"]) =>
-  windows.filter(({ w }) => windowMinutes(w.id) !== null).sort((x, y) => (windowMinutes(y.w.id) ?? 0) - (windowMinutes(x.w.id) ?? 0))
+const limited = (windows: UsageRow["windows"]) => windows.filter(({ w }) => windowMinutes(w.id) !== null)
 function UsageFoot({ active, placement }: { active: boolean; placement: "right" | "top" }) {
   const rows: UsageRow[] = useList(accountsAtom)
     .filter((a) => a.loggedIn)
@@ -685,6 +684,16 @@ function UsageFoot({ active, placement }: { active: boolean; placement: "right" 
     .sort((x, y) => (y.worst?.pace.risk ?? -1) - (x.worst?.pace.risk ?? -1))
   const risk = rows[0]?.worst && toneOf(rows[0].worst.pace)
   const dot = risk && TONE_DOT[risk]
+  const read = useMutation(mutations.readLimits)
+  const [reading, setReading] = useState(false)
+  // One account at a time: the mutation atom is shared, so a second call would abort the first.
+  const refresh = async () => {
+    setReading(true)
+    for (const r of rows.filter((x) => x.account.kind === "subscription")) {
+      await read({ params: { id: r.account.id }, query: { fresh: "1" }, reactivityKeys: ["accounts"] }).catch((e: unknown) => console.warn("[usage] reading limits failed", r.account.id, e))
+    }
+    setReading(false)
+  }
   return (
     <Popover
       label={t("nav.usage")}
@@ -701,9 +710,16 @@ function UsageFoot({ active, placement }: { active: boolean; placement: "right" 
     >
       {(close) => (
         <div className="flex min-h-0 flex-col">
-          <div className="scroll-quiet flex min-h-0 flex-col overflow-y-auto px-4 pt-3 pb-1">
-            <span className="pb-2 text-sm font-medium">{t("nav.usage")}</span>
-            {rows.length === 0 ? <p className="text-sm text-muted">{t("nav.usageNone")}</p> : rows.map((r) => <UsageAccount key={r.account.id} row={r} />)}
+          <div className="flex items-center justify-between pt-2 pr-2 pl-4">
+            <span className="text-sm font-medium">{t("nav.usage")}</span>
+            <Tooltip content={t("usage.refresh")}>
+              <IconButton label={t("usage.refresh")} variant="ghost" shape="pill" size="xs" isDisabled={reading || rows.length === 0} onPress={() => void refresh()}>
+                <RefreshCw className={cn(reading && "animate-spin motion-reduce:animate-none")} />
+              </IconButton>
+            </Tooltip>
+          </div>
+          <div className="scroll-quiet flex min-h-0 flex-col overflow-y-auto px-4 pb-1">
+            {rows.length === 0 ? <p className="py-2 text-sm text-muted">{t("nav.usageNone")}</p> : rows.map((r) => <UsageAccount key={r.account.id} row={r} />)}
           </div>
           <div className="flex justify-end px-2 pb-2">
             <Button
@@ -724,45 +740,34 @@ function UsageFoot({ active, placement }: { active: boolean; placement: "right" 
   )
 }
 
-// One account in the usage menu: its logo (in its windows' rings when it has limits), its name and where the pace
-// leads, then each window with its share used and when it resets.
+// One account in the usage menu: its logo and name, then its windows (or one quiet line when there are none).
 function UsageAccount({ row: r }: { row: UsageRow }) {
-  const rings = limited(r.windows).map(({ pace }) => ({ used: pace.used, tone: toneOf(pace) }))
-  const worst = r.worst
-  const leftAtReset = worst?.pace.elapsed && worst.pace.elapsed >= 0.1 ? 1 - worst.pace.used / worst.pace.elapsed : null
-  const line = !worst
-    ? t(r.account.kind === "api-key" ? "nav.usageKey" : "nav.usageNoLimits")
-    : worst.pace.runsOutAt
-      ? t("nav.usageRunsOut", { window: windowLabel(worst.w.id), time: formatTime(worst.pace.runsOutAt) })
-      : leftAtReset !== null
-        ? t("nav.usageOnPace", { window: windowLabel(worst.w.id), percent: formatPercent(leftAtReset) })
-        : t("nav.usageEarly", { window: windowLabel(worst.w.id), percent: formatPercent(worst.pace.used) })
   return (
     // Accounts parted by a hairline (the menu's own tone, no second fill), so it reads as a list of one or several.
-    <div className="flex flex-col gap-2.5 border-subtle border-t py-3 first-of-type:border-t-0">
-      <div className="flex items-center gap-3">
-        <LimitRing windows={rings}>
-          <ProviderIcon provider={r.account.provider} size={16} />
-        </LimitRing>
-        <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate text-sm font-medium">{r.account.label}</span>
-          <span className={cn("text-xs", worst ? TONE_TEXT[toneOf(worst.pace)] : "text-muted")}>{line}</span>
-        </span>
+    <div className="flex flex-col gap-2 border-subtle border-t py-3 first-of-type:border-t-0">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <ProviderIcon provider={r.account.provider} size={16} />
+        <span className="truncate text-sm font-medium">{r.account.label}</span>
       </div>
-      {r.windows.map(({ w, pace }) => (
-        <span key={w.id} className="flex items-baseline justify-between gap-3 text-xs">
-          <span className="truncate text-secondary">{windowLabel(w.id)}</span>
-          <span className="shrink-0 text-muted tabular-nums">
-            {formatPercent(pace.used)}
-            {w.resetsAt ? ` · ${t("usage.resets", { time: formatTime(w.resetsAt) })}` : ""}
+      {r.windows.length === 0 ? (
+        <span className="text-xs text-muted">{t(r.account.kind === "api-key" ? "nav.usageKey" : "nav.usageNoLimits")}</span>
+      ) : (
+        r.windows.map(({ w, pace }) => (
+          <span key={w.id} className="flex items-baseline justify-between gap-3 text-xs">
+            <span className="truncate text-secondary">{windowLabel(w.id)}</span>
+            <span className="shrink-0 tabular-nums">
+              <span className={TONE_TEXT[toneOf(pace)]}>{formatPercent(pace.used)}</span>
+              {w.resetsAt && <span className="text-muted">{` · ${t("usage.resets", { time: formatTime(w.resetsAt) })}`}</span>}
+            </span>
           </span>
-        </span>
-      ))}
+        ))
+      )}
     </div>
   )
 }
 
-const toneOf = (p: Pace): RingTone => (p.used >= 0.95 ? "critical" : p.runsOutAt || p.used >= LIMIT_ALERT ? "warning" : "ok")
+type Tone = keyof typeof TONE_TEXT
+const toneOf = (p: Pace): Tone => (p.used >= 0.95 ? "critical" : p.runsOutAt || p.used >= LIMIT_ALERT ? "warning" : "ok")
 
 // The desktop app's title bar: the whole window width above the sidebar and the card. It drags the window, leaves
 // room for the macOS window buttons, holds back/forward and the current page's header. The brand stays on the

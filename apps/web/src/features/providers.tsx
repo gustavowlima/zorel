@@ -13,7 +13,7 @@ import { CliVersion, type CliId as ProgramId, useCliUpdates } from "./cli-versio
 import { LimitWindows } from "./limits.tsx"
 import { modelName, modelNote, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
-import { Badge, Button, ChevronRight, ConfirmButton, cn, Dot, Fold, Input, ListRow, Plus, ProviderIcon, Rows, Section, SettingRow } from "@/ui"
+import { Badge, Button, Check, ChevronRight, ConfirmButton, Copy, cn, Dot, ExternalLink, Fold, Input, ListRow, Plus, ProviderIcon, Rows, Section, SettingRow } from "@/ui"
 
 type KeyInfo = typeof KeyInfoSchema.Type
 
@@ -323,7 +323,11 @@ function AccountRow({ account: a, started }: { account: ProviderAccount; started
   const shown = own ?? started
   const link = shown?.url ?? undefined
   const screen = shown?.output // a CLI that asks for a code (on a server, or agy): what it shows
+  // Waiting for the person: open the page, then paste its code back, or (a device sign-in) type the code shown here.
+  const waiting = a.loggingIn && !!screen
+  const device = screen ? DEVICE_CODE.exec(screen)?.[0] : undefined
   const [code, setCode] = useState("")
+  const [sending, setSending] = useState(false)
   const [error, setError] = useState<string>()
   const signIn = () => {
     setError(undefined)
@@ -332,7 +336,17 @@ function AccountRow({ account: a, started }: { account: ProviderAccount; started
       () => setError(t("accounts.busy"))
     )
   }
-  const status = a.loggingIn ? t("accounts.signingIn") : a.loggedIn ? (a.identity ?? t("accounts.signedIn")) : t("accounts.signedOut")
+  const send = () => {
+    setSending(true)
+    setError(undefined)
+    void sendCode({ params: { id: a.id }, payload: { code }, reactivityKeys: ["accounts"] })
+      .then(
+        () => setCode(""),
+        () => setError(t("accounts.codeFailed"))
+      )
+      .finally(() => setSending(false))
+  }
+  const status = waiting ? t("accounts.waitingCode") : a.loggingIn ? t("accounts.signingIn") : a.loggedIn ? (a.identity ?? t("accounts.signedIn")) : t("accounts.signedOut")
   return (
     <div className="flex flex-col gap-1.5 py-3.5">
       <div className="flex flex-wrap items-center gap-3">
@@ -341,11 +355,13 @@ function AccountRow({ account: a, started }: { account: ProviderAccount; started
             <span className="truncate font-medium">{a.loggedIn ? (a.identity ?? t("accounts.signedIn")) : a.label}</span>
             {a.isDefault && <Badge>{t("accounts.default")}</Badge>}
           </span>
-          <span className={cn("truncate text-sm", a.loggedIn ? "text-muted" : "text-warning")}>{a.loggedIn ? a.label : status}</span>
+          <span className={cn("truncate text-sm", a.loggedIn || waiting ? "text-muted" : "text-warning")}>{a.loggedIn ? a.label : status}</span>
         </span>
-        <Button size="sm" variant={a.loggedIn ? "secondary" : "default"} isDisabled={a.loggingIn && !!screen} onPress={signIn}>
-          {a.loggedIn ? t("providers.reconnect") : t("accounts.signIn")}
-        </Button>
+        {!waiting && (
+          <Button size="sm" variant={a.loggedIn ? "secondary" : "default"} onPress={signIn}>
+            {a.loggedIn ? t("providers.reconnect") : t("accounts.signIn")}
+          </Button>
+        )}
         {!a.isDefault && (
           <ConfirmButton
             size="sm"
@@ -364,30 +380,79 @@ function AccountRow({ account: a, started }: { account: ProviderAccount; started
           <LimitWindows account={a} compact />
         </div>
       )}
-      {link && a.loggingIn && (
-        <a className="text-sm text-accent-text underline" href={link} target="_blank" rel="noreferrer">
-          {t("accounts.openLogin")}
-        </a>
+      {waiting && (
+        <ol className="flex flex-col gap-4 pt-2.5">
+          <SignInStep n={1} text={t("accounts.stepOpen")}>
+            {link && (
+              <Button size="sm" variant="secondary" shape="pill" className="font-normal" onPress={() => window.open(link, "_blank", "noopener")}>
+                <ExternalLink />
+                {t("accounts.openLogin")}
+              </Button>
+            )}
+          </SignInStep>
+          {device ? (
+            <SignInStep n={2} text={t("accounts.stepDevice")}>
+              <DeviceCode code={device} />
+            </SignInStep>
+          ) : (
+            <SignInStep n={2} text={t("accounts.stepPaste")}>
+              <form
+                className="flex w-full max-w-md items-center gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (code.trim()) send()
+                }}
+              >
+                <Input className="min-w-0 flex-1" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t("accounts.codePlaceholder")} aria-label={t("accounts.codePlaceholder")} autoComplete="off" spellCheck={false} />
+                <Button type="submit" size="sm" variant="default" shape="pill" isPending={sending} isDisabled={!code.trim() || sending}>
+                  {t("accounts.connect")}
+                </Button>
+              </form>
+            </SignInStep>
+          )}
+        </ol>
       )}
-      {screen && a.loggingIn && (
-        <>
-          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-control bg-code p-2 font-mono text-xs text-secondary">{screen}</pre>
-          <form
-            className="flex items-center gap-2"
-            onSubmit={(e) => {
-              e.preventDefault()
-              void sendCode({ params: { id: a.id }, payload: { code }, reactivityKeys: ["accounts"] }).then(() => setCode(""), () => setError(t("accounts.codeFailed")))
-            }}
-          >
-            <Input className="min-w-48 flex-1" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t("accounts.codePlaceholder")} aria-label={t("accounts.codePlaceholder")} />
-            <Button type="submit" size="sm" isDisabled={!code.trim()}>
-              {t("accounts.sendCode")}
-            </Button>
-          </form>
-        </>
-      )}
+      {/* No link found in what the CLI printed: its own words, so the person isn't left without a way in. */}
+      {waiting && !link && <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-control bg-code p-2 font-mono text-xs text-secondary">{screen}</pre>}
       {error && <p className="text-sm text-danger">{error}</p>}
     </div>
+  )
+}
+
+// A one-time code for a device sign-in ("ABCD-1234"), as CLIs print it.
+const DEVICE_CODE = /\b[A-Z0-9]{4}-[A-Z0-9]{4,5}\b/
+
+// One step of a sign-in: its number in a soft circle, what to do, and the control for it.
+function SignInStep({ n, text, children }: { n: number; text: string; children: ReactNode }) {
+  return (
+    <li className="flex gap-3">
+      <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-full bg-control text-xs font-medium text-secondary tabular-nums">
+        {n}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col items-start gap-2 pt-0.5">
+        <span className="text-sm text-secondary">{text}</span>
+        {children}
+      </div>
+    </li>
+  )
+}
+
+// The code to type on the provider's page, large enough to read across, with Copy.
+function DeviceCode({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () =>
+    void navigator.clipboard.writeText(code).then(
+      () => setCopied(true),
+      (e: unknown) => console.warn("[accounts] copy failed", e)
+    )
+  return (
+    <span className="flex items-center gap-2">
+      <code className="rounded-control bg-control px-2.5 py-1 font-mono text-base tracking-widest">{code}</code>
+      <Button size="sm" variant="ghost" shape="pill" className="font-normal" onPress={copy}>
+        {copied ? <Check /> : <Copy />}
+        {copied ? t("common.copied") : t("common.copy")}
+      </Button>
+    </span>
   )
 }
 

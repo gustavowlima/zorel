@@ -987,8 +987,8 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.post("login", "/api/accounts/:id/login", { params: idParam, success: LoginStarted, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
       // On a server: the code the provider's page showed, typed into the waiting CLI.
       .add(HttpApiEndpoint.post("loginCode", "/api/accounts/:id/login/code", { params: idParam, payload: Schema.Struct({ code: Schema.String.check(Schema.isMaxLength(2000)) }), error: HttpApiError.NotFound }))
-      // Reads the account's limit windows now (cached for 4 min; failures back off up to 1 h).
-      .add(HttpApiEndpoint.post("limits", "/api/accounts/:id/limits", { params: idParam, success: ProviderAccount, error: HttpApiError.NotFound }))
+      // Reads the account's limit windows now (cached for 4 min, unless `fresh`; failures back off up to 1 h).
+      .add(HttpApiEndpoint.post("limits", "/api/accounts/:id/limits", { params: idParam, query: { fresh: Schema.optionalKey(Schema.Literals(["1"])) }, success: ProviderAccount, error: HttpApiError.NotFound }))
   )
   .add(
     HttpApiGroup.make("settings")

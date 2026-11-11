@@ -871,7 +871,7 @@ const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
         })
       )
       .handle("loginCode", ({ params, payload }) => Effect.flatMap(accounts.answer(params.id, payload.code), (ok) => (ok ? Effect.void : notFound())))
-      .handle("limits", ({ params }) => found(accounts.refreshLimits(params.id)))
+      .handle("limits", ({ params, query }) => found(accounts.refreshLimits(params.id, query.fresh === "1")))
   })
 )
 

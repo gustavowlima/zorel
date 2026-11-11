@@ -595,8 +595,8 @@ test("Antigravity: its models from `agy models`, and a settings folder of Zorel'
 test("Antigravity limits: agy /usage lines become windows with the share used", () => {
   const out = "Gemini Models\tWeekly Limit Remaining\t98%\t2026-11-16T12:00:47Z\nClaude and GPT models\tFive Hour Limit Remaining\t100%\t2026-11-12T00:55:14Z\nsomething else\n"
   expect(parseAntigravityUsage(out)).toEqual([
-    { id: "model:Gemini · 7d", usedPercent: 2, resetsAt: Date.parse("2026-11-16T12:00:47Z") },
-    { id: "model:Claude and GPT · 5h", usedPercent: 0, resetsAt: Date.parse("2026-11-12T00:55:14Z") }
+    { id: "10080m:Gemini", usedPercent: 2, resetsAt: Date.parse("2026-11-16T12:00:47Z") },
+    { id: "300m:Claude and GPT", usedPercent: 0, resetsAt: Date.parse("2026-11-12T00:55:14Z") }
   ])
   expect(parseAntigravityUsage("Authentication required. Please visit the URL to log in:")).toEqual([])
 })
