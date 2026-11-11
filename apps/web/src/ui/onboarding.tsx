@@ -23,11 +23,11 @@ const ORBITERS = [
 ] as const
 const tone = (n: number) => `var(--z-agent-${n})`
 
-// The orbits and their agents; `dim` while a step's text sits over it.
-export function OnboardingSet({ opening, dim }: { opening: boolean; dim: boolean }) {
+// The orbits and their agents; dimmed once a step's text sits over it (after the opening).
+export function OnboardingSet({ opening }: { opening: boolean }) {
   const delay = (s: number) => (opening ? s : 0)
   return (
-    <div aria-hidden="true" className={cn("pointer-events-none absolute inset-0 transition-opacity duration-1000", dim ? "opacity-35" : "opacity-100")}>
+    <div aria-hidden="true" className={cn("pointer-events-none absolute inset-0 transition-opacity duration-1000", opening ? "opacity-100" : "opacity-35")}>
       <svg viewBox="-600 -600 1200 1200" preserveAspectRatio="xMidYMid slice" aria-hidden="true" className="size-full">
         {RINGS.map((r, i) => (
           <motion.circle key={r} r={r} fill="none" stroke="var(--z-border-strong)" strokeWidth="1" vectorEffect="non-scaling-stroke" initial={{ opacity: 0, scale: 0.2 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 1.3, delay: delay(1.15 + i * 0.07), ease: EXPO }} />
@@ -91,7 +91,7 @@ function DrawnMark() {
   )
 }
 
-export const MARK_ID = "zorel-mark"
+const MARK_ID = "zorel-mark"
 const OPENING_MS = 3600
 
 // The opening: the mark drawn in the middle, then the name and a line; done after OPENING_MS or at once when skipped.
@@ -131,36 +131,22 @@ export function MarkOpening({ title, line, skip, onDone }: { title: string; line
   )
 }
 
-// The mark at the top of a step (the opening's mark glides here). `pulse`: a count that, when it changes, makes the
-// mark beat once (the person typing).
-export function StepMark({ pulse = 0, children }: { pulse?: number | undefined; children: ReactNode }) {
-  return (
-    <motion.div layoutId={MARK_ID} className="size-9" transition={{ duration: 1, ease: EXPO }}>
-      <motion.div key={pulse} className="size-full" initial={{ scale: pulse ? 1.14 : 1 }} animate={{ scale: 1 }} transition={{ duration: 0.4, ease: EXPO }}>
-        {children}
-      </motion.div>
-    </motion.div>
-  )
-}
-
-
-
-// The first run's header: the mark (it glides here from the opening; `pulse` makes it beat) and where the person is
-// in the three steps. It stays put while the steps change under it; `wide` follows the step's column width.
-export function StepHeader({ wide, pulse, at, steps }: { wide: boolean; pulse: number; at: number; steps: ReadonlyArray<string> }) {
+// The first run's header: the mark (it glides here from the opening) and where the person is in the steps. It stays
+// put while the steps change under it.
+export function StepHeader({ at, steps }: { at: number; steps: ReadonlyArray<string> }) {
   return (
     // A band of its own above the step (the step scrolls under it, never behind the mark).
     <div className="relative z-10 flex shrink-0 justify-center px-6">
-      <motion.div layout transition={{ duration: 0.6, ease: EXPO }} className={cn("flex w-full items-center justify-between pt-14 pb-6", wide ? "max-w-5xl" : "max-w-xl")}>
-        <StepMark pulse={pulse}>
+      <div className="flex w-full max-w-xl items-center justify-between pt-14 pb-6">
+        <motion.div layoutId={MARK_ID} className="size-9" transition={{ duration: 1, ease: EXPO }}>
           <Logo className="size-full" />
-        </StepMark>
+        </motion.div>
         <ol aria-label={steps[at]} className="flex items-center gap-1.5">
           {steps.map((label, i) => (
             <li key={label} title={label} aria-current={i === at ? "step" : undefined} className={cn("h-1 rounded-full transition-all duration-500", i === at ? "w-6 bg-accent" : i < at ? "w-3 bg-fg/40" : "w-3 bg-control-active")} />
           ))}
         </ol>
-      </motion.div>
+      </div>
     </div>
   )
 }
@@ -184,12 +170,11 @@ export function StepTransition({ id, dir, children }: { id: string; dir: number;
 
 // A first-run step's column under the header: "back" on top (when there is one) and, across from it, "later" (skip
 // the setup), then the step.
-type StepAction = { label: string; onPress: () => void; busy?: boolean }
-// `fill`: the step takes the whole height (panes that scroll inside), instead of a column that scrolls.
-export function StepColumn({ wide, fill, back, later, children }: { wide?: boolean; fill?: boolean; back?: StepAction | undefined; later?: StepAction | undefined; children: ReactNode }) {
+export type StepAction = { label: string; onPress: () => void; busy?: boolean }
+export function StepColumn({ back, later, children }: { back?: StepAction | undefined; later?: StepAction | undefined; children: ReactNode }) {
   return (
-    <div className={cn("relative flex min-h-0 flex-1 justify-center px-6", fill ? "overflow-y-auto lg:overflow-hidden" : "overflow-y-auto")}>
-      <div className={cn("flex w-full min-w-0 flex-col gap-6 pt-1", fill ? "min-h-0 pb-8" : "pb-14", wide ? "max-w-5xl" : "max-w-xl")}>
+    <div className="relative flex min-h-0 flex-1 justify-center overflow-y-auto px-6">
+      <div className="flex w-full max-w-xl min-w-0 flex-col gap-6 pt-1 pb-14">
         {(back || later) && (
           <div className="-mx-2.5 -mb-2 flex items-center justify-between">
             {back ? (
@@ -209,23 +194,6 @@ export function StepColumn({ wide, fill, back, later, children }: { wide?: boole
         )}
         {children}
       </div>
-    </div>
-  )
-}
-
-// One AI on the first run's "Connect an AI": its icon, name and where it stands, and the one move that fits.
-export function EngineLine({ icon, name, status, ready, action, children }: { icon: ReactNode; name: string; status: ReactNode; ready: boolean; action: ReactNode; children?: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-2 px-4 py-3.5">
-      <div className="flex items-center gap-3">
-        {icon}
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span className="font-medium">{name}</span>
-          <span className={cn("truncate text-sm", ready ? "text-success" : "text-muted")}>{status}</span>
-        </div>
-        {action}
-      </div>
-      {children && <div className="flex flex-col gap-1.5 pl-9">{children}</div>}
     </div>
   )
 }

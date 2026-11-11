@@ -25,6 +25,12 @@ const FILES: ReadonlyArray<{ id: Access; key: "read" | "write" | "full" }> = [
   { id: "full", key: "full" }
 ]
 
+// What an agent's permissions reach, counted once for every summary of them (the Builder's cards and profile).
+export function summarizePowers(p: AgentPermissions) {
+  const connectors = Object.values(p.grants).filter((g) => g !== "none").length
+  return { web: p.web, browser: p.browser, connectors, count: Number(p.web) + Number(p.browser) + connectors }
+}
+
 export function PermissionsEditor({
   access,
   onAccess,

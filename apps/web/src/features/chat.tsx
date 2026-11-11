@@ -545,7 +545,7 @@ export function RenameDialog({ isOpen, onClose, title, onSave }: { isOpen: boole
 
 type Item = { at: number; message: Message } | { at: number; note: Note } | { at: number; memory: Memory }
 
-export function Timeline({ chat, state, agents, onView, onEdit, onStop, at, intro, after, hold = false }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void; onStop?: (() => void) | undefined; at?: string | undefined; intro?: ReactNode; after?: ReactNode; hold?: boolean }) {
+export function Timeline({ chat, state, agents, onView, onEdit, onStop, at, intro, after, liveStatus = true }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void; onStop?: (() => void) | undefined; at?: string | undefined; intro?: ReactNode; after?: ReactNode; liveStatus?: boolean }) {
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true) // follow new content only while the reader is at the bottom
   // What was kept from this chat shows where it happened, from the memories themselves (a reload keeps it). The
@@ -562,9 +562,7 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at, intr
     ...state.notes.filter((n) => n.kind !== "remembered").map((n) => ({ at: n.at, note: n })),
     ...kept.map((m) => ({ at: m.createdAt, memory: m }))
   ].sort((a, b) => a.at - b.at)
-  // `hold`: the turn waits on something the screen shows itself (the Builder's proposal card, `after`): the waiting
-  // step and the "waits for your OK" line would only repeat it.
-  const live = hold && state.live ? { ...state.live, steps: state.live.steps.filter((x) => x.status !== "waiting") } : state.live
+  const live = state.live
   const multi = chat.agentIds.length > 1
   // One agent (or none): the header already says who answers, so replies show no face and no name.
   const solo = !multi
@@ -631,8 +629,8 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at, intr
             <TimelineNote key={`${item.note.kind}-${item.note.at}`} note={item.note} agents={agents} />
           )
         )}
-        {live && (live.text || live.steps.length || !hold) && (
-          <LiveMessage live={live} agents={agents} receipts={state.receipts} bare={solo} onStop={state.pending <= 1 ? onStop : undefined} hold={hold} />
+        {live && (
+          <LiveMessage live={live} agents={agents} receipts={state.receipts} bare={solo} onStop={state.pending <= 1 ? onStop : undefined} status={liveStatus} />
         )}
         {/* What the screen adds after the turn (the Builder's proposal card), in the same column. */}
         {after}
@@ -1085,7 +1083,8 @@ function useHeldLabel(wanted: string, specific: boolean) {
 // does now (a light sweeps across it), or plainly that it waits for the provider before anything came back, the time
 // only after 5 s, and Stop. Questions and approvals wait above the message box (PendingTray).
 const SHOW_TIME_AFTER_MS = 5000
-function LiveMessage({ live, agents, receipts, bare, onStop, hold = false }: { live: LiveTurn; agents: ReadonlyArray<Agent>; receipts: ReadonlyArray<Receipt>; bare: boolean; onStop?: (() => void) | undefined; hold?: boolean }) {
+// `status`: the line below the reply (what it does now, the clock, Stop); off when the screen tells it another way.
+function LiveMessage({ live, agents, receipts, bare, onStop, status }: { live: LiveTurn; agents: ReadonlyArray<Agent>; receipts: ReadonlyArray<Receipt>; bare: boolean; onStop?: (() => void) | undefined; status: boolean }) {
   const now = useNow(true)
   const current = [...live.steps].reverse().find((s) => s.status === "running" || s.status === "waiting")
   const idle = !live.text && !live.steps.length
@@ -1108,7 +1107,7 @@ function LiveMessage({ live, agents, receipts, bare, onStop, hold = false }: { l
       bare={bare}
       continued={bare}
       footer={
-        hold ? undefined : (
+        status && (
         // Below everything so far: the words and steps grow above it and the status stays at the end. Stop sits beside
         // the words (a button inside a button isn't valid); it is the composer's action too.
         <div className="flex h-7 max-w-full min-w-0 items-center gap-2 text-base text-muted">

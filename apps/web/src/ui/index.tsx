@@ -75,4 +75,4 @@ export const Badge = ({ tone = "neutral", children }: { tone?: "neutral" | "acce
 )
 
 export { OrbitBackdrop } from "./orbit"
-export { EngineLine, MarkOpening, OnboardingSet, StepColumn, StepHeader, StepMark, StepTransition } from "./onboarding"
+export { MarkOpening, OnboardingSet, StepColumn, StepHeader, type StepAction, StepTransition } from "./onboarding"

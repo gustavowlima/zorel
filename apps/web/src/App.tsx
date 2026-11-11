@@ -6,7 +6,7 @@ import { isTeammate } from "@zorel/contracts"
 import { useAtomValue } from "@effect/atom-react"
 import { t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import { agentsAtom, chatsAtom, memoriesAtom, modelsAtom, mutations, pagesAtom, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading, useStatuses } from "./client.ts"
 import { AgentView } from "./features/agent.tsx"
 import { ChatView } from "./features/chat.tsx"
@@ -49,7 +49,6 @@ export function App() {
   const loading = AsyncResult.isInitial(projectsResult)
 
   const sidebar = useSidebar()
-  const [onboarding, setOnboarding] = useState(false)
   const desktop = document.documentElement.dataset.shell === "desktop" // the desktop app: a title bar runs above everything
   useNotifications(route)
   useActivity()
@@ -62,15 +61,14 @@ export function App() {
   const agentsResult = useAtomValue(agentsAtom)
   // Until the agents are known, nothing: drawing the app first would flash it before the first run takes over.
   if (AsyncResult.isInitial(agentsResult)) return <Loading desktop={desktop} />
-  // The first run stays until its last step, though the agent exists before (it holds the screen meanwhile).
   // The agent builder and the new-agent form (where the first run sends you to make the first one) open without it.
   const firstTime = AsyncResult.isSuccess(agentsResult) && !agentsResult.value.some(isTeammate)
   const makingFirst = route.view === "builder" || route.view === "new-agent"
-  if (onboarding || (firstTime && !makingFirst))
+  if (firstTime && !makingFirst)
     return (
       <div className="flex h-full flex-col bg-canvas">
         {desktop && <div className="app-drag h-12 shrink-0" />}
-        <FirstRun hold={setOnboarding} />
+        <FirstRun />
       </div>
     )
   // Making the first agent: that screen alone, no sidebar (nothing else exists yet, and any other place would fall

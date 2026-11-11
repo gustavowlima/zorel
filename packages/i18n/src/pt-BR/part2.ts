@@ -64,7 +64,8 @@ export const part2 = {
     latestUnknown: "Não deu para ver a versão mais recente agora.",
     yours: "Cópia sua (Homebrew, npm…): ela é atualizada por onde veio.",
     yoursBehind: "Cópia sua (Homebrew, npm…). A versão {latest} já saiu: atualize por onde ela veio.",
-    checkNow: "Verificar agora"
+    checkNow: "Verificar agora",
+    checkFailed: "Não deu para verificar atualizações. Tente de novo mais tarde."
   },
   providers: {
     signInAction: "Entrar",

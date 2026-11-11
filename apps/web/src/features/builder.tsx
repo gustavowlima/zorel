@@ -14,7 +14,7 @@ import { go } from "../state.ts"
 import { PendingTray, Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
-import { PermissionsEditor } from "./permissions.tsx"
+import { PermissionsEditor, summarizePowers } from "./permissions.tsx"
 import { AgentAvatar, Button, ChevronLeft, cn, Dialog, Drawer, EmptyState, Folder, HEADER, IconButton, ListRow, PageHeader, Pencil, RowHit, Rows, Section, Select, SettingRow, ShieldCheck, Sparkles, Spinner, X, Cpu } from "@/ui"
 
 const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builder.suggest.docs", "builder.suggest.team"] as const
@@ -22,6 +22,8 @@ const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builde
 // The model the Builder starts on: Claude Code's Sonnet when it is there, else the first subscription model that
 // is, else any available one. None: the Builder can't start (the screen says so and points to Providers).
 const PREFERRED = ["claude-cli/sonnet", "codex-cli/"]
+// The model named when nothing else is: a proposal without one, a first agent made with no AI found yet.
+export const FALLBACK_MODEL = PREFERRED[0]!
 export function builderModel(models: ReadonlyArray<ModelInfo>): string | undefined {
   const ready = models.filter((m) => m.available && !m.id.endsWith("…"))
   for (const p of PREFERRED) {
@@ -49,7 +51,14 @@ export function BuilderView({ projectId }: { projectId: string | null }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <BuilderHeader projectId={projectId} />
+      <PageHeader className={HEADER}>
+        <h1 className="truncate text-lg font-semibold">{t("builder.title")}</h1>
+        <span className="min-w-0 flex-1 truncate text-muted">{t("builder.subtitle")}</span>
+        <Button size="sm" variant="ghost" onPress={() => go({ view: "new-agent", projectId })}>
+          <Pencil />
+          {t("builder.manual")}
+        </Button>
+      </PageHeader>
       {chat ? (
         <Wizard chat={chat} />
       ) : error ? (
@@ -86,32 +95,6 @@ export function BuilderView({ projectId }: { projectId: string | null }) {
   )
 }
 
-function BuilderHeader({ projectId }: { projectId: string | null }) {
-  return (
-    <ScreenHeader
-      title={t("builder.title")}
-      subtitle={t("builder.subtitle")}
-      action={
-        <Button size="sm" variant="ghost" onPress={() => go({ view: "new-agent", projectId })}>
-          <Pencil />
-          {t("builder.manual")}
-        </Button>
-      }
-    />
-  )
-}
-
-// The page header (in the desktop title bar like every screen's).
-function ScreenHeader({ title, subtitle, action }: { title: string; subtitle: string; action: ReactNode }) {
-  return (
-    <PageHeader className={HEADER}>
-      <h1 className="truncate text-lg font-semibold">{title}</h1>
-      <span className="min-w-0 flex-1 truncate text-muted">{subtitle}</span>
-      {action}
-    </PageHeader>
-  )
-}
-
 // The conversation with the Builder, as any chat: its face and name before the first message, the timeline, the
 // message box. The proposal shows as a card after the Builder's turn (`card`). While a proposal is out, what you
 // write declines it with your words as the reason: the Builder's turn waits on that decision, so a plain message
@@ -133,22 +116,25 @@ function Conversation({ chat, open, card }: { chat: Chat; open: Approval | undef
       : send({ payload: { chatId: chat.id, clientId: crypto.randomUUID(), text } })
     ).then(() => undefined)
   const stop = () => void interrupt({ payload: { chatId: chat.id } })
-  // The proposal is the card below the turn: no second card for it in the tray.
+  // The proposal is the card below the turn: no second card for it in the tray, and no waiting step or "waits for
+  // your OK" line repeating it (a turn left with nothing to show then shows nothing).
   const others = state.approvals.filter((a) => a.tool !== "zorel_create_agent")
+  const steps = open ? state.live?.steps.filter((s) => s.status !== "waiting") : state.live?.steps
+  const live = state.live && steps && (state.live.text || steps.length || !open) ? { ...state.live, steps } : undefined
   const builder = agents.find((a) => a.id === chat.agentIds[0])
 
   return (
     <section aria-label={t("builder.conversation")} className="flex min-w-0 flex-1 flex-col">
       <Timeline
         chat={chat}
-        state={{ ...state, approvals: others }}
+        state={{ ...state, approvals: others, live }}
         agents={agents}
         onView={() => {}}
         onEdit={() => {}}
         onStop={stop}
         intro={<BuilderIntro builder={builder} tone={builder ? agentTone(builder, agents) : 0} onPick={(text) => void submit(text)} />}
         after={card}
-        hold={!!open}
+        liveStatus={!open}
       />
       <div className="w-full px-8 pt-2 pb-4.5">
         <div className="mx-auto flex w-full max-w-chat flex-col gap-1.5">
@@ -415,18 +401,15 @@ function ProposalPanel({
   const pop = () => onStack(stack.slice(0, -1))
   const team = drafts.length > 1
   const scope = drafts.every((d) => d.fields.scope === "project") ? t("builder.inProject") : t("builder.everywhere")
-  const one = (i: number) => {
-    const draft = drafts[i]!
-    const p = powersOf(i)
-    return { draft, p }
-  }
+  // The AI each agent runs on: the one picked here, else the proposed one, else the fallback (card and profile agree).
+  const choiceOf = (i: number): ModelChoice => models[i] ?? { model: drafts[i]!.fields.model || FALLBACK_MODEL, accountId: null, effort: null }
   const VIEWS = {
     team: () => ({
       title: t("builder.yourAgents"),
       body: (
         <ul className="flex flex-col gap-3">
           {drafts.map((d, i) => (
-            <MemberCard key={d.name} draft={d} tone={i} model={models[i]?.model ?? d.fields.model ?? ""} powers={powersOf(i)} onOpen={() => push({ at: "profile", index: i })} onPowers={() => push({ at: "powers", index: i })} />
+            <MemberCard key={d.name} draft={d} tone={i} model={choiceOf(i).model} powers={powersOf(i)} onOpen={() => push({ at: "profile", index: i })} onPowers={() => push({ at: "powers", index: i })} />
           ))}
         </ul>
       ),
@@ -442,10 +425,9 @@ function ProposalPanel({
       )
     }),
     profile: (i: number) => {
-      const { draft, p } = one(i)
       return {
         title: "", // the profile shows the name itself, large
-        body: <AgentProfile draft={draft} tone={i} choice={models[i]} onChoice={(v) => onModel(i, v)} powers={p} onPowers={() => push({ at: "powers", index: i })} />,
+        body: <AgentProfile draft={drafts[i]!} tone={i} choice={choiceOf(i)} onChoice={(v) => onModel(i, v)} powers={powersOf(i)} onPowers={() => push({ at: "powers", index: i })} />,
         footer: (
           <Button size="sm" variant="default" shape="pill" onPress={() => push({ at: "powers", index: i })}>
             {t("builder.next")}
@@ -454,7 +436,8 @@ function ProposalPanel({
       }
     },
     powers: (i: number) => {
-      const { draft, p } = one(i)
+      const draft = drafts[i]!
+      const p = powersOf(i)
       return {
         title: t("builder.powersTitle", { name: draft.name }),
         body: (
@@ -515,10 +498,9 @@ function ProposalPanel({
 
 // A team member in the panel: face, name and role, what it does (cut to two lines), and one quiet line of how it runs
 // (its AI · access · permissions) with "Edit permissions" as a soft pill. No frame: a calm surface; it opens the profile.
-const powerCount = (p: Powers) => Number(p.permissions.web) + Number(p.permissions.browser) + Object.values(p.permissions.grants).filter((g) => g !== "none").length
 function MemberCard({ draft, tone, model, powers, onOpen, onPowers }: { draft: Draft; tone: number; model: string; powers: Powers; onOpen: () => void; onPowers: () => void }) {
   const f = draft.fields
-  const runs = [model && modelName(model), t(`access.${powers.access}`), t("builder.powerCount", { count: powerCount(powers) })].filter(Boolean)
+  const runs = [model && modelName(model), t(`access.${powers.access}`), t("builder.powerCount", { count: summarizePowers(powers.permissions).count })].filter(Boolean)
   return (
     <li className="relative flex flex-col gap-3 rounded-sheet bg-surface p-4">
       <RowHit label={`${t("builder.open")}: ${draft.name}`} onPress={onOpen} className="inset-0 rounded-sheet" />
@@ -543,14 +525,12 @@ function MemberCard({ draft, tone, model, powers, onOpen, onPowers }: { draft: D
 // A proposed agent as a profile, soft: its face, name and role, what it does; why it's the one, as a quiet note; then
 // how it runs on one calm surface, each item a label over its value (the panel is narrow: no label column, no
 // divider lines). The instructions (written for the model, in English) wait behind "See instructions".
-function AgentProfile({ draft, tone, choice, onChoice, powers, onPowers }: { draft: Draft; tone: number; choice: ModelChoice | undefined; onChoice: (v: ModelChoice) => void; powers: Powers; onPowers: () => void }) {
+function AgentProfile({ draft, tone, choice, onChoice, powers, onPowers }: { draft: Draft; tone: number; choice: ModelChoice; onChoice: (v: ModelChoice) => void; powers: Powers; onPowers: () => void }) {
   const f = draft.fields
-  const reason = f.reason
   const [instructions, setInstructions] = useState(false)
   // What is set here (the permissions step may have changed them), not only what was proposed.
-  const access = powers.access
-  const named = new Set(Object.entries(powers.permissions.grants).filter(([, g]) => g !== "none").map(([id]) => id))
-  const reach = [powers.permissions.web && t("builder.web"), powers.permissions.browser && t("builder.browser"), named.size > 0 && t("builder.connectorCount", { count: named.size })].filter(Boolean)
+  const s = summarizePowers(powers.permissions)
+  const reach = [s.web && t("builder.web"), s.browser && t("builder.browser"), s.connectors > 0 && t("builder.connectorCount", { count: s.connectors })].filter(Boolean)
   return (
     <article className="flex min-w-0 flex-col gap-6">
       <div className="flex items-center gap-4">
@@ -571,19 +551,19 @@ function AgentProfile({ draft, tone, choice, onChoice, powers, onPowers }: { dra
           )}
         </div>
       )}
-      {reason && (
+      {f.reason && (
         <div className="flex flex-col gap-1.5">
           <span className="text-sm text-muted">{t("builder.why")}</span>
-          <p className="text-sm leading-relaxed text-secondary">{reason}</p>
+          <p className="text-sm leading-relaxed text-secondary">{f.reason}</p>
         </div>
       )}
       {/* How it runs, as two settings rows (what, then its control on the right), parted by a hairline: its AI, and
           its permissions in one line (what it may do on its own · what it reaches) with "Change". */}
       <Rows className="rounded-sheet border-transparent">
         <SettingRow icon={<Cpu />} title={t("builder.model")}>
-          <ModelPicker className="max-w-56 text-fg" value={choice ?? { model: f.model || "claude-cli/sonnet", accountId: null, effort: null }} onChange={onChoice} />
+          <ModelPicker className="max-w-56 text-fg" value={choice} onChange={onChoice} />
         </SettingRow>
-        <SettingRow icon={<ShieldCheck />} title={t("builder.permissions")} hint={[t(`access.${access}`), reach.length ? reach.join(", ") : t("builder.reachesNothing")].join(" · ")}>
+        <SettingRow icon={<ShieldCheck />} title={t("builder.permissions")} hint={[t(`access.${powers.access}`), reach.length ? reach.join(", ") : t("builder.reachesNothing")].join(" · ")}>
           <Button size="sm" variant="secondary" shape="pill" className="font-normal" aria-label={`${t("builder.change")}: ${t("builder.permissions")}`} onPress={onPowers}>
             {t("builder.change")}
           </Button>

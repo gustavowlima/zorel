@@ -171,6 +171,7 @@ export const mutations = {
   telegramAgent: Zorel.mutation("settings", "telegramAgent"),
   undo: Zorel.mutation("chats", "undo"),
   readLimits: Zorel.mutation("accounts", "limits"),
+  checkCli: Zorel.mutation("settings", "cliStatus"), // with fresh: the server reads the sources now
   cleanStorage: Zorel.mutation("settings", "cleanStorage"),
   stopProcess: Zorel.mutation("settings", "stopProcess"),
   closeSession: Zorel.mutation("settings", "closeSession"),

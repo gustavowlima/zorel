@@ -7,12 +7,13 @@ import type { ProviderAccount } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
-import { useEffect, useState } from "react"
+import { type ReactNode, useEffect, useState } from "react"
 import { accountsAtom, cliAtom, modelsAtom, mutations, useInvalidate, useList, useMutation } from "../client.ts"
+import { useInstall } from "./cli-version.tsx"
 import { useRoute } from "../state.ts"
 import { builderModel } from "./builder.tsx"
 import { ProvidersSection } from "./providers.tsx"
-import { ArrowRight, Button, Check, Copy, Dialog, Download, EngineLine, KeyRound, ProviderIcon, RefreshCw, Spinner, StepColumn } from "@/ui"
+import { ArrowRight, Button, Check, cn, Copy, Dialog, Download, KeyRound, ProviderIcon, RefreshCw, Spinner, StepColumn, type StepAction } from "@/ui"
 
 // The AIs found on this computer, and the one the Builder starts on.
 export function useAi() {
@@ -53,23 +54,6 @@ function ProvidersDialog({ open, onOpenChange, title }: { open: boolean; onOpenC
   )
 }
 
-// Installing a CLI from its official source: the busy state, the error, and the lists to read again after.
-function useInstall(cli: "claude" | "codex" | "antigravity", name: string) {
-  const install = useMutation(mutations.installCli)
-  const invalidate = useInvalidate()
-  const [installing, setInstalling] = useState(false)
-  const [error, setError] = useState<string>()
-  const run = () => {
-    setInstalling(true)
-    setError(undefined)
-    install({ params: { id: cli }, reactivityKeys: ["accounts", "models", "cli"] })
-      .then(() => invalidate(["accounts", "models", "cli"]))
-      .catch((e: unknown) => setError((e as { message?: string })?.message || t("providers.installFailed", { name })))
-      .finally(() => setInstalling(false))
-  }
-  return { installing, error, run }
-}
-
 const InstallButton = ({ installing, onPress }: { installing: boolean; onPress: () => void }) => (
   <Button variant="secondary" size="sm" isDisabled={installing} onPress={onPress}>
     {installing ? <Spinner className="size-3.5" /> : <Download />}
@@ -78,7 +62,7 @@ const InstallButton = ({ installing, onPress }: { installing: boolean; onPress: 
 )
 
 // ---------- the step ----------
-export function Connect({ back, later, onNext }: { back: { label: string; onPress: () => void }; later: { label: string; onPress: () => void; busy?: boolean }; onNext: () => void }) {
+export function Connect({ back, later, onNext }: { back: StepAction; later: StepAction; onNext: () => void }) {
   const ai = useAi()
   const accounts = useList(accountsAtom)
   const invalidate = useInvalidate()
@@ -207,5 +191,22 @@ function AntigravityRow() {
       )}
       {install.error && <p className="text-sm text-danger">{install.error}</p>}
     </EngineLine>
+  )
+}
+
+// One AI on the first run's "Connect an AI": its icon, name and where it stands, and the one move that fits.
+function EngineLine({ icon, name, status, ready, action, children }: { icon: ReactNode; name: string; status: ReactNode; ready: boolean; action: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3.5">
+      <div className="flex items-center gap-3">
+        {icon}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="font-medium">{name}</span>
+          <span className={cn("truncate text-sm", ready ? "text-success" : "text-muted")}>{status}</span>
+        </div>
+        {action}
+      </div>
+      {children && <div className="flex flex-col gap-1.5 pl-9">{children}</div>}
+    </div>
   )
 }

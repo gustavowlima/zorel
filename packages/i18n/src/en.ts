@@ -715,7 +715,8 @@ export const en = {
     latestUnknown: "Couldn't check the latest version right now.",
     yours: "Your own copy (Homebrew, npm…): it's updated where it came from.",
     yoursBehind: "Your own copy (Homebrew, npm…). Version {latest} is out: update it where it came from.",
-    checkNow: "Check now"
+    checkNow: "Check now",
+    checkFailed: "Couldn't check for updates. Try again later."
   },
   providers: {
     signInAction: "Sign in",

@@ -6,6 +6,13 @@ import { Checkbox, CheckboxGroup } from "react-aria-components"
 import { cn } from "@/lib/utils"
 import { Check } from "./icons.tsx"
 
+// Two looks, one body: rows (a square box first), or soft tiles in two columns (a round tick last; picking people,
+// as a team's members).
+const LOOK = {
+  rows: { group: "flex flex-col gap-1", row: "gap-2.5 rounded-control px-2.5 py-1.5 data-hovered:not-data-selected:bg-control", box: "size-4 rounded-sm" },
+  tiles: { group: "grid gap-2 sm:grid-cols-2", row: "min-w-0 gap-3 rounded-card bg-control px-3 py-2.5 data-hovered:not-data-selected:bg-control-hover", box: "order-last size-5 rounded-full" }
+} as const
+
 export function CheckList({
   label,
   value,
@@ -17,53 +24,30 @@ export function CheckList({
   label: string
   value: ReadonlyArray<string>
   onChange: (value: string[]) => void
-  options: ReadonlyArray<{ value: string; label: ReactNode; hint?: ReactNode; trailing?: ReactNode; tint?: string }>
-  // Soft tiles in two columns instead of rows (picking people: a team's members): the label over its hint, a round
-  // tick at the end, and a ticked tile in its own tint.
+  options: ReadonlyArray<{ value: string; label: ReactNode; trailing?: ReactNode; tint?: string }>
   tiles?: boolean
   className?: string
 }) {
-  if (tiles)
-    return (
-      <CheckboxGroup aria-label={label} value={[...value]} onChange={onChange} className={cn("grid gap-2 sm:grid-cols-2", className)}>
-        {options.map((o) => (
-          <Checkbox
-            key={o.value}
-            value={o.value}
-            className={cn(
-              "group flex min-w-0 cursor-default items-center gap-3 rounded-card border border-transparent bg-control px-3 py-2.5 outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:not-data-selected:bg-control-hover motion-reduce:transition-none",
-              o.tint ? `${o.tint} data-selected:tinted` : "data-selected:border-accent-line data-selected:bg-accent-faint"
-            )}
-          >
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="flex min-w-0 items-center gap-2.5 text-fg">{o.label}</span>
-              {o.hint && <span className="truncate text-sm text-muted">{o.hint}</span>}
-            </span>
-            <span
-              aria-hidden="true"
-              className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border border-strong", o.tint ? "text-(--tint) group-data-selected:border-(--tint)" : "text-accent-text group-data-selected:border-accent-line group-data-selected:bg-accent-soft")}
-            >
-              <Check className="size-3 opacity-0 transition-opacity duration-120 group-data-selected:opacity-100 motion-reduce:transition-none" />
-            </span>
-          </Checkbox>
-        ))}
-      </CheckboxGroup>
-    )
+  const look = LOOK[tiles ? "tiles" : "rows"]
   return (
-    <CheckboxGroup aria-label={label} value={[...value]} onChange={onChange} className={cn("flex flex-col gap-1", className)}>
+    <CheckboxGroup aria-label={label} value={[...value]} onChange={onChange} className={cn(look.group, className)}>
       {options.map((o) => (
         <Checkbox
           key={o.value}
           value={o.value}
-          className={cn("group flex cursor-default items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:not-data-selected:bg-control motion-reduce:transition-none", o.tint ? `${o.tint} data-selected:tinted` : "data-selected:border-accent-line data-selected:bg-accent-faint")}
+          className={cn(
+            "group flex cursor-default items-center border border-transparent outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent motion-reduce:transition-none",
+            look.row,
+            o.tint ? `${o.tint} data-selected:tinted` : "data-selected:border-accent-line data-selected:bg-accent-faint"
+          )}
         >
           <span
             aria-hidden="true"
-            className={cn("flex size-4 shrink-0 items-center justify-center rounded-sm border border-strong", o.tint ? "text-(--tint) group-data-selected:border-(--tint)" : "text-accent-text group-data-selected:border-accent-line group-data-selected:bg-accent-soft")}
+            className={cn("flex shrink-0 items-center justify-center border border-strong", look.box, o.tint ? "text-(--tint) group-data-selected:border-(--tint)" : "text-accent-text group-data-selected:border-accent-line group-data-selected:bg-accent-soft")}
           >
             <Check className="size-3 opacity-0 transition-opacity duration-120 group-data-selected:opacity-100 motion-reduce:transition-none" />
           </span>
-          <span className="flex min-w-0 flex-1 items-center gap-2 text-fg">{o.label}</span>
+          <span className="flex min-w-0 flex-1 items-center gap-2.5 text-fg">{o.label}</span>
           {o.trailing}
         </Checkbox>
       ))}
