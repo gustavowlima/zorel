@@ -50,6 +50,11 @@ mac:
   artifactName: zorel-mac-${arch}.${ext}
   icon: assets/icon.png
   category: public.app-category.developer-tools
+  # With a Developer ID: the hardened runtime (notarization requires it) and its exceptions, for the app and for
+  # every program inside it. An ad hoc build ignores both (adhoc-sign.cjs signs it without the runtime).
+  hardenedRuntime: true
+  entitlements: assets/entitlements.mac.plist
+  entitlementsInherit: assets/entitlements.mac.plist
 win:
   icon: assets/icon.png
   artifactName: zorel-windows-setup.${ext} # one name every version: zorel.dev links releases/latest/download/ to it

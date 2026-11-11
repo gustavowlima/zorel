@@ -122,6 +122,8 @@ Architecture, decisions and roadmap: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md
 
 CI (`.github/workflows/ci.yml`) runs typecheck, tests and build on every push and pull request. A `v*` tag builds the desktop app for each system and publishes a GitHub release, which installed apps update from. macOS signing and notarization turn on when `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` are set; without them the macOS build is signed ad hoc and installs with `install.sh`.
 
+Setting up macOS signing, once: create a *Developer ID Application* certificate (Xcode › Settings › Accounts › Manage Certificates), export it from Keychain Access as a `.p12` with a password, and add the five secrets to the `release` environment (Settings › Environments › release): `CSC_LINK` (the `.p12` in base64: `base64 -i cert.p12`), `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` (account.apple.com › App-specific passwords) and `APPLE_TEAM_ID`. The next tag's macOS build is then signed and notarized; if Apple refuses it, the build fails before anything is published.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks and conventions, [SECURITY.md](SECURITY.md) to report a vulnerability privately, and [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
