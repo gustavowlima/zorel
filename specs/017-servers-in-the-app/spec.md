@@ -63,14 +63,14 @@ or "needs update" when the server's version can't serve this app (or the other w
 ### User Story 3 - Add a server the easy ways (Priority: P1)
 
 "Add a server" offers: paste an invite link or address (as today), or "Install on another computer", which opens a
-chat with a helper that installs Zorel there over SSH, private by default (User Story 5): each command is shown and
-approved, secrets (the setup code, the private network's join key) go on stdin, never as arguments.
+chat with a helper that installs Zorel there over SSH (listening on loopback, User Story 5): each command is shown and
+approved, secrets (the setup code) go on stdin, never as arguments.
 
 **Acceptance Scenarios**:
 
 1. **Given** an SSH host the person can reach, **When** they choose "Install on another computer" and give the host,
-   **Then** the helper proposes each command, runs the approved ones, and ends with the server added to the picker
-   at its private address, the person signed in as its owner.
+   **Then** the helper proposes each command, runs the approved ones, shows how to reach the server, and adds it to
+   the picker once the person gives its address.
 2. **Given** a command fails, **Then** the helper says what failed and what to try, and nothing is added.
 
 ---
@@ -93,29 +93,22 @@ page shows "Runs on <host>"; the agent's computer tools (spec 009) and its shell
 
 ---
 
-### User Story 5 - A server nobody on the internet can see (Priority: P1)
+### User Story 5 - Safe by default; reaching the server is the person's choice (Priority: P1)
 
-By default a server installed from the app is reachable only on a private network the person controls, so its IP and
-ports are never exposed. Zorel listens only on the machine's loopback; the private network gives it an HTTPS name
-(a real domain, so passkeys work) that only the person's own devices can open. The machine's firewall drops
-everything from the internet; SSH also moves to the private network, but only after it is proven to work there (no
-lock-out). A public address (a reverse proxy with HTTPS, as in spec 014) stays possible, chosen on purpose, with a
-warning.
+Zorel doesn't set up networks. A server installed from the app listens only on the machine's loopback; how the
+person's devices reach it (a private network, an outbound tunnel, a reverse proxy with HTTPS) is theirs to set up,
+with short recipes in the docs that say what each exposes. The app keeps its rule: it opens a server only over HTTPS,
+or plain HTTP on this computer.
 
-**Why this priority**: A server exposed to the internet is attacked from its first minute; one that can't be reached
-can't be attacked from it.
-
-**Independent Test**: Install on a fresh machine; from outside the private network every port is closed (a port scan
-finds nothing); from this computer, the server opens at its private HTTPS name.
+**Why this priority**: Networks, firewalls and domains differ from person to person; doing them for people makes Zorel
+responsible for machines it can't see. A server that listens only on loopback exposes nothing by itself.
 
 **Acceptance Scenarios**:
 
-1. **Given** a fresh Linux machine, **When** installed with the private default, **Then** Zorel answers on
-   `https://<machine>.<network>` from the person's devices and on no public port.
-2. **Given** this computer isn't on the private network yet, **When** the install ends, **Then** the app says how to
-   join it (one link) before adding the server.
-3. **Given** SSH over the private network fails to connect, **Then** the public SSH port stays open and the helper
-   says so; it closes only after a private SSH login works.
+1. **Given** a fresh install, **When** it starts, **Then** it listens on 127.0.0.1 only; listening elsewhere needs an
+   explicit setting.
+2. **Given** the install from the app ends, **Then** the helper shows the recipes to reach it and adds the server once
+   the person gives its HTTPS address.
 
 ---
 
@@ -143,41 +136,31 @@ finds nothing); from this computer, the server opens at its private HTTPS name.
   pass secrets on stdin.
 - **FR-007**: A project MAY run its agents' commands and edits on an SSH host; the engine and its login MUST stay on
   the server that runs the chat. The host is reached over the private network when it is on one.
-- **FR-008**: A server installed from the app MUST, by default, listen only on loopback and be published only on a
-  private network (HTTPS with a real domain name), with the firewall dropping inbound internet traffic.
-- **FR-009**: The helper MUST NOT close public SSH until a login over the private network has succeeded.
-- **FR-010**: Publishing to the internet (a public proxy, a public tunnel) MUST be an explicit choice with a warning;
-  never the default.
+- **FR-008**: A server MUST listen only on loopback unless a listen address is set explicitly.
+- **FR-009**: Zorel MUST NOT change the machine's network, firewall or DNS; the docs MUST give recipes (private
+  network, outbound tunnel, reverse proxy with HTTPS) with what each exposes.
 
 ### Key Entities
 
 - **Server**: a Zorel install the app knows (origin, name, last seen, version, state).
 - **Run host**: an SSH host a project's agents work on (host, user, folder, key reference in the keychain).
-- **Private network**: a WireGuard mesh the person's devices and servers join (see Private network below).
+
 
 ## Success Criteria *(mandatory)*
 
 - **SC-001**: Switching to a known online server shows it in under a second after the first visit.
 - **SC-002**: No server state is ever shown as online when its health request failed in the last check.
-- **SC-003**: A fresh Linux machine reachable over SSH becomes a server in the picker without the person typing a
-  command themselves.
+- **SC-003**: A fresh Linux machine reachable over SSH runs Zorel without the person typing a command themselves.
 
-## Private network (research, 2026-11-11)
+## Reaching a server (research, 2026-11-11; for the docs' recipes)
 
-| Option | How it hides the machine | Trade-offs | Role in Zorel |
-|---|---|---|---|
-| Tailscale (WireGuard mesh, hosted coordination) | No inbound port needed; `tailscale serve` publishes a loopback service as `https://<machine>.<tailnet>.ts.net` only to signed-in members of the tailnet, with a certificate | The coordination server is Tailscale's (it sees which devices exist, not traffic); "Funnel" would make it public, off by default | Default: easiest, gives HTTPS + a real domain (passkeys work) |
-| Headscale (self-hosted Tailscale coordination) | Same clients and WireGuard | One binary to run somewhere public; no official UI; groups from OIDC don't reach ACLs | Option for people who won't use a hosted coordinator |
-| NetBird (self-hosted WireGuard mesh) | No inbound port for peers | Self-hosted needs ~5 services + an OIDC provider | Option, documented, not automated first |
-| Cloudflare Tunnel | Outbound-only, IP hidden | TLS ends at Cloudflare's edge (it can see the traffic), needs a public hostname | Not the default; only for a deliberately public server |
-| Public reverse proxy (spec 014) | — (the IP is public) | Exposed to the internet | Explicit choice with a warning |
-
-Install steps the helper proposes (each approved): install the mesh client; join with a one-time key on stdin; install
-Zorel bound to 127.0.0.1; `serve` it on the private HTTPS name; firewall default-deny inbound, allow the mesh
-interface; prove SSH over the mesh; only then close public SSH; add the server to the picker.
-
-Sources: Tailscale Serve vs Funnel (ScaleTail docs, SSD Nodes), Headscale/NetBird comparisons (WZ-IT, dev.to,
-infralovers), Cloudflare Tunnel vs Tailscale (flaviocopes, toolradar). Vendor pages were weighed as such.
+| Recipe | Exposes | Notes |
+|---|---|---|
+| WireGuard (self-managed) | One UDP port that answers no unauthenticated packet | Free and open; each device needs the WireGuard app; no domain → password + code sign-in (spec 014) |
+| Tailscale | No inbound port; `tailscale serve` gives a tailnet-only HTTPS name | Free plan: 6 users, non-commercial; paid for teams |
+| Headscale / NetBird | Like Tailscale, self-hosted coordination | The coordinator must be public; NetBird needs ~5 services |
+| Cloudflare Tunnel | No inbound port, IP hidden, public HTTPS name (passkeys work) | Free; needs a domain on Cloudflare; TLS ends at Cloudflare (it can read the traffic) |
+| Reverse proxy with HTTPS (spec 014) | The machine's IP, port 443 | The person keeps it patched |
 
 ## Decisions (2026-11-11, the user)
 
@@ -185,4 +168,5 @@ infralovers), Cloudflare Tunnel vs Tailscale (flaviocopes, toolradar). Vendor pa
 2. The picker sits at the top of the sidebar, with ⌘1…⌘9 and a "Back to this computer" bar.
 3. In this spec: install on another computer over SSH from a chat; a project's agents working on an SSH host.
 4. Dropped: a second Zorel on this computer.
-5. Private by default: a private network (WireGuard mesh) so the machine's IP and ports are never exposed.
+5. Networking is the person's: Zorel listens on loopback by default and documents the ways to reach it; it never
+   changes the machine's network, firewall or DNS.
