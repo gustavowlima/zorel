@@ -79,8 +79,18 @@ export const en = {
     openFull: "Open full screen",
     close: "Close the task"
   },
+  copies: {
+    title: "Agents' own copies",
+    line: "{agent} works in a copy of its own",
+    merge: "Merge into the project",
+    discard: "Discard",
+    discardTitle: "Discard {agent}'s copy?",
+    discardBody: "Its changes and its branch are deleted. This can't be undone.",
+    failed: "That didn't work. Try again."
+  },
   status: {
     running: "{agent} is working",
+    runningMany: "{agents} are working",
     waiting: "{agent} waits for your OK",
     asking: "{agent} asks you something",
     failed: "The last turn failed",
@@ -126,6 +136,7 @@ export const en = {
     openOriginal: "Open original",
     coveredBySummary: "Covered by the summary",
     handoff: "{from} handed the turn to {to}",
+    ownCopy: "{agent} works in a copy of its own (branch {branch}): another agent was editing the folder",
     handedBack: "{from} handed back to {to}",
     routed: "Sent to {to}",
     routedWhy: "Sent to {to} · {reason}",
@@ -1563,7 +1574,9 @@ export const en = {
     title: "Agents",
     atOnce: "Agents working at once",
     atOnceHint: "When more want to work, they wait in line and start as soon as one finishes. Each agent is a process on this computer and spends from your subscription.",
-    noLimit: "No limit"
+    noLimit: "No limit",
+    perChat: "Agents at once in a chat",
+    perChatHint: "Agents called together in one chat work at the same time. Set a number to have the rest wait their turn."
   },
   // Spec 013: the New routine dialog.
   newRoutine: {

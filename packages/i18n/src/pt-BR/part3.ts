@@ -126,7 +126,9 @@ export const part3 = {
     title: "Agentes",
     atOnce: "Agentes trabalhando ao mesmo tempo",
     atOnceHint: "Quando mais agentes querem trabalhar, eles esperam na fila e começam assim que um termina. Cada agente é um processo neste computador e consome sua assinatura.",
-    noLimit: "Sem limite"
+    noLimit: "Sem limite",
+    perChat: "Agentes ao mesmo tempo num chat",
+    perChatHint: "Agentes chamados juntos num chat trabalham ao mesmo tempo. Defina um número para os outros esperarem a vez."
   },
   // Spec 013: the New routine dialog.
   newRoutine: {

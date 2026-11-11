@@ -27,6 +27,7 @@ import { chatDelta, Delta, type Focus, PinItem, type Pins, RunControl, type Shel
 import { ModelPicker } from "./model-picker.tsx"
 import { AccessChip } from "./access-chip.tsx"
 import { GitControl } from "./git.tsx"
+import { AgentCopies } from "./agent-copies.tsx"
 import { AgentAvatar, ContextMenu, Drawer, Fold, HEADER, PageHeader } from "@/ui"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import { ChatProcesses } from "./processes.tsx"
@@ -47,7 +48,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
   const team = chat.agentIds.flatMap((id) => agents.find((a) => a.id === id) ?? [])
   // Its agents all archived or deleted (or a chat from before spec 015): nothing answers until someone continues it.
   const orphan = agents.length > 0 && !team.some(isTeammate)
-  const busy = state.pending > 0 || !!state.live
+  const busy = state.pending > 0 || state.lives.length > 0
 
   const sendNow = useCallback(
     (text: string, attachmentIds: ReadonlyArray<string>) =>
@@ -122,7 +123,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
   // An agent started a preview (zorel_preview): its page is the chat's active tab, so the Browser panel opens on it.
   // Once per preview: the person may close the panel afterwards.
   const shownPreviews = useRef(new Set<string>())
-  const previewDone = state.live?.steps.find((st) => st.tool === "zorel_preview" && st.status === "ok" && !shownPreviews.current.has(st.id))
+  const previewDone = state.lives.flatMap((l) => l.steps).find((st) => st.tool === "zorel_preview" && st.status === "ok" && !shownPreviews.current.has(st.id))
   useEffect(() => {
     if (!previewDone) return
     shownPreviews.current.add(previewDone.id)
@@ -187,7 +188,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
       {/* Catches clicks on this chat's task links inside the transcript (they stay links: a link's Enter is a click). */}
       <div className="flex min-w-0 flex-1 flex-col" onClickCapture={taskLink}>
       <BrowserCards.Provider value={{ open: openBrowser }}>
-        <Timeline chat={chat} state={state} agents={agents} onView={view} onEdit={setRewind} onStop={() => void interrupt({ payload: { chatId: chat.id } })} at={at} />
+        <Timeline chat={chat} state={state} agents={agents} onView={view} onEdit={setRewind} onStop={(turnId) => void interrupt({ payload: { chatId: chat.id, ...(turnId && { turnId }) } })} at={at} />
       </BrowserCards.Provider>
       <RewindDialog
         chatId={chat.id}
@@ -202,6 +203,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
       <div className="w-full px-8 pt-2 pb-4.5">
         <div className="mx-auto w-full max-w-chat">
         <PendingTray approvals={state.approvals} />
+        <AgentCopies chat={chat} agents={agents} />
         {chat.resumeAt && (
           // Every route hit its usage limit: the chat goes on by itself at the reset (or you cancel, or write).
           <div role="status" className="mb-2 flex items-center gap-3 rounded-card border border-subtle px-3.5 py-2 text-sm">
@@ -234,7 +236,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
           busy={busy}
           ahead={state.pending}
           // Claude and Codex take a message into the reply in progress (not with attachments); any other engine stops it.
-          joinsTurn={(item) => !item.attachmentIds.length && ["claude-cli", "codex-cli"].includes(splitModel(state.live?.model ?? chat.model).provider)}
+          joinsTurn={(item) => !item.attachmentIds.length && ["claude-cli", "codex-cli"].includes(splitModel(state.lives[0]?.model ?? chat.model).provider)}
           onSendNow={(item) => {
             queue.remove(item.id)
             // If the server refuses it, it goes back to the queue instead of vanishing.
@@ -545,7 +547,7 @@ export function RenameDialog({ isOpen, onClose, title, onSave }: { isOpen: boole
 
 type Item = { at: number; message: Message } | { at: number; note: Note } | { at: number; memory: Memory }
 
-export function Timeline({ chat, state, agents, onView, onEdit, onStop, at, intro, after, liveStatus = true }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void; onStop?: (() => void) | undefined; at?: string | undefined; intro?: ReactNode; after?: ReactNode; liveStatus?: boolean }) {
+export function Timeline({ chat, state, agents, onView, onEdit, onStop, at, intro, after, liveStatus = true }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void; onStop?: ((turnId?: string) => void) | undefined; at?: string | undefined; intro?: ReactNode; after?: ReactNode; liveStatus?: boolean }) {
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true) // follow new content only while the reader is at the bottom
   // What was kept from this chat shows where it happened, from the memories themselves (a reload keeps it). The
@@ -562,7 +564,7 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at, intr
     ...state.notes.filter((n) => n.kind !== "remembered").map((n) => ({ at: n.at, note: n })),
     ...kept.map((m) => ({ at: m.createdAt, memory: m }))
   ].sort((a, b) => a.at - b.at)
-  const live = state.live
+  const lives = state.lives
   const multi = chat.agentIds.length > 1
   // One agent (or none): the header already says who answers, so replies show no face and no name.
   const solo = !multi
@@ -571,7 +573,7 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at, intr
   useLayoutEffect(() => {
     const el = scroller.current
     if (el && pinned.current) el.scrollTop = el.scrollHeight
-  }, [items.length, state.live?.text, state.live?.steps.length, state.approvals.length])
+  }, [items.length, lives.map((l) => l.text.length + l.steps.length).join(), state.approvals.length])
   // Opened on one reply (an agent's session in its Work tab): that reply in view, marked for a moment.
   const [marked, setMarked] = useState<string>()
   const ready = state.ready
@@ -603,7 +605,7 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at, intr
       <div className="px-8 pt-6 pb-8">
       <div className="mx-auto flex w-full max-w-chat flex-col gap-7">
         {chat.summary && <Summary text={chat.summary} />}
-        {state.ready && items.length === 0 && !state.live && (intro ?? <EmptyState icon={<MessageCircle />} title={t("chat.empty")} hint={t("chat.emptyHint")} />)}
+        {state.ready && items.length === 0 && !lives.length && (intro ?? <EmptyState icon={<MessageCircle />} title={t("chat.empty")} hint={t("chat.emptyHint")} />)}
         {!state.ready && (
           <div className="flex justify-center py-16 text-muted">
             <Spinner />
@@ -618,9 +620,9 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at, intr
               title={item.message.at <= chat.summaryUntil ? t("chat.coveredBySummary") : undefined}
             >
               {item.message.role === "user" ? (
-                <UserMessage message={item.message} onEdit={state.live ? undefined : () => onEdit(item.message)} />
+                <UserMessage message={item.message} onEdit={lives.length ? undefined : () => onEdit(item.message)} />
               ) : (
-                <AgentMessage message={item.message} agents={agents} onView={onView} continued={solo || continues(items[i - 1], item.message)} bare={solo} last={i === items.length - 1 && !state.live && state.pending === 0} />
+                <AgentMessage message={item.message} agents={agents} onView={onView} continued={solo || continues(items[i - 1], item.message)} bare={solo} last={i === items.length - 1 && !lives.length && state.pending === 0} />
               )}
             </div>
           ) : "memory" in item ? (
@@ -629,9 +631,11 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at, intr
             <TimelineNote key={`${item.note.kind}-${item.note.at}`} note={item.note} agents={agents} />
           )
         )}
-        {live && (
-          <LiveMessage live={live} agents={agents} receipts={state.receipts} bare={solo} onStop={state.pending <= 1 ? onStop : undefined} status={liveStatus} />
-        )}
+        {/* Every reply being written now (several agents may work at once, spec 016), each with its own Stop when there
+            is more than one (or nothing waits behind it). */}
+        {lives.map((l) => (
+          <LiveMessage key={l.turnId} live={l} agents={agents} receipts={state.receipts} bare={solo && lives.length === 1} onStop={onStop && (lives.length > 1 || state.pending <= 1) ? () => onStop(lives.length > 1 ? l.turnId : undefined) : undefined} status={liveStatus} />
+        ))}
         {/* What the screen adds after the turn (the Builder's proposal card), in the same column. */}
         {after}
         {multi && state.ready && items.length === 0 && <p className="text-center text-sm text-dim">{t("team.mentionHint")}</p>}
@@ -1394,6 +1398,7 @@ function TimelineNote({ note, agents }: { note: Note; agents: ReadonlyArray<Agen
   const accounts = useList(accountsAtom)
   if (note.kind === "failover") return <Separator>{switchText(note.switch, accounts)}</Separator>
   if (note.kind === "remembered") return null // shown from the memories themselves (MemoryChip)
+  if (note.kind === "worktree") return <Separator>{t("chat.ownCopy", { agent: agentName(note.agentId, agents), branch: note.branch })}</Separator>
   const to = note.to.map((id) => agentName(id, agents)).join(", ")
   const from = agentName(note.from, agents)
   if (note.via === "limit") return <Separator>{t("chat.chainStopped")}</Separator>

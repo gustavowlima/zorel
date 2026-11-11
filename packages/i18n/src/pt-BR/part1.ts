@@ -78,8 +78,18 @@ export const part1 = {
     openFull: "Abrir em tela cheia",
     close: "Fechar a tarefa"
   },
+  copies: {
+    title: "Cópias próprias dos agentes",
+    line: "{agent} trabalha numa cópia própria",
+    merge: "Juntar ao projeto",
+    discard: "Descartar",
+    discardTitle: "Descartar a cópia de {agent}?",
+    discardBody: "As mudanças e a branch dela são apagadas. Não dá para desfazer.",
+    failed: "Não deu certo. Tente de novo."
+  },
   status: {
     running: "{agent} está trabalhando",
+    runningMany: "{agents} estão trabalhando",
     waiting: "{agent} aguarda seu OK",
     asking: "{agent} tem uma pergunta",
     failed: "O último turno falhou",
@@ -125,6 +135,7 @@ export const part1 = {
     openOriginal: "Abrir original",
     coveredBySummary: "Incluído no resumo",
     handoff: "{from} passou a vez para {to}",
+    ownCopy: "{agent} trabalha numa cópia própria (branch {branch}): outro agente estava editando a pasta",
     handedBack: "{from} devolveu a vez para {to}",
     routed: "Enviado para {to}",
     routedWhy: "Enviado para {to} · {reason}",

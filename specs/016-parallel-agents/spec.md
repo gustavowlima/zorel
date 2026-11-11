@@ -1,6 +1,6 @@
 # Feature Specification: Agents Answer Together
 
-**Feature Branch**: `feat/agents-only-tools` | **Created**: 2026-11-11 | **Status**: Draft
+**Feature Branch**: `feat/agents-only-tools` | **Created**: 2026-11-11 | **Status**: Implemented (2026-11-11)
 
 **Input**: "vários agentes em paralelo no mesmo chat" (2026-11-11). When a message calls several agents, they should
 work at the same time instead of one after the other.
@@ -129,3 +129,18 @@ together. A turn over a limit waits in line, as a chat does today.
 1. Writers in the same folder: separate git worktrees (the person merges).
 2. A new message during a batch: only its recipients are affected.
 3. Agents at once in a chat: no limit by default, a setting caps it.
+
+## Implementation notes (2026-11-11)
+
+- runtime.ts worker: starts every startable queued turn (store.queuedTurns: a person's messages first, oldest first),
+  one per agent, within maxPerChat and maxRunning (turns at work, `atWork()`); a supervisor fiber per turn chains its
+  hand-offs and wakes the worker (`signal`). Routed turns are routed before the one-per-agent check.
+- `running`, `steering` are per turn / per agent; `interrupt(chatId, turnId?)`; send-now touches only recipients.
+- Chat status: per-agent entries (`working`), published with `agentIds` when two or more are at work.
+- `placed()`: a Workspace/Full turn whose folder another running turn of the chat is editing gets
+  `chats.agent_worktrees[agentId] = { path: dataDir/worktrees/<project>/<chat>-<handle>, branch: zorel/<chat8>-<handle> }`
+  (from the folder's HEAD: uncommitted work in the folder isn't in the copy); no git → waits. Event `worktree`.
+- Merge: POST /api/chats/:id/agents/:agentId/worktree/merge (commit leftovers on the branch, `merge --no-ff`, abort on
+  conflict, then remove worktree + branch). Discard: DELETE …/worktree. Audit git.merged / git.discarded.
+- Web: ChatState.lives (several LiveMessages, each with Stop when more than one), status "Ana and Rex are working",
+  note "works in a copy of its own", AgentCopies card above the composer, Settings › Agents "Agents at once in a chat".

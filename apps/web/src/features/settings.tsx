@@ -191,11 +191,14 @@ function AboutSetting() {
   )
 }
 
-// How many chats may have an agent working at once (the server's limit): over it a chat waits for a free slot. Each
+// How many agents may work at once, across chats (the server's limit): over it an agent waits for a free place. Each
 // agent is a CLI process and spends from the subscription, so a few at a time keeps the limits and the computer in check.
+// And how many of one chat's agents may work together (spec 016): no limit by default.
+const PER_CHAT_CHOICES = [0, 1, 2, 3, 4, 6, 8] as const
 function AgentsSetting() {
   const prefs = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)
   const set = useMutation(mutations.maxRunning)
+  const setPerChat = useMutation(mutations.maxPerChat)
   return (
     <Section title={t("agentsLimit.title")}>
       <Rows>
@@ -207,6 +210,16 @@ function AgentsSetting() {
             value={String(prefs?.maxRunning ?? MAX_RUNNING_DEFAULT)}
             onChange={(v) => void set({ payload: { value: Number(v) }, reactivityKeys: ["preferences"] })}
             options={MAX_RUNNING_CHOICES.map((n) => ({ value: String(n), label: n === 0 ? t("agentsLimit.noLimit") : String(n) }))}
+          />
+        </SettingRow>
+        <SettingRow title={t("agentsLimit.perChat")} hint={t("agentsLimit.perChatHint")}>
+          <Select
+            size="sm"
+            className="w-36"
+            aria-label={t("agentsLimit.perChat")}
+            value={String(prefs?.maxPerChat ?? 0)}
+            onChange={(v) => void setPerChat({ payload: { value: Number(v) }, reactivityKeys: ["preferences"] })}
+            options={PER_CHAT_CHOICES.map((n) => ({ value: String(n), label: n === 0 ? t("agentsLimit.noLimit") : String(n) }))}
           />
         </SettingRow>
       </Rows>

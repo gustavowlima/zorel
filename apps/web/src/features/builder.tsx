@@ -109,7 +109,7 @@ function Conversation({ chat, open, card }: { chat: Chat; open: Approval | undef
   const updateChat = useMutation(mutations.updateChat)
   const [model, setModel] = useState({ model: chat.model, accountId: chat.accountId, effort: chat.effort })
   // While a proposal is out the turn waits on you, not the other way round: no Stop, just send (a change).
-  const busy = !open && (state.pending > 0 || !!state.live)
+  const busy = !open && (state.pending > 0 || state.lives.length > 0)
   const submit = (text: string) =>
     (open
       ? decide({ payload: { approvalId: open.id, outcome: "denied", reason: text }, reactivityKeys: ["approvals"] })
@@ -119,15 +119,14 @@ function Conversation({ chat, open, card }: { chat: Chat; open: Approval | undef
   // The proposal is the card below the turn: no second card for it in the tray, and no waiting step or "waits for
   // your OK" line repeating it (a turn left with nothing to show then shows nothing).
   const others = state.approvals.filter((a) => a.tool !== "zorel_create_agent")
-  const steps = open ? state.live?.steps.filter((s) => s.status !== "waiting") : state.live?.steps
-  const live = state.live && steps && (state.live.text || steps.length || !open) ? { ...state.live, steps } : undefined
+  const lives = open ? state.lives.map((l) => ({ ...l, steps: l.steps.filter((s) => s.status !== "waiting") })).filter((l) => l.text || l.steps.length) : state.lives
   const builder = agents.find((a) => a.id === chat.agentIds[0])
 
   return (
     <section aria-label={t("builder.conversation")} className="flex min-w-0 flex-1 flex-col">
       <Timeline
         chat={chat}
-        state={{ ...state, approvals: others, live }}
+        state={{ ...state, approvals: others, lives }}
         agents={agents}
         onView={() => {}}
         onEdit={() => {}}

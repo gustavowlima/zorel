@@ -74,6 +74,9 @@ export const agentName = (id: string | null, agents: ReadonlyArray<Agent>) => ag
 
 export function statusLabel(status: ChatStatus, agents: ReadonlyArray<Agent>): string {
   const agent = agentName(status.agentId, agents)
+  // Several at work at once (spec 016): "Ana and Rex are working".
+  if (status.state === "running" && (status.agentIds?.length ?? 0) > 1)
+    return t("status.runningMany", { agents: new Intl.ListFormat(undefined, { type: "conjunction" }).format(status.agentIds!.map((id) => agentName(id, agents))) })
   if (status.state === "running") return t("status.running", { agent })
   if (status.state === "waiting") return status.label === "question" ? t("status.asking", { agent }) : t("status.waiting", { agent }) // "question": the server's mark for zorel_ask_user
   if (status.state === "failed") return t("status.failed")

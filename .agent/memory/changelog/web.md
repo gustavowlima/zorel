@@ -125,3 +125,4 @@
 2026-11-11 | skills: single pane, open skill replaces the list | user request
 2026-11-11 | 'Precisa de você' renamed 'Pendências' | user request
 2026-11-11 | Builder reads proposals as data; proposal titles localized | review + translation pending item
+2026-11-11 | spec 016 UI: several live replies, own-copy card, per-chat limit | user request

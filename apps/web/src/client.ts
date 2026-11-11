@@ -143,6 +143,9 @@ export const mutations = {
   gitBranch: Zorel.mutation("chats", "gitBranch"),
   enterWorktree: Zorel.mutation("chats", "enterWorktree"),
   leaveWorktree: Zorel.mutation("chats", "leaveWorktree"),
+  mergeAgentWorktree: Zorel.mutation("chats", "mergeAgentWorktree"),
+  maxPerChat: Zorel.mutation("settings", "maxPerChat"),
+  discardAgentWorktree: Zorel.mutation("chats", "discardAgentWorktree"),
   consolidate: Zorel.mutation("chats", "consolidate"),
   createMemory: Zorel.mutation("memories", "create"),
   updateMemory: Zorel.mutation("memories", "update"),
@@ -265,6 +268,8 @@ export type Note =
   | { readonly at: number; readonly kind: "remembered"; readonly memories: ReadonlyArray<{ readonly id: string; readonly scope: string; readonly text: string }> }
   // A failover move in the running turn; once the reply is saved, the message carries it instead.
   | { readonly at: number; readonly kind: "failover"; readonly turnId: string; readonly switch: Switch }
+  // An agent moved to a worktree of its own (spec 016): another agent was editing the folder.
+  | { readonly at: number; readonly kind: "worktree"; readonly agentId: string; readonly branch: string }
 export interface Receipt {
   readonly approval: Approval
   readonly outcome: ApprovalOutcome
@@ -274,38 +279,43 @@ export interface ChatState {
   readonly ready: boolean
   readonly messages: ReadonlyArray<Message>
   readonly pending: number // turns queued or running
-  readonly live: LiveTurn | undefined
+  readonly lives: ReadonlyArray<LiveTurn> // the replies being written now, in the order they started (spec 016: several)
   readonly approvals: ReadonlyArray<Approval>
   readonly receipts: ReadonlyArray<Receipt>
   readonly notes: ReadonlyArray<Note>
   readonly status: ChatStatus | null
 }
 
-const emptyChat: ChatState = { ready: false, messages: [], pending: 0, live: undefined, approvals: [], receipts: [], notes: [], status: null }
+const emptyChat: ChatState = { ready: false, messages: [], pending: 0, lives: [], approvals: [], receipts: [], notes: [], status: null }
 
-const withStep = (live: LiveTurn | undefined, step: WorkStep): LiveTurn | undefined =>
-  live?.turnId === step.turnId
-    ? { ...live, steps: [...live.steps.filter((s) => s.id !== step.id), step], stepAt: step.id in live.stepAt ? live.stepAt : { ...live.stepAt, [step.id]: live.text.length } }
-    : live
+// One live reply changed (by its turn); the others stay as they are.
+const onLive = (s: ChatState, turnId: string, f: (live: LiveTurn) => LiveTurn): ChatState =>
+  s.lives.some((l) => l.turnId === turnId) ? { ...s, lives: s.lives.map((l) => (l.turnId === turnId ? f(l) : l)) } : s
+const withStep = (live: LiveTurn, step: WorkStep): LiveTurn => ({
+  ...live,
+  steps: [...live.steps.filter((s) => s.id !== step.id), step],
+  stepAt: step.id in live.stepAt ? live.stepAt : { ...live.stepAt, [step.id]: live.text.length }
+})
 
 function reduceChat(s: ChatState, e: ChatEvent): ChatState {
   switch (e._tag) {
     case "snapshot": {
       const snap = e.snapshot
-      const running = snap.turns.find((x) => x.state === "running")
       return {
         ready: true,
         messages: snap.messages,
         pending: snap.turns.length,
-        live: running && {
-          turnId: running.id,
-          agentId: running.agentId,
-          model: running.model,
-          text: snap.partial.find((p) => p.turnId === running.id)?.text ?? "",
-          steps: snap.steps.filter((x) => x.turnId === running.id),
-          stepAt: {},
-          startedAt: running.startedAt ?? Date.now()
-        },
+        lives: snap.turns
+          .filter((x) => x.state === "running")
+          .map((running) => ({
+            turnId: running.id,
+            agentId: running.agentId,
+            model: running.model,
+            text: snap.partial.find((p) => p.turnId === running.id)?.text ?? "",
+            steps: snap.steps.filter((x) => x.turnId === running.id),
+            stepAt: {},
+            startedAt: running.startedAt ?? Date.now()
+          })),
         approvals: snap.approvals,
         receipts: [],
         notes: [],
@@ -317,12 +327,12 @@ function reduceChat(s: ChatState, e: ChatEvent): ChatState {
     case "queued":
       return { ...s, pending: s.pending + 1 }
     case "turn-started":
-      return { ...s, live: { turnId: e.turn.id, agentId: e.turn.agentId, model: e.turn.model, text: "", steps: [], stepAt: {}, startedAt: e.turn.startedAt ?? Date.now() } }
+      return { ...s, lives: [...s.lives.filter((l) => l.turnId !== e.turn.id), { turnId: e.turn.id, agentId: e.turn.agentId, model: e.turn.model, text: "", steps: [], stepAt: {}, startedAt: e.turn.startedAt ?? Date.now() }] }
     case "text":
-      return s.live?.turnId === e.turnId ? { ...s, live: { ...s.live, text: s.live.text + e.delta } } : s
+      return onLive(s, e.turnId, (l) => ({ ...l, text: l.text + e.delta }))
     case "step-started":
     case "step-finished":
-      return { ...s, live: withStep(s.live, e.step) }
+      return onLive(s, e.step.turnId, (l) => withStep(l, e.step))
     case "approval":
       return { ...s, approvals: [...s.approvals.filter((a) => a.id !== e.approval.id), e.approval] }
     case "approval-resolved": {
@@ -335,18 +345,16 @@ function reduceChat(s: ChatState, e: ChatEvent): ChatState {
       return { ...s, notes: [...s.notes, { at: Date.now(), kind: "remembered", memories: e.memories }] }
     case "failover":
       // The turn starts over on the next route: drop what the failed one wrote.
-      return {
-        ...s,
-        live: s.live?.turnId === e.turnId ? { ...s.live, model: e.switch.toModel, text: "", steps: [] } : s.live,
-        notes: [...s.notes, { at: Date.now(), kind: "failover", turnId: e.turnId, switch: e.switch }]
-      }
+      return { ...onLive(s, e.turnId, (l) => ({ ...l, model: e.switch.toModel, text: "", steps: [] })), notes: [...s.notes, { at: Date.now(), kind: "failover", turnId: e.turnId, switch: e.switch }] }
+    case "worktree":
+      return { ...s, notes: [...s.notes, { at: Date.now(), kind: "worktree", agentId: e.agentId, branch: e.worktree.branch }] }
     case "turn-completed":
     case "turn-failed":
     case "interrupted": {
       const message = e.message
       const messages = message && !s.messages.some((m) => m.id === message.id) ? [...s.messages, message] : s.messages
       const notes = s.notes.filter((n) => n.kind !== "failover" || n.turnId !== e.turn.id) // now on the message
-      return { ...s, messages, notes, pending: Math.max(0, s.pending - 1), live: s.live?.turnId === e.turn.id ? undefined : s.live, receipts: [] }
+      return { ...s, messages, notes, pending: Math.max(0, s.pending - 1), lives: s.lives.filter((l) => l.turnId !== e.turn.id), receipts: [] }
     }
     case "status":
       return { ...s, status: e.status, pending: e.status.state === "idle" ? 0 : s.pending }
