@@ -24,15 +24,21 @@ A misconfigured server refuses to start and says why. It never starts open.
 
 ## Run it
 
+Each release publishes the image (amd64 and arm64) to `ghcr.io/gustavowlima/zorel`, tagged with its version and
+`latest`:
+
 ```sh
-docker build -t zorel .
-docker run -d --name zorel -p 127.0.0.1:4317:4317 \
+docker pull ghcr.io/gustavowlima/zorel:latest
+docker run -d --name zorel --restart unless-stopped -p 127.0.0.1:4317:4317 \
   -v zorel-data:/data \
   -e ZOREL_PUBLIC_URL=https://zorel.example.com \
   -e ZOREL_TRUSTED_PROXIES=172.17.0.1 \
-  zorel
+  ghcr.io/gustavowlima/zorel:latest
 docker logs zorel   # the one-time setup link (valid 1 hour)
 ```
+
+Or build it from the code: `docker build -t ghcr.io/gustavowlima/zorel:latest .` in a checkout, then the same
+`docker run`.
 
 Open the setup link, create the first owner, then add a passkey (or an authenticator code). After that the link
 stops working. If it expired, restart the container for a new one (only while there's no owner).
@@ -103,7 +109,7 @@ Then `ZOREL_PUBLIC_URL=https://<your hostname>`. Consider a Cloudflare Access po
 **Install it from the app**: **Settings › General › Servers › Install on another computer** opens a chat with Zorel's
 Installer. Give it the computer's SSH address (`user@host`) and the HTTPS address you'll use; add the key it shows
 to `~/.ssh/authorized_keys` there; compare the computer's key when asked. It then checks the machine, gets the code,
-builds and runs the container on `127.0.0.1:4317` only, one command at a time, each shown for your OK, and ends with
+pulls the image (or builds it when it can't) and runs it on `127.0.0.1:4317` only, one command at a time, each shown for your OK, and ends with
 the setup link. Linux with Docker and git; on a team server only admins can use it.
 
 **Switch between them**: with a server added, the app's name at the top of the sidebar becomes where you are; press it
@@ -141,4 +147,10 @@ To restore, put the folder back in place (same `vault.key`) and start the server
 
 ## Updating
 
-Build the new image and run it on the same volume. Database changes apply at start.
+Pull the new image and run it again on the same volume; database changes apply at start:
+
+```sh
+docker pull ghcr.io/gustavowlima/zorel:latest
+docker rm -f zorel   # the data stays in the zorel-data volume
+# then the same docker run as above
+```

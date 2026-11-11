@@ -140,3 +140,4 @@
 2026-11-11 | spec 016: agents called together run at once; per-agent worktrees for a second writer | user request
 2026-11-11 | spec 017 P2: approved SSH commands for the Installer | user request
 2026-11-11 | spec 017 P3: Installer agent and docs recipes | user request
+2026-11-11 | CI publishes the server image to GHCR; the Installer pulls it | spec 017 follow-up
