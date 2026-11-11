@@ -5,20 +5,24 @@ import type { Agent } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { useState } from "react"
 import { agentsAtom, useList } from "../client.ts"
-import { agentTone } from "../labels.ts"
+import { agentTint, agentTone } from "../labels.ts"
 import { SEARCH_FROM, teamOf, usedByView } from "./skill-agents.ts"
 import { AgentAvatar, Badge, CheckList, SearchInput, Segmented } from "@/ui"
 
 export function UsedByBadge({ ids }: { ids: ReadonlyArray<string> | undefined }) {
-  const team = teamOf(useList(agentsAtom))
+  const agents = useList(agentsAtom)
+  const team = teamOf(agents)
   const v = usedByView(ids, team)
   if (v.kind === "all") return <Badge>{t("usedBy.all")}</Badge>
   if (v.kind === "none") return <Badge tone="danger">{t("usedBy.none")}</Badge>
-  const text = v.names.length === 1 ? t("usedBy.only", { name: v.names[0] ?? "" }) : t("usedBy.some", { name: v.names[0] ?? "", count: v.names.length - 1 })
+  // One agent: the chip wears its color; several stay neutral.
+  const one = v.names.length === 1 ? team.find((a) => ids?.includes(a.id)) : undefined
+  if (one) return <span className={`tinted ${agentTint(one, agents)} inline-flex h-5 shrink-0 items-center rounded-full border px-2 text-xs font-medium`}>{t("usedBy.only", { name: one.name })}</span>
+  const text = t("usedBy.some", { name: v.names[0] ?? "", count: v.names.length - 1 })
   // The full list on hover; the badge's own text already says the essential.
   return (
     <span title={v.names.join(", ")} className="inline-flex">
-      <Badge tone="accent">{text}</Badge>
+      <Badge>{text}</Badge>
     </span>
   )
 }
@@ -74,6 +78,7 @@ export function UsedBy({ state }: { state: ReturnType<typeof useUsedBy> }) {
             onChange={setIds}
             options={shown.map((r) => ({
               value: r.id,
+              ...(r.agent && { tint: agentTint(r.agent, agents) }),
               label: r.agent ? (
                 <>
                   <AgentAvatar id={r.agent.id} name={r.agent.name} tone={agentTone(r.agent, agents)} size={20} />

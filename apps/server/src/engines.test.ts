@@ -52,7 +52,7 @@ test("context: the memory budget favors the recent ones; layers in stable → vo
   expect(pinned([mem("stale", 1), mem("fresh", 2), mem("x".repeat(50), 3)], 59).map((m) => m.id)).toEqual(["x".repeat(50)])
   const dev = agentOf("a", "Dev", "INSTR")
   const turn = buildTurn({
-    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, effort: null, access: null, model: "anthropic/m", summary: "SUMMARYTEXT", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
+    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", parentId: null, accountId: null, effort: null, access: null, model: "anthropic/m", summary: "SUMMARYTEXT", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
     model: "anthropic/m",
     project: { id: "p", name: "P", brief: "BRIEF", path: null, agentIds: [], teamIds: [], createdAt: 0 },
     agent: dev,
@@ -428,7 +428,7 @@ test("sessionless engines: two turns that recall different memories send the sam
   const dev = agentOf("a", "Dev", "INSTR")
   const turnWith = (found: string) =>
     sessionless(buildTurn({
-      chat: { id: "c", projectId: "p", agentIds: ["a"], title: "", accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "SUMMARYTEXT", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
+      chat: { id: "c", projectId: "p", agentIds: ["a"], title: "", parentId: null, accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "SUMMARYTEXT", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
       model: "claude-cli/sonnet",
       project: { id: "p", name: "P", brief: "BRIEF", path: null, agentIds: [], teamIds: [], createdAt: 0 },
       agent: dev,
@@ -475,7 +475,7 @@ test("recalled content is marked as data and can't close the <context> block", (
   const dev = agentOf("a", "Dev", "INSTR")
   const turnWith = (retrieved: Memory[], excerpts: Array<{ chatTitle: string; author: string; at: number; text: string }> = []) =>
     buildTurn({
-      chat: { id: "c", projectId: "p", agentIds: ["a"], title: "", accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
+      chat: { id: "c", projectId: "p", agentIds: ["a"], title: "", parentId: null, accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
       model: "claude-cli/sonnet",
       project: { id: "p", name: "P", brief: "", path: null, agentIds: [], teamIds: [], createdAt: 0 },
       agent: dev,
@@ -549,7 +549,7 @@ test("the outside-text rule is in the instructions only when the turn has tools"
   const dev = agentOf("a", "Dev", "INSTR")
   const turnWith = (tools: boolean) =>
     buildTurn({
-      chat: { id: "c", projectId: null, agentIds: ["a"], title: "", accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
+      chat: { id: "c", projectId: null, agentIds: ["a"], title: "", parentId: null, accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
       model: "claude-cli/sonnet",
       project: undefined,
       agent: dev,

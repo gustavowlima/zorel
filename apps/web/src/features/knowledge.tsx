@@ -9,7 +9,7 @@ import { agentsAtom, chatsAtom, memoriesAtom, memoryVersionsAtom, mutations, pro
 import { agentTone, chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { UsedBy, UsedByBadge, useUsedBy } from "./used-by.tsx"
-import { AgentAvatar, Button, column, cx, Field, Folder, Input, LineDiff, Pin, PinOff, Rows, Select, Textarea, Tooltip, Undo2, User } from "@/ui"
+import { AgentAvatar, Button, column, cn, Field, Folder, Input, LineDiff, Pin, PinOff, Rows, Select, Textarea, Tooltip, Undo2, User } from "@/ui"
 
 // Where a memory lives now: a skill in Skills, a fact in Memory.
 export const openMemory = (m: Pick<Memory, "id" | "kind">) => go(m.kind === "skill" ? { view: "skills", id: m.id } : { view: "memory" })
@@ -40,7 +40,7 @@ export function Reader({ memory: m }: { memory: Memory }) {
   const patch = (payload: { state?: Memory["state"]; title?: string; text?: string; essential?: boolean; agents?: string[] }) => update({ params: { id: m.id }, payload, reactivityKeys: ["memories"] })
 
   return (
-    <article className={cx(column(), "gap-5")}>
+    <article className={cn(column(), "gap-5")}>
       <div className="flex flex-col gap-1.5">
         <span className="text-xs font-semibold tracking-wide text-accent-text uppercase">{skill ? t("knowledge.skill") : t("knowledge.fact")}</span>
         {skill && !editing && <h2 className="text-lg font-semibold">{m.title}</h2>}
@@ -122,7 +122,7 @@ export function Reader({ memory: m }: { memory: Memory }) {
           <LineDiff before={target.text} after={m.text} />
         </div>
       ) : (
-        <p className={cx("whitespace-pre-wrap leading-relaxed", skill ? "text-secondary" : "text-lg")}>{m.text}</p>
+        <p className={cn("whitespace-pre-wrap leading-relaxed", skill ? "text-secondary" : "text-lg")}>{m.text}</p>
       )}
       {!editing && (
         <div className="flex flex-wrap gap-2">
@@ -199,7 +199,7 @@ export function NewMemory({ kind, onKind, onDone }: { kind: Memory["kind"]; onKi
   const skill = kind === "skill"
   return (
     <form
-      className={cx(column(), "gap-4")}
+      className={cn(column(), "gap-4")}
       onSubmit={(e) => {
         e.preventDefault()
         void create({ payload: { scope, kind, title: skill ? title.trim() : "", text: text.trim() }, reactivityKeys: ["memories"] }).then((m) => onDone(m.id))

@@ -9,7 +9,7 @@ import { ACCOUNT_OF_MODEL, modelName, modelNote, providerLabel, splitModel } fro
 import { go } from "../state.ts"
 import { LimitWindows } from "./limits.tsx"
 import { providerPageOf } from "./providers.tsx"
-import { Button, cx, FieldButton, IconButton, Input, OptionButton, Popover, ProviderIcon, RailButton, SearchInput, Settings, StepSlider } from "@/ui"
+import { Button, cn, FieldButton, IconButton, Input, OptionButton, Popover, ProviderIcon, RailButton, SearchInput, Settings, StepSlider } from "@/ui"
 
 export interface ModelChoice {
   readonly model: string
@@ -93,7 +93,7 @@ const entryOf = (entries: ReadonlyArray<Entry>, v: ModelChoice) => {
   return mine.find((e) => e.account && e.account.id === v.accountId) ?? mine.find((e) => e.account?.isDefault) ?? mine[0]
 }
 
-export function useModelEntries() {
+function useModelEntries() {
   const accounts = useList(accountsAtom)
   const models = useList(modelsAtom)
   return useMemo(() => entriesOf(accounts, models), [accounts, models])
@@ -118,7 +118,7 @@ export function ModelPicker({ value, onChange, variant = "chip", className }: { 
         {face}
       </FieldButton>
     ) : (
-      <Button size="sm" variant="ghost" aria-label={t("model.choose")} className={cx("max-w-60 font-normal text-muted", className)}>
+      <Button size="sm" variant="ghost" aria-label={t("model.choose")} className={cn("max-w-60 font-normal text-muted", className)}>
         {face}
       </Button>
     )

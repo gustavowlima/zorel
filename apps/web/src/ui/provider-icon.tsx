@@ -76,8 +76,8 @@ const Lmstudio = ({ size = 16, ...p }: Props) => (
   </svg>
 )
 
-export const PROVIDER_ICONS = { claude: Claude, codex: Codex, opencode: Opencode, openrouter: Openrouter, ollama: Ollama, gemini: Gemini, antigravity: Antigravity, lmstudio: Lmstudio } as const
-export type ProviderIconName = keyof typeof PROVIDER_ICONS
+const PROVIDER_ICONS = { claude: Claude, codex: Codex, opencode: Opencode, openrouter: Openrouter, ollama: Ollama, gemini: Gemini, antigravity: Antigravity, lmstudio: Lmstudio } as const
+type ProviderIconName = keyof typeof PROVIDER_ICONS
 
 // The logo for a provider or a model id prefix ("claude-cli/opus" → claude). Unknown: a neutral box.
 const ALIASES: Record<string, ProviderIconName> = { "claude-cli": "claude", anthropic: "claude", "codex-cli": "codex", openai: "codex", "gemini-cli": "gemini" }

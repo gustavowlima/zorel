@@ -50,7 +50,7 @@ const REDACT = ["**.key", "**.token", "**.secret", "**.password", "**.env"]
 // Phase 8 seam: the hosted mode passes the request's Actor; locally it is always the owner.
 const owner: AuditActor = { type: "user", id: LOCAL_ACTOR.id }
 
-export interface AuditInput {
+interface AuditInput {
   readonly target: { readonly id: string; readonly name: string }
   readonly before?: Record<string, unknown> | undefined // only the fields that changed are kept
   readonly after?: Record<string, unknown> | undefined
@@ -59,12 +59,12 @@ export interface AuditInput {
   readonly actor?: AuditActor
 }
 
-export interface AuditService {
+interface AuditService {
   readonly record: (action: Action, input: AuditInput) => Effect.Effect<void>
   readonly list: (q: AuditFilter) => Effect.Effect<AuditPage>
 }
 
-export interface AuditFilter {
+interface AuditFilter {
   readonly kind?: AuditKind | undefined
   readonly q?: string | undefined
   readonly from?: number | undefined

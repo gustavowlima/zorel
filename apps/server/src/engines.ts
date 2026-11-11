@@ -151,7 +151,7 @@ const CLAUDE_ERRORS: Record<string, FailureReason | undefined> = {
 }
 
 const one = (e: EngineEvent): Stream.Stream<EngineEvent> => Stream.make(e)
-export const MAX_TOOL_STEPS = 12
+const MAX_TOOL_STEPS = 12
 
 // ---------- providers ----------
 
@@ -539,7 +539,7 @@ const api = (secrets: SecretStore, t: Turn): Stream.Stream<EngineEvent> => {
 
 // ---------- service ----------
 
-export interface OpenSession {
+interface OpenSession {
   readonly model: string
   readonly system: string // stable part of the context
   readonly cwd: string
@@ -552,7 +552,7 @@ export interface OpenSession {
   readonly approve: Approver // asks the person (the approval card) for a native call
 }
 
-export interface EnginesService {
+interface EnginesService {
   // Stateless: every call gets the whole layered context (API engines, CLIs without a session, consolidation).
   readonly run: (turn: Turn) => Stream.Stream<EngineEvent>
   // Native session for providers that have one; undefined = use `run`; string = could not open (shown as the turn error).

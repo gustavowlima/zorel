@@ -20,6 +20,8 @@ import {
 import { cn } from "@/lib/utils"
 import { ChevronRight, GripVertical } from "./icons"
 import { Tooltip } from "./tooltip"
+import { Reflow } from "./motion"
+import { DROP_LINE } from "./sortable"
 
 const row =
   "flex w-full min-w-0 shrink-0 cursor-default items-center gap-2.5 rounded-control border text-left text-base outline-none transition-colors duration-120 ease-out motion-reduce:transition-none"
@@ -143,7 +145,7 @@ export type NavKey = Key
 
 // Where a dragged row will land: an accent hairline between rows.
 const navDropIndicator = (target: DropTarget) => (
-  <DropIndicator target={target} className="relative z-10 -my-px h-0.5 rounded-full outline-none data-drop-target:bg-accent" />
+  <DropIndicator target={target} className={cn("relative z-10", DROP_LINE)} />
 )
 
 // One row of the tree. A group (project) shows its icon in the icon column (its tile, which turns into the opening
@@ -195,10 +197,12 @@ export function NavTreeItem({
       id={id}
       textValue={textValue}
       onAction={onAction}
-      className="group/row shrink-0 py-px outline-none data-dragging:opacity-50"
+      className="group/row shrink-0 py-px outline-none transition-[opacity,scale] duration-150 ease-out data-dragging:scale-[0.98] data-dragging:opacity-40 motion-reduce:transition-none"
     >
       <TreeItemContent>
         {({ hasChildItems, isExpanded, isFocusVisible, isHovered, isPressed, allowsDragging }) => (
+          // Glides to its new place when the list is reordered.
+          <Reflow>
           <div
             {...(active && { "aria-current": "page" as const })}
             {...(tooltip && { title: tooltip })}
@@ -270,6 +274,7 @@ export function NavTreeItem({
               <span className={cn("flex shrink-0 items-center text-sm font-normal text-muted tabular-nums", actions && HIDE_FOR_ACTIONS)}>{trailing}</span>
             )}
           </div>
+          </Reflow>
         )}
       </TreeItemContent>
       {children}

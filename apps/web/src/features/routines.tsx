@@ -12,9 +12,9 @@ import { useState } from "react"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { agentsAtom, mutations, pagesAtom, preferencesAtom, routineHistoryAtom, routinesAtom, serversAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
-import { agentTone } from "../labels.ts"
-import { go } from "../state.ts"
-import { AgentAvatar, AlarmClock, Bot, Button, CheckList, cx, Column, ConfirmDialog, Copy, Dialog, Dot, EmptyState, History, IconButton, Menu, MenuItem, MenuSeparator, MessageCircle, MoreHorizontal, Play, Plus, Rows, Screen, Section, Segmented, Select, Settings, SettingRow, Switch, Tooltip, Trash2, Workflow } from "@/ui"
+import { agentTint, agentTone } from "../labels.ts"
+import { go, type Route, store, stored } from "../state.ts"
+import { AgentAvatar, AlarmClock, Fold, MultiSegmented, Bot, Button, cn, Column, ConfirmDialog, Copy, Dialog, Dot, EmptyState, History, IconButton, Menu, MenuItem, MenuSeparator, MessageCircle, MoreHorizontal, Play, Plus, Rows, Screen, Section, Segmented, Select, Settings, SettingRow, Switch, Tooltip, Trash2, Workflow, SETTLE } from "@/ui"
 import { RoutineWeek, type Slot } from "./routine-week.tsx"
 import { ConnectorDestinations } from "./deliver-to.tsx"
 import { NewRoutine } from "./new-routine.tsx"
@@ -32,23 +32,17 @@ const when = (r: Routine, servers: ReadonlyArray<McpServer>) =>
         : t("routines.onDemand")
 
 const VIEW_KEY = "zorel.routinesView"
-const savedView = (): "week" | "list" => {
-  try {
-    return localStorage.getItem(VIEW_KEY) === "list" ? "list" : "week"
-  } catch {
-    return "week"
-  }
-}
-const saveView = (v: "week" | "list") => {
-  try {
-    localStorage.setItem(VIEW_KEY, v)
-  } catch {}
-}
+const savedView = (): "week" | "list" => (stored(VIEW_KEY) === "list" ? "list" : "week")
+const saveView = (v: "week" | "list") => store(VIEW_KEY, v)
 
 // Every routine on one page. The list is an agenda, like a calendar's schedule view: what runs today, tomorrow and
 // the days after (each row with its time and the agent that runs it), then what runs when something happens, what
 // runs only on demand, and what is off. "New routine" asks which agent runs it.
 export function RoutinesView() {
+  // A routine pressed on the week: its sheet (and the run pressed, when it was one).
+  const [showing, setShowing] = useState<{ routineId: string; runId: string | undefined }>()
+  const shown = useList(routinesAtom).find((r) => r.id === showing?.routineId)
+  const showingAgent = useList(agentsAtom).find((a) => a.id === shown?.agentId)
   const agents = useList(agentsAtom)
   const routines = useReading(routinesAtom).items
   const team = agents.filter((a) => isTeammate(a))
@@ -93,16 +87,17 @@ export function RoutinesView() {
       }
     >
       {view === "week" && withRoutines.length > 0 ? (
-        <div className="px-7 py-5">
+        <div className={cn("px-7 py-5", SETTLE)}>
           <RoutineWeek
             onCreate={(s) => {
               setSlot(s)
               setAdding(true)
             }}
+            onOpen={(routineId, runId) => setShowing({ routineId, runId })}
           />
         </div>
       ) : (
-        <Column>
+        <Column className={SETTLE}>
           {withRoutines.length === 0 ? <EmptyState icon={<AlarmClock />} title={t("routines.emptyTitle")} hint={t("routines.emptyHint")} action={newButton("default")} /> : <RoutineAgenda />}
         </Column>
       )}
@@ -118,6 +113,11 @@ export function RoutinesView() {
       >
         {(close) => <NewRoutine onDone={close} {...(slot && { slot })} />}
       </Dialog>
+      {shown && showingAgent && (
+        <Dialog title={shown.name} size="lg" isOpen onOpenChange={(o) => !o && setShowing(undefined)}>
+          {(close) => <RoutineSheet routine={shown} agent={showingAgent} runId={showing?.runId} onClose={close} />}
+        </Dialog>
+      )}
     </Screen>
   )
 }
@@ -208,19 +208,31 @@ export function AgentRoutines({ agent }: { agent: Agent }) {
   )
 }
 
+// What a routine's row and its sheet both do: run it now (a failure said in place) and turn it on or off.
+function useRoutineActions(r: Routine) {
+  const update = useMutation(mutations.updateRoutine)
+  const run = useMutation(mutations.runRoutine)
+  const invalidate = useInvalidate()
+  const [error, setError] = useState<string>()
+  const runNow = () => {
+    setError(undefined)
+    void run({ params: { id: r.id }, reactivityKeys: ["routines"] })
+      .then(() => invalidate(["chats"]))
+      .catch(() => setError(t("routines.runFailed")))
+  }
+  const enabled = <Switch aria-label={t("routines.enabled", { name: r.name })} isSelected={r.enabled} onChange={(on) => void update({ params: { id: r.id }, payload: { enabled: on }, reactivityKeys: ["routines"] })} />
+  return { runNow, enabled, error }
+}
+
 // One routine's row: (its time, in the agenda), the agent's face and name (in the agenda), the routine's name,
 // when it runs and how the last run went; Run now, ⋯ (its chat, history, settings, webhook, delete) and on/off.
 // On the agent's page, a routine with a webhook shows its URL on a muted line.
 function RoutineItem({ routine: r, agent, showAgent, time }: { routine: Routine; agent: Agent; showAgent?: boolean; time?: string | undefined }) {
   const agents = useList(agentsAtom)
   const servers = useList(serversAtom)
-  const update = useMutation(mutations.updateRoutine)
-  const runNow = useMutation(mutations.runRoutine)
   const remove = useMutation(mutations.removeRoutine)
-  const invalidate = useInvalidate()
+  const { runNow, enabled, error } = useRoutineActions(r)
   const [dialog, setDialog] = useState<"settings" | "history" | "delete">()
-  const [error, setError] = useState<string>()
-  const keys = { reactivityKeys: ["routines"] as const }
   // In the agenda the day and the time already say when (and the group says Off).
   const hint = [showAgent && agent.name, showAgent && (time || !r.enabled) ? undefined : when(r, servers), r.lastRunAt && t(`routines.last.${r.lastStatus ?? "started"}`, { age: formatAge(r.lastRunAt) })].filter(Boolean).join(" · ")
   return (
@@ -229,7 +241,7 @@ function RoutineItem({ routine: r, agent, showAgent, time }: { routine: Routine;
         {time !== undefined && <span className="w-16 shrink-0 whitespace-nowrap text-sm text-muted tabular-nums">{time}</span>}
         {showAgent && <AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={28} />}
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className={cx("truncate font-medium", !r.enabled && "text-muted")}>{r.name}</span>
+          <span className={cn("truncate font-medium", !r.enabled && "text-muted")}>{r.name}</span>
           <span className="truncate text-sm text-muted">{hint}</span>
         </span>
         <Tooltip content={t("flows.edit")}>
@@ -238,15 +250,7 @@ function RoutineItem({ routine: r, agent, showAgent, time }: { routine: Routine;
           </IconButton>
         </Tooltip>
         <Tooltip content={t("routines.runNow")}>
-          <IconButton
-            label={t("routines.runNow")}
-            onPress={() => {
-              setError(undefined)
-              void runNow({ params: { id: r.id }, ...keys })
-                .then(() => invalidate(["chats"]))
-                .catch(() => setError(t("routines.runFailed")))
-            }}
-          >
+          <IconButton label={t("routines.runNow")} onPress={runNow}>
             <Play />
           </IconButton>
         </Tooltip>
@@ -285,7 +289,7 @@ function RoutineItem({ routine: r, agent, showAgent, time }: { routine: Routine;
             {t("common.delete")}
           </MenuItem>
         </Menu>
-        <Switch aria-label={t("routines.enabled", { name: r.name })} isSelected={r.enabled} onChange={(enabled) => void update({ params: { id: r.id }, payload: { enabled }, ...keys })} />
+        {enabled}
       </div>
       {!showAgent && r.token && <code className="truncate font-mono text-sm text-dim">{`POST ${hookOf(r.token)}`}</code>}
       {error && <p className="text-sm text-danger">{error}</p>}
@@ -300,8 +304,66 @@ function RoutineItem({ routine: r, agent, showAgent, time }: { routine: Routine;
         onOpenChange={(o) => !o && setDialog(undefined)}
         title={t("routines.deleteTitle", { name: r.name })}
         description={t("routines.deleteBody")}
-        onConfirm={() => void remove({ params: { id: r.id }, ...keys })}
+        onConfirm={() => void remove({ params: { id: r.id }, reactivityKeys: ["routines"] })}
       />
+    </div>
+  )
+}
+
+// A routine at a glance, from the week: whose it is and when it runs (and on/off), the run that was pressed, what you
+// can do with it (run now, its steps, its chat, its settings: in place), and its last runs.
+function RoutineSheet({ routine: r, agent, runId, onClose }: { routine: Routine; agent: Agent; runId: string | undefined; onClose: () => void }) {
+  const agents = useList(agentsAtom)
+  const servers = useList(serversAtom)
+  const { runNow, enabled, error } = useRoutineActions(r)
+  const run = useReading(routineHistoryAtom(r.id)).items.find((x) => x.id === runId)
+  const [editing, setEditing] = useState(false)
+  const leave = (to: Route) => {
+    onClose()
+    go(to)
+  }
+  if (editing) return <RoutineSettings routine={r} agent={agent} onDone={() => setEditing(false)} />
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex items-center gap-3">
+        <AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={28} />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className={cn("tint-text truncate font-medium", agentTint(agent, agents))}>{agent.name}</span>
+          <span className="truncate text-sm text-muted">{when(r, servers)}</span>
+        </span>
+        {enabled}
+      </div>
+      {run && (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-sm text-muted">{t("routines.thisRun")}</h3>
+          <Rows>
+            <RunRow run={run} onOpen={() => leave(run.version != null ? { view: "routine-run", id: r.id, runId: run.id } : { view: "chat", id: r.chatId })} />
+          </Rows>
+        </section>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="default" onPress={runNow}>
+          <Play />
+          {t("routines.runNow")}
+        </Button>
+        <Button size="sm" variant="secondary" onPress={() => leave({ view: "routine-flow", id: r.id })}>
+          <Workflow />
+          {t("flows.edit")}
+        </Button>
+        <Button size="sm" variant="secondary" onPress={() => leave({ view: "chat", id: r.chatId })}>
+          <MessageCircle />
+          {t("routines.openChat")}
+        </Button>
+        <Button size="sm" variant="ghost" onPress={() => setEditing(true)}>
+          <Settings />
+          {t("routines.settings")}
+        </Button>
+      </div>
+      {error && <p className="text-sm text-danger">{error}</p>}
+      <section className="flex flex-col gap-2">
+        <h3 className="text-sm text-muted">{t("routines.history")}</h3>
+        <RoutineHistory routine={r} />
+      </section>
     </div>
   )
 }
@@ -328,7 +390,7 @@ function RoutineSettings({ routine, agent, onDone }: { routine: Routine; agent: 
   const needsPage = channels.includes("page") && !pageId
   return (
     <form
-      className="flex flex-col gap-4"
+      className="flex flex-col gap-8"
       onSubmit={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -348,14 +410,15 @@ function RoutineSettings({ routine, agent, onDone }: { routine: Routine; agent: 
           <SettingRow title={t("routines.when")}>
             <Select aria-label={t("routines.when")} value={tell} onChange={(v) => setTell(v as RoutineTell)} options={TELLS.map((v) => ({ value: v, label: t(`routines.tell.${v}`) }))} />
           </SettingRow>
+          {/* Where: the channels side by side, several at once (as a routine's days). */}
           <SettingRow title={t("routines.where")}>
-            <CheckList label={t("routines.where")} value={channels} onChange={setChannels} options={CHANNELS.map((c) => ({ value: c, label: t(`routines.channels.${c}`) }))} />
+            <MultiSegmented label={t("routines.where")} value={channels} onChange={setChannels} options={CHANNELS.map((c) => ({ id: c, label: t(`routines.channels.${c}`) }))} />
           </SettingRow>
-          {channels.includes("page") && (
+          <Fold open={channels.includes("page")}>
             <SettingRow title={t("routines.page")}>
               <Select aria-label={t("routines.page")} value={pageId} onChange={setPageId} placeholder={t("routines.pagePick")} options={pages.map((p) => ({ value: p.id, label: p.title }))} />
             </SettingRow>
-          )}
+          </Fold>
           <SettingRow title={t("routines.urgent")} hint={t("routines.urgentHint")}>
             <Switch aria-label={t("routines.urgent")} isSelected={urgent} onChange={setUrgent} />
           </SettingRow>
@@ -366,16 +429,17 @@ function RoutineSettings({ routine, agent, onDone }: { routine: Routine; agent: 
           )}
         </Rows>
       </Section>
-      <Section title={t("deliver.section")} description={t("deliver.sectionHint")}>
+      {/* The add card already says what a destination is: no description repeating it above. */}
+      <Section title={t("deliver.section")}>
         <ConnectorDestinations agent={agent} routineId={routine.id} value={connectors} onChange={setConnectors} />
       </Section>
       {outside && <p className="text-sm text-dim">{t("routines.outsideNote")}</p>}
       {error && <p className="text-sm text-danger">{error}</p>}
       <div className="flex justify-end gap-2">
-        <Button size="sm" variant="ghost" onPress={onDone}>
+        <Button variant="ghost" onPress={onDone}>
           {t("common.cancel")}
         </Button>
-        <Button size="sm" type="submit" isPending={busy} isDisabled={busy || needsPage}>
+        <Button variant="default" type="submit" isPending={busy} isDisabled={busy || needsPage}>
           {t("routines.save")}
         </Button>
       </div>

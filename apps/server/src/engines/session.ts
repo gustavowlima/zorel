@@ -40,7 +40,7 @@ export interface EngineSession {
 // The app's own server settings. An agent that runs the project's tests or dev server (Zorel's own repo included)
 // must not inherit them: ZOREL_MIGRATIONS made a test database use the installed app's older migrations, and
 // ZOREL_DB / ZOREL_HOME would point a test at the person's real data.
-export const APP_ONLY_ENV = ["ZOREL_MIGRATIONS", "ZOREL_WEB_DIR", "ZOREL_PARENT_PID", "ZOREL_DB", "ZOREL_HOME"] as const
+const APP_ONLY_ENV = ["ZOREL_MIGRATIONS", "ZOREL_WEB_DIR", "ZOREL_PARENT_PID", "ZOREL_DB", "ZOREL_HOME"] as const
 export const withoutAppEnv = <T extends Record<string, string | undefined>>(env: T): T => {
   const out = { ...env }
   for (const k of APP_ONLY_ENV) delete out[k]

@@ -31,7 +31,7 @@ const exe = (platform = process.platform) => (platform === "win32" ? "agent-desk
 
 export const targetOf = (platform: string = process.platform, arch: string = process.arch) => TARGETS[`${platform}-${arch}`]
 export const archiveOf = (target: string, version = AGENT_DESKTOP_VERSION) => `agent-desktop-v${version}-${target}.tar.gz`
-export const desktopDir = (dataDir: string) => join(dataDir, "tools", "agent-desktop", AGENT_DESKTOP_VERSION)
+const desktopDir = (dataDir: string) => join(dataDir, "tools", "agent-desktop", AGENT_DESKTOP_VERSION)
 export const desktopBin = (dataDir: string): string | undefined => {
   const p = join(desktopDir(dataDir), exe())
   return existsSync(p) ? p : undefined

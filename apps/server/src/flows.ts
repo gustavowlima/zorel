@@ -27,7 +27,7 @@ import { effectiveAccess } from "./team.ts"
 import { askOnTelegram } from "./telegram.ts"
 import { type RemoteTool, resultText, Tools } from "./tools.ts"
 
-export const PREVIEW_MAX = 4000
+const PREVIEW_MAX = 4000
 // ponytail: an object so tests can shorten the wait; 30 s in the app (spec 013 assumptions).
 export const flowTiming = { retryMs: 30_000 }
 
@@ -42,7 +42,7 @@ const REFUSED_BEFORE_RUNNING: Partial<Record<number, true>> = {
   [ErrorCode.MethodNotFound]: true,
   [ErrorCode.InvalidParams]: true
 }
-export type CallPhase = "connect" | "call"
+type CallPhase = "connect" | "call"
 export const neverRan = (error: unknown, phase: CallPhase): boolean => phase === "connect" || (error instanceof McpError && REFUSED_BEFORE_RUNNING[error.code] === true)
 
 // May a failed attempt go again? A read may on any failure; a write only when it surely never ran. `ranWithError`: the
@@ -79,7 +79,7 @@ export function resolveValue(v: unknown, outputs: ReadonlyMap<string, unknown>):
 }
 
 // A result's text as data when it is JSON, else the text.
-export const dataOf = (text: string): unknown => {
+const dataOf = (text: string): unknown => {
   try {
     return JSON.parse(text)
   } catch {
@@ -120,7 +120,7 @@ const RULES: Record<"hasItems" | "isEmpty" | "contains" | "equals", (v: unknown,
 // ---------- running ----------
 
 type Env = Store | Runtime | Tools | DataDir | Engines | Secrets
-export type RunEnd = { outcome: RoutineOutcome; summary: string; report: string }
+type RunEnd = { outcome: RoutineOutcome; summary: string; report: string }
 export interface FlowHooks {
   readonly finish: (end: RunEnd) => Effect.Effect<void, never, Env>
   readonly needs: (summary: string) => Effect.Effect<void, never, Env> // the run waits for the person

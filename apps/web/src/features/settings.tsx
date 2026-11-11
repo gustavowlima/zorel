@@ -18,30 +18,30 @@ import { ModelPicker } from "./model-picker.tsx"
 import { ProvidersSection } from "./providers.tsx"
 import { ProcessesSection } from "./processes.tsx"
 import { StorageSection } from "./storage.tsx"
-import { Activity, Button, Column, cx, DisclosurePill, HardDrive, History, Layers, MessageCircle, NavItem, Plug, Rows, Screen, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch } from "@/ui"
+import { Activity, Button, Column, cn, DisclosurePill, Fold, HardDrive, History, Layers, MessageCircle, NavItem, Plug, Rows, Screen, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch, SETTLE } from "@/ui"
 
 const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, skills: <Layers />, channels: <MessageCircle />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
 
-// skill: Skills is a section here (2026-11-09); its own links (#/skills/<id>, the computer tab) open it with these.
-export function SettingsView({ tab, provider, skill }: { tab: SettingsTab; provider?: string | undefined; skill?: { selected?: string | undefined; computer?: boolean | undefined } }) {
+// skill: Skills is a section here (2026-11-09); its own links (#/skills/<id>, #/skills/file/<path>) open it with these.
+export function SettingsView({ tab, provider, skill }: { tab: SettingsTab; provider?: string | undefined; skill?: { selected?: string | undefined; file?: string | undefined } }) {
   return (
     <Screen title={t("settings.title")} subtitle={t(`settings.hint.${tab}`)} bodyClassName="flex flex-col md:flex-row">
       {/* A column of sections beside the page; in a narrow window, a row above it that scrolls sideways. */}
       <nav aria-label={t("settings.sections")} className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-subtle p-2 md:w-56 md:flex-col md:overflow-x-visible md:border-r md:border-b-0 md:p-3">
         {SETTINGS_TABS.map((s) => (
           // On the canvas the active item needs a fill of its own (bg-canvas, the sidebar's, would vanish here).
-          <NavItem key={s} icon={ICONS[s]} active={s === tab} className={cx("w-auto shrink-0 md:w-full", s === tab && "border-transparent bg-control")} onPress={() => go({ view: "settings", tab: s })}>
+          <NavItem key={s} icon={ICONS[s]} active={s === tab} className={cn("w-auto shrink-0 md:w-full", s === tab && "border-transparent bg-control")} onPress={() => go({ view: "settings", tab: s })}>
             {t(`settings.${s}`)}
           </NavItem>
         ))}
       </nav>
       {/* Skills has a list and a reader side by side: the whole width, scrolling inside. */}
       {tab === "skills" ? (
-        <SkillsBody selected={skill?.selected} computer={skill?.computer} />
+        <SkillsBody selected={skill?.selected} file={skill?.file} />
       ) : (
       <div className="gutter-stable relative min-w-0 flex-1 overflow-y-auto">
         {/* One column for every page: it fills the space up to the wide width, then stays centered. */}
-        <Column wide>
+        <Column wide key={tab} className={SETTLE}>
           {tab === "providers" && <ProvidersSection provider={provider} />}
           {tab === "processes" && <ProcessesSection />}
           {tab === "storage" && <StorageSection />}
@@ -82,7 +82,7 @@ function MemorySettings() {
             ]}
           />
         </SettingRow>
-        {showModel && (
+        <Fold open={showModel}>
           <div id={advancedId}>
             <BackgroundModel
               title={t("settings.memoryModel")}
@@ -92,7 +92,7 @@ function MemorySettings() {
               onChange={(model) => void setMemory({ payload: { model }, reactivityKeys: ["preferences"] })}
             />
           </div>
-        )}
+        </Fold>
       </Rows>
       {!prefs?.memoryModel && (
         <div>

@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { agentsAtom, chatsAtom, memoriesAtom, memoryMapAtom, mutations, projectsAtom, useList, useMutation } from "../client.ts"
 import { chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { Brain, Button, cx, EmptyState, Link2, Maximize2, Menu, MenuItem, Minus, Plus, Rows, Unlink, X } from "@/ui"
+import { Brain, Button, cn, EmptyState, Link2, Maximize2, Menu, MenuItem, Minus, Plus, Rows, Unlink, X } from "@/ui"
 
 type Kind = MapPoint["type"]
 const NO_MAP: MapData = { points: [], links: [] }
@@ -285,7 +285,7 @@ export function MemoryMap({ scope, toolbar }: { scope: string; toolbar?: React.R
               size="sm"
               variant="secondary"
               aria-pressed={!hidden.has(k)}
-              className={cx("rounded-full", hidden.has(k) && "opacity-45")}
+              className={cn("rounded-full", hidden.has(k) && "opacity-45")}
               onPress={() => setHidden((h) => (h.has(k) ? new Set([...h].filter((x) => x !== k)) : new Set([...h, k])))}
             >
               <span aria-hidden="true" className="size-2 rounded-full" style={{ background: `var(${COLOR[k]})` }} />
@@ -344,7 +344,7 @@ function PointPanel({ point, points, links, labels, onOpen, onClose }: { point: 
             const chat = chats.find((c) => c.id === m.chatId)
             return (
               <div key={m.id} className="flex flex-col gap-0.5 py-2.5">
-                <span className={cx("text-fg", m.state === "pending" && "text-secondary")}>{m.text}</span>
+                <span className={cn("text-fg", m.state === "pending" && "text-secondary")}>{m.text}</span>
                 <span className="text-sm text-dim">
                   {[m.state === "pending" ? t("memory.waitsReview") : m.origin === "manual" ? t("memory.youWrote") : t("memory.learned"), chat && chatTitle(chat), formatAge(m.createdAt)].filter(Boolean).join(" · ")}
                 </span>

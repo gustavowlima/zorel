@@ -105,7 +105,7 @@ export function riskyKey(combo: string): boolean {
   return RULES[key]?.() ?? false
 }
 // A shortcut as the system takes it: off a Mac, ⌘ is Ctrl and ⌥ is Alt.
-export const keyFor = (combo: string, platform: string = process.platform) => {
+const keyFor = (combo: string, platform: string = process.platform) => {
   const c = combo.replace(/\s+/g, "").toLowerCase()
   return platform === "darwin" ? c : c.replace(/\b(cmd|command|meta)\+/g, "ctrl+").replace(/\boption\+/g, "alt+")
 }
@@ -116,7 +116,7 @@ export const isZorel = (name: string) => /^(zorel|electron)(\.exe)?$/i.test(name
 // ---------- the tools ----------
 
 export const DESKTOP_TOOL_NAMES = ["desktop_apps", "desktop_open", "desktop_read", "desktop_menu", "desktop_click", "desktop_type", "desktop_key"] as const
-export type DesktopToolName = (typeof DESKTOP_TOOL_NAMES)[number]
+type DesktopToolName = (typeof DESKTOP_TOOL_NAMES)[number]
 export const CHANGING_DESKTOP_TOOLS: ReadonlySet<string> = new Set(["desktop_click", "desktop_type", "desktop_key"])
 const CHANGES = CHANGING_DESKTOP_TOOLS
 
@@ -159,7 +159,7 @@ const fail = (text: string) => textResult(text, true)
 // on; `open -a` also brings an open app forward. Elsewhere agent-desktop launches it.
 const openMac = async (app: string) => (await Bun.spawn(["open", "-a", app, "--args", "--force-renderer-accessibility"], { stdout: "ignore", stderr: "ignore", timeout: 15_000 }).exited) === 0
 
-export interface DesktopCall {
+interface DesktopCall {
   readonly key: string // whose last list this is (chat + agent)
   readonly apps: ReadonlyArray<DesktopApp>
   readonly ask: (summary: string) => Promise<boolean> // the person's approval

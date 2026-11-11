@@ -30,6 +30,10 @@ test("parsePanelFrame: positions as fractions, bounded text, known kinds only", 
   expect(parsePanelFrame(`{"t":"key","key":"Enter"}`)).toEqual({ t: "key", key: "Enter" })
   expect(parsePanelFrame(`{"t":"nav","url":"example.com"}`)).toEqual({ t: "nav", url: "example.com" })
   expect(parsePanelFrame(`{"t":"release"}`)).toEqual({ t: "release" })
+  expect(parsePanelFrame(`{"t":"view","id":"t1"}`)).toEqual({ t: "view", id: "t1" }) // looking, not driving
+  expect(parsePanelFrame(`{"t":"previews"}`)).toEqual({ t: "previews" })
+  expect(parsePanelFrame(`{"t":"newtab","owner":"a1b2-c3"}`)).toEqual({ t: "newtab", owner: "a1b2-c3" }) // into that agent's browser
+  expect(parsePanelFrame(`{"t":"newtab","owner":"../etc"}`)).toEqual({ t: "newtab", owner: undefined }) // not a profile: the person's own
   expect(parsePanelFrame(`{"t":"eval","js":"1"}`)).toBeUndefined()
   expect(parsePanelFrame("nope")).toBeUndefined()
 })

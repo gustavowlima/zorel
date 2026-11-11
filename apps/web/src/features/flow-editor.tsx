@@ -1,15 +1,14 @@
-// A routine's steps (spec 013): one graph, shown on a canvas or as a list, a step's panel beside it, saved as a new
+// A routine's steps (spec 013): one graph, shown as a list (branches indented), a step's panel beside it, saved as a new
 // version. The contract's validateFlow runs as the person edits, so what the server would refuse shows (and names
 // the step) before Save; the server checks again, with the connectors' own tool descriptions.
 import { type FlowGraph, validateFlow } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
-import { lazy, Suspense, useEffect, useState } from "react"
+import { useState } from "react"
 import { agentsAtom, mutations, routineFlowAtom, routinesAtom, useInvalidate, useList, useMutation, useReading } from "../client.ts"
-import { go } from "../state.ts"
-import { ArrowLeft, Button, CircleAlert, cx, History, Column, EmptyState, IconButton, Notice, Screen, Segmented, Spinner } from "@/ui"
-import { nodeTitle } from "./flow-kinds.tsx"
+import { go, storedJson, storeJson } from "../state.ts"
+import { ArrowLeft, Button, CircleAlert, cn, Drawer, History, Column, EmptyState, IconButton, Notice, Screen, Spinner } from "@/ui"
 import { FlowList } from "./flow-list.tsx"
 import { StepPanel } from "./flow-panel.tsx"
 import { removeNode } from "./flow-model.ts"
@@ -34,32 +33,7 @@ export const missingOf = (field: string | undefined) => (field ? MISSING[field]?
 // were made on, and offered back only on that version.
 type Draft = { base: number | null; graph: FlowGraph }
 const draftKey = (id: string) => `zorel.draft.flow.${id}`
-function readDraft(id: string): Draft | undefined {
-  try {
-    const raw = localStorage.getItem(draftKey(id))
-    return raw ? (JSON.parse(raw) as Draft) : undefined
-  } catch {
-    return undefined
-  }
-}
-function writeDraft(id: string, draft: Draft | undefined) {
-  try {
-    if (draft) localStorage.setItem(draftKey(id), JSON.stringify(draft))
-    else localStorage.removeItem(draftKey(id))
-  } catch {}
-}
 
-const FlowCanvas = lazy(() => import("./routine-flow.tsx"))
-type View = "canvas" | "list"
-const VIEW_KEY = "zorel.flowView"
-// The list on a phone or when chosen; the canvas otherwise.
-const savedView = (): View => {
-  try {
-    const v = localStorage.getItem(VIEW_KEY)
-    if (v === "canvas" || v === "list") return v
-  } catch {}
-  return window.matchMedia("(min-width: 768px)").matches ? "canvas" : "list"
-}
 
 export function FlowEditorView({ routineId }: { routineId: string }) {
   const routine = useReading(routinesAtom).items.find((r) => r.id === routineId)
@@ -78,7 +52,7 @@ function Editor({ routineId, name, agent, initial, version: initialVersion }: { 
   const save = useMutation(mutations.saveFlow)
   const invalidate = useInvalidate()
   const [draft] = useState(() => {
-    const d = readDraft(routineId)
+    const d = storedJson<Draft>(draftKey(routineId))
     return d && d.base === initialVersion ? d : undefined
   })
   const [graph, setGraph] = useState(draft?.graph ?? initial)
@@ -86,22 +60,16 @@ function Editor({ routineId, name, agent, initial, version: initialVersion }: { 
   const [dirty, setDirty] = useState(!!draft)
   const [restored, setRestored] = useState(!!draft)
   const [selected, setSelected] = useState<string>()
-  const [view, setView] = useState<View>(savedView)
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState<{ message: string; nodeId?: string | undefined; conflict?: boolean }>()
-  useEffect(() => {
-    try {
-      localStorage.setItem(VIEW_KEY, view)
-    } catch {}
-  }, [view])
   const edit = (g: FlowGraph) => {
     setGraph(g)
     setDirty(true)
     setFailure(undefined)
-    writeDraft(routineId, { base: version, graph: g })
+    storeJson(draftKey(routineId), { base: version, graph: g })
   }
   const discard = () => {
-    writeDraft(routineId, undefined)
+    storeJson(draftKey(routineId), undefined)
     setGraph(initial)
     setDirty(false)
     setRestored(false)
@@ -109,10 +77,6 @@ function Editor({ routineId, name, agent, initial, version: initialVersion }: { 
   const checked = validateFlow(graph)
   const problem = checked.ok ? undefined : { ...checked, problem: missingOf(checked.field) ?? checked.problem }
   const node = graph.nodes.find((n) => n.id === selected)
-  const named = (id: string | undefined) => {
-    const n = graph.nodes.find((x) => x.id === id)
-    return n ? nodeTitle(n) : undefined
-  }
   const onSave = () => {
     setSaving(true)
     void save({ params: { id: routineId }, payload: { graph, baseVersion: version }, reactivityKeys: ["routines"] })
@@ -120,7 +84,7 @@ function Editor({ routineId, name, agent, initial, version: initialVersion }: { 
         setVersion(r.version)
         setDirty(false)
         setRestored(false)
-        writeDraft(routineId, undefined)
+        storeJson(draftKey(routineId), undefined)
         invalidate(["routines"])
       })
       .catch((e: { _tag?: string; message?: string; nodeId?: string }) => {
@@ -131,7 +95,8 @@ function Editor({ routineId, name, agent, initial, version: initialVersion }: { 
       })
       .finally(() => setSaving(false))
   }
-  const where = (id: string | undefined) => (named(id) ? `${named(id)}: ` : "")
+  // The one step with something to fix (what the server refused, else what the flow still misses): shown on it.
+  const issue = failure?.nodeId ? { nodeId: failure.nodeId, message: failure.message } : dirty && problem?.nodeId ? { nodeId: problem.nodeId, message: problem.problem } : undefined
   return (
     <Screen
       title={
@@ -144,17 +109,14 @@ function Editor({ routineId, name, agent, initial, version: initialVersion }: { 
       }
       subtitle={dirty ? t("flows.unsaved") : version ? t("flows.savedVersion", { n: version }) : t("flows.notSaved")}
       actions={
-        <>
-          <Segmented label={t("flows.view")} value={view} onChange={setView} options={[{ id: "canvas", label: t("flows.canvas.title") }, { id: "list", label: t("flows.list.title") }]} />
-          <Button size="sm" variant="default" isPending={saving} isDisabled={!dirty || !!problem} onPress={onSave}>
-            {t("common.save")}
-          </Button>
-        </>
+        <Button size="sm" variant="default" isPending={saving} isDisabled={!dirty || !!problem} onPress={onSave}>
+          {t("common.save")}
+        </Button>
       }
       bodyClassName="flex flex-col md:flex-row"
     >
       {/* On a phone an open step takes the screen; its close button brings the steps back. */}
-      <div className={cx("min-h-0 min-w-0 flex-1 flex-col", node ? "hidden md:flex" : "flex")}>
+      <div className={cn("min-h-0 min-w-0 flex-1 flex-col", node ? "hidden md:flex" : "flex")}>
         {restored && (
           <div className="px-4 pt-4">
             <Notice
@@ -169,44 +131,32 @@ function Editor({ routineId, name, agent, initial, version: initialVersion }: { 
             />
           </div>
         )}
-        {(failure || (dirty && problem && problem.nodeId !== selected)) && (
+        {/* Only what belongs to no step (a newer version saved elsewhere, the server's own refusal) is a notice here;
+            a step's problem shows on the step itself. */}
+        {(failure ? !failure.nodeId : dirty && problem && !problem.nodeId) && (
           <div className="px-4 pt-4">
             <Notice
               icon={<CircleAlert />}
-              title={failure ? `${where(failure.nodeId)}${failure.message}` : `${where(problem?.nodeId)}${problem?.problem}`}
+              title={failure ? failure.message : problem?.problem}
               action={
-                failure?.conflict ? (
+                failure?.conflict && (
                   <Button size="sm" variant="secondary" onPress={() => invalidate(["routines"])}>
                     {t("flows.reload")}
                   </Button>
-                ) : (failure?.nodeId ?? problem?.nodeId) ? (
-                  <Button size="sm" variant="secondary" onPress={() => setSelected(failure?.nodeId ?? problem?.nodeId)}>
-                    {t("flows.showStep")}
-                  </Button>
-                ) : undefined
+                )
               }
             />
           </div>
         )}
-        {view === "canvas" ? (
-          <Suspense
-            fallback={
-              <div className="flex flex-1 items-center justify-center">
-                <Spinner />
-              </div>
-            }
-          >
-            <FlowCanvas graph={graph} onGraph={edit} selected={selected} onSelect={setSelected} />
-          </Suspense>
-        ) : (
-          <div className="min-h-0 flex-1 overflow-auto p-4 md:p-7">
-            <div className="mx-auto max-w-3xl">
-              <FlowList graph={graph} onGraph={edit} selected={selected} onSelect={setSelected} />
-            </div>
+        <div className="min-h-0 flex-1 overflow-auto p-4 md:p-7">
+          <div className="mx-auto max-w-3xl">
+            <FlowList graph={graph} onGraph={edit} selected={selected} onSelect={setSelected} issue={issue} />
           </div>
-        )}
+        </div>
       </div>
-      {node && (
+      {/* A step's panel slides in beside the steps (on a phone it takes the screen, as before). */}
+      <Drawer open={!!node} className="flex min-h-0 overflow-hidden md:shrink-0">
+        {node && (
         <StepPanel
           key={node.id}
           graph={graph}
@@ -220,7 +170,8 @@ function Editor({ routineId, name, agent, initial, version: initialVersion }: { 
           }}
           onClose={() => setSelected(undefined)}
         />
-      )}
+        )}
+      </Drawer>
     </Screen>
   )
 }

@@ -120,9 +120,8 @@ export const pickedEntries = (pref: string | undefined): Pick[] => {
     return []
   }
 }
-export const pickedPaths = (pref: string | undefined): string[] => pickedEntries(pref).map((e) => e.path)
 export const serializePicks = (entries: ReadonlyArray<Pick>): string => JSON.stringify(entries.map((e) => (e.agents.length ? { path: e.path, agents: e.agents } : e.path)))
-export type PickedSkill = FileSkill & { readonly agents: ReadonlyArray<string> }
+type PickedSkill = FileSkill & { readonly agents: ReadonlyArray<string> }
 // Among those still on disk. forAgent: the agent that uses them (the ones for other agents stay out; null: no agent,
 // only the ones for everyone); undefined: all of them.
 export const picked = (pref: string | undefined, forAgent?: string | null): PickedSkill[] => {

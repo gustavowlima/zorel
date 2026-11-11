@@ -3,22 +3,26 @@
 // Clicking, scrolling or typing on the page, or using the address bar, takes control: while it is held, the
 // agents' browser tools are refused; "Hand back" returns it. Positions go up as fractions of the frame.
 // While an agent works, its pointer moves over the page to where it acts, and the bar says what it's doing.
+import type { Agent } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react"
 import { agentsAtom, useList } from "../client.ts"
-import { agentName, agentTone } from "../labels.ts"
-import { AgentAvatar, AgentPointer, ArrowRight, Button, ChevronRight, cx, Globe, IconButton, Input, Maximize2, Minimize2, Plus, RefreshCw, Spinner, Tooltip, X } from "@/ui"
+import { agentName, agentTint, agentTone } from "../labels.ts"
+import { AgentAvatar, AgentPointer, ArrowRight, Button, ChevronRight, cn, Globe, IconButton, Input, LayoutGrid, Maximize2, Minimize2, Plus, RefreshCw, Spinner, Tooltip, X } from "@/ui"
 
-type Tab = { id: string; title: string; url: string; active: boolean }
+type Tab = { id: string; title: string; url: string; active: boolean; owner: string } // owner: an agent's id, "assistant" or "you"
+const YOU = "you"
+const PREVIEW_MS = 4000 // the cards' pictures refresh this often while the cards show
 type Frame =
   | { t: "click"; x: number; y: number; button?: "left" | "right"; clicks?: number }
   | { t: "wheel"; x: number; y: number; dx: number; dy: number }
   | { t: "key"; key: string }
   | { t: "text"; text: string }
   | { t: "nav"; url: string }
-  | { t: "open"; url: string }
-  | { t: "back" | "forward" | "reload" | "newtab" | "release" }
-  | { t: "tab" | "close"; id: string }
+  | { t: "open"; url: string; owner?: string }
+  | { t: "back" | "forward" | "reload" | "release" | "previews" }
+  | { t: "newtab"; owner?: string }
+  | { t: "tab" | "close" | "view"; id: string }
 
 // An agent's action, from the server (BrowserAct): its tool, the element's name and where it is, then done.
 type Act = { agentId: string | null; tool: string; target?: string; x?: number; y?: number; done?: boolean; at: number }
@@ -60,9 +64,18 @@ export function BrowserPanel({ chatId, openUrl, newTab = 0 }: { chatId: string; 
   const [act, setAct] = useState<Act>()
   const [full, setFull] = useState(false) // the browser over the whole window, to drive it at a usable size
   const [idle, setIdle] = useState(true)
+  // The chat's browsers (one per agent, and yours), shown as cards; opening one shows it live with its own tabs.
+  const [cards, setCards] = useState(true)
+  const [previews, setPreviews] = useState<Record<string, string>>({})
   const agents = useList(agentsAtom)
   const ws = useRef<WebSocket>(null)
   const active = tabs.find((x) => x.active)
+  const owners = [...new Set(tabs.map((x) => x.owner))]
+  const showCards = cards && owners.length > 1
+  // ponytail: one shown tab per chat (the server's), so the open browser follows whichever agent acts last; a view per
+  // panel would need the server to stream per watcher.
+  const shown = active?.owner ?? owners[0] ?? YOU
+  const ownTabs = tabs.filter((x) => x.owner === shown)
 
   useEffect(() => {
     const url = new URL("/api/browser", location.href)
@@ -78,7 +91,8 @@ export function BrowserPanel({ chatId, openUrl, newTab = 0 }: { chatId: string; 
         if (m.t === "state") {
           setTabs(m.tabs ?? [])
           setHeld(!!m.userControl)
-        } else if (m.t === "error") setError(m.message)
+        } else if (m.t === "previews") setPreviews((m as { previews?: Record<string, string> }).previews ?? {})
+        else if (m.t === "error") setError(m.message)
         else if (m.t === "act") setAct(m as Act)
         return
       }
@@ -129,6 +143,24 @@ export function BrowserPanel({ chatId, openUrl, newTab = 0 }: { chatId: string; 
     if (newTab) send({ t: "newtab" })
   }, [newTab])
 
+  // While the cards show, their pictures are asked for now and every PREVIEW_MS.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: send is stable enough (it reads the socket ref)
+  useEffect(() => {
+    if (!showCards) return
+    send({ t: "previews" })
+    const timer = setInterval(() => send({ t: "previews" }), PREVIEW_MS)
+    return () => clearInterval(timer)
+  }, [showCards, owners.length])
+  // Opening a card shows that browser's tab (its shown one, else its latest) without taking it from the agents.
+  const open = (owner: string) => {
+    const mine = tabs.filter((x) => x.owner === owner)
+    const tab = mine.find((x) => x.active) ?? mine.at(-1)
+    if (tab && !tab.active) send({ t: "view", id: tab.id })
+    setCards(false)
+  }
+  const ownerLabel = (owner: string) => (owner === YOU ? t("browser.yours") : agentName(owner === "assistant" ? null : owner, agents))
+  const newTabFrame = (): Frame => (shown === YOU ? { t: "newtab" } : { t: "newtab", owner: shown })
+
   const at = (e: MouseEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect()
     return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }
@@ -137,17 +169,28 @@ export function BrowserPanel({ chatId, openUrl, newTab = 0 }: { chatId: string; 
   return (
     <section
       aria-label={t("browser.title")}
-      className={cx("flex min-h-0 min-w-0 flex-1 flex-col", full && "fixed inset-0 z-50 bg-canvas")}
+      className={cn("flex min-h-0 min-w-0 flex-1 flex-col", full && "fixed inset-0 z-50 animate-in bg-canvas fade-in-0 zoom-in-98 motion-reduce:animate-none")}
       // Esc leaves full screen, except on the page itself (there it's the page's key).
       onKeyDown={(e) => {
         if (full && e.key === "Escape" && !(e.target as HTMLElement).closest("[role=application]")) setFull(false)
       }}
     >
+      {showCards ? (
+        <BrowserCards agents={agents} owners={owners} tabs={tabs} previews={previews} label={ownerLabel} acting={working ? (act?.agentId ?? "assistant") : undefined} onOpen={open} />
+      ) : (
+      <>
       {/* Tabs, then the toolbar: back, forward, reload, the address, who holds it. */}
       <div className="flex items-center gap-1 border-b border-subtle px-2 py-1.5">
+        {owners.length > 1 && (
+          <Tooltip content={t("browser.allBrowsers")}>
+            <IconButton label={t("browser.allBrowsers")} size="xs" onPress={() => setCards(true)}>
+              <LayoutGrid className="size-3.5" />
+            </IconButton>
+          </Tooltip>
+        )}
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-          {tabs.map((tab) => (
-            <span key={tab.id} className={cx("group/tab flex h-control-sm max-w-48 min-w-0 items-center gap-1 rounded-full border pl-3", tab.active ? "border-subtle bg-surface text-fg" : "border-transparent text-muted")}>
+          {ownTabs.map((tab) => (
+            <span key={tab.id} className={cn("group/tab flex h-control-sm max-w-48 min-w-0 items-center gap-1 rounded-full border pl-3", tab.active ? "border-subtle bg-surface text-fg" : "border-transparent text-muted")}>
               <Button variant="ghost" className="h-auto min-w-0 truncate p-0 text-sm font-normal hover:bg-transparent" onPress={() => send({ t: "tab", id: tab.id })}>
                 {tab.title || tab.url || t("browser.newTab")}
               </Button>
@@ -157,7 +200,7 @@ export function BrowserPanel({ chatId, openUrl, newTab = 0 }: { chatId: string; 
             </span>
           ))}
           <Tooltip content={t("browser.newTab")}>
-            <IconButton label={t("browser.newTab")} size="xs" onPress={() => send({ t: "newtab" })}>
+            <IconButton label={t("browser.newTab")} size="xs" onPress={() => send(newTabFrame())}>
               <Plus className="size-3.5" />
             </IconButton>
           </Tooltip>
@@ -204,7 +247,7 @@ export function BrowserPanel({ chatId, openUrl, newTab = 0 }: { chatId: string; 
         </IconButton>
       </form>
       {/* Who holds the browser: the agents (and what one is doing now), or you (then they wait). */}
-      <div aria-live="polite" className={cx("flex items-center gap-2 px-3 py-1.5 text-sm", held ? "bg-accent-soft text-accent-text" : working ? "text-secondary" : "text-muted")}>
+      <div aria-live="polite" className={cn("flex items-center gap-2 px-3 py-1.5 text-sm", held ? "bg-accent-soft text-accent-text" : working ? (actor ? `tinted ${agentTint(actor, agents)}` : "text-secondary") : "text-muted")}>
         {working && (act.done ? face : <Spinner size={12} />)}
         <span className="min-w-0 flex-1 truncate">{held ? t("browser.youHold") : working ? doingLine(act, actorName) : t("browser.agentsMayUse")}</span>
         {held && (
@@ -214,7 +257,7 @@ export function BrowserPanel({ chatId, openUrl, newTab = 0 }: { chatId: string; 
         )}
       </div>
       {error && <p className="px-3 py-1.5 text-sm text-danger">{error}</p>}
-      <div className={cx("flex min-h-0 flex-1 justify-center overflow-auto bg-code p-2", full ? "items-center" : "items-start")}>
+      <div className={cn("flex min-h-0 flex-1 justify-center overflow-auto bg-code p-2", full ? "items-center" : "items-start")}>
         {active && frame ? (
           <div
             role="application"
@@ -264,7 +307,48 @@ export function BrowserPanel({ chatId, openUrl, newTab = 0 }: { chatId: string; 
           </div>
         )}
       </div>
+      </>
+      )}
     </section>
+  )
+}
+
+// The chat's browsers at a glance: one card per agent's browser (and yours), its picture, whose it is in that agent's
+// color, its shown tab and how many it has; the one an agent works in now says so. Pressing a card opens it.
+function BrowserCards({ agents, owners, tabs, previews, label, acting, onOpen }: { agents: ReadonlyArray<Agent>; owners: ReadonlyArray<string>; tabs: ReadonlyArray<Tab>; previews: Record<string, string>; label: (owner: string) => string; acting: string | undefined; onOpen: (owner: string) => void }) {
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <p className="mb-3 px-1 text-sm text-muted">{t("browser.cardsHint")}</p>
+      <ul className="grid grid-cols-1 gap-3 @lg:grid-cols-2">
+        {owners.map((owner) => {
+          const mine = tabs.filter((x) => x.owner === owner)
+          const shown = mine.find((x) => x.active) ?? mine.at(-1)
+          const agent = agents.find((a) => a.id === owner)
+          const live = acting === owner
+          return (
+            <li key={owner}>
+              <Button
+                variant="ghost"
+                onPress={() => onOpen(owner)}
+                className={cn("h-auto w-full flex-col items-stretch gap-0 overflow-hidden rounded-card border p-0 text-left font-normal whitespace-normal", live && agent ? `tinted ${agentTint(agent, agents)}` : "border-subtle bg-surface")}
+              >
+                <span className="flex w-full items-center justify-center bg-code" style={{ aspectRatio: "1280 / 800" }}>
+                  {previews[owner] ? <img src={`data:image/jpeg;base64,${previews[owner]}`} alt="" className="size-full object-cover" /> : <Globe className="size-5 text-dim" />}
+                </span>
+                <span className="flex items-center gap-2 border-t border-subtle px-3 py-2">
+                  {agent ? <AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={20} /> : <Globe className="size-4 text-muted" />}
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className={cn("truncate text-sm font-medium", agent && `tint-text ${agentTint(agent, agents)}`)}>{label(owner)}</span>
+                    <span className="truncate text-xs text-muted">{shown?.title || shown?.url || t("browser.newTab")}</span>
+                  </span>
+                  {live ? <Spinner size={12} /> : <span className="shrink-0 text-xs text-dim tabular-nums">{t("browser.tabCount", { count: mine.length })}</span>}
+                </span>
+              </Button>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }
 

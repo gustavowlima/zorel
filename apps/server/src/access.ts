@@ -2,7 +2,7 @@
 // In hosted mode (phase 8), a login middleware resolves the real Actor per request.
 import { Context, Layer } from "effect"
 
-export interface ActorInfo {
+interface ActorInfo {
   readonly id: string
   readonly role: "owner"
 }

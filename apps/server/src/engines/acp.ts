@@ -21,7 +21,7 @@ import { approvalFor, decideCommand } from "./policy.ts"
 import { type Approver, type NativeApproval, withoutAppEnv } from "./session.ts"
 import { which } from "../cli-install.ts"
 
-export interface AcpTurn {
+interface AcpTurn {
   readonly bin: string
   readonly args: ReadonlyArray<string>
   readonly model: string // the agent's own model id; "default" keeps the agent's choice
@@ -117,7 +117,7 @@ export function writableRoots(access: Access, cwd: string, state: ReadonlyArray<
 }
 
 // Seatbelt profile: everything allowed except writing outside the roots (and the terminal devices a shell needs).
-export function seatbeltProfile(roots: ReadonlyArray<string>): string {
+function seatbeltProfile(roots: ReadonlyArray<string>): string {
   return [
     "(version 1)",
     "(allow default)",
@@ -138,7 +138,7 @@ export function commandFor(path: string, t: Pick<AcpTurn, "args" | "access" | "c
 
 // bubblewrap: everything read-only, then each root bound writable over it; devices and /proc as usual. Network and
 // process starts stay open, as on macOS. Exits with Zorel (--die-with-parent).
-export const bwrapArgs = (bwrap: string, roots: ReadonlyArray<string>) => [
+const bwrapArgs = (bwrap: string, roots: ReadonlyArray<string>) => [
   // --unshare-pid: the agent's /proc shows its own processes only, never the server's (its environment, its memory).
   bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--unshare-pid", "--proc", "/proc", ...roots.flatMap((r) => ["--bind", r, r]), "--die-with-parent", "--"
 ]

@@ -6,9 +6,9 @@ import { type AgentPermissions, DEFAULT_PERMISSIONS, type Grant, type McpServer,
 export const permissionsOf = (agent: { permissions?: AgentPermissions } | undefined): AgentPermissions => agent?.permissions ?? DEFAULT_PERMISSIONS
 
 // A server the agent was given nothing for follows the server's own mode.
-export const grantFor = (p: AgentPermissions, server: Pick<McpServer, "id" | "mode">): Grant => p.grants[server.id] ?? (server.mode === "read" ? "read" : "write")
+const grantFor = (p: AgentPermissions, server: Pick<McpServer, "id" | "mode">): Grant => p.grants[server.id] ?? (server.mode === "read" ? "read" : "write")
 
-export interface ToolRoute {
+interface ToolRoute {
   readonly expose: boolean
   readonly approve: boolean
   readonly alwaysKey: string // the rule "Always allow" saves

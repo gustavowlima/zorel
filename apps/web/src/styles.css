@@ -14,9 +14,9 @@
 
 :root {
   /* Neutrals carry a trace of the brand blue (OKLCH hue 260, chroma 0.005): the landing's graphite. Frame 15.5%,
-     sidebar 17.5%, canvas 21%, surface 23.5%, raised 25% (OKLCH lightness). */
+     sidebar 17.5%, canvas 19%, surface 21%, raised 23.5% (OKLCH lightness; darkened 2026-11-10, the steps kept). */
   --z-bg-frame: #0b0c0e;
-  --z-bg-canvas: #17181b;
+  --z-bg-canvas: #131416;
   /* Chart series (categorical, fixed order, validated for CVD and contrast on the canvas; see DESIGN.md Charts). */
   --z-series-1: #3987e5;
   --z-series-2: #d95926;
@@ -26,18 +26,18 @@
   --z-series-6: #008300;
   --z-series-7: #9085e9;
   --z-bg-sidebar: #0f1113; /* a step above the rail (frame), as on the landing; content lives in one card */
-  --z-bg-surface: #1c1e21;
-  --z-bg-raised: #202225;
+  --z-bg-surface: #18191c;
+  --z-bg-raised: #1c1e21;
   /* Controls are a translucent layer, not a grey of their own: they read on the frame, the canvas and a surface
      card alike (an opaque #232323 vanished on surface, which has the same tone). */
   --z-bg-control: rgba(255, 255, 255, 0.07);
   --z-bg-control-hover: rgba(255, 255, 255, 0.09);
-  --z-bg-hover: #1a1c1f; /* rows and ghost controls on the frame and the canvas: a wash, not a control */
+  --z-bg-hover: #17191c; /* rows and ghost controls on the frame and the canvas: a wash, not a control */
   --z-bg-control-active: rgba(255, 255, 255, 0.12);
   /* Fields (Input, Textarea, a Select's body) are a faint veil with the hairline doing the outline: a control's 7%
      read as a grey slab on a dialog, lighter than everything around it. */
   --z-bg-field: rgba(255, 255, 255, 0.025);
-  --z-bg-code: #111315;
+  --z-bg-code: #0f1012;
   --z-border: rgba(255, 255, 255, 0.06);
   --z-border-strong: rgba(255, 255, 255, 0.1);
   --z-text: #ffffff;
@@ -63,7 +63,7 @@
      a shadow, so they float over the chat instead of covering it like a slab. Dialogs and tooltips stay solid. */
   --z-bg-float: rgba(32, 34, 37, 0.86);
   --z-shadow-float: 0 18px 40px -16px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.45);
-  --z-overlay: rgba(0, 0, 0, 0.5);
+  --z-overlay: rgba(0, 0, 0, 0.6); /* a dialog sits on the canvas tone, so the page behind steps back further */
   /* Agent identity: avatars only, never actions (the blue stays the only accent). Same in both themes. One lightness
      and chroma (OKLCH 68% 0.12), six hues kept clear of danger, warning, success and the blue, so an avatar never
      reads as a state; the initial is dark (≥6:1 on every one; white failed 4.5:1 on five of the old six). */
@@ -171,6 +171,13 @@
   --color-success-line: var(--z-success-line);
   --color-diff-add: var(--z-diff-add);
   --color-diff-del: var(--z-diff-del);
+  --color-series-1: var(--z-series-1);
+  --color-series-2: var(--z-series-2);
+  --color-series-3: var(--z-series-3);
+  --color-series-4: var(--z-series-4);
+  --color-series-5: var(--z-series-5);
+  --color-series-6: var(--z-series-6);
+  --color-series-7: var(--z-series-7);
   --color-agent-1: var(--z-agent-1);
   --color-agent-2: var(--z-agent-2);
   --color-agent-3: var(--z-agent-3);
@@ -257,7 +264,8 @@ img, svg, a { -webkit-user-drag: none; }
 /* The composer's Tiptap editor: one line that grows, the placeholder drawn from Tiptap's data attribute. */
 .composer-editor { outline: none; max-height: 15rem; overflow-y: auto; padding: 6px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 .composer-editor p { margin: 0; }
-.composer-editor p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--z-text-dim); float: left; height: 0; pointer-events: none; }
+/* Any TipTap editor's placeholder (the message box, a page being written). */
+.ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--z-text-dim); float: left; height: 0; pointer-events: none; }
 /* A scrolling list with more below fades out over its last 24px instead of ending on a cut row. */
 /* A scrolling page keeps its scrollbar's room, so a centered column never shifts when the page starts to scroll. */
 .gutter-stable { scrollbar-gutter: stable; }
@@ -318,10 +326,16 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .shimmer-text { animation: none; background: none; color: var(--z-text-muted); }
 }
-.prose-chat > * + * { margin-top: 0.6em; }
+/* Reading rhythm: a looser line (a chip in it doesn't crowd the next), paragraphs a line apart, list items with air
+   between them, a heading set off from what came before. */
+.prose-chat { line-height: 1.7; }
+.prose-chat > * + * { margin-top: 0.9em; }
+.prose-chat li + li { margin-top: 0.45em; }
+.prose-chat li > ul, .prose-chat li > ol, .prose-chat li > p + p { margin-top: 0.45em; }
+.prose-chat > :is(h1, h2, h3):not(:first-child) { margin-top: 1.4em; }
 .prose-chat ul { list-style: disc; padding-left: 1.4em; }
 .prose-chat ol { list-style: decimal; padding-left: 1.4em; }
-.prose-chat a:not([data-mention]) { color: var(--z-accent-text); text-decoration: underline; }
+.prose-chat a:not([data-mention]):not([data-chip]) { color: var(--z-accent-text); text-decoration: underline; }
 .prose-chat h1, .prose-chat h2, .prose-chat h3 { font-weight: 600; font-size: 15px; }
 .prose-chat code { font-family: var(--font-mono); font-size: 12px; background: var(--z-bg-control); border-radius: 4px; padding: 1px 4px; }
 .prose-chat pre code { background: none; padding: 0; }
@@ -331,3 +345,45 @@ body {
 .prose-chat th, .prose-chat td { border-bottom: 1px solid var(--z-border); padding: 6px 12px; }
 .prose-chat tr:last-child td { border-bottom: 0; }
 .prose-chat blockquote { border-left: 2px solid var(--z-border-strong); padding-left: 10px; color: var(--z-text-muted); }
+
+/* Page changes (useRoute): a short crossfade, the app's own easing. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 160ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Identity tint (DESIGN.md › Identity tint): something about one agent, when chosen or live, takes that agent's color.
+   tint-1…6 name the color (the agent's tone + 1, as the avatar's); `tinted` draws it: the line at 38%, a 9% wash and
+   the text pulled toward the hue, so it reads as that agent without competing with the blue (actions) or the states. */
+@utility tint-1 { --tint: var(--z-agent-1); }
+@utility tint-2 { --tint: var(--z-agent-2); }
+@utility tint-3 { --tint: var(--z-agent-3); }
+@utility tint-4 { --tint: var(--z-agent-4); }
+@utility tint-5 { --tint: var(--z-agent-5); }
+@utility tint-6 { --tint: var(--z-agent-6); }
+@utility tinted {
+  border-color: color-mix(in oklab, var(--tint) 38%, transparent);
+  background-color: color-mix(in oklab, var(--tint) 9%, transparent);
+  color: color-mix(in oklab, var(--tint) 45%, var(--z-text));
+}
+/* The tint as a 3px edge on the left (a routine's block in the week: whose it is), leaving the border to the outcome. */
+@utility tint-edge {
+  background-image: linear-gradient(to right, var(--tint) 3px, transparent 3px);
+  background-repeat: no-repeat; /* a repeat would show again under the right border */
+}
+/* A brand's or a category's icon tile: a 14% wash of the color with the mark in it, lifted toward the text so it
+   reads on the dark canvas (connectors' logos, a flow step's kind). */
+@utility brand-tile {
+  background-color: color-mix(in oklab, var(--tint) 14%, transparent);
+  color: color-mix(in oklab, var(--tint) 75%, var(--z-text));
+}
+/* A name in its agent's color (who speaks in a chat). */
+@utility tint-text {
+  color: color-mix(in oklab, var(--tint) 55%, var(--z-text));
+}
+/* A page (written or read): the chat's reading rhythm, with headings that read as headings. */
+.prose-page h1 { font-size: 1.5em; line-height: 1.3; }
+.prose-page h2 { font-size: 1.25em; line-height: 1.35; }
+.prose-page h3 { font-size: 1.1em; line-height: 1.4; }
+.prose-page > :is(h1, h2, h3) + * { margin-top: 0.5em; }

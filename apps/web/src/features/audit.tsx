@@ -9,7 +9,7 @@ import { type ReactNode, useEffect, useState } from "react"
 import { agentsAtom, auditAtom, useInvalidate, useList } from "../client.ts"
 import { ReadingState } from "./reading.tsx"
 import { modelLabel } from "../labels.ts"
-import { ArrowRight, Bot, Button, ChevronRight, cx, DateRangeField, Folder, KeyRound, Plug, Rows, SearchInput, Section, Select, Shield, Undo2 } from "@/ui"
+import { ArrowRight, Bot, Button, ChevronRight, cn, DateRangeField, Folder, KeyRound, Plug, Rows, SearchInput, Section, Select, Shield, Undo2 } from "@/ui"
 
 const KINDS: ReadonlyArray<AuditKind> = ["all", "providers", "projects", "tools", "approvals"]
 
@@ -19,7 +19,7 @@ const toneOf = (e: AuditEntry) => {
   const verb = e.action.split(".")[1] ?? ""
   if (e.outcome !== "success" || verb === "deleted" || verb === "removed" || verb === "denied" || verb === "cleared") return "bg-danger-soft text-danger"
   if (verb === "created" || verb === "added" || verb === "approved" || verb === "set") return "bg-success-faint text-success"
-  return "bg-accent-soft text-accent-text"
+  return "bg-control text-secondary"
 }
 const iconOf = (e: AuditEntry): ReactNode => {
   const resource = e.action.split(".")[0]
@@ -145,7 +145,7 @@ export function AuditSection() {
           <Rows>
             {list.map((e) => (
               <div key={e.id} className="flex items-start gap-3 py-3">
-                <span className={cx("mt-px flex size-6 shrink-0 items-center justify-center rounded-control [&_svg]:size-3.5", toneOf(e))}>{iconOf(e)}</span>
+                <span className={cn("mt-px flex size-6 shrink-0 items-center justify-center rounded-control [&_svg]:size-3.5", toneOf(e))}>{iconOf(e)}</span>
                 <span className="flex min-w-0 flex-1 flex-col gap-1">
                   <Sentence entry={e} />
                   {e.changes.length > 0 && (e.action.endsWith("updated") || e.action.endsWith("renamed")) ? (
@@ -226,5 +226,5 @@ function Sentence({ entry: e }: { entry: AuditEntry }) {
 function Value({ field, value, tone }: { field: string; value: string | null; tone: "before" | "after" }) {
   const text =
     value === null || value === "" ? "—" : field === "model" ? modelLabel(value) : field === "access" && ACCESS.has(value) ? t(`access.${value}` as MessageKey) : value
-  return <span className={cx("max-w-64 truncate", tone === "before" ? "text-muted line-through decoration-1" : "font-medium text-fg")}>{text}</span>
+  return <span className={cn("max-w-64 truncate", tone === "before" ? "text-muted line-through decoration-1" : "font-medium text-fg")}>{text}</span>
 }

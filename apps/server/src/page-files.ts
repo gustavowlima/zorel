@@ -35,7 +35,7 @@ export const fileTitle = (title: string) =>
     .replace(/^\.+/, "")
     .slice(0, 100) || "Untitled"
 
-export interface PageFile {
+interface PageFile {
   readonly id: string
   readonly scope: string
   readonly title: string

@@ -5,7 +5,7 @@ import { Schema } from "effect"
 
 export const MAX_STEPS = 30 // the trigger isn't counted
 const NodeId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,40}$/))
-const Text = (max: number) => Schema.String.check(Schema.isMaxLength(max))
+export const Text = (max: number) => Schema.String.check(Schema.isMaxLength(max))
 const Pos = Schema.Finite
 
 // A field's value: a literal, or what an earlier step gave ({ $from: "n2", path: "items.0.id" }).
@@ -15,16 +15,16 @@ export const isRef = (v: unknown): v is ValueRef =>
   !!v && typeof v === "object" && !Array.isArray(v) && typeof (v as { $from?: unknown }).$from === "string"
 
 // Spec 013 P2. One time, or a day of every month (29–31 fall back to a shorter month's last day), in the person's zone.
-export const LocalDate = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/))
-export const LocalTime = Schema.String.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/))
+const LocalDate = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/))
+const LocalTime = Schema.String.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/))
 export const RoutineSchedule = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("once"), date: LocalDate, time: LocalTime }),
   Schema.Struct({ kind: Schema.Literal("monthly"), day: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 31 })), time: LocalTime })
 ])
 export type RoutineSchedule = typeof RoutineSchedule.Type
 // Minutes between a watched connector's checks, never under one.
-export const WATCH_EVERY = [1, 5, 15, 60] as const
-export const WatchEvery = Schema.Literals(WATCH_EVERY)
+const WATCH_EVERY = [1, 5, 15, 60] as const
+const WatchEvery = Schema.Literals(WATCH_EVERY)
 
 // message: a watch on a connector's channel (the same engine, named for what it watches).
 export const TriggerConfig = Schema.Struct({
@@ -41,21 +41,21 @@ export const TriggerConfig = Schema.Struct({
   args: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   lookFirst: Schema.optional(Schema.Boolean)
 })
-export const ToolConfig = Schema.Struct({
+const ToolConfig = Schema.Struct({
   serverId: Schema.String,
   tool: Text(200),
   args: Schema.Record(Schema.String, Schema.Unknown),
   retries: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 })))
 })
-export const AgentConfig = Schema.Struct({ prompt: Text(8000) }) // the routine's own agent answers
-export const CheckConfig = Schema.Struct({ onlyWhen: Text(2000) })
-export const ConditionConfig = Schema.Struct({
+const AgentConfig = Schema.Struct({ prompt: Text(8000) }) // the routine's own agent answers
+const CheckConfig = Schema.Struct({ onlyWhen: Text(2000) })
+const ConditionConfig = Schema.Struct({
   rule: Schema.Literals(["hasItems", "isEmpty", "contains", "equals", "ask"]),
   input: Schema.optional(ValueRef),
   arg: Schema.optional(Text(2000)),
   defaultBranch: Schema.Literals(["yes", "no"])
 })
-export const ApprovalConfig = Schema.Struct({ summary: Text(500), expiresMinutes: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1440 }))) })
+const ApprovalConfig = Schema.Struct({ summary: Text(500), expiresMinutes: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1440 }))) })
 
 const node = <K extends string, C extends Schema.Top>(kind: K, config: C) =>
   Schema.Struct({ id: NodeId, kind: Schema.Literal(kind), x: Pos, y: Pos, label: Schema.optional(Text(80)), config })
@@ -78,7 +78,7 @@ export type FlowGraph = typeof FlowGraph.Type
 // ---------- ports ----------
 // What each kind hands on: text (an agent's reply), data (JSON: a trigger's event, a tool's result), or a decision
 // (which way to go: the value before it flows on). `splits`: its paths carry "yes" / "no".
-export type PortType = "text" | "data" | "decision"
+type PortType = "text" | "data" | "decision"
 export const PORTS: Record<FlowKind, { gives: PortType | null; splits: boolean; takes: boolean }> = {
   trigger: { gives: "data", splits: false, takes: false },
   tool: { gives: "data", splits: false, takes: true },
@@ -99,7 +99,7 @@ export function connectionProblem(from: FlowKind, to: FlowKind, branch?: "yes" |
 }
 
 // Why a field's value from an earlier step can't be used (undefined: it can).
-export function referenceProblem(source: FlowKind | undefined, ref: ValueRef): string | undefined {
+function referenceProblem(source: FlowKind | undefined, ref: ValueRef): string | undefined {
   if (!source) return `No step ${ref.$from}.`
   const gives = PORTS[source].gives
   if (gives === "decision" || gives === null) return "That step gives a decision, not a value."
@@ -108,7 +108,7 @@ export function referenceProblem(source: FlowKind | undefined, ref: ValueRef): s
 }
 
 // ---------- the whole graph ----------
-export type FlowProblem = { readonly ok: false; readonly nodeId?: string; readonly field?: string; readonly problem: string }
+type FlowProblem = { readonly ok: false; readonly nodeId?: string; readonly field?: string; readonly problem: string }
 const fail = (problem: string, nodeId?: string, field?: string): FlowProblem => ({ ok: false, problem, ...(nodeId && { nodeId }), ...(field && { field }) })
 const blank = (v: unknown) => typeof v !== "string" || !v.trim()
 

@@ -16,7 +16,7 @@ export function CheckList({
   label: string
   value: ReadonlyArray<string>
   onChange: (value: string[]) => void
-  options: ReadonlyArray<{ value: string; label: ReactNode; trailing?: ReactNode }>
+  options: ReadonlyArray<{ value: string; label: ReactNode; trailing?: ReactNode; tint?: string }>
   className?: string
 }) {
   return (
@@ -25,13 +25,13 @@ export function CheckList({
         <Checkbox
           key={o.value}
           value={o.value}
-          className="group flex cursor-default items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:not-data-selected:bg-control data-selected:border-accent-line data-selected:bg-accent-faint motion-reduce:transition-none"
+          className={cn("group flex cursor-default items-center gap-2.5 rounded-control border border-transparent px-2.5 py-1.5 outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:not-data-selected:bg-control motion-reduce:transition-none", o.tint ? `${o.tint} data-selected:tinted` : "data-selected:border-accent-line data-selected:bg-accent-faint")}
         >
           <span
             aria-hidden="true"
-            className="flex size-4 shrink-0 items-center justify-center rounded-sm border border-strong text-accent-text group-data-selected:border-accent-line group-data-selected:bg-accent-soft"
+            className={cn("flex size-4 shrink-0 items-center justify-center rounded-sm border border-strong", o.tint ? "text-(--tint) group-data-selected:border-(--tint)" : "text-accent-text group-data-selected:border-accent-line group-data-selected:bg-accent-soft")}
           >
-            <Check className="size-3 opacity-0 group-data-selected:opacity-100" />
+            <Check className="size-3 opacity-0 transition-opacity duration-120 group-data-selected:opacity-100 motion-reduce:transition-none" />
           </span>
           <span className="flex min-w-0 flex-1 items-center gap-2 text-fg">{o.label}</span>
           {o.trailing}

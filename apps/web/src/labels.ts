@@ -64,6 +64,11 @@ export function scopeLabel(scope: string, projects: ReadonlyArray<Project>, agen
 
 // Identity tone: position among the agents of the same project (or among the global ones).
 export const agentTone = (agent: Agent, agents: ReadonlyArray<Agent>) => Math.max(0, agents.filter((a) => a.projectId === agent.projectId).findIndex((a) => a.id === agent.id))
+// The agent's identity tint (styles.css: tint-1…6 set --tint; tinted, tint-text and tint-edge draw it). Whole class
+// names so Tailwind sees them; six, as the avatar colors.
+const TINTS = ["tint-1", "tint-2", "tint-3", "tint-4", "tint-5", "tint-6"] as const
+export const tintFor = (tone: number) => TINTS[tone % TINTS.length]!
+export const agentTint = (agent: Agent, agents: ReadonlyArray<Agent>) => tintFor(agentTone(agent, agents))
 
 export const agentName = (id: string | null, agents: ReadonlyArray<Agent>) => agents.find((a) => a.id === id)?.name ?? t("common.assistant")
 
@@ -90,7 +95,7 @@ export const handleOf = (a: Pick<Agent, "name">) =>
     .replace(/^-|-$/g, "")
 
 // A failover route for people: "Claude · work · Opus" for a subscription account, "Anthropic · claude-…" otherwise.
-export function routeLabel(model: string, accountId: string | null, accounts: ReadonlyArray<ProviderAccount>): string {
+function routeLabel(model: string, accountId: string | null, accounts: ReadonlyArray<ProviderAccount>): string {
   const provider = ACCOUNT_OF_MODEL[splitModel(model).provider]
   const mine = provider ? accounts.filter((a) => a.provider === provider) : []
   const account = mine.find((a) => a.id === accountId) ?? mine.find((a) => a.isDefault)
@@ -162,3 +167,7 @@ export function noteworthy(before: ChatStatus["state"] | undefined, now: ChatSta
   if (now === "idle" && before === "running") return "done"
   return undefined
 }
+
+// Minutes since midnight as "09:30", and back.
+export const hm = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`
+export const toMinutes = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5))

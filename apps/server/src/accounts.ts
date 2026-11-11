@@ -68,7 +68,7 @@ async function readStatus(a: AccountRow): Promise<Status> {
   return { loggedIn, identity: loggedIn ? (/using (\w+)/i.exec(out)?.[1] ?? null) : null }
 }
 
-export interface AccountsService {
+interface AccountsService {
   readonly list: Effect.Effect<ProviderAccount[]>
   readonly create: (provider: AccountProvider, label: string) => Effect.Effect<ProviderAccount>
   readonly rename: (id: string, label: string) => Effect.Effect<ProviderAccount | undefined>
@@ -88,7 +88,7 @@ export interface AccountsService {
   readonly forgetCliModels: Effect.Effect<void> // a CLI was just installed: read its models again
 }
 
-export type CliModels = Partial<Record<"claude-cli" | "codex-cli" | "antigravity", ReadonlyArray<CliModel>>>
+type CliModels = Partial<Record<"claude-cli" | "codex-cli" | "antigravity", ReadonlyArray<CliModel>>>
 const CLI_MODELS_KEY = "cliModels"
 const CLI_MODELS_TTL_MS = 60 * 60_000
 const CLI_MODELS_RETRY_MS = 5 * 60_000

@@ -4,16 +4,16 @@ import type { FolderListing, Project } from "@zorel/contracts"
 import { formatAge, t } from "@zorel/i18n"
 import { type KeyboardEvent, useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, mutations, projectsAtom, teamsAtom, useList, useMutation, useStatuses } from "../client.ts"
-import { agentTone, chatTitle, statusLabel } from "../labels.ts"
+import { agentTint, agentTone, chatTitle, statusLabel } from "../labels.ts"
 import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
 import { callable, projectCrew, teamsIn } from "./agent-options.ts"
 import { AgentItem, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
-import { AgentAvatar, ArrowLeft, column, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, CheckList, ChevronRight, ConfirmDialog, cx, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, RowHit, Rows, Screen, Section, Tab, TabList, TabPanel, Tabs, Textarea, Tooltip, Trash2, Users } from "@/ui"
+import { AgentAvatar, ArrowLeft, column, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, CheckList, ChevronRight, ConfirmDialog, cn, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, RowHit, Rows, Screen, Section, Tab, TabList, TabPanel, Tabs, Textarea, Tooltip, Trash2, Users } from "@/ui"
 
 // The reason a folder was refused (WorkspaceInvalid), in words.
 const REASONS = ["relative", "missing", "not_directory", "forbidden"] as const
-export function folderError(e: unknown): string {
+function folderError(e: unknown): string {
   const reason = (e as { reason?: string })?.reason
   return REASONS.includes(reason as (typeof REASONS)[number]) ? t(`workspace.invalid.${reason as (typeof REASONS)[number]}`) : String(e)
 }
@@ -194,7 +194,7 @@ function AddProject({ onDone }: { onDone: () => void }) {
                 label={t("project.open", { name: f.name })}
                 size="xs"
                 onPress={() => open(f.path)}
-                className={cx("text-muted", f === pick ? "opacity-100" : "opacity-0 group-hover:opacity-100 data-focus-visible:opacity-100")}
+                className={cn("text-muted", f === pick ? "opacity-100" : "opacity-0 group-hover:opacity-100 data-focus-visible:opacity-100")}
               >
                 <ChevronRight />
               </IconButton>
@@ -268,7 +268,7 @@ export function ProjectView({ project, tab }: { project: Project; tab: ProjectTa
         </>
       }
     >
-      <Tabs selectedKey={tab} onSelectionChange={(k) => go({ view: "project", id: project.id, tab: k as ProjectTab })} className={cx(column(), "gap-8")}>
+      <Tabs selectedKey={tab} onSelectionChange={(k) => go({ view: "project", id: project.id, tab: k as ProjectTab })} className={cn(column(), "gap-8")}>
         <TabList label={project.name}>
           <Tab id="overview">{t("project.overview")}</Tab>
           <Tab id="agents">{t("project.agents")}</Tab>
@@ -300,7 +300,7 @@ const TEAM_SHOWN = 8
 
 function Overview({ project }: { project: Project }) {
   const update = useMutation(mutations.updateProject)
-  const chats = useList(chatsAtom).filter((c) => c.projectId === project.id)
+  const chats = useList(chatsAtom).filter((c) => c.projectId === project.id && !c.parentId) // tasks live under their chat
   const agents = useList(agentsAtom)
   const statuses = useStatuses()
   const [name, setName] = useState(project.name)
@@ -441,7 +441,7 @@ function Agents({ projectId }: { projectId: string }) {
               value={project?.agentIds ?? []}
               onChange={(agentIds) => save({ agentIds })}
               className="scroll-quiet max-h-80 overflow-y-auto"
-              options={choices.map((a) => ({ value: a.id, label: <><AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} /> {a.name}</>, trailing: <span className="truncate text-sm text-muted">{a.title || (a.projectId ? t("project.onlyHere") : t("agents.global"))}</span> }))}
+              options={choices.map((a) => ({ value: a.id, tint: agentTint(a, agents), label: <><AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} /> {a.name}</>, trailing: <span className="truncate text-sm text-muted">{a.title || (a.projectId ? t("project.onlyHere") : t("agents.global"))}</span> }))}
             />
           </div>
           {failed && <p className="text-sm text-danger">{t("project.crewFailed")}</p>}

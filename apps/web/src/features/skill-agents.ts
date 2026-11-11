@@ -13,7 +13,7 @@ export const sees = (ids: ReadonlyArray<string> | undefined, agentId: string) =>
 // The ids still active: what can be written back.
 const active = (ids: ReadonlyArray<string>, team: ReadonlyArray<Agent>) => ids.filter((id) => teamOf(team).some((a) => a.id === id))
 
-export const MAX_AGENTS = 50 // the contract's limit on a skill's agents
+const MAX_AGENTS = 50 // the contract's limit on a skill's agents
 
 // Who a skill can reach: a project's skill only the agents that work in that project (its own and the global ones).
 const reach = (team: ReadonlyArray<Agent>, scope: string | undefined) => {
@@ -32,7 +32,7 @@ export function withoutAgent(ids: ReadonlyArray<string> | undefined, agentId: st
 export const withAgent = (ids: ReadonlyArray<string> | undefined, agentId: string, team: ReadonlyArray<Agent>): string[] => [...new Set([...active(ids ?? [], team), agentId])]
 
 // How the list reads: everyone, nobody left (all its agents are gone), or these agents.
-export type UsedByView = { kind: "all" } | { kind: "none" } | { kind: "some"; names: ReadonlyArray<string> }
+type UsedByView = { kind: "all" } | { kind: "none" } | { kind: "some"; names: ReadonlyArray<string> }
 export function usedByView(ids: ReadonlyArray<string> | undefined, team: ReadonlyArray<Agent>): UsedByView {
   if (!ids?.length) return { kind: "all" }
   const names = teamOf(team).filter((a) => ids.includes(a.id)).map((a) => a.name)

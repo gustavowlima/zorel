@@ -2,7 +2,7 @@
 // green with "+", the rest muted. LCS over lines: fine for recipes of a few dozen lines.
 import { cn } from "@/lib/utils"
 
-export type DiffLine = { readonly kind: "same" | "add" | "del"; readonly text: string }
+type DiffLine = { readonly kind: "same" | "add" | "del"; readonly text: string }
 
 export function diffLines(before: string, after: string): DiffLine[] {
   const a = before.split("\n")

@@ -19,7 +19,7 @@ const MAX_FILE = 200_000
 const MAX_CLI_OUTPUT = 2_000_000 // what runCli keeps of stdout: a file this long was cut
 
 export type Engine = "podman" | "docker"
-export interface EngineStatus {
+interface EngineStatus {
   readonly engine: Engine | null
   readonly problem: string | null // what the person has to do, when no engine works
 }
@@ -96,12 +96,12 @@ export const folderName = (path: string) => basename(path).toLowerCase().normali
 
 // ---------- the container ----------
 
-export interface Lent {
+interface Lent {
   readonly path: string
   readonly readOnly: boolean
 }
 // Two installs (a test one, another data folder) never share or erase each other's computers.
-export const installOf = (dataDir: string) => new Bun.CryptoHasher("sha1").update(dataDir).digest("hex").slice(0, 6)
+const installOf = (dataDir: string) => new Bun.CryptoHasher("sha1").update(dataDir).digest("hex").slice(0, 6)
 export const containerName = (dataDir: string, agentId: string, projectId: string | null) => `zorel-${installOf(dataDir)}-${agentId.slice(0, 8)}-${(projectId ?? "none").slice(0, 8)}`
 
 // What a container was made with (a label on it): the lent folder and whether it's read-only. A chat at another access
@@ -168,7 +168,7 @@ export const COMPUTER_TOOLS: ReadonlyArray<ToolDef> = [
 export const COMPUTER_TOOL_NAMES: ReadonlySet<string> = new Set(COMPUTER_TOOLS.map((t) => t.name))
 export const WRITING_COMPUTER_TOOLS: ReadonlySet<string> = new Set(["computer_run", "computer_write", "computer_edit"])
 
-export interface ComputerCall {
+interface ComputerCall {
   readonly agentId: string
   readonly projectId: string | null
   readonly lent: Lent | null // the chat's project folder, already checked

@@ -181,7 +181,7 @@ export const mutations = {
 
 // Refetch resources the server changed on its own (a chat titled after its first message, memories
 // proposed by a summary, an account that finished signing in).
-export const invalidateAtom = Zorel.runtime.fn((keys: ReadonlyArray<Key>) => Reactivity.invalidate(keys))
+const invalidateAtom = Zorel.runtime.fn((keys: ReadonlyArray<Key>) => Reactivity.invalidate(keys))
 
 // ---------- hooks ----------
 
@@ -207,7 +207,7 @@ export const useInvalidate = () => useAtomSet(invalidateAtom)
 
 const retrying = Schedule.spaced("1 second")
 
-export const statusAtom = Atom.keepAlive(
+const statusAtom = Atom.keepAlive(
   Live.runtime.atom(
     Stream.unwrap(
       Effect.gen(function* () {
@@ -221,7 +221,7 @@ export const statusAtom = Atom.keepAlive(
   )
 )
 // What routines tell the person (spec 012), one at a time: the latest notice (notify.tsx shows it).
-export const noticeAtom = Atom.keepAlive(
+const noticeAtom = Atom.keepAlive(
   Live.runtime.atom(
     Stream.unwrap(
       Effect.gen(function* () {
@@ -277,7 +277,7 @@ const withStep = (live: LiveTurn | undefined, step: WorkStep): LiveTurn | undefi
     ? { ...live, steps: [...live.steps.filter((s) => s.id !== step.id), step], stepAt: step.id in live.stepAt ? live.stepAt : { ...live.stepAt, [step.id]: live.text.length } }
     : live
 
-export function reduceChat(s: ChatState, e: ChatEvent): ChatState {
+function reduceChat(s: ChatState, e: ChatEvent): ChatState {
   switch (e._tag) {
     case "snapshot": {
       const snap = e.snapshot

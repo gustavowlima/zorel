@@ -6,7 +6,7 @@ import { type Agent, MENTION_RE } from "@zorel/contracts"
 import { handleOf } from "../labels.ts"
 
 type Named = Pick<Agent, "id" | "name">
-export type MentionPart = string | { agent: Named; text: string }
+type MentionPart = string | { agent: Named; text: string }
 
 export const agentUrl = (id: string) => `#/agent/${id}`
 // A mention's token as the server compares it with a handle: no accents, no case.

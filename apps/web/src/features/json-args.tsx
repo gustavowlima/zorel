@@ -26,7 +26,7 @@ const theme = EditorView.theme({
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "var(--z-accent-soft)" },
   ".cm-activeLine": { backgroundColor: "transparent" },
   ".cm-placeholder": { color: "var(--z-text-dim)" },
-  ".cm-tooltip": { backgroundColor: "var(--z-bg-raised)", border: "1px solid var(--z-border-strong)", borderRadius: "8px", color: "var(--z-text)" },
+  ".cm-tooltip": { backgroundColor: "var(--z-bg-float)", backdropFilter: "blur(24px) saturate(1.5)", boxShadow: "var(--z-shadow-float)", border: "1px solid var(--z-border-strong)", borderRadius: "8px", color: "var(--z-text)" },
   ".cm-tooltip-autocomplete > ul > li": { padding: "4px 8px" },
   ".cm-tooltip-autocomplete > ul > li[aria-selected]": { backgroundColor: "var(--z-accent-soft)", color: "var(--z-text)" },
   ".cm-completionDetail": { color: "var(--z-text-muted)", fontStyle: "normal", marginLeft: "8px" },
