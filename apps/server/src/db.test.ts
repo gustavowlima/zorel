@@ -587,3 +587,17 @@ test("routine runs (spec 012): old finished runs go, the newest 50 of each routi
       expect(yield* store.countQueued(r.id)).toBe(1)
     })
   ))
+
+test("approvals: a proposal to create agents is kept as data and read back with the card", () =>
+  run(join(mkdtempSync(join(tmpdir(), "zorel-approval-")), "z.db"), (r) =>
+    Effect.gen(function* () {
+      const c = yield* r.createChat({ projectId: null, agentIds: [], model: "x/y" })
+      const turn = yield* r.enqueueTurn({ chatId: c.id, agentId: null, model: "x/y", clientId: null, depth: 0 })
+      const agent = { name: "Rex", title: "Reviewer", description: "", instructions: "Review.", model: "x/y", access: "workspace", permissions: { web: true, browser: false, grants: {}, always: [] }, scope: "global", reason: "" } as const
+      const proposal = { kind: "create", agents: [agent] } as const
+      const a = yield* r.addApproval({ chatId: c.id, turnId: turn.id, stepId: null, agentId: null, kind: "tool", tool: "zorel_create_agent", summary: "s", args: "name: Rex", cwd: null, alwaysKey: null, proposal, expiresAt: Date.now() + 60_000 })
+      const [open] = yield* r.openApprovals(c.id)
+      expect(open?.id).toBe(a.id)
+      expect(open?.proposal).toEqual(proposal)
+    })
+  ))

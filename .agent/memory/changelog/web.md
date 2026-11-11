@@ -124,3 +124,4 @@
 2026-11-11 | usage menu: logo+name+metrics, refresh; sign-in by code as two steps | user: polluted menu, unintuitive sign-in
 2026-11-11 | skills: single pane, open skill replaces the list | user request
 2026-11-11 | 'Precisa de você' renamed 'Pendências' | user request
+2026-11-11 | Builder reads proposals as data; proposal titles localized | review + translation pending item

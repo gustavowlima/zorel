@@ -3,7 +3,7 @@
 // Chaining: a reply that mentions another member queues that member's turn (up to MAX_DEPTH without a message from you).
 import { APPROVAL_MS } from "./engines/session.ts"
 import { type Access, type Agent, type Chat, type Effort, type FailoverTarget, type FailureReason, type FileChange, MAX_RUNNING_DEFAULT, type Memory, type Step, type Switch } from "@zorel/contracts"
-import { type AgentOverride, type Approval, ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNeedsAgent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
+import { type AgentOverride, type Approval, ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNeedsAgent, ChatNotFound, type ChatStatus, ErrorCode, type ProposalOf, type Turn, type WorkStep } from "@zorel/contracts/events"
 import { Cause, Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
 import { ask, Busy, consolidate, DataDir, knownNames, mapEarlierFacts, members, NotFound, pinBudget, prepare } from "./chat.ts"
@@ -473,9 +473,9 @@ const makeRuntime = Effect.gen(function* () {
     const defs: ToolDef[] = []
     const mcpDefs: ToolDef[] = [] // the MCP servers' tools: listed, or found on demand when there are many
     const withheld = withheldTools(agent) // by the agent's memory mode and knowledge access
-    const step = async (title: string, tool: string) => {
+    const step = async (title: string, tool: string, detail = "") => {
       await settled()
-      return run(store.addStep({ turnId: row.id, kind: "tool", title, tool, files: [], status: "running" }).pipe(Effect.tap((s) => publish(chat.id, ev("step-started", { step: s })))))
+      return run(store.addStep({ turnId: row.id, kind: "tool", title, tool, detail, files: [], status: "running" }).pipe(Effect.tap((s) => publish(chat.id, ev("step-started", { step: s })))))
     }
     const finish = (s: WorkStep, status: WorkStep["status"], output = "") =>
       run(store.finishStep(s, { status, output: output.slice(0, 300) }).pipe(Effect.tap((done) => publish(chat.id, ev("step-finished", { step: done }))), Effect.tap((done) => Effect.sync(() => onFinished(done)))))
@@ -614,7 +614,9 @@ const makeRuntime = Effect.gen(function* () {
       if (name !== "zorel_create_agent" && !target) return textResult(`No agent "${String(args.agent ?? "")}" here. Call zorel_list_agents.`, true)
       if (name === "zorel_read_agent") return textResult(readText(target!))
       // Create or update: check, show the proposal card, write only on the person's OK.
-      let proposal: { title: string; text: string; fields: Record<string, unknown>; apply: (overrides: ReadonlyArray<AgentOverride>) => Promise<Agent[]> }
+      // `of`: the same proposal as data (the web words its title and fills the Builder's panel from it); `names`: who
+      // it's about, as the step's detail.
+      let proposal: { title: string; text: string; fields: Record<string, unknown>; of: ProposalOf; names: string; apply: (overrides: ReadonlyArray<AgentOverride>) => Promise<Agent[]> }
       try {
         if (name === "zorel_create_agent") {
           const inputs = createInputs(args, caller, chat.projectId, await run(store.mcpServersFor(chat.projectId)))
@@ -633,6 +635,11 @@ const makeRuntime = Effect.gen(function* () {
             // One card for the whole team: each profile under its name.
             text: inputs.length === 1 ? proposalText(fieldsOf(inputs[0]!)) : inputs.map((i) => `## ${i.name}\n${proposalText({ ...fieldsOf(i), name: undefined })}`).join("\n\n"),
             fields: {},
+            of: {
+              kind: "create",
+              agents: inputs.map((i) => ({ name: i.name, title: i.title, description: i.description, instructions: i.instructions, model: i.model, access: i.access, permissions: i.permissions, scope: i.projectId ? "project" : "global", reason: i.notes.reason }))
+            },
+            names: inputs.map((i) => i.name).join(", "),
             // What the person set in the builder's panel (its AI, its powers) goes in as each agent is created.
             apply: async (overrides) => {
               const made: Agent[] = []
@@ -649,6 +656,8 @@ const makeRuntime = Effect.gen(function* () {
             title: `${nameOf(agent)} proposes changes to ${target!.name}`,
             text: proposalText(changes),
             fields: changes,
+            of: { kind: "update", name: target!.name },
+            names: target!.name,
             apply: async () => [(await run(store.updateAgent(target!.id, changes, nameOf(agent))))!]
           }
         }
@@ -657,8 +666,8 @@ const makeRuntime = Effect.gen(function* () {
       }
       const card = cardText(proposal.text)
       if (!card) return textResult(TOO_LARGE, true)
-      const s = await step(proposal.title, name)
-      const { outcome, reason: change, overrides } = await run(waitFor(chat, row, agent, s, { kind: "tool", tool: name, summary: proposal.title, args: card, cwd: null }, null))
+      const s = await step(proposal.title, name, proposal.names)
+      const { outcome, reason: change, overrides } = await run(waitFor(chat, row, agent, s, { kind: "tool", tool: name, summary: proposal.title, args: card, cwd: null, proposal: proposal.of }, null))
       if (outcome === "denied" || outcome === "expired") {
         keep({ tool: name, args: "", status: "refused", result: "" })
         await finish(s, "refused")
@@ -1011,7 +1020,7 @@ const makeRuntime = Effect.gen(function* () {
       const now = Date.now()
       const approval = yield* store.addApproval({
         chatId: chat.id, turnId: row.id, stepId: s?.id ?? null, agentId: agent?.id ?? null, kind: req.kind, tool: req.tool,
-        summary: req.summary, args: req.args, cwd: req.cwd, alwaysKey: agent ? alwaysKey : null, expiresAt: now + APPROVAL_MS
+        summary: req.summary, args: req.args, cwd: req.cwd, alwaysKey: agent ? alwaysKey : null, proposal: req.proposal ?? null, expiresAt: now + APPROVAL_MS
       })
       const d = yield* Deferred.make<Decision>()
       waiting.set(approval.id, d)

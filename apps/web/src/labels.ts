@@ -1,7 +1,7 @@
 // Readable labels derived from data: model and provider names, memory scopes, chat titles, live status,
 // and each agent's identity tone (its position among its teammates, so colors don't repeat).
 import type { Agent, Chat, ModelInfo, Project, ProviderAccount, Switch } from "@zorel/contracts"
-import type { AgentWait, ChatStatus } from "@zorel/contracts/events"
+import type { AgentWait, Approval, ChatStatus, ProposalOf } from "@zorel/contracts/events"
 import { formatTime, type MessageKey, t } from "@zorel/i18n"
 
 const has = <K extends string>(map: Record<K, unknown>, k: string): k is K => k in map
@@ -174,3 +174,28 @@ export function noteworthy(before: ChatStatus["state"] | undefined, now: ChatSta
 // Minutes since midnight as "09:30", and back.
 export const hm = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`
 export const toMinutes = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5))
+
+// A proposal to create or change agents, worded in the person's language from its data (the server's summary is
+// English): with who proposes it on the card, and short in a step or a decided card ("New agent: Rex").
+const names = (p: Extract<ProposalOf, { kind: "create" }>) => p.agents.map((x) => x.name).join(", ")
+const PROPOSAL_TITLE: { [K in ProposalOf["kind"]]: (p: Extract<ProposalOf, { kind: K }>, by: string) => string } = {
+  create: (p, by) => (p.agents.length === 1 ? t("approval.proposesAgent", { agent: by, name: names(p) }) : t("approval.proposesTeam", { agent: by, count: p.agents.length, names: names(p) })),
+  update: (p, by) => t("approval.proposesChanges", { agent: by, name: p.name })
+}
+// The same, short, by the team tool that made it (a step carries the names as its detail).
+const PROPOSAL_SHORT: Record<string, (names: string) => string> = {
+  zorel_create_agent: (names) => (names.includes(", ") ? t("approval.newTeam", { names }) : t("approval.newAgent", { name: names })),
+  zorel_update_agent: (name) => t("approval.changesTo", { name })
+}
+const proposalNames = (p: ProposalOf) => (p.kind === "create" ? names(p) : p.name)
+
+// A card's title: a proposal from its data; any other card, its summary (or "<agent> wants to use <tool>").
+export function approvalTitle(a: Approval, by: string): string {
+  const p = a.proposal
+  if (p) return (PROPOSAL_TITLE[p.kind] as (p: ProposalOf, by: string) => string)(p, by)
+  return a.summary || t("approval.wantsTo", { agent: by, tool: a.tool })
+}
+// A decided card's short title: a proposal as "New agent: Rex"; any other card, its summary or tool.
+export const receiptTitle = (a: Approval) => (a.proposal && PROPOSAL_SHORT[a.tool]?.(proposalNames(a.proposal))) || a.summary || a.tool
+// A step's title: a team proposal's from its names (detail); any other step, the title the engine gave it.
+export const stepTitle = (tool: string | null, title: string, detail: string) => (tool && detail && PROPOSAL_SHORT[tool]?.(detail)) || title

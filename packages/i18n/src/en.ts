@@ -169,6 +169,12 @@ export const en = {
   approval: {
     waiting: "Waiting for you",
     waitsFor: "{agent} waits for your OK",
+    proposesAgent: "{agent} proposes a new agent: {name}",
+    proposesTeam: "{agent} proposes a team of {count}: {names}",
+    proposesChanges: "{agent} proposes changes to {name}",
+    newAgent: "New agent: {name}",
+    newTeam: "New team: {names}",
+    changesTo: "Changes to {name}",
     wantsTo: "{agent} wants to use {tool}",
     allow: "Allow",
     allowAlways: "Always allow",

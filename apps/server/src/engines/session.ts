@@ -3,6 +3,7 @@
 // seen yet (watermark), and closes it when the stable context, the provider or the account changes.
 import type { Effect, Stream } from "effect"
 import type { Effort } from "@zorel/contracts"
+import type { ProposalOf } from "@zorel/contracts/events"
 import type { EngineEvent, TurnFile, TurnTools } from "#server/engines.ts"
 
 export interface SessionTurnInput {
@@ -22,6 +23,7 @@ export interface NativeApproval {
   readonly summary: string
   readonly args: string
   readonly cwd: string | null
+  readonly proposal?: ProposalOf | null | undefined // a proposal to create or change agents, as data
 }
 export type Approver = (request: NativeApproval) => Promise<boolean>
 

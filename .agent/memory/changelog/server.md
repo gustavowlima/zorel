@@ -136,3 +136,4 @@
 2026-11-11 | approvals: decision carries reason + overrides; builder creates with overrides | quality review blocker
 2026-11-11 | Antigravity: several accounts, each folder its own --gemini-dir with a file login | user request; keychain allows one login per computer
 2026-11-11 | Antigravity limits via `agy -p /usage`; account folder holds .gemini | user request: show Antigravity limits
+2026-11-11 | approvals carry agent proposals as data | review: no text round trip; localized titles

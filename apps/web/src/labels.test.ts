@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
-import { modelName, paceOf, windowMinutes } from "./labels.ts"
+import type { Approval } from "@zorel/contracts/events"
+import { approvalTitle, modelName, paceOf, receiptTitle, stepTitle, windowMinutes } from "./labels.ts"
 
 const H = 3_600_000
 const now = 1_000 * H
@@ -23,4 +24,17 @@ test("a window scoped to a group of models keeps its length", () => {
   expect(windowMinutes("300m:Gemini")).toBe(300)
   expect(windowMinutes("10080m:Claude and GPT")).toBe(10080)
   expect(windowMinutes("model:Fable")).toBeNull()
+})
+
+test("a proposal's title is worded from its data, not the server's English summary", () => {
+  const base = { id: "a", chatId: "c", turnId: "t", stepId: "s", agentId: null, kind: "tool", args: "", cwd: null, alwaysKey: null, createdAt: 0, expiresAt: 0 } as const
+  const agent = { name: "Rex", title: "", description: "", instructions: "", model: "claude-cli/sonnet", access: "workspace", permissions: { web: true, browser: false, grants: {}, always: [] }, scope: "global", reason: "" } as const
+  const one: Approval = { ...base, tool: "zorel_create_agent", summary: "Builder proposes a new agent: Rex", proposal: { kind: "create", agents: [agent] } }
+  const team: Approval = { ...one, proposal: { kind: "create", agents: [agent, { ...agent, name: "Ana" }] } }
+  expect(approvalTitle(one, "Builder")).toBe("Builder proposes a new agent: Rex")
+  expect(approvalTitle(team, "Builder")).toBe("Builder proposes a team of 2: Rex, Ana")
+  expect(receiptTitle(team)).toBe("New team: Rex, Ana")
+  expect(approvalTitle({ ...base, tool: "x", summary: "Run tests" }, "Rex")).toBe("Run tests")
+  expect(stepTitle("zorel_update_agent", "Builder proposes changes to Rex", "Rex")).toBe("Changes to Rex")
+  expect(stepTitle("bash", "Run tests", "bun test")).toBe("Run tests")
 })

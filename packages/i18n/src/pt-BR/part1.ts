@@ -167,6 +167,12 @@ export const part1 = {
   approval: {
     waiting: "Aguardando você",
     waitsFor: "{agent} aguarda seu OK",
+    proposesAgent: "{agent} propõe um novo agente: {name}",
+    proposesTeam: "{agent} propõe um time de {count}: {names}",
+    proposesChanges: "{agent} propõe mudanças em {name}",
+    newAgent: "Novo agente: {name}",
+    newTeam: "Novo time: {names}",
+    changesTo: "Mudanças em {name}",
     wantsTo: "{agent} quer usar {tool}",
     allow: "Permitir",
     allowAlways: "Permitir sempre",

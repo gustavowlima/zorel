@@ -108,7 +108,7 @@ const toTurn = (r: typeof turns.$inferSelect): Turn => ({
 const toStep = (r: typeof steps.$inferSelect): WorkStep => ({ ...r, files: JSON.parse(r.files), changes: JSON.parse(r.changes) })
 const toApproval = (r: typeof approvals.$inferSelect): Approval => ({
   id: r.id, chatId: r.chatId, turnId: r.turnId, runStepId: r.runStepId, stepId: r.stepId, agentId: r.agentId, kind: r.kind, tool: r.tool,
-  summary: r.summary, args: r.args, cwd: r.cwd, alwaysKey: r.alwaysKey, createdAt: r.createdAt, expiresAt: r.expiresAt
+  summary: r.summary, args: r.args, cwd: r.cwd, alwaysKey: r.alwaysKey, proposal: r.proposal ?? null, createdAt: r.createdAt, expiresAt: r.expiresAt
 })
 export type TurnRow = typeof turns.$inferSelect
 export type RunRow = typeof routineRuns.$inferSelect

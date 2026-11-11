@@ -2,8 +2,8 @@
 // agent or a team, shows as a card after its turn; "Open" slides in a panel to look and set it up (profile and AI,
 // then powers: no access / read / read and write, prefilled with the least the Builder proposed), and Create makes
 // it. Each visit starts fresh; "Build it myself" opens the form.
-import { type Access, type Agent, type AgentPermissions, type Chat, type Grant, type McpServer, type ModelInfo, isTeammate } from "@zorel/contracts"
-import type { Approval } from "@zorel/contracts/events"
+import { type Access, type Agent, type AgentPermissions, type Chat, type McpServer, type ModelInfo, isTeammate } from "@zorel/contracts"
+import type { Approval, ProposedAgent } from "@zorel/contracts/events"
 import { t } from "@zorel/i18n"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { useAtomValue } from "@effect/atom-react"
@@ -193,49 +193,13 @@ function BuilderIntro({ builder, tone, onPick }: { builder: Agent | undefined; t
   )
 }
 
-// One proposed agent, read from the proposal card's text ("key: value" lines; a team has a "## Name" per agent).
-type Draft = { name: string; fields: Record<string, string> }
-function draftsOf(text: string): Draft[] {
-  const parse = (block: string, name: string): Draft => {
-    const fields: Record<string, string> = {}
-    let key = ""
-    for (const line of block.split("\n")) {
-      const m = /^([a-z_]+): (.*)$/i.exec(line)
-      if (m) {
-        key = m[1]!
-        fields[key] = m[2]!
-      } else if (key) fields[key] += `\n${line}`
-    }
-    return { name: fields.name || name, fields }
-  }
-  if (!text.includes("## ")) return [parse(text, "")]
-  return text
-    .split(/^## /m)
-    .filter((b) => b.trim())
-    .map((b) => {
-      const [head, ...rest] = b.split("\n")
-      return parse(rest.join("\n"), head!.trim())
-    })
-}
-
-const GRANTS = new Set(["read", "write"])
-// "GitHub (read), Notion (write)" → grants by server id; when connectors were named, the rest get no access.
-function permissionsOf(f: Record<string, string>, servers: ReadonlyArray<McpServer>): AgentPermissions {
-  const named = new Map(
-    (f.connectors ?? "").split(",").flatMap((part) => {
-      const m = /^\s*(.+?)\s*\((read|write)\)\s*$/.exec(part)
-      return m && GRANTS.has(m[2]!) ? [[m[1]!.toLowerCase(), m[2]! as Grant] as const] : []
-    })
-  )
-  const grants: Record<string, Grant> = {}
-  if (f.connectors) for (const s of servers) grants[s.id] = named.get(s.name.toLowerCase()) ?? "none"
-  return { web: f.web !== "false", browser: f.browser === "true", grants, always: [] }
-}
+// One proposed agent, as the server sent it with the proposal (the card's text is only for reading).
+type Draft = ProposedAgent
+const draftsOf = (a: Approval | undefined): Draft[] => (a?.proposal?.kind === "create" ? [...a.proposal.agents] : [])
 
 type Powers = { access: Access; permissions: AgentPermissions }
 // Where the panel is: a stack, so Back is always one pop (a team's list → a member's profile → its powers).
 type View = { at: "team" } | { at: "profile" | "powers"; index: number }
-const accessOf = (f: Record<string, string>): Access => (f.access === "ask" || f.access === "full" ? f.access : "workspace")
 
 // The Builder's screen: the conversation, and the proposal it makes as a card after its turn. "Open" slides in a
 // panel to look at the agent (or each of the team) and set it up: its profile and AI, then its powers, prefilled
@@ -247,7 +211,7 @@ function Wizard({ chat }: { chat: Chat }) {
   const servers = useList(serversAtom).filter((s) => s.projectId === null || s.projectId === chat.projectId)
   const decide = useMutation(mutations.decide)
   const open: Approval | undefined = state.approvals.findLast((a) => a.tool === "zorel_create_agent")
-  const drafts = open ? draftsOf(open.args) : []
+  const drafts = draftsOf(open)
   const single = drafts.length === 1
   // Made in this conversation (the server's clock on both sides).
   const created = agents.filter((a) => isTeammate(a) && a.createdAt >= chat.createdAt)
@@ -276,7 +240,7 @@ function Wizard({ chat }: { chat: Chat }) {
     go({ view: "agent", id: made.id })
   }, [made])
 
-  const powersOf = (i: number): Powers => powers[i] ?? { access: accessOf(drafts[i]!.fields), permissions: permissionsOf(drafts[i]!.fields, servers) }
+  const powersOf = (i: number): Powers => powers[i] ?? { access: drafts[i]!.access, permissions: drafts[i]!.permissions }
   const choose = (outcome: "approved" | "denied") => {
     if (!open) return
     setBusy(true)
@@ -358,10 +322,10 @@ function ProposalCard({ drafts, busy, onOpen, onDecline }: { drafts: Draft[]; bu
               <AgentAvatar id={d.name} name={d.name} tone={i} size={drafts.length > 1 ? 32 : 40} live />
               <span className="flex min-w-0 flex-col">
                 <span className="truncate font-medium">{d.name}</span>
-                {d.fields.title && <span className="truncate text-sm text-muted">{d.fields.title}</span>}
+                {d.title && <span className="truncate text-sm text-muted">{d.title}</span>}
               </span>
             </div>
-            {d.fields.description && <p className={cn("pointer-events-none relative text-sm text-muted", drafts.length > 1 ? "line-clamp-2" : "line-clamp-3")}>{d.fields.description}</p>}
+            {d.description && <p className={cn("pointer-events-none relative text-sm text-muted", drafts.length > 1 ? "line-clamp-2" : "line-clamp-3")}>{d.description}</p>}
           </li>
         ))}
       </ul>
@@ -400,9 +364,9 @@ function ProposalPanel({
   const push = (v: View) => onStack([...stack, v])
   const pop = () => onStack(stack.slice(0, -1))
   const team = drafts.length > 1
-  const scope = drafts.every((d) => d.fields.scope === "project") ? t("builder.inProject") : t("builder.everywhere")
+  const scope = drafts.every((d) => d.scope === "project") ? t("builder.inProject") : t("builder.everywhere")
   // The AI each agent runs on: the one picked here, else the proposed one, else the fallback (card and profile agree).
-  const choiceOf = (i: number): ModelChoice => models[i] ?? { model: drafts[i]!.fields.model || FALLBACK_MODEL, accountId: null, effort: null }
+  const choiceOf = (i: number): ModelChoice => models[i] ?? { model: drafts[i]!.model || FALLBACK_MODEL, accountId: null, effort: null }
   const VIEWS = {
     team: () => ({
       title: t("builder.yourAgents"),
@@ -499,7 +463,7 @@ function ProposalPanel({
 // A team member in the panel: face, name and role, what it does (cut to two lines), and one quiet line of how it runs
 // (its AI · access · permissions) with "Edit permissions" as a soft pill. No frame: a calm surface; it opens the profile.
 function MemberCard({ draft, tone, model, powers, onOpen, onPowers }: { draft: Draft; tone: number; model: string; powers: Powers; onOpen: () => void; onPowers: () => void }) {
-  const f = draft.fields
+  const f = draft
   const runs = [model && modelName(model), t(`access.${powers.access}`), t("builder.powerCount", { count: summarizePowers(powers.permissions).count })].filter(Boolean)
   return (
     <li className="relative flex flex-col gap-3 rounded-sheet bg-surface p-4">
@@ -526,7 +490,7 @@ function MemberCard({ draft, tone, model, powers, onOpen, onPowers }: { draft: D
 // how it runs on one calm surface, each item a label over its value (the panel is narrow: no label column, no
 // divider lines). The instructions (written for the model, in English) wait behind "See instructions".
 function AgentProfile({ draft, tone, choice, onChoice, powers, onPowers }: { draft: Draft; tone: number; choice: ModelChoice; onChoice: (v: ModelChoice) => void; powers: Powers; onPowers: () => void }) {
-  const f = draft.fields
+  const f = draft
   const [instructions, setInstructions] = useState(false)
   // What is set here (the permissions step may have changed them), not only what was proposed.
   const s = summarizePowers(powers.permissions)

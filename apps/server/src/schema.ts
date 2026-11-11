@@ -1,6 +1,7 @@
 // Database schema (Drizzle). Mirrors the tables the MVP created with hand-written SQL, column by column,
 // so the existing database is adopted without copying (see migrate.ts). Changed something here? `bun run db:generate`.
 import type { AccountUsage, AgentPermissions, FailoverTarget, FileChange, FlowGraph, RoutineDelivery, RoutineSchedule, RoutineWatch, Switch } from "@zorel/contracts"
+import type { ProposalOf } from "@zorel/contracts/events"
 import { sql } from "drizzle-orm"
 import { type AnySQLiteColumn, check, index, integer, primaryKey, real, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
 
@@ -346,6 +347,7 @@ export const approvals = sqliteTable(
     args: text().notNull(), // JSON with masked secrets
     cwd: text(),
     alwaysKey: text("always_key"),
+    proposal: text({ mode: "json" }).$type<ProposalOf>(), // a proposal to create or change agents (null: any other card)
     createdAt: integer("created_at").notNull(),
     expiresAt: integer("expires_at").notNull(),
     outcome: text({ enum: ["approved", "always", "denied", "expired"] }), // null: open

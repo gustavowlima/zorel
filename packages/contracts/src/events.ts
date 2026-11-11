@@ -75,6 +75,27 @@ export type WorkStep = typeof WorkStep.Type
 // ---------- approvals (ARCHITECTURE §9.2) ----------
 
 const ApprovalKind = Schema.Literals(["command", "edit", "tool", "network", "question"]) // question: zorel_ask_user (summary: the question; args: {"options": [...]})
+// One agent in a proposal to create agents (zorel_create_agent), as it would be created: what the Builder's panel
+// shows and edits (never parsed back from the card's text).
+export const ProposedAgent = Schema.Struct({
+  name: Schema.String,
+  title: Schema.String,
+  description: Schema.String,
+  instructions: Schema.String,
+  model: Schema.String,
+  access: Access,
+  permissions: AgentPermissions,
+  scope: Schema.Literals(["project", "global"]),
+  reason: Schema.String // why it's the one ("" when not said)
+})
+export type ProposedAgent = typeof ProposedAgent.Type
+// What a proposal card is about, as data, so each screen words it in the person's language.
+export const ProposalOf = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("create"), agents: Schema.Array(ProposedAgent) }),
+  Schema.Struct({ kind: Schema.Literal("update"), name: Schema.String })
+])
+export type ProposalOf = typeof ProposalOf.Type
+
 export const Approval = Schema.Struct({
   id: Id,
   chatId: Id,
@@ -88,6 +109,7 @@ export const Approval = Schema.Struct({
   args: Schema.String, // JSON with masked secrets
   cwd: Schema.NullOr(Schema.String),
   alwaysKey: Schema.NullOr(Schema.String), // set when "Always allow" applies: the rule it saves on the agent
+  proposal: Schema.optional(Schema.NullOr(ProposalOf)), // a proposal to create or change agents
   createdAt: Millis,
   expiresAt: Millis
 })

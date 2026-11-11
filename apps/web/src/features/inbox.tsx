@@ -5,7 +5,7 @@ import type { Approval } from "@zorel/contracts/events"
 import { formatAge, t } from "@zorel/i18n"
 import { type ReactNode, useState } from "react"
 import { agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, routinesAtom, uncertainStepsAtom, useList, useMutation } from "../client.ts"
-import { agentName, chatTitle, scopeLabel } from "../labels.ts"
+import { agentName, approvalTitle, chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { openMemory } from "./knowledge.tsx"
 import { AuthorAvatar } from "./people.tsx"
@@ -143,7 +143,7 @@ function ApprovalItem({ approval: a }: { approval: Approval }) {
         )
       }
     >
-      <p>{a.summary || t("approval.wantsTo", { agent: agentName(a.agentId, agents), tool: a.tool })}</p>
+      <p>{approvalTitle(a, agentName(a.agentId, agents))}</p>
       {editing !== undefined ? (
         <div className="flex flex-col gap-2">
           <Textarea aria-label={t("flows.ask.edit")} rows={6} value={editing} onChange={(e) => setEditing(e.target.value.slice(0, 2000))} />

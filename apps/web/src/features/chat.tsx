@@ -9,7 +9,7 @@ import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zorel/
 import { formatCompact, formatDuration, formatTime, locale, t } from "@zorel/i18n"
 import { memo, type ReactNode, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, teamsAtom, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
-import { agentName, agentTint, agentTone, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText, waitLabel } from "../labels.ts"
+import { agentName, agentTint, agentTone, approvalTitle, chatTitle, formatCost, handleOf, modelLabel, providerLabel, receiptTitle, splitModel, stepTitle, switchText, waitLabel } from "../labels.ts"
 import { ChatMarkdown } from "./chat-markdown.tsx"
 import { MemoryChip } from "./memory.tsx"
 import { MentionText } from "./mention.tsx"
@@ -955,7 +955,7 @@ function StoredReply({ message: m }: { message: Message }) {
 // A step's glyph says what kind of work it was (one running spins, one waiting for you is the clock).
 const KIND_ICON: Record<SummaryKind, ReactNode> = { search: <Search />, read: <FileText />, edit: <Pencil />, run: <SquareTerminal />, tool: <Wrench />, delegate: <Users /> }
 const glyphOf = (kind: string) => KIND_ICON[kindOf(kind) ?? "tool"]
-const savedStep = (s: Message["steps"][number]): SummaryStep => ({ kind: s.tool, status: s.status, title: s.title ?? "", detail: s.detail || s.args, files: s.tool === "edit" ? s.args.split(", ").filter(Boolean) : [] })
+const savedStep = (s: Message["steps"][number]): SummaryStep => ({ kind: s.tool, status: s.status, title: stepTitle(s.tool, s.title ?? "", s.detail ?? ""), detail: s.detail || s.args, files: s.tool === "edit" ? s.args.split(", ").filter(Boolean) : [] })
 
 // The summary as a sentence ("Read 2 files and ran 3 commands"), with what still failed or was refused.
 function sentenceOf(steps: ReadonlyArray<SummaryStep>) {
@@ -1147,7 +1147,7 @@ function LiveMessage({ live, agents, receipts, bare, onStop, status }: { live: L
 
 // One run of a live turn's steps: its summary, a spinner (the clock while one waits for you) while one runs, and its
 // steps as they come on the tree.
-const liveStep = (s: WorkStep): SummaryStep => ({ kind: s.kind, status: s.status, title: s.title, detail: s.detail, files: s.files })
+const liveStep = (s: WorkStep): SummaryStep => ({ kind: s.kind, status: s.status, title: stepTitle(s.tool, s.title, s.detail), detail: s.detail, files: s.files })
 function LiveSteps({ steps }: { steps: ReadonlyArray<WorkStep> }) {
   const [open, setOpen] = useState(liveStepsOpen)
   const id = useId()
@@ -1290,7 +1290,7 @@ function ApprovalCard({ approval: a }: { approval: Approval }) {
     <TrayCard icon={<ShieldAlert />} label={t("approval.waitsFor", { agent: who })}>
       <div className="flex flex-wrap items-center gap-2.5">
       <span className="flex min-w-50 flex-1 flex-col">
-        <span className="font-medium">{a.summary || t("approval.wantsTo", { agent: who, tool: a.tool })}</span>
+        <span className="font-medium">{approvalTitle(a, who)}</span>
         {/* The command itself; pressing it shows every argument. */}
         <Button variant="ghost" size="sm" aria-expanded={details} onPress={() => setDetails(!details)} className="h-auto max-w-full justify-start rounded-none bg-transparent px-0 font-mono font-normal text-muted data-hovered:bg-transparent">
           <span className="truncate" title={command}>
@@ -1346,7 +1346,7 @@ function ReceiptCard({ receipt: r }: { receipt: Receipt }) {
   const ok = r.outcome === "approved" || r.outcome === "always"
   const question = a.kind === "question"
   const word = r.outcome === "expired" ? t("approval.expired") : question ? (ok ? t("question.answered") : t("question.skipped")) : ok ? t("approval.approved") : t("approval.denied")
-  const summary = a.summary || a.tool
+  const summary = receiptTitle(a)
   const command = question ? "" : commandOf(a)
   const extra = question ? undefined : extraArgs(a, command)
   const copy = () =>
