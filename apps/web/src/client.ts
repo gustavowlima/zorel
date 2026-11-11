@@ -213,7 +213,7 @@ export const useMutation = <W, A>(atom: Atom.Writable<AsyncResult.AsyncResult<A,
 
 export const useInvalidate = () => useAtomSet(invalidateAtom)
 
-// ---------- live status of every chat (sidebar, "Needs you") ----------
+// ---------- live status of every chat (sidebar, "Pending") ----------
 
 const retrying = Schedule.spaced("1 second")
 

@@ -169,7 +169,7 @@ async function send(chatId: string, body: { text: string; model?: string; attach
   return rpc((c) =>
     Effect.gen(function* () {
       const events: ChatEvent[] = []
-      let openWhileWaiting: ReadonlyArray<Approval> = [] // what "Needs you" lists while the turn waits
+      let openWhileWaiting: ReadonlyArray<Approval> = [] // what "Pending" lists while the turn waits
       const ready = yield* Deferred.make<void>()
       const idle = yield* Deferred.make<void>()
       let ended = 0
@@ -348,7 +348,7 @@ test("MCP tools: read mode hides writes; approve mode asks and respects the deci
   expect(r.events.some((e) => e._tag === "approval" && e.approval.tool === "docs__delete_page")).toBe(true)
   expect(r.events.some((e) => e._tag === "approval-resolved" && e.outcome === "denied")).toBe(true)
   expect(r.openWhileWaiting.map((a) => [a.chatId, a.tool])).toEqual([[chat.id, "docs__delete_page"]])
-  expect(await rpc((c) => c.approvals())).toEqual([]) // decided: gone from "Needs you"
+  expect(await rpc((c) => c.approvals())).toEqual([]) // decided: gone from "Pending"
   expect(msg.text).toContain("The user declined")
   expect(msg.steps.find((s) => s.tool === "docs__delete_page")!.status).toBe("refused")
   expect(toolCalls).toEqual(["search_docs"]) // denied one never reached the server

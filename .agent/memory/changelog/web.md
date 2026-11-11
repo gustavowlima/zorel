@@ -123,3 +123,4 @@
 2026-11-11 | web quality review items 3-10: no first-run hold, Builder-only logic out of Timeline, shared power summary, install hook and default model | thermo-nuclear review
 2026-11-11 | usage menu: logo+name+metrics, refresh; sign-in by code as two steps | user: polluted menu, unintuitive sign-in
 2026-11-11 | skills: single pane, open skill replaces the list | user request
+2026-11-11 | 'Precisa de você' renamed 'Pendências' | user request
