@@ -3,7 +3,7 @@
 // handoff between agents, model switch, learning, receipt and status of each chat.
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
-import { FileChange, MAX_ATTACHMENTS, Message, ModelId, Switch } from "./index.ts"
+import { Access, AgentPermissions, Effort, FileChange, MAX_ATTACHMENTS, Message, ModelId, Switch } from "./index.ts"
 
 export { FileChange }
 
@@ -92,6 +92,16 @@ export const Approval = Schema.Struct({
   expiresAt: Millis
 })
 export type Approval = typeof Approval.Type
+
+// What the person set on a proposed agent before approving it (the builder's panel): its AI and its powers.
+export const AgentOverride = Schema.Struct({
+  model: Schema.optional(ModelId),
+  accountId: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(200)))),
+  effort: Schema.optional(Schema.NullOr(Effort)),
+  access: Schema.optional(Access),
+  permissions: Schema.optional(AgentPermissions)
+})
+export type AgentOverride = typeof AgentOverride.Type
 
 export const ApprovalOutcome = Schema.Literals(["approved", "always", "denied", "expired"])
 export type ApprovalOutcome = typeof ApprovalOutcome.Type
@@ -197,7 +207,9 @@ export const ZorelRpc = RpcGroup.make(
   Rpc.make("interrupt", { payload: { chatId: Id } }),
   // A reply that failed, was stopped or hit its limit: the same agent (or the lead) answers again.
   Rpc.make("retry", { payload: { chatId: Id, messageId: Id }, error: ChatNotFound }),
-  Rpc.make("decide", { payload: { approvalId: Id, outcome: Schema.Literals(["approved", "always", "denied"]), reason: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))) }, error: ApprovalNotFound }),
+  // overrides: on an agent proposal (zorel_create_agent), what the person set before approving, one per proposed agent
+  // in the proposal's order; applied as the agents are created.
+  Rpc.make("decide", { payload: { approvalId: Id, outcome: Schema.Literals(["approved", "always", "denied"]), reason: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))), overrides: Schema.optional(Schema.Array(AgentOverride).check(Schema.isMaxLength(8))) }, error: ApprovalNotFound }),
   Rpc.make("subscribeChat", { payload: { chatId: Id }, success: ChatEvent, error: ChatNotFound, stream: true }),
   Rpc.make("subscribeStatus", { success: ChatStatus, stream: true }), // all chats: sidebar and "Needs you"
   Rpc.make("notices", { success: Notice, stream: true }), // what routines tell the person (spec 012): desktop notifications

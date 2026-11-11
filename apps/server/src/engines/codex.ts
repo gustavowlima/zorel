@@ -12,7 +12,7 @@ import { basename, relative } from "node:path"
 import { type CliModel, classifyMessage, CODEX_DISABLED, commandStep, type EngineEvent, type EngineFailure, type NativeStep, splitModel, STEP_DETAIL_MAX, STEP_TITLE_MAX, toMillis, type Usage } from "#server/engines.ts"
 import { approvalFor } from "#server/engines/policy.ts"
 import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type SessionTurnInput, withoutAppEnv } from "#server/engines/session.ts"
-import { which } from "../cli-install.ts"
+import { which } from "../cli/index.ts"
 
 // Access level → Codex sandbox and approval policy (ARCHITECTURE §9.2). The shell is on in the app-server:
 // commands run in Codex's sandbox and what leaves it asks through Zorel.

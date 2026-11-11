@@ -3,7 +3,7 @@
 // CLI when it is installed and signed in). Messages are written by the person or drafted by the chat's model from
 // the diff, in the style of the repository's recent commits. Nothing here runs without the person pressing it.
 import type { GitStatus } from "@zorel/contracts"
-import { which } from "./cli-install.ts"
+import { which } from "./cli/index.ts"
 
 const MAX_DIFF = 40_000 // diff text handed to the model for a draft
 const OUT_CAP = 2_000 // git's message kept for an error

@@ -1,32 +1,28 @@
-// Build with AI: a screen of its own in two steps, one at a time. 1 Describe: a conversation with the
-// Builder (Zorel's own agent) on the left, the proposed agent on the right as it takes shape. 2 Powers: what it may
-// reach, as plain choices (no access / read / read and write), prefilled with the least the Builder proposed;
-// Create makes it with those powers and opens its page. A team is created as proposed from step 1. Each visit
-// starts fresh; "Build it myself" opens the form.
-import { type Access, type AgentPermissions, type Chat, DEFAULT_PERMISSIONS, type Grant, type McpServer, type ModelInfo, isTeammate } from "@zorel/contracts"
+// Build with AI: a chat with the Builder (Zorel's own agent), centered like any conversation. Its proposal, one
+// agent or a team, shows as a card after its turn; "Open" slides in a panel to look and set it up (profile and AI,
+// then powers: no access / read / read and write, prefilled with the least the Builder proposed), and Create makes
+// it. Each visit starts fresh; "Build it myself" opens the form.
+import { type Access, type Agent, type AgentPermissions, type Chat, type Grant, type McpServer, type ModelInfo, isTeammate } from "@zorel/contracts"
 import type { Approval } from "@zorel/contracts/events"
 import { t } from "@zorel/i18n"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
-import { agentsAtom, modelsAtom, mutations, projectsAtom, serversAtom, uploadAttachment, useChat, useInvalidate, useList, useMutation } from "../client.ts"
-import { agentTone, modelLabel } from "../labels.ts"
+import { agentsAtom, modelsAtom, mutations, projectsAtom, serversAtom, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
+import { agentTone, modelLabel, modelName } from "../labels.ts"
 import { go } from "../state.ts"
 import { PendingTray, Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
-import { AgentAvatar, Button, Check, ChevronRight, column, cn, Dialog, EmptyState, Folder, HEADER, IconTile, ListRow, PageHeader, Pencil, Rows, Section, Select, Sparkles, Spinner, Tag } from "@/ui"
+import { AgentAvatar, Button, ChevronLeft, cn, Dialog, Drawer, EmptyState, Folder, HEADER, IconButton, ListRow, PageHeader, Pencil, RowHit, Rows, Section, Select, SettingRow, ShieldCheck, Sparkles, Spinner, X, Cpu } from "@/ui"
 
 const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builder.suggest.docs", "builder.suggest.team"] as const
-type Step = "describe" | "powers"
-type Edit = { name: string; patch: Partial<ModelChoice> & { access?: Access; permissions?: AgentPermissions } }
-const STEPS: ReadonlyArray<Step> = ["describe", "powers"]
 
 // The model the Builder starts on: Claude Code's Sonnet when it is there, else the first subscription model that
 // is, else any available one. None: the Builder can't start (the screen says so and points to Providers).
 const PREFERRED = ["claude-cli/sonnet", "codex-cli/"]
-function builderModel(models: ReadonlyArray<ModelInfo>): string | undefined {
+export function builderModel(models: ReadonlyArray<ModelInfo>): string | undefined {
   const ready = models.filter((m) => m.available && !m.id.endsWith("…"))
   for (const p of PREFERRED) {
     const hit = ready.find((m) => (p.endsWith("/") ? m.id.startsWith(p) : m.id === p))
@@ -41,7 +37,6 @@ export function BuilderView({ projectId }: { projectId: string | null }) {
   const [chat, setChat] = useState<Chat>()
   const [error, setError] = useState<"failed" | "noModel">()
   const [attempt, setAttempt] = useState(0)
-  const opened = useRef(0)
   const started = useRef(-1)
   // One fresh conversation per visit (StrictMode mounts twice: the ref keeps it to one); "Try again" starts another.
   useEffect(() => {
@@ -49,7 +44,6 @@ export function BuilderView({ projectId }: { projectId: string | null }) {
     started.current = attempt
     const model = builderModel(modelsResult.value)
     if (!model) return setError("noModel")
-    opened.current = Date.now()
     builder({ payload: { projectId, model } }).then(setChat, () => setError("failed"))
   }, [builder, projectId, modelsResult, attempt])
 
@@ -57,7 +51,7 @@ export function BuilderView({ projectId }: { projectId: string | null }) {
     <div className="flex h-full min-h-0 flex-col">
       <BuilderHeader projectId={projectId} />
       {chat ? (
-        <Wizard chat={chat} since={opened.current} />
+        <Wizard chat={chat} />
       ) : error ? (
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
@@ -118,85 +112,98 @@ function ScreenHeader({ title, subtitle, action }: { title: string; subtitle: st
   )
 }
 
-function Conversation({ chat, reviewing }: { chat: Chat; reviewing: boolean }) {
+// The conversation with the Builder, as any chat: its face and name before the first message, the timeline, the
+// message box. The proposal shows as a card after the Builder's turn (`card`). While a proposal is out, what you
+// write declines it with your words as the reason: the Builder's turn waits on that decision, so a plain message
+// would queue behind it, unread, and show above the turn it came after.
+function Conversation({ chat, open, card }: { chat: Chat; open: Approval | undefined; card: ReactNode }) {
   const state = useChat(chat.id)
   const agents = useList(agentsAtom)
   const projects = useList(projectsAtom)
   const send = useMutation(mutations.send)
+  const decide = useMutation(mutations.decide)
   const interrupt = useMutation(mutations.interrupt)
   const updateChat = useMutation(mutations.updateChat)
   const [model, setModel] = useState({ model: chat.model, accountId: chat.accountId, effort: chat.effort })
-  const busy = state.pending > 0 || !!state.live
-  const submit = (text: string) => send({ payload: { chatId: chat.id, clientId: crypto.randomUUID(), text } }).then(() => undefined)
-  const empty = state.ready && state.messages.length === 0 && !state.live && state.pending === 0
+  // While a proposal is out the turn waits on you, not the other way round: no Stop, just send (a change).
+  const busy = !open && (state.pending > 0 || !!state.live)
+  const submit = (text: string) =>
+    (open
+      ? decide({ payload: { approvalId: open.id, outcome: "denied", reason: text }, reactivityKeys: ["approvals"] })
+      : send({ payload: { chatId: chat.id, clientId: crypto.randomUUID(), text } })
+    ).then(() => undefined)
+  const stop = () => void interrupt({ payload: { chatId: chat.id } })
+  // The proposal is the card below the turn: no second card for it in the tray.
+  const others = state.approvals.filter((a) => a.tool !== "zorel_create_agent")
+  const builder = agents.find((a) => a.id === chat.agentIds[0])
 
   return (
-    // A narrow window: the conversation alone (the explanation steps aside); while a proposal is reviewed, the review.
-    <section aria-label={t("builder.conversation")} className={cn("order-2 min-h-0 flex-1 flex-col border-subtle md:flex md:w-104 md:flex-none md:shrink-0 md:border-l", reviewing ? "hidden" : "flex")}>
-      {empty ? (
-        // Before the first message: what to say, and a few starting points.
-        <div className="flex flex-1 flex-col items-center justify-center gap-5 px-8 text-center">
-          <IconTile size="lg" className="text-muted">
-            <Sparkles />
-          </IconTile>
-          <div className="flex max-w-md flex-col gap-1.5">
-            <h2 className="text-lg font-semibold">{t("builder.introTitle")}</h2>
-            <p className="text-muted">{t("builder.introBody")}</p>
-          </div>
-          <div className="flex flex-wrap justify-center gap-1.5">
-            {SUGGESTIONS.map((k) => (
-              <Button key={k} size="sm" variant="secondary" shape="pill" className="font-normal" onPress={() => void submit(t(k))}>
-                {t(k)}
-              </Button>
-            ))}
-          </div>
+    <section aria-label={t("builder.conversation")} className="flex min-w-0 flex-1 flex-col">
+      <Timeline
+        chat={chat}
+        state={{ ...state, approvals: others }}
+        agents={agents}
+        onView={() => {}}
+        onEdit={() => {}}
+        onStop={stop}
+        intro={<BuilderIntro builder={builder} tone={builder ? agentTone(builder, agents) : 0} onPick={(text) => void submit(text)} />}
+        after={card}
+        hold={!!open}
+      />
+      <div className="w-full px-8 pt-2 pb-4.5">
+        <div className="mx-auto flex w-full max-w-chat flex-col gap-1.5">
+          {/* A question of the Builder's waits here, above the message box, as in any chat. */}
+          <PendingTray approvals={others} />
+          {/* Where the new agents live: picking a project starts the conversation over in it (as on Home). */}
+          <Select
+            variant="ghost"
+            icon={<Folder />}
+            className="w-auto max-w-64 self-start"
+            aria-label={t("home.project")}
+            value={chat.projectId ?? ""}
+            onChange={(v) => go({ view: "builder", projectId: v || null })}
+            options={[{ value: "", label: t("builder.everyProject") }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+          />
+          <Composer
+            autoFocus
+            busy={busy}
+            onStop={stop}
+            onSubmit={submit}
+            upload={(f) => uploadAttachment(chat.id, f)}
+            placeholder={open ? t("builder.changePlaceholder") : ""}
+            tools={
+              <ModelPicker
+                value={model}
+                onChange={(v) => {
+                  setModel(v)
+                  void updateChat({ params: { id: chat.id }, payload: v })
+                }}
+              />
+            }
+          />
         </div>
-      ) : (
-        // The proposal is reviewed on the right: no second card for it inside the conversation.
-        <>
-          <Timeline chat={chat} state={{ ...state, approvals: state.approvals.filter((a) => a.tool !== "zorel_create_agent") }} agents={agents} onView={() => {}} onEdit={() => {}} onStop={() => void interrupt({ payload: { chatId: chat.id } })} />
-          {/* While a proposal waits, the turn only shows "waiting": say where it is and what this box is for now. */}
-          {reviewing && (
-            <p className="mx-6 mb-2 flex items-start gap-2 rounded-card border border-subtle px-3 py-2.5 text-sm text-secondary">
-              <Sparkles className="mt-0.5 size-4 shrink-0 text-accent-text" />
-              {t("builder.readyHint")}
-            </p>
-          )}
-        </>
-      )}
-      <div className="flex w-full flex-col gap-1.5 px-8 pt-2 pb-4.5">
-        {/* A question or an approval of the Builder's (not the proposal: that's reviewed on the right) waits here,
-            above the message box, as in any chat: before, a question had nowhere to be answered. */}
-        <PendingTray approvals={state.approvals.filter((a) => a.tool !== "zorel_create_agent")} />
-        {/* Where the new agents live: picking a project starts the conversation over in it (as on Home). */}
-        <Select
-          variant="ghost"
-          icon={<Folder />}
-          className="w-auto max-w-64 self-start"
-          aria-label={t("home.project")}
-          value={chat.projectId ?? ""}
-          onChange={(v) => go({ view: "builder", projectId: v || null })}
-          options={[{ value: "", label: t("builder.everyProject") }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
-        />
-        <Composer
-          autoFocus
-          busy={busy}
-          onStop={() => void interrupt({ payload: { chatId: chat.id } })}
-          onSubmit={submit}
-          upload={(f) => uploadAttachment(chat.id, f)}
-          placeholder=""
-          tools={
-            <ModelPicker
-              value={model}
-              onChange={(v) => {
-                setModel(v)
-                void updateChat({ params: { id: chat.id }, payload: v })
-              }}
-            />
-          }
-        />
       </div>
     </section>
+  )
+}
+
+// Before the first message: the Builder itself (face, name, color), what to say, a few starting points.
+function BuilderIntro({ builder, tone, onPick }: { builder: Agent | undefined; tone: number; onPick: (text: string) => void }) {
+  return (
+    <div className="flex flex-col items-center gap-5 pt-16 text-center">
+      {builder && <AgentAvatar id={builder.id} name={builder.name} tone={tone} size={64} live />}
+      <div className="flex max-w-md flex-col gap-1.5">
+        <h2 className="text-xl font-semibold tracking-tight">{builder?.name ?? t("builder.title")}</h2>
+        <p className="text-balance text-muted">{t("builder.introBody")}</p>
+      </div>
+      <div className="flex flex-wrap justify-center gap-1.5">
+        {SUGGESTIONS.map((k) => (
+          <Button key={k} size="sm" variant="secondary" shape="pill" className="font-normal" onPress={() => onPick(t(k))}>
+            {t(k)}
+          </Button>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -239,302 +246,353 @@ function permissionsOf(f: Record<string, string>, servers: ReadonlyArray<McpServ
   return { web: f.web !== "false", browser: f.browser === "true", grants, always: [] }
 }
 
-function Wizard({ chat, since }: { chat: Chat; since: number }) {
+type Powers = { access: Access; permissions: AgentPermissions }
+// Where the panel is: a stack, so Back is always one pop (a team's list → a member's profile → its powers).
+type View = { at: "team" } | { at: "profile" | "powers"; index: number }
+const accessOf = (f: Record<string, string>): Access => (f.access === "ask" || f.access === "full" ? f.access : "workspace")
+
+// The Builder's screen: the conversation, and the proposal it makes as a card after its turn. "Open" slides in a
+// panel to look at the agent (or each of the team) and set it up: its profile and AI, then its powers, prefilled
+// with the least the Builder proposed. Create sends what was set here with the approval (decide's overrides): the
+// server creates each agent with it, in one step. One agent then opens its page.
+function Wizard({ chat }: { chat: Chat }) {
   const state = useChat(chat.id)
   const agents = useList(agentsAtom)
   const servers = useList(serversAtom).filter((s) => s.projectId === null || s.projectId === chat.projectId)
   const decide = useMutation(mutations.decide)
-  const updateAgent = useMutation(mutations.updateAgent)
-  const invalidate = useInvalidate()
   const open: Approval | undefined = state.approvals.findLast((a) => a.tool === "zorel_create_agent")
   const drafts = open ? draftsOf(open.args) : []
-  const single = drafts.length === 1 ? drafts[0] : undefined
-  const created = agents.filter((a) => isTeammate(a) && a.createdAt >= since)
-  const [step, setStep] = useState<Step>("describe")
-  const [access, setAccess] = useState<Access>("workspace")
-  const [perms, setPerms] = useState<AgentPermissions>(DEFAULT_PERMISSIONS)
+  const single = drafts.length === 1
+  // Made in this conversation (the server's clock on both sides).
+  const created = agents.filter((a) => isTeammate(a) && a.createdAt >= chat.createdAt)
+  const [panel, setPanel] = useState(false)
+  const [stack, setStack] = useState<View[]>([])
   const [busy, setBusy] = useState(false)
-  // A model picked per agent on its card (by name) before anything exists.
-  const [models, setModels] = useState<Record<string, ModelChoice>>({})
-  // After Create: the agents appear once the Builder's turn applies the proposal; then what was changed here
-  // (a model, one agent's powers) is applied to each, and a single agent's page opens.
-  const [finishing, setFinishing] = useState<{ at: number; edits: Edit[]; open: boolean }>()
+  // What was set here per agent (by its place in the proposal) before anything exists: a model, its powers.
+  const [models, setModels] = useState<Record<number, ModelChoice>>({})
+  const [powers, setPowers] = useState<Record<number, Powers>>({})
+  // The one agent approved: its page opens once it shows up in the list (the turn's end refetches the agents).
+  const [opening, setOpening] = useState<string>()
 
-  // A new proposal is prefilled into the next steps.
+  // A new proposal starts from what the Builder proposed (the panel stays open across a revision). An approval
+  // that is gone (decided, expired) frees the buttons.
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new proposal resets
   useEffect(() => {
     setModels({})
-    if (!single) return
-    const f = single.fields
-    setAccess(f.access === "ask" || f.access === "full" ? f.access : "workspace")
-    setPerms(permissionsOf(f, servers))
+    setPowers({})
+    setStack([single ? { at: "profile", index: 0 } : { at: "team" }])
+    setBusy(false)
   }, [open?.id])
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the agent shows up (stable mutations)
+  const made = opening && created.find((a) => a.name === opening)
   useEffect(() => {
-    if (!finishing) return
-    // By name; else, for one agent, the one that appeared right after Create (the Builder may have tidied the name).
-    const fresh = created.filter((a) => a.createdAt >= finishing.at - 2000)
-    const made = finishing.edits.map((e) => fresh.find((a) => a.name.toLowerCase() === e.name.toLowerCase()) ?? (finishing.edits.length === 1 ? fresh.at(-1) : undefined))
-    if (made.some((a) => !a)) {
-      const poll = setInterval(() => invalidate(["agents"]), 700)
-      return () => clearInterval(poll)
-    }
-    setFinishing(undefined)
-    void (async () => {
-      for (const [i, e] of finishing.edits.entries()) await updateAgent({ params: { id: made[i]!.id }, payload: e.patch, reactivityKeys: ["agents"] })
-      if (finishing.open) go({ view: "agent", id: made[0]!.id })
-    })().finally(() => setBusy(false))
-    return undefined
-  }, [finishing, created.length])
+    if (!made) return
+    setOpening(undefined)
+    go({ view: "agent", id: made.id })
+  }, [made])
 
-  const choose = (a: Approval, outcome: "approved" | "denied") => {
-    setBusy(true)
-    void decide({ payload: { approvalId: a.id, outcome }, reactivityKeys: ["approvals", "agents"] }).finally(() => outcome === "denied" && setBusy(false))
-  }
-  const create = () => {
-    if (!open || !single) return
-    setFinishing({ at: Date.now(), open: true, edits: [{ name: single.name, patch: { access, permissions: perms, ...models[single.name] } }] })
-    choose(open, "approved")
-  }
-  const createAll = () => {
+  const powersOf = (i: number): Powers => powers[i] ?? { access: accessOf(drafts[i]!.fields), permissions: permissionsOf(drafts[i]!.fields, servers) }
+  const choose = (outcome: "approved" | "denied") => {
     if (!open) return
-    const edits = Object.entries(models).map(([name, patch]) => ({ name, patch }))
-    if (edits.length) setFinishing({ at: Date.now(), open: false, edits })
-    choose(open, "approved")
+    setBusy(true)
+    setPanel(false)
+    const overrides = outcome === "approved" ? drafts.map((_, i) => ({ ...models[i], ...powers[i] })) : undefined
+    if (outcome === "approved" && single) setOpening(drafts[0]!.name)
+    void decide({ payload: { approvalId: open.id, outcome, ...(overrides && { overrides }) }, reactivityKeys: ["approvals", "agents"] }).catch(() => {
+      setBusy(false)
+      setOpening(undefined)
+    })
   }
-  const name = single?.name ?? ""
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* Steps only where there are steps: one agent goes on to its powers; a team is created as proposed. */}
-      {(single || step === "powers") && <Stepper step={step} />}
-      {/* Step 1 stays mounted (the conversation keeps its scroll and draft) while the others show. The
-          conversation always sits on the right; the middle explains the flow, then holds the proposal to review. */}
-      <div className={cn("min-h-0 flex-1", step === "describe" ? "flex" : "hidden")}>
-        <Conversation chat={chat} reviewing={!!open} />
-        {open ? (
-          <ProposalReview
-            drafts={drafts}
-            single={!!single}
-            busy={busy}
-            reason={single?.fields.reason}
-            models={models}
-            onModel={(name, v) => setModels((m) => ({ ...m, [name]: v }))}
-            onCreate={() => (single ? setStep("powers") : createAll())}
-            onDecline={() => choose(open, "denied")}
+  const card = open ? (
+    <ProposalCard
+      drafts={drafts}
+      busy={busy}
+      onOpen={(index) => {
+        setStack(single ? [{ at: "profile", index: 0 }] : [{ at: "team" }, ...(index === undefined ? [] : [{ at: "profile" as const, index }])])
+        setPanel(true)
+      }}
+      onDecline={() => choose("denied")}
+    />
+  ) : busy || opening ? (
+    <p className="text-sm text-muted">{t("builder.creating")}</p>
+  ) : created.length > 0 ? (
+    <Section title={t("builder.created")} description={t("builder.createdHint")}>
+      <Rows>
+        {created.map((a) => (
+          <ListRow
+            key={a.id}
+            label={`${t("agents.open")}: ${a.name}`}
+            onPress={() => go({ view: "agent", id: a.id })}
+            icon={<AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={28} />}
+            title={a.name}
+            hint={a.title || modelLabel(a.model)}
           />
-        ) : (
-          <section aria-label={t("builder.proposal")} className="hidden min-w-0 flex-1 flex-col overflow-y-auto md:flex">
-            <div className="m-auto flex w-full max-w-xl flex-col gap-10 px-7 py-7">
-            {finishing ? (
-              <p className="text-sm text-muted">{t("builder.creating")}</p>
-            ) : (
-              <Section title={t("builder.howTitle")}>
-                <ol className="flex flex-col gap-3 text-sm">
-                  {(["describe", "ask", "review", "create"] as const).map((k, i) => (
-                    <li key={k} className="flex gap-3">
-                      <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-full border border-strong text-xs text-muted tabular-nums">
-                        {i + 1}
-                      </span>
-                      <span className="text-secondary">{t(`builder.how.${k}`)}</span>
-                    </li>
-                  ))}
-                </ol>
-              </Section>
-            )}
-            {created.length > 0 && (
-              <Section title={t("builder.created")} description={t("builder.createdHint")}>
-                <Rows>
-                  {created.map((a) => (
-                    <ListRow
-                      key={a.id}
-                      label={`${t("agents.open")}: ${a.name}`}
-                      onPress={() => go({ view: "agent", id: a.id })}
-                      icon={<AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={28} />}
-                      title={a.name}
-                      hint={a.title || modelLabel(a.model)}
-                    />
-                  ))}
-                </Rows>
-              </Section>
-            )}
-            </div>
-          </section>
+        ))}
+      </Rows>
+    </Section>
+  ) : null
+
+  return (
+    <div className="flex min-h-0 flex-1">
+      <Conversation chat={chat} open={open} card={card} />
+      <Drawer open={panel && !!open && stack.length > 0}>
+        {open && stack.length > 0 && (
+          <ProposalPanel
+            drafts={drafts}
+            stack={stack}
+            onStack={setStack}
+            busy={busy}
+            models={models}
+            onModel={(i, v) => setModels((m) => ({ ...m, [i]: v }))}
+            powersOf={powersOf}
+            onPowers={(i, p) => setPowers((m) => ({ ...m, [i]: p }))}
+            servers={servers}
+            onCreate={() => choose("approved")}
+            onDecline={() => choose("denied")}
+            onClose={() => setPanel(false)}
+          />
         )}
-      </div>
-
-      {step === "powers" && single && (
-        <StepPage
-          title={t("builder.powersTitle", { name })}
-          hint={t("builder.powersHint")}
-          footer={
-            <>
-              <Button size="sm" variant="ghost" isDisabled={busy} onPress={() => setStep("describe")}>
-                {t("nav.back")}
-              </Button>
-              <span className="flex-1" />
-              <Button size="sm" variant="default" isPending={busy} isDisabled={busy} onPress={create}>
-                {t("builder.createNamed", { name })}
-              </Button>
-            </>
-          }
-        >
-          <PermissionsEditor access={access} onAccess={setAccess} value={perms} onChange={setPerms} servers={servers} showAlways={false} />
-        </StepPage>
-      )}
-
+      </Drawer>
     </div>
   )
 }
 
-// 1 Describe — 2 Powers: done steps get a check, the current one is filled.
-function Stepper({ step }: { step: Step }) {
-  const at = STEPS.indexOf(step)
+// The proposal in the conversation, as the Builder's answer (a reply, not a form): no frame around it, so nothing
+// sits in a hole. One agent: one calm card (face, name, role, what it does). A team: a line, then a card per member
+// on the canvas, lifted as every card is (opens its setup). Then the actions, where a reply's go: on the left.
+function ProposalCard({ drafts, busy, onOpen, onDecline }: { drafts: Draft[]; busy: boolean; onOpen: (index?: number) => void; onDecline: () => void }) {
   return (
-    <ol aria-label={t("builder.steps")} className="flex shrink-0 items-center justify-center gap-3 border-b border-subtle py-3 text-sm">
-      {STEPS.map((k, i) => (
-        <li key={k} className="flex items-center gap-3" {...(i === at && { "aria-current": "step" as const })}>
-          {i > 0 && <span aria-hidden="true" className="h-px w-8 bg-strong" />}
-          <span className={cn("flex items-center gap-2", i === at ? "font-medium text-fg" : "text-muted")}>
-            <span
-              aria-hidden="true"
-              className={cn(
-                "flex size-5 items-center justify-center rounded-full text-xs tabular-nums",
-                i < at ? "bg-accent-soft text-accent-text" : i === at ? "bg-accent text-on-accent" : "border border-strong"
-              )}
-            >
-              {i < at ? <Check className="size-3" /> : i + 1}
-            </span>
-            {t(`builder.step.${k}`)}
-          </span>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-// A step of its own: a centered column with a title, a line, the content, and the way forward at the bottom.
-function StepPage({ title, hint, footer, children }: { title: string; hint: string; footer: ReactNode; children: ReactNode }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className={cn(column(), "gap-6")}>
-          <div className="flex flex-col gap-1.5">
-            <h2 className="text-lg font-semibold">{title}</h2>
-            <p className="text-muted">{hint}</p>
-          </div>
-          {children}
-        </div>
-      </div>
-      <div className="shrink-0 border-t border-subtle">
-        <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-7 py-3">{footer}</div>
-      </div>
-    </div>
-  )
-}
-
-// The proposal under review: the team at a glance, one card per agent (what it does, how it runs, what it reaches,
-// its instructions on demand), and the decision in a bar that stays in view.
-function ProposalReview({
-  drafts, single, busy, reason, models, onModel, onCreate, onDecline
-}: { drafts: Draft[]; single: boolean; busy: boolean; reason: string | undefined; models: Record<string, ModelChoice>; onModel: (name: string, v: ModelChoice) => void; onCreate: () => void; onDecline: () => void }) {
-  const scope = drafts.every((d) => d.fields.scope === "project") ? t("builder.inProject") : t("builder.everywhere")
-  return (
-    <section aria-label={t("builder.proposal")} className="flex min-w-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className={cn(column(true), "gap-6")}>
-          <header className="flex items-center gap-4">
-            <span className="flex -space-x-2">
-              {drafts.map((d, i) => (
-                <AgentAvatar key={d.name} id={d.name} name={d.name} tone={i} size={40} className="ring-2 ring-canvas" />
-              ))}
-            </span>
-            <div className="flex min-w-0 flex-col">
-              <h2 className="text-lg font-semibold">{single ? t("builder.reviewOne") : t("builder.reviewTeam")}</h2>
-              <p className="text-sm text-muted">{[t("builder.teamSize", { count: drafts.length }), scope, t("builder.untilYouApprove")].join(" · ")}</p>
+    <article aria-label={t("builder.proposal")} className="flex flex-col gap-3">
+      {drafts.length > 1 && <p className="text-muted">{t("builder.teamHint")}</p>}
+      <ul className={cn("grid gap-2.5", drafts.length > 1 && "sm:grid-cols-2 lg:grid-cols-3")}>
+        {drafts.map((d, i) => (
+          <li key={d.name} className="relative flex flex-col gap-3 rounded-sheet bg-surface p-4">
+            <RowHit label={`${t("builder.open")}: ${d.name}`} onPress={() => onOpen(i)} className="inset-0 rounded-sheet" />
+            <div className="pointer-events-none relative flex items-center gap-3">
+              <AgentAvatar id={d.name} name={d.name} tone={i} size={drafts.length > 1 ? 32 : 40} live />
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate font-medium">{d.name}</span>
+                {d.fields.title && <span className="truncate text-sm text-muted">{d.fields.title}</span>}
+              </span>
             </div>
-          </header>
-          <div className={cn("grid gap-3", !single && "lg:grid-cols-2")}>
-            {drafts.map((d, i) => (
-              <AgentReview key={d.name} draft={d} tone={i} choice={models[d.name]} onChoice={(v) => onModel(d.name, v)} />
-            ))}
-          </div>
-          {reason && <p className="text-sm text-muted">{t("knowledge.why", { reason })}</p>}
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-3 border-t border-subtle px-8 py-3.5">
-        <span className="min-w-0 flex-1 truncate text-sm text-muted">{t("builder.refineHint")}</span>
-        <Button variant="ghost" isDisabled={busy} onPress={onDecline}>
+            {d.fields.description && <p className={cn("pointer-events-none relative text-sm text-muted", drafts.length > 1 ? "line-clamp-2" : "line-clamp-3")}>{d.fields.description}</p>}
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-1.5 pt-1">
+        <Button size="sm" variant="default" shape="pill" isDisabled={busy} onPress={() => onOpen()}>
+          {t("builder.review")}
+        </Button>
+        <Button size="sm" variant="ghost" shape="pill" isDisabled={busy} onPress={onDecline}>
           {t("builder.notNow")}
         </Button>
-        <Button variant="default" isPending={busy && !single} isDisabled={busy} onPress={onCreate}>
-          {single ? t("builder.useIt") : t("builder.createAll", { count: drafts.length })}
-          {single && <ChevronRight />}
-        </Button>
       </div>
-    </section>
+    </article>
   )
 }
 
-function AgentReview({ draft, tone, choice, onChoice }: { draft: Draft; tone: number; choice: ModelChoice | undefined; onChoice: (v: ModelChoice) => void }) {
-  const f = draft.fields
-  const model = choice?.model ?? f.model
-  const [details, setDetails] = useState(false)
-  const access = f.access === "ask" || f.access === "full" ? f.access : f.access ? "workspace" : undefined
-  const powers = [f.web === "true" && t("builder.web"), f.browser === "true" && t("builder.browser"), f.connectors && f.connectors !== "none" && f.connectors].filter(Boolean)
-  const head = (
-    <div className="flex items-center gap-3">
-      <AgentAvatar id={draft.name} name={draft.name} tone={tone} size={40} live />
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate font-medium">{draft.name}</span>
-        {f.title && <span className="truncate text-sm text-muted">{f.title}</span>}
-      </span>
-    </div>
-  )
-  const tags = (
-    <div className="flex flex-wrap gap-1.5">
-      {access && <Tag hint={t(`access.${access}Hint`)}>{t("builder.accessIs", { access: t(`access.${access}`) })}</Tag>}
-      <Tag hint={t("builder.reachesHint")}>{powers.length ? t("builder.reaches", { what: powers.join(", ") }) : t("builder.reachesNothing")}</Tag>
-    </div>
-  )
+// The panel "Open" slides in: a team's members (each opens), an agent's profile, then its powers; the way on at the
+// bottom. Each kind of view is one entry of a table (title, body, footer); Back pops the stack. The conversation stays
+// beside it: a change asked there revises the proposal, and this panel follows.
+function ProposalPanel({
+  drafts, stack, onStack, busy, models, onModel, powersOf, onPowers, servers, onCreate, onDecline, onClose
+}: {
+  drafts: Draft[]
+  stack: View[]
+  onStack: (s: View[]) => void
+  busy: boolean
+  models: Record<number, ModelChoice>
+  onModel: (i: number, v: ModelChoice) => void
+  powersOf: (i: number) => Powers
+  onPowers: (i: number, p: Powers) => void
+  servers: ReadonlyArray<McpServer>
+  onCreate: () => void
+  onDecline: () => void
+  onClose: () => void
+}) {
+  const view = stack.at(-1)!
+  const push = (v: View) => onStack([...stack, v])
+  const pop = () => onStack(stack.slice(0, -1))
+  const team = drafts.length > 1
+  const scope = drafts.every((d) => d.fields.scope === "project") ? t("builder.inProject") : t("builder.everywhere")
+  const one = (i: number) => {
+    const draft = drafts[i]!
+    const p = powersOf(i)
+    return { draft, p }
+  }
+  const VIEWS = {
+    team: () => ({
+      title: t("builder.yourAgents"),
+      body: (
+        <ul className="flex flex-col gap-3">
+          {drafts.map((d, i) => (
+            <MemberCard key={d.name} draft={d} tone={i} model={models[i]?.model ?? d.fields.model ?? ""} powers={powersOf(i)} onOpen={() => push({ at: "profile", index: i })} onPowers={() => push({ at: "powers", index: i })} />
+          ))}
+        </ul>
+      ),
+      footer: (
+        <>
+          <Button size="sm" variant="ghost" shape="pill" isDisabled={busy} onPress={onDecline}>
+            {t("builder.notNow")}
+          </Button>
+          <Button size="sm" variant="default" shape="pill" isPending={busy} isDisabled={busy} onPress={onCreate}>
+            {t("builder.createAll", { count: drafts.length })}
+          </Button>
+        </>
+      )
+    }),
+    profile: (i: number) => {
+      const { draft, p } = one(i)
+      return {
+        title: "", // the profile shows the name itself, large
+        body: <AgentProfile draft={draft} tone={i} choice={models[i]} onChoice={(v) => onModel(i, v)} powers={p} onPowers={() => push({ at: "powers", index: i })} />,
+        footer: (
+          <Button size="sm" variant="default" shape="pill" onPress={() => push({ at: "powers", index: i })}>
+            {t("builder.next")}
+          </Button>
+        )
+      }
+    },
+    powers: (i: number) => {
+      const { draft, p } = one(i)
+      return {
+        title: t("builder.powersTitle", { name: draft.name }),
+        body: (
+          <div className="flex flex-col gap-6">
+            <p className="text-muted">{t("builder.powersHint")}</p>
+            <PermissionsEditor access={p.access} onAccess={(access) => onPowers(i, { ...p, access })} value={p.permissions} onChange={(permissions) => onPowers(i, { ...p, permissions })} servers={servers} showAlways={false} />
+          </div>
+        ),
+        // A member of a team goes back to the list; one agent is created from here.
+        footer: team ? (
+          <Button size="sm" variant="default" shape="pill" onPress={() => onStack(stack.slice(0, 1))}>
+            {t("builder.done")}
+          </Button>
+        ) : (
+          <Button size="sm" variant="default" shape="pill" isPending={busy} isDisabled={busy} onPress={onCreate}>
+            {t("builder.createNamed", { name: draft.name })}
+          </Button>
+        )
+      }
+    }
+  }
+  const { title, body, footer } = view.at === "team" ? VIEWS.team() : VIEWS[view.at](view.index)
+  const name = view.at === "team" ? "" : drafts[view.index]!.name
+
   return (
-    // The card keeps one size (a preview of the instructions): reading them all opens a dialog, so a long profile
-    // never stretches the row and its neighbour.
-    <article className="flex flex-col gap-3 rounded-card border border-subtle p-4">
-      {head}
-      {f.description && <p className="line-clamp-3 text-secondary">{f.description}</p>}
-      {/* The primary model can be changed here, before the agent exists; the rest is on its page afterwards. */}
-      {f.model && (
-        <span className="flex items-center gap-2 text-sm text-muted">
-          {t("builder.primaryModel")}
-          <ModelPicker variant="field" className="min-w-0 flex-1" value={choice ?? { model: f.model, accountId: null, effort: null }} onChange={onChoice} />
+    <aside aria-label={t("builder.proposal")} className="flex w-120 shrink-0 flex-col border-l border-subtle bg-canvas">
+      <div className="flex h-14 shrink-0 items-center gap-1 px-3">
+        {stack.length > 1 && (
+          <IconButton label={t("nav.back")} onPress={pop}>
+            <ChevronLeft />
+          </IconButton>
+        )}
+        {/* Never an empty heading: on the profile the name is for screen readers (it shows large below). */}
+        <h2 className={cn("min-w-0 flex-1 truncate font-semibold", stack.length === 1 && "pl-2", !title && "sr-only")}>{title || name}</h2>
+        {!title && <span className="flex-1" />}
+        <IconButton label={t("common.close")} onPress={onClose}>
+          <X />
+        </IconButton>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-2 pb-6">{body}</div>
+      {/* The way on, with what it means beside it: where the agents will live and that nothing exists yet. */}
+      <div className="flex shrink-0 items-center gap-2 px-5 pt-2 pb-4">
+        <p className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-muted">
+          {view.at !== "powers" && (
+            <>
+              <Folder className="size-3.5 shrink-0" />
+              <span className="truncate" title={`${scope}. ${t("builder.untilYouApprove")}.`}>
+                {scope}. {t("builder.untilYouApprove")}.
+              </span>
+            </>
+          )}
+        </p>
+        {footer}
+      </div>
+    </aside>
+  )
+}
+
+// A team member in the panel: face, name and role, what it does (cut to two lines), and one quiet line of how it runs
+// (its AI · access · permissions) with "Edit permissions" as a soft pill. No frame: a calm surface; it opens the profile.
+const powerCount = (p: Powers) => Number(p.permissions.web) + Number(p.permissions.browser) + Object.values(p.permissions.grants).filter((g) => g !== "none").length
+function MemberCard({ draft, tone, model, powers, onOpen, onPowers }: { draft: Draft; tone: number; model: string; powers: Powers; onOpen: () => void; onPowers: () => void }) {
+  const f = draft.fields
+  const runs = [model && modelName(model), t(`access.${powers.access}`), t("builder.powerCount", { count: powerCount(powers) })].filter(Boolean)
+  return (
+    <li className="relative flex flex-col gap-3 rounded-sheet bg-surface p-4">
+      <RowHit label={`${t("builder.open")}: ${draft.name}`} onPress={onOpen} className="inset-0 rounded-sheet" />
+      <div className="pointer-events-none relative flex items-center gap-3">
+        <AgentAvatar id={draft.name} name={draft.name} tone={tone} size={40} />
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate font-medium">{draft.name}</span>
+          {f.title && <span className="truncate text-sm text-muted">{f.title}</span>}
         </span>
+      </div>
+      {f.description && <p className="pointer-events-none relative line-clamp-2 text-sm text-secondary">{f.description}</p>}
+      <div className="relative flex items-center gap-2">
+        <span className="pointer-events-none min-w-0 flex-1 truncate text-sm text-muted">{runs.join(" · ")}</span>
+        <Button size="sm" variant="secondary" shape="pill" className="font-normal" onPress={onPowers}>
+          {t("builder.editPowers")}
+        </Button>
+      </div>
+    </li>
+  )
+}
+
+// A proposed agent as a profile, soft: its face, name and role, what it does; why it's the one, as a quiet note; then
+// how it runs on one calm surface, each item a label over its value (the panel is narrow: no label column, no
+// divider lines). The instructions (written for the model, in English) wait behind "See instructions".
+function AgentProfile({ draft, tone, choice, onChoice, powers, onPowers }: { draft: Draft; tone: number; choice: ModelChoice | undefined; onChoice: (v: ModelChoice) => void; powers: Powers; onPowers: () => void }) {
+  const f = draft.fields
+  const reason = f.reason
+  const [instructions, setInstructions] = useState(false)
+  // What is set here (the permissions step may have changed them), not only what was proposed.
+  const access = powers.access
+  const named = new Set(Object.entries(powers.permissions.grants).filter(([, g]) => g !== "none").map(([id]) => id))
+  const reach = [powers.permissions.web && t("builder.web"), powers.permissions.browser && t("builder.browser"), named.size > 0 && t("builder.connectorCount", { count: named.size })].filter(Boolean)
+  return (
+    <article className="flex min-w-0 flex-col gap-6">
+      <div className="flex items-center gap-4">
+        <AgentAvatar id={draft.name} name={draft.name} tone={tone} size={64} live />
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h3 className="truncate text-2xl font-semibold tracking-tight">{draft.name}</h3>
+          {f.title && <p className="truncate text-muted">{f.title}</p>}
+        </div>
+      </div>
+      {(f.description || f.instructions) && (
+        <div className="flex flex-col items-start gap-2">
+          {f.description && <p className="leading-relaxed text-secondary">{f.description}</p>}
+          {/* How it thinks, next to what it does (the instructions are written for the model). */}
+          {f.instructions && (
+            <Button size="sm" variant="ghost" shape="pill" className="-ml-2.5 font-normal text-muted" onPress={() => setInstructions(true)}>
+              {t("builder.seeInstructions")}
+            </Button>
+          )}
+        </div>
       )}
-      {tags}
-      {f.instructions && <p className="mt-auto line-clamp-3 border-t border-subtle pt-3 text-sm whitespace-pre-wrap text-muted">{f.instructions}</p>}
-      <Button size="sm" variant="ghost" className="-ml-2.5 self-start" onPress={() => setDetails(true)}>
-        {t("builder.seeDetails")}
-      </Button>
-      <Dialog title={t("builder.details", { name: draft.name })} size="lg" isOpen={details} onOpenChange={setDetails}>
+      {reason && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm text-muted">{t("builder.why")}</span>
+          <p className="text-sm leading-relaxed text-secondary">{reason}</p>
+        </div>
+      )}
+      {/* How it runs, as two settings rows (what, then its control on the right), parted by a hairline: its AI, and
+          its permissions in one line (what it may do on its own · what it reaches) with "Change". */}
+      <Rows className="rounded-sheet border-transparent">
+        <SettingRow icon={<Cpu />} title={t("builder.model")}>
+          <ModelPicker className="max-w-56 text-fg" value={choice ?? { model: f.model || "claude-cli/sonnet", accountId: null, effort: null }} onChange={onChoice} />
+        </SettingRow>
+        <SettingRow icon={<ShieldCheck />} title={t("builder.permissions")} hint={[t(`access.${access}`), reach.length ? reach.join(", ") : t("builder.reachesNothing")].join(" · ")}>
+          <Button size="sm" variant="secondary" shape="pill" className="font-normal" aria-label={`${t("builder.change")}: ${t("builder.permissions")}`} onPress={onPowers}>
+            {t("builder.change")}
+          </Button>
+        </SettingRow>
+      </Rows>
+      <Dialog title={t("builder.details", { name: draft.name })} size="lg" isOpen={instructions} onOpenChange={setInstructions}>
         {(close) => (
           <div className="flex flex-col gap-4">
-            {head}
-            {f.description && <p className="text-secondary">{f.description}</p>}
-            {model && <Tag hint={t("builder.runsOnHint")}>{t("builder.runsOn", { model: modelLabel(model) })}</Tag>}
-            {tags}
-            {f.reason && (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-sm text-muted">{t("builder.why")}</span>
-                <p className="text-sm text-secondary">{f.reason}</p>
-              </div>
-            )}
-            {f.instructions && (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-sm text-muted">{t("builder.instructions")}</span>
-                <p className="max-h-80 overflow-y-auto rounded-control bg-control px-3 py-2.5 text-sm whitespace-pre-wrap text-secondary">{f.instructions}</p>
-              </div>
-            )}
+            <p className="max-h-80 overflow-y-auto rounded-control bg-control px-3 py-2.5 text-sm whitespace-pre-wrap text-secondary">{f.instructions}</p>
             <div className="flex justify-end">
               <Button variant="ghost" onPress={close}>
                 {t("common.close")}
@@ -546,3 +604,4 @@ function AgentReview({ draft, tone, choice, onChoice }: { draft: Draft; tone: nu
     </article>
   )
 }
+

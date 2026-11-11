@@ -11,14 +11,44 @@ export function CheckList({
   value,
   onChange,
   options,
+  tiles = false,
   className
 }: {
   label: string
   value: ReadonlyArray<string>
   onChange: (value: string[]) => void
-  options: ReadonlyArray<{ value: string; label: ReactNode; trailing?: ReactNode; tint?: string }>
+  options: ReadonlyArray<{ value: string; label: ReactNode; hint?: ReactNode; trailing?: ReactNode; tint?: string }>
+  // Soft tiles in two columns instead of rows (picking people: a team's members): the label over its hint, a round
+  // tick at the end, and a ticked tile in its own tint.
+  tiles?: boolean
   className?: string
 }) {
+  if (tiles)
+    return (
+      <CheckboxGroup aria-label={label} value={[...value]} onChange={onChange} className={cn("grid gap-2 sm:grid-cols-2", className)}>
+        {options.map((o) => (
+          <Checkbox
+            key={o.value}
+            value={o.value}
+            className={cn(
+              "group flex min-w-0 cursor-default items-center gap-3 rounded-card border border-transparent bg-control px-3 py-2.5 outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:not-data-selected:bg-control-hover motion-reduce:transition-none",
+              o.tint ? `${o.tint} data-selected:tinted` : "data-selected:border-accent-line data-selected:bg-accent-faint"
+            )}
+          >
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="flex min-w-0 items-center gap-2.5 text-fg">{o.label}</span>
+              {o.hint && <span className="truncate text-sm text-muted">{o.hint}</span>}
+            </span>
+            <span
+              aria-hidden="true"
+              className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border border-strong", o.tint ? "text-(--tint) group-data-selected:border-(--tint)" : "text-accent-text group-data-selected:border-accent-line group-data-selected:bg-accent-soft")}
+            >
+              <Check className="size-3 opacity-0 transition-opacity duration-120 group-data-selected:opacity-100 motion-reduce:transition-none" />
+            </span>
+          </Checkbox>
+        ))}
+      </CheckboxGroup>
+    )
   return (
     <CheckboxGroup aria-label={label} value={[...value]} onChange={onChange} className={cn("flex flex-col gap-1", className)}>
       {options.map((o) => (

@@ -119,7 +119,7 @@ function TeamDialog({ team, agents, projects, onClose }: { team: AgentTeam | und
     <Dialog title={team ? t("teams.edit", { name: team.name }) : t("teams.new")} isOpen onOpenChange={(o) => !o && onClose()} size="lg">
       {() => (
         <form
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-5"
           onSubmit={(e) => {
             e.preventDefault()
             if (name.trim() && !busy) save()
@@ -138,17 +138,33 @@ function TeamDialog({ team, agents, projects, onClose }: { team: AgentTeam | und
               />
             </Field>
           )}
-          <div className="flex flex-col gap-1.5 text-sm text-muted">
-            <span>{t("teams.members")}</span>
+          <div className="flex flex-col gap-2 text-sm text-muted">
+            <span className="flex justify-between">
+              {t("teams.members")}
+              {ids.length > 0 && <span className="tabular-nums text-dim">{`${ids.length}/${TEAM_MAX}`}</span>}
+            </span>
             {reach.length === 0 ? (
               <p className="text-dim">{t("teams.none")}</p>
             ) : (
               <CheckList
+                tiles
                 label={t("teams.members")}
                 value={ids}
                 onChange={pick}
-                className="scroll-quiet max-h-56 overflow-y-auto"
-                options={reach.map((a) => ({ value: a.id, tint: agentTint(a, agents), label: <><AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} /> {a.name}</>, trailing: <span className="truncate text-sm text-muted">{a.title}</span> }))}
+                className="scroll-quiet max-h-72 overflow-y-auto p-0.5"
+                options={reach.map((a) => ({
+                  value: a.id,
+                  tint: agentTint(a, agents),
+                  label: (
+                    <>
+                      <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={28} />
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate">{a.name}</span>
+                        {a.title && <span className="truncate text-sm text-muted">{a.title}</span>}
+                      </span>
+                    </>
+                  )
+                }))}
               />
             )}
           </div>

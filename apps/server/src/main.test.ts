@@ -441,7 +441,7 @@ test("learning: forgotten ones go to consolidation and can be restored; a cap of
 
 test("accounts: defaults are created by themselves and can't be removed; an extra one gets its own folder and it goes away with it", async () => {
   const list = await api((c) => c.accounts.list())
-  expect(list.filter((a) => a.isDefault).map((a) => a.provider).sort()).toEqual(["claude", "codex"])
+  expect(list.filter((a) => a.isDefault).map((a) => a.provider).sort()).toEqual(["antigravity", "claude", "codex"])
   const extra = await api((c) => c.accounts.create({ payload: { provider: "codex", label: "Codex work" } }))
   expect(extra).toMatchObject({ provider: "codex", isDefault: false, loggedIn: false })
   expect((await api((c) => c.accounts.update({ params: { id: extra.id }, payload: { label: "Codex 2" } }))).label).toBe("Codex 2")

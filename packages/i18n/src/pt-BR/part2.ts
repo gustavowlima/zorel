@@ -53,6 +53,19 @@ export const part2 = {
     busy: "Já existe um login em andamento para esta conta.",
     removeFailed: "Não foi possível remover esta conta."
   },
+  cli: {
+    title: "Programa",
+    notInstalled: "Não está instalado neste computador. O Zorel instala pela fonte oficial.",
+    selfUpdates: "Se mantém atualizado sozinho.",
+    updateAvailable: "A versão {latest} já saiu.",
+    update: "Atualizar para {latest}",
+    updateShort: "atualização disponível",
+    upToDate: "Em dia.",
+    latestUnknown: "Não deu para ver a versão mais recente agora.",
+    yours: "Cópia sua (Homebrew, npm…): ela é atualizada por onde veio.",
+    yoursBehind: "Cópia sua (Homebrew, npm…). A versão {latest} já saiu: atualize por onde ela veio.",
+    checkNow: "Verificar agora"
+  },
   providers: {
     signInAction: "Entrar",
     noAgentsUse: "Nenhum agente usa ainda",
@@ -220,6 +233,12 @@ export const part2 = {
     confirmBody: "Exclui {size} permanentemente. As conversas e os projetos que você ainda tem não são afetados."
   },
   audit: {
+    details: "Detalhes",
+    reason: "Motivo",
+    outcome: "Resultado",
+    target: "O quê",
+    when: "Quando",
+    outcomes: { success: "Feito", failure: "Falhou", denied: "Não permitido" },
     by: "por {name}",
     byYou: "por você",
     changes: "Alterações",

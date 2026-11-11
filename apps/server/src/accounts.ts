@@ -1,17 +1,17 @@
 // Provider accounts (ARCHITECTURE §6.1): several logins per provider, each in its own CLI folder.
 // Zorel runs the official login/status/logout commands with that folder and only keeps what the CLI
-// reports for display (e-mail, plan). It never reads or stores the token.
+// reports for display (e-mail, plan). It never stores the token; for an extra Antigravity account it reads
+// only the e-mail field of the login file agy wrote (agy has no status command).
 import type { AccountProvider, AccountUsage, AccountWindow, ProviderAccount } from "@zorel/contracts"
 import { Context, Effect, Layer, Semaphore } from "effect"
-import { existsSync, mkdirSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs"
 import { join, resolve, sep } from "node:path"
 import { DataDir } from "./chat.ts"
 import { type AccountRow, Store } from "./db.ts"
-import { type CliModel, splitModel } from "./engines.ts"
+import { ANTIGRAVITY_FILE_LOGIN, antigravityDir, antigravityGeminiDir, antigravityLoginFile, type CliModel, parseAntigravityModels, readAntigravityLimits, readAntigravityModels, splitModel } from "./engines.ts"
 import { readClaudeLimits, readClaudeModels } from "./engines/claude-sdk.ts"
-import { readAntigravityModels } from "./engines.ts"
 import { readCodexLimits, readCodexModels } from "./engines/codex.ts"
-import { which } from "./cli-install.ts"
+import { which } from "./cli/index.ts"
 
 const STATUS_TTL_MS = 30_000
 // Limit readings (ARCHITECTURE §10.2): cached 4 min; a failure waits 5, 10, 20, 40 min, then 1 h.
@@ -30,48 +30,95 @@ const SCREEN_SETTLE_MS = 600
 const plain = (s: string) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(\x07|\x1b\\)|\r/g, "").trim()
 
 // Which account provider serves a model provider.
-const ACCOUNT_OF_MODEL: Record<string, AccountProvider> = { "claude-cli": "claude", "codex-cli": "codex" }
+const ACCOUNT_OF_MODEL: Record<string, AccountProvider> = { "claude-cli": "claude", "codex-cli": "codex", antigravity: "antigravity" }
 const defaultId = (p: AccountProvider) => `${p}-default`
 
 interface Status {
   readonly loggedIn: boolean
   readonly identity: string | null
 }
+const SIGNED_OUT: Status = { loggedIn: false, identity: null }
 
-const envFor = (a: AccountRow): Record<string, string> => {
+const processEnv = () => {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
-  if (a.home && a.provider === "claude") env.CLAUDE_CONFIG_DIR = a.home
-  if (a.home && a.provider === "codex") env.CODEX_HOME = a.home
   return env
 }
 
-const COMMANDS: Record<AccountProvider, { bin: string; status: string[]; login: string[]; logout: string[] }> = {
-  claude: { bin: "claude", status: ["auth", "status", "--json"], login: ["auth", "login", "--claudeai"], logout: ["auth", "logout"] },
-  codex: { bin: "codex", status: ["login", "status"], login: ["login"], logout: ["logout"] }
+// What each provider's CLI needs: the account's environment, and its status, login and logout commands.
+interface Cli {
+  readonly bin: string
+  readonly env: (a: AccountRow) => Record<string, string>
+  readonly status: (a: AccountRow) => Promise<Status>
+  readonly login: (a: AccountRow) => string[]
+  readonly logout: string[] | null // null: deleting the account's folder signs it out
+  readonly pastesCode?: true // the sign-in always waits for a code pasted back (on a desktop too)
+  readonly limits?: (a: AccountRow) => Promise<ReadonlyArray<AccountWindow>> // absent: the CLI reports no limits
 }
 
 async function run(a: AccountRow, args: string[]) {
-  const bin = which(COMMANDS[a.provider as AccountProvider].bin)
+  const cli = CLIS[a.provider as AccountProvider]
+  const bin = which(cli.bin)
   if (!bin) return { code: -1, out: "" }
   if (a.home) mkdirSync(a.home, { recursive: true })
-  const proc = Bun.spawn([bin, ...args], { env: envFor(a), stdin: "ignore", stdout: "pipe", stderr: "pipe" })
+  const proc = Bun.spawn([bin, ...args], { env: cli.env(a), stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 30_000, killSignal: "SIGKILL", windowsHide: true })
   const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
   return { code, out: `${out}\n${err}` }
 }
 
-async function readStatus(a: AccountRow): Promise<Status> {
-  const { code, out } = await run(a, COMMANDS[a.provider as AccountProvider].status)
-  if (a.provider === "claude") {
-    try {
-      const s = JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1))
-      return { loggedIn: !!s.loggedIn, identity: [s.email, s.subscriptionType].filter(Boolean).join(" · ") || null }
-    } catch {
-      return { loggedIn: false, identity: null }
-    }
+// An extra Antigravity account is signed in when its .gemini holds agy's login file; who it is, that file's e-mail.
+export function antigravityFileStatus(geminiDir: string): Status {
+  const file = antigravityLoginFile(geminiDir)
+  if (!existsSync(file)) return SIGNED_OUT
+  try {
+    const email = (JSON.parse(readFileSync(file, "utf8")) as { id_token_email?: unknown }).id_token_email
+    return { loggedIn: true, identity: typeof email === "string" && email ? email : null }
+  } catch (e) {
+    console.warn(`[accounts] unreadable Antigravity login file in ${geminiDir}:`, e instanceof Error ? e.message : e)
+    return SIGNED_OUT
   }
-  const loggedIn = code === 0 && /logged in/i.test(out) && !/not logged in/i.test(out)
-  return { loggedIn, identity: loggedIn ? (/using (\w+)/i.exec(out)?.[1] ?? null) : null }
+}
+
+const CLIS: Record<AccountProvider, Cli> = {
+  claude: {
+    bin: "claude",
+    env: (a) => ({ ...processEnv(), ...(a.home && { CLAUDE_CONFIG_DIR: a.home }) }),
+    status: async (a) => {
+      const { out } = await run(a, ["auth", "status", "--json"])
+      try {
+        const s = JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1))
+        return { loggedIn: !!s.loggedIn, identity: [s.email, s.subscriptionType].filter(Boolean).join(" · ") || null }
+      } catch {
+        return SIGNED_OUT
+      }
+    },
+    login: () => ["auth", "login", "--claudeai"],
+    logout: ["auth", "logout"],
+    limits: (a) => readClaudeLimits(a.home ?? undefined)
+  },
+  codex: {
+    bin: "codex",
+    env: (a) => ({ ...processEnv(), ...(a.home && { CODEX_HOME: a.home }) }),
+    status: async (a) => {
+      const { code, out } = await run(a, ["login", "status"])
+      const loggedIn = code === 0 && /logged in/i.test(out) && !/not logged in/i.test(out)
+      return { loggedIn, identity: loggedIn ? (/using (\w+)/i.exec(out)?.[1] ?? null) : null }
+    },
+    login: () => ["login", ...(SERVER ? ["--device-auth"] : [])],
+    logout: ["logout"],
+    limits: (a) => readCodexLimits(a.home!)
+  },
+  // agy signs in with a link and a code pasted back. The default account is its keychain login (who it is isn't
+  // printed); an extra one keeps its login in its folder (ANTIGRAVITY_FILE_LOGIN).
+  antigravity: {
+    bin: "agy",
+    env: (a) => ({ ...processEnv(), ...(a.home && ANTIGRAVITY_FILE_LOGIN) }),
+    status: async (a) => (a.home ? antigravityFileStatus(antigravityGeminiDir(a.home)) : { loggedIn: parseAntigravityModels((await run(a, ["models"])).out).length > 0, identity: null }),
+    login: (a) => ["acp", "--disable-telemetry", "--gemini-dir", antigravityDir(a.home ? antigravityGeminiDir(a.home) : undefined), "--login"],
+    logout: null,
+    pastesCode: true,
+    limits: (a) => readAntigravityLimits(a.home)
+  }
 }
 
 interface AccountsService {
@@ -108,9 +155,10 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
       const store = yield* Store
       const dataDir = yield* DataDir
       const root = resolve(dataDir, "accounts")
-      // Default accounts: Claude uses the CLI's own login; Codex always gets a Zorel-owned folder (the
+      // Default accounts: Claude and Antigravity use the CLI's own login; Codex always gets a Zorel-owned folder (the
       // app-server would load the user's config.toml otherwise; see engines/codex.ts).
       yield* store.ensureAccount({ id: defaultId("claude"), label: "Claude", kind: "subscription", provider: "claude", home: null, secret: null, baseUrl: null, identity: null })
+      yield* store.ensureAccount({ id: defaultId("antigravity"), label: "Antigravity", kind: "subscription", provider: "antigravity", home: null, secret: null, baseUrl: null, identity: null })
       yield* store.ensureAccount({ id: defaultId("codex"), label: "Codex", kind: "subscription", provider: "codex", home: join(root, defaultId("codex")), secret: null, baseUrl: null, identity: null })
 
       const cache = new Map<string, { at: number; status: Status }>()
@@ -123,14 +171,14 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
         Effect.promise(async () => {
           const hit = cache.get(a.id)
           if (hit && Date.now() - hit.at < STATUS_TTL_MS) return hit.status
-          const s = await readStatus(a)
+          const s = await CLIS[a.provider as AccountProvider].status(a)
           cache.set(a.id, { at: Date.now(), status: s })
           return s
         })
       const toPublic = (a: AccountRow) =>
         Effect.map(status(a), (s): ProviderAccount => ({
           id: a.id, label: a.label, kind: a.kind, provider: a.provider, isDefault: a.id === defaultId(a.provider as AccountProvider),
-          loggedIn: s.loggedIn, identity: s.identity ?? a.identity, loggingIn: logins.has(a.id),
+          installed: !!which(CLIS[a.provider as AccountProvider].bin), loggedIn: s.loggedIn, identity: s.identity ?? a.identity, loggingIn: logins.has(a.id),
           limitedUntil: a.limitedUntil && a.limitedUntil > Date.now() ? a.limitedUntil : null, usage: usageOf(a), createdAt: a.createdAt
         }))
       // Only folders Zorel created can be deleted.
@@ -152,7 +200,8 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
             if (!a) return "not-found" as const
             if (a.id === defaultId(a.provider as AccountProvider)) return "default" as const
             // Log out first so the CLI drops its stored credentials (e.g. the macOS keychain entry).
-            yield* Effect.promise(() => run(a, COMMANDS[a.provider as AccountProvider].logout))
+            const logout = CLIS[a.provider as AccountProvider].logout
+            if (logout) yield* Effect.promise(() => run(a, logout))
             if (owned(a.home) && existsSync(a.home!)) rmSync(a.home!, { recursive: true, force: true })
             cache.delete(id)
             yield* store.removeAccount(id)
@@ -163,7 +212,8 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
             const a = yield* store.account(id)
             if (!a) return "not-found" as const
             if (logins.has(id)) return "busy" as const
-            const bin = which(COMMANDS[a.provider as AccountProvider].bin)
+            const cli = CLIS[a.provider as AccountProvider]
+            const bin = which(cli.bin)
             if (!bin) return { url: null }
             if (a.home) mkdirSync(a.home, { recursive: true })
             let resolveUrl: (u: string | null) => void = () => {}
@@ -175,22 +225,24 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
               if (m) resolveUrl(m[0])
             }
             const decoder = new TextDecoder()
-            const args = [bin, ...COMMANDS[a.provider as AccountProvider].login, ...(SERVER && a.provider === "codex" ? ["--device-auth"] : [])]
+            const args = [bin, ...cli.login(a)]
             // On a server there's no browser to open: the CLI runs in a terminal of its own, shows the link (and a
-            // device code), and reads the code the person pastes back (answer). On a desktop it opens the browser itself.
-            const proc = SERVER
-              ? Bun.spawn(args, { env: { ...envFor(a), TERM: "dumb", BROWSER: "none" }, terminal: { cols: 200, rows: 50, data: (_t, data) => {
+            // device code), and reads the code the person pastes back (answer). On a desktop it opens the browser
+            // itself, unless its sign-in always takes a pasted code (agy): then it runs in a terminal there too.
+            const pasted = SERVER || !!cli.pastesCode
+            const proc = pasted
+              ? Bun.spawn(args, { env: { ...cli.env(a), TERM: "dumb", BROWSER: "none" }, terminal: { cols: 200, rows: 50, data: (_t, data) => {
                   const text = decoder.decode(new Uint8Array(data), { stream: true })
                   screens.set(id, ((screens.get(id) ?? "") + text).slice(-SCREEN_MAX))
                   seen(text)
                 } } })
-              : Bun.spawn(args, { env: envFor(a), stdin: "ignore", stdout: "pipe", stderr: "pipe" })
+              : Bun.spawn(args, { env: cli.env(a), stdin: "ignore", stdout: "pipe", stderr: "pipe" })
             logins.add(id)
-            if (SERVER) terminals.set(id, proc)
+            if (pasted) terminals.set(id, proc)
             const scan = async (s: ReadableStream) => {
               for await (const chunk of s) seen(decoder.decode(chunk as Uint8Array, { stream: true }))
             }
-            if (!SERVER) {
+            if (!pasted) {
               void scan(proc.stdout as ReadableStream)
               void scan(proc.stderr as ReadableStream)
             }
@@ -200,13 +252,13 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
               screens.delete(id)
               cache.delete(id)
               resolveUrl(null)
-              const s = await readStatus(a)
+              const s = await cli.status(a)
               cache.set(id, { at: Date.now(), status: s })
               if (s.identity) await Effect.runPromise(store.updateAccount(id, { identity: s.identity }))
             })
             const link = yield* Effect.promise(() => Promise.race([url, Bun.sleep(URL_WAIT_MS).then(() => null)]))
-            if (SERVER) yield* Effect.promise(() => Bun.sleep(SCREEN_SETTLE_MS)) // the device code comes just after the link
-            return SERVER ? { url: link, output: plain(screens.get(id) ?? "") } : { url: link }
+            if (pasted) yield* Effect.promise(() => Bun.sleep(SCREEN_SETTLE_MS)) // the device code comes just after the link
+            return pasted ? { url: link, output: plain(screens.get(id) ?? "") } : { url: link }
           }),
         answer: (id, code) =>
           Effect.sync(() => {
@@ -237,9 +289,9 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
             const cached = usageOf(a)
             const backoff = failures.get(id)
             const fresh = cached && Date.now() - cached.readAt < LIMITS_TTL_MS
-            if (!fresh && (!backoff || Date.now() >= backoff.next)) {
-              const read = a.provider === "codex" ? () => readCodexLimits(a.home!) : () => readClaudeLimits(a.home ?? undefined)
-              const windows = yield* readingLock.withPermits(1)(Effect.tryPromise(read).pipe(Effect.option))
+            const limits = CLIS[a.provider as AccountProvider].limits
+            if (limits && !fresh && (!backoff || Date.now() >= backoff.next)) {
+              const windows = yield* readingLock.withPermits(1)(Effect.tryPromise(() => limits(a)).pipe(Effect.option))
               if (windows._tag === "Some") {
                 failures.delete(id)
                 yield* store.updateAccount(id, { usage: { windows: windows.value, readAt: Date.now() } })

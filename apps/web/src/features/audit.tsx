@@ -5,11 +5,11 @@ import { useAtomValue } from "@effect/atom-react"
 import type { AuditEntry, AuditKind } from "@zorel/contracts"
 import { AsyncResult } from "effect/reactivity"
 import { formatDate, formatTime, type MessageKey, t } from "@zorel/i18n"
-import { type ReactNode, useEffect, useState } from "react"
+import { type ReactNode, useEffect, useId, useState } from "react"
 import { agentsAtom, auditAtom, useInvalidate, useList } from "../client.ts"
 import { ReadingState } from "./reading.tsx"
 import { modelLabel } from "../labels.ts"
-import { ArrowRight, Bot, Button, ChevronRight, cn, DateRangeField, Folder, KeyRound, Plug, Rows, SearchInput, Section, Select, Shield, Undo2 } from "@/ui"
+import { ArrowRight, Bot, Button, ChevronDown, ChevronRight, cn, Fold, DateRangeField, Folder, KeyRound, Plug, Rows, SearchInput, Section, Select, Shield, Undo2 } from "@/ui"
 
 const KINDS: ReadonlyArray<AuditKind> = ["all", "providers", "projects", "tools", "approvals"]
 
@@ -76,8 +76,6 @@ export function AuditSection() {
   const data = AsyncResult.getOrElse(result, () => undefined)
   const shown = data?.entries ?? []
   const filtered = kind !== "all" || !!q || !!from || !!to
-  const actorName = (e: AuditEntry) =>
-    e.actor.type === "user" ? t("audit.you") : e.actor.type === "agent" ? (agents.find((a) => a.id === e.actor.id)?.name ?? t("audit.removedAgent")) : t("app.name")
 
   // Entries by day (Today, Yesterday, a date), newest first: a time alone can't tell yesterday from today.
   const days = shown.reduce<Array<{ day: string; entries: AuditEntry[] }>>((acc, e) => {
@@ -144,32 +142,7 @@ export function AuditSection() {
           <h3 className="pt-2 text-sm font-medium text-muted">{day}</h3>
           <Rows>
             {list.map((e) => (
-              <div key={e.id} className="flex items-start gap-3 py-3">
-                <span className={cn("mt-px flex size-6 shrink-0 items-center justify-center rounded-control [&_svg]:size-3.5", toneOf(e))}>{iconOf(e)}</span>
-                <span className="flex min-w-0 flex-1 flex-col gap-1">
-                  <Sentence entry={e} />
-                  {e.changes.length > 0 && (e.action.endsWith("updated") || e.action.endsWith("renamed")) ? (
-                    <span className="flex flex-col gap-0.5 text-sm">
-                      {e.changes.map((c) => (
-                        <span key={c.field} className="flex min-w-0 flex-wrap items-center gap-x-1.5">
-                          <span className="text-muted">{FIELDS.has(c.field) ? t(`audit.fields.${c.field}` as MessageKey) : c.field}:</span>
-                          <Value field={c.field} value={c.before} tone="before" />
-                          {/* The arrow travels with the new value: a wrap never leaves it dangling. */}
-                          <span className="inline-flex min-w-0 items-center gap-1.5">
-                            <ArrowRight className="size-3.5 shrink-0 text-muted" />
-                            <Value field={c.field} value={c.after} tone="after" />
-                          </span>
-                        </span>
-                      ))}
-                    </span>
-                  ) : null}
-                  {e.reason && <span className="text-sm text-muted">{e.reason}</span>}
-                  <span className="text-sm text-muted">{e.actor.type === "user" ? t("audit.byYou") : t("audit.by", { name: actorName(e) })}</span>
-                </span>
-                <time className="shrink-0 text-sm text-muted tabular-nums" dateTime={new Date(e.at).toISOString()} title={new Date(e.at).toLocaleString()}>
-                  {formatTime(e.at, e.at) /* the day is the heading above: the time alone */}
-                </time>
-              </div>
+              <AuditRow key={e.id} entry={e} by={actorName(e, agents)} />
             ))}
           </Rows>
         </div>
@@ -193,6 +166,80 @@ export function AuditSection() {
     </Section>
   )
 }
+
+// One change in the log: what happened, the fields that changed (an update's, inline), who did it and when. "Details"
+// opens everything recorded: every field before → after in full (a creation's values, an approval's tool and chat),
+// the reason, the outcome, what was touched (kind and id) and the exact time.
+function AuditRow({ entry: e, by }: { entry: AuditEntry; by: string }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  const inline = e.changes.length > 0 && (e.action.endsWith("updated") || e.action.endsWith("renamed"))
+  return (
+    <div className="flex items-start gap-3 py-3">
+      <span className={cn("mt-px flex size-6 shrink-0 items-center justify-center rounded-control [&_svg]:size-3.5", toneOf(e))}>{iconOf(e)}</span>
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <Sentence entry={e} />
+        {inline && (
+          <span className="flex flex-col gap-0.5 text-sm">
+            {e.changes.map((c) => (
+              <span key={c.field} className="flex min-w-0 flex-wrap items-center gap-x-1.5">
+                <span className="text-muted">{fieldName(c.field)}:</span>
+                <Value field={c.field} value={c.before} tone="before" />
+                {/* The arrow travels with the new value: a wrap never leaves it dangling. */}
+                <span className="inline-flex min-w-0 items-center gap-1.5">
+                  <ArrowRight className="size-3.5 shrink-0 text-muted" />
+                  <Value field={c.field} value={c.after} tone="after" />
+                </span>
+              </span>
+            ))}
+          </span>
+        )}
+        {e.reason && <span className="text-sm text-muted">{e.reason}</span>}
+        <span className="flex items-center gap-2 text-sm text-muted">
+          {e.actor.type === "user" ? t("audit.byYou") : t("audit.by", { name: by })}
+          <Button size="sm" variant="ghost" shape="pill" className="-my-1 font-normal text-muted" aria-expanded={open} aria-controls={id} onPress={() => setOpen(!open)}>
+            {t("audit.details")}
+            <ChevronDown className={cn("size-3.5 transition-transform duration-150 ease-out motion-reduce:transition-none", open && "rotate-180")} />
+          </Button>
+        </span>
+        <Fold open={open}>
+          <dl id={id} className="mt-1 flex flex-col gap-2 rounded-card bg-control p-3 text-sm">
+            {e.changes.map((c) => (
+              <Detail key={c.field} label={fieldName(c.field)}>
+                {c.before !== null && c.before !== "" && <span className="whitespace-pre-wrap break-words text-muted line-through decoration-1">{c.before}</span>}
+                <span className="whitespace-pre-wrap break-words text-fg">{c.after === null || c.after === "" ? "—" : c.after}</span>
+              </Detail>
+            ))}
+            {e.reason && <Detail label={t("audit.reason")}>{e.reason}</Detail>}
+            <Detail label={t("audit.outcome")}>{t(`audit.outcomes.${e.outcome}`)}</Detail>
+            <Detail label={t("audit.target")}>
+              <span className="break-all">{`${e.target.type} · ${e.target.id}`}</span>
+            </Detail>
+            <Detail label={t("audit.when")}>{new Date(e.at).toLocaleString()}</Detail>
+          </dl>
+        </Fold>
+      </span>
+      <time className="shrink-0 text-sm text-muted tabular-nums" dateTime={new Date(e.at).toISOString()} title={new Date(e.at).toLocaleString()}>
+        {formatTime(e.at, e.at) /* the day is the heading above: the time alone */}
+      </time>
+    </div>
+  )
+}
+// Who did it: you, an agent (by its name, or "a removed agent"), or Zorel itself. Who acts, by kind.
+const ACTOR: Record<AuditEntry["actor"]["type"], (e: AuditEntry, agents: ReadonlyArray<{ id: string; name: string }>) => string> = {
+  user: () => t("audit.you"),
+  agent: (e, agents) => agents.find((a) => a.id === e.actor.id)?.name ?? t("audit.removedAgent"),
+  system: () => t("app.name"),
+  api: () => t("app.name")
+}
+const actorName = (e: AuditEntry, agents: ReadonlyArray<{ id: string; name: string }>) => ACTOR[e.actor.type](e, agents)
+const fieldName = (field: string) => (FIELDS.has(field) ? t(`audit.fields.${field}` as MessageKey) : field)
+const Detail = ({ label, children }: { label: string; children: ReactNode }) => (
+  <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+    <dt className="shrink-0 text-muted sm:w-28">{label}</dt>
+    <dd className="flex min-w-0 flex-1 flex-col gap-0.5 text-secondary">{children}</dd>
+  </div>
+)
 
 const DAY = 86_400_000
 // The start of a "yyyy-mm-dd" day on this computer.

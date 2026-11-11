@@ -3,7 +3,7 @@
 // Chaining: a reply that mentions another member queues that member's turn (up to MAX_DEPTH without a message from you).
 import { APPROVAL_MS } from "./engines/session.ts"
 import { type Access, type Agent, type Chat, type Effort, type FailoverTarget, type FailureReason, type FileChange, MAX_RUNNING_DEFAULT, type Memory, type Step, type Switch } from "@zorel/contracts"
-import { type Approval, ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNeedsAgent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
+import { type AgentOverride, type Approval, ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNeedsAgent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
 import { Cause, Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
 import { ask, Busy, consolidate, DataDir, knownNames, mapEarlierFacts, members, NotFound, pinBudget, prepare } from "./chat.ts"
@@ -20,7 +20,7 @@ import { Pricing } from "./pricing.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { actionNames, BROWSER_TOOLS, type BrowserToolName, BrowserService, profileOf, runBrowserTool } from "./browser.ts"
 import { cardText, TOO_LARGE } from "./engines/policy.ts"
-import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, READ_RESULT_TOOL, REMEMBER_TOOL, staleWrite, FIND_TOOLS_TOOL, USE_TOOL_TOOL, MCP_DEFER_CHARS, findTools, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo } from "./team.ts"
+import { ASK_TOOL, createInputs, findAgent, effectiveAccess, KNOWLEDGE_TOOLS, listText, MAX_OPEN_TASKS, MAX_TASK_DEPTH, MEMORY_TOOL, narrower, proposalText, readText, READ_RESULT_TOOL, REMEMBER_TOOL, staleWrite, FIND_TOOLS_TOOL, USE_TOOL_TOOL, MCP_DEFER_CHARS, findTools, ROUTINES_TOOL, SKILL_TOOLS, TASK_TOOL, TEAM_TOOLS, withheldTools, updateInput, visibleTo, withOverride } from "./team.ts"
 import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
@@ -60,6 +60,8 @@ const ERRORS_MAX = 6 // this many failed steps in a row: stuck
 // Runaway guard of one turn: it watches finished steps and says why to stop, if it should.
 // A step is its kind, title and the start of its output; a different step or a success resets the counts.
 // A waiting status whose card is a question (zorel_ask_user): the app says "asks you" instead of "waits for your OK".
+// A decision on an approval card, as its waiter gets it.
+type Decision = { readonly outcome: ApprovalOutcome; readonly reason: string | null; readonly overrides: ReadonlyArray<AgentOverride> }
 const QUESTION_LABEL = "question"
 
 // Background work (learning, the memory map) that must not stop the chat, and must not fail unseen either: an
@@ -183,7 +185,7 @@ export interface RuntimeService {
   readonly paused: () => boolean
   readonly setPaused: (paused: boolean) => Effect.Effect<void>
   readonly setMaxRunning: (max: number) => Effect.Effect<void>
-  readonly decide: (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">, reason?: string) => Effect.Effect<void, ApprovalNotFound>
+  readonly decide: (approvalId: string, outcome: Exclude<ApprovalOutcome, "expired">, reason?: string, overrides?: ReadonlyArray<AgentOverride>) => Effect.Effect<void, ApprovalNotFound>
   // Spec 013: a routine flow's step waits for the person (a write, an "Ask me"), with no turn behind it. The card goes
   // to the routine's chat and Needs you like any other; "Always allow" saves the rule on the agent.
   readonly requestApproval: (req: RunStepApproval) => Effect.Effect<{ readonly outcome: ApprovalOutcome; readonly reason: string | null }>
@@ -350,7 +352,7 @@ const makeRuntime = Effect.gen(function* () {
           model: row.model, system: turn.stable ?? turn.system, cwd: turn.cwd, gatewayUrl: gatewayOf(key).url, dataDir, account: account && { id: account.id, home: account.home },
           access, web, nativeSkills, approve: (req) => (approvers.get(key) ?? (async () => false))(req)
         })
-        if (opened === undefined) return engines.run({ ...turn, access, web, approve: (req) => (approvers.get(key) ?? (async () => false))(req) })
+        if (opened === undefined) return engines.run({ ...turn, access, web, account: account && { id: account.id, home: account.home }, approve: (req) => (approvers.get(key) ?? (async () => false))(req) })
         if (typeof opened === "string") return Stream.make<EngineEvent[]>({ type: "error", message: opened })
         if (sessions.size >= MAX_SESSIONS) {
           const oldest = [...sessions.entries()].sort((a, b) => a[1].used - b[1].used)[0]
@@ -390,8 +392,9 @@ const makeRuntime = Effect.gen(function* () {
       )
     })
   const running = new Map<string, Fiber.Fiber<unknown, unknown>>()
-  const waiting = new Map<string, Deferred.Deferred<ApprovalOutcome>>()
-  const answers = new Map<string, string>() // question id → the person's answer (zorel_ask_user)
+  // approval id → its waiter: the decision comes with the person's words (a question's answer, what to change in a
+  // proposal) and, on an agent proposal, what they set before approving.
+  const waiting = new Map<string, Deferred.Deferred<Decision>>()
   const previews = new Map<string, { shellId: string; port: number }>() // chat + preview key → its running server
   const tasked = new Map<string, Set<string>>() // turn id → teammates it gave a task to (not chained again by mention)
   // chat id → a hand-off by mention waiting for its teammates' answers, to give the asker a wrap-up turn.
@@ -522,9 +525,7 @@ const makeRuntime = Effect.gen(function* () {
       if (!question) return textResult("question: what you need to know, in one short question.", true)
       const options = (Array.isArray(args.options) ? args.options : []).flatMap((o) => (typeof o === "string" && o.trim() ? [o.trim().slice(0, 100)] : [])).slice(0, 6)
       const s = await step(question, ASK_TOOL.name)
-      const { id, outcome } = await run(waitFor(chat, row, agent, s, { kind: "question", tool: ASK_TOOL.name, summary: question, args: JSON.stringify({ options }), cwd: null }, null, "answer"))
-      const answer = answers.get(id)
-      answers.delete(id)
+      const { outcome, reason: answer } = await run(waitFor(chat, row, agent, s, { kind: "question", tool: ASK_TOOL.name, summary: question, args: JSON.stringify({ options }), cwd: null }, null, "answer"))
       if (outcome !== "approved" || !answer) {
         await finish(s, "refused")
         return textResult(outcome === "expired" ? "No answer in 30 minutes. Go on with your best judgment and say what you assumed." : "The user chose not to answer. Go on with your best judgment and say what you assumed.")
@@ -613,7 +614,7 @@ const makeRuntime = Effect.gen(function* () {
       if (name !== "zorel_create_agent" && !target) return textResult(`No agent "${String(args.agent ?? "")}" here. Call zorel_list_agents.`, true)
       if (name === "zorel_read_agent") return textResult(readText(target!))
       // Create or update: check, show the proposal card, write only on the person's OK.
-      let proposal: { title: string; text: string; fields: Record<string, unknown>; apply: () => Promise<Agent[]> }
+      let proposal: { title: string; text: string; fields: Record<string, unknown>; apply: (overrides: ReadonlyArray<AgentOverride>) => Promise<Agent[]> }
       try {
         if (name === "zorel_create_agent") {
           const inputs = createInputs(args, caller, chat.projectId, await run(store.mcpServersFor(chat.projectId)))
@@ -632,9 +633,13 @@ const makeRuntime = Effect.gen(function* () {
             // One card for the whole team: each profile under its name.
             text: inputs.length === 1 ? proposalText(fieldsOf(inputs[0]!)) : inputs.map((i) => `## ${i.name}\n${proposalText({ ...fieldsOf(i), name: undefined })}`).join("\n\n"),
             fields: {},
-            apply: async () => {
+            // What the person set in the builder's panel (its AI, its powers) goes in as each agent is created.
+            apply: async (overrides) => {
               const made: Agent[] = []
-              for (const { notes: _notes, ...input } of inputs) made.push(await run(store.createAgent(input, nameOf(agent))))
+              for (const [i, proposed] of inputs.entries()) {
+                const { notes: _notes, ...input } = withOverride(proposed, overrides[i])
+                made.push(await run(store.createAgent(input, nameOf(agent))))
+              }
               return made
             }
           }
@@ -653,14 +658,16 @@ const makeRuntime = Effect.gen(function* () {
       const card = cardText(proposal.text)
       if (!card) return textResult(TOO_LARGE, true)
       const s = await step(proposal.title, name)
-      const outcome = await run(askApproval(chat, row, agent, s, { kind: "tool", tool: name, summary: proposal.title, args: card, cwd: null }))
+      const { outcome, reason: change, overrides } = await run(waitFor(chat, row, agent, s, { kind: "tool", tool: name, summary: proposal.title, args: card, cwd: null }, null))
       if (outcome === "denied" || outcome === "expired") {
         keep({ tool: name, args: "", status: "refused", result: "" })
         await finish(s, "refused")
-        return textResult("The user declined this proposal. Don't propose it again unless they ask.", true)
+        // Declined with words: a change to make (the builder's "want to change something?"), so propose again.
+        if (change) return textResult(`The user wants changes to this proposal: "${change}". Revise it accordingly and propose again with zorel_create_agent (a team if they ask for one). Don't ask first.`, true)
+        return textResult("The user declined this proposal. Don't propose the same thing again unless they ask. Ask in one short line what to change (the roles, how many, the access), and don't suggest using an agent they already have instead.", true)
       }
       onWrite()
-      const done = await proposal.apply()
+      const done = await proposal.apply(overrides)
       // Recorded as the agent's change (the person approved it).
       const actor = { type: "agent" as const, id: agent?.id ?? "assistant" }
       for (const d of done)
@@ -1006,24 +1013,24 @@ const makeRuntime = Effect.gen(function* () {
         chatId: chat.id, turnId: row.id, stepId: s?.id ?? null, agentId: agent?.id ?? null, kind: req.kind, tool: req.tool,
         summary: req.summary, args: req.args, cwd: req.cwd, alwaysKey: agent ? alwaysKey : null, expiresAt: now + APPROVAL_MS
       })
-      const d = yield* Deferred.make<ApprovalOutcome>()
+      const d = yield* Deferred.make<Decision>()
       waiting.set(approval.id, d)
       if (s) yield* publish(chat.id, ev("step-finished", { step: { ...s, status: "waiting" } }))
       yield* publish(chat.id, ev("approval", { approval }))
       yield* setStatus(chat.id, "waiting", agent?.id ?? null, waits === "answer" ? QUESTION_LABEL : `${nameOf(agent)} waits for your OK`)
-      const outcome = yield* Deferred.await(d).pipe(
+      const decision = yield* Deferred.await(d).pipe(
         Effect.timeoutOption(Duration.millis(APPROVAL_MS)),
         Effect.flatMap((o) => (o._tag === "Some" ? Effect.succeed(o.value) : expire(chat.id, approval.id)))
       )
       waiting.delete(approval.id)
       yield* setStatus(chat.id, "running", agent?.id ?? null, `${nameOf(agent)} is working`)
-      return { id: approval.id, outcome }
+      return decision
     })
 
   const expire = (chatId: string, id: string) =>
     store.resolveApproval(id, "expired", null, "expiry").pipe(
       Effect.tap((a) => (a ? publish(chatId, ev("approval-resolved", { approvalId: id, outcome: "expired", reason: null, by: "expiry" })) : Effect.void)),
-      Effect.as<ApprovalOutcome>("expired")
+      Effect.as<Decision>({ outcome: "expired", reason: null, overrides: [] })
     )
 
   // ---------- failover (ARCHITECTURE §6.1) ----------
@@ -1757,7 +1764,7 @@ const makeRuntime = Effect.gen(function* () {
         } else for (const chatId of new Set((yield* store.turnsIn("queued")).map((t) => t.chatId))) yield* ensureWorker(chatId)
       }),
 
-    decide: (approvalId, outcome, reason) =>
+    decide: (approvalId, outcome, reason, overrides) =>
       Effect.gen(function* () {
         const a = yield* store.resolveApproval(approvalId, outcome, reason ?? null, "user")
         if (!a) return yield* new ApprovalNotFound({ approvalId })
@@ -1772,8 +1779,7 @@ const makeRuntime = Effect.gen(function* () {
           if (target) yield* store.updateAgent(target.id, { permissions: withAlways(permissionsOf(target), a.alwaysKey) })
         }
         const d = waiting.get(approvalId)
-        if (a.kind === "question" && reason) answers.set(approvalId, reason.trim()) // the answer, read by zorel_ask_user
-        if (d) yield* Deferred.succeed(d, outcome)
+        if (d) yield* Deferred.succeed(d, { outcome, reason: reason?.trim() || null, overrides: overrides ?? [] })
         yield* publish(a.chatId, ev("approval-resolved", { approvalId, outcome, reason: reason ?? null, by: "user" }))
       }),
 
@@ -1784,18 +1790,16 @@ const makeRuntime = Effect.gen(function* () {
           chatId: req.chatId, turnId: null, runStepId: req.runStepId, stepId: null, agentId: req.agentId, kind: req.kind, tool: req.tool,
           summary: req.summary, args: req.args, cwd: null, alwaysKey: req.agentId ? req.alwaysKey : null, expiresAt: Date.now() + wait
         })
-        const d = yield* Deferred.make<ApprovalOutcome>()
+        const d = yield* Deferred.make<Decision>()
         waiting.set(approval.id, d)
         yield* publish(req.chatId, ev("approval", { approval }))
         if (req.notify) yield* req.notify(approval).pipe(Effect.catchCause((c) => Effect.logWarning("approval notice failed", String(c))))
-        const outcome = yield* Deferred.await(d).pipe(
+        // The person's words with the decision ("Edit the text first" on an Ask me) come with it.
+        const { outcome, reason } = yield* Deferred.await(d).pipe(
           Effect.timeoutOption(Duration.millis(wait)),
           Effect.flatMap((o) => (o._tag === "Some" ? Effect.succeed(o.value) : expire(req.chatId, approval.id))),
           Effect.ensuring(Effect.sync(() => waiting.delete(approval.id)))
         )
-        // The person's words with the decision ("Edit the text first" on an Ask me): kept on the row by decide.
-        const reason = answers.get(approval.id) ?? null
-        answers.delete(approval.id)
         return { outcome, reason }
       }),
 

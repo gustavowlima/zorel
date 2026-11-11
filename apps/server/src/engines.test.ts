@@ -7,7 +7,7 @@ process.env.ZOREL_API_ENGINE = "direct" // these tests drive the direct API engi
 import { type Agent, DEFAULT_PERMISSIONS, type Memory, type Message, namedSkills, skillHandle } from "@zorel/contracts"
 import { Effect, Stream } from "effect"
 import { buildTurn, OUTSIDE_TEXT_RULE, PINNED_PAGES_CHARS, pinnedPagesText, UNTRUSTED_NOTICE, grounded, mappedOf, memoryNote, mentioned, namedPoints, parseConsolidation, pinned, readPage, reviewed, sectionOf, similar, spread, withinBudget } from "./context.ts"
-import { ANTIGRAVITY_SETTINGS, antigravityDir, imagesNotShown, parseAntigravityModels, cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, sessionless, splitModel, transcript, type EngineEvent, type Parser, type Turn, type TurnFile, type TurnMessage } from "./engines.ts"
+import { ANTIGRAVITY_SETTINGS, antigravityDir, imagesNotShown, parseAntigravityModels, parseAntigravityUsage, cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, sessionless, splitModel, transcript, type EngineEvent, type Parser, type Turn, type TurnFile, type TurnMessage } from "./engines.ts"
 import { codexFailure, codexStep, windowsOf } from "./engines/codex.ts"
 import { hasCredential, redact } from "./observability.ts"
 import { stretchOf } from "./chat.ts"
@@ -585,11 +585,20 @@ test("Antigravity: its models from `agy models`, and a settings folder of Zorel'
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)", note: "" }
   ])
   const home = mkdtempSync(join(tmpdir(), "zorel-agy-"))
-  const dir = antigravityDir(home)
+  const dir = antigravityDir(join(home, ".gemini", "zorel"))
   // The person's "always-proceed" never applies: Zorel's access level decides each edit and command.
   expect(JSON.parse(readFileSync(join(dir, "antigravity-cli", "settings.json"), "utf8")).toolPermission).toBe("request-review")
   expect(ANTIGRAVITY_SETTINGS.permissions.allow).toEqual(["mcp(zorel/*)"])
   expect(JSON.parse(readFileSync(join(dir, "config", "mcp_config.json"), "utf8"))).toEqual({ mcpServers: {} })
+})
+
+test("Antigravity limits: agy /usage lines become windows with the share used", () => {
+  const out = "Gemini Models\tWeekly Limit Remaining\t98%\t2026-11-16T12:00:47Z\nClaude and GPT models\tFive Hour Limit Remaining\t100%\t2026-11-12T00:55:14Z\nsomething else\n"
+  expect(parseAntigravityUsage(out)).toEqual([
+    { id: "model:Gemini · 7d", usedPercent: 2, resetsAt: Date.parse("2026-11-16T12:00:47Z") },
+    { id: "model:Claude and GPT · 5h", usedPercent: 0, resetsAt: Date.parse("2026-11-12T00:55:14Z") }
+  ])
+  expect(parseAntigravityUsage("Authentication required. Please visit the URL to log in:")).toEqual([])
 })
 
 test("ACP agents are told an attached image wasn't shown to them, and only then", () => {

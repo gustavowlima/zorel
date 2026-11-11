@@ -19,7 +19,7 @@ import { Stream } from "effect"
 import { commandStep, type EngineEvent, type NativeStep, STEP_DETAIL_MAX, STEP_TITLE_MAX } from "../engines.ts"
 import { approvalFor, decideCommand } from "./policy.ts"
 import { type Approver, type NativeApproval, withoutAppEnv } from "./session.ts"
-import { which } from "../cli-install.ts"
+import { which } from "../cli/index.ts"
 
 interface AcpTurn {
   readonly bin: string
@@ -30,7 +30,7 @@ interface AcpTurn {
   readonly access: Access
   readonly gatewayUrl?: string | undefined
   readonly web?: boolean // the agent may fetch and search the web
-  readonly state?: ReadonlyArray<string> // folders under home the CLI writes its own data to
+  readonly state?: ReadonlyArray<string> // folders (under home, or absolute) the CLI writes its own data to
   readonly env?: Readonly<Record<string, string>> // extra environment (OpenCode's injected config and the API key)
   readonly approve?: Approver | undefined // at "ask", each permission request becomes the turn's approval card
 }
@@ -103,7 +103,7 @@ export function gitCommonDir(cwd: string): string | undefined {
 
 // The folders a confined agent may write, by access level.
 export function writableRoots(access: Access, cwd: string, state: ReadonlyArray<string>, home = homedir()): string[] {
-  const roots = [tmpdir(), "/tmp", "/private/tmp", join(home, ".cache"), join(home, "Library/Caches"), ...state.map((s) => join(home, s))]
+  const roots = [tmpdir(), "/tmp", "/private/tmp", join(home, ".cache"), join(home, "Library/Caches"), ...state.map((s) => resolve(home, s))] // an absolute folder stays as is
   if (access === "workspace") {
     roots.push(cwd)
     try {

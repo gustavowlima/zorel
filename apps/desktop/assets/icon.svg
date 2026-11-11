@@ -2,8 +2,13 @@
   <!-- Apple's app icon grid: the shape is 824 of the 1024 canvas, centered; the margin stays transparent. The mark is
        apps/web/src/ui/logo.tsx's, white on the app's graphite, at its original proportions. -->
   <rect x="100" y="100" width="824" height="824" rx="185" fill="#131416"/>
+  <!-- The arcs stop along a ring around the core (a cut that follows the circle). -->
+  <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+    <rect x="-10" y="-10" width="120" height="120" fill="#fff"/>
+    <circle cx="50" cy="50" r="15" fill="#000"/>
+  </mask>
   <g transform="translate(512 512) scale(6.6) translate(-50 -50)">
-    <path d="M21.7 21.7 A40 40 0 0 1 78.3 21.7 L61.3 38.7 M38.7 61.3 L21.7 78.3 A40 40 0 0 0 78.3 78.3" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M21.7 21.7 A40 40 0 0 1 78.3 21.7 L61.3 38.7 M38.7 61.3 L21.7 78.3 A40 40 0 0 0 78.3 78.3" mask="url(#cut)" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
     <circle cx="50" cy="50" r="11" fill="#fff"/>
     <circle cx="21.7" cy="21.7" r="5" fill="#fff"/>
     <circle cx="78.3" cy="78.3" r="5" fill="#fff"/>

@@ -6,7 +6,7 @@ import { isTeammate } from "@zorel/contracts"
 import { useAtomValue } from "@effect/atom-react"
 import { t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { agentsAtom, chatsAtom, memoriesAtom, modelsAtom, mutations, pagesAtom, preferencesAtom, projectsAtom, useInvalidate, useList, useMutation, useReading, useStatuses } from "./client.ts"
 import { AgentView } from "./features/agent.tsx"
 import { ChatView } from "./features/chat.tsx"
@@ -27,10 +27,12 @@ import { SIDEBAR_FOLDED, SIDEBAR_WIDTH, Sidebar, TitleBar } from "./features/sid
 import { UsageView } from "./features/usage.tsx"
 import { rememberModels } from "./labels.ts"
 import { go, type Route, useRoute, useSidebar } from "./state.ts"
-import { Button, CircleAlert, EmptyState, Pause, Spinner, Width } from "@/ui"
+import { cn } from "@/lib/utils"
+import { ArrowLeft, Button, CircleAlert, EmptyState, Pause, Spinner, Width } from "@/ui"
 import { useNotifications } from "./features/notify.tsx"
 import { Palette } from "./features/palette.tsx"
 import { FirstRun } from "./features/first-run.tsx"
+import { Loading } from "./features/loading.tsx"
 import { QuitDialog } from "./features/quit-dialog.tsx"
 
 export function App() {
@@ -47,6 +49,7 @@ export function App() {
   const loading = AsyncResult.isInitial(projectsResult)
 
   const sidebar = useSidebar()
+  const [onboarding, setOnboarding] = useState(false)
   const desktop = document.documentElement.dataset.shell === "desktop" // the desktop app: a title bar runs above everything
   useNotifications(route)
   useActivity()
@@ -57,11 +60,33 @@ export function App() {
 
   // No agent of the person's own yet (the Builder doesn't count): the first run comes before anything else (spec 015).
   const agentsResult = useAtomValue(agentsAtom)
-  if (AsyncResult.isSuccess(agentsResult) && !agentsResult.value.some(isTeammate))
+  // Until the agents are known, nothing: drawing the app first would flash it before the first run takes over.
+  if (AsyncResult.isInitial(agentsResult)) return <Loading desktop={desktop} />
+  // The first run stays until its last step, though the agent exists before (it holds the screen meanwhile).
+  // The agent builder and the new-agent form (where the first run sends you to make the first one) open without it.
+  const firstTime = AsyncResult.isSuccess(agentsResult) && !agentsResult.value.some(isTeammate)
+  const makingFirst = route.view === "builder" || route.view === "new-agent"
+  if (onboarding || (firstTime && !makingFirst))
     return (
       <div className="flex h-full flex-col bg-canvas">
         {desktop && <div className="app-drag h-12 shrink-0" />}
-        <FirstRun />
+        <FirstRun hold={setOnboarding} />
+      </div>
+    )
+  // Making the first agent: that screen alone, no sidebar (nothing else exists yet, and any other place would fall
+  // back to the first run). "Back" returns to it; once the agent exists, the whole app shows.
+  if (firstTime)
+    return (
+      <div className="flex h-full flex-col bg-canvas">
+        <div className={cn("flex h-12 shrink-0 items-center px-3", desktop && "app-drag pl-20")}>
+          <Button size="sm" variant="ghost" onPress={() => go({ view: "home" })}>
+            <ArrowLeft />
+            {t("firstRun.back")}
+          </Button>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <Screen route={route} />
+        </div>
       </div>
     )
 

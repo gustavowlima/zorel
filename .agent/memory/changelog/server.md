@@ -131,3 +131,8 @@
 2026-11-11 | own computer: host option, lent folders, live state, start/restart/open; Podman always when installed; app icons | user request
 2026-11-11 | spec 014 M1: server mode, Better Auth, vault, guard, setup and sign-in | user decision
 2026-11-11 | spec 014 M2-M7: team, visibility via refOf + SC-004 route matrix, devices, browser lease/masking, PTY engine sign-in, Dockerfile | user request
+2026-11-11 | cli/ module: install Claude Code and Codex, versions and updates with rollback | user request
+2026-11-11 | Builder: no redirect to existing general agents; decline asks what to change | user: the Builder is the agent creator
+2026-11-11 | approvals: decision carries reason + overrides; builder creates with overrides | quality review blocker
+2026-11-11 | Antigravity: several accounts, each folder its own --gemini-dir with a file login | user request; keychain allows one login per computer
+2026-11-11 | Antigravity limits via `agy -p /usage`; account folder holds .gemini | user request: show Antigravity limits

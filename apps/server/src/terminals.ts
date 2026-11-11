@@ -16,7 +16,7 @@ import { Store } from "./db.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
 import { listeners, listProcs, type Proc, subtree } from "./procs.ts"
-import { which } from "./cli-install.ts"
+import { which } from "./cli/index.ts"
 
 const MAX_TERMINALS = 12 // live shells at once, across chats
 const MAX_INPUT = 64 * 1024 // one input frame (a paste)

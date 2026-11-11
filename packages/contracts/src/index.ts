@@ -14,7 +14,7 @@ export const ModelId = Schema.String.check(Schema.isPattern(/^[a-z-]+\/\S+$/), S
 // ---------- entities ----------
 
 // Provider account (ARCHITECTURE §6.1). The CLI login stays in its own folder; Zorel only shows identity.
-export const AccountProvider = Schema.Literals(["claude", "codex"])
+export const AccountProvider = Schema.Literals(["claude", "codex", "antigravity"])
 export type AccountProvider = typeof AccountProvider.Type
 // Limit windows of a subscription (ARCHITECTURE §10.2), as the harness reports them: Claude's 5-hour and
 // weekly windows (rate_limit_event, /usage), Codex's primary and secondary (account/rateLimits).
@@ -31,6 +31,7 @@ export const ProviderAccount = Schema.Struct({
   kind: Schema.Literals(["subscription", "api-key"]),
   provider: Schema.String,
   isDefault: Schema.Boolean, // the account used when an agent or chat doesn't pick one
+  installed: Schema.Boolean, // its CLI (claude, codex) is on this computer: without it, Zorel can install it
   loggedIn: Schema.Boolean,
   identity: Schema.NullOr(Schema.String), // e-mail or plan reported by the CLI
   loggingIn: Schema.Boolean, // a login flow is open in the browser
@@ -591,6 +592,11 @@ const ComputerStatus = Schema.Struct({ engine: Schema.NullOr(Schema.Literals(["p
 // agent-desktop on this computer (spec 008). accessibility: macOS's permission (granted, denied, unknown).
 export const DesktopStatus = Schema.Struct({ supported: Schema.Boolean, installed: Schema.Boolean, version: Schema.String, accessibility: Schema.NullOr(Schema.String), suggestion: Schema.NullOr(Schema.String) })
 export type DesktopStatus = typeof DesktopStatus.Type
+// An agent CLI here (spec 014 follow-up): the version that runs, the latest its official source offers, and who keeps
+// it up to date ("self": it updates itself; "zorel": Zorel can; "you": the person's own copy, Homebrew or npm).
+const CliIdSchema = Schema.Literals(["claude", "codex", "antigravity", "opencode"])
+export const CliState = Schema.Struct({ id: CliIdSchema, name: Schema.String, version: Schema.NullOr(Schema.String), latest: Schema.NullOr(Schema.String), keeper: Schema.Literals(["self", "zorel", "you"]), behind: Schema.Boolean, update: Schema.Boolean })
+export type CliState = typeof CliState.Type
 export class CliInstallFailed extends Schema.Error<CliInstallFailed>("zorel/CliInstallFailed")({ _tag: Schema.tag("CliInstallFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
 // A team's handle (from its name) is taken by an agent or another team the same chats can see; or an agent's name
 // would take a team's handle.
@@ -1021,7 +1027,9 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.get("desktop", "/api/desktop", { success: DesktopStatus }))
       .add(HttpApiEndpoint.post("installDesktop", "/api/desktop/install", { success: DesktopStatus, error: DesktopInstallFailed }))
       // An agent CLI with a single-program build (Antigravity, OpenCode): downloaded from its official source and checked.
-      .add(HttpApiEndpoint.post("installCli", "/api/cli/:id/install", { params: { id: Schema.Literals(["antigravity", "opencode"]) }, error: CliInstallFailed }))
+      .add(HttpApiEndpoint.post("installCli", "/api/cli/:id/install", { params: { id: CliIdSchema }, error: CliInstallFailed }))
+      // The CLIs' versions against the latest (read at most every few hours; `fresh` reads the sources now).
+      .add(HttpApiEndpoint.get("cliStatus", "/api/cli", { query: { fresh: Schema.optionalKey(Schema.Literals(["1"])) }, success: Schema.Array(CliState) }))
       .add(HttpApiEndpoint.post("desktopGuide", "/api/desktop/guide"))
       .add(HttpApiEndpoint.get("desktopRunning", "/api/desktop/running", { success: Schema.Array(Schema.String) }))
       // The apps installed on this computer (names), for picking which an agent may use.

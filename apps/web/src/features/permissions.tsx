@@ -48,10 +48,11 @@ export function PermissionsEditor({
     return `${servers.find((s) => s.id === key.slice(0, at))?.name ?? key.slice(0, at)} · ${key.slice(at + 1)}`
   }
   return (
-    <div className="flex flex-col gap-8">
+    // A container: in a narrow place (the builder's side panel) each control takes its own line under its text.
+    <div className="@container flex flex-col gap-8">
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-medium text-muted">{t("agent.perm.accessTitle")}</h2>
-      <Rows>
+      <Rows className="rounded-sheet border-transparent">
         <Power
           icon={<SquareTerminal />}
           title={t("agent.perm.files")}
@@ -104,7 +105,7 @@ export function PermissionsEditor({
           {servers.length === 0 ? (
             <p className="text-sm text-muted">{t("agent.perm.noConnectors")}</p>
           ) : (
-            <Rows>
+            <Rows className="rounded-sheet border-transparent">
         {servers.map((s) => (
           <Power
             key={s.id}

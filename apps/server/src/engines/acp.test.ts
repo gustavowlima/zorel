@@ -33,6 +33,8 @@ describe("acp confinement", () => {
     expect(roots).toContain(realpathSync.native(cwd))
     expect(roots).toContain(resolve("/Users/someone/.opencode-x")) // D:\Users\… on Windows
     expect(writableRoots("ask", cwd, [], "/Users/someone")).not.toContain(realpathSync.native(cwd))
+    // An account's own folder (an absolute path) stays where it is.
+    expect(writableRoots("ask", cwd, [resolve("/data/accounts/a1")], "/Users/someone")).toContain(resolve("/data/accounts/a1"))
   })
   test("a worktree's main .git is writable; a .git file the agent wrote (gitdir: /etc/x) adds nothing", () => {
     const dir = mkdtempSync(join(tmpdir(), "acp-git-"))

@@ -177,6 +177,8 @@ function openWindow() {
     if (items.length) Menu.buildFromTemplate(items).popup()
   })
   win.once("ready-to-show", () => win?.show())
+  // Development: the page's console in the terminal (electron-vite's log), to follow what the interface does.
+  if (dev) win.webContents.on("console-message", (e) => console.info(`[page] ${e.message}`))
   win.on("closed", () => {
     win = undefined
   })

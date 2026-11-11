@@ -29,7 +29,7 @@ import { type ServerMode, serverModeFrom } from "./server-mode.ts"
 import { serverRoutes } from "./server-routes.ts"
 import { serverIdentity } from "./devices.ts"
 import { viewerScope } from "./visibility.ts"
-import { addCliDirsToPath, installCli } from "./cli-install.ts"
+import { addCliDirsToPath, cliName, cliStates, installCli } from "./cli/index.ts"
 import { desktopCli, desktopStatus, installDesktop } from "./desktop.ts"
 import { installedApps } from "./installed-apps.ts"
 import { checkFolder, computersFor } from "./computer.ts"
@@ -910,7 +910,6 @@ const useOf = (pids: Iterable<number>, procs: ReadonlyArray<Proc>, cpu: Readonly
   return { cpu: Math.round(c * 10) / 10, memory: m }
 }
 
-const CLI_NAMES = { antigravity: "Antigravity", opencode: "OpenCode" } as const
 const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
   Effect.gen(function* () {
     const secrets = yield* Secrets
@@ -1081,10 +1080,11 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
           Effect.tap(() => audit.record(Actions.desktopInstalled, { target: { id: "agent-desktop", name: "agent-desktop" } }))
         )
       )
+      .handle("cliStatus", ({ query }) => Effect.promise(() => cliStates(query.fresh === "1")))
       .handle("installCli", ({ params }) =>
         Effect.promise(() => installCli(params.id)).pipe(
           Effect.flatMap((r) => (r.ok ? accounts.forgetCliModels : Effect.fail(new CliInstallFailed({ message: r.error })))),
-          Effect.tap(() => audit.record(Actions.cliInstalled, { target: { id: params.id, name: CLI_NAMES[params.id] } }))
+          Effect.tap(() => audit.record(Actions.cliInstalled, { target: { id: params.id, name: cliName(params.id) } }))
         )
       )
       // macOS: opens System Settings with agent-desktop's guide to the Accessibility permission.
@@ -1146,7 +1146,7 @@ const RpcHandlers = ZorelRpc.toLayer(
           const a = (yield* store.openApprovals()).find((x) => x.id === p.approvalId)
           if (a && !(yield* visibleIds).has(a.chatId)) return yield* new ApprovalNotFound({ approvalId: p.approvalId })
           if ((yield* Actor).device) return yield* new ApprovalNotFound({ approvalId: p.approvalId }) // a device approves only signed (spec 014 FR-014)
-          return yield* runtime.decide(p.approvalId, p.outcome, p.reason)
+          return yield* runtime.decide(p.approvalId, p.outcome, p.reason, p.overrides)
         }),
       subscribeChat: (p) => Stream.unwrap(reach(p.chatId).pipe(Effect.as(runtime.subscribeChat(p.chatId)))),
       subscribeStatus: () => Stream.unwrap(Effect.map(visibleIds, (ids) => runtime.subscribeStatus.pipe(Stream.filter((s) => ids.has(s.chatId))))),

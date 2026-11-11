@@ -17,7 +17,7 @@ import { NewProjectButton } from "./project.tsx"
 import { byTurn, ordered, type Statuses, visibleChats } from "./sidebar-order.ts"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  ChevronRight, Fold, Marker, Menu, MoreHorizontal, NavItem, Search, Pause, Play, PanelLeftClose, PanelLeftOpen, AlarmClock, Bot, Brain, Button, ConfirmDialog, ContextMenu, ChartColumn, cn, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, SquarePen, Tooltip, Trash2, useNavReorder, Width
+  ChevronRight, Fold, Marker, Menu, MoreHorizontal, NavItem, Popover, Search, Pause, Play, PanelLeftClose, PanelLeftOpen, AlarmClock, Bot, Brain, Button, ConfirmDialog, ContextMenu, ChartColumn, cn, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, SquarePen, Tooltip, Trash2, useNavReorder, Width
 } from "@/ui"
 
 // Open and folded widths (App animates between them; the desktop title bar lines up with the open one).
@@ -217,7 +217,7 @@ function RailItem({
 }: {
   label: string
   active: boolean
-  onPress: () => void
+  onPress?: () => void // none: a popover's trigger (the popover opens it)
   count?: number | undefined
   placement?: "right" | "top"
   children: ReactNode
@@ -229,7 +229,7 @@ function RailItem({
       <Tooltip content={label} placement={placement}>
         <IconButton
           label={count ? `${label} (${count})` : label}
-          onPress={onPress}
+          {...(onPress && { onPress })}
           className={cn("relative rounded-card", small ? "size-8 [&_svg]:size-4" : "size-10 [&_svg]:size-5", active ? "text-accent-text data-hovered:bg-transparent" : "text-muted")}
           {...(active && { "aria-current": "page" as const })}
         >
@@ -667,98 +667,98 @@ function ChatItem({
   )
 }
 
-// The subscriptions at the foot: one ring, the most at risk one's (its limit windows concentric around its logo),
-// opening Usage when pressed. Hovering (or focusing) shows every subscription: each window with when it resets, the
-// account's windows as rings (ui/limit-ring.tsx) and where the pace so far leads.
+// Usage at the foot: only the usage icon (with a dot in the tone of the account most at risk, when one is). Pressed,
+// a floating menu lists every connected account with what it has used: a subscription's limit windows as rings with
+// the logo inside, where the pace leads and when each window resets; an API key, as a key. "See all" opens Usage.
 const TONE_TEXT = { ok: "text-secondary", warning: "text-warning", critical: "text-danger" } as const
+const TONE_DOT = { ok: undefined, warning: "bg-warning", critical: "bg-danger" } as const
+type UsageRow = { account: ProviderAccount; windows: ReadonlyArray<{ w: AccountWindow; pace: Pace }>; worst: { w: AccountWindow; pace: Pace } | undefined }
+const limited = (windows: UsageRow["windows"]) =>
+  windows.filter(({ w }) => windowMinutes(w.id) !== null).sort((x, y) => (windowMinutes(y.w.id) ?? 0) - (windowMinutes(x.w.id) ?? 0))
 function UsageFoot({ active, placement }: { active: boolean; placement: "right" | "top" }) {
-  const rows = useList(accountsAtom)
-    .filter((a) => a.kind === "subscription")
-    .flatMap((a) => {
-      const windows = (a.usage?.windows ?? []).map((w) => ({ w, pace: paceOf(w) }))
-      const worst = windows.filter((x) => windowMinutes(x.w.id) !== null).sort((x, y) => y.pace.risk - x.pace.risk)[0]
-      return worst ? [{ account: a, windows, ...worst }] : []
+  const rows: UsageRow[] = useList(accountsAtom)
+    .filter((a) => a.loggedIn)
+    .map((account) => {
+      const windows = (account.usage?.windows ?? []).map((w) => ({ w, pace: paceOf(w) }))
+      return { account, windows, worst: [...limited(windows)].sort((x, y) => y.pace.risk - x.pace.risk)[0] }
     })
-    .sort((x, y) => y.pace.risk - x.pace.risk)
-  const first = rows[0]
-  if (!first)
-    return (
-      <RailItem label={t("nav.usage")} active={active} onPress={() => go({ view: "usage" })} placement={placement}>
-        <ChartColumn />
-      </RailItem>
-    )
-  const window = windowLabel(first.w.id)
-  const sentence = first.pace.runsOutAt
-    ? t("nav.usageOut", { account: first.account.label, window, time: formatTime(first.pace.runsOutAt) })
-    : t("nav.usageUsed", { account: first.account.label, window, percent: formatPercent(first.pace.used) })
-  const small = placement === "top"
+    .sort((x, y) => (y.worst?.pace.risk ?? -1) - (x.worst?.pace.risk ?? -1))
+  const risk = rows[0]?.worst && toneOf(rows[0].worst.pace)
+  const dot = risk && TONE_DOT[risk]
   return (
-    <Tooltip content={<UsageDetail rows={rows} />} placement={placement}>
-      <Button
-        variant="ghost"
-        shape="pill"
-        aria-label={`${t("nav.usage")}: ${sentence}`}
-        onPress={() => go({ view: "usage" })}
-        className={cn("p-0 text-fg data-hovered:text-fg", small ? "size-8" : "size-10", active && "ring-1 ring-strong")}
-      >
-        <LimitRing
-          size={small ? 28 : 34}
-          windows={first.windows
-            .filter(({ w }) => windowMinutes(w.id) !== null)
-            .sort((x, y) => (windowMinutes(y.w.id) ?? 0) - (windowMinutes(x.w.id) ?? 0))
-            .map(({ pace }) => ({ used: pace.used, tone: toneOf(pace) }))}
-        >
-          <ProviderIcon provider={first.account.provider} size={small ? 11 : 13} />
-        </LimitRing>
-      </Button>
-    </Tooltip>
+    <Popover
+      label={t("nav.usage")}
+      placement={placement === "top" ? "bottom end" : "right bottom"}
+      className="w-80"
+      trigger={
+        <span className="relative">
+          <RailItem label={t("nav.usage")} active={active} placement={placement}>
+            <ChartColumn />
+          </RailItem>
+          {dot && <span aria-hidden="true" className={cn("pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full ring-2 ring-(--z-bg-frame)", dot)} />}
+        </span>
+      }
+    >
+      {(close) => (
+        <div className="flex min-h-0 flex-col">
+          <div className="scroll-quiet flex min-h-0 flex-col overflow-y-auto px-4 pt-3 pb-1">
+            <span className="pb-2 text-sm font-medium">{t("nav.usage")}</span>
+            {rows.length === 0 ? <p className="text-sm text-muted">{t("nav.usageNone")}</p> : rows.map((r) => <UsageAccount key={r.account.id} row={r} />)}
+          </div>
+          <div className="flex justify-end px-2 pb-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              shape="pill"
+              onPress={() => {
+                close()
+                go({ view: "usage" })
+              }}
+            >
+              {t("nav.usageSeeAll")}
+            </Button>
+          </div>
+        </div>
+      )}
+    </Popover>
   )
 }
 
-// The hover card: per account, its windows as concentric rings with the logo inside, where the pace so far leads,
-// and every window with its share used and when it resets.
-function UsageDetail({ rows }: { rows: ReadonlyArray<{ account: ProviderAccount; windows: ReadonlyArray<{ w: AccountWindow; pace: Pace }>; w: AccountWindow; pace: Pace }> }) {
+// One account in the usage menu: its logo (in its windows' rings when it has limits), its name and where the pace
+// leads, then each window with its share used and when it resets.
+function UsageAccount({ row: r }: { row: UsageRow }) {
+  const rings = limited(r.windows).map(({ pace }) => ({ used: pace.used, tone: toneOf(pace) }))
+  const worst = r.worst
+  const leftAtReset = worst?.pace.elapsed && worst.pace.elapsed >= 0.1 ? 1 - worst.pace.used / worst.pace.elapsed : null
+  const line = !worst
+    ? t(r.account.kind === "api-key" ? "nav.usageKey" : "nav.usageNoLimits")
+    : worst.pace.runsOutAt
+      ? t("nav.usageRunsOut", { window: windowLabel(worst.w.id), time: formatTime(worst.pace.runsOutAt) })
+      : leftAtReset !== null
+        ? t("nav.usageOnPace", { window: windowLabel(worst.w.id), percent: formatPercent(leftAtReset) })
+        : t("nav.usageEarly", { window: windowLabel(worst.w.id), percent: formatPercent(worst.pace.used) })
   return (
-    <span className="flex w-64 flex-col gap-3 py-0.5">
-      {rows.map((r) => {
-        const tone = toneOf(r.pace)
-        const leftAtReset = r.pace.elapsed && r.pace.elapsed >= 0.1 ? 1 - r.pace.used / r.pace.elapsed : null
-        return (
-          <span key={r.account.id} className="flex flex-col gap-2">
-            <span className="flex items-center gap-3">
-              {/* One ring per window (the longest outside), as the rows below in words. */}
-              <LimitRing
-                windows={r.windows
-                  .filter(({ w }) => windowMinutes(w.id) !== null)
-                  .sort((x, y) => (windowMinutes(y.w.id) ?? 0) - (windowMinutes(x.w.id) ?? 0))
-                  .map(({ pace }) => ({ used: pace.used, tone: toneOf(pace) }))}
-              >
-                <ProviderIcon provider={r.account.provider} size={16} />
-              </LimitRing>
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="font-medium text-fg">{r.account.label}</span>
-                <span className={cn("text-xs", TONE_TEXT[tone])}>
-              {r.pace.runsOutAt
-                ? t("nav.usageRunsOut", { window: windowLabel(r.w.id), time: formatTime(r.pace.runsOutAt) })
-                : leftAtReset !== null
-                  ? t("nav.usageOnPace", { window: windowLabel(r.w.id), percent: formatPercent(leftAtReset) })
-                  : t("nav.usageEarly", { window: windowLabel(r.w.id), percent: formatPercent(r.pace.used) })}
-                </span>
-              </span>
-            </span>
-            {r.windows.map(({ w, pace }) => (
-              <span key={w.id} className="flex items-baseline justify-between gap-3 text-xs">
-                <span className="truncate text-secondary">{windowLabel(w.id)}</span>
-                <span className="shrink-0 text-muted tabular-nums">
-                  {formatPercent(pace.used)}
-                  {w.resetsAt ? ` · ${t("usage.resets", { time: formatTime(w.resetsAt) })}` : ""}
-                </span>
-              </span>
-            ))}
+    // Accounts parted by a hairline (the menu's own tone, no second fill), so it reads as a list of one or several.
+    <div className="flex flex-col gap-2.5 border-subtle border-t py-3 first-of-type:border-t-0">
+      <div className="flex items-center gap-3">
+        <LimitRing windows={rings}>
+          <ProviderIcon provider={r.account.provider} size={16} />
+        </LimitRing>
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="truncate text-sm font-medium">{r.account.label}</span>
+          <span className={cn("text-xs", worst ? TONE_TEXT[toneOf(worst.pace)] : "text-muted")}>{line}</span>
+        </span>
+      </div>
+      {r.windows.map(({ w, pace }) => (
+        <span key={w.id} className="flex items-baseline justify-between gap-3 text-xs">
+          <span className="truncate text-secondary">{windowLabel(w.id)}</span>
+          <span className="shrink-0 text-muted tabular-nums">
+            {formatPercent(pace.used)}
+            {w.resetsAt ? ` · ${t("usage.resets", { time: formatTime(w.resetsAt) })}` : ""}
           </span>
-        )
-      })}
-    </span>
+        </span>
+      ))}
+    </div>
   )
 }
 

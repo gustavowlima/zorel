@@ -5,6 +5,7 @@ import { t } from "@zorel/i18n"
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react"
 import { authClient, type ServerInfo, serverInfo } from "../auth-client.ts"
 import { Button, Field, Input, KeyRound, Logo, Spinner } from "@/ui"
+import { Loading } from "./loading.tsx"
 
 type Gate = { state: "checking" } | { state: "local" } | { state: "server"; info: ServerInfo; signedIn: boolean }
 
@@ -23,12 +24,7 @@ export function ServerGate({ children }: { children: ReactNode }) {
   useEffect(check, [])
   if (gate.state === "local") return children
   if (gate.state === "server" && gate.signedIn) return <ServerMode.Provider value={gate.info}>{children}</ServerMode.Provider>
-  if (gate.state === "checking")
-    return (
-      <div className="flex h-full items-center justify-center bg-canvas">
-        <Spinner className="size-5 text-muted" />
-      </div>
-    )
+  if (gate.state === "checking") return <Loading desktop={document.documentElement.dataset.shell === "desktop"} />
   const token = new URLSearchParams(location.search).get("t")
   const invite = /^\/invite\/([A-Za-z0-9_-]+)$/.exec(location.pathname)?.[1]
   return (

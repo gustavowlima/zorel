@@ -22,7 +22,7 @@ import type { Approver } from "#server/engines/session.ts"
 import type { EngineSession } from "#server/engines/session.ts"
 import { Secrets, type SecretStore } from "./secrets.ts"
 import { resultText, type Session, type ToolDef } from "./tools.ts"
-import { which } from "./cli-install.ts"
+import { which } from "./cli/index.ts"
 
 export interface TurnFile {
   readonly name: string
@@ -57,6 +57,7 @@ export interface Turn {
   readonly access?: Access | undefined // what the agent may do without asking (ACP agents ask through Zorel)
   readonly approve?: Approver | undefined // the turn's approval card, for an engine that asks mid-turn (ACP at "ask")
   readonly web?: boolean | undefined // the agent may search and read the web (its permissions)
+  readonly account?: { readonly id: string; readonly home: string | null } | undefined // §6.1: whose login runs an ACP turn
   // Characters of each part of the context (the composer's context meter estimates tokens from them).
   readonly parts?: { readonly instructions: number; readonly memories: number; readonly skills: number; readonly summary: number }
 }
@@ -562,21 +563,38 @@ interface EnginesService {
 
 const NATIVE = new Set(["claude-cli", "codex-cli"])
 // ACP agents: the binary and its arguments for a model ("default": the agent's own choice).
-// `state`: folders (under home) the CLI writes its own sessions, logs and caches to; the sandbox lets it write there.
-const ACP: Record<string, (model: string) => { bin: string; args: string[]; state: string[] }> = {
+// `state`: folders (under home, or absolute) the CLI writes its own sessions, logs and caches to; the sandbox lets it
+// write there. `home`: the folder of the account the turn runs on (null: the CLI's own login).
+type AcpCommand = { bin: string; args: string[]; state: string[]; env?: Record<string, string> }
+const ACP: Record<string, (model: string, home: string | null) => AcpCommand> = {
   "gemini-cli": (model) => ({ bin: "gemini", args: ["--acp", ...(model && model !== "default" ? ["-m", model] : [])], state: [".gemini"] }),
   opencode: () => ({ bin: "opencode", args: ["acp"], state: [".local/share/opencode", ".local/state/opencode", ".cache/opencode", ".config/opencode"] }),
   // The model is chosen in the session (session/set_model). agy runs from a folder of Zorel's (--gemini-dir): the
   // person's settings could say "always-proceed" (no permission request ever reaches Zorel, at "Ask first" too),
-  // and their MCP servers, global rules and skills would load. The login stays the system keychain's.
-  antigravity: () => ({ bin: "agy", args: ["acp", "--disable-telemetry", "--gemini-dir", antigravityDir()], state: [".gemini", ".antigravity"] })
+  // and their MCP servers, global rules and skills would load. The default login stays the system keychain's; an
+  // extra account's folder is its --gemini-dir, with the login in a file there (ANTIGRAVITY_FILE_LOGIN).
+  antigravity: (_model, home) => ({
+    bin: "agy",
+    args: ["acp", "--disable-telemetry", "--gemini-dir", antigravityDir(home ? antigravityGeminiDir(home) : undefined)],
+    state: [".gemini", ".antigravity", ...(home ? [home] : [])],
+    ...(home && { env: ANTIGRAVITY_FILE_LOGIN })
+  })
 }
+
+// HACK: agy keeps one Google login per computer user, in the system keychain. It keeps it in a file under --gemini-dir
+// instead when it believes it runs over SSH (as on headless hosts), so each account folder holds its own login and
+// several accounts run side by side. If agy stops honouring this, extra accounts read as signed out; the default
+// account (keychain) is unaffected.
+export const ANTIGRAVITY_FILE_LOGIN: Readonly<Record<string, string>> = { SSH_CONNECTION: "127.0.0.1 0 127.0.0.1 0" }
+// An account folder holds agy's data in .gemini, where agy looks when HOME is that folder (agy -p /usage has no
+// --gemini-dir); its file login lives in there (agy writes it; Zorel reads only its e-mail).
+export const antigravityGeminiDir = (home: string) => join(home, ".gemini")
+export const antigravityLoginFile = (geminiDir: string) => join(geminiDir, "antigravity-cli", "antigravity-oauth-token")
 
 // Antigravity's settings for Zorel: ask before edits and commands (Zorel's access level then decides, engines/acp.ts),
 // and Zorel's own tools without asking (its gateway applies its own approvals).
 export const ANTIGRAVITY_SETTINGS = { toolPermission: "request-review", permissions: { allow: ["mcp(zorel/*)"] }, notifications: false, showTips: false, showFeedbackSurvey: false }
-export function antigravityDir(home = homedir()): string {
-  const dir = join(home, ".gemini", "zorel")
+export function antigravityDir(dir = join(homedir(), ".gemini", "zorel")): string {
   mkdirSync(join(dir, "antigravity-cli"), { recursive: true })
   mkdirSync(join(dir, "config"), { recursive: true })
   writeFileSync(join(dir, "antigravity-cli", "settings.json"), JSON.stringify(ANTIGRAVITY_SETTINGS, null, 2))
@@ -598,6 +616,29 @@ export async function readAntigravityModels(): Promise<CliModel[]> {
   return parseAntigravityModels(out)
 }
 
+// `agy -p /usage` prints "<group>\t<window> Limit Remaining\t<n>%\t<ISO reset>" per line (its official quota
+// command; no model call). Each becomes a window "model:<group> · <5h|7d>" with the share used.
+const ANTIGRAVITY_WINDOWS: Record<string, string> = { "Five Hour": "5h", Weekly: "7d" }
+export const parseAntigravityUsage = (out: string): AccountWindow[] =>
+  out.split(/\r?\n/).flatMap((line) => {
+    const m = /^([^\t]+)\t(.+?) Limit Remaining\t(\d+(?:\.\d+)?)%\t(\S+)$/.exec(line.trim())
+    if (!m) return []
+    const resets = Date.parse(m[4]!)
+    const window = ANTIGRAVITY_WINDOWS[m[2]!] ?? m[2]!
+    return [{ id: `model:${m[1]!.replace(/ models$/i, "")} · ${window}`, usedPercent: Math.max(0, Math.min(100, 100 - Number(m[3]))), resetsAt: Number.isFinite(resets) ? resets : null }]
+  })
+// An extra account (home) runs with HOME there and its file login (ANTIGRAVITY_FILE_LOGIN); null: the keychain login.
+export async function readAntigravityLimits(home: string | null): Promise<AccountWindow[]> {
+  const bin = which("agy")
+  if (!bin) throw new Error("agy is not installed")
+  const env = home ? { ...process.env, HOME: home, USERPROFILE: home, ...ANTIGRAVITY_FILE_LOGIN } : process.env
+  const proc = Bun.spawn([bin, "-p", "/usage", "--print-timeout", "60s"], { env, stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 90_000, killSignal: "SIGKILL", windowsHide: true })
+  const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
+  const windows = parseAntigravityUsage(out)
+  if (!windows.length) throw new Error(`agy /usage gave no reading: ${(err || out).trim().slice(0, 200)}`)
+  return windows
+}
+
 export class Engines extends Context.Service<Engines, EnginesService>()("Engines") {
   static layer = Layer.effect(
     Engines,
@@ -612,7 +653,7 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
           const acp = ACP[provider]
           if (acp) {
             const { model } = splitModel(t.model)
-            return acpRun({ ...acp(model), model, cwd: t.cwd, prompt: `${t.system}\n\n${transcript(t.messages)}${imagesNotShown(t.messages)}`, access: t.access ?? "workspace", web: t.web ?? false, gatewayUrl: t.tools?.url, approve: t.approve })
+            return acpRun({ ...acp(model, t.account?.home ?? null), model, cwd: t.cwd, prompt: `${t.system}\n\n${transcript(t.messages)}${imagesNotShown(t.messages)}`, access: t.access ?? "workspace", web: t.web ?? false, gatewayUrl: t.tools?.url, approve: t.approve })
           }
           // An API-key model in a chat turn runs in OpenCode (files, shell, edits, its tools) when it's installed;
           // internal tasks (summaries, titles) and machines without it keep the direct API engine.
@@ -623,7 +664,7 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
             if (p.key && !key) return one({ type: "error", message: `Set ${p.key} (in Settings or the environment) to use ${provider}.`, failure: { reason: "auth" } })
             const { model } = splitModel(t.model)
             return acpRun({
-              ...ACP.opencode!("default"),
+              ...ACP.opencode!("default", null),
               model: "default", // the injected config already names the model
               cwd: t.cwd,
               prompt: `${t.system}\n\n${transcript(t.messages)}${imagesNotShown(t.messages)}`,

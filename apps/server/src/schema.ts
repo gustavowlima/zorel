@@ -10,7 +10,7 @@ export const providerAccounts = sqliteTable("provider_accounts", {
   id: text().primaryKey(),
   label: text().notNull(),
   kind: text({ enum: ["subscription", "api-key"] }).notNull(),
-  provider: text().notNull(), // subscription: claude | codex; api-key: anthropic | openai | openrouter…
+  provider: text().notNull(), // subscription: claude | codex | antigravity; api-key: anthropic | openai | openrouter…
   home: text(), // null: the CLI's own default login (Claude only; Codex always gets a Zorel-owned folder)
   secret: text(), // api-key: keychain entry name; the value never touches the database
   baseUrl: text("base_url"),

@@ -20,7 +20,7 @@ const deny = (status: number, error: string) => HttpServerResponse.jsonUnsafe({ 
 // keys, connectors, the computer apps program, CLIs, storage, preferences, skills found on this server, channels,
 // pausing everything, importing. Of those, the ones that hand out access also need a recent confirmation (FR-007).
 // The server machine itself (its processes, folders, desktop, spending) is for admins: a member sees the team's work.
-const ADMIN_READ = ["/api/audit", "/api/keys", "/api/workspace/export", "/api/processes", "/api/folders", "/api/desktop", "/api/usage", "/api/storage"]
+const ADMIN_READ = ["/api/audit", "/api/keys", "/api/workspace/export", "/api/processes", "/api/folders", "/api/desktop", "/api/usage", "/api/storage", "/api/cli"]
 const ADMIN_WRITE = ["/api/accounts", "/api/keys", "/api/mcp", "/api/desktop", "/api/cli/", "/api/storage", "/api/preferences", "/api/skills/files", "/api/channels/", "/api/pause", "/api/workspace/", "/api/processes", "/api/computer/erase"]
 const FRESH_WRITE = ["/api/accounts", "/api/keys", "/api/mcp", "/api/channels/", "/api/workspace/import"]
 const under = (path: string, prefixes: ReadonlyArray<string>) => prefixes.some((p) => path === p || path.startsWith(p.endsWith("/") ? p : `${p}/`))

@@ -13,7 +13,9 @@ const buttonVariants = cva(
         secondary: "bg-control text-fg data-hovered:bg-control-hover data-pressed:bg-control-active popup-open:bg-control-active",
         // While its menu or popover is open, a trigger stays lit (it reads as the origin of the floating layer).
         ghost: "text-muted data-hovered:bg-control-hover data-hovered:text-fg popup-open:bg-control-hover popup-open:text-fg",
-        destructive: "bg-danger-soft text-danger data-hovered:bg-danger data-hovered:text-on-accent"
+        destructive: "bg-danger-soft text-danger data-hovered:bg-danger data-hovered:text-on-accent",
+        // The accent as a glow: a tinted fill with the bright accent text (the first run's main moves).
+        soft: "bg-accent-soft text-accent-text data-hovered:bg-accent-line data-hovered:text-fg data-disabled:opacity-50"
       },
       size: {
         sm: "h-control-sm px-2.5 text-sm",

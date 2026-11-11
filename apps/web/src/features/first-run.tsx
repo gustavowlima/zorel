@@ -1,131 +1,124 @@
-// The first run (spec 015): in Zorel you always talk to agents, so before anything else the person makes their first
-// one. A name, what it is for (a ready choice sets its instructions, editable later), and which AI it uses; with none
-// connected, the providers open here, in a dialog. Create makes the agent and a chat with it, then goes there. What
-// was typed survives closing the app midway (localStorage, best effort).
+// The first run (spec 015): in Zorel you always talk to agents, so the person makes their first one before anything
+// else, on a set drawn from Zorel's mark (ui/onboarding.tsx). The opening (once per browser, skippable) draws the mark
+// and opens the orbits; then connecting an AI (first-run-connect.tsx: found, installed or signed in from here); then
+// the first agent, made in the app's own agent builder (with AI, or by hand from there). "Set up later"
+// makes a general agent instead. The first run doesn't hold a builder of its own: there is one, the app's.
 import { t } from "@zorel/i18n"
-import { useAtomValue } from "@effect/atom-react"
-import { AsyncResult } from "effect/reactivity"
-import { useEffect, useState } from "react"
-import { modelsAtom, mutations, useList, useMutation } from "../client.ts"
-import { go, useRoute } from "../state.ts"
-import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
-import { ProvidersSection } from "./providers.tsx"
-import { Button, ChoiceCards, Dialog, Field, Input, Logo, Spinner, Textarea } from "@/ui"
+import { LayoutGroup } from "motion/react"
+import { useCallback, useEffect, useState } from "react"
+import { mutations, useMutation } from "../client.ts"
+import { go } from "../state.ts"
+import { Connect, useAi } from "./first-run-connect.tsx"
+import { ArrowRight, Button, MarkOpening, OnboardingSet, StepColumn, StepHeader, StepTransition } from "@/ui"
 
-type Purpose = "research" | "writing" | "code" | "operations" | "own"
-// What each ready choice tells the agent (model-facing, so English, and never which language to reply in).
-const INSTRUCTIONS: Readonly<Record<Exclude<Purpose, "own">, string>> = {
-  research: "You research for me: find sources, read them, compare what they say and give me a short answer with links. Say what you couldn't verify.",
-  writing: "You write with me: drafts, edits and summaries in my voice. Ask what it's for and who reads it when that isn't clear; keep it short.",
-  code: "You build software with me: read the code before changing it, make small changes that work, run the tests, and tell me what you changed.",
-  operations: "You handle my routine work: check what needs attention, keep things in order with my tools, and tell me only what needs me."
-}
-const PURPOSES = ["research", "writing", "code", "operations", "own"] as const
-const DRAFT_KEY = "zorel.draft.firstAgent"
-type Draft = { name: string; purpose: Purpose; own: string }
+type Step = "opening" | "connect" | "agent"
+const ORDER: Readonly<Record<Step, number>> = { opening: 0, connect: 1, agent: 2 }
+const OPENED_KEY = "zorel.seen.opening"
+// Drafts of the earlier first run (a form, then a text box): dropped.
+const OLD_KEYS = ["zorel.draft.firstAgent", "zorel.draft.firstAsk"]
+type Action = { label: string; onPress: () => void; busy?: boolean }
 
-const readDraft = (): Draft => {
-  try {
-    return { name: "", purpose: "research", own: "", ...JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "{}") }
-  } catch {
-    return { name: "", purpose: "research", own: "" }
-  }
-}
-const saveDraft = (d: Draft | null) => {
-  try {
-    if (d) localStorage.setItem(DRAFT_KEY, JSON.stringify(d))
-    else localStorage.removeItem(DRAFT_KEY)
-  } catch {
-    // no storage (private window): the draft just isn't kept
-  }
-}
-
-export function FirstRun() {
-  // Finding the AIs takes a few seconds (the CLIs are asked): until then it says so, not "none connected".
-  const modelsResult = useAtomValue(modelsAtom)
-  const looking = AsyncResult.isInitial(modelsResult) || (AsyncResult.isSuccess(modelsResult) && modelsResult.waiting)
-  const models = useList(modelsAtom).filter((m) => m.available)
-  const route = useRoute()
-  const createAgent = useMutation(mutations.createAgent)
-  const createChat = useMutation(mutations.createChat)
-  const [draft, setDraft] = useState(readDraft)
-  const [picked, setPicked] = useState<ModelChoice>()
-  const [connecting, setConnecting] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string>()
-  useEffect(() => saveDraft(draft), [draft])
-  // The model: the person's pick, else Claude's when it's ready, else the first one ready.
-  const first = models.find((m) => m.id === "claude-cli/sonnet") ?? models[0]
-  const choice: ModelChoice | undefined = picked ?? (first && { model: first.id, accountId: null, effort: null })
-  const name = draft.name.trim() || t("firstRun.defaultName")
-  const instructions = draft.purpose === "own" ? draft.own.trim() : INSTRUCTIONS[draft.purpose]
-  const ready = !!choice && !!instructions && !saving
-
-  const create = async () => {
-    if (!choice) return
-    setSaving(true)
-    setError(undefined)
+// Browser storage, best effort (a private window has none).
+const store = {
+  get: (k: string) => {
     try {
-      const title = draft.purpose === "own" ? "" : t(`firstRun.purpose.${draft.purpose}`)
-      const agent = await createAgent({ payload: { projectId: null, name, title, instructions, ...choice }, reactivityKeys: ["agents"] })
-      const chat = await createChat({ payload: { projectId: null, agentIds: [agent.id], ...choice }, reactivityKeys: ["chats"] })
-      saveDraft(null)
-      go({ view: "chat", id: chat.id })
+      return localStorage.getItem(k)
     } catch {
-      setError(t("firstRun.failed"))
-      setSaving(false)
+      return null
+    }
+  },
+  set: (k: string, v: string | null) => {
+    try {
+      if (v === null) localStorage.removeItem(k)
+      else localStorage.setItem(k, v)
+    } catch {
+      // no storage: nothing kept
     }
   }
+}
+
+export function FirstRun({ hold }: { hold: (on: boolean) => void }) {
+  // Seen the opening already: back at connecting an AI (it says at once what's ready, one press to go on).
+  const [step, setStep] = useState<Step>(() => {
+    for (const k of OLD_KEYS) store.set(k, null)
+    return store.get(OPENED_KEY) ? "connect" : "opening"
+  })
+  const [dir, setDir] = useState(1) // the way steps slide: 1 forward, -1 back
+  const goTo = useCallback((next: Step) => {
+    setStep((now) => {
+      setDir(ORDER[next] >= ORDER[now] ? 1 : -1)
+      return next
+    })
+  }, [])
+  useEffect(() => hold(true), [hold])
+  const opened = useCallback(() => {
+    store.set(OPENED_KEY, "1")
+    goTo("connect")
+  }, [goTo])
+  // Leaving the first run for the app's agent builder.
+  const leaveTo = (route: Parameters<typeof go>[0]) => {
+    go(route)
+    hold(false)
+  }
+  const later = useLater(() => hold(false))
+  const back = (to: Step, label = t("firstRun.back")) => ({ label, onPress: () => goTo(to) })
 
   return (
-    <div className="flex min-h-0 flex-1 justify-center overflow-y-auto bg-canvas px-6 py-12">
-      <div className="flex w-full max-w-xl flex-col gap-7 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 motion-reduce:animate-none">
-        <div className="flex flex-col gap-2">
-          <Logo className="size-8" />
-          <h1 className="text-xl font-semibold">{t("firstRun.title")}</h1>
-          <p className="text-muted">{t("firstRun.subtitle")}</p>
-        </div>
-        <Field label={t("firstRun.name")}>
-          <Input autoFocus value={draft.name} placeholder={t("firstRun.defaultName")} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-        </Field>
-        <Field label={t("firstRun.for")}>
-          <ChoiceCards
-            list
-            label={t("firstRun.for")}
-            value={draft.purpose}
-            onChange={(purpose) => setDraft({ ...draft, purpose })}
-            options={PURPOSES.map((p) => ({ value: p, title: t(`firstRun.purpose.${p}`), description: t(`firstRun.purposeHint.${p}`) }))}
-          />
-        </Field>
-        {draft.purpose === "own" && <Textarea aria-label={t("firstRun.own")} placeholder={t("firstRun.ownHint")} value={draft.own} onChange={(e) => setDraft({ ...draft, own: e.target.value })} rows={4} />}
-        <Field label={t("firstRun.ai")} hint={choice ? t("firstRun.aiHint") : undefined}>
-          {choice ? (
-            <ModelPicker variant="field" value={choice} onChange={setPicked} />
-          ) : looking ? (
-            <p className="flex h-control items-center gap-2 text-sm text-muted">
-              <Spinner className="size-4" />
-              {t("firstRun.looking")}
-            </p>
-          ) : (
-            <div className="flex items-center gap-3 rounded-card border border-subtle bg-surface px-3.5 py-3">
-              <span className="flex-1 text-sm text-muted">{t("firstRun.noAi")}</span>
-              <Button variant="secondary" onPress={() => setConnecting(true)}>
-                {t("firstRun.connect")}
-              </Button>
-            </div>
-          )}
-        </Field>
-        {error && <p className="text-sm text-danger">{error}</p>}
-        <div className="flex justify-end">
-          <Button isDisabled={!ready} onPress={() => void create()}>
-            {saving ? t("firstRun.creating") : t("firstRun.create", { name })}
-          </Button>
-        </div>
+    <LayoutGroup>
+      <div className="relative flex min-h-0 flex-1 overflow-hidden bg-canvas">
+        <OnboardingSet opening={step === "opening"} dim={step !== "opening"} />
+        {step === "opening" ? (
+          <MarkOpening title={t("firstRun.brand")} line={t("firstRun.opening")} skip={t("firstRun.skip")} onDone={opened} />
+        ) : (
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <StepHeader wide={false} pulse={0} at={ORDER[step] - 1} steps={[t("firstRun.steps.connect"), t("firstRun.steps.agent")]} />
+            <StepTransition id={step} dir={dir}>
+              {step === "connect" && <Connect back={back("opening", t("firstRun.replay"))} later={later} onNext={() => goTo("agent")} />}
+              {step === "agent" && <FirstAgent back={back("connect")} later={later} onBuilder={() => leaveTo({ view: "builder", projectId: null })} />}
+            </StepTransition>
+          </div>
+        )}
       </div>
-      {/* Connecting an AI without leaving the step: the providers' own screens, in a dialog. */}
-      <Dialog title={t("firstRun.connect")} size="xl" isOpen={connecting} onOpenChange={setConnecting}>
-        {() => <ProvidersSection provider={route.view === "settings" ? route.provider : undefined} />}
-      </Dialog>
-    </div>
+    </LayoutGroup>
   )
+}
+
+// "Your first agent": one way in, the app's agent builder (it proposes the agent or a team with their powers, and
+// has "build it myself" for the form).
+function FirstAgent({ back, later, onBuilder }: { back: Action; later: Action; onBuilder: () => void }) {
+  const ai = useAi()
+  return (
+    <StepColumn back={back} later={later}>
+      <div className="flex flex-col gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight text-balance">{t("firstRun.agentTitle")}</h1>
+        <p className="max-w-prose text-muted">{t("firstRun.agentLede")}</p>
+      </div>
+      <Button variant="default" size="lg" className="self-start" isDisabled={!ai.model} onPress={onBuilder}>
+        {t("firstRun.createAgent")}
+        <ArrowRight />
+      </Button>
+    </StepColumn>
+  )
+}
+
+
+// "Set up later": Zorel always works with an agent (spec 015), so this makes a general one (named, plain instructions,
+// on the AI found here, else Claude's) and opens the app; everything changes later on its page.
+const GENERAL_INSTRUCTIONS = "You help me with whatever I ask. Understand the request first, ask when something important is unclear, keep answers short, and tell me what you did."
+function useLater(done: () => void): Action {
+  const ai = useAi()
+  const createAgent = useMutation(mutations.createAgent)
+  const [busy, setBusy] = useState(false)
+  const onPress = () => {
+    if (busy) return
+    setBusy(true)
+    const model = ai.models.find((m) => m.id === "claude-cli/sonnet")?.id ?? ai.models[0]?.id ?? "claude-cli/sonnet"
+    void createAgent({ payload: { projectId: null, name: t("firstRun.defaultName"), title: "", instructions: GENERAL_INSTRUCTIONS, model, accountId: null, effort: null }, reactivityKeys: ["agents"] })
+      .then(() => {
+        go({ view: "home" })
+        done()
+      })
+      .catch(() => setBusy(false))
+  }
+  return { label: t("firstRun.later"), onPress, busy }
 }

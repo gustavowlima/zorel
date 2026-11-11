@@ -26,7 +26,7 @@ export class Live extends AtomRpc.Service<Live>()("Live", {
 
 // ---------- CRUD queries (one key per resource) ----------
 
-export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "processes" | "context" | "terminals" | "scripts" | "localServers" | "git" | "routines" | "pages" | "fileSkills" | "runs" | "today"
+export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "processes" | "context" | "terminals" | "scripts" | "localServers" | "git" | "routines" | "pages" | "fileSkills" | "runs" | "today" | "cli"
 
 export const projectsAtom = Zorel.query("projects", "list", { reactivityKeys: ["projects"] })
 export const agentsAtom = Zorel.query("agents", "list", { reactivityKeys: ["agents"] })
@@ -46,6 +46,8 @@ export const desktopRunningAtom = Zorel.query("settings", "desktopRunning", { re
 export const installedAppsAtom = Zorel.query("settings", "installedApps", { reactivityKeys: ["desktop"] })
 export const auditAtom = (query: { kind?: AuditKind; q?: string; from?: number; to?: number; page?: number }) =>
   Zorel.query("settings", "audit", { query, reactivityKeys: ["audit"] })
+// The agent CLIs' versions against the latest (the server reads the sources at most every few hours).
+export const cliAtom = Zorel.query("settings", "cliStatus", { query: {}, reactivityKeys: ["cli"] })
 export const storageAtom = Zorel.query("settings", "storage", { reactivityKeys: ["storage"] })
 export const processesAtom = Zorel.query("settings", "processes", { reactivityKeys: ["processes"] })
 export const fileSkillsAtom = Zorel.query("settings", "fileSkills", { reactivityKeys: ["fileSkills"] })
@@ -265,6 +267,7 @@ export type Note =
 export interface Receipt {
   readonly approval: Approval
   readonly outcome: ApprovalOutcome
+  readonly reason?: string | null // what the person said with it (a change asked of a proposal)
 }
 export interface ChatState {
   readonly ready: boolean
@@ -323,7 +326,7 @@ function reduceChat(s: ChatState, e: ChatEvent): ChatState {
       return { ...s, approvals: [...s.approvals.filter((a) => a.id !== e.approval.id), e.approval] }
     case "approval-resolved": {
       const approval = s.approvals.find((a) => a.id === e.approvalId)
-      return { ...s, approvals: s.approvals.filter((a) => a.id !== e.approvalId), receipts: approval ? [...s.receipts, { approval, outcome: e.outcome }] : s.receipts }
+      return { ...s, approvals: s.approvals.filter((a) => a.id !== e.approvalId), receipts: approval ? [...s.receipts, { approval, outcome: e.outcome, reason: e.reason }] : s.receipts }
     }
     case "handoff":
       return { ...s, notes: [...s.notes, { at: Date.now(), kind: "handoff", from: e.from, to: e.to, via: e.via, reason: e.reason }] }

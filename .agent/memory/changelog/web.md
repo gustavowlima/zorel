@@ -108,3 +108,15 @@
 2026-11-11 | own computer: host option, lent folders, live state, start/restart/open; Podman always when installed; app icons | user request
 2026-11-11 | spec 014 M1: server mode, Better Auth, vault, guard, setup and sign-in | user decision
 2026-11-11 | team UI: devices, project shared browser, browser holder/masked/watch-only, server engine sign-in code | spec 014
+2026-11-11 | onboarding with opening animation, connect step, AI builder, ready step; CLI versions on provider pages | user request
+2026-11-11 | first run hands the first agent to the app's agent builder / form; its own builder steps removed | user decision
+2026-11-11 | first agent: builder/new-agent render without the sidebar until the first agent exists | sidebar links led back to the first run
+2026-11-11 | builder: centered chat, proposal card + side panel replace the two-pane review | user: not intuitive; steps vanished on a new message
+2026-11-11 | builder: a message while a proposal is out declines it with the text as reason | a plain send queued behind the waiting turn
+2026-11-11 | builder card v2 + Timeline hold | waiting lines repeated the card; card felt empty and stiff
+2026-11-11 | builder panel: member cards with permission count and edit | user asked for organized cards
+2026-11-11 | builder: soft pass (no borders/dividers, tinted member pills, one muted run line, pill actions) | user: too corporate
+2026-11-11 | builder profile: critique fixes (footer scope, borderless AI, Change pills, Review permissions CTA, copy) | impeccable critique 24/36
+2026-11-11 | SettingRow: control aligns with text in a narrow @container; permissions rows soft; shorter copy | user: permissions step crowded
+2026-11-11 | builder: overrides with the approval, view stack panel | quality review blocker
+2026-11-11 | Antigravity provider page: several accounts with pasted-code sign-in | user request

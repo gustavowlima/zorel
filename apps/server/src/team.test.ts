@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { type Agent, DEFAULT_PERMISSIONS } from "@zorel/contracts"
-import { createInput, createInputs, effectiveAccess, findAgent, learningOf, narrower, staleWrite, updateInput, visibleTo, withheldTools } from "./team.ts"
+import { createInput, createInputs, effectiveAccess, findAgent, learningOf, narrower, staleWrite, updateInput, visibleTo, withheldTools, withOverride } from "./team.ts"
 
 const agent = (over: Partial<Agent>): Agent => ({
   id: "a1", projectId: null, name: "Code Reviewer", title: "", description: "", instructions: "x", model: "claude-cli/claude-sonnet-5-5",
@@ -97,4 +97,11 @@ test("a page is changed only after reading it, and only if nobody changed it sin
   expect(staleWrite(new Map(), page)).toContain("Read the page first")
   expect(staleWrite(new Map([["p1", 90]]), page)).toContain("changed since you read it")
   expect(staleWrite(new Map([["p1", 100]]), page)).toBeUndefined()
+})
+
+test("withOverride: what the person set replaces what was proposed, nothing else", () => {
+  const [proposed] = createInputs({ name: "Dev", instructions: "Build.", access: "ask" }, { model: "claude-cli/sonnet", effort: null, access: "workspace" }, null)
+  expect(withOverride(proposed!, undefined)).toBe(proposed!)
+  const set = withOverride(proposed!, { model: "codex-cli/gpt-5", access: "full", permissions: { ...DEFAULT_PERMISSIONS, browser: true } })
+  expect([set.model, set.access, set.permissions.browser, set.name, set.effort]).toEqual(["codex-cli/gpt-5", "full", true, "Dev", proposed!.effort])
 })

@@ -70,7 +70,8 @@ export const Rows = ({ children, className }: { children: ReactNode; className?:
 )
 
 // One setting in a group: what it is (an optional icon tile, title, a line of explanation) and its control on the
-// right. On a narrow column the control wraps under the text instead of squeezing it. A hint in a state color
+// right. On a narrow column the control wraps under the text instead of squeezing it (aligned with the text when an
+// @container ancestor is narrow). A hint in a state color
 // passes its own span (<span className="text-warning">).
 export function SettingRow({ icon, title, hint, children, className }: { icon?: ReactNode; title: ReactNode; hint?: ReactNode; children?: ReactNode; className?: string }) {
   return (
@@ -80,7 +81,9 @@ export function SettingRow({ icon, title, hint, children, className }: { icon?: 
         <span className="font-medium">{title}</span>
         {hint && <span className="flex flex-col text-sm text-muted">{hint}</span>}
       </span>
-      {children && <span className="flex shrink-0 items-center gap-2">{children}</span>}
+      {/* In a narrow container (a side panel, an @container ancestor under 32rem) the control takes its own line,
+          lined up with the text instead of under the icon. Without such an ancestor nothing changes. */}
+      {children && <span className={cn("flex shrink-0 items-center gap-2 @max-lg:basis-full", icon && "@max-lg:pl-12")}>{children}</span>}
     </div>
   )
 }

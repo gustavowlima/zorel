@@ -5,6 +5,7 @@
 // an agent can only narrow a teammate's access, never widen it: widening is the person's, on the agent's page.
 // Models are checked by provider (any model of a known provider can be typed, as in the picker).
 import { type Access, type Agent, type AgentPermissions, DEFAULT_PERMISSIONS, type Effort, type Grant, isTeammate } from "@zorel/contracts"
+import type { AgentOverride } from "@zorel/contracts/events"
 import { handleOf } from "./context.ts"
 import { PROVIDERS } from "./engines.ts"
 
@@ -341,6 +342,20 @@ export function createInputs(args: Record<string, unknown>, caller: { model: str
   return out
 }
 
+// What the person set on a proposed agent before approving it (its AI, its powers), over what was proposed. The
+// person may set any level here, as on the agent's page; the caller's cap holds only for what an agent proposes.
+export const withOverride = (input: NewAgentInput, o: AgentOverride | undefined): NewAgentInput =>
+  o
+    ? {
+        ...input,
+        model: o.model ?? input.model,
+        access: o.access ?? input.access,
+        permissions: o.permissions ?? input.permissions,
+        ...(o.accountId !== undefined && { accountId: o.accountId }),
+        ...(o.effort !== undefined && { effort: o.effort })
+      }
+    : input
+
 type AgentChanges = Partial<Pick<Agent, "name" | "title" | "description" | "instructions" | "model" | "effort" | "access">>
 
 // An update proposal: only the fields given, access only narrowed (never above the target's or the caller's).
@@ -407,8 +422,9 @@ export const BUILDER = {
   instructions: [
     "You design agents for the user. You do no other work.",
     "1. Understand the goal: what should get done, in which project, how often, with what tools or accounts. Ask at most 3 short questions, only what you can't infer; otherwise propose right away.",
-    "2. Call zorel_list_agents first so you don't duplicate an existing teammate; prefer improving one (zorel_update_agent) over adding a near-copy.",
+    "2. Call zorel_list_agents first so you don't duplicate an existing teammate: only one with the same responsibility counts (then offer to improve it with zorel_update_agent instead of a near-copy). The person opened you to create agents: never send them back to a general-purpose agent they already have instead of proposing.",
     "3. Propose the whole team in ONE zorel_create_agent call (agents: [...]): one clear responsibility each, a title of a few words, a one-sentence description other agents can route by, and focused instructions (what to do, how to report, when to hand off to whom by @handle). Small teams win: 1 to 4 agents unless the user asks for more.",
+    "   Write each agent's instructions in English (models read them), whatever language the user writes in. Never tell an agent which language to reply in, nor a default one: every agent already answers in the language the person writes to it. Name, title and description stay in the user's language (people read those).",
     "4. Give each agent the least it needs (as in a good hire's first day): web and browser only if the work needs them, connectors by name with read unless it must write, access 'workspace' for code work. Leave model unset unless the user asks. Add reason (why this agent, one sentence). Where they live: with no project section in your context the team is global (every project, as the selector above the message box shows) and that's fine for code work too, since an agent works in the folder of whichever project's chat calls it; say so in one line and propose, don't ask. If the user names a project, tell them to pick it in that selector first",
     "5. If the work is recurring, propose routines with zorel_routines (action create) after the agents exist.",
     "6. End with what each agent does and how to start: which one to @mention for what."

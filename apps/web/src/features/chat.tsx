@@ -545,7 +545,7 @@ export function RenameDialog({ isOpen, onClose, title, onSave }: { isOpen: boole
 
 type Item = { at: number; message: Message } | { at: number; note: Note } | { at: number; memory: Memory }
 
-export function Timeline({ chat, state, agents, onView, onEdit, onStop, at }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void; onStop?: (() => void) | undefined; at?: string | undefined }) {
+export function Timeline({ chat, state, agents, onView, onEdit, onStop, at, intro, after, hold = false }: { chat: Chat; state: ChatState; agents: ReadonlyArray<Agent>; onView: (f: Focus) => void; onEdit: (m: Message) => void; onStop?: (() => void) | undefined; at?: string | undefined; intro?: ReactNode; after?: ReactNode; hold?: boolean }) {
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true) // follow new content only while the reader is at the bottom
   // What was kept from this chat shows where it happened, from the memories themselves (a reload keeps it). The
@@ -562,6 +562,9 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at }: { 
     ...state.notes.filter((n) => n.kind !== "remembered").map((n) => ({ at: n.at, note: n })),
     ...kept.map((m) => ({ at: m.createdAt, memory: m }))
   ].sort((a, b) => a.at - b.at)
+  // `hold`: the turn waits on something the screen shows itself (the Builder's proposal card, `after`): the waiting
+  // step and the "waits for your OK" line would only repeat it.
+  const live = hold && state.live ? { ...state.live, steps: state.live.steps.filter((x) => x.status !== "waiting") } : state.live
   const multi = chat.agentIds.length > 1
   // One agent (or none): the header already says who answers, so replies show no face and no name.
   const solo = !multi
@@ -602,7 +605,7 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at }: { 
       <div className="px-8 pt-6 pb-8">
       <div className="mx-auto flex w-full max-w-chat flex-col gap-7">
         {chat.summary && <Summary text={chat.summary} />}
-        {state.ready && items.length === 0 && !state.live && <EmptyState icon={<MessageCircle />} title={t("chat.empty")} hint={t("chat.emptyHint")} />}
+        {state.ready && items.length === 0 && !state.live && (intro ?? <EmptyState icon={<MessageCircle />} title={t("chat.empty")} hint={t("chat.emptyHint")} />)}
         {!state.ready && (
           <div className="flex justify-center py-16 text-muted">
             <Spinner />
@@ -628,7 +631,11 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at }: { 
             <TimelineNote key={`${item.note.kind}-${item.note.at}`} note={item.note} agents={agents} />
           )
         )}
-        {state.live && <LiveMessage live={state.live} agents={agents} receipts={state.receipts} bare={solo} onStop={state.pending <= 1 ? onStop : undefined} />}
+        {live && (live.text || live.steps.length || !hold) && (
+          <LiveMessage live={live} agents={agents} receipts={state.receipts} bare={solo} onStop={state.pending <= 1 ? onStop : undefined} hold={hold} />
+        )}
+        {/* What the screen adds after the turn (the Builder's proposal card), in the same column. */}
+        {after}
         {multi && state.ready && items.length === 0 && <p className="text-center text-sm text-dim">{t("team.mentionHint")}</p>}
       </div>
       </div>
@@ -1078,12 +1085,19 @@ function useHeldLabel(wanted: string, specific: boolean) {
 // does now (a light sweeps across it), or plainly that it waits for the provider before anything came back, the time
 // only after 5 s, and Stop. Questions and approvals wait above the message box (PendingTray).
 const SHOW_TIME_AFTER_MS = 5000
-function LiveMessage({ live, agents, receipts, bare, onStop }: { live: LiveTurn; agents: ReadonlyArray<Agent>; receipts: ReadonlyArray<Receipt>; bare: boolean; onStop?: (() => void) | undefined }) {
+function LiveMessage({ live, agents, receipts, bare, onStop, hold = false }: { live: LiveTurn; agents: ReadonlyArray<Agent>; receipts: ReadonlyArray<Receipt>; bare: boolean; onStop?: (() => void) | undefined; hold?: boolean }) {
   const now = useNow(true)
   const current = [...live.steps].reverse().find((s) => s.status === "running" || s.status === "waiting")
   const idle = !live.text && !live.steps.length
   const elapsed = now - live.startedAt
-  const wanted = current?.title ?? (idle ? t("activity.waitingFor", { provider: providerLabel(splitModel(live.model).provider) }) : t("activity.working"))
+  // Waiting for the person (an approval, a question): say so, not the step's title again as if it were being worked on.
+  const waiter = agents.find((a) => a.id === live.agentId)?.name
+  const wanted =
+    current?.status === "waiting"
+      ? waiter
+        ? t("approval.waitsFor", { agent: waiter })
+        : t("approval.waiting")
+      : (current?.title ?? (idle ? t("activity.waitingFor", { provider: providerLabel(splitModel(live.model).provider) }) : t("activity.working")))
   const what = useHeldLabel(wanted, !!current)
   const pieces = interleave(live.text, live.steps, (s) => live.stepAt[s.id])
   return (
@@ -1094,13 +1108,15 @@ function LiveMessage({ live, agents, receipts, bare, onStop }: { live: LiveTurn;
       bare={bare}
       continued={bare}
       footer={
+        hold ? undefined : (
         // Below everything so far: the words and steps grow above it and the status stays at the end. Stop sits beside
         // the words (a button inside a button isn't valid); it is the composer's action too.
         <div className="flex h-7 max-w-full min-w-0 items-center gap-2 text-base text-muted">
           <span className="flex w-4 shrink-0 justify-center [&_svg]:size-3.5">{current?.status === "waiting" ? <Clock className="text-accent-text" /> : <Spinner size={12} className="text-muted" />}</span>
           {/* One element for every state, so the sweep doesn't restart each time the label changes. */}
           <span className={cn("truncate", idle || current?.status === "waiting" ? undefined : "shimmer-text")}>{what}</span>
-          {elapsed >= SHOW_TIME_AFTER_MS && <span className="shrink-0 text-dim tabular-nums">{`· ${formatDuration(elapsed)}`}</span>}
+          {/* No clock while it waits for you: nothing is being worked on then. */}
+          {elapsed >= SHOW_TIME_AFTER_MS && current?.status !== "waiting" && <span className="shrink-0 text-dim tabular-nums">{`· ${formatDuration(elapsed)}`}</span>}
           {onStop && (
             <Tooltip content={t("composer.stop")}>
               <IconButton label={t("composer.stop")} variant="ghost" shape="pill" size="xs" onPress={onStop}>
@@ -1109,6 +1125,7 @@ function LiveMessage({ live, agents, receipts, bare, onStop }: { live: LiveTurn;
             </Tooltip>
           )}
         </div>
+        )
       }
     >
       {pieces.map((p, i) =>
@@ -1343,8 +1360,8 @@ function ReceiptCard({ receipt: r }: { receipt: Receipt }) {
       <Button variant="ghost" size="sm" aria-expanded={open} aria-controls={id} onPress={() => setOpen(!open)} className="w-full justify-start gap-2 px-2 font-normal text-muted">
         {r.outcome === "expired" ? <Clock className="size-3.5 shrink-0" /> : ok ? <CircleCheck className="size-3.5 shrink-0 text-success" /> : <CircleX className="size-3.5 shrink-0" />}
         <span className="shrink-0 text-secondary">{word}</span>
-        <span className="min-w-0 flex-1 truncate text-left" title={summary}>
-          {summary}
+        <span className="min-w-0 flex-1 truncate text-left" title={r.reason ?? summary}>
+          {r.reason ? `“${r.reason}”` : summary}
         </span>
         <ChevronDown aria-hidden="true" className={cn("size-3.5 shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none", open && "rotate-180")} />
       </Button>

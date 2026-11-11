@@ -14,7 +14,7 @@ import { basename, relative } from "node:path"
 import { type CliModel, claudeParser, classifyMessage, type EngineEvent, type NativeStep, splitModel, STEP_DETAIL_MAX, STEP_TITLE_MAX, type TurnFile } from "#server/engines.ts"
 import { approvalFor, decideCommand, decideEdit, decideRead } from "#server/engines/policy.ts"
 import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type NativeApproval, withoutAppEnv } from "#server/engines/session.ts"
-import { which } from "../cli-install.ts"
+import { which } from "../cli/index.ts"
 
 const GATEWAY = "zorel"
 // Claude Code's own tools Zorel turns on: files and shell, plus web search and fetch when the agent may use the web.

@@ -1,9 +1,16 @@
 # design-system
 keywords: ui, tailwind, tokens, theme, button, css, check:ui, avatar, provider icon, detector
 status: active
-updated: 2026-11-05
+updated: 2026-11-11
 
 ## current
+- A flow's top (mark, progress) is a band of its own (`StepHeader`, shrink-0); only the step under it scrolls. Never an overlay the content scrolls behind (it collided with the mark).
+- Onboarding and decorative backgrounds (2026-11-11, user feedback): over the orbit set (ui/onboarding.tsx) every group of controls sits on an opaque card (`rounded-card border border-subtle bg-surface shadow-lg`); control fills are translucent (`bg-control`) and the set's lines show through otherwise. The set is dimmed to 35% under steps.
+- Button `variant="soft"` (ui/button.tsx): `bg-accent-soft text-accent-text`, hover `bg-accent-line` (the "neon" look). Available, but main actions use `default` (solid blue): the user tried soft on the onboarding CTAs and asked to go back (2026-11-11).
+- Suggestion chips: soft pills (`Button size="sm" shape="pill" variant="secondary" font-normal`), a dot of the agent's tone; selected = a wash of that tone (`SuggestionChip`).
+- No AI sparkle icons on buttons (the user removed it from "Create with AI"). Icons only where they name the action plainly.
+- Motion: animate transform and opacity only (GPU). A blur on a whole screen or SVG groups rotating repaint every frame and stutter; a small blur on a short word is fine. Moving decorations are HTML layers turned by transform (OnboardingSet's agents), not SVG.
+- The mark (ui/logo.tsx `Logo`, `CoreCut`): the arcs stop along a ring around the core (mask, CUT_R 18.5 in the 100 box), never round line ends touching it; icon.svg and the favicon draw the same cut.
 - New routine critique + layout (2026-11-10, 23/40 before): `Field` = label 8px above the control (was 6, off-scale), the hint outside the <label> (not in the control's name), 6px under it; `Dialog` padding 24px (was 20) and sizes sm 384 / lg 576 / xl 672; `ChoiceCards list` = one card, 40px radio rows (icon, title, line); `Segmented` (non-fill) and `MultiSegmented` hug their content (`self-start`) and share one selected look, `bg-control-active` (translucent: a `surface` fill was darker than a raised dialog and vanished there); `Dialog anchor="top"` keeps a tabbed dialog's title still while its height changes; a dialog body is flex-1 so a form can pin its foot and scroll its middle. Long forms in a dialog: 24px between groups, 12–16 inside, a bordered foot with the summary (or the first missing thing in warning) and 32px buttons. Destinations add in place (no dialog over a dialog).
 
 - --z-* tokens in apps/web/src/styles.css; dark default, light via [data-theme="light"]
@@ -48,6 +55,8 @@ updated: 2026-11-05
 - user message bubble (2026-11-10, after the darker scale): bg-raised + border-subtle (surface read too close to the canvas); its attachment chips the same
 
 ## avoid
+- Controls straight over a decorative background (orbits, gradients): they turn transparent and unreadable.
+- Animating `filter: blur` on large areas or rotating SVG groups continuously (jank).
 
 - a visual redesign of the whole app ("Team Desk", 2026-11-10: new fonts, palette, scale, chat spine): prototyped and dropped by the user, who kept this design; propose a redesign again only if asked
 
@@ -105,3 +114,6 @@ updated: 2026-11-05
 - model picker states (2026-11-05): body h-100 fixed (shrinks), lists flex-1; unavailable entry = muted "Not set up" + Set up → #/settings/providers/<id> (providerPageOf), no models/custom id; removed providerHint + model.hints for claude/codex/anthropic/openai/openrouter (ollama/lmstudio hints still used on Providers)
 - agent surfaces pass (2026-11-05, impeccable critique 23/40 → applied): AgentItem rows (agents.tsx) replace AgentCard/AgentRow on Agents + project Agents tab, search past 8, count in section title, tags only for deviations; agent page Profile in groups (Who it is / Model / Instructions), drafts in localStorage zorel.draft.agent.<id|new:project> with Unsaved changes + Discard; Knowledge route #/knowledge/in:<scope>[/kind], rail tabs = kinds + Show select; Routines rows (Run, ⋯, switch) + creation in Dialog (also from Routines page, agent select); Needs you in Rows, chat name opens chat; Builder starts on first available model, recoverable EmptyState. Not done: agentTone recolor on delete (needs a stored tone), Builder draft faces change after creation (id unknown before)
 - full-screen layers (2026-11-11): add `app-full` to anything `fixed inset-0` that covers the window (browser full screen, image viewer): in the desktop app it starts at top 3rem, under the title bar where macOS draws the window buttons
+- AgentOrbit (ui/agent-orbit.tsx, 2026-11-11): the agents around Zorel, after the mark: core Logo in a soft accent tile (bg-accent-soft text-accent-text), two thin orbits, the mark's spokes, three live AgentAvatars seated on the orbits. The builder's empty state uses it; its step icons sit in soft tiles. User: follow the design system, the logo's inspiration and the soft look.
+- SettingRow narrow mode (2026-11-11): inside an @container ancestor under 32rem, the control takes its own line indented to the text (@max-lg:basis-full, pl-12 with an icon). Opt in by putting @container on a stretched block ancestor (PermissionsEditor does); never on a shrink-to-fit parent (container-type collapses it).
+- CheckList tiles (2026-11-11): `tiles` prop = picking people as soft tiles in two columns (bg-control, round tick, tinted when ticked); rows stay for short option lists.
