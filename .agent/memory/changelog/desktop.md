@@ -15,3 +15,4 @@
 2026-11-11 | own computer: host option, lent folders, live state, start/restart/open; Podman always when installed; app icons | user request
 2026-11-11 | no bundled Chromium: Chrome/Edge first, else one download into the data folder; idle browser closes after 15 min | smaller app, less memory
 2026-11-11 | desktop connects to team servers (own window and partition each); local server starts only when needed | user request
+2026-11-11 | spec 017 P1: server picker, window swap in place, on-demand check | user request

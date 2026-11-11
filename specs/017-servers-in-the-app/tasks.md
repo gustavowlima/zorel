@@ -4,17 +4,18 @@
 
 Each phase ends testable on its own; the desktop with no servers behaves as before after every one.
 
-## P1: Picker and health (US1, US2)
+## P1: Picker and state (US1, US2) — lean (2026-11-11, the user: no timer, the connection is continuous)
 
-- [ ] T001 contracts: `PROTOCOL` integer and `Health` schema `{ version, protocol, ready }`
-- [ ] T002 server: `GET /api/health` (open path, both modes); test (no sign-in needed, nothing else in the body)
-- [ ] T003 desktop: `health.ts` — check each known server (and the local one) every 60 s and on demand, 5 s timeout,
-  states online | connecting | offline | outdated with `seenAt`; unit test of the state reduction
-- [ ] T004 desktop: broadcast `servers:changed`; `servers:check`; preloads expose `onChanged` and `check` (nothing else)
-- [ ] T005 desktop: switching swaps windows in place (bounds carried over, the previous one hidden, not closed)
-- [ ] T006 desktop: ⌘1…⌘9 in the Servers menu; offline page for a window that fails to load (Try again)
-- [ ] T007 web: `features/server-picker.tsx` at the top of the sidebar + the "Back to this computer" bar; i18n en/pt-BR
-- [ ] T008 verify: two local servers on different ports; stop one; screenshots; memory and changelog
+- [X] T001 desktop: switching shows the chosen window in the place of the one it was chosen in and hides that one
+  (`place`); new windows open with its bounds; the Dock reopens when every window is hidden
+- [X] T002 desktop: keep the 3 most recent server windows alive; close hidden ones after 30 min (`trimServers`)
+- [X] T003 desktop: `servers:check` asks each known server `GET /api/server` (5 s) when the picker opens; bridges expose
+  `check` (nothing else new)
+- [X] T004 desktop: ⌘1…⌘9 in the Servers menu (macOS); an offline page (name, "isn't answering", Try again) when a
+  server window fails to load; a pasted setup link keeps its one-time code
+- [X] T005 web: `features/server-picker.tsx` in the sidebar head (only with team servers; Ctrl+1…9 off macOS) and the
+  "On <host> · This computer" line on a server's window; i18n en/pt-BR
+- [ ] T006 verify by hand: a second local server (server mode on 127.0.0.1:4400), switch both ways, stop it, reopen
 
 ## P2: Approved SSH commands
 

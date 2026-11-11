@@ -5,14 +5,18 @@ import { t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
 import { Button, Input, Rows, Section, SettingRow, Tag, Trash2 } from "@/ui"
 
+export type ServerState = { state: "online" | "offline"; seenAt: number | null }
 type Servers = {
   list: () => Promise<{ servers: Array<{ origin: string; name: string }>; current: string }>
   open: (target: string) => Promise<boolean>
+  check?: () => Promise<Record<string, ServerState>> // spec 017: whether each answers now
   add?: (link: string) => Promise<boolean>
   forget?: (origin: string) => Promise<boolean>
 }
-const bridge = (window as { zorelDesktop?: { servers?: Servers } }).zorelDesktop?.servers
-const LOCAL = "local"
+// The desktop app's bridge (absent in a browser).
+export const serversBridge = (window as { zorelDesktop?: { servers?: Servers } }).zorelDesktop?.servers
+const bridge = serversBridge
+export const LOCAL = "local"
 
 export function ServersSetting() {
   const [state, setState] = useState<Awaited<ReturnType<Servers["list"]>>>()

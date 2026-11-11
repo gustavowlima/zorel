@@ -8,7 +8,8 @@ export function serverFrom(text: string): { origin: string; open: string } | und
   const u = new URL(raw)
   if (u.protocol !== "https:" && !(u.protocol === "http:" && LOOPBACK.has(u.hostname))) return undefined
   if (u.username || u.password) return undefined
-  // An invite link opens its page (to join); anything else, the app.
-  const open = u.pathname.startsWith("/invite/") ? `${u.origin}${u.pathname}` : `${u.origin}/`
+  // An invite link opens its page (to join), the first owner's setup link its page with the one-time code; anything
+  // else, the app.
+  const open = u.pathname.startsWith("/invite/") ? `${u.origin}${u.pathname}` : u.pathname === "/setup" ? `${u.origin}/setup${u.search}` : `${u.origin}/`
   return { origin: u.origin, open }
 }

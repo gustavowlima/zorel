@@ -32,23 +32,18 @@ no servers.
 - **Constraints**: a server page never gets more bridge than `servers.list/open/onChanged` (FR-005); no network,
   firewall or DNS changes on any machine (FR-009).
 
-## Phase 1: picker and health
+## Phase 1: picker and state (lean, as built)
 
-- **Server**: `GET /api/health` (open path in server-routes, also in local mode) → `{ version, protocol, ready }`.
-  `PROTOCOL` (an integer in contracts) changes only on a breaking client/server change.
-- **Desktop main** (`servers.ts`):
-  - `health.ts`: every 60 s, and when a picker opens (`servers:check`), `net.fetch(origin + "/api/health")` with a 5 s
-    timeout for the local server and each saved one → `{ state: online | connecting | offline | outdated, version,
-    seenAt }` in memory; changes broadcast to every window (`servers:changed`).
-  - Switching (`servers:open`): the target window takes the current window's bounds and shows; the current hides (not
-    closed: its page and notifications live on). The local window is one of them.
-  - ⌘1…⌘9 in the "Servers" menu (accelerators), ⌘1 = this computer.
-  - A server window that fails to load shows a small offline page (its name, "isn't answering", last seen, Try again).
-- **Preloads**: `servers.onChanged(cb)` and `servers.check()` added to both bridges (still nothing else).
-- **Web**: `features/server-picker.tsx` at the top of the sidebar (desktop only, from the bridge): current server name
-  + state dot; a Popover listing this computer and each server (state, host, ⌘n), "Add a server…" (opens Settings ›
-  Servers, from this computer only); a thin "On <name> · Back to this computer" bar when the window isn't local. The
-  web app without desktop shows nothing new.
+- No new endpoint and no timer (the user: the connection is continuous): an open window knows through its own
+  WebSocket; the picker asks the existing `GET /api/server` of each known server once when it opens
+  (`servers:check`, main process, `net.fetch`, 5 s). No version check: a server's window shows its own web app.
+- Switching (`servers.ts` `place`): the chosen window takes the place of the one it was chosen in, which hides (its
+  page and notifications go on). At most 3 server windows alive; hidden over 30 min → closed (`trimServers`, every
+  5 min and on each switch). The Dock reopens when every window is hidden.
+- ⌘1…⌘9 in the Servers menu on macOS; Ctrl+1…9 from the page elsewhere (no menu bar there).
+- A server window that fails to load shows a small offline page of the app (two languages from the system's locale).
+- Web: `features/server-picker.tsx` replaces the app name in the sidebar head when there are team servers; a thin
+  "On <host> · This computer" line under it in a server's window.
 
 ## Phase 2: approved SSH commands
 

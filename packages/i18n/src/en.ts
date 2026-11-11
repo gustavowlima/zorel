@@ -2117,7 +2117,13 @@ export const en = {
     forget: "Forget this server (signs out on this computer)",
     placeholder: "A server's address or an invite link (https://…)",
     connect: "Connect",
-    invalid: "That isn't a Zorel server's address: it must start with https:// (or http://localhost)."
+    invalid: "That isn't a Zorel server's address: it must start with https:// (or http://localhost).",
+    pick: "Choose where to work",
+    add: "Add a server…",
+    offline: "Not answering",
+    lastSeen: "Not answering · last seen {time}",
+    onServer: "On {name}",
+    back: "This computer"
   },
   people: {
     members: "Team",

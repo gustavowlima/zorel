@@ -5,6 +5,7 @@
 // The list fades out at the bottom while more is below. Chats sort by whose turn it is, then manual order and
 // recency; projects reorder by drag and drop, chats only inside their own group. Each row has a ⋯ with the same
 // menu as right-click.
+import { ServerLine, ServerPicker } from "./server-picker.tsx"
 import { type AccountWindow, type Agent, type Chat, LIMIT_ALERT, type Project, type ProviderAccount } from "@zorel/contracts"
 import type { ChatStatus } from "@zorel/contracts/events"
 import { formatAge, formatPercent, formatTime, t } from "@zorel/i18n"
@@ -104,7 +105,8 @@ function Head({ route, folded, onToggle }: { route: Route; folded: boolean; onTo
   return (
     <div className="flex h-13 shrink-0 items-center gap-1 pr-2.5 pl-4.5">
       <Logo className="mr-1.5 size-5 shrink-0" />
-      <span className="min-w-0 flex-1 truncate font-semibold">{t("app.name")}</span>
+      {/* With team servers (desktop): where this window is, and the way to the others (spec 017). */}
+      <ServerPicker fallback={<span className="min-w-0 flex-1 truncate font-semibold">{t("app.name")}</span>} />
       <Tooltip content={t("nav.newChat")} placement="bottom">
         <IconButton label={t("nav.newChat")} onPress={() => go({ view: "home" })} className={cn("text-muted", newChat && "bg-control-hover text-fg")}>
           <SquarePen />
@@ -398,6 +400,7 @@ export function Sidebar({
   return (
     <nav aria-label={t("nav.label")} className={cn("flex shrink-0 flex-col overflow-hidden pb-3", folded ? "w-14" : "w-67")}>
       <Head route={route} folded={folded} onToggle={onToggle} />
+      {!folded && <ServerLine />}
       <Places route={route} folded={folded} />
 
       {/* Chats (without a project) first, then Projects; each section folds, and the list scrolls under the places.

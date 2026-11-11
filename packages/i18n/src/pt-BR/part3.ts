@@ -667,7 +667,13 @@ export const part3 = {
     forget: "Esquecer este servidor (sai da conta neste computador)",
     placeholder: "Endereço do servidor ou link de convite (https://…)",
     connect: "Conectar",
-    invalid: "Isso não é o endereço de um servidor Zorel: precisa começar com https:// (ou http://localhost)."
+    invalid: "Isso não é o endereço de um servidor Zorel: precisa começar com https:// (ou http://localhost).",
+    pick: "Escolher onde trabalhar",
+    add: "Adicionar servidor…",
+    offline: "Não está respondendo",
+    lastSeen: "Não está respondendo · visto às {time}",
+    onServer: "Em {name}",
+    back: "Este computador"
   },
   people: {
     members: "Equipe",

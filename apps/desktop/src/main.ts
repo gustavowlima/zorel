@@ -10,7 +10,7 @@ import { isAbsolute, join } from "node:path"
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, powerMonitor, powerSaveBlocker, session, shell, Tray } from "electron"
 import { SESSION_BYTES, SESSION_HEADER, SESSION_STDIN_ENV } from "@zorel/contracts/session"
 import { autoUpdater } from "electron-updater"
-import { addServer, forgetServer, LOCAL, markOpened, openServer, readServers, serverMenu, serverOf } from "./servers.ts"
+import { addServer, checkServers, forgetServer, LOCAL, markOpened, openServer, place, readServers, serverMenu, serverOf, trimServers } from "./servers.ts"
 
 const dev = !app.isPackaged
 // app.getAppPath(): apps/desktop in dev, the app.asar when packaged (the bundler bakes __dirname at build time).
@@ -113,10 +113,10 @@ const startLocal = () => {
   local ??= startServer().then(auth)
   return local
 }
-async function openLocal() {
+async function openLocal(from?: BrowserWindow | null) {
   await startLocal()
   markOpened(LOCAL)
-  openWindow()
+  openWindow(from)
 }
 // What opened last: "local" or a team server's origin (one still in the list).
 const current = () => {
@@ -130,10 +130,12 @@ function openCurrent() {
   if (now === LOCAL) return void openLocal().catch(localFailed)
   openServer(now, SERVER_PRELOAD())
 }
-function switchTo(target: string) {
-  if (target === LOCAL) void openLocal().catch(localFailed)
-  else if (readServers().servers.some((x) => x.origin === target)) openServer(target, SERVER_PRELOAD())
+// Switching shows the chosen one where the window it was chosen in was, and hides that one (spec 017).
+function switchTo(target: string, from: BrowserWindow | null = BrowserWindow.getFocusedWindow()) {
+  if (target === LOCAL) void openLocal(from).catch(localFailed)
+  else if (readServers().servers.some((x) => x.origin === target)) openServer(target, SERVER_PRELOAD(), undefined, from)
   refreshMenus()
+  trimServers()
 }
 const localFailed = (e: unknown) => dialog.showErrorBox("Zorel", e instanceof Error ? e.message : String(e))
 async function connectCopied() {
@@ -148,8 +150,8 @@ function forget(origin: string) {
   })
 }
 
-function openWindow() {
-  if (win) return win.isMinimized() ? win.restore() : win.focus()
+function openWindow(from?: BrowserWindow | null) {
+  if (win) return place(win, from)
   win = new BrowserWindow({
     title: "Zorel",
     width: 1280,
@@ -161,6 +163,7 @@ function openWindow() {
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 18, y: 18 }, // centered in the web app title bar (48px)
     ...(process.platform === "linux" && { icon: icon() }), // Windows takes the .exe's icon, macOS the bundle's
+    ...(from && !from.isDestroyed() && { ...from.getBounds() }), // switching from a server's window: in its place
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false, preload: join(appDir, "dist", "preload.cjs") }
   })
   // An app, not a page: no pinch or Ctrl+wheel zoom.
@@ -176,7 +179,7 @@ function openWindow() {
     if (dev) items.push(...(items.length ? [{ type: "separator" } as const] : []), { label: "Inspect", click: () => win?.webContents.inspectElement(p.x, p.y) })
     if (items.length) Menu.buildFromTemplate(items).popup()
   })
-  win.once("ready-to-show", () => win?.show())
+  win.once("ready-to-show", () => win && place(win, from))
   // Development: the page's console in the terminal (electron-vite's log), to follow what the interface does.
   if (dev) win.webContents.on("console-message", (e) => console.info(`[page] ${e.message}`))
   win.on("closed", () => {
@@ -483,9 +486,11 @@ function serversIpc() {
   ipcMain.handle("servers:list", (e) => (known(e) ? { servers: readServers().servers, current: serverOf(e.sender) ?? LOCAL } : { servers: [], current: LOCAL }))
   ipcMain.handle("servers:open", (e, target: unknown) => {
     if (!known(e) || typeof target !== "string") return false
-    switchTo(target)
+    switchTo(target, BrowserWindow.fromWebContents(e.sender))
     return true
   })
+  // Whether each server answers now: asked when the picker opens (spec 017).
+  ipcMain.handle("servers:check", (e) => (known(e) ? checkServers() : {}))
   ipcMain.handle("servers:add", (e, text: unknown) => {
     if (!fromApp(e) || typeof text !== "string" || text.length > 2000) return false
     const added = addServer(text, SERVER_PRELOAD())
@@ -520,7 +525,7 @@ if (!app.requestSingleInstanceLock()) app.quit()
 else {
   app.on("second-instance", openCurrent)
   app.on("activate", () => {
-    if (!BrowserWindow.getAllWindows().length) openCurrent()
+    if (!BrowserWindow.getAllWindows().some((w) => w.isVisible())) openCurrent() // hidden server windows don't count
   })
   app.on("window-all-closed", () => undefined) // stay running: the server keeps working with no window
   app.on("before-quit", (e) => {
@@ -557,6 +562,7 @@ else {
       if (dev) app.dock?.setIcon(icon()) // a packaged app shows the bundle's icon; dev would show Electron's
       if (!openedAtLogin()) openCurrent()
       addTray()
+      setInterval(trimServers, 5 * 60_000) // hidden server windows past their time close (spec 017)
       updates()
     })
     .catch((e: unknown) => {

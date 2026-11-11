@@ -46,17 +46,17 @@ says which server this is when it isn't this computer, with "Back to this comput
 
 ---
 
-### User Story 2 - Know a server's state and version (Priority: P1)
+### User Story 2 - Know whether a server answers (Priority: P1)
 
-Each server answers a small public "health" request with its version and whether it is ready. The app checks the
-servers it knows every minute while open (and at once when the picker opens) and shows: online, connecting, offline,
-or "needs update" when the server's version can't serve this app (or the other way round), with what to do.
+No timer: an open window already knows through its own connection (the WebSocket reconnects by itself). When the
+picker opens, the app asks each server it knows the existing public `GET /api/server` once and shows online, or "not
+answering · last seen <time>". A server's window always shows that server's own web app, so the page and the server
+never disagree on versions; nothing to check there.
 
 **Acceptance Scenarios**:
 
-1. **Given** a server two minor versions behind with a breaking change, **When** checked, **Then** it shows "needs
-   update" and the server's update command.
-2. **Given** the network drops, **When** checked, **Then** it shows offline with the time it was last online.
+1. **Given** a server that is down, **When** the picker opens, **Then** it shows "not answering" and when it was last
+   seen.
 
 ---
 
@@ -124,11 +124,11 @@ responsible for machines it can't see. A server that listens only on loopback ex
 ### Functional Requirements
 
 - **FR-001**: The window MUST show the current server and switch to another from a picker and from ⌘1…⌘9.
-- **FR-002**: A server's view MUST stay alive after switching away (no reload when coming back).
-- **FR-003**: Every server MUST answer `GET /api/health` without signing in with `{ version, protocol, ready }` and
-  nothing else.
-- **FR-004**: The app MUST show each server's state (online, connecting, offline, needs update) and, when offline,
-  the last time it answered.
+- **FR-002**: A server's view MUST stay alive after switching away (no reload when coming back), up to the 3 most
+  recently used; one hidden for over 30 minutes closes and reloads when chosen again (each is a renderer process).
+- **FR-003**: The picker MUST ask each known server `GET /api/server` (public, already there) when it opens; no
+  periodic checks.
+- **FR-004**: The app MUST show each server as online or not answering, with the last time it answered.
 - **FR-005**: A server's page MUST never reach this computer's bridge beyond listing and switching servers (as today).
 - **FR-006**: "Install on another computer" MUST run each SSH command only after the person approves it, and MUST
   pass secrets on stdin.
@@ -148,7 +148,7 @@ responsible for machines it can't see. A server that listens only on loopback ex
 ## Success Criteria *(mandatory)*
 
 - **SC-001**: Switching to a known online server shows it in under a second after the first visit.
-- **SC-002**: No server state is ever shown as online when its health request failed in the last check.
+- **SC-002**: No server is shown as online when its check failed when the picker opened.
 - **SC-003**: A fresh Linux machine reachable over SSH runs Zorel without the person typing a command themselves.
 
 ## Reaching a server (research, 2026-11-11; for the docs' recipes)

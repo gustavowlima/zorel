@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld("zorelDesktop", {
   servers: {
     list: (): Promise<{ servers: Array<{ origin: string; name: string }>; current: string }> => ipcRenderer.invoke("servers:list"),
     open: (target: string): Promise<boolean> => ipcRenderer.invoke("servers:open", target),
+    // Whether each server answers now (spec 017): origin → { state, seenAt }.
+    check: (): Promise<Record<string, { state: "online" | "offline"; seenAt: number | null }>> => ipcRenderer.invoke("servers:check"),
     add: (link: string): Promise<boolean> => ipcRenderer.invoke("servers:add", link),
     forget: (origin: string): Promise<boolean> => ipcRenderer.invoke("servers:forget", origin)
   },
