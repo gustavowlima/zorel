@@ -1,7 +1,7 @@
 // Local database: SQLite via Drizzle over Effect's SqliteClient (D9). Every method returns an Effect;
 // a database error is a defect (orDie): the caller can do nothing but fail the request.
 import { SqliteClient } from "@effect/sql-sqlite-bun"
-import { type Access, type Agent, type AgentPermissions, type AgentTeam, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type FlowGraph, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type RoutineDelivery, type RoutineTell, type RoutineWatch, type Step, type Switch } from "@zorel/contracts"
+import { type Access, type Agent, type AgentPermissions, type AgentTeam, type AgentWorktree, type AccountUsage, DEFAULT_PERMISSIONS, type Attachment, type Chat, type Effort, type FailoverTarget, type FileChange, type FlowGraph, type McpServer, type Memory, type Message, PREVIEW_CHARS, type Project, type RoutineDelivery, type RoutineTell, type RoutineWatch, type Step, type Switch } from "@zorel/contracts"
 import type { Approval, ApprovalOutcome, Turn, WorkStep } from "@zorel/contracts/events"
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, notInArray, or, sql } from "drizzle-orm"
 import * as Drizzle from "drizzle-orm/effect-sqlite-bun"
@@ -708,6 +708,16 @@ export const repository = (db: Db, pagesDir?: string) => {
     // Chats whose usage-limit pause is over.
     dueResumes: (at: number) => orDie(db.select({ id: chats.id, resumeAt: chats.resumeAt }).from(chats).where(sql`${chats.resumeAt} <= ${at}`)),
     setWorktree: (id: string, worktree: string | null) => orDie(db.update(chats).set({ worktree }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
+    // An agent's own worktree in a chat (null: back to the chat's folder).
+    setAgentWorktree: (id: string, agentId: string, wt: AgentWorktree | null) =>
+      orDie(
+        Effect.gen(function* () {
+          const row = (yield* db.select({ agentWorktrees: chats.agentWorktrees }).from(chats).where(eq(chats.id, id)))[0]
+          if (!row) return
+          const { [agentId]: _old, ...rest } = row.agentWorktrees
+          yield* db.update(chats).set({ agentWorktrees: wt ? { ...rest, [agentId]: wt } : rest }).where(eq(chats.id, id))
+        })
+      ),
     setSummary: (id: string, summary: string, until: number) => orDie(db.update(chats).set({ summary, summaryUntil: until, learnedUntil: sql`max(${chats.learnedUntil}, ${until})` }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
     setLearned: (id: string, until: number) => orDie(db.update(chats).set({ learnedUntil: until }).where(eq(chats.id, id)).pipe(Effect.asVoid)),
     // Messages containing the words (newest first). ponytail: LIKE scan; FTS5 like memory_index when chats grow large.

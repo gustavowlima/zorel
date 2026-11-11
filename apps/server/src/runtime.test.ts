@@ -1222,3 +1222,61 @@ test("release (spec 011): a deleted chat's open stream ends, and it can't be sub
     const again = yield* runtime.subscribeChat(chat.id).pipe(Stream.runDrain, Effect.exit)
     expect(Exit.isFailure(again)).toBe(true)
   })))
+
+// Sessions that hang after a word and remember the folder each agent was given.
+const Places = (cwds: Record<string, string>) =>
+  Layer.succeed(Engines, {
+    run: () => Stream.make<EngineEvent[]>({ type: "error", message: "should use the session" }),
+    hasSession: () => true,
+    open: (o) => {
+      const who = o.system.includes("You are Bee") ? "bee" : "lee"
+      cwds[who] = o.cwd
+      return { alive: () => true, close: Effect.void, turn: () => Stream.concat(Stream.make<EngineEvent[]>({ type: "text", delta: "part" }), Stream.never) }
+    }
+  })
+const twoWriters = (folder: string) =>
+  Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const lee = yield* store.createAgent({ projectId: null, name: "Lee", instructions: "I am Lee", model: "claude-cli/haiku" })
+    const bee = yield* store.createAgent({ projectId: null, name: "Bee", instructions: "I am Bee", model: "claude-cli/haiku" })
+    const project = yield* store.createProject({ name: "app", brief: "", path: folder })
+    const chat = yield* store.createChat({ projectId: project.id, agentIds: [lee.id, bee.id], model: "claude-cli/haiku" })
+    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "@lee @bee slow" })
+    return { store, runtime, chat, lee, bee }
+  })
+
+test("two agents that edit the same git project at once: the second works in a worktree of its own", () => {
+  const repo = mkdtempSync(join(tmpdir(), "zorel-par-"))
+  Bun.spawnSync(["git", "init", "-q"], { cwd: repo })
+  Bun.spawnSync(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], { cwd: repo })
+  const cwds: Record<string, string> = {}
+  return runWith(":memory:", Places(cwds), Effect.gen(function* () {
+    const { store, runtime, chat, bee } = yield* twoWriters(repo)
+    yield* waitFor(() => Effect.map(store.activeTurns(chat.id), (ts) => ts.filter((t) => t.state === "running").length === 2))
+    const own = Object.entries((yield* store.chat(chat.id))!.agentWorktrees)
+    expect(own).toHaveLength(1)
+    const [agentId, wt] = own[0]!
+    const [mine, other] = agentId === bee.id ? ["bee", "lee"] : ["lee", "bee"]
+    expect(cwds[mine]).toBe(wt.path)
+    expect(cwds[other]).toBe(repo)
+    expect(wt.branch).toStartWith("zorel/")
+    yield* runtime.interrupt(chat.id)
+  }))
+})
+
+test("two agents that edit the same folder without git: the second waits for the first", () => {
+  const folder = mkdtempSync(join(tmpdir(), "zorel-nogit-"))
+  return runWith(":memory:", Places({}), Effect.gen(function* () {
+    const { store, runtime, chat } = yield* twoWriters(folder)
+    yield* waitFor(() => Effect.map(store.activeTurns(chat.id), (ts) => ts.some((t) => t.state === "running")))
+    yield* Effect.sleep("100 millis")
+    const turns = yield* store.activeTurns(chat.id)
+    expect(turns.map((t) => t.state).sort()).toEqual(["queued", "running"])
+    expect((yield* store.chat(chat.id))!.agentWorktrees).toEqual({})
+    // The first one stops: the second starts in the same folder.
+    yield* runtime.interrupt(chat.id, turns.find((t) => t.state === "running")!.id)
+    yield* waitFor(() => Effect.map(store.activeTurns(chat.id), (ts) => ts.length === 1 && ts[0]!.state === "running"))
+    yield* runtime.interrupt(chat.id)
+  }))
+})

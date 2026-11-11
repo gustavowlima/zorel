@@ -25,6 +25,8 @@ import { createRoutineFor, nextRun } from "./schedule.ts"
 import { claudeCommands, commandOf } from "./engines/claude-sdk.ts"
 import { Workspace } from "./workspace.ts"
 import { projectFor } from "./chat.ts"
+import * as Git from "./git.ts"
+import { join } from "node:path"
 import { startVectors } from "./vectors.ts"
 import { desktopBin, desktopCli } from "./desktop.ts"
 import { checkFolder, COMPUTER_TOOL_NAMES, COMPUTER_TOOLS, computersFor, WRITING_COMPUTER_TOOLS } from "./computer.ts"
@@ -201,6 +203,7 @@ export interface RuntimeService {
   // Every turn that ended, in any chat (spec 012: routine runs read their outcome from it).
   readonly finished: Stream.Stream<FinishedTurn>
   readonly busy: (chatId: string) => boolean // a turn is running in the chat now
+  readonly agentBusy: (chatId: string, agentId: string) => boolean // that agent's turn is running in the chat now
   // A chat was deleted (spec 011): its engine sessions close, its open event streams end, and what the server kept
   // live for it goes.
   readonly release: (chatId: string) => Effect.Effect<void>
@@ -444,8 +447,9 @@ const makeRuntime = Effect.gen(function* () {
 
   // ---------- previews: shared by zorel_preview (an agent) and the chat's Run (the person) ----------
   // Where it runs, the line and a free port; a string is what's wrong.
-  const planPreview = async (chat: Chat, args: { script?: unknown; command?: unknown; folder?: unknown }) => {
-    const root = workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined))
+  // agentId: an agent's call runs in its own worktree when it has one (spec 016); the person's Run, in the chat's folder.
+  const planPreview = async (chat: Chat, args: { script?: unknown; command?: unknown; folder?: unknown }, agentId?: string | null) => {
+    const root = workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined, agentId))
     const where = previewFolder(root, args.folder)
     if (typeof where === "string") return where
     const port = await freePort()
@@ -574,7 +578,7 @@ const makeRuntime = Effect.gen(function* () {
     // zorel_preview (preview.ts): the project's dev server on a free port, in a shell of the chat, its page in the chat's
     // browser. It runs outside the agent's sandbox, so below full access the person approves the exact command.
     const previewCall = async (args: Record<string, unknown>) => {
-      const plan = await planPreview(chat, args)
+      const plan = await planPreview(chat, args, agent?.id)
       if (typeof plan === "string") return textResult(plan, true)
       const show = async (at: number) => {
         const url = previewUrl(at, args.path)
@@ -957,7 +961,7 @@ const makeRuntime = Effect.gen(function* () {
       if (COMPUTER_TOOL_NAMES.has(name) && perms.computer === "container") {
         const s = await step(name === "computer_run" ? String(args.command ?? "").slice(0, 120) : `${name.replace("computer_", "")} ${String(args.path ?? "")}`.trim(), name)
         // The chat's project folder is lent when it may be (inside home, not hidden, not Zorel's): read-only at "ask".
-        const project = projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined)
+        const project = projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined, agent?.id)
         // The folders it may reach: the chat's project folder, and the ones the person lent it on its page (each
         // checked again: a folder can change since it was lent), read-only at "ask".
         const lents = [...new Set([...(project?.path ? [project.path] : []), ...(perms.lent ?? [])])].filter((p) => !checkFolder(p, { dataDir })).map((path) => ({ path, readOnly: askFirst }))
@@ -999,7 +1003,7 @@ const makeRuntime = Effect.gen(function* () {
           }
         }
         if (writes) onWrite()
-        const root = workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined))
+        const root = workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined, agent?.id))
         const r = guarded(
           await runBrowserTool(browsers, chat.id, name as BrowserToolName, args, root, browserProfile, agent?.id ?? null).then(
             (text) => textResult(text),
@@ -1138,7 +1142,7 @@ const makeRuntime = Effect.gen(function* () {
       const timing = replyTiming()
       // Workspace (§9.1): the project folder is the agents' cwd; a checkpoint before the turn and one after
       // give its diff and its undo.
-      const project = projectFor(chat, chat.projectId ? yield* store.project(chat.projectId) : undefined) // a worktree, when the chat has one
+      const project = projectFor(chat, chat.projectId ? yield* store.project(chat.projectId) : undefined, row.agentId) // a worktree, when the chat or its agent has one
       const access: Access = turnAccess(chat, agent, row)
       const cwd = workspace.cwdOf(chatId, project)
       const treeBefore = yield* workspace.snapshot(project)
@@ -1545,6 +1549,7 @@ const makeRuntime = Effect.gen(function* () {
             Effect.gen(function* () {
               const done = yield* Fiber.join(fiber).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
               runs.delete(row.id)
+              writers.delete(row.id)
               last = done
               failed = (yield* store.turnRow(row.id))?.state === "failed" ? (row.agentId ?? null) : undefined
               yield* clearStatus(chatId, row.agentId)
@@ -1598,8 +1603,43 @@ const makeRuntime = Effect.gen(function* () {
       if (!running.get(chatId)?.size) running.delete(chatId)
       return freeSlots
     })))
-  // Where a turn may work (spec 016): true to start it now. Set below with the agents' own worktrees.
-  const placed = (_row: TurnRow, _runs: ReadonlyMap<string, { agentId: string | null }>): Effect.Effect<boolean> => Effect.succeed(true)
+  // Where a turn may work (spec 016). An agent that may edit on its own (Workspace or Full) in a folder another of this
+  // chat's turns is editing right now moves to a git worktree of its own (folder + branch), kept for its next turns in
+  // this chat until the person merges or discards it; where there's no git, it waits for that turn (false). Asking
+  // agents (each edit approved) and readers work alongside. `writers`: running turn → the folder it edits.
+  const writers = new Map<string, string>()
+  const placed = (row: TurnRow, runs: ReadonlyMap<string, { agentId: string | null }>) =>
+    Effect.gen(function* () {
+      const chat = yield* store.chat(row.chatId)
+      const project = chat?.projectId ? yield* store.project(chat.projectId) : undefined
+      if (!chat || !project?.path) return true
+      const agent = (yield* members(store, chat)).find((a) => a.id === row.agentId)
+      const access = turnAccess(chat, agent, row)
+      if (access !== "workspace" && access !== "full") return true
+      const folder = projectFor(chat, project, row.agentId)!.path!
+      const holder = [...runs.keys()].find((id) => writers.get(id) === folder)
+      if (!holder) {
+        writers.set(row.id, folder)
+        return true
+      }
+      const other = nameOf((yield* members(store, chat)).find((a) => a.id === runs.get(holder)?.agentId))
+      const own = agent && (yield* Effect.promise(() => Git.isRepo(folder)))
+        ? yield* Effect.tryPromise(async () => {
+            const handle = handleOf(agent)
+            const wt = { path: join(dataDir, "worktrees", project.id, `${chat.id}-${handle}`), branch: `zorel/${chat.id.slice(0, 8)}-${handle}` }
+            await Git.addWorktree(folder, wt.path, wt.branch)
+            return wt
+          }).pipe(Effect.tapError((e) => Effect.logWarning("agent worktree not created; the turn waits", { chatId: chat.id, agentId: agent.id, error: String(e) })), Effect.option)
+        : undefined
+      if (own?._tag === "Some" && agent) {
+        yield* store.setAgentWorktree(chat.id, agent.id, own.value)
+        writers.set(row.id, own.value.path)
+        yield* publish(chat.id, ev("worktree", { agentId: agent.id, worktree: own.value }))
+        return true
+      }
+      yield* setStatus(chat.id, "running", row.agentId, `${nameOf(agent)} waits for ${other} to finish editing`)
+      return false
+    })
   const wake = (w: { kicked: boolean; signal: Deferred.Deferred<void> }) =>
     Effect.suspend(() => {
       w.kicked = true
@@ -1934,6 +1974,7 @@ const makeRuntime = Effect.gen(function* () {
       ),
 
     busy: (chatId) => statuses.get(chatId)?.state === "running",
+    agentBusy: (chatId, agentId) => [...(running.get(chatId)?.values() ?? [])].some((r) => r.agentId === agentId),
 
     release: (chatId) =>
       Effect.suspend(() => {

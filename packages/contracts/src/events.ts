@@ -3,7 +3,7 @@
 // handoff between agents, model switch, learning, receipt and status of each chat.
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
-import { Access, AgentPermissions, Effort, FileChange, MAX_ATTACHMENTS, Message, ModelId, Switch } from "./index.ts"
+import { Access, AgentPermissions, AgentWorktree, Effort, FileChange, MAX_ATTACHMENTS, Message, ModelId, Switch } from "./index.ts"
 
 export { FileChange }
 
@@ -187,7 +187,9 @@ export const ChatEvent = Schema.TaggedUnion({
   "turn-completed": { turn: Turn, message: Message },
   "turn-failed": { turn: Turn, message: Schema.NullOr(Message) },
   interrupted: { turn: Turn, message: Schema.NullOr(Message) }, // partial text preserved
-  status: { status: ChatStatus }
+  status: { status: ChatStatus },
+  // An agent moved to a worktree of its own in this chat (spec 016): another turn was editing its folder.
+  worktree: { agentId: Id, worktree: AgentWorktree }
 })
 export type ChatEvent = typeof ChatEvent.Type
 

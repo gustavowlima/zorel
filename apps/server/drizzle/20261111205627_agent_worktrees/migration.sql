@@ -1,0 +1,1 @@
+ALTER TABLE `chats` ADD `agent_worktrees` text DEFAULT '{}' NOT NULL;

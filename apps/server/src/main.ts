@@ -311,6 +311,17 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         const project = chat?.projectId ? yield* store.project(chat.projectId) : undefined
         yield* audit.record(a, { target: { id: project?.id ?? chatId, name: project?.name ?? chat?.title ?? chatId }, after })
       })
+    // An agent's own worktree in a chat, with the chat and its project; refused while that agent is at work there.
+    const agentWorktree = (chatId: string, agentId: string) =>
+      Effect.gen(function* () {
+        const chat = yield* store.chat(chatId)
+        const wt = chat?.agentWorktrees[agentId]
+        const project = chat?.projectId ? yield* store.project(chat.projectId) : undefined
+        if (!chat || !wt || !project?.path) return yield* notFound()
+        if (runtime.agentBusy(chat.id, agentId)) return yield* new GitFailed({ message: "Wait for this agent to finish." })
+        const agent = yield* store.agent(agentId)
+        return { chat, project, wt, agent }
+      })
     // The folder the chat's agents and shells work in.
     const chatRoot = (id: string) =>
       Effect.gen(function* () {
@@ -359,12 +370,14 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
       )
       .handle("remove", ({ params }) =>
         Effect.gen(function* () {
-          // Its worktree goes with it when nothing in it is uncommitted (else it stays on disk, with its branch).
+          // Its worktrees (its own and its agents', spec 016) go with it when nothing in them is uncommitted (else they
+          // stay on disk, with their branches).
           const chat = yield* store.chat(params.id)
-          const project = chat?.worktree && chat.projectId ? yield* store.project(chat.projectId) : undefined
-          if (chat?.worktree && project?.path) {
-            const removed = yield* Effect.promise(() => Git.removeWorktree(project.path!, chat.worktree!).catch(() => false))
-            if (!removed) yield* Effect.logInfo("worktree kept: it has uncommitted changes", { chatId: chat.id, worktree: chat.worktree })
+          const project = chat?.projectId ? yield* store.project(chat.projectId) : undefined
+          const trees = chat && project?.path ? [...Object.values(chat.agentWorktrees).map((w) => w.path), ...(chat.worktree ? [chat.worktree] : [])] : []
+          for (const dir of trees) {
+            const removed = yield* Effect.promise(() => Git.removeWorktree(project!.path!, dir).catch(() => false))
+            if (!removed) yield* Effect.logInfo("worktree kept: it has uncommitted changes", { chatId: params.id, worktree: dir })
           }
         }).pipe(
           Effect.andThen(store.removeChat(params.id)),
@@ -455,6 +468,25 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           const removed = project?.path ? yield* gitTry(() => Git.removeWorktree(project.path!, chat.worktree!)) : true
           if (!removed) return yield* new GitFailed({ message: "The worktree has uncommitted changes: commit them (or discard them) first." })
           yield* store.setWorktree(chat.id, null)
+        })
+      )
+      // An agent's own worktree (spec 016) into the chat's folder: its uncommitted work committed on its branch, then
+      // merged; a conflict leaves the folder as it was and says so. Not while that agent is at work in the chat.
+      .handle("mergeAgentWorktree", ({ params }) =>
+        Effect.gen(function* () {
+          const { chat, project, wt, agent } = yield* agentWorktree(params.id, params.agentId)
+          const into = projectFor(chat, project)!.path!
+          yield* gitTry(() => Git.mergeWorktree(into, wt.path, wt.branch, `Work by ${agent?.name ?? "an agent"} in "${chat.title}"`))
+          yield* store.setAgentWorktree(chat.id, params.agentId, null)
+          yield* gitAudit(chat.id, Actions.gitMerged, { branch: wt.branch, agent: agent?.name ?? params.agentId })
+        })
+      )
+      .handle("discardAgentWorktree", ({ params }) =>
+        Effect.gen(function* () {
+          const { chat, project, wt, agent } = yield* agentWorktree(params.id, params.agentId)
+          yield* gitTry(() => Git.discardWorktree(projectFor(chat, project)!.path!, wt.path, wt.branch))
+          yield* store.setAgentWorktree(chat.id, params.agentId, null)
+          yield* gitAudit(chat.id, Actions.gitDiscarded, { branch: wt.branch, agent: agent?.name ?? params.agentId })
         })
       )
       .handle("rewind", ({ params, payload }) =>

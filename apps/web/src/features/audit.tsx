@@ -35,7 +35,8 @@ const ACTIONS = new Set([
   "project.created", "project.updated", "project.deleted", "agent.created", "agent.updated", "agent.deleted", "team.created", "team.updated", "team.deleted", "routine.history_cleared", "account.added", "account.renamed",
   "account.removed", "account.signin_started", "api_key.set", "api_key.cleared", "mcp_server.added", "mcp_server.updated", "mcp_server.removed",
   "failover_terms.accepted", "approval.approved", "approval.denied", "turn.undone", "storage.cleaned", "chat.access_changed", "desktop.installed", "cli.installed",
-  "computer.erased", "git.committed", "git.pushed", "git.branched", "git.pr_created"
+  "computer.erased", "git.committed", "git.pushed", "git.branched", "git.pr_created",
+  "git.merged", "git.discarded"
 ])
 const ACCESS = new Set(["workspace", "ask", "full"])
 const FIELDS = new Set(["name", "brief", "path", "instructions", "model", "accountId", "effort", "failover", "access", "label", "mode", "enabled", "provider"])

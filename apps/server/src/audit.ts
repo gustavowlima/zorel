@@ -44,7 +44,9 @@ export const Actions = {
   gitCommitted: action("git.committed", "project"),
   gitPushed: action("git.pushed", "project"),
   gitBranched: action("git.branched", "project"),
-  gitPrCreated: action("git.pr_created", "project")
+  gitPrCreated: action("git.pr_created", "project"),
+  gitMerged: action("git.merged", "project"), // an agent's own worktree merged into the chat's folder (spec 016)
+  gitDiscarded: action("git.discarded", "project")
 } as const
 type Action = (typeof Actions)[keyof typeof Actions]
 

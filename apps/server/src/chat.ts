@@ -198,8 +198,12 @@ export const prepare = (store: Repository, chat: Chat, agent: Agent | undefined,
 
 // The project as a chat sees it: a chat in a git worktree works (and is checkpointed) in the worktree's folder.
 // The shadow repository is the project's either way; trees are content, so diffs and undo hold across folders.
-export const projectFor = (chat: { readonly worktree: string | null }, project: Project | undefined): Project | undefined =>
-  project && chat.worktree && project.path ? { ...project, path: chat.worktree } : project
+// An agent with a worktree of its own in the chat (spec 016) works there instead.
+export const projectFor = (chat: { readonly worktree: string | null; readonly agentWorktrees?: Readonly<Record<string, { readonly path: string }>> }, project: Project | undefined, agentId?: string | null): Project | undefined => {
+  const own = agentId ? chat.agentWorktrees?.[agentId]?.path : undefined
+  const path = own ?? chat.worktree
+  return project && path && project.path ? { ...project, path } : project
+}
 
 // One question to a model, no tools, no history: its whole answer (git drafts).
 export const ask = Effect.fn("ask")(function* (model: string, text: string) {

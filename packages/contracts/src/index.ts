@@ -340,6 +340,10 @@ export class CronInvalid extends Schema.Error<CronInvalid>("zorel/CronInvalid")(
 export const SearchHit = Schema.Struct({ chatId: Id, messageId: Id, snippet: Schema.String, at: Schema.Number })
 export type SearchHit = typeof SearchHit.Type
 
+// An agent's own copy of the project in a chat (spec 016): a git worktree on its own branch.
+export const AgentWorktree = Schema.Struct({ path: Schema.String, branch: Schema.String })
+export type AgentWorktree = typeof AgentWorktree.Type
+
 export const Chat = Schema.Struct({
   id: Id,
   projectId: Schema.NullOr(Id), // null: standalone chat
@@ -356,6 +360,7 @@ export const Chat = Schema.Struct({
   failover: Schema.NullOr(FailoverList), // null: the lead agent's list
   position: Schema.NullOr(Schema.Number), // manual order inside its group; null: by recent activity, above the placed ones
   worktree: Schema.NullOr(Schema.String), // the git worktree the chat works in (its own branch); null: the project folder
+  agentWorktrees: Schema.Record(Schema.String, AgentWorktree), // agents working in a copy of their own (spec 016), by agent id
   resumeAt: Schema.NullOr(Schema.Number), // all routes hit their limit: it continues by itself then (null: no)
   preview: Schema.NullOr(Schema.String), // start of the last message, one line (sidebar)
   lastAt: Schema.NullOr(Schema.Number), // when the last message was written
@@ -928,6 +933,9 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.post("gitBranch", "/api/chats/:id/git/branch", { params: idParam, payload: Schema.Struct({ name: GitText.check(Schema.isMaxLength(200)) }), error: [HttpApiError.NotFound, GitFailed] }))
       .add(HttpApiEndpoint.post("enterWorktree", "/api/chats/:id/worktree", { params: idParam, payload: Schema.Struct({ branch: Schema.optionalKey(GitText.check(Schema.isMaxLength(200))) }), error: [HttpApiError.NotFound, GitFailed] }))
       .add(HttpApiEndpoint.delete("leaveWorktree", "/api/chats/:id/worktree", { params: idParam, error: [HttpApiError.NotFound, GitFailed] }))
+      // An agent's own worktree in the chat (spec 016): merged into the chat's folder, or thrown away with its branch.
+      .add(HttpApiEndpoint.post("mergeAgentWorktree", "/api/chats/:id/agents/:agentId/worktree/merge", { params: { id: Id, agentId: Id }, error: [HttpApiError.NotFound, GitFailed] }))
+      .add(HttpApiEndpoint.delete("discardAgentWorktree", "/api/chats/:id/agents/:agentId/worktree", { params: { id: Id, agentId: Id }, error: [HttpApiError.NotFound, GitFailed] }))
       // "Edit from here": the conversation goes back to before this message of yours (it comes back as text to
       // edit); files: also undo what the later turns changed. Refused while a turn runs.
       .add(HttpApiEndpoint.post("rewind", "/api/chats/:id/rewind", { params: idParam, payload: Schema.Struct({ messageId: Id, files: Schema.Boolean }), success: Schema.Struct({ text: Schema.String }), error: [HttpApiError.NotFound, HttpApiError.Conflict, UndoConflict] }))

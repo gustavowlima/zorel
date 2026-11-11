@@ -170,6 +170,33 @@ export async function removeWorktree(repo: string, dir: string, force = false): 
   return true
 }
 
+// Whether `dir` is inside a git work tree.
+export const isRepo = async (dir: string) => (await git(dir, ["rev-parse", "--is-inside-work-tree"], true)).trim() === "true"
+
+// An agent's own worktree (spec 016) back into the folder it came from: what it left uncommitted is committed on its
+// branch first, then the branch is merged with a merge commit. A conflict aborts the merge, so the folder stays as it
+// was, and throws. After a merge the worktree and its branch go.
+export async function mergeWorktree(into: string, dir: string, branch: string, message: string) {
+  if ((await git(dir, ["status", "--porcelain"], true)).trim()) {
+    await git(dir, ["add", "-A"])
+    await git(dir, ["commit", "-m", message])
+  }
+  try {
+    await git(into, ["merge", "--no-ff", "--no-edit", branch])
+  } catch (e) {
+    await git(into, ["merge", "--abort"], true)
+    throw e
+  }
+  await removeWorktree(into, dir, true)
+  await git(into, ["branch", "-d", branch], true)
+}
+
+// An agent's own worktree thrown away, with its branch.
+export async function discardWorktree(repo: string, dir: string, branch: string) {
+  await removeWorktree(repo, dir, true)
+  await git(repo, ["branch", "-D", branch], true)
+}
+
 // A branch name from a chat title: "Add min() to sum.ts" → "zorel/add-min-to-sum-ts".
 export const branchFor = (title: string, id: string) =>
   `zorel/${

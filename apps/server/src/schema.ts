@@ -1,6 +1,6 @@
 // Database schema (Drizzle). Mirrors the tables the MVP created with hand-written SQL, column by column,
 // so the existing database is adopted without copying (see migrate.ts). Changed something here? `bun run db:generate`.
-import type { AccountUsage, AgentPermissions, FailoverTarget, FileChange, FlowGraph, RoutineDelivery, RoutineSchedule, RoutineWatch, Switch } from "@zorel/contracts"
+import type { AccountUsage, AgentPermissions, AgentWorktree, FailoverTarget, FileChange, FlowGraph, RoutineDelivery, RoutineSchedule, RoutineWatch, Switch } from "@zorel/contracts"
 import type { ProposalOf } from "@zorel/contracts/events"
 import { sql } from "drizzle-orm"
 import { type AnySQLiteColumn, check, index, integer, primaryKey, real, sqliteTable, text, unique } from "drizzle-orm/sqlite-core"
@@ -108,6 +108,9 @@ export const chats = sqliteTable("chats", {
   failover: text({ mode: "json" }).$type<ReadonlyArray<FailoverTarget>>(), // null: the lead agent's list
   position: integer(), // manual order inside its group (project or General); null: by recent activity, above the placed ones
   worktree: text(), // a git worktree of the project the chat works in (its own branch); null: the project folder
+  // Agents of this chat with a worktree of their own (spec 016: a second writer at work in the same folder at once):
+  // agent id → its folder and branch, until the person merges or discards it.
+  agentWorktrees: text("agent_worktrees", { mode: "json" }).$type<Readonly<Record<string, AgentWorktree>>>().notNull().default({}),
   resumeAt: integer("resume_at"), // every route hit its usage limit: the chat continues by itself at this time (null: no)
   hidden: integer({ mode: "boolean" }).notNull().default(false), // a screen's own conversation (the Builder's): not in the chats list
   // A task an agent started (zorel_start_task): the chat its result goes back to, until it does (then null), and

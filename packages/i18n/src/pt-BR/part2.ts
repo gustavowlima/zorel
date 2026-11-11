@@ -297,7 +297,9 @@ export const part2 = {
       git_committed: "Fez commit em {name}",
       git_pushed: "Fez push de {name}",
       git_branched: "Criou uma branch em {name}",
-      git_pr_created: "Abriu um pull request para {name}"
+      git_pr_created: "Abriu um pull request para {name}",
+      git_merged: "Juntou a cópia de um agente em {name}",
+      git_discarded: "Descartou a cópia de um agente de {name}"
     },
     fields: {
       name: "Nome",
