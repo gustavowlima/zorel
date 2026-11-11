@@ -10,7 +10,7 @@ import { join } from "node:path"
 import { BACKUP } from "./migrate.ts"
 
 // Bytes under a path (files and folders, symlinks not followed); 0 when it doesn't exist.
-export async function sizeOf(path: string): Promise<{ bytes: number; files: number }> {
+async function sizeOf(path: string): Promise<{ bytes: number; files: number }> {
   const info = await lstat(path).catch(() => undefined)
   if (!info) return { bytes: 0, files: 0 }
   if (!info.isDirectory()) return { bytes: info.size, files: 1 }

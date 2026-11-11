@@ -17,7 +17,7 @@ updated: 2026-11-05
 - native title still ok on non-interactive elements (badges, rows); Tooltip only on a focusable trigger
 - web bundle ~827 KB min / 261 KB gzip after React Aria (was 605 KB); code-split per route if it gets heavy
 - shadcn tokens (background, foreground, card, popover, primary, destructive, border, input, ring, *-foreground) point to --z-* in :root; radius sm/md/lg/xl/2xl = 4/6/8/12/16; `dark:` = default theme (no .dark class)
-- cx = cn (`cn` package, Tailwind class merge)
+- cn (`cn` package, Tailwind class merge; the `cx` alias was removed 2026-11-10: one name)
 - pressable: scale(0.97), <300ms, respects prefers-reduced-motion
 
 - apps/web/DESIGN.md written (/impeccable document, scan): north star "The Night Workbench"; YAML frontmatter is normative (dark theme values); sidecar in apps/web/.impeccable/design.json
@@ -39,6 +39,13 @@ updated: 2026-11-05
 - ui-baseline.json zeroed: screens without check:ui debt
 - token --font-mono (ui-monospace)
 - EmptyState: plain = a whole screen or pane (centred, py-16); `inset` = an empty list inside a Section (dashed card the height of a row, icon tile + text left, action right). Never the plain one inside a Section: it leaves a big void (project Tools/Agents tabs, 2026-11-10)
+- motion (2026-11-10, impeccable animate): Tabs/Segmented pill slides (Marker per useId group); New routine cards Fold; dialog + command palette exit (fade, 0.98, 100ms); CheckList mark fades; page crossfade 160ms (View Transitions, view changes only). All in the shared spring or <=160ms, none under reduced motion
+- identity tint (2026-11-10, user asked for OpenBot-like color): agent hue on chosen/live things about one agent: CheckList option tint (crew, team members), @mention chip, agent page TabList tint, week block tint-edge (3px left, no-repeat; border keeps outcome); Processes stat tiles bg-series-N/15. Utilities tint-1..6, tinted, tint-edge in styles.css; agentTint(agent, agents) / tintFor(tone) in labels.ts (moved from ui/avatar's tintOf, 2026-11-10: labels owns the agent's color and tests import it without the DOM). Never on chrome; blue = actions, states keep their colors. DESIGN.md › Identity tint
+- tint everywhere (2026-11-10): chat author name tint-text; composer @/# chips tinted (ComposerOption.tint); home crew chip tinted for one agent; connector logos = BrandMark (ui/layout.tsx; brand {hex,path}; variant tile = brand-tile! on IconTile, inline = bare 16px mark for list options; luminance <0.25 → neutral); iconOfServer from mcp.tsx; flow kind tiles by series. IconTile takes style
+- motion primitives (2026-11-10): Fold (height), Drawer (side panel width), Reflow (reorder glide), ListPresence+PresenceRow (rows come/go), Rise (receipt), Marker (sliding pill); DROP_LINE grows in, a dragged row steps back (0.98, 40%). Dialog sheet bg-canvas + shadow-float over a 60% overlay
+- logo (2026-11-10, user's new mark): two arcs ending in dots + blue core, no ring (user's purple swapped for our blue). App: currentColor + fill-accent, heavier strokes for 20px. Icon/favicon: white on #17181b with #007cf7 core; icon.png re-rendered with apps/desktop/scripts/icons.sh
+- 2026-11-10 later: neutral scale darkened, steps kept (canvas #131416, surface #18191c, raised #1c1e21, hover #17191c, code #0f1012; frame/sidebar unchanged); icon/favicon tile = canvas. SETTLE (ui/motion.tsx, exported from @/ui) = content settling in: every TabPanel, and keyed swaps (memory scope list, settings sections, skills/pages reader, routines week/list). Tab takes tint (an agent's notes tab). New chat backdrop = OrbitBackdrop (ui/orbit.tsx: faint rings in --z-border, two spokes ending in dots like the mark, accent agents slowly orbiting; replaces bg-lines). Page editor: toolbar (H1-3, bold, italic, code, lists, quote; aria-pressed) and .prose-page headings (1.5/1.25/1.1em) in editor and page view
+- user message bubble (2026-11-10, after the darker scale): bg-raised + border-subtle (surface read too close to the canvas); its attachment chips the same
 
 ## avoid
 
@@ -61,7 +68,7 @@ updated: 2026-11-05
 - check:ui in CI (literals, scale, hand-made button/dialog, direct import of headless/icons); neither Storybook nor gallery
 - shadcn (CLI 4.x) as GENERATOR of the primitives: `shadcn init --base aria` (React Aria Components; NOT Radix nor Base UI, user decision 2026-11-03), code copied into src/ui and ours; shadcn semantic tokens mapped once to --z-*; nothing from the neutral palette/default --radius; heights on the 24/28/32/36 scale
 - scrollbars: no scrollbar-color/scrollbar-width on :root (inherits and makes Chrome/WebKit ignore ::-webkit-scrollbar); only in @supports not selector(::-webkit-scrollbar). Desktop-style areas use .scroll-quiet (no bar) + hairline on the edges with hidden content
-- sidebar: brand (= title bar on desktop: class electrobun-webkit-app-region-drag, .title-inset gives 84px to the window buttons with data-shell=desktop), Needs you/Knowledge/Usage and Settings fixed; only the trees scroll; 28px rows (h-control-sm) and shrink-0; projects/chats are NavTree/NavTreeItem (React Aria Tree); actions overlay the count on hover/focus with pointer-events-none when hidden; chats without project in the Chats section
+- sidebar: brand (= title bar on desktop: class .app-drag (-webkit-app-region: drag under [data-shell=desktop], Electron), .title-inset gives 84px to the window buttons with data-shell=desktop), Needs you/Knowledge/Usage and Settings fixed; only the trees scroll; 28px rows (h-control-sm) and shrink-0; projects/chats are NavTree/NavTreeItem (React Aria Tree); actions overlay the count on hover/focus with pointer-events-none when hidden; chats without project in the Chats section
 - loose numbers in navigation only when actionable: Usage % shows from LIMIT_ALERT on, with aria-label/title naming account and window
 - drag and drop: useNavReorder (ui/nav.tsx) on top of React Aria's useDragAndDrop; only reorders within a group (getDropOperation cancels 'on' and other groups); no new lib
 - I18nProvider with Zorel's locale() in main.tsx: React Aria strings (drag, collapse) follow the interface language, not the browser's

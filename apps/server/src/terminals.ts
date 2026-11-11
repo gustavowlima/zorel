@@ -18,7 +18,7 @@ import { projectFor } from "./chat.ts"
 import { listeners, listProcs, type Proc, subtree } from "./procs.ts"
 import { which } from "./cli-install.ts"
 
-export const MAX_TERMINALS = 12 // live shells at once, across chats
+const MAX_TERMINALS = 12 // live shells at once, across chats
 const MAX_INPUT = 64 * 1024 // one input frame (a paste)
 const SCROLLBACK = 256 * 1024 // output kept for a reattach
 const size = (n: unknown, max: number) => (typeof n === "number" && Number.isInteger(n) && n >= 2 && n <= max ? n : undefined)

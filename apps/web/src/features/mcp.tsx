@@ -10,7 +10,7 @@ import { AsyncResult } from "effect/reactivity"
 import { useAtomValue } from "@effect/atom-react"
 import { mutations, serversAtom, signedInAtom, useInvalidate, useMutation, useReading } from "../client.ts"
 import { ReadingState } from "./reading.tsx"
-import { Badge, Button, Check, Code, ConfirmButton, Dialog, EmptyState, Field, IconButton, IconTile, Input, Menu, MenuItem, MenuSeparator, MoreHorizontal, Plug, Plus, RefreshCw, Rows, Section, Select, Spinner, Switch, Textarea, Trash2 } from "@/ui"
+import { Badge, BrandMark, Button, Check, Code, ConfirmButton, Dialog, EmptyState, Field, Fold, IconButton, Input, Menu, MenuItem, MenuSeparator, MoreHorizontal, Plug, Plus, RefreshCw, Rows, Section, Select, Spinner, Switch, Textarea, Trash2 } from "@/ui"
 
 const MODES = ["read", "approve", "auto"] as const
 const modeOptions = () => MODES.map((m) => ({ value: m, label: t(`mcp.modes.${m}`) }))
@@ -102,6 +102,7 @@ function ServerRow({ server: s }: { server: McpServer }) {
   return (
     <div className="flex flex-col gap-3 py-3.5">
       <div className="flex flex-wrap items-center gap-3">
+        <BrandMark brand={iconOfServer(s)} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="font-medium">
             {s.name}
@@ -121,9 +122,9 @@ function ServerRow({ server: s }: { server: McpServer }) {
       </div>
       {failed && <p className="text-sm text-danger">{failed}</p>}
       {tools?.error && <p className="text-sm text-danger">{t("mcp.failed", { error: tools.error })}</p>}
-      {tools && !tools.error && (
+      <Fold open={!!tools && !tools.error}>
         <ul className="flex flex-col gap-1.5">
-          {tools.tools.map((tool) => (
+          {tools?.tools.map((tool) => (
             <li key={tool.name} className={visible(tool.cls) ? "flex items-center gap-2" : "flex items-center gap-2 opacity-40"} title={visible(tool.cls) ? tool.description : t("mcp.hiddenInReadMode")}>
               <Badge tone={CLS_TONE[tool.cls]}>{t(`mcp.cls.${tool.cls}`)}</Badge>
               <Code>{tool.name}</Code>
@@ -131,7 +132,7 @@ function ServerRow({ server: s }: { server: McpServer }) {
             </li>
           ))}
         </ul>
-      )}
+      </Fold>
     </div>
   )
 }
@@ -241,23 +242,11 @@ const CONNECTORS: ReadonlyArray<Connector> = [
   { id: "playwright", name: "Playwright", command: "npx -y @playwright/mcp@latest", auth: "none" }
 ]
 const matches = (c: Connector, s: McpServer) => (c.url ? s.url === c.url : [s.command, ...s.args].join(" ") === c.command)
+// The brand mark of a server added from the catalog (none for a custom one).
+export const iconOfServer = (s: McpServer) => CONNECTORS.find((c) => matches(c, s))?.icon
 const WAIT_MS = 5 * 60_000
 const FAILED = () => ({ ok: false, text: t("connectors.failed") })
 
-// A brand's mark (simple-icons, CC0) in one color on a neutral tile, like the rest of the UI; a plug when there's none.
-function ConnectorLogo({ icon }: { icon: SimpleIcon | undefined }) {
-  return (
-    <IconTile>
-      {icon ? (
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-          <path d={icon.path} />
-        </svg>
-      ) : (
-        <Plug />
-      )}
-    </IconTile>
-  )
-}
 
 const NO_STATE: { signedIn: ReadonlyArray<string>; refused: ReadonlyArray<string> } = { signedIn: [], refused: [] }
 
@@ -369,7 +358,7 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
   return (
     <div className="flex flex-col gap-3 rounded-card border border-subtle p-3">
       <div className="flex items-center gap-3">
-        <ConnectorLogo icon={c.icon} />
+        <BrandMark brand={c.icon} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate font-medium">{c.name}</span>
           <span className={result?.ok === false ? "truncate text-sm text-danger" : result?.ok ? "truncate text-sm text-success" : status === "attention" && !waiting ? "truncate text-sm text-warning" : "truncate text-sm text-muted"}>{hint}</span>
@@ -389,7 +378,7 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
         )}
         {menu}
       </div>
-      {asking && (
+      <Fold open={asking}>
         <form
           className="flex flex-col gap-2"
           onSubmit={(e) => {
@@ -412,7 +401,7 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
             )}
           </div>
         </form>
-      )}
+      </Fold>
     </div>
   )
 }

@@ -3,10 +3,10 @@ name: Zorel
 description: An AI agent workspace for code, dark, compact and quiet.
 colors:
   frame: "#0b0c0e"
-  canvas: "#17181b"
+  canvas: "#131416"
   sidebar: "#0f1113"
-  surface: "#1c1e21"
-  raised: "#202225"
+  surface: "#18191c"
+  raised: "#1c1e21"
   float: "rgba(32, 34, 37, 0.86)"
   control: "rgba(255, 255, 255, 0.07)"
   control-hover: "rgba(255, 255, 255, 0.09)"
@@ -206,7 +206,7 @@ Layered near-black neutral grays, one signal blue and three state colors. All va
 - **Diff** (diff-add, diff-del): background of added and removed lines.
 
 ### Agent identity
-- **Six colors** (agent-violet, agent-teal, agent-rose, agent-ochre, agent-orchid, agent-clay): each agent gets one, in the order it joins the project. They appear only in the avatar and never on a button, link or state. The avatar is a little object with eyes (Open Bot Avatar, MIT) inside a solid tile of the agent's color (22% of it mixed into the raised tone, so overlapping faces don't show through): the shape comes from the agent's id, so teammates differ by shape as well as color. Lists and the chat use still SVGs; the Builder's review shows them live (breathing, blinking), still under reduced motion. All six share one lightness and chroma (OKLCH 68% 0.12) and keep their hues clear of danger, warning, success and the blue, so an avatar never reads as a state or an action.
+- **Six colors** (agent-violet, agent-teal, agent-rose, agent-ochre, agent-orchid, agent-clay): each agent gets one, in the order it joins the project. They appear in the avatar and, since 2026-11-10, as the **identity tint** (below); never on a plain button, a link or a state. The avatar is a little object with eyes (Open Bot Avatar, MIT) inside a solid tile of the agent's color (22% of it mixed into the raised tone, so overlapping faces don't show through): the shape comes from the agent's id, so teammates differ by shape as well as color. Lists and the chat use still SVGs; the Builder's review shows them live (breathing, blinking), still under reduced motion. All six share one lightness and chroma (OKLCH 68% 0.12) and keep their hues clear of danger, warning, success and the blue, so an avatar never reads as a state or an action.
 
 ### Named Rules
 **The One Voice Rule.** Signal blue is the only accent. If it appears on something that is not an action, focus, selection or link, it is wrong.
@@ -262,7 +262,7 @@ No shadows. Depth comes from layers of tone: frame (and sidebar) → workbench �
 
 **The Dialog Rule.** Creating something with more than one field (a project, a custom MCP server) happens in a centred dialog, never in a popover hanging from its button or a form pushed into the page.
 
-**The Flat Rule.** Surfaces are flat. If something needs to stand out, it goes up one step in tone; it does not get a shadow. One exception: floating layers (menus, popovers, selects, the composer's / @ $ # list, the command palette), which are `float`: the raised tone at 86% with blur and `shadow-float`, so they hover over the chat instead of covering it. Dialogs and tooltips stay solid.
+**The Flat Rule.** Surfaces are flat. If something needs to stand out, it goes up one step in tone; it does not get a shadow. One exception: floating layers (menus, popovers, selects, the composer's / @ $ # list, the command palette), which are `float`: the raised tone at 86% with blur and `shadow-float`, so they hover over the chat instead of covering it. Dialogs and tooltips stay solid; a dialog also takes `shadow-float` (2026-11-10), since it now sits on the canvas tone and needs to lift off the page.
 
 **The Graphite Rule.** Neutrals are not dead grey: each carries a trace of the brand blue (OKLCH hue 260, chroma 0.005): rail/frame 15.5%, sidebar 17.5%, canvas 21%, surface 23.5%, raised 25% lightness, the graphite the landing shows. Selection speaks blue: the focused item in a menu or list gets `accent-soft` with its icon in `accent-text`, and the current place in the rail its icon in `accent-text` on `accent-faint`.
 
@@ -337,7 +337,7 @@ Compact and direct, with a physical squeeze on press.
 - **Focus rings:** action controls (buttons, tabs, segmented) use the accent ring; text fields, accent-soft, because the caret already shows focus. Rings show only during keyboard navigation, as in a native app: Tab turns them on (`data-keyboard` on the root), the next pointer press turns them off; focus coming back to a trigger after a menu or select closes never draws one. Images and links never drag a ghost.
 
 ### Dialog / Tooltip
-- **Dialog:** 16px-radius sheet in raised with a strong border over a dark overlay; 15px semibold title; actions on the right. A destructive action is always confirmed by a dialog (never `window.confirm`), with initial focus on the confirm button.
+- **Dialog:** 16px-radius sheet in the canvas tone (2026-11-10: raised read grey and washed out, and made the surface cards inside look sunken) with a strong border and `shadow-float`, over a 60% overlay; 15px semibold title; actions on the right. A destructive action is always confirmed by a dialog (never `window.confirm`), with initial focus on the confirm button.
 - **Tooltip:** raised with a strong border, 12px secondary text, appears after 500ms on hover and on keyboard focus; the trigger is a `Button`/`IconButton` (React Aria).
 - **Popover** (`Popover`): 16px sheet in raised with a strong border for interactive content (model picker, who answers). Esc and clicking outside close it; focus returns to the trigger. `FieldButton` is the field-looking trigger inside forms.
 
@@ -354,9 +354,16 @@ Compact and direct, with a physical squeeze on press.
 ### Image viewer
 - An image in the chat opens inside Zorel (`ImageViewer`), never in a new tab: a modal over the dimmed app, the image as large as it fits (object-contain, strong border, 12px corners) and, above, a bar with the name, "Open original" and close. Esc, clicking outside or the button close it; focus returns to the thumbnail.
 
+### Identity tint (2026-11-10)
+Something about one agent, when chosen or live, wears that agent's color: the line at 38%, a 9% wash and the text pulled 45% toward the hue (`tinted` with `tint-1…6`, `agentTint(agent, agents)` in `labels.ts`, next to `agentTone`; `tint-edge` draws it as a 3px left edge). Where: a chosen agent in a `CheckList` (project crew, team members), the `@mention` chip, the agent page's tab pill, the left edge of a routine's block in the week (the border keeps the outcome). Live numbers take the chart series instead (Processes: CPU series-1, memory series-7, as a 15% tile). Also: who speaks in a chat (the name, `tint-text`), an agent's chip in the message box (`@`/`#`, via `ComposerOption.tint`), the new chat's chip when one agent starts it. Connectors wear their brand color on their tile (`BrandMark` in `@/ui`: `brand-tile` on its tile, the bare mark inline in a list; a brand darker than 0.25 luminance — GitHub, Notion, Vercel, Sentry — stays neutral), in Settings and in the connector picker. A flow step's kind has its color: trigger blue, tool series-3, agent series-7, check series-5, condition series-2, Ask me warning, end quiet. Never on chrome (sidebar, tabs elsewhere, buttons): if everything has a color, nothing stands out. The blue stays for actions, success/warning/danger for states; the six agent hues are kept clear of both.
+
 ### Motion
 - **Motion** (motion.dev, `motion/react`, in `ui/motion.tsx`) for what CSS does not do cleanly: width and height to/from `auto` without unmounting, and a shape sliding between places. A single spring in the app (`spring`: no bounce, ~220ms visual). `MotionConfig reducedMotion="user"` at the root: with reduced motion in the system, everything changes state without animating.
 - Sidebar: collapses and opens by animating the width (`SlideWidth`), with the content mounted (scroll and state are kept). Chats and Projects sections: open and close by height (`Fold`). Rail: the current place's background slides from the previous one to the new one (`Marker`, `layoutId`).
+- Tabs and Segmented: the selected pill slides from the option it left (`Marker`, one `useId` group per list), the text color crossfading under it. MultiSegmented (several on) does not slide.
+- Disclosure cards (New routine's steps): open and close by height (`Fold`), so the cards below move instead of jumping.
+- Overlays: dialogs and the command palette enter with a fade and a 0.97 scale and leave faster (100ms, 0.98); menus, popovers, selects and tooltips fade in and out. A check mark fades in (120ms).
+- Pages: going to another view crossfades for 160ms (`document.startViewTransition` in `useRoute`; tabs and ids inside a page swap at once; skipped with reduced motion or without engine support).
 - The rest stays in CSS (`transition-colors` 120–150ms on hovers; arrows rotate in 150ms).
 
 ### Side panel
@@ -481,6 +488,9 @@ Compact and direct, with a physical squeeze on press.
 
 ### Chat (signature component)
 Markdown replies with a 0.6em rhythm between blocks, headings at 15px, links in signal-blue-text underlined, inline code on a control background and code blocks on surface with a subtle border and 12px corners.
+
+### Zorel's mark (2026-11-10)
+- Two arcs from opposite corners, each ending in a dot, and a blue core (`ui/logo.tsx`, viewBox 100); no ring. In the app: arcs and dots in the text color, the core `fill-accent`; strokes heavier than the original (7 for 3, dots 8, core 13) so it reads at 20px. App icon (`apps/desktop/assets/icon.svg` → `scripts/icons.sh` → icon.png) and favicon (`index.html`): white on the graphite tile (#131416, the canvas) with the brand blue core (#007cf7); the icon keeps the original proportions, the favicon the heavy ones.
 
 ### Avatar and provider logos
 - `AgentAvatar` at 16, 20, 28 and 32px; pass `tone` = the agent's position in the project, so two agents never share a color (up to six). Without `tone`, a hash of the id keeps the color stable.

@@ -83,7 +83,7 @@ export function restore(root: string, id: string, trashDir: string) {
 }
 
 // A file's text for the viewer; null when it's binary (a NUL byte early on) or too big to show.
-export const MAX_VIEW_BYTES = 1024 * 1024
+const MAX_VIEW_BYTES = 1024 * 1024
 export function readText(root: string, path: string): { contents: string | null; size: number } {
   const abs = inside(root, path)
   const { size } = statSync(abs)

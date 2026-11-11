@@ -39,7 +39,7 @@ export const members = (store: Repository, chat: Chat) =>
 
 // The model that learns from a chat: the one chosen in Settings, else ZOREL_MEMORY_MODEL, else the chat's provider's
 // small model (consolidate falls back to the chat's own model when that one fails).
-export const memoryModelFor = (store: Repository, chatModel: string) =>
+const memoryModelFor = (store: Repository, chatModel: string) =>
   Effect.map(store.preference("memoryModel"), (chosen) => chosen || process.env.ZOREL_MEMORY_MODEL || cheapModel(chatModel))
 
 const STREAM = 10 // candidates each recall source (map, facts by words, past messages) brings to the fusion
@@ -48,7 +48,7 @@ const MEANING_MIN = 0.25 // cosine below this isn't "about the same thing" for a
 const RECALL_CHARS = 2_000 // the most the recalled facts take in a turn
 
 // A bounded piece of a past message around the words that matched, with who said it and where.
-export interface Excerpt {
+interface Excerpt {
   readonly id: string
   readonly chatId: string
   readonly chatTitle: string

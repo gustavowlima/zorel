@@ -12,7 +12,7 @@ import { Button, ChevronLeft, CodeBlock, Field, IconButton, Plus, Rows, Select, 
 import { SchemaForm } from "./schema-form.tsx"
 import { ConnectorTool, type Picked } from "./tool-picker.tsx"
 
-export const MAX_DESTINATIONS = 3
+const MAX_DESTINATIONS = 3
 
 // lead: rows shown before the destinations in the same card (New routine: "Tell me here"). Adding one happens in
 // place, as a step with its own way back, never as a dialog over the dialog.

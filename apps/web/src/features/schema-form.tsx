@@ -12,6 +12,7 @@ import { Button, IconButton, Input, Link2, Segmented, Select, Spinner, Switch, T
 import { nodeTitle } from "./flow-kinds.tsx"
 import { kindOf, pathsFromSample, pathsFromSchema, type Prop, samples } from "./schema-rules.ts"
 import { fieldProblem as problemOf } from "./schema-rules.ts"
+import { stored, store } from "../state.ts"
 
 type Args = Record<string, unknown>
 
@@ -19,13 +20,7 @@ type Args = Record<string, unknown>
 const JsonArgs = lazy(() => import("./json-args.tsx"))
 type Mode = "form" | "json"
 const MODE_KEY = "zorel.argsMode"
-const savedMode = (): Mode => {
-  try {
-    return localStorage.getItem(MODE_KEY) === "json" ? "json" : "form"
-  } catch {
-    return "form"
-  }
-}
+const savedMode = (): Mode => (stored(MODE_KEY) === "json" ? "json" : "form")
 
 export function SchemaForm({ schema, value, onChange, sources, serverId, tools, omit, agentId }: {
   schema: Record<string, unknown>
@@ -44,9 +39,7 @@ export function SchemaForm({ schema, value, onChange, sources, serverId, tools, 
   if (!fields.length) return <p className="text-sm text-muted">{t("flows.form.noInputs")}</p>
   const pick = (m: Mode) => {
     setMode(m)
-    try {
-      localStorage.setItem(MODE_KEY, m)
-    } catch {}
+    store(MODE_KEY, m)
   }
   // The field filled elsewhere (a destination's text) isn't one of the arguments here, in either mode.
   const shown: JsonSchema = { ...s, properties: Object.fromEntries(fields), required: (s.required ?? []).filter((k) => k !== omit) }
@@ -111,7 +104,7 @@ function SchemaField({ name, prop, required, value, onChange, sources, serverId,
   )
 }
 
-export function FromStep({ value, onChange, sources, agentId }: { value: ValueRef; onChange: (v: ValueRef | undefined) => void; sources: ReadonlyArray<FlowNode>; agentId?: string | undefined }) {
+function FromStep({ value, onChange, sources, agentId }: { value: ValueRef; onChange: (v: ValueRef | undefined) => void; sources: ReadonlyArray<FlowNode>; agentId?: string | undefined }) {
   const source = sources.find((n) => n.id === value.$from)
   return (
     <div className="flex gap-2">

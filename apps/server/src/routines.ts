@@ -23,8 +23,8 @@ import { sayToPaired } from "./telegram.ts"
 import { activeOn, briefFrom, profileOf } from "./time-profile.ts"
 import { resultText, Tools } from "./tools.ts"
 
-export const TICK = "30 seconds"
-export const QUEUE_MAX = 20 // outside events waiting per routine; past it, refused
+const TICK = "30 seconds"
+const QUEUE_MAX = 20 // outside events waiting per routine; past it, refused
 const TRIAGE_TIMEOUT = "20 seconds"
 const KEEP_DAYS = 90 // run history kept (the newest 50 of each routine stay whatever their age)
 const RUN_PREFIX = "routine:"
@@ -361,7 +361,7 @@ const resumes = Effect.gen(function* () {
       .pipe(Effect.catchCause((cause) => Effect.logWarning("resume after limit failed", { chatId: c.id, cause: String(cause) })))
   }
 })
-export const RESUME_TEXT = "The usage limit has reset. Continue where you left off."
+const RESUME_TEXT = "The usage limit has reset. Continue where you left off."
 
 // Retention (FR-017), once a day. ponytail: the time is in memory, so a restart prunes again at once (harmless).
 let prunedAt = 0

@@ -59,7 +59,7 @@ export async function status(cwd: string): Promise<GitStatus> {
 }
 
 // `git log --format=%h%x1f%s%x1f%ct`: the first `ahead` are not on the upstream yet.
-export const parseLog = (out: string, ahead: number) =>
+const parseLog = (out: string, ahead: number) =>
   out
     .split("\n")
     .filter(Boolean)

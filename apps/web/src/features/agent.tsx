@@ -6,8 +6,8 @@ import { type Access, type Agent, type AgentPermissions, type AgentVersion, DEFA
 import { formatAge, formatCompact, t } from "@zorel/i18n"
 import { useEffect, useState } from "react"
 import { agentsAtom, agentVersionsAtom, mutations, projectsAtom, serversAtom, teamsAtom, useList, useMutation, useReading } from "../client.ts"
-import { agentTone } from "../labels.ts"
-import { type AgentTab, go } from "../state.ts"
+import { agentTint, agentTone } from "../labels.ts"
+import { type AgentTab, go, storedJson, storeJson } from "../state.ts"
 import { AgentMemory } from "./agent-memory.tsx"
 import { AgentWork } from "./agent-work.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
@@ -16,7 +16,7 @@ import { useArchive } from "./agents.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import {
-  AgentAvatar, Archive, ArchiveRestore, Button, ChartColumn, CheckList, column, ConfirmDialog, cx, Download, Field, IconButton, Input, ListRow, Menu, MenuItem, MoreHorizontal, Notice, Rows, Screen, Section, Select, SettingRow, Tab, TabList,
+  AgentAvatar, Archive, ArchiveRestore, Button, ChartColumn, CheckList, column, ConfirmDialog, cn, Download, Field, IconButton, Input, ListRow, Menu, MenuItem, MoreHorizontal, Notice, Rows, Screen, Section, Select, SettingRow, Tab, TabList,
   TabPanel, Tabs, Textarea, Trash2, Undo2
 } from "@/ui"
 
@@ -45,22 +45,6 @@ const fromAgent = (agent: Agent | undefined): Draft => ({
   permissions: agent?.permissions ?? DEFAULT_PERMISSIONS
 })
 const draftKey = (agent: Agent | undefined, projectId: string | null) => `zorel.draft.agent.${agent?.id ?? `new:${projectId ?? "global"}`}`
-function readDraft(key: string): Draft | undefined {
-  try {
-    const raw = localStorage.getItem(key)
-    return raw ? (JSON.parse(raw) as Draft) : undefined
-  } catch {
-    return undefined // storage blocked or an old shape: start from the saved profile
-  }
-}
-function writeDraft(key: string, draft: Draft | undefined) {
-  try {
-    if (draft) localStorage.setItem(key, JSON.stringify(draft))
-    else localStorage.removeItem(key)
-  } catch {
-    // storage blocked: the draft lives only while the page is open
-  }
-}
 
 export function AgentView({ agent, projectId, tab: opened, teamId }: { agent?: Agent; projectId: string | null; tab?: AgentTab | undefined; teamId?: string }) {
   const agents = useList(agentsAtom)
@@ -70,7 +54,7 @@ export function AgentView({ agent, projectId, tab: opened, teamId }: { agent?: A
   const update = useMutation(mutations.updateAgent)
   const remove = useMutation(mutations.removeAgent)
   const key = draftKey(agent, projectId)
-  const [form, setForm] = useState<Draft>(() => readDraft(key) ?? fromAgent(agent))
+  const [form, setForm] = useState<Draft>(() => storedJson<Draft>(key) ?? fromAgent(agent))
   const set = (patch: Partial<Draft>) => setForm((f) => ({ ...f, ...patch }))
   const { name, title, description, instructions, choice, failover, access, permissions } = form
   const [tab, setTab] = useState<AgentTab>(opened ?? "profile")
@@ -96,13 +80,13 @@ export function AgentView({ agent, projectId, tab: opened, teamId }: { agent?: A
     agent && void limits({ params: { id: agent.id }, payload: { [field]: v ? Number(v) : null }, reactivityKeys: ["agents"] })
 
   // Another agent, or this one saved (or changed elsewhere): its draft if it has one, else the saved profile.
-  useEffect(() => setForm(readDraft(key) ?? fromAgent(agent)), [agent, key])
+  useEffect(() => setForm(storedJson<Draft>(key) ?? fromAgent(agent)), [agent, key])
 
   const project = projects.find((p) => p.id === (agent?.projectId ?? projectId))
   const tools = servers.filter((s) => s.projectId === null || s.projectId === project?.id)
   const changed = JSON.stringify(form) !== JSON.stringify(fromAgent(agent))
   const dirty = !agent || changed || teamsChanged
-  useEffect(() => writeDraft(key, changed && (agent || name.trim()) ? form : undefined), [key, changed, form, agent, name])
+  useEffect(() => storeJson(key, changed && (agent || name.trim()) ? form : undefined), [key, changed, form, agent, name])
 
   const save = () => {
     setBusy(true)
@@ -111,7 +95,7 @@ export function AgentView({ agent, projectId, tab: opened, teamId }: { agent?: A
       ? update({ params: { id: agent.id }, payload, reactivityKeys: ["agents"] })
       : create({ payload: { ...payload, projectId: project?.id ?? null }, reactivityKeys: ["agents"] }).then((a) => go({ view: "agent", id: a.id }))
     void done.then(() => {
-      writeDraft(key, undefined)
+      storeJson(key, undefined)
       setPickedTeams(undefined)
     }).finally(() => setBusy(false))
   }
@@ -172,7 +156,7 @@ export function AgentView({ agent, projectId, tab: opened, teamId }: { agent?: A
           </Notice>
         )}
         <Tabs selectedKey={tab} onSelectionChange={(k) => setTab(k as typeof tab)} className="gap-8">
-          <TabList label={agent ? t("agent.tabsLabel", { name: agent.name }) : t("agent.newTitle")}>
+          <TabList label={agent ? t("agent.tabsLabel", { name: agent.name }) : t("agent.newTitle")} tint={agent && agentTint(agent, agents)}>
             {agent && <Tab id="work">{t("agent.tabs.work")}</Tab>}
             <Tab id="profile">{t("agent.tabs.profile")}</Tab>
             <Tab id="tools">{t("agent.tabs.tools")}</Tab>
@@ -266,7 +250,7 @@ export function AgentView({ agent, projectId, tab: opened, teamId }: { agent?: A
       </form>
       {/* Outside the profile form (a form of its own): the agent's routines, with its activity. */}
       {agent && tab === "activity" && (
-        <div className={cx(column(), "pt-0")}>
+        <div className={cn(column(), "pt-0")}>
           <AgentRoutines agent={agent} />
         </div>
       )}
@@ -278,7 +262,7 @@ export function AgentView({ agent, projectId, tab: opened, teamId }: { agent?: A
           description={t("agent.deleteBody")}
           onConfirm={() =>
             void remove({ params: { id: agent.id }, reactivityKeys: ["agents", "chats", "memories"] }).then(() => {
-              writeDraft(key, undefined)
+              storeJson(key, undefined)
               go(agent.projectId ? { view: "project", id: agent.projectId, tab: "agents" } : { view: "home" })
             })
           }
@@ -346,7 +330,7 @@ function History({ agent }: { agent: Agent }) {
 
 // ---------- export / import: the profile as JSON, without the account (it is this computer's) ----------
 
-export const EXPORT_KIND = "zorel.agent"
+const EXPORT_KIND = "zorel.agent"
 
 export function exportAgent(a: Agent) {
   const data = {

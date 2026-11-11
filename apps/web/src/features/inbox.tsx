@@ -194,12 +194,17 @@ function MemoryItem({ memory: m }: { memory: Memory }) {
   const update = useMutation(mutations.updateMemory)
   const set = (state: Memory["state"]) => void update({ params: { id: m.id }, payload: { state }, reactivityKeys: ["memories"] })
   const about = m.scope === "user"
+  const agent = agents.find((a) => `agent:${a.id}` === m.scope) // an agent's memory shows that agent's face
   return (
     <Item
       avatar={
-        <IconTile>
-          <User />
-        </IconTile>
+        agent ? (
+          <AuthorAvatar agent={agent} model={null} />
+        ) : (
+          <IconTile>
+            <User />
+          </IconTile>
+        )
       }
       who={about ? t("inbox.aboutYou") : scopeLabel(m.scope, projects, agents)}
       context={t("inbox.proposed")}

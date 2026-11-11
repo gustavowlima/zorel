@@ -125,7 +125,7 @@ function Screen({ route }: { route: Route }) {
     case "pages":
       return <PagesView selected={route.id} />
     case "skills":
-      return <SettingsView tab="skills" skill={{ selected: route.id, computer: route.computer }} />
+      return <SettingsView tab="skills" skill={{ selected: route.id, file: route.file }} />
     case "usage":
       return <UsageView key={route.agentId ?? "all"} agentId={route.agentId} />
     case "settings":

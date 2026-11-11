@@ -15,7 +15,7 @@ const EXCLUDE = ["node_modules/", ".DS_Store"].join("\n")
 type Status = FileChange["status"]
 const STATUS: Record<string, Status> = { A: "added", M: "modified", D: "deleted", T: "modified" }
 
-export interface WorkspaceService {
+interface WorkspaceService {
   // The folder as stored: absolute, real, an existing directory, and not one agents must never own.
   readonly validate: (path: string) => Effect.Effect<string, WorkspaceInvalid>
   // Where a chat's agents work: the project folder, or an empty Zorel folder for the chat.

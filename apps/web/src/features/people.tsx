@@ -5,9 +5,9 @@ import { isTeammate } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { agentsAtom, mutations, teamsAtom, useList, useMutation } from "../client.ts"
 import { callable, teamsIn, withTeam } from "./agent-options.ts"
-import { agentTone, handleOf, modelLabel, splitModel } from "../labels.ts"
+import { agentTint, agentTone, handleOf, modelLabel, splitModel } from "../labels.ts"
 import { useState } from "react"
-import { AgentAvatar, Badge, Button, IconButton, ModelAvatar, Plus, Popover, SearchInput, Users, X } from "@/ui"
+import { AgentAvatar, Button, IconButton, ModelAvatar, Plus, Popover, SearchInput, Users, X } from "@/ui"
 
 type Size = 16 | 20 | 28 | 32
 
@@ -76,7 +76,7 @@ export function TeamPicker({ chat }: { chat: Chat }) {
               <span className="truncate text-sm text-muted">{i === 0 ? t("team.leadHint") : `@${handleOf(a)} · ${modelLabel(a.model)}`}</span>
             </span>
             {i === 0 ? (
-              <Badge tone="accent">{t("team.lead")}</Badge>
+              <span className={`tinted ${agentTint(a, agents)} inline-flex h-5 shrink-0 items-center rounded-full border px-2 text-xs font-medium`}>{t("team.lead")}</span>
             ) : (
               // The lead's model drives the chat, so it follows the new lead.
               <Button size="sm" variant="ghost" onPress={() => void setTeam([a.id, ...chat.agentIds.filter((x) => x !== a.id)], a.model)}>

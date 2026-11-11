@@ -16,7 +16,7 @@ import { PendingTray, Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
-import { AgentAvatar, Button, Check, ChevronRight, column, cx, Dialog, EmptyState, Folder, HEADER, IconTile, ListRow, PageHeader, Pencil, Rows, Section, Select, Sparkles, Spinner, Tag } from "@/ui"
+import { AgentAvatar, Button, Check, ChevronRight, column, cn, Dialog, EmptyState, Folder, HEADER, IconTile, ListRow, PageHeader, Pencil, Rows, Section, Select, Sparkles, Spinner, Tag } from "@/ui"
 
 const SUGGESTIONS = ["builder.suggest.review", "builder.suggest.triage", "builder.suggest.docs", "builder.suggest.team"] as const
 type Step = "describe" | "powers"
@@ -132,7 +132,7 @@ function Conversation({ chat, reviewing }: { chat: Chat; reviewing: boolean }) {
 
   return (
     // A narrow window: the conversation alone (the explanation steps aside); while a proposal is reviewed, the review.
-    <section aria-label={t("builder.conversation")} className={cx("order-2 min-h-0 flex-1 flex-col border-subtle md:flex md:w-104 md:flex-none md:shrink-0 md:border-l", reviewing ? "hidden" : "flex")}>
+    <section aria-label={t("builder.conversation")} className={cn("order-2 min-h-0 flex-1 flex-col border-subtle md:flex md:w-104 md:flex-none md:shrink-0 md:border-l", reviewing ? "hidden" : "flex")}>
       {empty ? (
         // Before the first message: what to say, and a few starting points.
         <div className="flex flex-1 flex-col items-center justify-center gap-5 px-8 text-center">
@@ -202,7 +202,7 @@ function Conversation({ chat, reviewing }: { chat: Chat; reviewing: boolean }) {
 
 // One proposed agent, read from the proposal card's text ("key: value" lines; a team has a "## Name" per agent).
 type Draft = { name: string; fields: Record<string, string> }
-export function draftsOf(text: string): Draft[] {
+function draftsOf(text: string): Draft[] {
   const parse = (block: string, name: string): Draft => {
     const fields: Record<string, string> = {}
     let key = ""
@@ -311,7 +311,7 @@ function Wizard({ chat, since }: { chat: Chat; since: number }) {
       {(single || step === "powers") && <Stepper step={step} />}
       {/* Step 1 stays mounted (the conversation keeps its scroll and draft) while the others show. The
           conversation always sits on the right; the middle explains the flow, then holds the proposal to review. */}
-      <div className={cx("min-h-0 flex-1", step === "describe" ? "flex" : "hidden")}>
+      <div className={cn("min-h-0 flex-1", step === "describe" ? "flex" : "hidden")}>
         <Conversation chat={chat} reviewing={!!open} />
         {open ? (
           <ProposalReview
@@ -396,10 +396,10 @@ function Stepper({ step }: { step: Step }) {
       {STEPS.map((k, i) => (
         <li key={k} className="flex items-center gap-3" {...(i === at && { "aria-current": "step" as const })}>
           {i > 0 && <span aria-hidden="true" className="h-px w-8 bg-strong" />}
-          <span className={cx("flex items-center gap-2", i === at ? "font-medium text-fg" : "text-muted")}>
+          <span className={cn("flex items-center gap-2", i === at ? "font-medium text-fg" : "text-muted")}>
             <span
               aria-hidden="true"
-              className={cx(
+              className={cn(
                 "flex size-5 items-center justify-center rounded-full text-xs tabular-nums",
                 i < at ? "bg-accent-soft text-accent-text" : i === at ? "bg-accent text-on-accent" : "border border-strong"
               )}
@@ -419,7 +419,7 @@ function StepPage({ title, hint, footer, children }: { title: string; hint: stri
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className={cx(column(), "gap-6")}>
+        <div className={cn(column(), "gap-6")}>
           <div className="flex flex-col gap-1.5">
             <h2 className="text-lg font-semibold">{title}</h2>
             <p className="text-muted">{hint}</p>
@@ -443,7 +443,7 @@ function ProposalReview({
   return (
     <section aria-label={t("builder.proposal")} className="flex min-w-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className={cx(column(true), "gap-6")}>
+        <div className={cn(column(true), "gap-6")}>
           <header className="flex items-center gap-4">
             <span className="flex -space-x-2">
               {drafts.map((d, i) => (
@@ -455,7 +455,7 @@ function ProposalReview({
               <p className="text-sm text-muted">{[t("builder.teamSize", { count: drafts.length }), scope, t("builder.untilYouApprove")].join(" · ")}</p>
             </div>
           </header>
-          <div className={cx("grid gap-3", !single && "lg:grid-cols-2")}>
+          <div className={cn("grid gap-3", !single && "lg:grid-cols-2")}>
             {drafts.map((d, i) => (
               <AgentReview key={d.name} draft={d} tone={i} choice={models[d.name]} onChoice={(v) => onModel(d.name, v)} />
             ))}

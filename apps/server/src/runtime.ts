@@ -58,7 +58,7 @@ const ERRORS_MAX = 6 // this many failed steps in a row: stuck
 // Runaway guard of one turn: it watches finished steps and says why to stop, if it should.
 // A step is its kind, title and the start of its output; a different step or a success resets the counts.
 // A waiting status whose card is a question (zorel_ask_user): the app says "asks you" instead of "waits for your OK".
-export const QUESTION_LABEL = "question"
+const QUESTION_LABEL = "question"
 
 // Background work (learning, the memory map) that must not stop the chat, and must not fail unseen either: an
 // expected "already running" or "chat gone" ends quietly; anything else is logged once, masked like every log line.
@@ -153,7 +153,7 @@ export function replyTiming() {
 }
 const TEXT_BATCH = Duration.millis(100) // batched deltas
 
-export interface SendInput {
+interface SendInput {
   readonly chatId: string
   readonly clientId: string
   readonly text: string
@@ -216,7 +216,7 @@ export interface RunStepApproval {
 const STEP_RESULT_CHARS = 4000 // of each step's output kept with the reply (its review after the turn)
 const ev = <T extends ChatEvent["_tag"]>(_tag: T, body: Omit<Extract<ChatEvent, { _tag: T }>, "_tag">) => ({ _tag, ...body }) as unknown as ChatEvent
 
-export const makeRuntime = Effect.gen(function* () {
+const makeRuntime = Effect.gen(function* () {
   // ponytail: in memory per chat, lost on restart (the agent just reads the page again)
   const pagesReadBy = new Map<string, Map<string, number>>()
   const store = yield* Store
@@ -1382,7 +1382,7 @@ export const makeRuntime = Effect.gen(function* () {
       const c = yield* store.createChat({
         // The asking chat's access level comes along: a chat's level covers the work it hands off, too.
         projectId: origin.projectId, agentIds: [target.id], model: target.model, accountId: target.accountId, effort: target.effort, access: origin.access,
-        title: `${target.name}: ${task.replace(/\s+/g, " ").slice(0, 60)}`, taskOf: reply ? origin.id : null, taskBy: by?.id ?? null
+        title: `${target.name}: ${task.replace(/\s+/g, " ").slice(0, 60)}`, taskOf: reply ? origin.id : null, taskBy: by?.id ?? null, parentId: origin.id
       })
       const back = reply
         ? `Your final answer goes back to ${nameOf(by)}. Answer in this shape, short: Status: done | partial | blocked. Result: the result itself. Evidence: what you ran or read.`

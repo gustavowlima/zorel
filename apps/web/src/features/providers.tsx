@@ -12,7 +12,7 @@ import { accountsAtom, agentsAtom, keysAtom, modelsAtom, mutations, useInvalidat
 import { LimitWindows } from "./limits.tsx"
 import { modelName, modelNote, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
-import { Badge, Button, ChevronRight, ConfirmButton, cx, Dot, Input, ListRow, Plus, ProviderIcon, Rows, Section, SettingRow } from "@/ui"
+import { Badge, Button, ChevronRight, ConfirmButton, cn, Dot, Fold, Input, ListRow, Plus, ProviderIcon, Rows, Section, SettingRow } from "@/ui"
 
 type KeyInfo = typeof KeyInfoSchema.Type
 
@@ -290,7 +290,7 @@ function SignIns({ provider, accounts }: { provider: AccountProvider; accounts: 
       {accounts.map((a) => (
         <AccountRow key={a.id} account={a} />
       ))}
-      {adding && (
+      <Fold open={adding}>
         <form
           className="flex flex-wrap items-center gap-3 py-3.5"
           onSubmit={(e) => {
@@ -322,7 +322,7 @@ function SignIns({ provider, accounts }: { provider: AccountProvider; accounts: 
             {t("common.cancel")}
           </Button>
         </form>
-      )}
+      </Fold>
       {error && <p className="py-3 text-sm text-danger">{error}</p>}
     </Group>
   )
@@ -349,7 +349,7 @@ function AccountRow({ account: a }: { account: ProviderAccount }) {
             <span className="truncate font-medium">{a.loggedIn ? (a.identity ?? t("accounts.signedIn")) : a.label}</span>
             {a.isDefault && <Badge>{t("accounts.default")}</Badge>}
           </span>
-          <span className={cx("truncate text-sm", a.loggedIn ? "text-muted" : "text-warning")}>{a.loggedIn ? a.label : status}</span>
+          <span className={cn("truncate text-sm", a.loggedIn ? "text-muted" : "text-warning")}>{a.loggedIn ? a.label : status}</span>
         </span>
         <Button size="sm" variant={a.loggedIn ? "secondary" : "default"} isPending={a.loggingIn} isDisabled={a.loggingIn} onPress={signIn}>
           {a.loggedIn ? t("providers.reconnect") : t("accounts.signIn")}

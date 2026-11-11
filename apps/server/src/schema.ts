@@ -109,6 +109,9 @@ export const chats = sqliteTable("chats", {
   // the agent that asked (null: the chat's assistant).
   taskOf: text("task_of").references((): AnySQLiteColumn => chats.id, { onDelete: "set null" }),
   taskBy: text("task_by"),
+  // The chat a task came from, for good (taskOf clears when the result goes back): the task lives under it (its
+  // drawer), not as a chat of its own in the list.
+  parentId: text("parent_id").references((): AnySQLiteColumn => chats.id, { onDelete: "set null" }),
   createdAt: integer("created_at").notNull()
 })
 

@@ -9,15 +9,17 @@ import type { Routine, RoutineRun } from "@zorel/contracts"
 import { locale, t } from "@zorel/i18n"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
-import { type PointerEvent, useRef, useState } from "react"
-import { mutations, preferencesAtom, routineWeekAtom, useMutation, useReading, routinesAtom } from "../client.ts"
+import { type PointerEvent, useEffect, useRef, useState } from "react"
+import { agentsAtom, mutations, preferencesAtom, routineWeekAtom, useList, useMutation, useReading, routinesAtom } from "../client.ts"
 import { go, type Route } from "../state.ts"
 import { lanesOf, moveCron } from "./week-lanes.ts"
-import { Button, ChevronLeft, ChevronRight, cx, Dot, IconButton, ListRow, Rows, Section, Tooltip } from "@/ui"
+import { Button, ChevronLeft, ChevronRight, cn, Dot, IconButton, ListRow, Rows, Section, Tooltip } from "@/ui"
+import { agentTint, hm, toMinutes } from "../labels.ts"
 
 const DAY = 24 * 60 * 60_000
-const FIRST_HOUR = 7
-const LAST_HOUR = 22
+// The whole day; the grid scrolls inside its card and opens an hour before your day starts.
+const FIRST_HOUR = 0
+const LAST_HOUR = 24
 const HOUR_PX = 44
 const BLOCK_PX = 38
 const hours = Array.from({ length: LAST_HOUR - FIRST_HOUR }, (_, i) => FIRST_HOUR + i)
@@ -36,8 +38,6 @@ const minutesOf = (at: number) => {
 }
 // Where a time sits in the grid, clamped into the visible hours.
 const topOf = (minutes: number) => Math.min(Math.max(((minutes - FIRST_HOUR * 60) / 60) * HOUR_PX, 0), (LAST_HOUR - FIRST_HOUR) * HOUR_PX - BLOCK_PX)
-const hm = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`
-const toMinutes = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5))
 
 // How each outcome looks on the grid. Opaque, so a block cascading over another stays readable.
 const LOOK: Record<"needs" | "something" | "nothing" | "planned", string> = {
@@ -51,12 +51,14 @@ const SNAP = 15 // minutes a drag moves by
 
 // A planned run opens what it will run: a routine's steps (spec 013), else its chat.
 const plannedOpen = (r: Routine | undefined): Route | undefined => (!r ? undefined : r.version != null ? { view: "routine-flow", id: r.id } : { view: "chat", id: r.chatId })
-type Block = { key: string; day: number; minutes: number; title: string; meta: string; look: keyof typeof LOOK; open: Route | undefined; routine?: Routine | undefined }
-type Drag = { key: string; x: number; y: number; dx: number; dy: number; width: number }
+type Block = { key: string; day: number; minutes: number; title: string; meta: string; look: keyof typeof LOOK; open: Route | undefined; routine?: Routine | undefined; agentId?: string | undefined; routineId: string; runId?: string | undefined }
+type Drag = { key: string; x: number; y: number; dx: number; dy: number; width: number; moved: boolean }
 
 
 export type Slot = { weekday: number; minutes: number } // 0 = Sunday, as cron counts
-export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
+// onOpen: a block was pressed (the page shows that routine, and the run when it is one); without it, the block opens
+// its run or its steps.
+export function RoutineWeek({ onCreate, onOpen }: { onCreate?: (slot: Slot) => void; onOpen?: (routineId: string, runId: string | undefined) => void }) {
   const [offset, setOffset] = useState(0)
   const from = weekStart(offset)
   const week = AsyncResult.getOrElse(useAtomValue(routineWeekAtom(from, from + 7 * DAY)), () => undefined)
@@ -73,18 +75,33 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
     const minutes = FIRST_HOUR * 60 + Math.floor(y / (HOUR_PX / 2)) * 30
     if (hover?.day !== day || hover.minutes !== minutes) setHover({ day, minutes })
   }
-  const dragged = useRef(false) // the press that ends a drag isn't a click
+  // Open on the working hours: an hour before the day starts (08:00 when it isn't known yet), once per mount.
+  const scroller = useRef<HTMLDivElement>(null)
+  const startMinutes = prefs?.timeProfile?.dayStartMinutes
+  const placed = useRef(false)
+  useEffect(() => {
+    if (placed.current || !scroller.current || prefs === undefined) return
+    placed.current = true
+    scroller.current.scrollTop = Math.max(0, ((startMinutes ?? 8 * 60) / 60 - 1) * HOUR_PX)
+  }, [prefs, startMinutes])
+  const press = (b: Block) => (onOpen ? onOpen(b.routineId, b.runId) : b.open && go(b.open))
   const byId = new Map<string, Routine>(routines.map((r) => [r.id, r]))
+  const agents = useList(agentsAtom)
+  // Whose routine a block is: its agent's color down its left edge (identity tint); the border keeps the outcome.
+  const edgeOf = (b: Block) => {
+    const a = agents.find((x) => x.id === b.agentId)
+    return a ? `tint-edge ${agentTint(a, agents)}` : undefined
+  }
   const profile = prefs?.timeProfile
   const runs = week?.runs ?? []
   const blockOf = (run: RoutineRun): Block | undefined => {
     const r = byId.get(run.routineId)
     if (!r || !run.outcome) return undefined
-    return { key: run.id, day: Math.floor((run.createdAt - from) / DAY), minutes: minutesOf(run.createdAt), title: r.name, meta: run.summary || t(`routines.runs.outcome.${run.outcome}`), look: run.outcome, open: run.version != null ? { view: "routine-run", id: r.id, runId: run.id } : { view: "chat", id: r.chatId } }
+    return { key: run.id, day: Math.floor((run.createdAt - from) / DAY), minutes: minutesOf(run.createdAt), title: r.name, agentId: r.agentId, routineId: r.id, runId: run.id, meta: run.summary || t(`routines.runs.outcome.${run.outcome}`), look: run.outcome, open: run.version != null ? { view: "routine-run", id: r.id, runId: run.id } : { view: "chat", id: r.chatId } }
   }
   const blocks: Block[] = [
     ...runs.map(blockOf).filter((b): b is Block => !!b),
-    ...(week?.planned ?? []).map((p, i) => ({ key: `p${i}`, day: Math.floor((p.at - from) / DAY), minutes: minutesOf(p.at), title: byId.get(p.routineId)?.name ?? "", meta: t("routines.legend.planned"), look: "planned" as const, open: plannedOpen(byId.get(p.routineId)), routine: byId.get(p.routineId) }))
+    ...(week?.planned ?? []).map((p, i) => ({ key: `p${i}`, day: Math.floor((p.at - from) / DAY), minutes: minutesOf(p.at), title: byId.get(p.routineId)?.name ?? "", agentId: byId.get(p.routineId)?.agentId, routineId: p.routineId, meta: t("routines.legend.planned"), look: "planned" as const, open: plannedOpen(byId.get(p.routineId)), routine: byId.get(p.routineId) }))
   ]
   const today = Math.floor((Date.now() - from) / DAY)
   const quiet = profile?.quietHours
@@ -94,18 +111,24 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
     const minutes = Math.min((LAST_HOUR - 1) * 60, Math.max(FIRST_HOUR * 60, b.minutes + Math.round(((d.dy / HOUR_PX) * 60) / SNAP) * SNAP))
     return { day, minutes }
   }
+  // A press is a click until the pointer moves 4px; only then is the pointer captured and the block dragged, so a
+  // click reaches the block's button like any other.
   const startDrag = (b: Block) => (e: PointerEvent<HTMLDivElement>) => {
     if (!b.routine?.cron || !moveCron(b.routine.cron, 0, 0) || e.button !== 0) return
-    e.currentTarget.setPointerCapture(e.pointerId)
-    setDrag({ key: b.key, x: e.clientX, y: e.clientY, dx: 0, dy: 0, width: e.currentTarget.parentElement?.clientWidth ?? 100 })
+    setDrag({ key: b.key, x: e.clientX, y: e.clientY, dx: 0, dy: 0, width: e.currentTarget.parentElement?.clientWidth ?? 100, moved: false })
   }
-  const moveDrag = (e: PointerEvent<HTMLDivElement>) => drag && setDrag({ ...drag, dx: e.clientX - drag.x, dy: e.clientY - drag.y })
+  const moveDrag = (e: PointerEvent<HTMLDivElement>) => {
+    if (!drag) return
+    const dx = e.clientX - drag.x
+    const dy = e.clientY - drag.y
+    const moved = drag.moved || Math.abs(dx) >= 4 || Math.abs(dy) >= 4
+    if (moved && !drag.moved) e.currentTarget.setPointerCapture(e.pointerId)
+    setDrag({ ...drag, dx, dy, moved })
+  }
   const endDrag = (b: Block) => () => {
     const d = drag
     setDrag(undefined)
-    if (!d || d.key !== b.key || !b.routine?.cron) return
-    dragged.current = Math.abs(d.dx) >= 4 || Math.abs(d.dy) >= 4
-    if (!dragged.current) return
+    if (!d?.moved || d.key !== b.key || !b.routine?.cron) return
     const to = landing(b, d)
     const cron = moveCron(b.routine.cron, new Date(from + to.day * DAY).getDay(), to.minutes)
     if (cron && cron !== b.routine.cron) void update({ params: { id: b.routine.id }, payload: { cron }, reactivityKeys: ["routines"] })
@@ -148,15 +171,16 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
       </div>
 
       <div className="flex flex-wrap items-start gap-4">
-        <div className="min-w-0 overflow-x-auto rounded-card border border-subtle bg-surface" style={{ flex: "999 1 40rem" }}>
+        <div ref={scroller} className="min-w-0 overflow-auto rounded-card border border-subtle bg-surface" style={{ flex: "999 1 40rem", maxHeight: "calc(100vh - 13rem)" }}>
           <div className="grid min-w-180" style={{ gridTemplateColumns: "3.25rem repeat(7, minmax(0, 1fr))" }}>
-            <div className="h-11 border-b border-subtle" />
+            {/* The days stay on top while the hours scroll under them. */}
+            <div className="sticky top-0 z-30 h-11 border-b border-subtle bg-surface" />
             {DAYS.map((d) => {
               const date = new Date(from + d * DAY)
               return (
-                <div key={`head-${d}`} className={cx("flex h-11 items-center justify-center gap-1.5 border-b border-l border-subtle text-sm", d === today ? "text-fg" : "text-muted")}>
+                <div key={`head-${d}`} className={cn("sticky top-0 z-30 flex h-11 items-center justify-center gap-1.5 border-b border-l border-subtle bg-surface text-sm", d === today ? "text-fg" : "text-muted")}>
                   <span>{date.toLocaleDateString(locale(), { weekday: "short" })}</span>
-                  <span className={cx("flex size-5.5 items-center justify-center rounded-full font-semibold", d === today ? "bg-accent text-on-accent" : d > 4 ? "text-dim" : "text-fg")}>{date.getDate()}</span>
+                  <span className={cn("flex size-5.5 items-center justify-center rounded-full font-semibold", d === today ? "bg-accent-soft text-accent-text" : d > 4 ? "text-dim" : "text-fg")}>{date.getDate()}</span>
                 </div>
               )
             })}
@@ -168,7 +192,7 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
               ))}
             </div>
             {DAYS.map((d) => (
-              <div key={`col-${d}`} onPointerMove={onCreate && hoverAt(d)} onPointerLeave={() => setHover(undefined)} className={cx("relative border-l border-subtle", d > 4 && "bg-canvas")} style={{ height: (LAST_HOUR - FIRST_HOUR) * HOUR_PX }}>
+              <div key={`col-${d}`} onPointerMove={onCreate && hoverAt(d)} onPointerLeave={() => setHover(undefined)} className={cn("relative border-l border-subtle", d > 4 && "bg-canvas")} style={{ height: (LAST_HOUR - FIRST_HOUR) * HOUR_PX }}>
                 {hours.map((h) => (
                   <div key={h} className="absolute inset-x-0 border-t border-subtle/50" style={{ top: (h - FIRST_HOUR) * HOUR_PX }} />
                 ))}
@@ -188,7 +212,7 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
                       />
                     )
                   })}
-                {hover?.day === d && !drag && (
+                {hover?.day === d && !drag?.moved && (
                   <div aria-hidden="true" className="pointer-events-none absolute inset-x-1 flex items-start rounded-md border border-dashed border-strong px-1.5 pt-0.5 text-xs text-muted tabular-nums" style={{ top: topOf(hover.minutes), height: HOUR_PX / 2 }}>
                     {hm(hover.minutes)}
                   </div>
@@ -206,7 +230,7 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
                   const box = "absolute flex h-auto min-w-0 flex-col items-start justify-start gap-0 overflow-hidden rounded-md px-1.5 py-1 text-left text-xs shadow-sm"
                   const movable = !!b.routine?.cron && !!moveCron(b.routine.cron, 0, 0)
                   if (movable) {
-                    const dragging = drag?.key === b.key ? drag : undefined
+                    const dragging = drag?.key === b.key && drag.moved ? drag : undefined
                     const to = dragging && landing(b, dragging)
                     return (
                       <Tooltip key={b.key} content={`${b.title} · ${t("routines.dragHint")}`}>
@@ -215,18 +239,14 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
                           onPointerMove={moveDrag}
                           onPointerUp={endDrag(b)}
                           onPointerCancel={() => setDrag(undefined)}
-                          className={cx("absolute cursor-grab touch-none select-none", dragging && "cursor-grabbing opacity-90")}
+                          className={cn("absolute cursor-grab touch-none select-none", dragging && "cursor-grabbing opacity-90")}
                           style={{ ...style, ...(dragging && to && { transform: `translate(${(to.day - b.day) * dragging.width}px, ${topOf(to.minutes) - topOf(b.minutes)}px)`, zIndex: 50 }) }}
                         >
                           <Button
                             variant="ghost"
                             aria-label={`${b.title}: ${b.meta}. ${t("routines.dragHint")}`}
-                            onPress={() => {
-                              const wasDrag = dragged.current
-                              dragged.current = false
-                              if (!wasDrag && b.open) go(b.open)
-                            }}
-                            className={cx(box, "inset-0 cursor-grab", LOOK[b.look], dragging && "ring-2 ring-accent")}
+                            onPress={() => press(b)}
+                            className={cn(box, "inset-0 cursor-grab", LOOK[b.look], edgeOf(b), dragging && "ring-2 ring-accent")}
                           >
                             {dragging && to ? (
                               <>
@@ -243,7 +263,7 @@ export function RoutineWeek({ onCreate }: { onCreate?: (slot: Slot) => void }) {
                   }
                   return (
                     <Tooltip key={b.key} content={`${b.title}: ${b.meta}`}>
-                      <Button variant="ghost" aria-label={`${b.title}: ${b.meta}`} onPress={() => b.open && go(b.open)} className={cx(box, LOOK[b.look], "hover:z-40")} style={style}>
+                      <Button variant="ghost" aria-label={`${b.title}: ${b.meta}`} onPress={() => press(b)} className={cn(box, LOOK[b.look], edgeOf(b), "hover:z-40")} style={style}>
                         {body}
                       </Button>
                     </Tooltip>

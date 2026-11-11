@@ -13,7 +13,7 @@ import { ChevronRight, Folder, FolderOpen } from "./icons"
 export type FileNode = { readonly name: string; readonly path: string; readonly children: ReadonlyArray<FileNode> | null } // null: a file
 
 const ROW = 28 // px: h-control-sm, the Virtualizer's fixed row height
-const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")))
+export const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")))
 
 export function FileTree({
   label,
@@ -67,7 +67,7 @@ export function FileTree({
     onRootDrop: () => onMove(dragged.current, "")
   })
   const row = (n: FileNode, depth: number): ReactNode => (
-    <TreeItem key={n.path} id={n.path} textValue={n.name} className="group/row outline-none data-dragging:opacity-50">
+    <TreeItem key={n.path} id={n.path} textValue={n.name} className="group/row outline-none transition-[opacity,scale] duration-150 ease-out data-dragging:scale-[0.98] data-dragging:opacity-40 motion-reduce:transition-none">
       <TreeItemContent>
         {({ isExpanded, isFocusVisible, isHovered, isSelected, isDropTarget }) => (
           <div

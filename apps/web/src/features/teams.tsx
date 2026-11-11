@@ -6,7 +6,7 @@ import { type Agent, type AgentTeam, isTeammate, TEAM_MAX } from "@zorel/contrac
 import { t } from "@zorel/i18n"
 import { useState } from "react"
 import { agentsAtom, mutations, projectsAtom, teamsAtom, useList, useMutation } from "../client.ts"
-import { agentTone, handleOf } from "../labels.ts"
+import { agentTint, agentTone, handleOf } from "../labels.ts"
 import { go } from "../state.ts"
 import { AgentAvatar, Button, CheckList, ConfirmDialog, Dialog, Field, IconButton, Input, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, Plus, Rows, Section, Select, SortableList, Trash2, Users } from "@/ui"
 
@@ -148,7 +148,7 @@ function TeamDialog({ team, agents, projects, onClose }: { team: AgentTeam | und
                 value={ids}
                 onChange={pick}
                 className="scroll-quiet max-h-56 overflow-y-auto"
-                options={reach.map((a) => ({ value: a.id, label: <><AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} /> {a.name}</>, trailing: <span className="truncate text-sm text-muted">{a.title}</span> }))}
+                options={reach.map((a) => ({ value: a.id, tint: agentTint(a, agents), label: <><AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} /> {a.name}</>, trailing: <span className="truncate text-sm text-muted">{a.title}</span> }))}
               />
             )}
           </div>
@@ -156,6 +156,7 @@ function TeamDialog({ team, agents, projects, onClose }: { team: AgentTeam | und
             <div className="flex flex-col gap-1.5 text-sm text-muted">
               <span>{t("teams.order")}</span>
               <SortableList
+                idOf={(a) => a.id}
                 items={chosen}
                 label={t("teams.order")}
                 handleLabel={(a) => t("teams.move", { name: a.name })}

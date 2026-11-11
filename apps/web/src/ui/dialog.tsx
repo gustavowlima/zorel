@@ -8,7 +8,7 @@ import { Button, type ButtonProps } from "./button"
 
 const overlay =
   "fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4 data-entering:animate-in data-entering:fade-in-0 data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none"
-const sheet = "flex max-h-full w-full flex-col rounded-sheet border border-strong bg-raised p-6 text-fg outline-none data-entering:animate-in data-entering:zoom-in-95 motion-reduce:animate-none"
+const sheet = "flex max-h-full w-full flex-col rounded-sheet border border-strong bg-canvas p-6 text-fg shadow-float outline-none data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.97] data-exiting:animate-out data-exiting:fade-out-0 data-exiting:zoom-out-[0.98] data-exiting:duration-100 motion-reduce:animate-none"
 
 type Body = (close: () => void) => ReactNode
 
