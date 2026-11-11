@@ -66,14 +66,24 @@ no servers.
   the recipes; when the person gives the HTTPS address, add the server in the desktop app and open its setup page.
 - Linux with systemd first; anything else ends with the manual steps (spec 014 quickstart).
 
-## Phase 4: a project on an SSH host
+## Phase 4: a project on an SSH host — T016 findings (2026-11-11)
 
-- First task: prototype both ways on one host and pick (recorded in this plan):
-  - **CLI on the host**: the engine CLI (Claude Code / Codex / agy) runs over `ssh` on the host, its login there; the
-    session's stdio is the SSH channel. Simple and faithful; needs the CLI installed and signed in on the host.
-  - **Tools remoted**: the engine stays here, its file and shell tools go through `ssh`. Native engines edit the local
-    disk directly, so this only works for engines whose tools Zorel owns.
-- Then: `run_hosts` table, the project page's "Runs on", turn failure "H isn't reachable" (connect timeout 10 s).
+**Feasible: the engine CLI on the host.** Every engine starts one local process spoken to over stdio, through one seam
+each: Claude (`spawnClaudeCodeProcess` in the SDK options), Codex (`Bun.spawn` of `codex app-server`), ACP agents
+(`commandFor` + `Bun.spawn`). Each can become `ssh -T user@host -- cd <folder> && env … <cli> <args>`. The tool
+gateway (`http://127.0.0.1:<port>/mcp/<48-hex token>`) is reached from the host through a reverse forward
+(`-R <port>:127.0.0.1:<port>`; one master connection per host with ControlMaster, no multiplexing on Windows'
+OpenSSH, so there one forward per session). The CLI must be installed and signed in on the host (its own login).
+"Tools remoted" is not possible for Claude Code and Codex: their file and shell tools are built in.
+
+**What assumes the folder is on this machine** and would need a remote version or be turned off for such a project:
+the changes view, checkpoints and undo (`workspace.ts`: git trees of the folder), the terminal panel (`terminals.ts`,
+a local PTY), previews (`preview.ts`: a local port; would need `-L`), file reads and attachments paths, the agent's
+own computer (spec 009), worktrees (spec 016), and the prompt's "You work in the project folder" line.
+
+**Options**: (A) engine turns on the host only, with those features off for remote projects; (B) all of them over SSH
+(remote git, an SSH PTY, `-L` forwards for previews), the largest piece of this spec; (C) no remote projects: a
+machine whose power you want runs a Zorel server (phases 1–3), which gives every feature there with nothing new.
 
 ## Risks
 
