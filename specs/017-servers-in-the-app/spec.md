@@ -1,6 +1,6 @@
 # Feature Specification: Servers in the App
 
-**Feature Branch**: `feat/agents-only-tools` | **Created**: 2026-11-11 | **Status**: Draft
+**Feature Branch**: `feat/agents-only-tools` | **Created**: 2026-11-11 | **Status**: Implemented (2026-11-11; User Story 4 dropped)
 
 **Input**: "a spec de execução em servidores e seleção de servidor no próprio Zorel" (2026-11-11). Zorel already runs
 on a team server (spec 014) and the desktop app opens such servers (2026-11-11), but choosing where you are and
@@ -75,19 +75,11 @@ approved, secrets (the setup code) go on stdin, never as arguments.
 
 ---
 
-### User Story 4 - Choose where a project's agents work (Priority: P2)
+### User Story 4 - Dropped (2026-11-11): a project on an SSH host
 
-A project can say where its agents' work runs: this computer (today), or a server's machine reached over SSH, where
-the agent's commands and file edits happen in a folder there while the engine and its login stay here. The project's
-page shows "Runs on <host>"; the agent's computer tools (spec 009) and its shell go to that host.
-
-**Why this priority**: It is the only way to use a remote machine's power without moving the whole team to a server.
-
-**Acceptance Scenarios**:
-
-1. **Given** project P set to run on host H, **When** an agent edits a file, **Then** the file changes in H's folder,
-   and the chat's changes view shows it.
-2. **Given** H is offline, **When** an agent starts, **Then** the turn fails with "H isn't reachable", not a hang.
+Running a project's agents on another machine while Zorel stays here was dropped after the phase 4 findings (plan.md):
+the changes view, undo, the terminal, previews, agents' own copies and computers all assume a local folder. A machine
+whose power you want runs a Zorel server (User Stories 1–3, 5), which gives every feature there.
 
 ---
 
@@ -132,8 +124,6 @@ responsible for machines it can't see. A server that listens only on loopback ex
 - **FR-005**: A server's page MUST never reach this computer's bridge beyond listing and switching servers (as today).
 - **FR-006**: "Install on another computer" MUST run each SSH command only after the person approves it, and MUST
   pass secrets on stdin.
-- **FR-007**: A project MAY run its agents' commands and edits on an SSH host; the engine and its login MUST stay on
-  the server that runs the chat. The host is reached at the address the person gives (their network is theirs).
 - **FR-008**: A server MUST listen only on loopback unless a listen address is set explicitly (already so:
   `ZOREL_LISTEN` defaults to `127.0.0.1`).
 - **FR-009**: Zorel MUST NOT change the machine's network, firewall or DNS; the docs MUST give recipes (private
@@ -142,7 +132,6 @@ responsible for machines it can't see. A server that listens only on loopback ex
 ### Key Entities
 
 - **Server**: a Zorel install the app knows (origin, name, last seen, version, state).
-- **Run host**: an SSH host a project's agents work on (host, user, folder, key reference in the keychain).
 
 
 ## Success Criteria *(mandatory)*
@@ -173,7 +162,8 @@ public meeting point, out of scope; the client's transport stays swappable (spec
 
 1. A server is a whole other Zorel you switch to (as today); not a target for one chat or agent.
 2. The picker sits at the top of the sidebar, with ⌘1…⌘9 and a "Back to this computer" bar.
-3. In this spec: install on another computer over SSH from a chat; a project's agents working on an SSH host.
+3. In this spec: install on another computer over SSH from a chat. A project's agents working on an SSH host was
+   dropped after the phase 4 findings: use a server on that machine.
 4. Dropped: a second Zorel on this computer.
 5. Networking is the person's: Zorel listens on loopback by default and documents the ways to reach it; it never
    changes the machine's network, firewall or DNS.

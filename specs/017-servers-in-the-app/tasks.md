@@ -38,8 +38,7 @@ Each phase ends testable on its own; the desktop with no servers behaves as befo
   Tunnel) with what each exposes, nginx WebSocket upgrade, Cloudflare Tunnel; installing and switching from the app
 - [ ] T015 verify on a disposable Linux machine (manual) and in the test container (automated)
 
-## P4: A project on an SSH host
+## P4: A project on an SSH host — dropped (2026-11-11)
 
-- [ ] T016 prototype CLI-on-host vs tools-remoted; record the choice in plan.md
-- [ ] T017 server: `run_hosts` + routing the project's turns and shells; "H isn't reachable" failure
-- [ ] T018 web: the project page's "Runs on"; tests; memory
+- [X] T016 prototype: the engine CLI can run on the host (stdio seams + a reverse forward to the gateway), but most
+  of Zorel assumes a local folder (plan.md). The user chose: no remote projects; a server on that machine instead.
