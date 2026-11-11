@@ -9,7 +9,9 @@ import { go, type ProjectTab } from "../state.ts"
 import { McpSection } from "./mcp.tsx"
 import { callable, projectCrew, teamsIn } from "./agent-options.ts"
 import { AgentItem, NewAgentMenu, useDeleteAgent, useWorking } from "./agents.tsx"
-import { AgentAvatar, ArrowLeft, column, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, CheckList, ChevronRight, ConfirmDialog, cn, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, RowHit, Rows, Screen, Section, Tab, TabList, TabPanel, Tabs, Textarea, Tooltip, Trash2, Users } from "@/ui"
+import { useServer } from "./sign-in.tsx"
+import { ProjectPeople } from "./team.tsx"
+import { AgentAvatar, ArrowLeft, column, ArrowRight, ArrowUp, Bot, Button, ChatStatusIcon, CheckList, ChevronRight, ConfirmDialog, cn, Dialog, EmptyState, Field, Folder, FolderOpen, GitBranch, IconButton, Input, Menu, MenuItem, MessageCircle, MoreHorizontal, OptionList, OptionRow, Plus, RowHit, Rows, Screen, Section, Switch, Tab, TabList, TabPanel, Tabs, Textarea, Tooltip, Trash2, Users } from "@/ui"
 
 // The reason a folder was refused (WorkspaceInvalid), in words.
 const REASONS = ["relative", "missing", "not_directory", "forbidden"] as const
@@ -409,14 +411,25 @@ function Agents({ projectId }: { projectId: string }) {
   const teams = teamsIn(useList(teamsAtom), projectId)
   const crew = projectCrew(project, choices, teams)
   const [failed, setFailed] = useState(false)
-  const save = (payload: { agentIds?: string[]; teamIds?: string[] }) => {
+  const save = (payload: { agentIds?: string[]; teamIds?: string[]; sharedBrowser?: boolean }) => {
     setFailed(false)
     update({ params: { id: projectId }, payload, reactivityKeys: ["projects"] }).catch(() => setFailed(true))
   }
   const working = useWorking()
   const del = useDeleteAgent()
+  const server = useServer()
   return (
     <div className="flex flex-col gap-10">
+      {/* On a team server: the people in this project (members see it; owners and admins see every project). */}
+      {server && <ProjectPeople projectId={projectId} />}
+      {/* Team server: the agents' site logins kept per person (default) or once for the whole project. */}
+      {server && project && (
+        <Section title={t("project.sharedBrowser")} description={t("project.sharedBrowserHint")}>
+          <Switch isSelected={project.sharedBrowser} onChange={(on) => save({ sharedBrowser: on })}>
+            {t("project.sharedBrowserOn")}
+          </Switch>
+        </Section>
+      )}
       {/* Who takes part in the project's chats: teams and agents, as many as you like; the router gives each message
           to the one it fits, so there is no "who answers first" to pick. */}
       <Section title={t("project.crew")} description={t("project.crewHint")}>

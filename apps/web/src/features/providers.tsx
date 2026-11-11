@@ -331,12 +331,18 @@ function SignIns({ provider, accounts }: { provider: AccountProvider; accounts: 
 function AccountRow({ account: a }: { account: ProviderAccount }) {
   const login = useMutation(mutations.login)
   const remove = useMutation(mutations.removeAccount)
+  const sendCode = useMutation(mutations.loginCode)
   const [link, setLink] = useState<string>()
+  const [screen, setScreen] = useState<string>() // on a server: what the CLI shows (the link, a device code)
+  const [code, setCode] = useState("")
   const [error, setError] = useState<string>()
   const signIn = () => {
     setError(undefined)
     login({ params: { id: a.id }, reactivityKeys: ["accounts"] }).then(
-      (r) => r.url && setLink(r.url),
+      (r) => {
+        if (r.url) setLink(r.url)
+        setScreen(r.output)
+      },
       () => setError(t("accounts.busy"))
     )
   }
@@ -376,6 +382,23 @@ function AccountRow({ account: a }: { account: ProviderAccount }) {
         <a className="text-sm text-accent-text underline" href={link} target="_blank" rel="noreferrer">
           {t("accounts.openLogin")}
         </a>
+      )}
+      {screen && a.loggingIn && (
+        <>
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-control bg-code p-2 font-mono text-xs text-secondary">{screen}</pre>
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void sendCode({ params: { id: a.id }, payload: { code }, reactivityKeys: ["accounts"] }).then(() => setCode(""), () => setError(t("accounts.codeFailed")))
+            }}
+          >
+            <Input className="min-w-48 flex-1" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t("accounts.codePlaceholder")} aria-label={t("accounts.codePlaceholder")} />
+            <Button type="submit" size="sm" isDisabled={!code.trim()}>
+              {t("accounts.sendCode")}
+            </Button>
+          </form>
+        </>
       )}
       {error && <p className="text-sm text-danger">{error}</p>}
     </div>

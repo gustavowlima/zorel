@@ -155,6 +155,7 @@ export const mutations = {
   createAccount: Zorel.mutation("accounts", "create"),
   removeAccount: Zorel.mutation("accounts", "remove"),
   login: Zorel.mutation("accounts", "login"),
+  loginCode: Zorel.mutation("accounts", "loginCode"),
   setKey: Zorel.mutation("settings", "setKey"),
   telegramPair: Zorel.mutation("settings", "telegramPair"),
   installDesktop: Zorel.mutation("settings", "installDesktop"),

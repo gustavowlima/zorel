@@ -11,6 +11,8 @@ import { parseRoute, ROUTER_MESSAGES, routerModel, routerPrompt } from "./router
 import { activeMembers, teamsIn } from "./agent-teams.ts"
 import { grounded, handleOf, mappedOf, MAX_DEPTH, memoryNote, mentioned, mentionedTeams, pinned, readPage, scopesOf, sectionOf, similar, snippet } from "./context.ts"
 import { type AccountRow, normalize, Store, type Repository, type TurnRow } from "./db.ts"
+import { LOCAL_ACTOR } from "./access.ts"
+import { ownedStore } from "./visibility.ts"
 import { hasCredential } from "./observability.ts"
 import { engineLabel, type EngineFailure, Engines, isImage, type NativeStep, splitModel, transcript, type Turn as EngineTurn, type EngineEvent, type TurnTools } from "./engines.ts"
 import type { Approver, EngineSession, NativeApproval } from "#server/engines/session.ts"
@@ -166,7 +168,7 @@ export type FinishedTurn = { readonly turnId: string; readonly chatId: string; r
 export interface RuntimeService {
   // opts.outside (spec 011): the text came from outside (a webhook or a watched connector); its turns run at "ask".
   // Server-only: no RPC field sets it.
-  readonly send: (input: SendInput, opts?: { readonly outside?: boolean }) => Effect.Effect<{ turnId: string }, ChatNotFound | ChatNeedsAgent>
+  readonly send: (input: SendInput, opts?: { readonly outside?: boolean; readonly personId?: string }) => Effect.Effect<{ turnId: string }, ChatNotFound | ChatNeedsAgent>
   // Corrects the agent mid-turn when the engine supports it (Codex); otherwise queues it like `send`.
   readonly steer: (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) => Effect.Effect<{ readonly joined: boolean }, ChatNotFound>
   readonly interrupt: (chatId: string) => Effect.Effect<void>
@@ -427,13 +429,22 @@ const makeRuntime = Effect.gen(function* () {
     return { port: at }
   }
 
+  // Who a turn speaks for (spec 014): whose message started it, else the chat's owner, else the one local owner. Their
+  // personal memory is the one it hears and keeps (ownedStore), their browser logins the ones it uses.
+  // ponytail: one speaker per chat at a time; two people sending to the same project chat at once may swap a handoff's
+  // person. A person per message would need it threaded through every enqueue.
+  const speaker = new Map<string, string>()
+  const enqueue = (input: Parameters<typeof store.enqueueTurn>[0]) => store.enqueueTurn({ personId: speaker.get(input.chatId) ?? null, ...input })
+  const personOfTurn = (chatId: string, row: Pick<TurnRow, "personId">) =>
+    Effect.map(store.chatAccess(chatId), (c) => row.personId ?? c?.ownerId ?? LOCAL_ACTOR.id)
+
   // The reading tools with nothing to read in this chat, for this agent (they come back once there is).
-  const idleTools = (chat: Chat, agent: Agent | undefined) =>
+  const idleTools = (chat: Chat, agent: Agent | undefined, mem: Pick<Repository, "activeMemories"> = store) =>
     Effect.gen(function* () {
       const scopes = scopesOf(chat, agent?.id ?? null)
       const who = agent?.id ?? null
-      const active = yield* store.activeMemories(scopes)
-      const skills = (yield* store.activeMemories(scopes, "skill", undefined, who)).length + picked(yield* store.preference("fileSkills"), who).length
+      const active = yield* mem.activeMemories(scopes)
+      const skills = (yield* mem.activeMemories(scopes, "skill", undefined, who)).length + picked(yield* store.preference("fileSkills"), who).length
       const idle = new Set<string>()
       if (active.length <= pinned(active, pinBudget()).length) idle.add(MEMORY_TOOL.name) // every memory is in the prompt already
       if (!(yield* store.hasPages(scopes))) for (const t of ["zorel_knowledge_search", "zorel_knowledge_read"]) idle.add(t)
@@ -449,6 +460,11 @@ const makeRuntime = Effect.gen(function* () {
   // so the tool's step comes after them, live and in its `at`.
   const openTools = async (chat: Chat, row: TurnRow, agent: Agent | undefined, keep: (s: Step) => void, onWrite: () => void, fixed?: GatewayHandle, onFinished: (s: WorkStep) => void = () => {}, settled: () => Promise<void> = async () => {}) => {
     const routes = new Map<string, { server: string; tool: string; approve: boolean; writes: boolean; alwaysKey: string }>()
+    const person = await run(personOfTurn(chat.id, row))
+    const mem = ownedStore(store, person) // the memory tools hear and keep this person's facts
+    // Whose site logins the agent's browser holds: this person's, or the project's when it shares one (spec 014).
+    const shared = chat.projectId ? (await run(store.project(chat.projectId)))?.sharedBrowser : false
+    const browserProfile = profileOf(agent?.id, shared ? `p-${chat.projectId}` : person)
     const perms = permissionsOf(agent)
     const askFirst = turnAccess(chat, agent, row) === "ask"
     const defs: ToolDef[] = []
@@ -492,7 +508,7 @@ const makeRuntime = Effect.gen(function* () {
     // The team (team.ts): reading is free; creating or changing an agent is always a proposal the person approves.
     // Each tool's description costs tokens in every session: the ones that only read something are offered once
     // there is something to read (memories past the prompt's budget, a page, a skill); writing ones stay.
-    const useless = await run(idleTools(chat, agent))
+    const useless = await run(idleTools(chat, agent, mem))
     for (const t of [...TEAM_TOOLS, TASK_TOOL, ASK_TOOL, MEMORY_TOOL, REMEMBER_TOOL, ROUTINES_TOOL, PREVIEW_TOOL, ...KNOWLEDGE_TOOLS, ...SKILL_TOOLS, ...(agent ? [REQUEST_ACCESS_TOOL] : [])])
       if (!withheld.has(t.name) && !useless.has(t.name)) defs.push({ name: t.name, description: t.description, inputSchema: t.inputSchema })
     if (!defs.length) {
@@ -525,7 +541,7 @@ const makeRuntime = Effect.gen(function* () {
       const show = async (at: number) => {
         const url = previewUrl(at, args.path)
         const opened = await browsers
-          .newTab(chat.id, url, profileOf(agent?.id))
+          .newTab(chat.id, url, browserProfile)
           .then((tab) => (browsers.held(chat.id) ? true : browsers.select(chat.id, tab).then(() => true))) // a person holding it keeps their tab
           .catch(() => false) // no browser on this computer: the URL still works in the person's own
         const look = opened ? ` It's open in this chat's Browser panel${perms.browser ? "; read it with your browser tools" : ""}.` : ""
@@ -664,7 +680,7 @@ const makeRuntime = Effect.gen(function* () {
 
     const memoryCall = async (args: Record<string, unknown>) => {
       const query = typeof args.query === "string" ? args.query.slice(0, 500) : ""
-      const found = await run(store.searchMemories(scopesOf(chat, agent?.id ?? null), query, [], 10))
+      const found = await run(mem.searchMemories(scopesOf(chat, agent?.id ?? null), query, [], 10))
       return textResult(found.length ? found.map((m) => `- ${m.text}`).join("\n") : "Nothing found. Try other words.")
     }
 
@@ -683,7 +699,7 @@ const makeRuntime = Effect.gen(function* () {
       const agentsSaid = recent.filter((m) => m.role === "assistant").map((m) => m.text).join("\n")
       if (!person || !grounded(text, person, agentsSaid)) return textResult("Only what the user said or confirmed can be kept, not details you added.", true)
       const scopes = scopesOf(chat, agent?.id ?? null)
-      const active = await run(store.activeMemories(scopes))
+      const active = await run(mem.activeMemories(scopes))
       const wanted = typeof args.replaces === "string" ? normalize(args.replaces) : ""
       const target = wanted ? active.find((m) => normalize(m.text) === wanted) : undefined
       if (!target) {
@@ -693,11 +709,11 @@ const makeRuntime = Effect.gen(function* () {
           return textResult("Already kept. Go on without mentioning it.")
         }
       }
-      if ((await run(store.pendingCount(scopes))) >= MAX_PENDING_MEMORIES) return textResult("Too many memories already wait for the user's review. Go on without it.", true)
+      if ((await run(mem.pendingCount(scopes))) >= MAX_PENDING_MEMORIES) return textResult("Too many memories already wait for the user's review. Go on without it.", true)
       // A turn that started with outside text never keeps a fact on its own: that text isn't the person (spec 011).
       const kept = (await run(store.preference("memoryApproval"))) === "undo" && !target && !row.outside
       const s = await step(`${kept ? "Remember" : "Propose to remember"}: ${text.slice(0, 60)}`, REMEMBER_TOOL.name)
-      const m = await run(store.addMemory({ scope: target?.scope ?? scope, kind: "fact", text, state: kept ? "active" : "pending", origin: "auto", chatId: chat.id, agentId: agent?.id ?? null, replaces: target?.id ?? null }))
+      const m = await run(mem.addMemory({ scope: target?.scope ?? scope, kind: "fact", text, state: kept ? "active" : "pending", origin: "auto", chatId: chat.id, agentId: agent?.id ?? null, replaces: target?.id ?? null }))
       await finish(s, m ? "ok" : "refused", text)
       if (!m) return textResult("The user already has this, or asked to forget it: don't keep it again or mention it.")
       const topics = Array.isArray(args.topics) ? args.topics.slice(0, 5) : []
@@ -714,7 +730,7 @@ const makeRuntime = Effect.gen(function* () {
       // Only the skills this agent sees: one limited to other agents isn't found, nor can it be improved from here.
       const who = agent?.id ?? null
       const files = picked(await run(store.preference("fileSkills")), who)
-      const skills = [...(await run(store.activeMemories(scopes, "skill", undefined, who))), ...files.map(asMemory)]
+      const skills = [...(await run(mem.activeMemories(scopes, "skill", undefined, who))), ...files.map(asMemory)]
       const byTitle = (v: unknown) => {
         const want = String(v ?? "").trim().toLowerCase()
         return skills.find((m) => m.title.toLowerCase() === want) ?? skills.find((m) => m.title.toLowerCase().includes(want) && want.length > 2)
@@ -738,7 +754,7 @@ const makeRuntime = Effect.gen(function* () {
       const waiting = (await run(store.memories())).filter((m) => m.state === "pending" && m.kind === "skill" && m.chatId === chat.id)
       if (waiting.length >= 5) return textResult("Five of your skill proposals already wait for the user. Wait for them to review those.", true)
       const s = await step(target ? `Propose a better "${target.title}"` : `Propose skill: ${title}`, name)
-      const added = await run(store.addMemory({ scope, kind: "skill", title, text: steps, state: "pending", origin: "auto", chatId: chat.id, replaces: target?.id ?? null, reason }))
+      const added = await run(mem.addMemory({ scope, kind: "skill", title, text: steps, state: "pending", origin: "auto", chatId: chat.id, replaces: target?.id ?? null, reason }))
       await finish(s, "ok", title)
       return added ? textResult(`Proposed. The user reviews it in Knowledge${target ? ", seeing what changes" : ""}; it applies once approved.`) : textResult("The same skill is already there.")
     }
@@ -873,7 +889,7 @@ const makeRuntime = Effect.gen(function* () {
         await finish(s, "ok", change.label)
         // A turn's tools are fixed when it starts (the engine lists them once), so the access lands in a turn of its
         // own: queued now, it starts as soon as this one ends, without the person writing again.
-        const next = await run(store.enqueueTurn({ chatId: chat.id, agentId: agent.id, model: row.model, accountId: row.accountId, clientId: null, depth: row.depth }))
+        const next = await run(enqueue({ chatId: chat.id, agentId: agent.id, model: row.model, accountId: row.accountId, clientId: null, depth: row.depth }))
         await run(publish(chat.id, ev("queued", { turn: store.toTurn(next) })))
         await run(ensureWorker(chat.id))
         return textResult(`Granted: ${change.label}. Zorel starts your next turn as soon as this one ends, with the access in place: end this turn now with one short line, then continue the task there.`)
@@ -918,7 +934,7 @@ const makeRuntime = Effect.gen(function* () {
         const s = await step(browserStepTitle(name, args), name)
         // Listing tabs only reads; opening, switching or closing one acts.
         const writes = builtin.writes || (name === "browser_tabs" && (args.action ?? "list") !== "list")
-        const gate = browserRoute(perms, args, writes, askFirst, await actionNames(browsers, chat.id, name as BrowserToolName, args, profileOf(agent?.id)))
+        const gate = browserRoute(perms, args, writes, askFirst, await actionNames(browsers, chat.id, name as BrowserToolName, args, browserProfile))
         if (gate.approve) {
           const card = cardText(JSON.stringify(args, null, 2))
           if (!card) return textResult(TOO_LARGE, true)
@@ -932,7 +948,7 @@ const makeRuntime = Effect.gen(function* () {
         if (writes) onWrite()
         const root = workspace.cwdOf(chat.id, projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined))
         const r = guarded(
-          await runBrowserTool(browsers, chat.id, name as BrowserToolName, args, root, profileOf(agent?.id), agent?.id ?? null).then(
+          await runBrowserTool(browsers, chat.id, name as BrowserToolName, args, root, browserProfile, agent?.id ?? null).then(
             (text) => textResult(text),
             (e: unknown) => textResult(e instanceof Error ? e.message.split("\n")[0]! : String(e), true)
           ),
@@ -1191,7 +1207,7 @@ const makeRuntime = Effect.gen(function* () {
               for (const a of yield* store.openApprovals(chatId)) if (a.turnId === row.id) yield* expire(chatId, a.id)
             })
           )
-          const turn = yield* prepare(store, (yield* store.chat(chatId))!, agent, model, dataDir, opened.tools, cwd)
+          const turn = yield* prepare(ownedStore(store, yield* personOfTurn(chatId, row)), (yield* store.chat(chatId))!, agent, model, dataDir, opened.tools, cwd)
           const nativeSkills = (yield* store.preference("nativeSkills")) === "1"
           const stream = yield* engineStream(attemptRow, turn, account, effort, access, permissionsOf(agent).web, nativeSkills, (set) => {
             markSeen = set
@@ -1331,7 +1347,7 @@ const makeRuntime = Effect.gen(function* () {
   const enqueueAgent = (chat: Chat, team: ReadonlyArray<Agent>, a: Agent, depth: number, routeTeamId?: string, outside = false) =>
     Effect.gen(function* () {
       const isLead = a.id === team[0]?.id // the lead follows the chat's model; other members, their own
-      const t = yield* store.enqueueTurn({ chatId: chat.id, agentId: a.id, model: isLead ? chat.model : a.model, accountId: isLead ? chat.accountId : a.accountId, clientId: null, depth, outside, ...(routeTeamId && { route: true, routeTeamId }) })
+      const t = yield* enqueue({ chatId: chat.id, agentId: a.id, model: isLead ? chat.model : a.model, accountId: isLead ? chat.accountId : a.accountId, clientId: null, depth, outside, ...(routeTeamId && { route: true, routeTeamId }) })
       yield* publish(chat.id, ev("queued", { turn: store.toTurn(t) }))
     })
   // The teams a text calls (spec 010), each as the first of its active members in the chat (none there: no call).
@@ -1389,7 +1405,8 @@ const makeRuntime = Effect.gen(function* () {
       const c = yield* store.createChat({
         // The asking chat's access level comes along: a chat's level covers the work it hands off, too.
         projectId: origin.projectId, agentIds: [target.id], model: target.model, accountId: target.accountId, effort: target.effort, access: origin.access,
-        title: `${target.name}: ${task.replace(/\s+/g, " ").slice(0, 60)}`, taskOf: reply ? origin.id : null, taskBy: by?.id ?? null, parentId: origin.id
+        title: `${target.name}: ${task.replace(/\s+/g, " ").slice(0, 60)}`, taskOf: reply ? origin.id : null, taskBy: by?.id ?? null, parentId: origin.id,
+        ownerId: (yield* store.chatAccess(origin.id))?.ownerId ?? null // a task is seen by whoever sees the chat it came from
       })
       const back = reply
         ? `Your final answer goes back to ${nameOf(by)}. Answer in this shape, short: Status: done | partial | blocked. Result: the result itself. Evidence: what you ran or read.`
@@ -1416,7 +1433,7 @@ const makeRuntime = Effect.gen(function* () {
       const team = yield* members(store, origin)
       const asker = team.find((a) => a.id === task.taskBy)
       const isLead = !asker || asker.id === team[0]?.id
-      const t = yield* store.enqueueTurn({
+      const t = yield* enqueue({
         chatId: origin.id, agentId: asker?.id ?? team[0]?.id ?? null, model: isLead ? origin.model : asker.model, accountId: isLead ? origin.accountId : asker.accountId, clientId: null, depth: 1, outside
       })
       yield* publish(origin.id, ev("queued", { turn: store.toTurn(t) }))
@@ -1587,7 +1604,7 @@ const makeRuntime = Effect.gen(function* () {
         if (joined !== undefined && (a?.id ?? null) === joined) continue
         // The leader uses the chat model (the one you picked); other members use their own.
         const isLead = !a || a.id === plan.lead?.id
-        const t = yield* store.enqueueTurn({
+        const t = yield* enqueue({
           chatId: chat.id, agentId: a?.id ?? null, model: isLead ? chat.model : a.model, accountId: isLead ? chat.accountId : a.accountId,
           clientId: first === undefined ? clientId : null, depth: 0, route: plan.route, outside
         })
@@ -1597,7 +1614,7 @@ const makeRuntime = Effect.gen(function* () {
       // Each @team: one turn the router gives to the member who fits (the first one on any failure).
       for (const c of plan.calls) {
         const isLead = c.first.id === plan.lead?.id
-        const t = yield* store.enqueueTurn({
+        const t = yield* enqueue({
           chatId: chat.id, agentId: c.first.id, model: isLead ? chat.model : c.first.model, accountId: isLead ? chat.accountId : c.first.accountId,
           clientId: first === undefined ? clientId : null, depth: 0, route: true, routeTeamId: c.teamId, outside
         })
@@ -1627,6 +1644,7 @@ const makeRuntime = Effect.gen(function* () {
         let chat = yield* store.chat(input.chatId)
         if (!chat) return yield* new ChatNotFound({ chatId: input.chatId })
         if (!(yield* members(store, chat)).length) return yield* new ChatNeedsAgent({ chatId: chat.id }) // nothing answers anonymously
+        if (opts?.personId) speaker.set(chat.id, opts.personId) // the turns this message starts speak for them
         if (input.model && input.model !== chat.model) chat = (yield* store.updateChat(chat.id, { model: input.model }))!
         if (chat.title === "New chat" || chat.title === "Novo chat") chat = (yield* store.updateChat(chat.id, { title: input.text.replace(/\s+/g, " ").slice(0, 60) }))!
         if (chat.resumeAt && !input.clientId.startsWith("resume:")) yield* store.setResumeAt(chat.id, null) // you went on yourself
@@ -1716,7 +1734,7 @@ const makeRuntime = Effect.gen(function* () {
         const lead = team[0]
         const who = team.find((a) => a.id === m.agentId) ?? lead
         const isLead = !who || who.id === lead?.id
-        const t = yield* store.enqueueTurn({ chatId, agentId: who?.id ?? null, model: isLead ? chat.model : who.model, accountId: isLead ? chat.accountId : who.accountId, clientId: null, depth: 0 })
+        const t = yield* enqueue({ chatId, agentId: who?.id ?? null, model: isLead ? chat.model : who.model, accountId: isLead ? chat.accountId : who.accountId, clientId: null, depth: 0 })
         yield* publish(chatId, ev("queued", { turn: store.toTurn(t) }))
         yield* ensureWorker(chatId)
       }),

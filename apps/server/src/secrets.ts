@@ -1,6 +1,10 @@
 // Secrets (API keys, MCP server variables) live in the system keychain via Bun.secrets
-// (Keychain on macOS, libsecret on Linux, Credential Manager on Windows), never in the database or a file.
-// Environment variables take precedence: whoever runs the server decides what applies.
+// (Keychain on macOS, libsecret on Linux, Credential Manager on Windows), never in the database. A server without a
+// keychain (spec 014) keeps them in a file vault instead: each value sealed with AES-256-GCM under a key only the
+// server's user can read. Environment variables take precedence: whoever runs the server decides what applies.
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
+import { join } from "node:path"
 import { registerSecret } from "./observability.ts"
 import { Context, Effect, Layer } from "effect"
 import { Store } from "./db.ts"
@@ -45,6 +49,42 @@ export class Secrets extends Context.Service<Secrets, SecretStore>()("Secrets") 
   )
 
   static memory = (initial: Record<string, string> = {}) => Layer.succeed(Secrets, memoryStore(new Map(Object.entries(initial))))
+
+  // The file vault (a server without a keychain): every value is in it, so nothing needs preloading.
+  static file = (dataDir: string) => Layer.sync(Secrets, () => fileVault(dataDir))
+}
+
+// <dataDir>/vault.json holds { name: base64(iv | tag | ciphertext) }; <dataDir>/vault.key the 32-byte key (0600). The
+// key and the vault are backed up together (docs/server.md); without the key the vault can't be read.
+export function fileVault(dataDir: string): SecretStore {
+  mkdirSync(dataDir, { recursive: true })
+  const keyFile = join(dataDir, "vault.key")
+  const vaultFile = join(dataDir, "vault.json")
+  if (!existsSync(keyFile)) writeFileSync(keyFile, randomBytes(32), { mode: 0o600 })
+  chmodSync(keyFile, 0o600)
+  const key = readFileSync(keyFile)
+  if (key.length !== 32) throw new Error(`${keyFile} isn't a vault key (32 bytes).`)
+  const sealed: Record<string, string> = existsSync(vaultFile) ? JSON.parse(readFileSync(vaultFile, "utf8")) : {}
+  const cache = new Map(Object.entries(sealed).map(([name, box]) => [name, open(key, box)]))
+  return memoryStore(cache, async (name, value) => {
+    if (value) sealed[name] = seal(key, value)
+    else delete sealed[name]
+    const tmp = `${vaultFile}.tmp`
+    writeFileSync(tmp, JSON.stringify(sealed), { mode: 0o600 })
+    renameSync(tmp, vaultFile) // never half-written
+  })
+}
+const seal = (key: Buffer, value: string) => {
+  const iv = randomBytes(12)
+  const cipher = createCipheriv("aes-256-gcm", key, iv)
+  const data = Buffer.concat([cipher.update(value, "utf8"), cipher.final()])
+  return Buffer.concat([iv, cipher.getAuthTag(), data]).toString("base64")
+}
+const open = (key: Buffer, box: string) => {
+  const raw = Buffer.from(box, "base64")
+  const decipher = createDecipheriv("aes-256-gcm", key, raw.subarray(0, 12))
+  decipher.setAuthTag(raw.subarray(12, 28))
+  return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8")
 }
 
 function memoryStore(cache: Map<string, string>, persist: (name: string, value: string) => Promise<unknown> = async () => {}): SecretStore {

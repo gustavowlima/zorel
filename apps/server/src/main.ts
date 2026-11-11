@@ -3,7 +3,7 @@ import { listFolders } from "./folders.ts"
 import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
 import { Api, ChatNeedsAgentError, CliInstallFailed, LastAgent, CronInvalid, FlowConflict, FlowInvalid, type FlowGraph, type RoutineDelivery, type RoutineSchedule, synthesizeFlow, validateFlow, RoutineInvalid, RoutineQueueFull, TeamHandleTaken, TeamInvalid, DesktopInstallFailed, GitFailed, isTeammate, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
-import { ZorelRpc } from "@zorel/contracts/events"
+import { ApprovalNotFound, ChatNotFound, ZorelRpc } from "@zorel/contracts/events"
 import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER, SESSION_STDIN_ENV } from "@zorel/contracts/session"
 import { Effect, Layer, Schema, Semaphore, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -23,7 +23,12 @@ import { PAGES_DIR } from "./page-files.ts"
 import { PageSync } from "./page-sync.ts"
 import { Engines, listModels, splitModel } from "./engines.ts"
 import { claudeCommands } from "./engines/claude-sdk.ts"
-import { API_KEYS, mcpEnvName, oauthKey, Secrets } from "./secrets.ts"
+import { API_KEYS, fileVault, mcpEnvName, oauthKey, Secrets } from "./secrets.ts"
+import { hasOwner, makeAuth, migrateAuth, setupToken } from "./auth.ts"
+import { type ServerMode, serverModeFrom } from "./server-mode.ts"
+import { serverRoutes } from "./server-routes.ts"
+import { serverIdentity } from "./devices.ts"
+import { viewerScope } from "./visibility.ts"
 import { addCliDirsToPath, installCli } from "./cli-install.ts"
 import { desktopCli, desktopStatus, installDesktop } from "./desktop.ts"
 import { installedApps } from "./installed-apps.ts"
@@ -31,7 +36,7 @@ import { checkFolder, computersFor } from "./computer.ts"
 import { isZorel } from "./desktop-apps.ts"
 import { channelAgent, newPairingCode, pairingCode, TELEGRAM_AGENT, TELEGRAM_KEY, TelegramChannel, telegramUsers, unpairTelegram } from "./telegram.ts"
 import { Accounts } from "./accounts.ts"
-import { Actor } from "./access.ts"
+import { Actor, LOCAL_ACTOR } from "./access.ts"
 import { Actions, Audit, changed } from "./audit.ts"
 import { LoggerLive, redact } from "./observability.ts"
 import { MAX_RUNNING_KEY, parseMaxRunning, Runtime, type RuntimeService } from "./runtime.ts"
@@ -83,6 +88,18 @@ const lentOk = (paths: ReadonlyArray<string> | undefined) =>
       if (why) return yield* new TeamInvalid({ message: `${path}: ${why}` })
     }
   })
+// What the request's person may see (visibility.ts); locally the one owner sees everything.
+const seen = Effect.gen(function* () {
+  return yield* viewerScope(yield* Actor)
+})
+// The routines whose chats the person sees (their runs, the week, the day's brief).
+const visibleRoutines = Effect.gen(function* () {
+  const store = yield* Store
+  const v = yield* seen
+  const shown = new Set((yield* store.chatAccessAll()).filter((c) => v.chat(c)).map((c) => c.id))
+  return new Set((yield* store.routines()).filter((r) => shown.has(r.chatId)).map((r) => r.id))
+})
+
 // A chat's agents: they exist and are global or from the same project.
 const validAgents = (store: Repository, agentIds: ReadonlyArray<string>, projectId: string | null) =>
   Effect.forEach(agentIds, store.agent).pipe(Effect.map((as) => as.every((a) => !!a && (a.projectId === null || a.projectId === projectId))))
@@ -99,7 +116,7 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
     const withPath = <T extends { path?: string | null | undefined }>(input: T) =>
       input.path ? Effect.map(workspace.validate(input.path), (path) => ({ ...input, path })) : Effect.succeed(input)
     return h
-      .handle("list", () => store.projects())
+      .handle("list", () => Effect.flatMap(seen, (v) => Effect.map(store.projects(), (all) => all.filter((p) => v.project(p.id)))))
       // The subfolders of one folder, to pick a project's folder (names and paths only).
       .handle("folders", ({ query }) =>
         Effect.try({ try: () => listFolders(query.dir), catch: (e) => (e instanceof WorkspaceInvalid ? e : new WorkspaceInvalid({ reason: "forbidden" })) })
@@ -118,7 +135,7 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
           if (payload.agentIds?.length && !inReach(payload.agentIds, yield* store.agents())) return yield* notFound()
           if (payload.teamIds?.length && !inReach(payload.teamIds, yield* store.teams())) return yield* notFound()
           const after = yield* Effect.flatMap(withPath(payload), (p) => found(store.updateProject(params.id, p)))
-          if (before) yield* audit.record(Actions.projectUpdated, { target: after, ...changed(before, after, ["name", "brief", "path", "agentIds", "teamIds"]) })
+          if (before) yield* audit.record(Actions.projectUpdated, { target: after, ...changed(before, after, ["name", "brief", "path", "agentIds", "teamIds", "sharedBrowser"]) })
           return after
         })
       )
@@ -141,7 +158,7 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
           if (project) yield* audit.record(Actions.projectDeleted, { target: project })
         })
       )
-      .handle("reorder", ({ payload }) => store.reorderProjects(payload.ids))
+      .handle("reorder", ({ payload }) => Effect.flatMap(seen, (v) => store.reorderProjects(payload.ids.filter(v.project))))
   })
 )
 
@@ -176,7 +193,7 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
       })
     const teamById = (id: string) => Effect.map(store.teams(), (ts) => ts.find((t) => t.id === id))
     return h
-      .handle("list", () => store.agents())
+      .handle("list", () => Effect.flatMap(seen, (v) => Effect.map(store.agents(), (all) => all.filter((a) => a.projectId === null || v.project(a.projectId)))))
       .handle("teams", () => store.teams())
       .handle("createTeam", ({ payload }) =>
         Effect.gen(function* () {
@@ -246,7 +263,7 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
           // Each visit starts fresh. Old Builder conversations are tidied away, but never one opened in the last
           // hour: another tab, window or the desktop app may be in the middle of it (deleting it broke their send).
           for (const old of yield* store.hiddenChats(payload.projectId, Date.now() - BUILDER_KEEP_MS)) yield* store.removeChat(old.id).pipe(Effect.andThen(runtime.release(old.id)))
-          const chat = yield* store.createChat({ projectId: payload.projectId, agentIds: [builder.id], model: payload.model, hidden: true })
+          const chat = yield* store.createChat({ projectId: payload.projectId, agentIds: [builder.id], model: payload.model, hidden: true, ownerId: (yield* Actor).id })
           return (yield* store.updateChat(chat.id, { title: "Build agents" }))!
         })
       )
@@ -315,12 +332,18 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         return { row, projectId: chat.projectId, before: row.treeBefore, after: row.treeAfter, revertedAt: message?.revertedAt ?? null }
       })
     return h
-      .handle("list", () => store.chats())
+      .handle("list", () =>
+        Effect.gen(function* () {
+          const v = yield* seen
+          const access = new Map((yield* store.chatAccessAll()).map((c) => [c.id, c]))
+          return (yield* store.chats()).filter((c) => v.chat(access.get(c.id) ?? { projectId: c.projectId, ownerId: null }))
+        })
+      )
       .handle("create", ({ payload }) =>
         Effect.gen(function* () {
           if (!(yield* projectOk(store, payload.projectId)) || !(yield* validAgents(store, payload.agentIds, payload.projectId))) return yield* notFound()
           if (!payload.agentIds.length) return yield* new ChatNeedsAgentError()
-          return yield* store.createChat(payload)
+          return yield* store.createChat({ ...payload, ownerId: (yield* Actor).id }) // outside a project only its owner sees it
         })
       )
       .handle("update", ({ params, payload }) =>
@@ -461,7 +484,12 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         })
       )
       .handle("search", ({ query }) =>
-        Effect.map(store.searchMessages(query.q.trim()), (rows) => rows.map((m) => ({ chatId: m.chatId, messageId: m.id, at: m.at, snippet: snippet(m.text, query.q.trim()) })))
+        Effect.gen(function* () {
+          const v = yield* seen
+          const access = new Map((yield* store.chatAccessAll()).map((c) => [c.id, c]))
+          const rows = (yield* store.searchMessages(query.q.trim())).filter((m) => { const c = access.get(m.chatId); return !!c && v.chat(c) })
+          return rows.map((m) => ({ chatId: m.chatId, messageId: m.id, at: m.at, snippet: snippet(m.text, query.q.trim()) }))
+        })
       )
       .handle("scripts", ({ params }) => Effect.map(chatRoot(params.id), scriptsOf))
       .handle("preview", ({ params, payload }) =>
@@ -516,7 +544,13 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           }).pipe(Effect.tapError((e) => Effect.logWarning("files op failed", p.op, String(e))), Effect.mapError(() => new HttpApiError.BadRequest()))
         })
       )
-      .handle("reorder", ({ payload }) => store.reorderChats(payload.projectId, payload.ids))
+      .handle("reorder", ({ payload }) =>
+        Effect.gen(function* () {
+          const v = yield* seen
+          const shown = new Set((yield* store.chatAccessAll()).filter((c) => v.chat(c)).map((c) => c.id))
+          return yield* store.reorderChats(payload.projectId, payload.ids.filter((id) => shown.has(id))) // only what the person sees
+        })
+      )
       .handle("messages", ({ params }) => store.messages(params.id))
       // The slash commands of the chat's engine, read in the folder the agents work in (Claude Code only).
       .handle("commands", ({ params }) =>
@@ -610,13 +644,23 @@ const scopeExists = (store: Repository, scope: string) =>
 const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
-    const actor = yield* Actor
     return h
-      .handle("list", () => store.memories())
+      .handle("list", () =>
+        Effect.gen(function* () {
+          const actor = yield* Actor
+          const v = yield* seen
+          return (yield* store.memories(actor.id)).filter((m) => !m.scope.startsWith("project:") || v.project(m.scope.slice(8)))
+        })
+      )
       // The map of one scope (and what's about you), or of every scope.
       .handle("map", ({ query }) =>
         Effect.gen(function* () {
-          const scopes = query.scope ? [...new Set(["user", query.scope])] : [...new Set((yield* store.memories()).map((m) => m.scope))]
+          // ponytail: the map's points have no owner, so on a team server the personal ("user") scope stays off it;
+          // a per-person map would need entities keyed by owner.
+          const v = yield* seen
+          const personal = (yield* Actor).id === LOCAL_ACTOR.id
+          const visible = (s: string) => (s === "user" ? personal : !s.startsWith("project:") || v.project(s.slice(8)))
+          const scopes = (query.scope ? [...new Set(["user", query.scope])] : [...new Set((yield* store.memories()).map((m) => m.scope))]).filter(visible)
           const shape = ({ memory_ids, ...p }: { id: string; scope: string; name: string; type: string; weight: number; facts: number; pending: number; memory_ids: string }) => ({ ...p, type: p.type as "project" | "agent" | "concept" | "subject", facts: Number(p.facts), pending: Number(p.pending ?? 0), memoryIds: memory_ids ? memory_ids.split(",") : [] })
           const own = (yield* store.entitiesIn(scopes)).map(shape)
           // A bridge brings its other end onto this map (drawn as another project's point).
@@ -632,7 +676,7 @@ const Memories = HttpApiBuilder.group(Api, "memories", (h) =>
           if (payload.agents?.length && payload.kind !== "skill") return yield* badRequest() // only a skill is limited to agents
           const only = yield* skillAgents(store, payload.agents)
           if (!only) return yield* badRequest()
-          const added = yield* store.addMemory({ ...payload, agents: only, state: "active", origin: "manual", chatId: null, owner: actor.id })
+          const added = yield* store.addMemory({ ...payload, agents: only, state: "active", origin: "manual", chatId: null, owner: (yield* Actor).id })
           // A fact written by hand hangs off its project's or agent's point on the map (what it's about: the next sleep).
           if (added && added.kind === "fact") yield* store.linkMemory(added.id, added.scope, { entities: [], relations: [] }, yield* ownerPoint(store, added.scope))
           return added ?? (yield* store.memories()).find((m) => m.scope === payload.scope && m.text === payload.text)!
@@ -826,6 +870,7 @@ const AccountsGroup = HttpApiBuilder.group(Api, "accounts", (h) =>
           return r
         })
       )
+      .handle("loginCode", ({ params, payload }) => Effect.flatMap(accounts.answer(params.id, payload.code), (ok) => (ok ? Effect.void : notFound())))
       .handle("limits", ({ params }) => found(accounts.refreshLimits(params.id)))
   })
 )
@@ -1079,17 +1124,35 @@ const RpcHandlers = ZorelRpc.toLayer(
   Effect.gen(function* () {
     const runtime = yield* Runtime
     const store = yield* Store
+    // Each call names a chat: one the person can't see answers as missing (spec 014; locally the owner sees all).
+    const reach = (chatId: string) =>
+      Effect.gen(function* () {
+        const v = yield* seen
+        const c = yield* store.chatAccess(chatId)
+        if (!c || !v.chat(c)) return yield* new ChatNotFound({ chatId })
+        return (yield* Actor).id
+      })
+    const visibleIds = Effect.gen(function* () {
+      const v = yield* seen
+      return new Set((yield* store.chatAccessAll()).filter((c) => v.chat(c)).map((c) => c.id))
+    })
     return {
-      send: (p) => noteActivity(store).pipe(Effect.andThen(runtime.send(p))), // the person is here (spec 012)
-      steer: (p) => runtime.steer(p.chatId, p.text, p.attachmentIds),
-      interrupt: (p) => runtime.interrupt(p.chatId),
-      retry: (p) => runtime.retry(p.chatId, p.messageId),
-      decide: (p) => runtime.decide(p.approvalId, p.outcome, p.reason),
-      subscribeChat: (p) => runtime.subscribeChat(p.chatId),
-      subscribeStatus: () => runtime.subscribeStatus,
+      send: (p) => reach(p.chatId).pipe(Effect.tap(() => noteActivity(store)), Effect.flatMap((personId) => runtime.send(p, { personId }))), // the person is here (spec 012)
+      steer: (p) => reach(p.chatId).pipe(Effect.andThen(runtime.steer(p.chatId, p.text, p.attachmentIds))),
+      interrupt: (p) => reach(p.chatId).pipe(Effect.andThen(runtime.interrupt(p.chatId)), Effect.ignore),
+      retry: (p) => reach(p.chatId).pipe(Effect.andThen(runtime.retry(p.chatId, p.messageId))),
+      decide: (p) =>
+        Effect.gen(function* () {
+          const a = (yield* store.openApprovals()).find((x) => x.id === p.approvalId)
+          if (a && !(yield* visibleIds).has(a.chatId)) return yield* new ApprovalNotFound({ approvalId: p.approvalId })
+          if ((yield* Actor).device) return yield* new ApprovalNotFound({ approvalId: p.approvalId }) // a device approves only signed (spec 014 FR-014)
+          return yield* runtime.decide(p.approvalId, p.outcome, p.reason)
+        }),
+      subscribeChat: (p) => Stream.unwrap(reach(p.chatId).pipe(Effect.as(runtime.subscribeChat(p.chatId)))),
+      subscribeStatus: () => Stream.unwrap(Effect.map(visibleIds, (ids) => runtime.subscribeStatus.pipe(Stream.filter((s) => ids.has(s.chatId))))),
       notices: () => Stream.fromPubSub(notices),
-      approvals: () => store.openApprovals(),
-      runs: (p) => store.runsOf(p.chatId)
+      approvals: () => Effect.flatMap(visibleIds, (ids) => Effect.map(store.openApprovals(), (all) => all.filter((a) => ids.has(a.chatId)))),
+      runs: (p) => reach(p.chatId).pipe(Effect.andThen(store.runsOf(p.chatId)), Effect.orElseSucceed(() => []))
     }
   })
 )
@@ -1205,12 +1268,13 @@ const OAuthCallback = HttpRouter.add(
   })
 )
 
-const WebRoute = (dir: string) =>
+const WebRoute = (dir: string, server = false) =>
   HttpRouter.add("GET", "/*", (req) => {
     const path = normalize(join(dir, decodeURIComponent(new URL(req.url, "http://x").pathname)))
     const file = path.startsWith(dir + sep) && existsSync(path) && !path.endsWith("/") && Bun.file(path).size > 0 ? path : join(dir, "index.html")
     // The app itself only with a session: without one it couldn't load anything, so say how to get one.
-    if (file.endsWith("index.html") && !signedIn(req.headers)) return Effect.succeed(page("Open Zorel from its link", "Use the link Zorel printed when it started (it ends in /api/login?t=…).", 401, false))
+    // A server's app loads signed out (it shows the sign-in or the setup); locally it needs the per-launch secret.
+    if (file.endsWith("index.html") && !server && !signedIn(req.headers)) return Effect.succeed(page("Open Zorel from its link", "Use the link Zorel printed when it started (it ends in /api/login?t=…).", 401, false))
     // index.html always revalidates (it points at the current build); hashed assets never change.
     const cache = file.endsWith("index.html") ? "no-cache" : "public, max-age=31536000, immutable"
     return HttpServerResponse.file(file).pipe(Effect.map(HttpServerResponse.setHeader("cache-control", cache)), Effect.orDie)
@@ -1276,7 +1340,7 @@ const PagesGroup = HttpApiBuilder.group(Api, "pages", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
     return h
-      .handle("list", () => store.pages())
+      .handle("list", () => Effect.flatMap(seen, (v) => Effect.map(store.pages(), (all) => all.filter((p) => !p.scope.startsWith("project:") || v.project(p.scope.slice(8))))))
       .handle("create", ({ payload }) => store.savePage(payload))
       .handle("update", ({ params, payload }) =>
         Effect.gen(function* () {
@@ -1364,7 +1428,13 @@ const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
         }
       })
     return h
-      .handle("list", () => store.routines())
+      .handle("list", () =>
+        Effect.gen(function* () {
+          const v = yield* seen
+          const access = new Map((yield* store.chatAccessAll()).map((c) => [c.id, c]))
+          return (yield* store.routines()).filter((r) => { const c = access.get(r.chatId); return !c || v.chat(c) })
+        })
+      )
       .handle("create", ({ payload }) =>
         Effect.gen(function* () {
           const agent = yield* store.agent(payload.agentId)
@@ -1421,14 +1491,16 @@ const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
         Effect.gen(function* () {
           if (!(query.to > query.from) || query.to - query.from > 31 * 24 * 60 * 60_000) return yield* Effect.fail(new HttpApiError.BadRequest())
           const p = yield* profileOf(store)
-          const runs = (yield* store.routineRunsBetween(query.from, query.to)).map(({ payload: _p, report: _r, ...run }) => run)
-          return { runs, planned: plannedRuns(yield* store.routines(), p.zone, p.start, Math.max(query.from, Date.now()), query.to) }
+          const mine = yield* visibleRoutines
+          const runs = (yield* store.routineRunsBetween(query.from, query.to)).filter((r) => mine.has(r.routineId)).map(({ payload: _p, report: _r, ...run }) => run)
+          return { runs, planned: plannedRuns((yield* store.routines()).filter((r) => mine.has(r.id)), p.zone, p.start, Math.max(query.from, Date.now()), query.to) }
         })
       )
       .handle("today", () =>
         Effect.gen(function* () {
           const from = yield* briefFrom(store)
-          const t = todayOf((yield* store.routineRunsBetween(from, Date.now() + 1)).map(({ payload: _p, report: _r, ...run }) => run), from)
+          const mine = yield* visibleRoutines
+          const t = todayOf((yield* store.routineRunsBetween(from, Date.now() + 1)).filter((r) => mine.has(r.routineId)).map(({ payload: _p, report: _r, ...run }) => run), from)
           return { from, ...t }
         })
       )
@@ -1526,9 +1598,10 @@ const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
       .handle("uncertain", () =>
         Effect.gen(function* () {
           const out = []
+          const mine = yield* visibleRoutines
           for (const step of yield* store.uncertainSteps()) {
             const run = yield* store.routineRun(step.runId)
-            if (run) out.push({ routineId: run.routineId, runId: run.id, stepId: step.id, nodeId: step.nodeId, at: step.startedAt })
+            if (run && mine.has(run.routineId)) out.push({ routineId: run.routineId, runId: run.id, stepId: step.id, nodeId: step.nodeId, at: step.startedAt })
           }
           return out
         })
@@ -1553,10 +1626,10 @@ const SCHEDULES: Partial<Record<string, (t: { date?: string | undefined; time?: 
 }
 const stepOut = ({ outputFile, mayHaveWritten: _m, ...s }: StepRow) => ({ ...s, full: outputFile !== null })
 
-export const AppLive = (webDir?: string) =>
+// `server`: server mode's guard and routes (server-routes.ts) in place of LocalOnly and the local login link.
+export const AppLive = (webDir?: string, server?: ReturnType<typeof serverRoutes>) =>
   Layer.mergeAll(
-    LocalOnly,
-    Login,
+    server ?? Layer.mergeAll(LocalOnly, Login),
     HttpApiBuilder.layer(Api).pipe(Layer.provide([Projects, Agents, Chats, Memories, ToolsGroup, AccountsGroup, Settings, RoutinesGroup, PagesGroup])),
     RoutineScheduler,
     TelegramChannel,
@@ -1569,7 +1642,7 @@ export const AppLive = (webDir?: string) =>
     TerminalSocket,
     BrowserSocket,
     BrowserPicture,
-    ...(webDir && existsSync(join(webDir, "index.html")) ? [WebRoute(webDir)] : [])
+    ...(webDir && existsSync(join(webDir, "index.html")) ? [WebRoute(webDir, !!server)] : [])
   )
 
 // Services with real dependencies (system keychain). Tests build their own with Secrets.memory.
@@ -1592,7 +1665,16 @@ interface StartOptions {
 export async function start(o: StartOptions = {}) {
   const dataDir = o.dataDir ?? process.env.ZOREL_HOME ?? defaultDataDir()
   mkdirSync(dataDir, { recursive: true }) // don't spawn a shell just to create the folder
-  const port = o.port ?? Number(process.env.PORT ?? 4317)
+  // Server mode (spec 014): by environment only; misconfigured, it refuses to start rather than run open.
+  let mode: ServerMode | undefined
+  try {
+    mode = serverModeFrom(process.env)
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : e)
+    process.exit(1)
+  }
+  const port = mode?.port ?? o.port ?? Number(process.env.PORT ?? 4317)
+  if (mode) process.env.ZOREL_ORIGIN = mode.publicUrl.origin // OAuth services send people back to the public URL
   process.env.ZOREL_ORIGIN ??= `http://127.0.0.1:${port}` // where OAuth services send the person back (oauth.ts)
   const dbPath = process.env.ZOREL_DB ?? dbPathIn(dataDir)
   const imported = await applyPendingImport(dataDir, dbPath).catch((e: unknown) => {
@@ -1601,10 +1683,12 @@ export async function start(o: StartOptions = {}) {
   })
   if (imported) console.info("imported workspace applied")
   const webDir = o.webDir ?? process.env.ZOREL_WEB_DIR ?? resolve(import.meta.dir, "../../web/dist")
-  AppLive(resolve(webDir)).pipe(
+  // A server keeps its secrets in the file vault (no keychain to rely on), the auth secret among them, made once.
+  const server = mode && (await serverSetup(mode, dataDir, dbPath))
+  AppLive(resolve(webDir), server?.routes).pipe(
     HttpRouter.serve,
-    Layer.provide(services(dbPath, dataDir)),
-    Layer.provide(BunHttpServer.layer({ port, hostname: "127.0.0.1" })),
+    Layer.provide(services(dbPath, dataDir, mode ? Secrets.file(dataDir) : undefined)),
+    Layer.provide(BunHttpServer.layer({ port, hostname: mode?.host ?? "127.0.0.1" })),
     Layer.provide(LoggerLive),
     Layer.launch,
     BunRuntime.runMain
@@ -1613,9 +1697,36 @@ export async function start(o: StartOptions = {}) {
   addCliDirsToPath() // agent CLIs installed in their usual folders are found even when this process's PATH lacks them
   process.on("exit", () => computersFor(dataDir).stopAll()) // the containers this run used don't outlive it
   // The desktop app brings its own secret; elsewhere this link is how the owner's browser gets in.
-  if (!process.env.ZOREL_PARENT_PID) console.info(`Open Zorel: ${process.env.ZOREL_WEB_ORIGIN ?? `http://127.0.0.1:${port}`}${LOGIN_PATH}?t=${SESSION}`)
+  if (mode) console.info(server?.setupLink ? `Zorel needs its first owner. Open (valid 1 hour): ${server.setupLink}` : `Zorel is up at ${mode.publicUrl.origin}`)
+  else if (!process.env.ZOREL_PARENT_PID) console.info(`Open Zorel: ${process.env.ZOREL_WEB_ORIGIN ?? `http://127.0.0.1:${port}`}${LOGIN_PATH}?t=${SESSION}`)
   return `http://127.0.0.1:${port}`
 }
+
+// Server mode's identity (auth.ts): its secret from the vault (made once), its tables, the routes and guard, and the
+// one-time setup link while there's no owner.
+async function serverSetup(mode: ServerMode, dataDir: string, dbPath: string) {
+  const vault = fileVault(dataDir)
+  let secret = vault.get(AUTH_SECRET)
+  if (!secret) {
+    secret = randomBytes(32).toString("base64url")
+    await vault.set(AUTH_SECRET, secret)
+  }
+  const a = makeAuth({ dbPath, secret, mode })
+  await migrateAuth(a)
+  const setup = setupToken()
+  // The server's identity key (devices check it at pairing), made once into the vault.
+  const identity = await serverIdentity(vault.get(SERVER_KEY), (jwk) => vault.set(SERVER_KEY, jwk))
+  // Someone removed (FR-008, FR-019): their routines pause and they leave every project; their sessions and devices
+  // are already gone (team-routes.ts).
+  const onRemoved = async (personId: string) => {
+    a.db.query("UPDATE routines SET enabled = 0 WHERE chat_id IN (SELECT id FROM chats WHERE owner_id = ?)").run(personId)
+    a.db.query("DELETE FROM project_members WHERE person_id = ?").run(personId)
+    a.db.query("UPDATE devices SET state = 'revoked' WHERE person_id = ?").run(personId)
+  }
+  return { routes: serverRoutes(mode, a, setup, identity, onRemoved), setupLink: hasOwner(a) ? undefined : `${mode.publicUrl.origin}/setup?t=${setup.value}` }
+}
+const AUTH_SECRET = "auth-secret"
+const SERVER_KEY = "server-identity-key"
 
 // Before the rename to Zorel the data lived in ~/.zero/zero.db. Keep using it where it exists (not moved: the
 // database holds absolute paths of attachments and accounts).

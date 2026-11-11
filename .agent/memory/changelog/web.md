@@ -106,3 +106,5 @@
 2026-11-11 | spec 015: agents mandatory (first run, no plain chat, last agent kept, orphan chats ask who continues) | user decision
 2026-11-11 | permissions tab split into Access/Tools; app picker with search; nested form fixed | user: apps section broken and hard to use
 2026-11-11 | own computer: host option, lent folders, live state, start/restart/open; Podman always when installed; app icons | user request
+2026-11-11 | spec 014 M1: server mode, Better Auth, vault, guard, setup and sign-in | user decision
+2026-11-11 | team UI: devices, project shared browser, browser holder/masked/watch-only, server engine sign-in code | spec 014

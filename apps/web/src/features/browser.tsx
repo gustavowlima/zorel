@@ -15,6 +15,8 @@ import { AgentAvatar, AgentPointer, ArrowRight, Button, ChevronRight, cn, Globe,
 export type BrowserFocus = { owner: string; full: boolean; onExit?: (() => void) | undefined }
 type Tab = { id: string; title: string; url: string; active: boolean; owner: string } // owner: an agent's id, "assistant" or "you"
 const YOU = "you"
+const isYours = (owner: string) => owner === YOU || owner.startsWith(`${YOU}--`)
+const agentOf = (owner: string) => owner.split("--")[0]!
 const PREVIEW_MS = 4000 // the cards' pictures refresh this often while the cards show
 type Frame =
   | { t: "click"; x: number; y: number; button?: "left" | "right"; clicks?: number }
@@ -61,6 +63,8 @@ function keyFrame(e: KeyboardEvent): Frame | undefined {
 export function BrowserPanel({ chatId, openUrl, focus, newTab = 0 }: { chatId: string; openUrl?: { url: string } | undefined; focus?: BrowserFocus | undefined; newTab?: number }) {
   const [tabs, setTabs] = useState<ReadonlyArray<Tab>>([])
   const [held, setHeld] = useState(false)
+  // On a team server (spec 014): someone else may hold it, a secret field may hide the page, you may only watch.
+  const [view, setView] = useState({ yours: true, masked: false, mayControl: true })
   const [frame, setFrame] = useState<string>()
   const [address, setAddress] = useState("")
   const [error, setError] = useState<string>()
@@ -90,10 +94,11 @@ export function BrowserPanel({ chatId, openUrl, focus, newTab = 0 }: { chatId: s
     let last: string | undefined
     socket.onmessage = (e) => {
       if (typeof e.data === "string") {
-        const m = JSON.parse(e.data) as { t: string; tabs?: Tab[]; userControl?: boolean; message?: string } & Partial<Act>
+        const m = JSON.parse(e.data) as { t: string; tabs?: Tab[]; userControl?: boolean; yours?: boolean; masked?: boolean; mayControl?: boolean; message?: string } & Partial<Act>
         if (m.t === "state") {
           setTabs(m.tabs ?? [])
           setHeld(!!m.userControl)
+          setView({ yours: m.yours !== false, masked: !!m.masked, mayControl: m.mayControl !== false })
         } else if (m.t === "previews") setPreviews((m as { previews?: Record<string, string> }).previews ?? {})
         else if (m.t === "error") setError(m.message)
         else if (m.t === "act") setAct(m as Act)
@@ -130,6 +135,7 @@ export function BrowserPanel({ chatId, openUrl, focus, newTab = 0 }: { chatId: s
 
   const send = (f: Frame) => {
     setError(undefined)
+    if (!view.mayControl && f.t !== "view" && f.t !== "previews") return // watching only: the server refuses it anyway
     if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify(f))
     else ws.current?.addEventListener("open", () => ws.current?.send(JSON.stringify(f)), { once: true })
   }
@@ -179,8 +185,9 @@ export function BrowserPanel({ chatId, openUrl, focus, newTab = 0 }: { chatId: s
     exitFull.current = want.full ? want.onExit : undefined
     setWant(undefined)
   }, [want, tabs])
-  const ownerLabel = (owner: string) => (owner === YOU ? t("browser.yours") : agentName(owner === "assistant" ? null : owner, agents))
-  const newTabFrame = (): Frame => (shown === YOU ? { t: "newtab" } : { t: "newtab", owner: shown })
+  // A browser's owner: yours ("you", or "you--<person>" on a team server) or an agent's ("<agent>" or "<agent>--<person>").
+  const ownerLabel = (owner: string) => (isYours(owner) ? t("browser.yours") : agentName(agentOf(owner) === "assistant" ? null : agentOf(owner), agents))
+  const newTabFrame = (): Frame => (isYours(shown) ? { t: "newtab" } : { t: "newtab", owner: shown })
 
   const at = (e: MouseEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect()
@@ -270,14 +277,14 @@ export function BrowserPanel({ chatId, openUrl, focus, newTab = 0 }: { chatId: s
       {/* Who holds the browser: the agents (and what one is doing now), or you (then they wait). */}
       <div aria-live="polite" className={cn("flex items-center gap-2 px-3 py-1.5 text-sm", held ? "bg-accent-soft text-accent-text" : working ? (actor ? `tinted ${agentTint(actor, agents)}` : "text-secondary") : "text-muted")}>
         {working && (act.done ? face : <Spinner size={12} />)}
-        <span className="min-w-0 flex-1 truncate">{held ? t("browser.youHold") : working ? doingLine(act, actorName) : t("browser.agentsMayUse")}</span>
-        {held && (
+        <span className="min-w-0 flex-1 truncate">{held ? t(view.yours ? "browser.youHold" : "browser.otherHolds") : working ? doingLine(act, actorName) : t(view.mayControl ? "browser.agentsMayUse" : "browser.watchOnly")}</span>
+        {held && view.yours && (
           <Button size="sm" variant="secondary" onPress={() => send({ t: "release" })}>
             {t("browser.handBack")}
           </Button>
         )}
       </div>
-      {error && <p className="px-3 py-1.5 text-sm text-danger">{error}</p>}
+      {error && <p className="px-3 py-1.5 text-sm text-danger">{error === "watch_only" ? t("browser.watchOnly") : error}</p>}
       <div className={cn("flex min-h-0 flex-1 justify-center overflow-auto bg-code p-2", full ? "items-center" : "items-start")}>
         {active && frame ? (
           <div
@@ -304,7 +311,8 @@ export function BrowserPanel({ chatId, openUrl, focus, newTab = 0 }: { chatId: s
               send({ t: "text", text: e.clipboardData.getData("text") })
             }}
           >
-            <img src={frame} alt="" draggable={false} className="pointer-events-none size-full select-none object-contain" />
+            <img src={frame} alt="" draggable={false} className={cn("pointer-events-none size-full select-none object-contain", view.masked && "blur-md")} />
+            {view.masked && <p className="absolute inset-x-0 top-1/2 text-center text-sm text-primary">{t("browser.masked")}</p>}
             {act?.x !== undefined && act.y !== undefined && !held && (
               <AgentPointer
                 x={act.x}
@@ -344,7 +352,7 @@ function BrowserCards({ agents, owners, tabs, previews, label, acting, onOpen }:
         {owners.map((owner) => {
           const mine = tabs.filter((x) => x.owner === owner)
           const shown = mine.find((x) => x.active) ?? mine.at(-1)
-          const agent = agents.find((a) => a.id === owner)
+          const agent = agents.find((a) => a.id === agentOf(owner))
           const live = acting === owner
           return (
             <li key={owner}>

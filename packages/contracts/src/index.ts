@@ -41,7 +41,8 @@ export const ProviderAccount = Schema.Struct({
 export type ProviderAccount = typeof ProviderAccount.Type
 const NewAccount = Schema.Struct({ provider: AccountProvider, label: Name })
 const AccountPatch = Schema.Struct({ label: Name })
-const LoginStarted = Schema.Struct({ url: Schema.NullOr(Schema.String) }) // url: when the CLI printed one
+// url: when the CLI printed one; output: on a server, what it shows (the link, a device code, a prompt for the code)
+const LoginStarted = Schema.Struct({ url: Schema.NullOr(Schema.String), output: Schema.optional(Schema.String) })
 
 // Reasoning effort (ARCHITECTURE §6). null = the model's default. "max" maps to each engine's top level.
 export const Effort = Schema.Literals(["low", "medium", "high", "max"])
@@ -89,6 +90,7 @@ export const Project = Schema.Struct({
   // then gives each message to the one it fits. Empty: a plain chat.
   agentIds: Schema.Array(Id),
   teamIds: Schema.Array(Id),
+  sharedBrowser: Schema.Boolean, // team server: the project's agents keep one set of site logins for all its people
   createdAt: Schema.Number
 })
 export type Project = typeof Project.Type
@@ -709,7 +711,7 @@ const TopTurn = Schema.Struct({
 
 const FolderPath = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(1000))
 const NewProject = Schema.Struct({ name: Name, brief: Text(8000), path: Schema.optional(Schema.NullOr(FolderPath)) })
-const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: Schema.optional(Text(8000)), path: Schema.optional(Schema.NullOr(FolderPath)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))), teamIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
+const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: Schema.optional(Text(8000)), path: Schema.optional(Schema.NullOr(FolderPath)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))), teamIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))), sharedBrowser: Schema.optional(Schema.Boolean) })
 const AgentTitle = Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(60))
 const AgentDescription = Text(300)
 const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Text(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions), memory: Schema.optional(MemoryMode), knowledge: Schema.optional(KnowledgeAccess) , teamIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) })
@@ -977,6 +979,8 @@ export const Api = HttpApi.make("zorel")
       // Default accounts can't be removed; removing logs out and deletes the account's folder.
       .add(HttpApiEndpoint.delete("remove", "/api/accounts/:id", { params: idParam, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
       .add(HttpApiEndpoint.post("login", "/api/accounts/:id/login", { params: idParam, success: LoginStarted, error: [HttpApiError.NotFound, HttpApiError.Conflict] }))
+      // On a server: the code the provider's page showed, typed into the waiting CLI.
+      .add(HttpApiEndpoint.post("loginCode", "/api/accounts/:id/login/code", { params: idParam, payload: Schema.Struct({ code: Schema.String.check(Schema.isMaxLength(2000)) }), error: HttpApiError.NotFound }))
       // Reads the account's limit windows now (cached for 4 min; failures back off up to 1 h).
       .add(HttpApiEndpoint.post("limits", "/api/accounts/:id/limits", { params: idParam, success: ProviderAccount, error: HttpApiError.NotFound }))
   )

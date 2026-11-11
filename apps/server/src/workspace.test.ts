@@ -17,7 +17,7 @@ const setup = () => {
   writeFileSync(join(folder, "src", "a.ts"), "export const a = 1\n")
   writeFileSync(join(folder, "keep.md"), "keep\n")
   writeFileSync(join(folder, "node_modules", "x", "i.js"), "ignored\n")
-  const project: Project = { id: "p1", name: "app", brief: "", path: folder, agentIds: [], teamIds: [], createdAt: 0 }
+  const project: Project = { id: "p1", name: "app", brief: "", path: folder, agentIds: [], teamIds: [], sharedBrowser: false, createdAt: 0 }
   const run = <A, E>(f: Effect.Effect<A, E, Workspace>) => Effect.runPromise(f.pipe(Effect.provide(Workspace.layer.pipe(Layer.provide(DataDir.layer(data))))) as Effect.Effect<A>)
   const runExit = <A, E>(f: Effect.Effect<A, E, Workspace>) => Effect.runPromise(Effect.exit(f).pipe(Effect.provide(Workspace.layer.pipe(Layer.provide(DataDir.layer(data))))))
   return { root, data, folder, project, run, runExit }

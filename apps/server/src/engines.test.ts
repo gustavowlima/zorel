@@ -54,7 +54,7 @@ test("context: the memory budget favors the recent ones; layers in stable → vo
   const turn = buildTurn({
     chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", parentId: null, accountId: null, effort: null, access: null, model: "anthropic/m", summary: "SUMMARYTEXT", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
     model: "anthropic/m",
-    project: { id: "p", name: "P", brief: "BRIEF", path: null, agentIds: [], teamIds: [], createdAt: 0 },
+    project: { id: "p", name: "P", brief: "BRIEF", path: null, agentIds: [], teamIds: [], sharedBrowser: false, createdAt: 0 },
     agent: dev,
     members: [dev, agentOf("b", "Senior Reviewer", "Reviews PRs")],
     pinned: [mem("MINE", 1), mem("PROJ", 1, "project:p"), mem("AG", 1, "agent:a")],
@@ -430,7 +430,7 @@ test("sessionless engines: two turns that recall different memories send the sam
     sessionless(buildTurn({
       chat: { id: "c", projectId: "p", agentIds: ["a"], title: "", parentId: null, accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "SUMMARYTEXT", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
       model: "claude-cli/sonnet",
-      project: { id: "p", name: "P", brief: "BRIEF", path: null, agentIds: [], teamIds: [], createdAt: 0 },
+      project: { id: "p", name: "P", brief: "BRIEF", path: null, agentIds: [], teamIds: [], sharedBrowser: false, createdAt: 0 },
       agent: dev,
       members: [dev],
       pinned: [mem("MINE", 1)],
@@ -477,7 +477,7 @@ test("recalled content is marked as data and can't close the <context> block", (
     buildTurn({
       chat: { id: "c", projectId: "p", agentIds: ["a"], title: "", parentId: null, accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
       model: "claude-cli/sonnet",
-      project: { id: "p", name: "P", brief: "", path: null, agentIds: [], teamIds: [], createdAt: 0 },
+      project: { id: "p", name: "P", brief: "", path: null, agentIds: [], teamIds: [], sharedBrowser: false, createdAt: 0 },
       agent: dev,
       members: [dev],
       pinned: [],

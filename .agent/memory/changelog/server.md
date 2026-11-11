@@ -129,3 +129,5 @@
 2026-11-11 | spec 015: server refuses agentless chats/sends and removing the last agent; Telegram answers as an agent | user decision
 2026-11-11 | new connectors read-only by default; read-mode servers cap grants; installed apps endpoint | user decision
 2026-11-11 | own computer: host option, lent folders, live state, start/restart/open; Podman always when installed; app icons | user request
+2026-11-11 | spec 014 M1: server mode, Better Auth, vault, guard, setup and sign-in | user decision
+2026-11-11 | spec 014 M2-M7: team, visibility via refOf + SC-004 route matrix, devices, browser lease/masking, PTY engine sign-in, Dockerfile | user request

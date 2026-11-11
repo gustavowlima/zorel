@@ -7,6 +7,9 @@ import { type LanguagePref, languagePref, setLanguagePref, t } from "@zorel/i18n
 import { MAX_RUNNING_CHOICES, MAX_RUNNING_DEFAULT, type MemoryApproval } from "@zorel/contracts"
 import { type ReactNode, useEffect, useId, useState } from "react"
 import { mutations, preferencesAtom, useMutation } from "../client.ts"
+import { useServer } from "./sign-in.tsx"
+import { TeamSection } from "./team.tsx"
+import { ServersSetting } from "./desktop-servers.tsx"
 import { go, liveStepsOpen, SETTINGS_TABS, type SettingsTab, setLiveStepsOpen, setThemePref, themePref, type ThemePref } from "../state.ts"
 import { AuditSection } from "./audit.tsx"
 import { SkillsBody } from "./skills.tsx"
@@ -18,17 +21,18 @@ import { ModelPicker } from "./model-picker.tsx"
 import { ProvidersSection } from "./providers.tsx"
 import { ProcessesSection } from "./processes.tsx"
 import { StorageSection } from "./storage.tsx"
-import { Activity, Button, Column, cn, DisclosurePill, Fold, HardDrive, History, Layers, MessageCircle, NavItem, Plug, Rows, Screen, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch, SETTLE } from "@/ui"
+import { Activity, Button, Column, cn, DisclosurePill, Fold, HardDrive, History, Layers, MessageCircle, NavItem, Plug, Rows, Screen, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch, SETTLE, Users } from "@/ui"
 
-const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, providers: <Sparkles />, mcp: <Plug />, skills: <Layers />, channels: <MessageCircle />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
+const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, team: <Users />, providers: <Sparkles />, mcp: <Plug />, skills: <Layers />, channels: <MessageCircle />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
 
 // skill: Skills is a section here (2026-11-09); its own links (#/skills/<id>, #/skills/file/<path>) open it with these.
 export function SettingsView({ tab, provider, skill }: { tab: SettingsTab; provider?: string | undefined; skill?: { selected?: string | undefined; file?: string | undefined } }) {
+  const server = useServer() // Team only on a team server
   return (
     <Screen title={t("settings.title")} subtitle={t(`settings.hint.${tab}`)} bodyClassName="flex flex-col md:flex-row">
       {/* A column of sections beside the page; in a narrow window, a row above it that scrolls sideways. */}
       <nav aria-label={t("settings.sections")} className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-subtle p-2 md:w-56 md:flex-col md:overflow-x-visible md:border-r md:border-b-0 md:p-3">
-        {SETTINGS_TABS.map((s) => (
+        {SETTINGS_TABS.filter((s) => s !== "team" || server).map((s) => (
           // On the canvas the active item needs a fill of its own (bg-canvas, the sidebar's, would vanish here).
           <NavItem key={s} icon={ICONS[s]} active={s === tab} className={cn("w-auto shrink-0 md:w-full", s === tab && "border-transparent bg-control")} onPress={() => go({ view: "settings", tab: s })}>
             {t(`settings.${s}`)}
@@ -49,6 +53,7 @@ export function SettingsView({ tab, provider, skill }: { tab: SettingsTab; provi
           {tab === "mcp" && <McpSection projectId={null} />}
           {tab === "channels" && <ChannelsSection />}
           {tab === "general" && <General />}
+          {tab === "team" && server && <TeamSection />}
         </Column>
       </div>
       )}
@@ -266,6 +271,7 @@ function General() {
     </Section>
     <YourDaySetting />
     <AgentsSetting />
+    <ServersSetting />
     <StartupSetting />
     <AboutSetting />
     </>

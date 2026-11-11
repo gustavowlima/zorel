@@ -29,6 +29,8 @@ export const projects = sqliteTable("projects", {
   position: integer(), // manual order in the sidebar; null: not placed yet (newest first, above the placed ones)
   agentIds: text("agent_ids", { mode: "json" }).$type<ReadonlyArray<string>>().notNull().default([]), // who joins a new chat here
   teamIds: text("team_ids", { mode: "json" }).$type<ReadonlyArray<string>>().notNull().default([]), // teams whose members join it too
+  // On a team server (spec 014): its agents sign in to sites once for everyone in the project, not once per person.
+  sharedBrowser: integer("shared_browser", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at").notNull()
 })
 
@@ -92,6 +94,8 @@ export const memoryVersions = sqliteTable("memory_versions", {
 export const chats = sqliteTable("chats", {
   id: text().primaryKey(),
   projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  // Who started it (spec 014): outside a project only they see it. "local" on the desktop; null for chats made before.
+  ownerId: text("owner_id"),
   title: text().notNull(),
   model: text().notNull(),
   accountId: text("account_id"), // the lead's account; null: the default one
@@ -287,6 +291,7 @@ export const turns = sqliteTable(
     route: integer({ mode: "boolean" }).notNull().default(false), // who answers is picked (router.ts) when it starts
     routeTeamId: text("route_team_id"), // routed among this team's members (an @team call); null: the chat's members
     outside: integer({ mode: "boolean" }).notNull().default(false), // started by outside text (webhook, watch) or handed off from it: runs at "ask"
+    personId: text("person_id"), // whose message started it (spec 014): their personal memory and browser logins; null: the chat's owner
     createdAt: integer("created_at").notNull(),
     startedAt: integer("started_at"),
     endedAt: integer("ended_at"),
@@ -514,3 +519,40 @@ export const pageVersions = sqliteTable("page_versions", {
   by: text().notNull(), // "you" or the agent's name
   at: integer().notNull()
 })
+
+// The people in a project on a team server (spec 014): they see its chats, files and agents. Owners and admins see
+// every project; members only theirs. Unused on the desktop (one owner sees everything).
+export const projectMembers = sqliteTable(
+  "project_members",
+  {
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    personId: text("person_id").notNull(),
+    addedAt: integer("added_at").notNull()
+  },
+  (t) => [primaryKey({ columns: [t.projectId, t.personId] }), index("project_members_person").on(t.personId)]
+)
+
+// Paired devices (spec 014 M4, the phone app of spec 016): each makes its own P-256 key at pairing and keeps it; the
+// server keeps only the public half. Waiting until the person (or an admin) confirms it by name; revoked never comes back.
+export const devices = sqliteTable(
+  "devices",
+  {
+    id: text().primaryKey(),
+    personId: text("person_id").notNull(),
+    name: text().notNull(),
+    publicKey: text("public_key").notNull(), // JWK (P-256), as the device sent it
+    state: text({ enum: ["waiting", "active", "revoked"] }).notNull(),
+    createdAt: integer("created_at").notNull(),
+    usedAt: integer("used_at")
+  },
+  (t) => [index("devices_person").on(t.personId)]
+)
+
+// One-time pairing codes: only a hash is kept; used once, within 5 minutes.
+export const pairingCodes = sqliteTable("pairing_codes", {
+  hash: text().primaryKey(),
+  personId: text("person_id").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+  used: integer({ mode: "boolean" }).notNull().default(false)
+})
+

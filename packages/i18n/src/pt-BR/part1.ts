@@ -402,6 +402,9 @@ export const part1 = {
   },
   project: {
     crew: "Quem participa das conversas",
+    sharedBrowser: "Navegador dos agentes",
+    sharedBrowserHint: "Por padrão, cada agente guarda os logins de sites de cada pessoa separados. Compartilhado, ele entra uma vez para todos deste projeto.",
+    sharedBrowserOn: "Compartilhar os logins dos agentes no projeto",
     crewHint: "Entram em toda conversa nova deste projeto. Cada mensagem vai para quem tem a ver com o assunto; mencione alguém com @ para chamar direto.",
     crewTeams: "Times",
     crewNoTeams: "Nenhum time ainda. Crie um na tela Agentes.",

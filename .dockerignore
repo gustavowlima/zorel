@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/out
+.git
+.agent
+specs
+docs
+*.log
+.env*
+apps/desktop/artifacts
+apps/desktop/build
+**/.DS_Store

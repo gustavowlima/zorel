@@ -31,6 +31,8 @@ export const Actions = {
   desktopInstalled: action("desktop.installed", "tool"),
   cliInstalled: action("cli.installed", "tool"),
   computerErased: action("computer.erased", "agent"),
+  browserControlTaken: action("browser.control_taken", "chat"),
+  browserControlReturned: action("browser.control_returned", "chat"),
   mcpAdded: action("mcp_server.added", "mcp_server"),
   mcpUpdated: action("mcp_server.updated", "mcp_server"),
   mcpRemoved: action("mcp_server.removed", "mcp_server"),

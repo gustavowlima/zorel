@@ -8,6 +8,8 @@ import {
 } from "./context.ts"
 import { hasCredential, redact } from "./observability.ts"
 import { normalize, Store, type Repository } from "./db.ts"
+import { LOCAL_ACTOR } from "./access.ts"
+import { ownedStore } from "./visibility.ts"
 import { nearest, vectorsReady } from "./vectors.ts"
 
 // How much of the memory rides along pinned: the full budget until the local model is ready (without it, paraphrased
@@ -250,11 +252,16 @@ export function stretchOf<M extends { role: string; at: number; text: string }>(
 // correction of an existing memory and every skill still wait (a skill is instructions for the agent, so it never
 // turns on by itself); a chat that doesn't learn only folds the summary.
 export const consolidate = Effect.fn("consolidate")(function* (chatId: string, how: Consolidation = "window", onRemembered: (saved: ReadonlyArray<Memory>) => Effect.Effect<void> = () => Effect.void) {
-  const store = yield* Store
+  const base = yield* Store
   const engines = yield* Engines
   const dataDir = yield* DataDir
-  const chat = yield* store.chat(chatId)
+  const chat = yield* base.chat(chatId)
   if (!chat) return yield* new NotFound()
+  // Whose facts these are (spec 014): the chat's owner. In a team's project chat several people talk, so nothing is
+  // kept about "the user" there: one person's facts would land with another.
+  const owner = (yield* base.chatAccess(chatId))?.ownerId ?? LOCAL_ACTOR.id
+  const store = ownedStore(base, owner)
+  const shared = !!chat.projectId && owner !== LOCAL_ACTOR.id
   if (consolidating.has(chatId)) return yield* new Busy()
   const learnedUntil = Math.max(chat.summaryUntil, chat.learnedUntil)
   const stretch = stretchOf((yield* store.messagesAfter(chat.id, chat.summaryUntil)).filter((m) => m.text.trim()), learnedUntil, how)
@@ -323,6 +330,7 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, h
     for (const m of parsed.memories) {
       const credited = m.scope === "agent" ? creditedAgent(m.evidence) : null
       const scope = m.scope === "agent" ? `agent:${credited}` : scopeOf[m.scope]
+      if (shared && scope === "user") continue
       const target = m.replaces !== undefined ? shown[m.replaces] : undefined
       if (!target) {
         const same = existing.find((e) => e.scope === scope && similar(e.text, m.text))

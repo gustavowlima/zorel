@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `shared_browser` integer DEFAULT false NOT NULL;

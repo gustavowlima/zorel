@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react"
 import { flushSync } from "react-dom"
 
-export const SETTINGS_TABS = ["general", "providers", "mcp", "skills", "channels", "processes", "storage", "audit"] as const
+export const SETTINGS_TABS = ["general", "team", "providers", "mcp", "skills", "channels", "processes", "storage", "audit"] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]
 const PROJECT_TABS = ["overview", "agents", "tools"] as const
 const AGENT_TABS = ["work", "profile", "tools", "memory", "activity"] as const

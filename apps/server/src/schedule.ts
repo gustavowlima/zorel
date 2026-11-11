@@ -1,5 +1,6 @@
 // Routine helpers with no runtime: cron times, webhook tokens, a run's message, and creating a routine with its
 // chat (shared by the HTTP API and the agents' zorel_routines tool).
+import { Actor } from "./access.ts"
 import { Cron } from "croner"
 import { Effect } from "effect"
 import type { Agent, RoutineDelivery, RoutineTell, RoutineWatch } from "@zorel/contracts"
@@ -71,7 +72,8 @@ export const createRoutineFor = (
   Effect.gen(function* () {
     const next = input.cron === null ? { at: null } : nextRun(input.cron, new Date(), timezone)
     if ("error" in next) return yield* Effect.fail(next.error)
-    const chat = yield* store.createChat({ projectId: agent.projectId, agentIds: [agent.id], model: agent.model, accountId: agent.accountId, effort: agent.effort })
+    // The routine's chat is its creator's (spec 014): theirs to read, and its runs speak for them.
+    const chat = yield* store.createChat({ projectId: agent.projectId, agentIds: [agent.id], model: agent.model, accountId: agent.accountId, effort: agent.effort, ownerId: (yield* Actor).id })
     yield* store.updateChat(chat.id, { title: `${input.name} (routine)` })
     const { onDayStart, lookFirst, delivery, tell, urgent } = input
     return yield* store.createRoutine({ agentId: agent.id, chatId: chat.id, name: input.name, prompt: input.prompt, cron: input.cron, token: input.webhook ? newToken() : null, nextRunAt: next.at, watch: input.watch ?? null, onDayStart, lookFirst, delivery, tell, urgent })

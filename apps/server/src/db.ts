@@ -13,7 +13,7 @@ import { Context, Effect, Layer, Semaphore } from "effect"
 import { migrationsDir, prepare } from "./migrate.ts"
 import type { EntityType, Mapped } from "./context.ts"
 import { fileTitle, hashOf, markdownFiles, pageText, parsePageText, readText, removeFile, slugOf, titleOfFile, writeAtomic } from "./page-files.ts"
-import { type AgentProfile, agents, agentTeamMembers, agentTeams, agentVersions, entities, entityLinks, memoryEntities, memoryVersions, relations, pages, pageVersions, routineRuns, routineRunSteps, routineVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
+import { projectMembers, type AgentProfile, agents, agentTeamMembers, agentTeams, agentVersions, entities, entityLinks, memoryEntities, memoryVersions, relations, pages, pageVersions, routineRuns, routineRunSteps, routineVersions, routines, approvals, attachments, auditEvents, chatMembers, chats, mcpServers, memories, messages, preferences, projects, providerAccounts, steps, turns } from "./schema.ts"
 
 // The part of an agent a version keeps (everything but its id, project and creation time).
 export const profileOf = (a: Agent): AgentProfile => ({
@@ -125,6 +125,14 @@ type Db = Effect.Success<typeof makeDb>
 export const repository = (db: Db, pagesDir?: string) => {
   const orDie = <A, E>(e: Effect.Effect<A, E>) => Effect.orDie(e)
   const first = <A>(rows: ReadonlyArray<A>) => rows[0]
+  const REF_QUERIES: Record<RefKind, (id: string) => Effect.Effect<ReadonlyArray<Ref>, unknown>> = {
+    turns: (id) => db.select({ chatId: turns.chatId }).from(turns).where(eq(turns.id, id)),
+    approvals: (id) => db.select({ chatId: approvals.chatId }).from(approvals).where(eq(approvals.id, id)),
+    routines: (id) => db.select({ chatId: routines.chatId }).from(routines).where(eq(routines.id, id)),
+    memories: (id) => db.select({ scope: memories.scope, owner: memories.owner }).from(memories).where(eq(memories.id, id)),
+    pages: (id) => db.select({ scope: pages.scope }).from(pages).where(eq(pages.id, id)),
+    agents: (id) => db.select({ projectId: agents.projectId }).from(agents).where(eq(agents.id, id))
+  }
 
   // ---------- knowledge pages as files (page-files.ts) ----------
   // With a folder, every page is also its Markdown file, written through here (the file is the truth; the row
@@ -272,7 +280,7 @@ export const repository = (db: Db, pagesDir?: string) => {
     projects: (): Effect.Effect<Project[]> =>
       orDie(
         db
-          .select({ id: projects.id, name: projects.name, brief: projects.brief, path: projects.path, agentIds: projects.agentIds, teamIds: projects.teamIds, createdAt: projects.createdAt })
+          .select({ id: projects.id, name: projects.name, brief: projects.brief, path: projects.path, agentIds: projects.agentIds, teamIds: projects.teamIds, sharedBrowser: projects.sharedBrowser, createdAt: projects.createdAt })
           .from(projects)
           .orderBy(sql`${projects.position} is not null`, asc(projects.position), desc(projects.createdAt))
       ),
@@ -282,11 +290,11 @@ export const repository = (db: Db, pagesDir?: string) => {
     project,
     createProject: (input: { name: string; brief: string; path?: string | null | undefined }) =>
       Effect.gen(function* () {
-        const p: Project = { id: crypto.randomUUID(), ...input, path: input.path ?? null, agentIds: [], teamIds: [], createdAt: now() }
+        const p: Project = { id: crypto.randomUUID(), ...input, path: input.path ?? null, agentIds: [], teamIds: [], sharedBrowser: false, createdAt: now() }
         yield* db.insert(projects).values(p)
         return p
       }).pipe(orDie),
-    updateProject: (id: string, input: { name?: string | undefined; brief?: string | undefined; path?: string | null | undefined; agentIds?: ReadonlyArray<string> | undefined; teamIds?: ReadonlyArray<string> | undefined }) =>
+    updateProject: (id: string, input: { name?: string | undefined; brief?: string | undefined; path?: string | null | undefined; agentIds?: ReadonlyArray<string> | undefined; teamIds?: ReadonlyArray<string> | undefined; sharedBrowser?: boolean | undefined }) =>
       Effect.gen(function* () {
         const set = defined(input)
         if (Object.keys(set).length) yield* db.update(projects).set(set).where(eq(projects.id, id))
@@ -671,12 +679,12 @@ export const repository = (db: Db, pagesDir?: string) => {
         )
       ),
     chat,
-    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; access?: Access | null | undefined; hidden?: boolean | undefined; title?: string | undefined; taskOf?: string | null | undefined; taskBy?: string | null | undefined; parentId?: string | null | undefined }) =>
+    createChat: (input: { projectId: string | null; agentIds: ReadonlyArray<string>; model: string; accountId?: string | null | undefined; effort?: Effort | null | undefined; access?: Access | null | undefined; hidden?: boolean | undefined; title?: string | undefined; taskOf?: string | null | undefined; taskBy?: string | null | undefined; parentId?: string | null | undefined; ownerId?: string | null | undefined }) =>
       Effect.gen(function* () {
         const id = crypto.randomUUID()
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: input.title ?? "New chat", model: input.model, accountId: input.accountId ?? null, effort: input.effort ?? null, access: input.access ?? null, hidden: input.hidden ?? false, taskOf: input.taskOf ?? null, taskBy: input.taskBy ?? null, parentId: input.parentId ?? null, createdAt: now() })
+            yield* tx.insert(chats).values({ id, projectId: input.projectId, title: input.title ?? "New chat", model: input.model, accountId: input.accountId ?? null, effort: input.effort ?? null, access: input.access ?? null, hidden: input.hidden ?? false, taskOf: input.taskOf ?? null, taskBy: input.taskBy ?? null, parentId: input.parentId ?? null, ownerId: input.ownerId ?? null, createdAt: now() })
             yield* setMembers(tx, id, input.agentIds)
           })
         )
@@ -771,11 +779,13 @@ export const repository = (db: Db, pagesDir?: string) => {
 
     // ---------- memories and skills ----------
     // All, including forgotten ones (the UI offers restore): pending, active, forgotten.
-    memories: () =>
+    // owner: only that person's personal memories (user scope) come with the rest; every one when absent (consolidation).
+    memories: (owner?: string) =>
       orDie(
         db
           .select()
           .from(memories)
+          .where(owner === undefined ? undefined : or(ne(memories.scope, "user"), eq(memories.owner, owner)))
           .orderBy(sql`${memories.state} = 'forgotten'`, sql`${memories.state} = 'active'`, desc(memories.confirmedAt))
           .pipe(Effect.map((r) => r.map(toMemory)))
       ),
@@ -1117,13 +1127,25 @@ export const repository = (db: Db, pagesDir?: string) => {
       ),
 
     // ---------- turns (per-chat queue) ----------
+    // What an id a request names belongs to (spec 014, visibility.ts): its chat, or its scope ("project:…", "agent:…",
+    // "user") and owner, or the project of an agent. undefined: no such row (the handler answers "not found").
+    refOf: (kind: RefKind, id: string): Effect.Effect<Ref | undefined> => orDie(REF_QUERIES[kind](id).pipe(Effect.map(first))),
     turnRow: (id: string) => orDie(db.select().from(turns).where(eq(turns.id, id)).pipe(Effect.map(first))),
     turnByClientId: (clientId: string) => orDie(db.select().from(turns).where(eq(turns.clientId, clientId)).pipe(Effect.map(first))),
     // route: the agent is picked (router.ts) when the turn starts; agentId is the fallback (the lead).
     retargetTurn: (id: string, to: { agentId: string; model: string; accountId: string | null }) =>
       orDie(db.update(turns).set({ ...to, route: false, routeTeamId: null }).where(eq(turns.id, id)).returning().pipe(Effect.map((r) => r[0]!))),
-    enqueueTurn: (input: { chatId: string; agentId: string | null; model: string; accountId?: string | null; clientId: string | null; depth: number; route?: boolean; routeTeamId?: string | null; outside?: boolean }) =>
+    enqueueTurn: (input: { chatId: string; agentId: string | null; model: string; accountId?: string | null; clientId: string | null; depth: number; route?: boolean; routeTeamId?: string | null; outside?: boolean; personId?: string | null }) =>
       orDie(db.insert(turns).values({ id: crypto.randomUUID(), ...input, state: "queued", createdAt: now() }).returning().pipe(Effect.map((r) => r[0]!))),
+    // ---------- who sees what (spec 014) ----------
+    // A chat's owner and project, for the visibility checks (not part of the Chat contract: the server decides).
+    chatAccess: (id: string) => orDie(db.select({ id: chats.id, projectId: chats.projectId, ownerId: chats.ownerId }).from(chats).where(eq(chats.id, id)).pipe(Effect.map(first))),
+    chatAccessAll: () => orDie(db.select({ id: chats.id, projectId: chats.projectId, ownerId: chats.ownerId }).from(chats)),
+    projectsOf: (personId: string) => orDie(db.select({ projectId: projectMembers.projectId }).from(projectMembers).where(eq(projectMembers.personId, personId)).pipe(Effect.map((r) => r.map((x) => x.projectId)))),
+    membersOf: (projectId: string) => orDie(db.select({ personId: projectMembers.personId }).from(projectMembers).where(eq(projectMembers.projectId, projectId)).pipe(Effect.map((r) => r.map((x) => x.personId)))),
+    addProjectMember: (projectId: string, personId: string) => orDie(db.insert(projectMembers).values({ projectId, personId, addedAt: now() }).onConflictDoNothing()),
+    removeProjectMember: (projectId: string, personId: string) => orDie(db.delete(projectMembers).where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.personId, personId)))),
+    forgetPerson: (personId: string) => orDie(db.delete(projectMembers).where(eq(projectMembers.personId, personId))),
     // What a chat runs next: your own messages (depth 0) before the replies that agents handed to one another (depth > 0),
     // each group in order of arrival. A message of yours never waits behind a chain it didn't start.
     nextQueued: (chatId: string) =>
@@ -1288,6 +1310,8 @@ export const repository = (db: Db, pagesDir?: string) => {
   }
 }
 
+export type RefKind = "turns" | "approvals" | "routines" | "memories" | "pages" | "agents"
+export type Ref = { chatId?: string | null; scope?: string; owner?: string; projectId?: string | null }
 export type Repository = ReturnType<typeof repository>
 
 // Opens the database: adopt/backup (sync), enables foreign keys and applies pending migrations.

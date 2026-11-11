@@ -5,6 +5,7 @@ import { StrictMode } from "react"
 import { I18nProvider, MotionConfig } from "@/ui"
 import { createRoot } from "react-dom/client"
 import { App } from "./App.tsx"
+import { ServerGate } from "./features/sign-in.tsx"
 import { applyTheme } from "./state.ts"
 
 // Preferences saved before the rename to Zorel (zero.*): copied once to zorel.*.
@@ -46,7 +47,10 @@ createRoot(document.getElementById("root")!).render(
       <I18nProvider locale={locale()}>
         {/* Motion follows the system: no movement when it asks for reduced motion. */}
         <MotionConfig reducedMotion="user">
-          <App />
+          {/* A team server asks who you are first (spec 014); locally the app opens at once. */}
+          <ServerGate>
+            <App />
+          </ServerGate>
         </MotionConfig>
       </I18nProvider>
     </RegistryProvider>

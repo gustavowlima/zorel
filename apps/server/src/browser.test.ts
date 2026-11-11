@@ -53,7 +53,7 @@ const site = Bun.serve({
   fetch: (req) =>
     new URL(req.url).pathname === "/login"
       ? new Response("<title>In</title>signed in", { headers: { "content-type": "text/html", "set-cookie": "sid=agent-a; Path=/; Max-Age=3600" } })
-      : new Response(`<title>Shop</title><h1>Shop</h1><label>Email <input></label><button onclick="document.querySelector('h1').textContent='ok '+document.querySelector('input').value">Buy</button><button onclick="document.querySelector('h1').textContent=confirm('Sure?')?'yes':'no'">Ask</button>`, {
+      : new Response(`<title>Shop</title><h1>Shop</h1><label>Email <input></label><button onclick="document.querySelector('h1').textContent='ok '+document.querySelector('input').value">Buy</button><button onclick="document.querySelector('h1').textContent=confirm('Sure?')?'yes':'no'">Ask</button><input type="password" id="pw">`, {
       headers: { "content-type": "text/html" }
     })
 })
@@ -85,7 +85,7 @@ test.skipIf(!chrome)(
     expect(await runBrowserTool(b, "chat-1", "browser_run", { steps: [{ click: ask }] })).toContain('heading "yes"')
 
     b.setControl("chat-1", true)
-    await expect(runBrowserTool(b, "chat-1", "browser_snapshot", {})).rejects.toThrow(/controlling the browser/)
+    await expect(runBrowserTool(b, "chat-1", "browser_snapshot", {})).rejects.toThrow(/has control of the browser/)
     b.setControl("chat-1", false)
     expect(await runBrowserTool(b, "chat-1", "browser_snapshot", {})).toContain("Shop")
   },
@@ -146,6 +146,48 @@ test.skipIf(!chrome)(
     b.setControl("chat-3", true)
     detach()
     expect(b.held("chat-3")).toBe(false)
+  },
+  30_000
+)
+
+test("control (spec 014): one holder at a time, a lease, taking and returning logged", () => {
+  const log: string[] = []
+  const lb = new Browsers(join(tmpdir(), "zorel-unused"), KEY)
+  lb.setControl("c", true, { person: "ana", log: (taken) => log.push(taken ? "taken" : "returned") })
+  lb.setControl("c", true, { person: "ana" }) // her next input renews, no second entry
+  expect(() => lb.setControl("c", true, { person: "bia" })).toThrow("Someone else has control")
+  lb.setControl("c", false)
+  expect(lb.held("c")).toBe(false)
+  lb.setControl("c", true, { person: "bia", log: () => log.push("bia") })
+  lb.setControl("c", false)
+  expect(log).toEqual(["taken", "returned", "bia", "bia"])
+})
+
+test.skipIf(!chrome)(
+  "a focused password field: only the person in control gets the pictures; the others are told it's hidden",
+  async () => {
+    await runBrowserTool(b, "chat-4", "browser_navigate", { url: `http://127.0.0.1:${site.port}/` })
+    const frames = { ana: 0, bia: 0 }
+    let masked = false
+    const off = [
+      await b.attach("chat-4", { person: "ana", state: () => {}, frame: () => void frames.ana++, act: () => {} }),
+      await b.attach("chat-4", { person: "bia", state: (s) => (masked = s.masked), frame: () => void frames.bia++, act: () => {} })
+    ]
+    b.setControl("chat-4", true, { person: "ana" })
+    const page = await b.page("chat-4")
+    await page.focus("#pw")
+    for (let i = 0; i < 50 && !masked; i++) await Bun.sleep(20)
+    expect(masked).toBe(true)
+    const before = { ...frames }
+    await page.keyboard.type("hunter2-secret", { delay: 30 })
+    await Bun.sleep(300)
+    expect(frames.ana).toBeGreaterThan(before.ana)
+    expect(frames.bia).toBe(before.bia)
+    await page.focus("input:not([type])")
+    for (let i = 0; i < 50 && masked; i++) await Bun.sleep(20)
+    expect(masked).toBe(false)
+    b.setControl("chat-4", false)
+    for (const f of off) f()
   },
   30_000
 )

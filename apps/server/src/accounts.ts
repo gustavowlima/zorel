@@ -22,6 +22,12 @@ const LIMITS_BACKOFF_MAX_MS = 60 * 60_000
 // The stored reading; older rows kept a single { usedPercent, resetsAt } and read as nothing.
 const usageOf = (a: AccountRow): AccountUsage | null => (a.usage && Array.isArray((a.usage as AccountUsage).windows) ? (a.usage as AccountUsage) : null)
 const URL_WAIT_MS = 8_000
+const SERVER = process.env.ZOREL_SERVER === "1"
+const SCREEN_MAX = 4000
+const SCREEN_SETTLE_MS = 600
+// A terminal's text without its colors and cursor moves, for the web to show as is.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching terminal escapes is the point
+const plain = (s: string) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*(\x07|\x1b\\)|\r/g, "").trim()
 
 // Which account provider serves a model provider.
 const ACCOUNT_OF_MODEL: Record<string, AccountProvider> = { "claude-cli": "claude", "codex-cli": "codex" }
@@ -73,7 +79,9 @@ interface AccountsService {
   readonly create: (provider: AccountProvider, label: string) => Effect.Effect<ProviderAccount>
   readonly rename: (id: string, label: string) => Effect.Effect<ProviderAccount | undefined>
   readonly remove: (id: string) => Effect.Effect<"ok" | "not-found" | "default">
-  readonly login: (id: string) => Effect.Effect<{ url: string | null } | "not-found" | "busy">
+  readonly login: (id: string) => Effect.Effect<{ url: string | null; output?: string } | "not-found" | "busy">
+  // On a server (spec 014): what the person pasted back from the provider's page, typed into the waiting CLI.
+  readonly answer: (id: string, code: string) => Effect.Effect<boolean>
   // The account a turn runs on: the chosen one if it serves this model, otherwise the provider's default.
   readonly resolve: (model: string, accountId: string | null) => Effect.Effect<AccountRow | undefined>
   // Failover (§6.1): a subscription that hit its limit waits until `until`; the last limit reading is kept.
@@ -109,6 +117,8 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
       const readingLock = yield* Semaphore.make(1) // one limit reading at a time, across accounts
       const failures = new Map<string, { count: number; next: number }>()
       const logins = new Set<string>()
+      const terminals = new Map<string, ReturnType<typeof Bun.spawn>>() // server sign-ins waiting for a pasted code
+      const screens = new Map<string, string>() // what each of those CLIs printed (the tail)
       const status = (a: AccountRow) =>
         Effect.promise(async () => {
           const hit = cache.get(a.id)
@@ -156,31 +166,54 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
             const bin = which(COMMANDS[a.provider as AccountProvider].bin)
             if (!bin) return { url: null }
             if (a.home) mkdirSync(a.home, { recursive: true })
-            // The CLI opens the provider's page in the browser itself; the URL is a fallback for the UI.
-            const proc = Bun.spawn([bin, ...COMMANDS[a.provider as AccountProvider].login], { env: envFor(a), stdin: "ignore", stdout: "pipe", stderr: "pipe" })
-            logins.add(id)
             let resolveUrl: (u: string | null) => void = () => {}
             const url = new Promise<string | null>((r) => {
               resolveUrl = r
             })
-            const scan = async (s: ReadableStream) => {
-              const decoder = new TextDecoder()
-              for await (const chunk of s) {
-                const m = /https?:\/\/\S+/.exec(decoder.decode(chunk as Uint8Array, { stream: true }))
-                if (m) resolveUrl(m[0])
-              }
+            const seen = (text: string) => {
+              const m = /https?:\/\/\S+/.exec(text)
+              if (m) resolveUrl(m[0])
             }
-            void scan(proc.stdout)
-            void scan(proc.stderr)
+            const decoder = new TextDecoder()
+            const args = [bin, ...COMMANDS[a.provider as AccountProvider].login, ...(SERVER && a.provider === "codex" ? ["--device-auth"] : [])]
+            // On a server there's no browser to open: the CLI runs in a terminal of its own, shows the link (and a
+            // device code), and reads the code the person pastes back (answer). On a desktop it opens the browser itself.
+            const proc = SERVER
+              ? Bun.spawn(args, { env: { ...envFor(a), TERM: "dumb", BROWSER: "none" }, terminal: { cols: 200, rows: 50, data: (_t, data) => {
+                  const text = decoder.decode(new Uint8Array(data), { stream: true })
+                  screens.set(id, ((screens.get(id) ?? "") + text).slice(-SCREEN_MAX))
+                  seen(text)
+                } } })
+              : Bun.spawn(args, { env: envFor(a), stdin: "ignore", stdout: "pipe", stderr: "pipe" })
+            logins.add(id)
+            if (SERVER) terminals.set(id, proc)
+            const scan = async (s: ReadableStream) => {
+              for await (const chunk of s) seen(decoder.decode(chunk as Uint8Array, { stream: true }))
+            }
+            if (!SERVER) {
+              void scan(proc.stdout as ReadableStream)
+              void scan(proc.stderr as ReadableStream)
+            }
             void proc.exited.then(async () => {
               logins.delete(id)
+              terminals.delete(id)
+              screens.delete(id)
               cache.delete(id)
               resolveUrl(null)
               const s = await readStatus(a)
               cache.set(id, { at: Date.now(), status: s })
               if (s.identity) await Effect.runPromise(store.updateAccount(id, { identity: s.identity }))
             })
-            return { url: yield* Effect.promise(() => Promise.race([url, Bun.sleep(URL_WAIT_MS).then(() => null)])) }
+            const link = yield* Effect.promise(() => Promise.race([url, Bun.sleep(URL_WAIT_MS).then(() => null)]))
+            if (SERVER) yield* Effect.promise(() => Bun.sleep(SCREEN_SETTLE_MS)) // the device code comes just after the link
+            return SERVER ? { url: link, output: plain(screens.get(id) ?? "") } : { url: link }
+          }),
+        answer: (id, code) =>
+          Effect.sync(() => {
+            const t = terminals.get(id)?.terminal
+            if (!t) return false
+            t.write(`${code.trim()}\r`)
+            return true
           }),
         resolve: (model, accountId) =>
           Effect.gen(function* () {
