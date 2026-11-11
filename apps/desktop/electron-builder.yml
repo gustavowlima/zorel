@@ -31,8 +31,7 @@ extraResources:
   - { from: build, to: ., filter: ["zorel-server", "zorel-server.exe", "THIRD_PARTY_LICENSES.md"] } # bun --compile adds .exe on Windows; the licenses of what ships
   - { from: build/web, to: web }
   - { from: build/drizzle, to: drizzle }
-  # The agents' browser (Playwright's headless Chromium, the server's Playwright version): the app needs no Chrome.
-  - { from: build/browsers, to: browsers }
+  # No browser ships: the agents use Chrome or Edge, else the server downloads Playwright's Chromium once (browser.ts).
   # playwright-core as files (the server loads it from here, ZOREL_PLAYWRIGHT): it can't live inside the binary.
   - { from: build/playwright-core, to: playwright-core }
   # onnxruntime-node for recall by meaning (spec 003): one JS file + this platform's native binary (ZOREL_ONNX).

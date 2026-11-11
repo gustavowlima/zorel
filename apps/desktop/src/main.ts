@@ -7,9 +7,10 @@ import { randomBytes } from "node:crypto"
 import { existsSync, openSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
 import { isAbsolute, join } from "node:path"
-import { app, BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, powerMonitor, powerSaveBlocker, session, shell, Tray } from "electron"
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, powerMonitor, powerSaveBlocker, session, shell, Tray } from "electron"
 import { SESSION_BYTES, SESSION_HEADER, SESSION_STDIN_ENV } from "@zorel/contracts/session"
 import { autoUpdater } from "electron-updater"
+import { addServer, forgetServer, LOCAL, markOpened, openServer, readServers, serverMenu, serverOf } from "./servers.ts"
 
 const dev = !app.isPackaged
 // app.getAppPath(): apps/desktop in dev, the app.asar when packaged (the bundler bakes __dirname at build time).
@@ -83,7 +84,7 @@ async function startServer() {
       [SESSION_STDIN_ENV]: "1", // the secret comes on stdin, never in the environment (readable by any process of this user)
       ZOREL_PARENT_PID: String(process.pid), // the server exits if this process dies without stopping it
       ZOREL_WEB_DIR: dev ? join(root, "apps/web/dist") : join(root, "web"),
-      ...(dev ? {} : { ZOREL_MIGRATIONS: join(root, "drizzle"), PLAYWRIGHT_BROWSERS_PATH: join(root, "browsers"), ZOREL_PLAYWRIGHT: join(root, "playwright-core"), ZOREL_ONNX: join(root, "onnxruntime-node", "dist", "index.cjs") }) // the bundled Chromium; the local model's runtime
+      ...(dev ? {} : { ZOREL_MIGRATIONS: join(root, "drizzle"), ZOREL_PLAYWRIGHT: join(root, "playwright-core"), ZOREL_ONNX: join(root, "onnxruntime-node", "dist", "index.cjs") }) // the bundled Chromium; the local model's runtime
     },
     stdio: ["pipe", dev ? "inherit" : log, dev ? "inherit" : log]
   })
@@ -103,6 +104,48 @@ async function startServer() {
     await new Promise((r) => setTimeout(r, READY_EVERY_MS))
   }
   throw new Error("The Zorel server didn't start in 2 minutes.")
+}
+
+// This computer's server, started on first need: at launch when it's what was open last (or Zorel opens at login to
+// run routines), else when the person switches to "This computer". Someone who only uses a team server never runs it.
+let local: Promise<void> | undefined
+const startLocal = () => {
+  local ??= startServer().then(auth)
+  return local
+}
+async function openLocal() {
+  await startLocal()
+  markOpened(LOCAL)
+  openWindow()
+}
+// What opened last: "local" or a team server's origin (one still in the list).
+const current = () => {
+  const s = readServers()
+  return s.last && s.last !== LOCAL && s.servers.some((x) => x.origin === s.last) ? s.last : LOCAL
+}
+const SERVER_PRELOAD = () => join(appDir, "dist", "preload-server.cjs")
+// Opens what was used last: this computer, or a team server.
+function openCurrent() {
+  const now = current()
+  if (now === LOCAL) return void openLocal().catch(localFailed)
+  openServer(now, SERVER_PRELOAD())
+}
+function switchTo(target: string) {
+  if (target === LOCAL) void openLocal().catch(localFailed)
+  else if (readServers().servers.some((x) => x.origin === target)) openServer(target, SERVER_PRELOAD())
+  refreshMenus()
+}
+const localFailed = (e: unknown) => dialog.showErrorBox("Zorel", e instanceof Error ? e.message : String(e))
+async function connectCopied() {
+  const added = addServer(await clipboard.readText(), SERVER_PRELOAD())
+  if (!added) dialog.showErrorBox("Zorel", "Copy a Zorel server's address (https://…) or an invite link first.")
+  refreshMenus()
+}
+function forget(origin: string) {
+  void forgetServer(origin).then(() => {
+    refreshMenus()
+    openCurrent()
+  })
 }
 
 function openWindow() {
@@ -328,10 +371,11 @@ function runInstaller(failed: (reason: string) => void) {
 // macOS the app, Edit (its shortcuts: copy, paste, undo) and Window menus; Windows and Linux get no menu bar (the
 // text shortcuts work without one).
 function appMenu() {
-  if (process.platform !== "darwin") return Menu.setApplicationMenu(dev ? Menu.buildFromTemplate([{ role: "viewMenu" }]) : null)
+  if (process.platform !== "darwin") return Menu.setApplicationMenu(dev ? Menu.buildFromTemplate([{ role: "viewMenu" }]) : null) // servers: in the tray
   const template: MenuItemConstructorOptions[] = [
     { role: "appMenu", submenu: [{ role: "about" }, { type: "separator" }, { role: "services" }, { type: "separator" }, { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit" }] },
     { role: "editMenu" },
+    { label: "Servers", submenu: serversItems() },
     { role: "windowMenu" }
   ]
   if (dev) template.push({ role: "viewMenu" })
@@ -388,7 +432,7 @@ function systemIpc() {
   const fromApp = (e: Electron.IpcMainInvokeEvent) => !!win && e.sender === win.webContents
   ipcMain.handle("notifications:settings", (e) => {
     const target = NOTIFICATION_SETTINGS[process.platform]
-    if (!fromApp(e) || !target) return false
+    if ((!fromApp(e) && !serverOf(e.sender)) || !target) return false
     void shell.openExternal(target)
     return true
   })
@@ -429,22 +473,57 @@ function systemIpc() {
   keepAwake()
 }
 
+// Team servers (servers.ts): any Zorel window may list them and switch; only this computer's window adds or forgets one
+// (a page another machine serves can't add servers to this computer).
+function serversIpc() {
+  const fromApp = (e: Electron.IpcMainInvokeEvent) => !!win && e.sender === win.webContents
+  const known = (e: Electron.IpcMainInvokeEvent) => fromApp(e) || !!serverOf(e.sender)
+  ipcMain.handle("servers:list", (e) => (known(e) ? { servers: readServers().servers, current: serverOf(e.sender) ?? LOCAL } : { servers: [], current: LOCAL }))
+  ipcMain.handle("servers:open", (e, target: unknown) => {
+    if (!known(e) || typeof target !== "string") return false
+    switchTo(target)
+    return true
+  })
+  ipcMain.handle("servers:add", (e, text: unknown) => {
+    if (!fromApp(e) || typeof text !== "string" || text.length > 2000) return false
+    const added = addServer(text, SERVER_PRELOAD())
+    refreshMenus()
+    return !!added
+  })
+  ipcMain.handle("servers:forget", (e, origin: unknown) => {
+    if (!fromApp(e) || typeof origin !== "string") return false
+    forget(origin)
+    return true
+  })
+}
+
+// The app menu and the tray follow the list of servers.
+function refreshMenus() {
+  appMenu()
+  if (tray) tray.setContextMenu(trayMenu())
+}
+const serversItems = () => serverMenu(current, switchTo, () => void connectCopied(), forget)
+
 // Off macOS there's no Dock to reopen a closed window: a tray icon does it (and quits).
 function addTray() {
   if (process.platform === "darwin") return
   tray = new Tray(icon().resize({ width: 16, height: 16 }))
   tray.setToolTip("Zorel")
-  tray.setContextMenu(Menu.buildFromTemplate([{ label: "Open Zorel", click: openWindow }, { type: "separator" }, { label: "Quit", role: "quit" }]))
-  tray.on("click", openWindow)
+  tray.setContextMenu(trayMenu())
+  tray.on("click", openCurrent)
 }
+const trayMenu = () => Menu.buildFromTemplate([{ label: "Open Zorel", click: openCurrent }, { type: "separator" }, ...serversItems(), { type: "separator" }, { label: "Quit", role: "quit" }])
 
 if (!app.requestSingleInstanceLock()) app.quit()
 else {
-  app.on("second-instance", openWindow)
-  app.on("activate", openWindow)
+  app.on("second-instance", openCurrent)
+  app.on("activate", () => {
+    if (!BrowserWindow.getAllWindows().length) openCurrent()
+  })
   app.on("window-all-closed", () => undefined) // stay running: the server keeps working with no window
   app.on("before-quit", (e) => {
-    if (!quitting && confirmQuit && !askedNotTo()) {
+    // Only this computer's server has agents and routines to stop: with just team servers open, quit at once.
+    if (!quitting && confirmQuit && server && !askedNotTo()) {
       e.preventDefault()
       void askToQuit()
       return
@@ -465,15 +544,16 @@ else {
   void app
     .whenReady()
     .then(loginShellPath)
-    .then(startServer)
+    // This computer's server at once when it's what opened last; with a team server last, only that server's window.
+    .then(() => (current() === LOCAL ? startLocal() : undefined))
     .then(() => {
-      auth()
       loginItemIpc()
       systemIpc()
+      serversIpc()
       appMenu()
       permissions()
       if (dev) app.dock?.setIcon(icon()) // a packaged app shows the bundle's icon; dev would show Electron's
-      if (!openedAtLogin()) openWindow()
+      if (!openedAtLogin()) openCurrent()
       addTray()
       updates()
     })

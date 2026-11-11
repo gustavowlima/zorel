@@ -27,6 +27,13 @@ contextBridge.exposeInMainWorld("zorelDesktop", {
     },
     answer: (a: { quit: boolean; dontAsk: boolean }) => void ipcRenderer.invoke("quit:answer", a)
   },
+  // Team servers (servers.ts): list, switch (or "local"), connect by a pasted address or invite link, forget one.
+  servers: {
+    list: (): Promise<{ servers: Array<{ origin: string; name: string }>; current: string }> => ipcRenderer.invoke("servers:list"),
+    open: (target: string): Promise<boolean> => ipcRenderer.invoke("servers:open", target),
+    add: (link: string): Promise<boolean> => ipcRenderer.invoke("servers:add", link),
+    forget: (origin: string): Promise<boolean> => ipcRenderer.invoke("servers:forget", origin)
+  },
   // A new version: downloading (ready false) or ready to install with a restart.
   update: {
     get: (): Promise<Update> => ipcRenderer.invoke("update:get"),

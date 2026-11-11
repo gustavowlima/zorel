@@ -10,12 +10,11 @@
     "main": "electron-vite build",
     "server": "bun scripts/server.ts && bun scripts/playwright.ts && bun scripts/onnx.ts",
     "start": "bun run main && electron .",
-    "prebuild": "bun run main && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run browser && bun run licenses",
+    "prebuild": "bun run main && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run licenses",
     "build": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --publish never",
     "icons": "sh scripts/icons.sh",
     "release": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --publish always",
-    "prerelease": "bun run main && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run browser && bun run licenses",
-    "browser": "PLAYWRIGHT_BROWSERS_PATH=build/browsers bun ../server/node_modules/playwright-core/cli.js install chromium-headless-shell && rm -rf build/browsers/ffmpeg-*",
+    "prerelease": "bun run main && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run licenses",
     "licenses": "bun ../../scripts/third-party-licenses.ts build/THIRD_PARTY_LICENSES.md"
   },
   "devDependencies": {

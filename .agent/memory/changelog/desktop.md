@@ -13,3 +13,5 @@
 2026-11-11 | quit question in Zorel's own dialog, native as fallback | user: native dialog off the design system
 2026-11-11 | electron-vite for build and dev (HMR, main restart) | user: desktop is the focus
 2026-11-11 | own computer: host option, lent folders, live state, start/restart/open; Podman always when installed; app icons | user request
+2026-11-11 | no bundled Chromium: Chrome/Edge first, else one download into the data folder; idle browser closes after 15 min | smaller app, less memory
+2026-11-11 | desktop connects to team servers (own window and partition each); local server starts only when needed | user request
