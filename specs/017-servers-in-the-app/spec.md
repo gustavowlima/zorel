@@ -77,8 +77,6 @@ approved, secrets (the setup code) go on stdin, never as arguments.
 
 ### User Story 4 - Choose where a project's agents work (Priority: P2)
 
-<!-- In scope (decision 3). -->
-
 A project can say where its agents' work runs: this computer (today), or a server's machine reached over SSH, where
 the agent's commands and file edits happen in a folder there while the engine and its login stay here. The project's
 page shows "Runs on <host>"; the agent's computer tools (spec 009) and its shell go to that host.
@@ -135,8 +133,9 @@ responsible for machines it can't see. A server that listens only on loopback ex
 - **FR-006**: "Install on another computer" MUST run each SSH command only after the person approves it, and MUST
   pass secrets on stdin.
 - **FR-007**: A project MAY run its agents' commands and edits on an SSH host; the engine and its login MUST stay on
-  the server that runs the chat. The host is reached over the private network when it is on one.
-- **FR-008**: A server MUST listen only on loopback unless a listen address is set explicitly.
+  the server that runs the chat. The host is reached at the address the person gives (their network is theirs).
+- **FR-008**: A server MUST listen only on loopback unless a listen address is set explicitly (already so:
+  `ZOREL_LISTEN` defaults to `127.0.0.1`).
 - **FR-009**: Zorel MUST NOT change the machine's network, firewall or DNS; the docs MUST give recipes (private
   network, outbound tunnel, reverse proxy with HTTPS) with what each exposes.
 
@@ -156,11 +155,19 @@ responsible for machines it can't see. A server that listens only on loopback ex
 
 | Recipe | Exposes | Notes |
 |---|---|---|
-| WireGuard (self-managed) | One UDP port that answers no unauthenticated packet | Free and open; each device needs the WireGuard app; no domain → password + code sign-in (spec 014) |
+| WireGuard (self-managed) | One UDP port that answers no unauthenticated packet | Free and open; each device needs the WireGuard app. Still HTTPS: a domain name pointing at the private address with a DNS-validated certificate (e.g. Caddy), since sign-in cookies are `Secure` and plain HTTP on a private IP can't hold them |
 | Tailscale | No inbound port; `tailscale serve` gives a tailnet-only HTTPS name | Free plan: 6 users, non-commercial; paid for teams |
 | Headscale / NetBird | Like Tailscale, self-hosted coordination | The coordinator must be public; NetBird needs ~5 services |
 | Cloudflare Tunnel | No inbound port, IP hidden, public HTTPS name (passkeys work) | Free; needs a domain on Cloudflare; TLS ends at Cloudflare (it can read the traffic) |
 | Reverse proxy with HTTPS (spec 014) | The machine's IP, port 443 | The person keeps it patched |
+
+## Communication
+
+Unchanged: the app talks to a server over one WebSocket (`/rpc`, Effect RPC: every live event, Stop, send-now) plus
+plain HTTPS requests (`/api/…`); it reconnects every second and gets a snapshot on reconnect. Every recipe above
+carries WebSockets; a reverse proxy must pass the upgrade (Caddy does by itself; nginx needs `Upgrade`/`Connection`
+headers). The health check is one short HTTPS request a minute. No WebRTC: it only matters for peer-to-peer with no
+public meeting point, out of scope; the client's transport stays swappable (spec 014).
 
 ## Decisions (2026-11-11, the user)
 
