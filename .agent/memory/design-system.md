@@ -4,6 +4,7 @@ status: active
 updated: 2026-11-05
 
 ## current
+- New routine critique + layout (2026-11-10, 23/40 before): `Field` = label 8px above the control (was 6, off-scale), the hint outside the <label> (not in the control's name), 6px under it; `Dialog` padding 24px (was 20) and sizes sm 384 / lg 576 / xl 672; `ChoiceCards list` = one card, 40px radio rows (icon, title, line); `Segmented` (non-fill) and `MultiSegmented` hug their content (`self-start`) and share one selected look, `bg-control-active` (translucent: a `surface` fill was darker than a raised dialog and vanished there); `Dialog anchor="top"` keeps a tabbed dialog's title still while its height changes; a dialog body is flex-1 so a form can pin its foot and scroll its middle. Long forms in a dialog: 24px between groups, 12–16 inside, a bordered foot with the summary (or the first missing thing in warning) and 32px buttons. Destinations add in place (no dialog over a dialog).
 
 - --z-* tokens in apps/web/src/styles.css; dark default, light via [data-theme="light"]
 - @theme inline exposes tokens as utilities (bg-surface, text-muted, border-subtle, h-control*)
@@ -16,7 +17,7 @@ updated: 2026-11-05
 - native title still ok on non-interactive elements (badges, rows); Tooltip only on a focusable trigger
 - web bundle ~827 KB min / 261 KB gzip after React Aria (was 605 KB); code-split per route if it gets heavy
 - shadcn tokens (background, foreground, card, popover, primary, destructive, border, input, ring, *-foreground) point to --z-* in :root; radius sm/md/lg/xl/2xl = 4/6/8/12/16; `dark:` = default theme (no .dark class)
-- cx = cn (`cn` package, Tailwind class merge)
+- cn (`cn` package, Tailwind class merge; the `cx` alias was removed 2026-11-10: one name)
 - pressable: scale(0.97), <300ms, respects prefers-reduced-motion
 
 - apps/web/DESIGN.md written (/impeccable document, scan): north star "The Night Workbench"; YAML frontmatter is normative (dark theme values); sidecar in apps/web/.impeccable/design.json
@@ -37,8 +38,18 @@ updated: 2026-11-05
 - `* { border-color }` lives in @layer base: outside a layer it overrode Tailwind's border-* (all colored borders)
 - ui-baseline.json zeroed: screens without check:ui debt
 - token --font-mono (ui-monospace)
+- EmptyState: plain = a whole screen or pane (centred, py-16); `inset` = an empty list inside a Section (dashed card the height of a row, icon tile + text left, action right). Never the plain one inside a Section: it leaves a big void (project Tools/Agents tabs, 2026-11-10)
+- motion (2026-11-10, impeccable animate): Tabs/Segmented pill slides (Marker per useId group); New routine cards Fold; dialog + command palette exit (fade, 0.98, 100ms); CheckList mark fades; page crossfade 160ms (View Transitions, view changes only). All in the shared spring or <=160ms, none under reduced motion
+- identity tint (2026-11-10, user asked for a reference app-like color): agent hue on chosen/live things about one agent: CheckList option tint (crew, team members), @mention chip, agent page TabList tint, week block tint-edge (3px left, no-repeat; border keeps outcome); Processes stat tiles bg-series-N/15. Utilities tint-1..6, tinted, tint-edge in styles.css; agentTint(agent, agents) / tintFor(tone) in labels.ts (moved from ui/avatar's tintOf, 2026-11-10: labels owns the agent's color and tests import it without the DOM). Never on chrome; blue = actions, states keep their colors. DESIGN.md › Identity tint
+- tint everywhere (2026-11-10): chat author name tint-text; composer @/# chips tinted (ComposerOption.tint); home crew chip tinted for one agent; connector logos = BrandMark (ui/layout.tsx; brand {hex,path}; variant tile = brand-tile! on IconTile, inline = bare 16px mark for list options; luminance <0.25 → neutral); iconOfServer from mcp.tsx; flow kind tiles by series. IconTile takes style
+- motion primitives (2026-11-10): Fold (height), Drawer (side panel width), Reflow (reorder glide), ListPresence+PresenceRow (rows come/go), Rise (receipt), Marker (sliding pill); DROP_LINE grows in, a dragged row steps back (0.98, 40%). Dialog sheet bg-canvas + shadow-float over a 60% overlay
+- logo (2026-11-10, user's new mark): two arcs ending in dots + blue core, no ring (user's purple swapped for our blue). App: currentColor + fill-accent, heavier strokes for 20px. Icon/favicon: white on #17181b with #007cf7 core; icon.png re-rendered with apps/desktop/scripts/icons.sh
+- 2026-11-10 later: neutral scale darkened, steps kept (canvas #131416, surface #18191c, raised #1c1e21, hover #17191c, code #0f1012; frame/sidebar unchanged); icon/favicon tile = canvas. SETTLE (ui/motion.tsx, exported from @/ui) = content settling in: every TabPanel, and keyed swaps (memory scope list, settings sections, skills/pages reader, routines week/list). Tab takes tint (an agent's notes tab). New chat backdrop = OrbitBackdrop (ui/orbit.tsx: faint rings in --z-border, two spokes ending in dots like the mark, accent agents slowly orbiting; replaces bg-lines). Page editor: toolbar (H1-3, bold, italic, code, lists, quote; aria-pressed) and .prose-page headings (1.5/1.25/1.1em) in editor and page view
+- user message bubble (2026-11-10, after the darker scale): bg-raised + border-subtle (surface read too close to the canvas); its attachment chips the same
 
 ## avoid
+
+- a visual redesign of the whole app ("Team Desk", 2026-11-10: new fonts, palette, scale, chat spine): prototyped and dropped by the user, who kept this design; propose a redesign again only if asked
 
 - shadcn's bg-muted / bg-accent / bg-secondary: those names are ours (dimmed text, blue, secondary text). When adopting a component, swap for bg-control/bg-control-hover
 - Geist font and Nova preset neutral palette: removed; the font is Inter
@@ -57,7 +68,7 @@ updated: 2026-11-05
 - check:ui in CI (literals, scale, hand-made button/dialog, direct import of headless/icons); neither Storybook nor gallery
 - shadcn (CLI 4.x) as GENERATOR of the primitives: `shadcn init --base aria` (React Aria Components; NOT Radix nor Base UI, user decision 2026-11-03), code copied into src/ui and ours; shadcn semantic tokens mapped once to --z-*; nothing from the neutral palette/default --radius; heights on the 24/28/32/36 scale
 - scrollbars: no scrollbar-color/scrollbar-width on :root (inherits and makes Chrome/WebKit ignore ::-webkit-scrollbar); only in @supports not selector(::-webkit-scrollbar). Desktop-style areas use .scroll-quiet (no bar) + hairline on the edges with hidden content
-- sidebar: brand (= title bar on desktop: class electrobun-webkit-app-region-drag, .title-inset gives 84px to the window buttons with data-shell=desktop), Needs you/Knowledge/Usage and Settings fixed; only the trees scroll; 28px rows (h-control-sm) and shrink-0; projects/chats are NavTree/NavTreeItem (React Aria Tree); actions overlay the count on hover/focus with pointer-events-none when hidden; chats without project in the Chats section
+- sidebar: brand (= title bar on desktop: class .app-drag (-webkit-app-region: drag under [data-shell=desktop], Electron), .title-inset gives 84px to the window buttons with data-shell=desktop), Needs you/Knowledge/Usage and Settings fixed; only the trees scroll; 28px rows (h-control-sm) and shrink-0; projects/chats are NavTree/NavTreeItem (React Aria Tree); actions overlay the count on hover/focus with pointer-events-none when hidden; chats without project in the Chats section
 - loose numbers in navigation only when actionable: Usage % shows from LIMIT_ALERT on, with aria-label/title naming account and window
 - drag and drop: useNavReorder (ui/nav.tsx) on top of React Aria's useDragAndDrop; only reorders within a group (getDropOperation cancels 'on' and other groups); no new lib
 - I18nProvider with Zorel's locale() in main.tsx: React Aria strings (drag, collapse) follow the interface language, not the browser's
@@ -75,6 +86,7 @@ updated: 2026-11-05
 - selection is blue: menus/lists focus = bg-accent-soft + icon text-accent-text (4.9:1); rail current = icon accent-text on accent-faint
 - dark neutrals set to the landing's graphite (2026-11-05, user choice): OKLCH hue 260 chroma 0.005; frame #0b0c0e, sidebar #0f1113 (a step above the rail), canvas #17181b, surface #1c1e21, raised #202225; replaces the stronger tint (chroma 0.013) of the same day
 - creating with several fields = centred Dialog (Dialog Rule): Add project (folder browser via GET /api/folders, desktop folder:pick IPC, name from the folder) and Add custom server (MCP)
+- field fill (2026-11-10, user: the grey input didn't harmonize): `field` (Input, Textarea, a Select's body) = `bg-field` (`--z-bg-field`: dark white 2.5%, light #fff) + `border-strong`, hover `border-fg/20`, focus `border-fg/25`. `bg-control` (7%) stays for buttons and pills only: on a raised dialog it read as a grey slab.
 - standard fields (2026-11-05): Input size md|sm (no h-control-* classes on fields), SearchInput (magnifier inside), OptionList/OptionRow for lists driven from a text field (composer menu, folder browser); check:ui rules hand-search, hand-listbox, input-height keep them out of screens
 - ported from the dropped design-system-pass worktree (2026-11-05): IconTile (sm/md/lg) and Notice in ui/layout.tsx; every hairline list uses Rows; check:ui hand-list and hand-notice (card alerts only; App.tsx offline strip is separate). Not ported: Appearance as a Select (DESIGN.md keeps the segmented control)
 - agent avatars (2026-11-05): open-bot-avatar 0.2.0 (MIT, published 2026-11-02: exception to the 2-week dependency rule, approved by the user) — shape by id among its 7 examples, inside a tile bg-agent-n/15; still SVG (cached per shape/tone/size) everywhere, live (mountAvatar) in the Builder review; NOTICE credits it

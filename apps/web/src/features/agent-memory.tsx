@@ -13,7 +13,7 @@ import { ScopeIcon } from "./knowledge.tsx"
 import { ReadingState } from "./reading.tsx"
 import { sees, teamOf, withAgent, withoutAgent } from "./skill-agents.ts"
 import { UsedByBadge } from "./used-by.tsx"
-import { Button, cx, Info, ListRow, Notice, Rows, Section, Segmented, SettingRow, ShieldAlert, Switch } from "@/ui"
+import { Button, cn, Info, ListRow, Notice, Rows, Section, Segmented, SettingRow, ShieldAlert, Switch } from "@/ui"
 
 type Field = "memory" | "knowledge"
 type Status = "idle" | "saving" | "saved" | "error"
@@ -44,7 +44,7 @@ function useInstant<F extends Field>(agent: Agent, field: F) {
 // "Saving… / Saved / Not saved. Try again", announced politely. Always in the page so the change is read out.
 function SaveStatus({ status, onRetry }: { status: Status; onRetry: () => void }) {
   return (
-    <span role="status" className={cx("flex items-center gap-1 text-sm", status === "error" ? "text-danger" : "text-muted")}>
+    <span role="status" className={cn("flex items-center gap-1 text-sm", status === "error" ? "text-danger" : "text-muted")}>
       {status === "saving" && t("agent.mem.saving")}
       {status === "saved" && t("agent.mem.saved")}
       {status === "error" && (
@@ -197,7 +197,7 @@ function AgentSkills({ agent, team }: { agent: Agent; team: ReadonlyArray<Agent>
     <SettingRow
       key={key}
       title={
-        <span className={cx("flex min-w-0 items-center gap-2", dim && "text-muted")}>
+        <span className={cn("flex min-w-0 items-center gap-2", dim && "text-muted")}>
           <span className="truncate">{title}</span>
           <UsedByBadge ids={ids} />
         </span>
@@ -217,7 +217,7 @@ function AgentSkills({ agent, team }: { agent: Agent; team: ReadonlyArray<Agent>
   const sharedRow = (m: Memory) =>
     row(m.id, m.title, firstLine(m.text), m.agents, action(m.id, m.agents, (agents) => update({ params: { id: m.id }, payload: { agents }, reactivityKeys: ["memories"] }), () => go({ view: "skills", id: m.id }), m.scope), !sees(m.agents, agent.id))
   const machineRow = (s: FileSkill) =>
-    row(s.path, s.name, s.description, s.agents, action(s.path, s.agents, (agents) => pick({ payload: { path: s.path, enabled: true, agents }, reactivityKeys: ["fileSkills"] }), () => go({ view: "skills", computer: true })), !sees(s.agents, agent.id))
+    row(s.path, s.name, s.description, s.agents, action(s.path, s.agents, (agents) => pick({ payload: { path: s.path, enabled: true, agents }, reactivityKeys: ["fileSkills"] }), () => go({ view: "skills", file: s.path })), !sees(s.agents, agent.id))
 
   return (
     <Section title={t("agent.skillsTab.title")} description={<span className="block max-w-prose">{t("agent.skillsTab.hint", { name: agent.name })}</span>}>

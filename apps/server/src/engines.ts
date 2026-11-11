@@ -13,7 +13,8 @@ import { acpRun, opencodeEnv } from "./engines/acp.ts"
 import { Context, Effect, Layer, Queue, Redacted, Stream } from "effect"
 import { LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
-import { readFileSync, statSync } from "node:fs"
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { homedir } from "node:os"
 import { join } from "node:path"
 import { openClaudeSession } from "#server/engines/claude-sdk.ts"
 import { openCodexSession } from "#server/engines/codex.ts"
@@ -21,6 +22,7 @@ import type { Approver } from "#server/engines/session.ts"
 import type { EngineSession } from "#server/engines/session.ts"
 import { Secrets, type SecretStore } from "./secrets.ts"
 import { resultText, type Session, type ToolDef } from "./tools.ts"
+import { which } from "./cli-install.ts"
 
 export interface TurnFile {
   readonly name: string
@@ -149,7 +151,7 @@ const CLAUDE_ERRORS: Record<string, FailureReason | undefined> = {
 }
 
 const one = (e: EngineEvent): Stream.Stream<EngineEvent> => Stream.make(e)
-export const MAX_TOOL_STEPS = 12
+const MAX_TOOL_STEPS = 12
 
 // ---------- providers ----------
 
@@ -180,6 +182,8 @@ export const PROVIDERS: Record<string, Provider> = {
   // ACP agents (phase 5): any CLI that speaks the Agent Client Protocol, through one adapter (engines/acp.ts).
   "gemini-cli": { kind: "subscription", hint: "Gemini CLI logado (gemini, then sign in)", suggestions: ["default", "gemini-2.5-pro", "gemini-2.5-flash"], bin: "gemini", cheap: "gemini-2.5-flash" },
   opencode: { kind: "subscription", hint: "OpenCode set up (opencode auth login); uses its own providers and keys", suggestions: ["default"], bin: "opencode" },
+  // Google's Antigravity CLI (agy): signed in with a Google account; its models come from `agy models`.
+  antigravity: { kind: "subscription", hint: "Antigravity CLI signed in (run agy, then sign in with Google)", suggestions: ["default"], bin: "agy", cheap: "gemini-3.8-flash-low" },
   ollama: { kind: "api", hint: "Ollama rodando (OLLAMA_URL)", suggestions: [], local: true },
   lmstudio: { kind: "api", hint: "LM Studio rodando (LMSTUDIO_URL)", suggestions: [], local: true }
 }
@@ -196,7 +200,7 @@ export const cheapModel = (model: string) => {
   return cheap ? `${provider}/${cheap}` : model
 }
 
-const ENGINE_NAMES: Record<string, string> = { "claude-cli": "Claude Code", "codex-cli": "Codex", "gemini-cli": "Gemini CLI", opencode: "OpenCode", anthropic: "Anthropic", openai: "OpenAI", openrouter: "OpenRouter", ollama: "Ollama", lmstudio: "LM Studio" }
+const ENGINE_NAMES: Record<string, string> = { "claude-cli": "Claude Code", "codex-cli": "Codex", "gemini-cli": "Gemini CLI", opencode: "OpenCode", antigravity: "Antigravity", anthropic: "Anthropic", openai: "OpenAI", openrouter: "OpenRouter", ollama: "Ollama", lmstudio: "LM Studio" }
 
 // "claude-cli/opus" → "Claude Code · Opus"; "claude-cli/claude-sonnet-5-5" → "Claude Code · Sonnet 5.5"; API models keep their id.
 // Saved as text on the timing steps, so it reads without the model list (the picker's own names come from it).
@@ -233,7 +237,7 @@ export async function listModels(secrets: SecretStore, cli: Partial<Record<strin
   const found = await Promise.all(entries.map(([id, p]) => (p.local ? probe(COMPAT[id]!()) : Promise.resolve(undefined))))
   return entries.flatMap(([provider, p], i) => {
     const local = found[i]
-    const available = p.local ? !!local : p.key ? !!secrets.get(p.key) : !!Bun.which(p.bin!)
+    const available = p.local ? !!local : p.key ? !!secrets.get(p.key) : !!which(p.bin!)
     const named = cli[provider]
     if (named?.length) {
       // Codex keeps "default" (its own pick) ahead of the listed models.
@@ -281,6 +285,13 @@ function fileNote(f: TurnFile): string {
   return `[attached file: ${f.name} (${f.mime})]`
 }
 const withFiles = (m: TurnMessage) => (m.files?.length ? `${m.text}\n\n${m.files.map(fileNote).join("\n")}` : m.text)
+
+// ACP agents get text only: an attached image is named in the transcript but never seen. Said plainly, so the model
+// doesn't describe a picture it didn't get.
+export const imagesNotShown = (messages: ReadonlyArray<TurnMessage>) =>
+  messages.some((m) => m.files?.some(isImage))
+    ? "\n\n(Note from Zorel: the images attached in this conversation couldn't be shown to you; this agent takes text only. If asked about an image, say you couldn't see it.)"
+    : ""
 
 export function transcript(messages: ReadonlyArray<TurnMessage>): string {
   const last = messages.at(-1)!
@@ -444,7 +455,7 @@ async function* runCli(bin: string, args: string[], stdin: string, cwd: string, 
 }
 
 const cli = (bin: string, args: string[], stdin: string, cwd: string, parser: Parser): Stream.Stream<EngineEvent> => {
-  const path = Bun.which(bin)
+  const path = which(bin)
   if (!path) return one({ type: "error", message: `${bin} isn't installed or isn't on the PATH.`, failure: { reason: "unavailable" } })
   return Stream.fromAsyncIterable(runCli(path, args, stdin, cwd, parser), (e) => e).pipe(Stream.catch((e) => one({ type: "error", message: String(e), failure: classifyMessage(String(e)) })))
 }
@@ -528,7 +539,7 @@ const api = (secrets: SecretStore, t: Turn): Stream.Stream<EngineEvent> => {
 
 // ---------- service ----------
 
-export interface OpenSession {
+interface OpenSession {
   readonly model: string
   readonly system: string // stable part of the context
   readonly cwd: string
@@ -541,7 +552,7 @@ export interface OpenSession {
   readonly approve: Approver // asks the person (the approval card) for a native call
 }
 
-export interface EnginesService {
+interface EnginesService {
   // Stateless: every call gets the whole layered context (API engines, CLIs without a session, consolidation).
   readonly run: (turn: Turn) => Stream.Stream<EngineEvent>
   // Native session for providers that have one; undefined = use `run`; string = could not open (shown as the turn error).
@@ -554,7 +565,37 @@ const NATIVE = new Set(["claude-cli", "codex-cli"])
 // `state`: folders (under home) the CLI writes its own sessions, logs and caches to; the sandbox lets it write there.
 const ACP: Record<string, (model: string) => { bin: string; args: string[]; state: string[] }> = {
   "gemini-cli": (model) => ({ bin: "gemini", args: ["--acp", ...(model && model !== "default" ? ["-m", model] : [])], state: [".gemini"] }),
-  opencode: () => ({ bin: "opencode", args: ["acp"], state: [".local/share/opencode", ".local/state/opencode", ".cache/opencode", ".config/opencode"] })
+  opencode: () => ({ bin: "opencode", args: ["acp"], state: [".local/share/opencode", ".local/state/opencode", ".cache/opencode", ".config/opencode"] }),
+  // The model is chosen in the session (session/set_model). agy runs from a folder of Zorel's (--gemini-dir): the
+  // person's settings could say "always-proceed" (no permission request ever reaches Zorel, at "Ask first" too),
+  // and their MCP servers, global rules and skills would load. The login stays the system keychain's.
+  antigravity: () => ({ bin: "agy", args: ["acp", "--disable-telemetry", "--gemini-dir", antigravityDir()], state: [".gemini", ".antigravity"] })
+}
+
+// Antigravity's settings for Zorel: ask before edits and commands (Zorel's access level then decides, engines/acp.ts),
+// and Zorel's own tools without asking (its gateway applies its own approvals).
+export const ANTIGRAVITY_SETTINGS = { toolPermission: "request-review", permissions: { allow: ["mcp(zorel/*)"] }, notifications: false, showTips: false, showFeedbackSurvey: false }
+export function antigravityDir(home = homedir()): string {
+  const dir = join(home, ".gemini", "zorel")
+  mkdirSync(join(dir, "antigravity-cli"), { recursive: true })
+  mkdirSync(join(dir, "config"), { recursive: true })
+  writeFileSync(join(dir, "antigravity-cli", "settings.json"), JSON.stringify(ANTIGRAVITY_SETTINGS, null, 2))
+  writeFileSync(join(dir, "config", "mcp_config.json"), JSON.stringify({ mcpServers: {} })) // the gateway comes with the session
+  return dir
+}
+
+// `agy models` prints "<id>\t<label>" per line after a "Fetching…" line; signed out, an error.
+export const parseAntigravityModels = (out: string): CliModel[] =>
+  out.split(/\r?\n/).flatMap((line) => {
+    const m = /^([a-z0-9][a-z0-9.-]*)\t(.+)$/i.exec(line.trim())
+    return m ? [{ id: m[1]!, name: m[2]!.trim(), note: "" }] : []
+  })
+export async function readAntigravityModels(): Promise<CliModel[]> {
+  const bin = which("agy")
+  if (!bin) return []
+  const proc = Bun.spawn([bin, "models"], { stdin: "ignore", stdout: "pipe", stderr: "ignore", timeout: 20_000, killSignal: "SIGKILL", windowsHide: true })
+  const [out] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
+  return parseAntigravityModels(out)
 }
 
 export class Engines extends Context.Service<Engines, EnginesService>()("Engines") {
@@ -571,13 +612,13 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
           const acp = ACP[provider]
           if (acp) {
             const { model } = splitModel(t.model)
-            return acpRun({ ...acp(model), model, cwd: t.cwd, prompt: `${t.system}\n\n${transcript(t.messages)}`, access: t.access ?? "workspace", web: t.web ?? false, gatewayUrl: t.tools?.url, approve: t.approve })
+            return acpRun({ ...acp(model), model, cwd: t.cwd, prompt: `${t.system}\n\n${transcript(t.messages)}${imagesNotShown(t.messages)}`, access: t.access ?? "workspace", web: t.web ?? false, gatewayUrl: t.tools?.url, approve: t.approve })
           }
           // An API-key model in a chat turn runs in OpenCode (files, shell, edits, its tools) when it's installed;
           // internal tasks (summaries, titles) and machines without it keep the direct API engine.
           const p = PROVIDERS[provider]
           // ZOREL_API_ENGINE=direct keeps the direct engine (tests, or if OpenCode misbehaves).
-          if (p?.kind === "api" && t.tools && process.env.ZOREL_API_ENGINE !== "direct" && Bun.which("opencode")) {
+          if (p?.kind === "api" && t.tools && process.env.ZOREL_API_ENGINE !== "direct" && which("opencode")) {
             const key = p.key ? secrets.get(p.key) : undefined
             if (p.key && !key) return one({ type: "error", message: `Set ${p.key} (in Settings or the environment) to use ${provider}.`, failure: { reason: "auth" } })
             const { model } = splitModel(t.model)
@@ -585,7 +626,7 @@ export class Engines extends Context.Service<Engines, EnginesService>()("Engines
               ...ACP.opencode!("default"),
               model: "default", // the injected config already names the model
               cwd: t.cwd,
-              prompt: `${t.system}\n\n${transcript(t.messages)}`,
+              prompt: `${t.system}\n\n${transcript(t.messages)}${imagesNotShown(t.messages)}`,
               access: t.access ?? "workspace",
               web: t.web ?? false,
               gatewayUrl: t.tools.url,

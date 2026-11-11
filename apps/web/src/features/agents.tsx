@@ -8,9 +8,10 @@ import { t } from "@zorel/i18n"
 import { useState } from "react"
 import { agentsAtom, mutations, projectsAtom, useList, useMutation, useStatuses } from "../client.ts"
 import { exportAgent, importedAgent } from "./agent.tsx"
+import { TeamsSection } from "./teams.tsx"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { AgentAvatar, Archive, ArchiveRestore, Bot, Button, ChevronDown, Column, cx, MessageCircle, Settings, ConfirmDialog, Dot, Download, EmptyState, IconButton, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, SearchInput, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
+import { AgentAvatar, Archive, ArchiveRestore, Bot, Button, ChevronDown, Column, cn, MessageCircle, Settings, ConfirmDialog, Dot, Download, EmptyState, Fold, IconButton, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, SearchInput, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
 
 // The agents working now, each with what it's doing (a chat of theirs running or waiting; waiting on you first).
 export function useWorking() {
@@ -41,7 +42,7 @@ export function AgentItem({ agent, agents, status, onDelete }: { agent: Agent; a
         <span className="flex items-center gap-2">
           <span className="truncate">{agent.name}</span>
           {working && (
-            <span className={cx("inline-flex shrink-0 items-center gap-1 text-sm font-normal", status?.state === "waiting" ? "text-warning" : "text-accent-text")}>
+            <span className={cn("inline-flex shrink-0 items-center gap-1 text-sm font-normal", status?.state === "waiting" ? "text-warning" : "text-accent-text")}>
               <Dot tone={status?.state === "waiting" ? "warning" : "accent"} />
               {status?.state === "waiting" ? t("agent.work.waiting") : t("agents.working")}
             </span>
@@ -101,7 +102,7 @@ export function useArchive() {
 
 // A team past this many gets a search field (the same threshold as every long list).
 export const SEARCH_AT = 8
-export const agentMatches = (a: Agent, q: string) => !q || `${a.name} ${a.title} ${a.description}`.toLowerCase().includes(q)
+const agentMatches = (a: Agent, q: string) => !q || `${a.name} ${a.title} ${a.description}`.toLowerCase().includes(q)
 
 // Deleting from a list: one confirm for the screen (the agent's own page has the same).
 export function useDeleteAgent() {
@@ -199,6 +200,7 @@ export function AgentsView() {
       }
     >
       <Column>
+        {team.length > 0 && !q && <TeamsSection />}
         {team.length === 0 ? (
           <EmptyState
             icon={<Bot />}
@@ -235,13 +237,13 @@ export function AgentsView() {
               </Button>
             }
           >
-            {showArchived && (
+            <Fold open={showArchived}>
               <Rows>
                 {archived.map((a) => (
                   <AgentItem key={a.id} agent={a} agents={agents} onDelete={del.ask} />
                 ))}
               </Rows>
-            )}
+            </Fold>
           </Section>
         )}
       </Column>

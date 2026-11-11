@@ -17,7 +17,7 @@ export function ImageViewer({ src, name, closeLabel, openLabel, children, classN
         isDismissable
         className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-6 data-entering:animate-in data-entering:fade-in-0 data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none"
       >
-        <Modal className="flex max-h-full max-w-full outline-none data-entering:animate-in data-entering:zoom-in-95 motion-reduce:animate-none">
+        <Modal className="flex max-h-full max-w-full outline-none data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-95 data-exiting:animate-out data-exiting:fade-out-0 data-exiting:zoom-out-[0.98] data-exiting:duration-100 motion-reduce:animate-none">
           <Dialog aria-label={name} className="flex max-h-full min-h-0 flex-col gap-3 outline-none">
             {({ close }) => (
               <>

@@ -8,7 +8,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import { Api, type Message } from "@zorel/contracts"
-import { type Approval, type ChatEvent, ZorelRpc } from "@zorel/contracts/events"
+import { type Approval, type ChatEvent, type Notice, ZorelRpc } from "@zorel/contracts/events"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
@@ -67,6 +67,8 @@ const mcp = Bun.serve({
 // ---------- fake engine ----------
 const turns: Turn[] = []
 const mentionNext = new Map<string, string>() // reply text per agent name (to test handoff)
+let routeNext = "" // the router's answer (empty: the fake echoes, which names no one: the fallback)
+let triageNext = '{"act": false, "why": "nothing to do"}' // the cheap check's answer for routines that look first (spec 012)
 let manyMemories = 0 // > 0: the fake consolidation proposes this many user memories
 let manyWord = "subject" // ...worded "Likes <word><letter>x"
 
@@ -93,8 +95,10 @@ const FakeEngines = Layer.succeed(Engines, {
         { type: "done" as const, usage: { inputTokens: 1, outputTokens: 1 } }
       )
     const last = t.messages.at(-1)!.text
+    if (last.startsWith("A routine watches for events")) return Stream.make<EngineEvent[]>({ type: "text", delta: triageNext }, { type: "done", usage: { inputTokens: 40, outputTokens: 5 } })
+    if (routeNext && last.startsWith("You route a message")) return Stream.make<EngineEvent[]>({ type: "text", delta: routeNext }, { type: "done", usage: { inputTokens: 1, outputTokens: 1 } })
     const me = /## You are (.+)\n/.exec(t.system)?.[1]
-    const call = /^tool:(\S+)(?:\s+(\{[\s\S]*\}))?/.exec(last)
+    const call = /^tool:(\S+)(?:\s+(\{[\s\S]*\}))?/m.exec(last) // any line: a routine's prompt comes after its title
     const tool = call?.[1]
     if (tool)
       return Stream.fromEffect(Effect.promise(() => useTool(t, tool, call?.[2] ? JSON.parse(call[2]) : { q: "deploy" }))).pipe(
@@ -278,6 +282,46 @@ test("channel: an @mention picks who answers; an agent hands off by mentioning a
   r = await send(chat.id, { text: "@leo go" })
   expect(dones(r.events)).toHaveLength(3) // Leo → Nico → Leo and stops
   mentionNext.clear()
+})
+
+test("teams: handles are unique with agents, members stay in reach, @team routes to one member, deleting keeps the agents", async () => {
+  const project = await api((c) => c.projects.create({ payload: { name: "Teams", brief: "" } }))
+  const mk = (name: string, title: string, projectId: string | null = project.id) => api((c) => c.agents.create({ payload: { projectId, name, title, instructions: `I am ${name}.`, model: "claude-cli/haiku" } }))
+  const [ana, ted, lead] = [await mk("Ana", "UI design"), await mk("Ted", "Writes tests"), await mk("Boss", "Lead")]
+  const err = (p: Promise<unknown>) => p.then(() => undefined, (e: { _tag?: string }) => e._tag)
+
+  const team = await api((c) => c.agents.createTeam({ payload: { projectId: project.id, name: "Front End", agentIds: [ana.id, ted.id] } }))
+  expect(team).toMatchObject({ handle: "front-end", agentIds: [ana.id, ted.id] })
+  expect(await err(api((c) => c.agents.createTeam({ payload: { projectId: project.id, name: "Ana", agentIds: [] } })))).toBe("TeamHandleTaken")
+  expect(await err(api((c) => c.agents.update({ params: { id: lead.id }, payload: { name: "Front End" } })))).toBe("TeamHandleTaken")
+  expect(await err(api((c) => c.agents.createTeam({ payload: { projectId: null, name: "Everyone", agentIds: [ana.id] } })))).toBe("TeamInvalid") // a global team holds global agents
+  // Joining a team from the agent's side: last in line.
+  await api((c) => c.agents.update({ params: { id: lead.id }, payload: { teamIds: [team.id] } }))
+  expect((await api((c) => c.agents.teams())).find((t) => t.id === team.id)!.agentIds).toEqual([ana.id, ted.id, lead.id])
+  await api((c) => c.agents.updateTeam({ params: { id: team.id }, payload: { agentIds: [ana.id, ted.id] } }))
+
+  // @team: one routed turn; the router's pick answers, and the chat says which team it routed for.
+  const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [lead.id, ana.id, ted.id], model: "claude-cli/sonnet" } }))
+  routeNext = '{"handle": "ted", "reason": "tests"}'
+  let r = await send(chat.id, { text: "@front-end write tests for the header" })
+  expect(dones(r.events).map((m) => m.agentId)).toEqual([ted.id])
+  expect(r.events.some((e) => e._tag === "handoff" && e.via === "route" && e.reason === "Front End · tests")).toBe(true)
+  // An answer naming someone outside the team (or unreadable) falls back to the team's first member.
+  routeNext = '{"handle": "boss", "reason": "x"}'
+  r = await send(chat.id, { text: "@front-end hi" })
+  expect(dones(r.events).map((m) => m.agentId)).toEqual([ana.id])
+  routeNext = ""
+  // In backticks it calls no one: the lead answers.
+  r = await send(chat.id, { text: "what does `@front-end` mean?" })
+  expect(dones(r.events).map((m) => m.agentId)).toEqual([lead.id])
+
+  await api((c) => c.agents.removeTeam({ params: { id: team.id } }))
+  expect((await api((c) => c.agents.list())).filter((a) => [ana.id, ted.id].includes(a.id))).toHaveLength(2)
+  expect((await api((c) => c.agents.teams())).some((t) => t.id === team.id)).toBe(false)
+  // Deleting an agent drops it from its teams.
+  const crew = await api((c) => c.agents.createTeam({ payload: { projectId: project.id, name: "Crew", agentIds: [ana.id, ted.id] } }))
+  await api((c) => c.agents.remove({ params: { id: ted.id } }))
+  expect((await api((c) => c.agents.teams())).find((t) => t.id === crew.id)!.agentIds).toEqual([ana.id])
 })
 
 test("MCP tools: read mode hides writes; approve mode asks and respects the decision", async () => {
@@ -587,15 +631,21 @@ test("edit from here: the conversation goes back to before the message and it co
   expect((notUser as { _tag?: string })._tag).toBe("NotFound") // only a message of yours
 })
 
-test("a project's default agent: only a global one or one from the project", async () => {
+test("who joins a project's chats: agents and teams, only global ones or the project's own", async () => {
   const p = await api((c) => c.projects.create({ payload: { name: "Def", brief: "" } }))
   const other = await api((c) => c.projects.create({ payload: { name: "Other", brief: "" } }))
   const foreign = await api((c) => c.agents.create({ payload: { projectId: other.id, name: "Foreign", instructions: "", model: "claude-cli/sonnet" } }))
   const global = await api((c) => c.agents.create({ payload: { projectId: null, name: "Global", instructions: "", model: "claude-cli/sonnet" } }))
-  const bad = await api((c) => c.projects.update({ params: { id: p.id }, payload: { defaultAgentId: foreign.id } })).catch((e: unknown) => e)
+  const bad = await api((c) => c.projects.update({ params: { id: p.id }, payload: { agentIds: [global.id, foreign.id] } })).catch((e: unknown) => e)
   expect((bad as { _tag?: string })._tag).toBe("NotFound")
-  expect((await api((c) => c.projects.update({ params: { id: p.id }, payload: { defaultAgentId: global.id } }))).defaultAgentId).toBe(global.id)
-  expect((await api((c) => c.projects.list())).find((x) => x.id === p.id)!.defaultAgentId).toBe(global.id)
+  const otherTeam = await api((c) => c.agents.createTeam({ payload: { projectId: other.id, name: "Elsewhere", agentIds: [foreign.id] } }))
+  const badTeam = await api((c) => c.projects.update({ params: { id: p.id }, payload: { teamIds: [otherTeam.id] } })).catch((e: unknown) => e)
+  expect((badTeam as { _tag?: string })._tag).toBe("NotFound")
+  const team = await api((c) => c.agents.createTeam({ payload: { projectId: p.id, name: "Here", agentIds: [global.id] } }))
+  const saved = await api((c) => c.projects.update({ params: { id: p.id }, payload: { agentIds: [global.id], teamIds: [team.id] } }))
+  expect([saved.agentIds, saved.teamIds]).toEqual([[global.id], [team.id]])
+  const listed = (await api((c) => c.projects.list())).find((x) => x.id === p.id)!
+  expect([listed.agentIds, listed.teamIds]).toEqual([[global.id], [team.id]])
 })
 
 test("pages by agents: writing in the project becomes a version, search and read; the pinned one enters the context", async () => {
@@ -683,6 +733,203 @@ const compactListening = (chatId: string) =>
     })
   )
 
+// Listens to a chat while `act` starts its work (a webhook, a "Run now"), until it rests again. Approvals are denied.
+const listening = (chatId: string, act: () => Promise<unknown>) =>
+  rpc((c) =>
+    Effect.gen(function* () {
+      const events: ChatEvent[] = []
+      const ready = yield* Deferred.make<void>()
+      const idle = yield* Deferred.make<void>()
+      let ended = 0
+      const fiber = yield* c.subscribeChat({ chatId }).pipe(
+        Stream.runForEach((e) =>
+          Effect.gen(function* () {
+            if (e._tag === "snapshot") return yield* Deferred.succeed(ready, undefined)
+            events.push(e)
+            if (e._tag === "approval") yield* c.decide({ approvalId: e.approval.id, outcome: "denied" })
+            if (e._tag === "turn-completed" || e._tag === "turn-failed" || e._tag === "interrupted") ended++
+            if (e._tag === "status" && (e.status.state === "idle" || e.status.state === "failed") && ended) yield* Deferred.succeed(idle, undefined)
+          })
+        ),
+        Effect.forkChild
+      )
+      yield* Deferred.await(ready)
+      yield* Effect.promise(act)
+      yield* Deferred.await(idle).pipe(Effect.timeout("5 seconds"))
+      yield* Fiber.interrupt(fiber)
+      return events
+    })
+  )
+
+test("outside text (spec 011): a webhook run asks even at Full access, what it hands off too; the person's own message and a plain run don't", async () => {
+  const server = await api((c) => c.tools.create({ payload: { projectId: null, name: "docs", command: "", args: [], url: `http://localhost:${mcp.port}/mcp`, env: {}, mode: "auto" } }))
+  const helper = await api((c) => c.agents.create({ payload: { projectId: null, name: "Helper Out", instructions: "Helps.", model: "claude-cli/sonnet", access: "full" } }))
+  const ops = await api((c) => c.agents.create({ payload: { projectId: null, name: "Ops Out", instructions: "Runs ops.", model: "claude-cli/sonnet", access: "full" } }))
+  const r = await api((c) => c.routines.create({ payload: { agentId: ops.id, name: "Cleanup", prompt: "tool:docs__delete_page", cron: null, webhook: true } }))
+  const asked = (events: ChatEvent[]) => events.filter((e) => e._tag === "approval").length
+
+  // The webhook's body is outside text: the sensitive tool waits for the person (denied here) though the agent has Full access.
+  const hooked = await listening(r.chatId, () => api((c) => c.routines.hook({ params: { token: r.token! }, payload: { page: 7 } })))
+  expect(asked(hooked)).toBe(1)
+  expect(dones(hooked)[0]!.text).toContain("The user declined")
+
+  // "Run now" carries only the person's own prompt: Full access, no card.
+  const plain = await listening(r.chatId, () => api((c) => c.routines.run({ params: { id: r.id } })))
+  expect(asked(plain)).toBe(0)
+  expect(dones(plain)[0]!.text).toContain("=> result of delete_page")
+
+  // The person writing in the same chat: Full access, no card.
+  const own = await send(r.chatId, { text: "tool:docs__delete_page" })
+  expect(asked(own.events)).toBe(0)
+
+  // A hand-off from an outside turn carries the cap: the helper's call asks too.
+  const relay = await api((c) => c.routines.create({ payload: { agentId: ops.id, name: "Relay", prompt: "@ops-out pass it on", cron: null, webhook: true } }))
+  await api((c) => c.chats.update({ params: { id: relay.chatId }, payload: { agentIds: [ops.id, helper.id] } }))
+  mentionNext.set("Ops Out", "@helper-out\ntool:docs__delete_page")
+  const handed = await listening(relay.chatId, () => api((c) => c.routines.hook({ params: { token: relay.token! }, payload: { page: 8 } })))
+  mentionNext.delete("Ops Out")
+  expect(handed.some((e) => e._tag === "handoff" && e.to.includes(helper.id))).toBe(true)
+  expect(asked(handed)).toBe(1)
+  await api((c) => c.tools.remove({ params: { id: server.id } }))
+})
+
+// ---------- useful routines (spec 012) ----------
+// What routines tell the person while `act` runs, until `done` says the run is over.
+const noticesWhile = (act: () => Promise<unknown>, done: () => Promise<boolean>) =>
+  rpc((c) =>
+    Effect.gen(function* () {
+      const got: Notice[] = []
+      const fiber = yield* c.notices().pipe(Stream.runForEach((n) => Effect.sync(() => void got.push(n))), Effect.forkChild)
+      yield* Effect.sleep("50 millis")
+      yield* Effect.promise(act)
+      for (let i = 0; i < 100 && !(yield* Effect.promise(done)); i++) yield* Effect.sleep("50 millis")
+      yield* Effect.sleep("100 millis")
+      yield* Fiber.interrupt(fiber)
+      return got
+    })
+  )
+const historyOf = (id: string) => api((c) => c.routines.history({ params: { id }, query: {} }))
+const doneRuns = (id: string, n: number) => async () => (await historyOf(id)).filter((r) => r.state === "done").length >= n
+const routine = async (name: string, extra: Record<string, unknown> = {}) => {
+  const agent = await api((c) => c.agents.create({ payload: { projectId: null, name, instructions: `I am ${name}.`, model: "claude-cli/sonnet" } }))
+  return api((c) => c.routines.create({ payload: { agentId: agent.id, name: `${name} check`, prompt: "Check the PRs", cron: null, webhook: true, ...extra } }))
+}
+
+test("routines (spec 012): the outcome decides the ping, the marker leaves the reply, the next run gets the last report", async () => {
+  const r = await routine("Rex")
+  mentionNext.set("Rex", "Nothing changed since yesterday.\n\nOutcome: nothing new")
+  const quiet = await noticesWhile(() => api((c) => c.routines.run({ params: { id: r.id } })), doneRuns(r.id, 1))
+  expect(quiet).toEqual([])
+  let runs = await historyOf(r.id)
+  expect(runs[0]).toMatchObject({ trigger: "now", state: "done", outcome: "nothing", summary: "Nothing changed since yesterday.", deliveredAt: null })
+  const msgs = await api((c) => c.chats.messages({ params: { id: r.chatId } }))
+  expect(msgs.at(-1)!.text).toBe("Nothing changed since yesterday.") // the marker line is gone
+  expect(msgs[0]!.text).toContain("Outcome: needs you") // the run's instruction
+
+  mentionNext.set("Rex", "PR #212 is now 4 days old.\nOutcome: something new")
+  const told = await noticesWhile(() => api((c) => c.routines.run({ params: { id: r.id } })), doneRuns(r.id, 2))
+  expect(told.map((n) => [n.outcome, n.text])).toEqual([["something", "PR #212 is now 4 days old."]])
+  expect(turns.at(-1)!.messages.at(-1)!.text).toContain("<previous-run>\nNothing changed since yesterday.\n</previous-run>")
+
+  mentionNext.set("Rex", "Here is a report with no marker.") // unreadable: "something", nothing dropped
+  await noticesWhile(() => api((c) => c.routines.run({ params: { id: r.id } })), doneRuns(r.id, 3))
+  runs = await historyOf(r.id)
+  expect(runs[0]!.outcome).toBe("something")
+  expect(runs.map((x) => x.state)).toEqual(["done", "done", "done"]) // newest first
+  mentionNext.delete("Rex")
+}, 20_000)
+
+test("routines (spec 012): webhooks wait in line, in order; 20 waiting at most; a cheap check can end a run with no turn", async () => {
+  const r = await routine("Quinn")
+  await api((c) => c.settings.pause({ payload: { paused: true } }))
+  for (let i = 1; i <= 20; i++) await api((c) => c.routines.hook({ params: { token: r.token! }, payload: { n: i } }))
+  const full = await api((c) => c.routines.hook({ params: { token: r.token! }, payload: { n: 21 } })).catch((e: { _tag?: string }) => e._tag)
+  expect(full).toBe("RoutineQueueFull")
+  const runs = await historyOf(r.id)
+  expect(runs.filter((x) => x.state === "queued")).toHaveLength(20)
+  expect(runs[0]).toMatchObject({ state: "done", deliveryNote: "refused" })
+  await api((c) => c.routines.remove({ params: { id: r.id } })) // its queue goes with it
+  await api((c) => c.settings.pause({ payload: { paused: false } }))
+
+  // In order, one after another.
+  const q = await routine("Queue")
+  const before = turns.length
+  for (const n of [1, 2, 3]) await api((c) => c.routines.hook({ params: { token: q.token! }, payload: { n } }))
+  for (let i = 0; i < 100 && !(await doneRuns(q.id, 3)()); i++) await Bun.sleep(50)
+  const seen = turns.slice(before).map((t) => t.messages.at(-1)!.text).filter((x) => x.startsWith('Routine "Queue check"')).map((x) => /"n": (\d)/.exec(x)?.[1])
+  expect(seen).toEqual(["1", "2", "3"])
+
+  // Look first: the small model says no, so the agent never starts.
+  const lf = await routine("Lookout", { lookFirst: true })
+  const turnsBefore = turns.length
+  await api((c) => c.routines.hook({ params: { token: lf.token! }, payload: { status: "green" } }))
+  for (let i = 0; i < 100 && !(await doneRuns(lf.id, 1)()); i++) await Bun.sleep(50)
+  expect((await historyOf(lf.id))[0]).toMatchObject({ outcome: "nothing", summary: "Checked: nothing to do", turnId: null, triageTokens: 45 })
+  expect(turns.slice(turnsBefore).some((t) => t.messages.at(-1)!.text.startsWith("Routine"))).toBe(false)
+  triageNext = "not json at all" // a check that can't be read: the agent runs
+  await api((c) => c.routines.hook({ params: { token: lf.token! }, payload: { status: "red" } }))
+  for (let i = 0; i < 100 && !(await doneRuns(lf.id, 2)()); i++) await Bun.sleep(50)
+  expect((await historyOf(lf.id))[0]!.turnId).not.toBeNull()
+  triageNext = '{"act": false, "why": "nothing to do"}'
+  const anyAgent = (await api((x) => x.agents.list()))[0]!.id
+  const bad = await api((c) => c.routines.create({ payload: { agentId: anyAgent, name: "No trigger", prompt: "x", cron: "0 9 * * *", webhook: false, lookFirst: true } })).catch((e: { _tag?: string }) => e._tag)
+  expect(bad).toBe("RoutineInvalid")
+}, 20_000)
+
+test("routines (spec 012): quiet hours hold pings for Today; urgent needs you still pings; page and Telegram delivery", async () => {
+  const r = await routine("Nora")
+  const hm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const bad = await api((c) => c.settings.timeProfile({ payload: { timeZone: "Mars/Base", quietHours: null, dayStartSet: null } })).catch((e: { _tag?: string }) => e._tag)
+  expect(bad).toBe("BadRequest")
+  const prefs = await api((c) => c.settings.timeProfile({ payload: { timeZone: zone, quietHours: { from: hm(new Date(Date.now() - 3_600_000)), to: hm(new Date(Date.now() + 3_600_000)) }, dayStartSet: 540 } }))
+  expect(prefs.timeProfile).toMatchObject({ timeZone: zone, dayStartMinutes: 540, dayStartSet: 540 })
+
+  mentionNext.set("Nora", "Two new issues.\nOutcome: something new")
+  const held = await noticesWhile(() => api((c) => c.routines.run({ params: { id: r.id } })), doneRuns(r.id, 1))
+  expect(held).toEqual([])
+  expect((await historyOf(r.id))[0]).toMatchObject({ outcome: "something", held: true })
+  const today = await api((c) => c.routines.today())
+  expect(today.found.map((x) => x.summary)).toContain("Two new issues.")
+
+  await api((c) => c.routines.update({ params: { id: r.id }, payload: { urgent: true } }))
+  mentionNext.set("Nora", "Pick one of the two proposals.\nOutcome: needs you")
+  const urgent = await noticesWhile(() => api((c) => c.routines.run({ params: { id: r.id } })), doneRuns(r.id, 2))
+  expect(urgent.map((n) => n.outcome)).toEqual(["needs"])
+  const needs = (await api((c) => c.routines.today())).needs.find((x) => x.routineId === r.id)!
+  await api((c) => c.routines.todayRead({ payload: { runIds: [needs.id] } }))
+  expect((await api((c) => c.routines.today())).needs.some((x) => x.id === needs.id)).toBe(false)
+  await api((c) => c.settings.timeProfile({ payload: { timeZone: zone, quietHours: null, dayStartSet: null } }))
+
+  // A page: its body becomes the report, with a version kept. Telegram not paired: the notification instead.
+  const page = await api((c) => c.pages.create({ payload: { scope: "user", title: "Issues today", body: "old" } }))
+  await api((c) => c.routines.update({ params: { id: r.id }, payload: { delivery: { channels: ["page", "telegram"], pageId: page.id } } }))
+  mentionNext.set("Nora", "Three new issues.\n- #1\n- #2\n- #3\nOutcome: something new")
+  const fallback = await noticesWhile(() => api((c) => c.routines.run({ params: { id: r.id } })), doneRuns(r.id, 3))
+  expect(fallback.map((n) => n.text)).toEqual(["Three new issues."])
+  expect((await historyOf(r.id))[0]!.deliveryNote).toBe("telegram not paired")
+  expect((await api((c) => c.pages.list())).find((p) => p.id === page.id)!.body).toBe("Three new issues.\n- #1\n- #2\n- #3")
+  const noPage = await api((c) => c.routines.update({ params: { id: r.id }, payload: { delivery: { channels: ["page"] } } })).catch((e: { _tag?: string }) => e._tag)
+  expect(noPage).toBe("RoutineInvalid")
+  mentionNext.delete("Nora")
+
+  await api((c) => c.routines.clearHistory({ params: { id: r.id } }))
+  expect(await historyOf(r.id)).toEqual([])
+  const week = await api((c) => c.routines.week({ query: { from: Date.now() - 86_400_000, to: Date.now() + 86_400_000 } }))
+  expect(Array.isArray(week.runs) && Array.isArray(week.planned)).toBe(true)
+  expect(await api((c) => c.routines.week({ query: { from: 0, to: Date.now() } })).catch((e: { _tag?: string }) => e._tag)).toBe("BadRequest")
+}, 20_000)
+
+test("routines (spec 012): a run that waits for approval needs you before it ends", async () => {
+  const server = await api((c) => c.tools.create({ payload: { projectId: null, name: "docs2", command: "", args: [], url: `http://localhost:${mcp.port}/mcp`, env: {}, mode: "approve" } }))
+  const r = await routine("Wade")
+  await api((c) => c.routines.update({ params: { id: r.id }, payload: { prompt: "tool:docs2__delete_page" } }))
+  const got = await noticesWhile(() => listening(r.chatId, () => api((c) => c.routines.run({ params: { id: r.id } }))), doneRuns(r.id, 1))
+  expect(got[0]?.outcome).toBe("needs") // told while it waited
+  expect(got).toHaveLength(1) // and not again when it ended
+  await api((c) => c.tools.remove({ params: { id: server.id } }))
+}, 20_000)
+
 const approval = (a: "review" | "undo") => api((c) => c.settings.memoryApproval({ payload: { approval: a } }))
 
 test("memory approval: review proposes, undo saves facts (skills still wait, with a notice); an agent that doesn't learn keeps its chats from learning", async () => {
@@ -726,6 +973,20 @@ test("memory approval: review proposes, undo saves facts (skills still wait, wit
   expect(read.summary).toBe("They talked about deploying.") // the chat's own summary still folds
   // One agent that doesn't learn keeps a shared chat from learning.
   expect((await learned([true, false])).mine).toEqual([])
+  await approval("review")
+})
+
+test("memory approval undo (spec 011): a stretch holding a webhook's text only proposes", async () => {
+  for (const m of (await api((c) => c.memories.list())).filter((x) => x.state === "pending")) await api((c) => c.memories.update({ params: { id: m.id }, payload: { state: "forgotten" } }))
+  const project = await api((c) => c.projects.create({ payload: { name: "Outside learning", brief: "" } }))
+  const agent = await api((c) => c.agents.create({ payload: { projectId: project.id, name: "Watcher", instructions: "Watches.", model: "claude-cli/sonnet" } }))
+  const r = await api((c) => c.routines.create({ payload: { agentId: agent.id, name: "Intake", prompt: "Read it", cron: null, webhook: true } }))
+  await approval("undo")
+  await listening(r.chatId, () => api((c) => c.routines.hook({ params: { token: r.token! }, payload: { note: "deploys go out on fridays" } })))
+  await compactListening(r.chatId)
+  const mine = (await api((c) => c.memories.list())).filter((m) => m.chatId === r.chatId && m.kind === "fact")
+  expect(mine.length).toBeGreaterThan(0)
+  expect(mine.every((m) => m.state === "pending")).toBe(true) // with "undo" on, a plain chat keeps it (test above)
   await approval("review")
 })
 
@@ -960,3 +1221,79 @@ test("Telegram channel: strangers are turned away, a paired account talks to Zor
     tg.stop(true)
   }
 }, 30_000)
+
+test("routine flows (spec 013): an old routine's flow, versions, refusals, the tool catalog, Test step and a run's steps", async () => {
+  const agent = await api((c) => c.agents.create({ payload: { projectId: null, name: "Flowy", instructions: "", model: "claude-cli/sonnet" } }))
+  const server = await api((c) => c.tools.create({ payload: { projectId: null, name: "wiki", command: "", args: [], url: `http://localhost:${mcp.port}/mcp`, env: {}, mode: "read" } }))
+  const r = await api((c) => c.routines.create({ payload: { agentId: agent.id, name: "Flow", prompt: "Sum it up", cron: null, webhook: false } }))
+  const old = await api((c) => c.routines.flow({ params: { id: r.id } }))
+  expect(old.version).toBeNull()
+  expect(old.graph.nodes.map((n) => n.kind)).toEqual(["trigger", "agent", "end"])
+
+  const tagOf = (e: unknown) => (e as { _tag?: string })._tag
+  const save = (graph: typeof old.graph, baseVersion: number | null) => api((c) => c.routines.saveFlow({ params: { id: r.id }, payload: { graph, baseVersion } }))
+  const stray = { id: "x", kind: "agent" as const, x: 0, y: 0, config: { prompt: "alone" } }
+  const unreachable = await save({ ...old.graph, nodes: [...old.graph.nodes, stray] }, null).catch((e: unknown) => e)
+  expect(unreachable).toMatchObject({ _tag: "FlowInvalid", nodeId: "x" })
+  const tool = { id: "look", kind: "tool" as const, x: 0, y: 80, config: { serverId: server.id, tool: "search_docs", args: { q: "deploy" } } }
+  const graph = {
+    nodes: [old.graph.nodes[0]!, tool, old.graph.nodes[1]!, old.graph.nodes[2]!],
+    edges: [{ id: "a", from: "trigger", to: "look" }, { id: "b", from: "look", to: "agent" }, { id: "c", from: "agent", to: "end" }]
+  }
+  const missingTool = await save({ ...graph, nodes: graph.nodes.map((n) => (n.id === "look" ? { ...tool, config: { ...tool.config, tool: "nope" } } : n)) }, null).catch((e: unknown) => e)
+  expect(missingTool).toMatchObject({ _tag: "FlowInvalid", nodeId: "look", field: "tool" })
+  expect((await save(graph, null)).version).toBe(1)
+  expect(tagOf(await save(graph, null).catch((e: unknown) => e))).toBe("FlowConflict") // saved on top of an old version
+  expect((await api((c) => c.routines.flowVersion({ params: { id: r.id, n: 1 } }))).graph).toEqual(graph)
+  expect((await api((c) => c.routines.list())).find((x) => x.id === r.id)!.version).toBe(1)
+
+  // the picker: a "read" connector lets this agent read, not delete
+  const catalog = await api((c) => c.tools.catalog({ params: { id: server.id }, query: { agentId: agent.id } }))
+  expect(Object.fromEntries(catalog.tools.map((t) => [t.name, t.state]))).toMatchObject({ search_docs: "usable", delete_page: "read-only" })
+  expect(tagOf(await api((c) => c.tools.options({ params: { id: server.id }, payload: { tool: "delete_page", args: {} } })).catch((e: unknown) => e))).toBe("BadRequest")
+  const tested = await api((c) => c.routines.testStep({ params: { id: r.id }, payload: { graph, nodeId: "look" } }))
+  expect(tested).toEqual({ output: "result of search_docs", dry: false, error: null })
+
+  // a run goes through the flow: trigger, the tool, the agent (given the tool's result), the end
+  await api((c) => c.routines.run({ params: { id: r.id } }))
+  let runs = await api((c) => c.routines.history({ params: { id: r.id }, query: {} }))
+  for (let i = 0; i < 100 && runs[0]?.state !== "done"; i++) {
+    await Bun.sleep(50)
+    runs = await api((c) => c.routines.history({ params: { id: r.id }, query: {} }))
+  }
+  const detail = await api((c) => c.routines.runDetail({ params: { id: r.id, runId: runs[0]!.id } }))
+  expect(detail.run.version).toBe(1)
+  expect(detail.steps.map((s) => [s.nodeId, s.state])).toEqual([["trigger", "done"], ["look", "done"], ["agent", "done"], ["end", "done"]])
+  expect(detail.steps[2]!.input).toBe("result of search_docs")
+  expect(detail.steps[2]!.output).toContain("echo: Routine \"Flow\"")
+  expect((await api((c) => c.routines.stepOutput({ params: { id: r.id, runId: runs[0]!.id, stepId: detail.steps[1]!.id } }))).text).toBe("result of search_docs")
+  expect(tagOf(await api((c) => c.routines.resolveStep({ params: { id: r.id, runId: runs[0]!.id }, payload: { stepId: detail.steps[1]!.id, choice: "again" } })).catch((e: unknown) => e))).toBe("BadRequest") // not uncertain
+}, 20_000)
+
+test("routine flows P2 (spec 013): schedules from the trigger, a connector destination checked on save, a gone connector blocks turning on", async () => {
+  const agent = await api((c) => c.agents.create({ payload: { projectId: null, name: "Planner", instructions: "", model: "claude-cli/sonnet" } }))
+  const server = await api((c) => c.tools.create({ payload: { projectId: null, name: "kb2", command: "", args: [], url: `http://localhost:${mcp.port}/mcp`, env: {}, mode: "approve" } }))
+  const r = await api((c) => c.routines.create({ payload: { agentId: agent.id, name: "Monthly", prompt: "Close the month", cron: null, webhook: false } }))
+  const old = await api((c) => c.routines.flow({ params: { id: r.id } }))
+  const withTrigger = (config: Record<string, unknown>) => ({ ...old.graph, nodes: old.graph.nodes.map((n) => (n.kind === "trigger" ? { ...n, config } : n)) }) as typeof old.graph
+  await api((c) => c.routines.saveFlow({ params: { id: r.id }, payload: { graph: withTrigger({ on: "monthly", day: 31, time: "08:00" }), baseVersion: null } }))
+  const saved = (await api((c) => c.routines.list())).find((x) => x.id === r.id)!
+  expect(saved.schedule).toEqual({ kind: "monthly", day: 31, time: "08:00" })
+  expect(saved.cron).toBeNull()
+  expect(saved.nextRunAt).toBeGreaterThan(Date.now())
+  const past = await api((c) => c.routines.saveFlow({ params: { id: r.id }, payload: { graph: withTrigger({ on: "once", date: "2020-01-01", time: "08:00" }), baseVersion: 1 } })).catch((e: unknown) => e)
+  expect(past).toMatchObject({ _tag: "FlowInvalid", field: "date" })
+  const times = await api((c) => c.routines.testTrigger({ params: { id: r.id }, payload: { graph: withTrigger({ on: "monthly", day: 31, time: "08:00" }) } }))
+  expect(times.times).toHaveLength(3)
+
+  // a destination must be a tool that writes, with that text input
+  const delivery = (tool: string, textField: string) => ({ channels: ["notify" as const], connectors: [{ serverId: server.id, tool, args: {}, textField }] })
+  expect(await api((c) => c.routines.update({ params: { id: r.id }, payload: { delivery: delivery("search_docs", "q") } })).catch((e: unknown) => e)).toMatchObject({ _tag: "RoutineInvalid" })
+  expect(await api((c) => c.routines.update({ params: { id: r.id }, payload: { delivery: delivery("delete_page", "body") } })).catch((e: unknown) => e)).toMatchObject({ _tag: "RoutineInvalid" })
+  expect((await api((c) => c.routines.update({ params: { id: r.id }, payload: { delivery: delivery("delete_page", "id") } }))).delivery.connectors).toHaveLength(1)
+
+  // the connector goes; the routine can't be turned on again until that's fixed
+  await api((c) => c.routines.update({ params: { id: r.id }, payload: { enabled: false } }))
+  await api((c) => c.tools.remove({ params: { id: server.id } }))
+  expect(await api((c) => c.routines.update({ params: { id: r.id }, payload: { enabled: true } })).catch((e: unknown) => e)).toMatchObject({ _tag: "RoutineInvalid" })
+}, 20_000)

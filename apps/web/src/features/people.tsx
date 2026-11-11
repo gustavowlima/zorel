@@ -3,10 +3,11 @@
 import type { Agent, Chat } from "@zorel/contracts"
 import { isTeammate } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
-import { agentsAtom, mutations, useList, useMutation } from "../client.ts"
-import { agentTone, handleOf, modelLabel, splitModel } from "../labels.ts"
+import { agentsAtom, mutations, teamsAtom, useList, useMutation } from "../client.ts"
+import { callable, teamsIn, withTeam } from "./agent-options.ts"
+import { agentTint, agentTone, handleOf, modelLabel, splitModel } from "../labels.ts"
 import { useState } from "react"
-import { AgentAvatar, Badge, Button, IconButton, ModelAvatar, Plus, Popover, SearchInput, X } from "@/ui"
+import { AgentAvatar, Button, IconButton, ModelAvatar, Plus, Popover, SearchInput, Users, X } from "@/ui"
 
 type Size = 16 | 20 | 28 | 32
 
@@ -21,6 +22,10 @@ export function AuthorAvatar({ agent, model, size = 32 }: { agent: Agent | undef
 export function TeamPicker({ chat }: { chat: Chat }) {
   const agents = useList(agentsAtom)
   const update = useMutation(mutations.updateChat)
+  // Teams (spec 010): one press adds the members who aren't here yet, in the team's order.
+  const reach = callable(agents, chat.projectId)
+  const teams = teamsIn(useList(teamsAtom), chat.projectId).map((x) => ({ team: x, add: withTeam(x, reach, chat.agentIds) }))
+  const [overflow, setOverflow] = useState(0)
   const team = chat.agentIds.flatMap((id) => agents.find((a) => a.id === id) ?? [])
   const candidates = agents.filter((a) => isTeammate(a) && (a.projectId === null || a.projectId === chat.projectId) && !chat.agentIds.includes(a.id))
   const lead = team[0]
@@ -32,7 +37,7 @@ export function TeamPicker({ chat }: { chat: Chat }) {
   const setTeam = (agentIds: ReadonlyArray<string>, model?: string) =>
     update({ params: { id: chat.id }, payload: { agentIds, ...(model && { model }) }, reactivityKeys: ["chats"] })
   // No agents to pick: the model answers on its own and the model chip already says which.
-  if (!lead && candidates.length === 0) return null
+  if (!lead && candidates.length === 0 && teams.length === 0) return null
 
   return (
     <Popover
@@ -71,7 +76,7 @@ export function TeamPicker({ chat }: { chat: Chat }) {
               <span className="truncate text-sm text-muted">{i === 0 ? t("team.leadHint") : `@${handleOf(a)} · ${modelLabel(a.model)}`}</span>
             </span>
             {i === 0 ? (
-              <Badge tone="accent">{t("team.lead")}</Badge>
+              <span className={`tinted ${agentTint(a, agents)} inline-flex h-5 shrink-0 items-center rounded-full border px-2 text-xs font-medium`}>{t("team.lead")}</span>
             ) : (
               // The lead's model drives the chat, so it follows the new lead.
               <Button size="sm" variant="ghost" onPress={() => void setTeam([a.id, ...chat.agentIds.filter((x) => x !== a.id)], a.model)}>
@@ -102,6 +107,31 @@ export function TeamPicker({ chat }: { chat: Chat }) {
                 </Button>
               ))}
             </div>
+          </>
+        )}
+        {teams.length > 0 && (
+          <>
+            <p className="mt-1 border-t border-subtle px-2 pt-2.5 pb-1 text-sm font-medium text-muted">{t("teams.addTeam")}</p>
+            {teams.map(({ team: x, add }) => (
+              <Button
+                key={x.id}
+                variant="ghost"
+                isDisabled={add.added.length === 0}
+                className="h-auto justify-start gap-2.5 px-2 py-1.5 text-left font-normal text-fg"
+                onPress={() => {
+                  setOverflow(add.overflow)
+                  void setTeam(add.ids, chat.agentIds.length ? undefined : add.added[0]?.model)
+                }}
+              >
+                <Users className="size-4 text-muted" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{x.name}</span>
+                  <span className="truncate text-sm text-muted">{add.added.length ? t("teams.added", { names: add.added.map((a) => a.name).join(", ") }) : t("teams.allIn")}</span>
+                </span>
+                <Plus className="size-3.5 text-muted" />
+              </Button>
+            ))}
+            {overflow > 0 && <p className="px-2 py-1 text-sm text-warning">{t("teams.overflow", { count: overflow })}</p>}
           </>
         )}
         {team.length > 1 && <p className="border-t border-subtle px-2 pt-2 text-sm text-dim">{t("team.mentionHint")}</p>}

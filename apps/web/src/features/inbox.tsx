@@ -4,22 +4,25 @@ import type { Agent, Chat, Memory } from "@zorel/contracts"
 import type { Approval } from "@zorel/contracts/events"
 import { formatAge, t } from "@zorel/i18n"
 import { type ReactNode, useState } from "react"
-import { agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useList, useMutation } from "../client.ts"
+import { agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, routinesAtom, uncertainStepsAtom, useList, useMutation } from "../client.ts"
 import { agentName, chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { openMemory } from "./knowledge.tsx"
 import { AuthorAvatar } from "./people.tsx"
-import { Button, Check, Code, Column, EmptyState, IconTile, Rows, Screen, Tab, TabList, Tabs, User } from "@/ui"
+import { Button, Check, Code, CodeBlock, Column, EmptyState, IconTile, Rows, Screen, ShieldAlert, Tab, TabList, Tabs, Textarea, User } from "@/ui"
 import { QuestionAnswer } from "./question.tsx"
 
 type Filter = "all" | "approvals" | "memories"
 
 export function InboxView() {
+  // A routine's write that may have gone out (spec 013) waits here like an approval.
   const approvals = useList(approvalsAtom)
+  const uncertain = useList(uncertainStepsAtom)
   const memories = useList(memoriesAtom).filter((m) => m.state === "pending")
   const [filter, setFilter] = useState<Filter>("all")
   const items = [
     ...(filter !== "memories" ? approvals.map((a) => ({ at: a.createdAt, approval: a })) : []),
+    ...(filter !== "memories" ? uncertain.map((u) => ({ at: u.at, uncertain: u })) : []),
     ...(filter !== "approvals" ? memories.map((m) => ({ at: m.createdAt, memory: m })) : [])
   ].sort((a, b) => b.at - a.at)
 
@@ -30,10 +33,10 @@ export function InboxView() {
       actions={
         <Tabs selectedKey={filter} onSelectionChange={(k) => setFilter(k as Filter)}>
           <TabList label={t("inbox.title")}>
-            <Tab id="all" count={approvals.length + memories.length || undefined}>
+            <Tab id="all" count={approvals.length + uncertain.length + memories.length || undefined}>
               {t("inbox.all")}
             </Tab>
-            <Tab id="approvals" count={approvals.length || undefined}>
+            <Tab id="approvals" count={approvals.length + uncertain.length || undefined}>
               {t("inbox.approvals")}
             </Tab>
             <Tab id="memories" count={memories.length || undefined}>
@@ -48,7 +51,9 @@ export function InboxView() {
           <EmptyState icon={<Check />} title={t("inbox.empty")} hint={t("inbox.emptyHint")} />
         ) : (
           <Rows>
-            {items.map((item) => ("approval" in item ? <ApprovalItem key={item.approval.id} approval={item.approval} /> : <MemoryItem key={item.memory.id} memory={item.memory} />))}
+            {items.map((item) =>
+              "approval" in item ? <ApprovalItem key={item.approval.id} approval={item.approval} /> : "uncertain" in item ? <UncertainItem key={item.uncertain.stepId} step={item.uncertain} /> : <MemoryItem key={item.memory.id} memory={item.memory} />
+            )}
           </Rows>
         )}
       </Column>
@@ -92,14 +97,17 @@ function ApprovalItem({ approval: a }: { approval: Approval }) {
   const chats = useList(chatsAtom)
   const decide = useMutation(mutations.decide)
   const [pending, setPending] = useState<"approved" | "always" | "denied">()
+  const [editing, setEditing] = useState<string>() // an "Ask me": the text the steps after it get, changed first
   const chat = chats.find((c) => c.id === a.chatId)
   const agent = agents.find((x) => x.id === a.agentId)
-  const choose = (outcome: "approved" | "always" | "denied") => {
+  const choose = (outcome: "approved" | "always" | "denied", reason?: string) => {
     setPending(outcome)
     // Already decided elsewhere: the refetch removes it from the list either way.
-    decide({ payload: { approvalId: a.id, outcome }, reactivityKeys: ["approvals", "agents"] }).catch(() => setPending(undefined))
+    decide({ payload: { approvalId: a.id, outcome, ...(reason?.trim() && { reason: reason.trim().slice(0, 2000) }) }, reactivityKeys: ["approvals", "agents"] }).catch(() => setPending(undefined))
   }
-  if (a.kind === "question")
+  const askMe = a.kind === "question" && !!a.runStepId
+  // An "Ask me" step of a routine (spec 013) is a yes or no, not a question to answer in words.
+  if (a.kind === "question" && !a.runStepId)
     return (
       <Item avatar={<AuthorAvatar agent={agent} model={chat?.model ?? null} />} who={agentName(a.agentId, agents)} context={<InChat chat={chat} />} at={a.createdAt} actions={null}>
         <p className="font-medium">{a.summary}</p>
@@ -113,6 +121,7 @@ function ApprovalItem({ approval: a }: { approval: Approval }) {
       context={<InChat chat={chat} />}
       at={a.createdAt}
       actions={
+        editing !== undefined ? null : (
         <>
           <Button size="sm" variant="default" isPending={pending === "approved"} isDisabled={!!pending} onPress={() => choose("approved")}>
             {t("approval.allow")}
@@ -125,11 +134,56 @@ function ApprovalItem({ approval: a }: { approval: Approval }) {
           <Button size="sm" variant="ghost" isDisabled={!!pending} onPress={() => choose("denied")}>
             {t("approval.deny")}
           </Button>
+          {askMe && (
+            <Button size="sm" variant="ghost" isDisabled={!!pending} onPress={() => setEditing(a.args)}>
+              {t("flows.ask.edit")}
+            </Button>
+          )}
         </>
+        )
       }
     >
       <p>{a.summary || t("approval.wantsTo", { agent: agentName(a.agentId, agents), tool: a.tool })}</p>
-      <Code className="self-start">{a.tool}</Code>
+      {editing !== undefined ? (
+        <div className="flex flex-col gap-2">
+          <Textarea aria-label={t("flows.ask.edit")} rows={6} value={editing} onChange={(e) => setEditing(e.target.value.slice(0, 2000))} />
+          <div className="flex gap-2">
+            <Button size="sm" isDisabled={!!pending || !editing.trim()} onPress={() => choose("approved", editing)}>
+              {t("flows.ask.approveEdited")}
+            </Button>
+            <Button size="sm" variant="ghost" onPress={() => setEditing(undefined)}>
+              {t("common.cancel")}
+            </Button>
+          </div>
+        </div>
+      ) : a.runStepId && a.args ? (
+        <CodeBlock code={a.args.slice(0, 2000)} />
+      ) : (
+        <Code className="self-start">{a.tool}</Code>
+      )}
+    </Item>
+  )
+}
+
+function UncertainItem({ step }: { step: { routineId: string; runId: string; stepId: string; at: number } }) {
+  const routine = useList(routinesAtom).find((r) => r.id === step.routineId)
+  return (
+    <Item
+      avatar={
+        <IconTile size="md" className="text-warning">
+          <ShieldAlert />
+        </IconTile>
+      }
+      who={routine?.name ?? t("flows.run.title")}
+      context={t("flows.uncertain.context")}
+      at={step.at}
+      actions={
+        <Button size="sm" variant="secondary" onPress={() => go({ view: "routine-run", id: step.routineId, runId: step.runId })}>
+          {t("flows.uncertain.open")}
+        </Button>
+      }
+    >
+      <p>{t("flows.uncertain.title")}</p>
     </Item>
   )
 }
@@ -140,12 +194,17 @@ function MemoryItem({ memory: m }: { memory: Memory }) {
   const update = useMutation(mutations.updateMemory)
   const set = (state: Memory["state"]) => void update({ params: { id: m.id }, payload: { state }, reactivityKeys: ["memories"] })
   const about = m.scope === "user"
+  const agent = agents.find((a) => `agent:${a.id}` === m.scope) // an agent's memory shows that agent's face
   return (
     <Item
       avatar={
-        <IconTile>
-          <User />
-        </IconTile>
+        agent ? (
+          <AuthorAvatar agent={agent} model={null} />
+        ) : (
+          <IconTile>
+            <User />
+          </IconTile>
+        )
       }
       who={about ? t("inbox.aboutYou") : scopeLabel(m.scope, projects, agents)}
       context={t("inbox.proposed")}

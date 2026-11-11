@@ -9,7 +9,9 @@ import { DataDir } from "./chat.ts"
 import { type AccountRow, Store } from "./db.ts"
 import { type CliModel, splitModel } from "./engines.ts"
 import { readClaudeLimits, readClaudeModels } from "./engines/claude-sdk.ts"
+import { readAntigravityModels } from "./engines.ts"
 import { readCodexLimits, readCodexModels } from "./engines/codex.ts"
+import { which } from "./cli-install.ts"
 
 const STATUS_TTL_MS = 30_000
 // Limit readings (ARCHITECTURE §10.2): cached 4 min; a failure waits 5, 10, 20, 40 min, then 1 h.
@@ -44,7 +46,7 @@ const COMMANDS: Record<AccountProvider, { bin: string; status: string[]; login: 
 }
 
 async function run(a: AccountRow, args: string[]) {
-  const bin = Bun.which(COMMANDS[a.provider as AccountProvider].bin)
+  const bin = which(COMMANDS[a.provider as AccountProvider].bin)
   if (!bin) return { code: -1, out: "" }
   if (a.home) mkdirSync(a.home, { recursive: true })
   const proc = Bun.spawn([bin, ...args], { env: envFor(a), stdin: "ignore", stdout: "pipe", stderr: "pipe" })
@@ -66,7 +68,7 @@ async function readStatus(a: AccountRow): Promise<Status> {
   return { loggedIn, identity: loggedIn ? (/using (\w+)/i.exec(out)?.[1] ?? null) : null }
 }
 
-export interface AccountsService {
+interface AccountsService {
   readonly list: Effect.Effect<ProviderAccount[]>
   readonly create: (provider: AccountProvider, label: string) => Effect.Effect<ProviderAccount>
   readonly rename: (id: string, label: string) => Effect.Effect<ProviderAccount | undefined>
@@ -83,9 +85,10 @@ export interface AccountsService {
   // The models the default logins offer, with their real names ("opus" → "Opus 5.5"). Kept in preferences,
   // served at once and re-read in the background after an hour; a failed read keeps the last list.
   readonly cliModels: Effect.Effect<CliModels>
+  readonly forgetCliModels: Effect.Effect<void> // a CLI was just installed: read its models again
 }
 
-export type CliModels = Partial<Record<"claude-cli" | "codex-cli", ReadonlyArray<CliModel>>>
+type CliModels = Partial<Record<"claude-cli" | "codex-cli" | "antigravity", ReadonlyArray<CliModel>>>
 const CLI_MODELS_KEY = "cliModels"
 const CLI_MODELS_TTL_MS = 60 * 60_000
 const CLI_MODELS_RETRY_MS = 5 * 60_000
@@ -150,7 +153,7 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
             const a = yield* store.account(id)
             if (!a) return "not-found" as const
             if (logins.has(id)) return "busy" as const
-            const bin = Bun.which(COMMANDS[a.provider as AccountProvider].bin)
+            const bin = which(COMMANDS[a.provider as AccountProvider].bin)
             if (!bin) return { url: null }
             if (a.home) mkdirSync(a.home, { recursive: true })
             // The CLI opens the provider's page in the browser itself; the URL is a fallback for the UI.
@@ -225,11 +228,12 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
           if (saved && Date.now() - saved.at < CLI_MODELS_TTL_MS) return saved.models
           const previous = saved?.models ?? {}
           const read = Effect.promise(async () => {
-            const [claude, codex] = await Promise.allSettled([readClaudeModels(undefined), readCodexModels(join(root, defaultId("codex")))])
+            const [claude, codex, antigravity] = await Promise.allSettled([readClaudeModels(undefined), readCodexModels(join(root, defaultId("codex"))), readAntigravityModels()])
             const models: CliModels = { ...previous }
             if (claude.status === "fulfilled" && claude.value.length) models["claude-cli"] = claude.value
             if (codex.status === "fulfilled" && codex.value.length) models["codex-cli"] = codex.value
-            const failed = claude.status === "rejected" || codex.status === "rejected"
+            if (antigravity.status === "fulfilled" && antigravity.value.length) models.antigravity = antigravity.value
+            const failed = claude.status === "rejected" || codex.status === "rejected" || antigravity.status === "rejected"
             return { models, at: failed ? Date.now() - CLI_MODELS_TTL_MS + CLI_MODELS_RETRY_MS : Date.now() }
           }).pipe(Effect.tap((s) => store.setPreference(CLI_MODELS_KEY, JSON.stringify(s))))
           if (saved) {
@@ -237,7 +241,8 @@ export class Accounts extends Context.Service<Accounts, AccountsService>()("Acco
             return previous
           }
           return (yield* read).models
-        })
+        }),
+        forgetCliModels: store.setPreference(CLI_MODELS_KEY, "")
       }
       return service
     })

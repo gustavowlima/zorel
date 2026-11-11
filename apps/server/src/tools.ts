@@ -8,7 +8,7 @@ import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotoc
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
-import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js"
+import { CallToolRequestSchema, CallToolResultSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import type { McpServer, ToolInfo } from "@zorel/contracts"
 import { Context, Effect, Layer } from "effect"
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
@@ -17,7 +17,7 @@ import { mcpEnv, Secrets, type SecretStore } from "./secrets.ts"
 
 const CONNECT_MS = 20_000
 const CALL_MS = 5 * 60_000
-export const MAX_RESULT_CHARS = 40_000
+const MAX_RESULT_CHARS = 40_000
 
 // ---------- policy ----------
 
@@ -87,7 +87,7 @@ export function guarded(r: CallToolResult, source: string): CallToolResult {
 // A result of Zorel's own tools (MCP, browser) over COMPACT_AT characters reaches the agent as its first COMPACT_HEAD
 // and a handle; the whole text stays here, readable with zorel_read_result. A big result would otherwise be sent
 // again at every later step of the turn.
-export const COMPACT_AT = 16_000
+const COMPACT_AT = 16_000
 export const COMPACT_HEAD = 3_000
 const KEPT_PER_CHAT = 20
 const KEPT_CHATS = 50
@@ -136,6 +136,7 @@ export function readResult(chatId: string, args: Record<string, unknown>): CallT
 
 export interface RemoteTool extends ToolInfo {
   readonly inputSchema: Record<string, unknown>
+  readonly outputSchema?: Record<string, unknown> | undefined // spec 013: the shape of its result, when declared
 }
 
 export class Hub {
@@ -184,12 +185,15 @@ export class Hub {
     } while (cursor)
     // Classified once the whole list shows whether the names share a namespace word ("desktop_…").
     const prefix = sharedPrefix(listed.map((t) => t.name))
-    return listed.map((t) => ({ name: t.name, description: t.description ?? "", cls: classify(t, prefix), inputSchema: t.inputSchema as Record<string, unknown> }))
+    return listed.map((t) => ({ name: t.name, description: t.description ?? "", cls: classify(t, prefix), inputSchema: t.inputSchema as Record<string, unknown>, ...(t.outputSchema && { outputSchema: t.outputSchema as Record<string, unknown> }) }))
   }
 
+  // tools/call as is: the SDK's callTool also checks the result against the tool's outputSchema and throws
+  // InvalidParams when it doesn't fit, after the tool ran. A routine's write (spec 013) reads InvalidParams as "refused
+  // before running", so every protocol error here must be the server's own.
   async call(s: McpServer, name: string, args: Record<string, unknown>): Promise<CallToolResult> {
     const client = await this.connect(s)
-    return (await client.callTool({ name, arguments: args }, undefined, { timeout: CALL_MS })) as CallToolResult
+    return (await client.request({ method: "tools/call", params: { name, arguments: args } }, CallToolResultSchema, { timeout: CALL_MS })) as CallToolResult
   }
 
   async close(id: string) {

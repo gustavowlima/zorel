@@ -4,7 +4,7 @@
 // - Turns: AtomRpc over one WebSocket. Each chat is an atom folded from its event stream (snapshot first,
 //   then live events); reconnecting subscribes again and the next snapshot replaces the state.
 import { type AuditKind, Api, type Attachment, MAX_ATTACHMENT_BYTES, type Message, type Switch } from "@zorel/contracts"
-import { type Approval, type ApprovalOutcome, type ChatEvent, type ChatStatus, type WorkStep, ZorelRpc } from "@zorel/contracts/events"
+import { type Approval, type ApprovalOutcome, type ChatEvent, type ChatStatus, type Notice, type WorkStep, ZorelRpc } from "@zorel/contracts/events"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
 import { t } from "@zorel/i18n"
 import { Effect, Layer, Schedule, Stream } from "effect"
@@ -26,10 +26,12 @@ export class Live extends AtomRpc.Service<Live>()("Live", {
 
 // ---------- CRUD queries (one key per resource) ----------
 
-export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "processes" | "context" | "terminals" | "scripts" | "localServers" | "git" | "routines" | "pages" | "fileSkills" | "runs"
+export type Key = "projects" | "agents" | "chats" | "memories" | "servers" | "accounts" | "keys" | "models" | "usage" | "approvals" | "preferences" | "workspace" | "audit" | "storage" | "processes" | "context" | "terminals" | "scripts" | "localServers" | "git" | "routines" | "pages" | "fileSkills" | "runs" | "today"
 
 export const projectsAtom = Zorel.query("projects", "list", { reactivityKeys: ["projects"] })
 export const agentsAtom = Zorel.query("agents", "list", { reactivityKeys: ["agents"] })
+// Teams (spec 010) change with their agents (a deleted agent leaves its teams): same key.
+export const teamsAtom = Zorel.query("agents", "teams", { reactivityKeys: ["agents"] })
 export const chatsAtom = Zorel.query("chats", "list", { reactivityKeys: ["chats"] })
 export const memoriesAtom = Zorel.query("memories", "list", { reactivityKeys: ["memories"] })
 export const serversAtom = Zorel.query("tools", "list", { reactivityKeys: ["servers"] })
@@ -53,6 +55,17 @@ export const memoryMapAtom = (scope: string) => Zorel.query("memories", "map", {
 export const memoryVersionsAtom = (id: string) => Zorel.query("memories", "versions", { params: { id }, reactivityKeys: ["memories"] })
 export const pageVersionsAtom = (id: string) => Zorel.query("pages", "versions", { params: { id }, reactivityKeys: ["pages"] })
 export const routinesAtom = Zorel.query("routines", "list", { reactivityKeys: ["routines"] })
+// Spec 012: a routine's run history, the runs of a week (and the ones planned), and the morning brief.
+export const routineHistoryAtom = (id: string) => Zorel.query("routines", "history", { params: { id }, query: {}, reactivityKeys: ["routines", "today"] })
+export const routineWeekAtom = (from: number, to: number) => Zorel.query("routines", "week", { query: { from, to }, reactivityKeys: ["routines", "today"] })
+export const todayAtom = Zorel.query("routines", "today", { reactivityKeys: ["today", "routines"] })
+// Spec 013: a routine's flow (made up for one saved before flows), a run step by step, and a connector's tools for the
+// step picker with whether this agent can use each one.
+export const routineFlowAtom = (id: string) => Zorel.query("routines", "flow", { params: { id }, reactivityKeys: ["routines"] })
+export const flowVersionAtom = (id: string, n: number) => Zorel.query("routines", "flowVersion", { params: { id, n }, reactivityKeys: ["routines"] })
+export const runDetailAtom = (id: string, runId: string) => Zorel.query("routines", "runDetail", { params: { id, runId }, reactivityKeys: ["routines", "today"] })
+export const uncertainStepsAtom = Zorel.query("routines", "uncertain", { reactivityKeys: ["routines", "today"] })
+export const catalogAtom = (serverId: string, agentId: string) => Zorel.query("tools", "catalog", { params: { id: serverId }, query: { agentId }, reactivityKeys: ["servers"] })
 export const agentRunsAtom = (id: string) => Zorel.query("agents", "runs", { params: { id }, reactivityKeys: ["runs"] })
 export const agentVersionsAtom = (id: string) => Zorel.query("agents", "versions", { params: { id }, reactivityKeys: ["agents"] })
 export const gitAtom = (id: string) => Zorel.query("chats", "git", { params: { id }, reactivityKeys: ["git"] })
@@ -80,6 +93,9 @@ export const mutations = {
   createAgent: Zorel.mutation("agents", "create"),
   updateAgent: Zorel.mutation("agents", "update"),
   removeAgent: Zorel.mutation("agents", "remove"),
+  createTeam: Zorel.mutation("agents", "createTeam"),
+  updateTeam: Zorel.mutation("agents", "updateTeam"),
+  removeTeam: Zorel.mutation("agents", "removeTeam"),
   restoreAgent: Zorel.mutation("agents", "restore"),
   builder: Zorel.mutation("agents", "builder"),
   pause: Zorel.mutation("settings", "pause"),
@@ -93,6 +109,19 @@ export const mutations = {
   updateRoutine: Zorel.mutation("routines", "update"),
   removeRoutine: Zorel.mutation("routines", "remove"),
   runRoutine: Zorel.mutation("routines", "run"),
+  routineHistoryPage: Zorel.mutation("routines", "history"),
+  clearRoutineHistory: Zorel.mutation("routines", "clearHistory"),
+  saveFlow: Zorel.mutation("routines", "saveFlow"),
+  testStep: Zorel.mutation("routines", "testStep"),
+  testTrigger: Zorel.mutation("routines", "testTrigger"),
+  testNewTrigger: Zorel.mutation("routines", "testNewTrigger"),
+  testDelivery: Zorel.mutation("routines", "testDelivery"),
+  stepOutput: Zorel.mutation("routines", "stepOutput"),
+  resolveStep: Zorel.mutation("routines", "resolveStep"),
+  toolOptions: Zorel.mutation("tools", "options"),
+  readToday: Zorel.mutation("routines", "todayRead"),
+  activity: Zorel.mutation("routines", "activity"),
+  setTimeProfile: Zorel.mutation("settings", "timeProfile"),
   createChat: Zorel.mutation("chats", "create"),
   updateChat: Zorel.mutation("chats", "update"),
   reorderChats: Zorel.mutation("chats", "reorder"),
@@ -127,6 +156,7 @@ export const mutations = {
   setKey: Zorel.mutation("settings", "setKey"),
   telegramPair: Zorel.mutation("settings", "telegramPair"),
   installDesktop: Zorel.mutation("settings", "installDesktop"),
+  installCli: Zorel.mutation("settings", "installCli"),
   eraseComputer: Zorel.mutation("settings", "eraseComputer"),
   desktopGuide: Zorel.mutation("settings", "desktopGuide"),
   telegramUnpair: Zorel.mutation("settings", "telegramUnpair"),
@@ -151,7 +181,7 @@ export const mutations = {
 
 // Refetch resources the server changed on its own (a chat titled after its first message, memories
 // proposed by a summary, an account that finished signing in).
-export const invalidateAtom = Zorel.runtime.fn((keys: ReadonlyArray<Key>) => Reactivity.invalidate(keys))
+const invalidateAtom = Zorel.runtime.fn((keys: ReadonlyArray<Key>) => Reactivity.invalidate(keys))
 
 // ---------- hooks ----------
 
@@ -177,7 +207,7 @@ export const useInvalidate = () => useAtomSet(invalidateAtom)
 
 const retrying = Schedule.spaced("1 second")
 
-export const statusAtom = Atom.keepAlive(
+const statusAtom = Atom.keepAlive(
   Live.runtime.atom(
     Stream.unwrap(
       Effect.gen(function* () {
@@ -190,6 +220,19 @@ export const statusAtom = Atom.keepAlive(
     )
   )
 )
+// What routines tell the person (spec 012), one at a time: the latest notice (notify.tsx shows it).
+const noticeAtom = Atom.keepAlive(
+  Live.runtime.atom(
+    Stream.unwrap(
+      Effect.gen(function* () {
+        const client = yield* Live
+        return client("notices", undefined)
+      })
+    ).pipe(Stream.retry(retrying))
+  )
+)
+export const useNotice = (): Notice | undefined => AsyncResult.getOrElse(AsyncResult.map(useAtomValue(noticeAtom), (n): Notice | undefined => n), () => undefined)
+
 export const useStatuses = (): Readonly<Record<string, ChatStatus>> => AsyncResult.getOrElse(useAtomValue(statusAtom), () => ({}))
 
 // ---------- one chat: snapshot + events folded into a view state ----------
@@ -234,7 +277,7 @@ const withStep = (live: LiveTurn | undefined, step: WorkStep): LiveTurn | undefi
     ? { ...live, steps: [...live.steps.filter((s) => s.id !== step.id), step], stepAt: step.id in live.stepAt ? live.stepAt : { ...live.stepAt, [step.id]: live.text.length } }
     : live
 
-export function reduceChat(s: ChatState, e: ChatEvent): ChatState {
+function reduceChat(s: ChatState, e: ChatEvent): ChatState {
   switch (e._tag) {
     case "snapshot": {
       const snap = e.snapshot

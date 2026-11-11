@@ -9,7 +9,7 @@ import { ACCOUNT_OF_MODEL, modelName, modelNote, providerLabel, splitModel } fro
 import { go } from "../state.ts"
 import { LimitWindows } from "./limits.tsx"
 import { providerPageOf } from "./providers.tsx"
-import { Button, cx, FieldButton, IconButton, Input, OptionButton, Popover, ProviderIcon, RailButton, SearchInput, Settings, StepSlider } from "@/ui"
+import { Button, cn, FieldButton, IconButton, Input, OptionButton, Popover, ProviderIcon, RailButton, SearchInput, Settings, StepSlider } from "@/ui"
 
 export interface ModelChoice {
   readonly model: string
@@ -77,14 +77,14 @@ function entriesOf(accounts: ReadonlyArray<ProviderAccount>, models: ReadonlyArr
       models: namesOf(provider)
     })
   }
-  // ACP agent CLIs (Gemini CLI, OpenCode): shown while installed; they use their own sign-in and models.
+  // ACP agent CLIs (Gemini CLI, OpenCode, Antigravity): shown while installed; they use their own sign-in and models.
   for (const provider of ACP_PROVIDERS) {
     if (!models.find((m) => m.provider === provider)?.available) continue
     entries.push({ key: provider, provider, label: providerLabel(provider), kind: "agent", account: undefined, badge: undefined, available: true, models: namesOf(provider) })
   }
   return entries
 }
-const ACP_PROVIDERS = ["gemini-cli", "opencode"]
+const ACP_PROVIDERS = ["gemini-cli", "opencode", "antigravity"]
 
 // The entry a choice belongs to: the chosen account, else the provider's default account, else the provider.
 const entryOf = (entries: ReadonlyArray<Entry>, v: ModelChoice) => {
@@ -93,7 +93,7 @@ const entryOf = (entries: ReadonlyArray<Entry>, v: ModelChoice) => {
   return mine.find((e) => e.account && e.account.id === v.accountId) ?? mine.find((e) => e.account?.isDefault) ?? mine[0]
 }
 
-export function useModelEntries() {
+function useModelEntries() {
   const accounts = useList(accountsAtom)
   const models = useList(modelsAtom)
   return useMemo(() => entriesOf(accounts, models), [accounts, models])
@@ -118,7 +118,7 @@ export function ModelPicker({ value, onChange, variant = "chip", className }: { 
         {face}
       </FieldButton>
     ) : (
-      <Button size="sm" variant="ghost" aria-label={t("model.choose")} className={cx("max-w-60 font-normal text-muted", className)}>
+      <Button size="sm" variant="ghost" aria-label={t("model.choose")} className={cn("max-w-60 font-normal text-muted", className)}>
         {face}
       </Button>
     )

@@ -17,10 +17,11 @@ import { basename, dirname, join, resolve } from "node:path"
 import type { Access } from "@zorel/contracts"
 import { Stream } from "effect"
 import { commandStep, type EngineEvent, type NativeStep, STEP_DETAIL_MAX, STEP_TITLE_MAX } from "../engines.ts"
-import { approvalFor } from "./policy.ts"
+import { approvalFor, decideCommand } from "./policy.ts"
 import { type Approver, type NativeApproval, withoutAppEnv } from "./session.ts"
+import { which } from "../cli-install.ts"
 
-export interface AcpTurn {
+interface AcpTurn {
   readonly bin: string
   readonly args: ReadonlyArray<string>
   readonly model: string // the agent's own model id; "default" keeps the agent's choice
@@ -116,7 +117,7 @@ export function writableRoots(access: Access, cwd: string, state: ReadonlyArray<
 }
 
 // Seatbelt profile: everything allowed except writing outside the roots (and the terminal devices a shell needs).
-export function seatbeltProfile(roots: ReadonlyArray<string>): string {
+function seatbeltProfile(roots: ReadonlyArray<string>): string {
   return [
     "(version 1)",
     "(allow default)",
@@ -127,7 +128,7 @@ export function seatbeltProfile(roots: ReadonlyArray<string>): string {
 }
 
 // The command line for a turn: confined below "full"; undefined when it can't be confined here.
-export function commandFor(path: string, t: Pick<AcpTurn, "args" | "access" | "cwd" | "state">, platform = process.platform, bwrap = Bun.which("bwrap")): string[] | undefined {
+export function commandFor(path: string, t: Pick<AcpTurn, "args" | "access" | "cwd" | "state">, platform = process.platform, bwrap = which("bwrap")): string[] | undefined {
   if (t.access === "full") return [path, ...t.args]
   const roots = () => writableRoots(t.access, t.cwd, t.state ?? [])
   if (platform === "darwin" && existsSync(SANDBOX_EXEC)) return [SANDBOX_EXEC, "-p", seatbeltProfile(roots()), path, ...t.args]
@@ -137,8 +138,9 @@ export function commandFor(path: string, t: Pick<AcpTurn, "args" | "access" | "c
 
 // bubblewrap: everything read-only, then each root bound writable over it; devices and /proc as usual. Network and
 // process starts stay open, as on macOS. Exits with Zorel (--die-with-parent).
-export const bwrapArgs = (bwrap: string, roots: ReadonlyArray<string>) => [
-  bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", ...roots.flatMap((r) => ["--bind", r, r]), "--die-with-parent", "--"
+const bwrapArgs = (bwrap: string, roots: ReadonlyArray<string>) => [
+  // --unshare-pid: the agent's /proc shows its own processes only, never the server's (its environment, its memory).
+  bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--unshare-pid", "--proc", "/proc", ...roots.flatMap((r) => ["--bind", r, r]), "--die-with-parent", "--"
 ]
 
 export function acpRun(t: AcpTurn): Stream.Stream<EngineEvent> {
@@ -146,7 +148,7 @@ export function acpRun(t: AcpTurn): Stream.Stream<EngineEvent> {
 }
 
 async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
-  const path = Bun.which(t.bin)
+  const path = which(t.bin)
   if (!path) {
     yield { type: "error", message: `${t.bin} is not installed or not on the PATH.`, failure: { reason: "unavailable" } }
     return
@@ -200,8 +202,14 @@ async function* run(t: AcpTurn): AsyncGenerator<EngineEvent> {
         send({ id: m.id, result: answer })
       }
       if (call.kind === "fetch" && !t.web) return reply(CANCELLED)
-      if (t.access !== "ask" || !t.approve) return reply(permission(options, t.access))
-      // "Ask first": the person decides on the turn's approval card while the agent waits.
+      // "Ask first" asks for everything; at workspace a risky command (push, rm -rf, curl…) asks as it does under the
+      // other engines: the confinement keeps writes in the folder but leaves the network open.
+      const raw = call.rawInput?.command
+      const command = Array.isArray(raw) ? raw.join(" ") : typeof raw === "string" ? raw : String(call.title ?? "")
+      const asks = t.access === "ask" || (t.access === "workspace" && call.kind === "execute" && decideCommand("workspace", command, t.cwd, true) === "ask")
+      if (!asks) return reply(permission(options, t.access))
+      if (!t.approve) return reply(CANCELLED)
+      // The person decides on the turn's approval card while the agent waits.
       const title = String(call.title ?? "A tool call")
       void t.approve(approvalFor(CARD_KIND[String(call.kind)] ?? "tool", title, title, call.rawInput ?? call, t.cwd)).then(
         (ok) => reply(ok ? permission(options, "workspace") : CANCELLED),

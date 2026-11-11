@@ -14,7 +14,7 @@ const pending = new Map<string, { serverId: string; at: number }>()
 const PENDING_MS = 10 * 60_000
 
 // This server's address as the browser reaches it (set by start()).
-export const callbackUrl = () => `${process.env.ZOREL_ORIGIN ?? "http://127.0.0.1:4317"}/api/oauth/callback`
+const callbackUrl = () => `${process.env.ZOREL_ORIGIN ?? "http://127.0.0.1:4317"}/api/oauth/callback`
 
 export class McpOAuth implements OAuthClientProvider {
   authorizeUrl: string | undefined

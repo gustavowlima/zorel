@@ -1,10 +1,13 @@
 import { expect, test } from "bun:test"
+import { mkdtempSync, readFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 process.env.ZOREL_API_ENGINE = "direct" // these tests drive the direct API engine against a mock server
 import { type Agent, DEFAULT_PERMISSIONS, type Memory, type Message, namedSkills, skillHandle } from "@zorel/contracts"
 import { Effect, Stream } from "effect"
 import { buildTurn, OUTSIDE_TEXT_RULE, PINNED_PAGES_CHARS, pinnedPagesText, UNTRUSTED_NOTICE, grounded, mappedOf, memoryNote, mentioned, namedPoints, parseConsolidation, pinned, readPage, reviewed, sectionOf, similar, spread, withinBudget } from "./context.ts"
-import { cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, sessionless, splitModel, transcript, type EngineEvent, type Parser, type Turn } from "./engines.ts"
+import { ANTIGRAVITY_SETTINGS, antigravityDir, imagesNotShown, parseAntigravityModels, cheapModel, claudeArgs, claudeParser, classifyMessage, codexArgs, codexParser, commandStep, Engines, engineLabel, sessionless, splitModel, transcript, type EngineEvent, type Parser, type Turn, type TurnFile, type TurnMessage } from "./engines.ts"
 import { codexFailure, codexStep, windowsOf } from "./engines/codex.ts"
 import { hasCredential, redact } from "./observability.ts"
 import { stretchOf } from "./chat.ts"
@@ -49,9 +52,9 @@ test("context: the memory budget favors the recent ones; layers in stable → vo
   expect(pinned([mem("stale", 1), mem("fresh", 2), mem("x".repeat(50), 3)], 59).map((m) => m.id)).toEqual(["x".repeat(50)])
   const dev = agentOf("a", "Dev", "INSTR")
   const turn = buildTurn({
-    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", accountId: null, effort: null, access: null, model: "anthropic/m", summary: "SUMMARYTEXT", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
+    chat: { id: "c", projectId: "p", agentIds: ["a", "b"], title: "", parentId: null, accountId: null, effort: null, access: null, model: "anthropic/m", summary: "SUMMARYTEXT", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
     model: "anthropic/m",
-    project: { id: "p", name: "P", brief: "BRIEF", path: null, defaultAgentId: null, createdAt: 0 },
+    project: { id: "p", name: "P", brief: "BRIEF", path: null, agentIds: [], teamIds: [], createdAt: 0 },
     agent: dev,
     members: [dev, agentOf("b", "Senior Reviewer", "Reviews PRs")],
     pinned: [mem("MINE", 1), mem("PROJ", 1, "project:p"), mem("AG", 1, "agent:a")],
@@ -425,9 +428,9 @@ test("sessionless engines: two turns that recall different memories send the sam
   const dev = agentOf("a", "Dev", "INSTR")
   const turnWith = (found: string) =>
     sessionless(buildTurn({
-      chat: { id: "c", projectId: "p", agentIds: ["a"], title: "", accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "SUMMARYTEXT", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
+      chat: { id: "c", projectId: "p", agentIds: ["a"], title: "", parentId: null, accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "SUMMARYTEXT", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
       model: "claude-cli/sonnet",
-      project: { id: "p", name: "P", brief: "BRIEF", path: null, defaultAgentId: null, createdAt: 0 },
+      project: { id: "p", name: "P", brief: "BRIEF", path: null, agentIds: [], teamIds: [], createdAt: 0 },
       agent: dev,
       members: [dev],
       pinned: [mem("MINE", 1)],
@@ -472,9 +475,9 @@ test("recalled content is marked as data and can't close the <context> block", (
   const dev = agentOf("a", "Dev", "INSTR")
   const turnWith = (retrieved: Memory[], excerpts: Array<{ chatTitle: string; author: string; at: number; text: string }> = []) =>
     buildTurn({
-      chat: { id: "c", projectId: "p", agentIds: ["a"], title: "", accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
+      chat: { id: "c", projectId: "p", agentIds: ["a"], title: "", parentId: null, accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
       model: "claude-cli/sonnet",
-      project: { id: "p", name: "P", brief: "", path: null, defaultAgentId: null, createdAt: 0 },
+      project: { id: "p", name: "P", brief: "", path: null, agentIds: [], teamIds: [], createdAt: 0 },
       agent: dev,
       members: [dev],
       pinned: [],
@@ -546,7 +549,7 @@ test("the outside-text rule is in the instructions only when the turn has tools"
   const dev = agentOf("a", "Dev", "INSTR")
   const turnWith = (tools: boolean) =>
     buildTurn({
-      chat: { id: "c", projectId: null, agentIds: ["a"], title: "", accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
+      chat: { id: "c", projectId: null, agentIds: ["a"], title: "", parentId: null, accountId: null, effort: null, access: null, model: "claude-cli/sonnet", summary: "", summaryUntil: 0, learnedUntil: 0, failover: null, position: null, worktree: null, resumeAt: null, preview: null, lastAt: null, createdAt: 0 },
       model: "claude-cli/sonnet",
       project: undefined,
       agent: dev,
@@ -573,4 +576,25 @@ test("a namespace word every tool of a server shares is skipped to find the verb
   expect(classify({ name: "status" })).toBe("read")
   expect(sharedPrefix(["search_docs", "delete_page", "search_pages"])).toBeUndefined()
   expect(sharedPrefix(["gh_get", "gh_list"])).toBeUndefined() // too few to call it a namespace
+})
+
+test("Antigravity: its models from `agy models`, and a settings folder of Zorel's that asks before edits and commands", () => {
+  const out = "Fetching available models...\ngemini-3.8-flash-low\tGemini 3.8 Flash (Low)\nclaude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)\nError: something\n"
+  expect(parseAntigravityModels(out)).toEqual([
+    { id: "gemini-3.8-flash-low", name: "Gemini 3.8 Flash (Low)", note: "" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)", note: "" }
+  ])
+  const home = mkdtempSync(join(tmpdir(), "zorel-agy-"))
+  const dir = antigravityDir(home)
+  // The person's "always-proceed" never applies: Zorel's access level decides each edit and command.
+  expect(JSON.parse(readFileSync(join(dir, "antigravity-cli", "settings.json"), "utf8")).toolPermission).toBe("request-review")
+  expect(ANTIGRAVITY_SETTINGS.permissions.allow).toEqual(["mcp(zorel/*)"])
+  expect(JSON.parse(readFileSync(join(dir, "config", "mcp_config.json"), "utf8"))).toEqual({ mcpServers: {} })
+})
+
+test("ACP agents are told an attached image wasn't shown to them, and only then", () => {
+  const image: TurnFile = { name: "shot.png", mime: "image/png", path: "/x/shot.png" }
+  const said = (m: TurnMessage) => imagesNotShown([m])
+  expect(said({ role: "user", text: "look", files: [image] })).toContain("couldn't be shown")
+  expect(said({ role: "user", text: "hi" })).toBe("")
 })

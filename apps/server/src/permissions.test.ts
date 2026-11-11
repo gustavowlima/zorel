@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { DEFAULT_PERMISSIONS } from "@zorel/contracts"
-import { accessChange, browserRoute, mcpRoute, withAlways } from "./permissions.ts"
+import { accessChange, browserRoute, mcpRoute, privateHost, withAlways } from "./permissions.ts"
 
 const server = { id: "s1", mode: "approve" as const }
 const p = (over = {}) => ({ ...DEFAULT_PERMISSIONS, ...over })
@@ -19,14 +19,19 @@ test("destructive tools ask unless allowed for good or the server is trusted", (
   expect(mcpRoute(p(), { id: "s1", mode: "auto" }, del, false).approve).toBe(false)
   expect(mcpRoute(p(), server, del, false).approve).toBe(true)
   expect(mcpRoute(p({ always: ["s1:delete_page"] }), server, del, false).approve).toBe(false)
+  // "Ask first" asks for a destructive tool even on a trusted server.
+  expect(mcpRoute(p(), { id: "s1", mode: "auto" }, del, true).approve).toBe(true)
   expect(mcpRoute(p(), { id: "s1", mode: "read" }, { name: "create", cls: "write" }, true).approve).toBe(false) // not exposed at all
 })
 
 test("risky clicks always ask; the rest asks only when the agent asks first", () => {
-  expect(browserRoute(p({ always: ["browser"] }), "browser_click", { element: "Place order" }, true, false)).toEqual({ approve: true, alwaysKey: null })
-  expect(browserRoute(p(), "browser_click", { element: "Next page" }, true, false).approve).toBe(false)
-  expect(browserRoute(p(), "browser_click", { element: "Next page" }, true, true).approve).toBe(true)
-  expect(browserRoute(p({ always: ["browser"] }), "browser_navigate", {}, true, true).approve).toBe(false)
+  expect(browserRoute(p({ always: ["browser"] }), { element: "Place order" }, true, false)).toEqual({ approve: true, alwaysKey: null })
+  expect(browserRoute(p(), { element: "Next page" }, true, false).approve).toBe(false)
+  expect(browserRoute(p(), { element: "Next page" }, true, true).approve).toBe(true)
+  // The agent's own label can't hide what the page calls the button.
+  expect(browserRoute(p({ always: ["browser"] }), { element: "button" }, true, false, "Place order")).toEqual({ approve: true, alwaysKey: null })
+  expect(browserRoute(p(), {}, true, false, "")).toEqual({ approve: false, alwaysKey: null })
+  expect(browserRoute(p({ always: ["browser"] }), {}, true, true).approve).toBe(false)
   expect(withAlways(withAlways(p(), "browser"), "browser").always).toEqual(["browser"])
 })
 
@@ -36,4 +41,11 @@ test("an access request names what changes, or why it can't", () => {
   expect(accessChange(p(), "web", undefined, servers)).toBe("You already have web access.")
   expect(accessChange(p({ grants: { s1: "none" } }), "github", "read", servers)).toEqual({ label: "read GitHub", next: p({ grants: { s1: "read" } }) })
   expect(typeof accessChange(p(), "linear", "read", servers)).toBe("string")
+})
+
+test("a local-network page asks before an agent opens it; its own servers and the web don't", () => {
+  for (const u of ["http://192.168.0.1", "10.0.0.5:8080", "http://169.254.169.254/latest/meta-data", "http://nas.local", "http://router", "http://[fe80::1]"]) expect(privateHost(u)).toBe(true)
+  for (const u of ["http://localhost:5173", "http://127.0.0.1:3000", "https://example.com", "example.com/path", undefined, ""]) expect(privateHost(u)).toBe(false)
+  expect(browserRoute(p(), { url: "http://192.168.0.1" }, true, false)).toEqual({ approve: true, alwaysKey: null })
+  expect(browserRoute(p(), { ref: "e3" }, true, false).approve).toBe(false)
 })

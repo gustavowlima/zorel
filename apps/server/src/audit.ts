@@ -17,6 +17,10 @@ export const Actions = {
   agentCreated: action("agent.created", "agent"),
   agentUpdated: action("agent.updated", "agent"),
   agentDeleted: action("agent.deleted", "agent"),
+  teamCreated: action("team.created", "agent"),
+  teamUpdated: action("team.updated", "agent"),
+  teamDeleted: action("team.deleted", "agent"),
+  routineHistoryCleared: action("routine.history_cleared", "agent"),
   chatAccessChanged: action("chat.access_changed", "chat"),
   accountAdded: action("account.added", "account"),
   accountRenamed: action("account.renamed", "account"),
@@ -25,6 +29,7 @@ export const Actions = {
   apiKeySet: action("api_key.set", "api_key"),
   apiKeyCleared: action("api_key.cleared", "api_key"),
   desktopInstalled: action("desktop.installed", "tool"),
+  cliInstalled: action("cli.installed", "tool"),
   computerErased: action("computer.erased", "agent"),
   mcpAdded: action("mcp_server.added", "mcp_server"),
   mcpUpdated: action("mcp_server.updated", "mcp_server"),
@@ -45,7 +50,7 @@ const REDACT = ["**.key", "**.token", "**.secret", "**.password", "**.env"]
 // Phase 8 seam: the hosted mode passes the request's Actor; locally it is always the owner.
 const owner: AuditActor = { type: "user", id: LOCAL_ACTOR.id }
 
-export interface AuditInput {
+interface AuditInput {
   readonly target: { readonly id: string; readonly name: string }
   readonly before?: Record<string, unknown> | undefined // only the fields that changed are kept
   readonly after?: Record<string, unknown> | undefined
@@ -54,12 +59,12 @@ export interface AuditInput {
   readonly actor?: AuditActor
 }
 
-export interface AuditService {
+interface AuditService {
   readonly record: (action: Action, input: AuditInput) => Effect.Effect<void>
   readonly list: (q: AuditFilter) => Effect.Effect<AuditPage>
 }
 
-export interface AuditFilter {
+interface AuditFilter {
   readonly kind?: AuditKind | undefined
   readonly q?: string | undefined
   readonly from?: number | undefined

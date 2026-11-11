@@ -32,3 +32,11 @@
 2026-11-05 | model picker reasoning tabs → StepSlider footer; footer text removed, Providers gear on the rail | user found the picker cluttered
 2026-11-05 | picker: fixed body height, unavailable providers just point to their settings page | user: squeezed rail, no "Add key" instructions in the picker
 2026-11-05 | agent pages: rows instead of cards, grouped profile with kept drafts, filtered Knowledge route, routines dialog, Builder recovery; DESIGN.md one spec per surface | impeccable critique of agent pages, user: apply all
+2026-11-10 | fields use bg-field (faint veil + border-strong), not bg-control | grey slab on dialogs
+2026-11-10 | Team Desk redesign (spec 014: Onest/JetBrains Mono, soft-night palette, 14px scale, continuity spine, settings search) prototyped, partly applied, then fully reverted | user decided to keep the existing design
+2026-11-10 | EmptyState gains inset (dashed row card) for empties inside a Section; MCP modes legend sm:grid-cols-4 | plain EmptyState in sections left the project Tools tab sparse
+2026-11-10 | subtle motion across the app: sliding tab/segment pill, Fold cards, overlay exits, check fade, page crossfade | /impeccable animate
+2026-11-10 | title bar drag note: .app-drag (Electron), not Electrobun | stale name
+2026-11-10 | agent colors allowed beyond the avatar as the identity tint (chosen/live things about one agent) | user: the app felt lifeless; a reference app reference
+2026-11-10 | darker neutral scale, settling content swaps, per-tab tint, orbit backdrop, page editor toolbar + page headings | user requests
+2026-11-10 | SETTLE moved from ui/tabs.tsx to ui/motion.tsx | motion primitives in one place

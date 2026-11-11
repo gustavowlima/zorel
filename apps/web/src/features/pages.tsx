@@ -4,16 +4,19 @@
 // save is a version you can restore.
 import { isTeammate, type Page } from "@zorel/contracts"
 import { formatAge, formatDate, t } from "@zorel/i18n"
-import { useState } from "react"
+import { useState, lazy, Suspense } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { agentsAtom, mutations, pagesAtom, pageVersionsAtom, projectsAtom, useList, useMutation, useReading } from "../client.ts"
 import { scopeLabel } from "../labels.ts"
 import { MemorySwitch } from "./memory.tsx"
 import { go } from "../state.ts"
-import { BookOpen, Button, ConfirmDialog, column, cx, EmptyState, Field, Input, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Textarea, Trash2, Undo2 } from "@/ui"
+import { BookOpen, Button, ChevronRight, ConfirmDialog, column, cn, EmptyState, Field, Input, Pin, PinOff, Plus, Rows, Screen, SearchInput, Select, Spinner, Trash2, Undo2, SETTLE } from "@/ui"
 
-const prose = "prose-chat leading-relaxed" // the same Markdown look as the chat
+// The page editor (TipTap) loads with the first page being written, not with the app.
+const MarkdownEditor = lazy(() => import("./markdown-editor.tsx"))
+
+const prose = "prose-chat prose-page leading-relaxed" // the chat's Markdown look, with page-sized headings
 
 export function PagesView({ selected }: { selected?: string | undefined }) {
   const pages = useList(pagesAtom)
@@ -46,7 +49,8 @@ export function PagesView({ selected }: { selected?: string | undefined }) {
         </>
       }
     >
-      <nav aria-label={t("pages.pages")} className="flex w-96 shrink-0 flex-col gap-3 overflow-y-auto border-r border-subtle py-4 pr-3 pl-4">
+      {/* A narrow window shows one side at a time: the list, or the open page with a way back to it. */}
+      <nav aria-label={t("pages.pages")} className={cn("w-full shrink-0 flex-col gap-3 overflow-y-auto border-subtle py-4 pr-3 pl-4 md:flex md:w-96 md:border-r", page || creating ? "hidden" : "flex")}>
         {scopes.length > 1 && (
           <Select
             size="sm"
@@ -65,11 +69,13 @@ export function PagesView({ selected }: { selected?: string | undefined }) {
                   setCreating(false)
                   go({ view: "pages", id: p.id })
                 }}
-                className={cx("h-auto w-full flex-col items-start gap-0.5 rounded-card border px-3 py-2.5 text-left font-normal whitespace-normal", p.id === selected ? "border-subtle bg-surface text-fg" : "border-transparent text-fg")}
+                className={cn("h-auto w-full flex-col items-start gap-0.5 rounded-card border px-3 py-2.5 text-left font-normal whitespace-normal", p.id === selected ? "border-subtle bg-surface text-fg" : "border-transparent text-fg")}
               >
-                <span className="flex w-full items-center gap-1.5 truncate font-medium">
+                <span className="flex w-full min-w-0 items-center gap-1.5 font-medium">
                   {p.pinned && <Pin className="size-3 shrink-0 text-muted" />}
-                  {p.title}
+                  <span className="truncate" title={p.title}>
+                    {p.title}
+                  </span>
                 </span>
                 <span className="block w-full truncate text-sm text-muted">{[scopeLabel(p.scope, projects, agents), formatAge(p.updatedAt)].join(" · ")}</span>
               </Button>
@@ -78,14 +84,22 @@ export function PagesView({ selected }: { selected?: string | undefined }) {
           {list.length === 0 && <p className="px-2 py-6 text-center text-muted">{pages.length ? t("knowledge.noMatch") : t("pages.empty")}</p>}
         </ul>
       </nav>
-      <div className="min-w-0 flex-1 overflow-y-auto">
+      <div className={cn("min-w-0 flex-1 overflow-y-auto md:block", page || creating ? "block" : "hidden")}>
+        {(page || creating) && (
+          <Button size="sm" variant="ghost" className="mt-3 ml-4 text-muted md:hidden" onPress={() => (creating ? setCreating(false) : go({ view: "pages" }))}>
+            <ChevronRight className="size-3.5 rotate-180" />
+            {t("pages.pages")}
+          </Button>
+        )}
         {creating ? (
           <NewPage onDone={(id) => {
             setCreating(false)
             if (id) go({ view: "pages", id })
           }} />
         ) : page ? (
-          <PageView key={page.id} page={page} />
+          <div key={page.id} className={SETTLE}>
+            <PageView page={page} />
+          </div>
         ) : (
           <EmptyState icon={<BookOpen />} title={pages.length ? t("pages.select") : t("pages.empty")} {...(!pages.length && { hint: t("pages.emptyHint") })} />
         )}
@@ -94,7 +108,7 @@ export function PagesView({ selected }: { selected?: string | undefined }) {
   )
 }
 
-export function PageView({ page }: { page: Page }) {
+function PageView({ page }: { page: Page }) {
   const projects = useList(projectsAtom)
   const agents = useList(agentsAtom)
   const update = useMutation(mutations.updatePage)
@@ -106,7 +120,7 @@ export function PageView({ page }: { page: Page }) {
   const save = () =>
     void update({ params: { id: page.id }, payload: { title: title.trim(), body }, reactivityKeys: ["pages"] }).then(() => setEditing(false))
   return (
-    <article className={cx(column(), "gap-5")}>
+    <article className={cn(column(), "gap-5")}>
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           {editing ? (
@@ -136,7 +150,9 @@ export function PageView({ page }: { page: Page }) {
       </div>
       {editing ? (
         <div className="flex flex-col gap-3">
-          <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={18} maxLength={100_000} className="font-mono text-sm" aria-label={t("pages.body")} />
+          <Suspense fallback={<Spinner />}>
+            <MarkdownEditor value={body} onChange={setBody} label={t("pages.body")} autoFocus />
+          </Suspense>
           <div className="flex gap-2">
             <Button variant="default" isDisabled={!title.trim()} onPress={save}>
               {t("common.save")}
@@ -212,7 +228,7 @@ export function NewPage({ onDone }: { onDone: (id?: string) => void }) {
   const [body, setBody] = useState("")
   return (
     <form
-      className={cx(column(), "gap-4")}
+      className={cn(column(), "gap-4")}
       onSubmit={(e) => {
         e.preventDefault()
         void create({ payload: { scope, title: title.trim(), body }, reactivityKeys: ["pages"] }).then((p) => onDone(p.id))
@@ -236,9 +252,13 @@ export function NewPage({ onDone }: { onDone: (id?: string) => void }) {
           />
         </Field>
       </div>
-      <Field label={t("pages.body")} hint={t("pages.bodyHint")}>
-        <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={14} maxLength={100_000} className="font-mono text-sm" />
-      </Field>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm text-muted">{t("pages.body")}</span>
+        <Suspense fallback={<Spinner />}>
+          <MarkdownEditor value={body} onChange={setBody} label={t("pages.body")} />
+        </Suspense>
+        <span className="text-sm text-dim">{t("pages.bodyHint")}</span>
+      </div>
       <div className="flex gap-2">
         <Button type="submit" variant="default" isDisabled={!title.trim()}>
           {t("common.create")}

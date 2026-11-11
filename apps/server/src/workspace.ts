@@ -9,12 +9,13 @@ import { existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } 
 import { homedir } from "node:os"
 import { isAbsolute, join, resolve, sep } from "node:path"
 import { DataDir } from "./chat.ts"
+import { which } from "./cli-install.ts"
 
 const EXCLUDE = ["node_modules/", ".DS_Store"].join("\n")
 type Status = FileChange["status"]
 const STATUS: Record<string, Status> = { A: "added", M: "modified", D: "deleted", T: "modified" }
 
-export interface WorkspaceService {
+interface WorkspaceService {
   // The folder as stored: absolute, real, an existing directory, and not one agents must never own.
   readonly validate: (path: string) => Effect.Effect<string, WorkspaceInvalid>
   // Where a chat's agents work: the project folder, or an empty Zorel folder for the chat.
@@ -34,7 +35,7 @@ export class Workspace extends Context.Service<Workspace, WorkspaceService>()("W
     Workspace,
     Effect.gen(function* () {
       const dataDir = resolve(yield* DataDir)
-      const gitBin = Bun.which("git")
+      const gitBin = which("git")
       const locks = new Map<string, Semaphore.Semaphore>()
       const lockOf = (id: string) => {
         let l = locks.get(id)

@@ -7,7 +7,7 @@ import { useAtomValue } from "@effect/atom-react"
 import { formatCompact, formatPercent, t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
 import { contextAtom, useInvalidate } from "../client.ts"
-import { Button, cx, Minimize2, Popover, SquarePen } from "@/ui"
+import { Button, cn, Minimize2, Popover, SquarePen } from "@/ui"
 
 type Part = ContextUsage["parts"][number]["id"]
 // One fixed color per part (chart series tokens), so a part keeps its color whatever else is there.
@@ -93,7 +93,7 @@ function Details({ usage, ratio, onCompact, onNewChat }: { usage: ContextUsage; 
       <div className="flex flex-col gap-3 p-4">
         <div className="flex items-baseline justify-between gap-3">
           <span className="font-semibold">{t("context.title")}</span>
-          {ratio !== null && <span className={cx("text-sm", ratio >= ALERT ? "text-warning" : "text-muted")}>{t("context.used", { percent: formatPercent(ratio) })}</span>}
+          {ratio !== null && <span className={cn("text-sm", ratio >= ALERT ? "text-warning" : "text-muted")}>{t("context.used", { percent: formatPercent(ratio) })}</span>}
         </div>
         {/* One whole split into its parts, the free space as the track. */}
         <div className="flex h-1.5 gap-0.5 overflow-hidden rounded-full bg-control" role="img" aria-label={parts.map((p) => `${t(`context.parts.${p.id}`)} ${formatCompact(p.tokens)}`).join(", ")}>

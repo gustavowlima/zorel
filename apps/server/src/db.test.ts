@@ -570,3 +570,20 @@ test("recall by meaning: a fact sharing no word with the question comes back, ne
     setEmbedder(undefined)
   }
 })
+
+test("routine runs (spec 012): old finished runs go, the newest 50 of each routine and unfinished ones stay", () =>
+  run(":memory:", (store) =>
+    Effect.gen(function* () {
+      const agent = yield* store.createAgent({ projectId: null, name: "Keeper", instructions: "", model: "a/m" })
+      const chat = yield* store.createChat({ projectId: null, agentIds: [agent.id], model: "a/m" })
+      const r = yield* store.createRoutine({ agentId: agent.id, chatId: chat.id, name: "R", prompt: "p", cron: null, token: null, nextRunAt: null, watch: null })
+      expect(r).toMatchObject({ onDayStart: false, lookFirst: false, delivery: { channels: ["notify"] }, tell: "something", urgent: false })
+      for (let i = 0; i < 60; i++) yield* store.addRun({ routineId: r.id, trigger: "schedule", state: "done" })
+      const queued = yield* store.addRun({ routineId: r.id, trigger: "webhook", state: "queued", payload: { n: 1 } })
+      yield* store.pruneRoutineRuns(Date.now() + 3_600_000) // everything counts as old (the store's clock runs ahead within a ms)
+      const left = yield* store.routineRunsOf(r.id, undefined, 100)
+      expect(left).toHaveLength(51)
+      expect(left.some((x) => x.id === queued.id)).toBe(true)
+      expect(yield* store.countQueued(r.id)).toBe(1)
+    })
+  ))

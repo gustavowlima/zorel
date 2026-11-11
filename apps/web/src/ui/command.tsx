@@ -30,8 +30,8 @@ export function CommandPalette({
 }) {
   const shown = sections.filter((s) => s.items.length)
   return (
-    <ModalOverlay isDismissable isOpen={isOpen} onOpenChange={onOpenChange} className="fixed inset-0 z-50 flex items-start justify-center bg-overlay p-4 pt-[12vh] data-entering:animate-in data-entering:fade-in-0 motion-reduce:animate-none">
-      <Modal className="w-full max-w-xl overflow-hidden rounded-sheet border border-strong bg-float shadow-float backdrop-blur-xl backdrop-saturate-150 text-fg outline-none data-entering:animate-in data-entering:zoom-in-95 motion-reduce:animate-none">
+    <ModalOverlay isDismissable isOpen={isOpen} onOpenChange={onOpenChange} className="fixed inset-0 z-50 flex items-start justify-center bg-overlay p-4 pt-[12vh] data-entering:animate-in data-entering:fade-in-0 data-exiting:animate-out data-exiting:fade-out-0 data-exiting:duration-100 motion-reduce:animate-none">
+      <Modal className="w-full max-w-xl overflow-hidden rounded-sheet border border-strong bg-float shadow-float backdrop-blur-xl backdrop-saturate-150 text-fg outline-none data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.97] data-exiting:animate-out data-exiting:fade-out-0 data-exiting:zoom-out-[0.98] data-exiting:duration-100 motion-reduce:animate-none">
         <Dialog aria-label={label} className="flex max-h-[60vh] flex-col outline-none">
           {({ close }) => (
             <Autocomplete inputValue={query} onInputChange={onQuery}>

@@ -26,8 +26,7 @@ export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode]
 export const isInterruption = (error: string | null) =>
   !!error && (error === ErrorCode.interrupted || error === ErrorCode.cancelled || error === ErrorCode.serverRestarted || error.startsWith("interrompido"))
 
-export const TurnState = Schema.Literals(["queued", "running", "completed", "failed", "interrupted"])
-export type TurnState = typeof TurnState.Type
+const TurnState = Schema.Literals(["queued", "running", "completed", "failed", "interrupted"])
 
 export const Usage = Schema.Struct({
   inputTokens: Schema.Number,
@@ -54,8 +53,7 @@ export type Turn = typeof Turn.Type
 
 // ---------- steps (the activity pill and the expanded detail) ----------
 
-export const StepKind = Schema.Literals(["read", "edit", "run", "search", "tool", "delegate"])
-export type StepKind = typeof StepKind.Type
+const StepKind = Schema.Literals(["read", "edit", "run", "search", "tool", "delegate"])
 
 
 export const WorkStep = Schema.Struct({
@@ -76,11 +74,12 @@ export type WorkStep = typeof WorkStep.Type
 
 // ---------- approvals (ARCHITECTURE §9.2) ----------
 
-export const ApprovalKind = Schema.Literals(["command", "edit", "tool", "network", "question"]) // question: zorel_ask_user (summary: the question; args: {"options": [...]})
+const ApprovalKind = Schema.Literals(["command", "edit", "tool", "network", "question"]) // question: zorel_ask_user (summary: the question; args: {"options": [...]})
 export const Approval = Schema.Struct({
   id: Id,
   chatId: Id,
-  turnId: Id,
+  turnId: Schema.NullOr(Id), // null: a routine flow's step asks (runStepId), not a turn
+  runStepId: Schema.optional(Schema.NullOr(Id)),
   stepId: Schema.NullOr(Id),
   agentId: Schema.NullOr(Id),
   kind: ApprovalKind,
@@ -117,13 +116,13 @@ export type ChatStatus = typeof ChatStatus.Type
 
 // ---------- turn context (the "18k context" and the inspector) ----------
 
-export const ContextLayer = Schema.Struct({ id: Schema.String, label: Schema.String, tokens: Schema.Number })
+const ContextLayer = Schema.Struct({ id: Schema.String, label: Schema.String, tokens: Schema.Number })
 export const ContextUsage = Schema.Struct({ layers: Schema.Array(ContextLayer), total: Schema.Number, limit: Schema.Number })
 export type ContextUsage = typeof ContextUsage.Type
 
 // ---------- chat events ----------
 
-export const ChatSnapshot = Schema.Struct({
+const ChatSnapshot = Schema.Struct({
   messages: Schema.Array(Message), // since the summary
   turns: Schema.Array(Turn), // in progress and queued
   partial: Schema.Array(Schema.Struct({ turnId: Id, text: Schema.String })), // text so far of the running ones
@@ -131,7 +130,6 @@ export const ChatSnapshot = Schema.Struct({
   approvals: Schema.Array(Approval), // open
   status: ChatStatus
 })
-export type ChatSnapshot = typeof ChatSnapshot.Type
 
 export const ChatEvent = Schema.TaggedUnion({
   snapshot: { snapshot: ChatSnapshot }, // always first; reconnect = subscribe again
@@ -165,13 +163,26 @@ export type ChatEvent = typeof ChatEvent.Type
 export class ChatNotFound extends Schema.TaggedError<ChatNotFound>()("ChatNotFound", { chatId: Id }) {}
 export class ApprovalNotFound extends Schema.TaggedError<ApprovalNotFound>()("ApprovalNotFound", { approvalId: Id }) {} // already decided or expired
 
-export const SendPayload = {
+const SendPayload = {
   chatId: Id,
   clientId: Schema.String.check(Schema.isMinLength(8), Schema.isMaxLength(64)),
   text: Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(100_000)),
   model: Schema.optional(ModelId),
   attachmentIds: Schema.optional(Schema.Array(Schema.String).check(Schema.isMaxLength(MAX_ATTACHMENTS))) // uploaded first (POST /api/chats/:id/attachments)
 }
+
+// What a routine run tells the person (spec 012): the web app turns it into a desktop notification.
+export const Notice = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literal("routine"),
+  runId: Schema.String,
+  routineId: Schema.String,
+  chatId: Schema.String,
+  title: Schema.String,
+  text: Schema.String,
+  outcome: Schema.Literals(["nothing", "something", "needs"])
+})
+export type Notice = typeof Notice.Type
 
 export const ZorelRpc = RpcGroup.make(
   Rpc.make("send", { payload: SendPayload, success: Schema.Struct({ turnId: Id }), error: ChatNotFound }),
@@ -187,6 +198,7 @@ export const ZorelRpc = RpcGroup.make(
   Rpc.make("decide", { payload: { approvalId: Id, outcome: Schema.Literals(["approved", "always", "denied"]), reason: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))) }, error: ApprovalNotFound }),
   Rpc.make("subscribeChat", { payload: { chatId: Id }, success: ChatEvent, error: ChatNotFound, stream: true }),
   Rpc.make("subscribeStatus", { success: ChatStatus, stream: true }), // all chats: sidebar and "Needs you"
+  Rpc.make("notices", { success: Notice, stream: true }), // what routines tell the person (spec 012): desktop notifications
   Rpc.make("approvals", { success: Schema.Array(Approval) }), // open approvals of every chat ("Needs you")
   Rpc.make("runs", { payload: { chatId: Id }, success: Schema.Array(WorkStep) }) // commands the agents ran in this chat (terminal panel)
 )

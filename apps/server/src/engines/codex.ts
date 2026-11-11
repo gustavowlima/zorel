@@ -12,11 +12,15 @@ import { basename, relative } from "node:path"
 import { type CliModel, classifyMessage, CODEX_DISABLED, commandStep, type EngineEvent, type EngineFailure, type NativeStep, splitModel, STEP_DETAIL_MAX, STEP_TITLE_MAX, toMillis, type Usage } from "#server/engines.ts"
 import { approvalFor } from "#server/engines/policy.ts"
 import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type SessionTurnInput, withoutAppEnv } from "#server/engines/session.ts"
+import { which } from "../cli-install.ts"
 
 // Access level → Codex sandbox and approval policy (ARCHITECTURE §9.2). The shell is on in the app-server:
 // commands run in Codex's sandbox and what leaves it asks through Zorel.
 const SANDBOX: Record<Access, string> = { workspace: "workspace-write", ask: "read-only", full: "danger-full-access" }
-const APPROVAL: Record<Access, string> = { workspace: "on-request", ask: "on-request", full: "never" }
+// "Ask first": untrusted asks before every command that isn't a known read, as the other engines ask for each one.
+// On Windows Codex's own sandbox is experimental: below full access it reads only, and each write asks through Zorel.
+export const sandboxFor = (access: Access, platform: string = process.platform) => (platform === "win32" && access === "workspace" ? SANDBOX.ask : SANDBOX[access])
+const APPROVAL: Record<Access, string> = { workspace: "on-request", ask: "untrusted", full: "never" }
 // A function, not a constant: engines.ts imports this module, so CODEX_DISABLED isn't ready at load time.
 const appServerDisabled = () => CODEX_DISABLED.filter((f) => f !== "shell_tool" && f !== "unified_exec")
 
@@ -177,7 +181,7 @@ const childEnv = (home: string) => {
   return env
 }
 
-export interface CodexSessionOptions {
+interface CodexSessionOptions {
   readonly model: string // "<provider>/<model>"; "default" uses Codex's default
   readonly system: string // stable context → developerInstructions
   readonly cwd: string
@@ -190,10 +194,10 @@ export interface CodexSessionOptions {
   readonly command?: ReadonlyArray<string> // tests: a fake app-server instead of `codex`
 }
 
-export const codexLoginHint = (home: string) => `Sign in to Zorel's Codex (once): run \`CODEX_HOME=${home} codex login\` in a terminal.`
+const codexLoginHint = (home: string) => `Sign in to Zorel's Codex (once): run \`CODEX_HOME=${home} codex login\` in a terminal.`
 
 export function openCodexSession(o: CodexSessionOptions): EngineSession | string {
-  const bin = o.command?.[0] ?? Bun.which("codex")
+  const bin = o.command?.[0] ?? which("codex")
   if (!bin) return "codex isn't installed or isn't on the PATH."
   mkdirSync(o.cwd, { recursive: true })
   mkdirSync(o.home, { recursive: true })
@@ -247,7 +251,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
       ...(model && { model }),
       cwd: o.cwd,
       approvalPolicy: APPROVAL[o.access],
-      sandbox: SANDBOX[o.access],
+      sandbox: sandboxFor(o.access),
       ephemeral: true, // Zorel's context is the source of truth; resuming uses the checkpoint
       developerInstructions: o.system,
       config: {
@@ -388,7 +392,7 @@ export function openCodexSession(o: CodexSessionOptions): EngineSession | string
 // Reads the account's limit windows on demand: a short-lived app-server on the account's CODEX_HOME.
 // A short-lived app-server for one read (limits, models); killed afterwards.
 async function withAppServer<A>(home: string, command: ReadonlyArray<string> | undefined, read: (rpc: Rpc) => Promise<A>): Promise<A> {
-  const bin = command?.[0] ?? Bun.which("codex")
+  const bin = command?.[0] ?? which("codex")
   if (!bin) throw new Error("codex isn't installed or isn't on the PATH.")
   mkdirSync(home, { recursive: true })
   const rpc = Rpc.start(bin, command?.slice(1) ?? ["app-server"], home, childEnv(home))

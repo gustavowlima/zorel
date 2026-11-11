@@ -76,3 +76,27 @@
 2026-11-09 | sidebar: New chat and Search as icons in the head row; the places back as named rows | user preferred names over an icon row
 2026-11-09 | Memory page: one header across views, approval moved into Review, rows use pin + ⋯ menu | impeccable layout/critique pass
 2026-11-09 | Memory: undo receipt for Forget/Discard/Move; 8 per group in All with See all; DESIGN.md accent #0071e3 | critique follow-ups chosen by the user
+2026-11-09 | audit+polish: AgentView keyed, missing connector/audit strings, settings nav row on narrow, headings | impeccable audit
+2026-11-09 | narrow-window adaptation across screens; connector ids typed by their descriptions | impeccable adapt + harden
+2026-11-09 | side panel: Home/Overview tab became the Pull request tab, Run list removed, panel opens on Changes | user: no need for a home, wants PR and Changes areas
+2026-11-09 | side panel tabs opened from a + menu and closable; Browser/Terminal again = new page/shell | user: choose what to open instead of fixed tabs
+2026-11-09 | providers page lists Gemini CLI, OpenCode, Antigravity | user thought Antigravity was not set up: it was only in the model picker
+2026-11-10 | Install button for agent CLIs; Gemini/Antigravity/LM Studio logos | user: no icons in the picker, wanted in-app install
+2026-11-10 | Teams section, agent form teams, Add a team in pickers, @team joins members; project label Team → Agents | spec 010
+2026-11-10 | Routines Week view, routine History and Settings dialogs, Today page, Your day settings, routine notices | spec 012
+2026-11-10 | spec 013 P1-b: flow editor (lazy React Flow canvas + List), step panels, schema form, tool picker, Run view, Needs you rows for uncertain writes and Ask me; Dialog scrolls its body | the routine flows UI; long dialogs overflowed the window
+2026-11-10 | New routine rebuilt on the flow model (a reference app's fields, no JSON); canvas drag flicker fixed (keep RF measured nodes) | the user saw the old form and the canvas flickered
+2026-11-10 | pt-BR interface (catalog + language setting, system default) | user request; PRODUCT.md said English only for now
+2026-11-10 | tool choice is connector first (ConnectorTool), pt-BR rewritten for natural voice | user feedback
+2026-11-10 | New routine dialog is a step list (start unchosen, steps inline, add step), tabs removed | user: time was set before finishing; wanted steps like a reference app
+2026-11-10 | tool arguments: Form | JSON modes (CodeMirror, schema-aware) | user asked for both
+2026-11-10 | week: dotted half-hour hover with time; day-start line in the legend | user asked
+2026-11-10 | project default agent replaced by a crew (agents + teams) | the internal router already chooses who answers; user wanted to pick several agents or teams
+2026-11-10 | ponytail cleanup: 135 unused i18n keys, shared storage helpers, cx→cn, 202 needless exports, dead type aliases | review + audit
+2026-11-10 | Today out of the sidebar; page crossfade (View Transitions); Skills as one list with source | user requests
+2026-11-10 | React Flow canvas removed from the routine editor (list only; @xyflow/react, routine-flow.tsx/.css and the flows.canvas keys gone) | user decision
+2026-11-10 | flow list as a DnD flow, step-level problems, routine sheet from the week, 24h week, WYSIWYG page editor (TipTap markdown), home grid, memory motion | user requests
+2026-11-10 | thermo-nuclear review applied: derived home state, lazy pointer capture, useRoutineActions, agentTint in labels, BrandMark, flow geometry constants, pure Drawer/Rise | code quality
+2026-11-10 | delegated tasks live under their chat (parentId) and open in a drawer, not as sidebar chats | user request
+2026-11-10 | browser cards per agent, owner-aware panel input, empty Changes without a pill, task report card + task chip | user requests
+2026-11-10 | task drawer state unified and moved to task-drawer.tsx; empty Changes tab derived, no effect | ponytail review

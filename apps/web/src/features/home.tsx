@@ -3,13 +3,13 @@
 // moves to it.
 import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
-import { agentsAtom, mutations, projectsAtom, uploadAttachment, useList, useMutation } from "../client.ts"
+import { agentsAtom, mutations, projectsAtom, teamsAtom, uploadAttachment, useList, useMutation } from "../client.ts"
 import { go } from "../state.ts"
-import { agentOptions, callable, toJoin } from "./agent-options.ts"
-import { Composer, type ComposerSources, SendError } from "./composer.tsx"
+import { agentOptions, callable, projectCrew, teamsIn, toJoin } from "./agent-options.ts"
+import { Composer, type ComposerOption, type ComposerSources, SendError } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
-import { agentTone, modelLabel } from "../labels.ts"
-import { AgentAvatar, Folder, IconButton, Select, X } from "@/ui"
+import { agentTint, agentTone, modelLabel } from "../labels.ts"
+import { AgentAvatar, cn, Folder, IconButton, OrbitBackdrop, Select, Users, X } from "@/ui"
 
 const DEFAULT_MODEL: ModelChoice = { model: "claude-cli/sonnet", accountId: null, effort: null }
 
@@ -20,46 +20,49 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
   const send = useMutation(mutations.send)
   const updateChat = useMutation(mutations.updateChat)
   const [projectId, setProjectId] = useState<string | null>(initialProject ?? null)
-  const [agentId, setAgentId] = useState<string | null>(null)
-  const [choice, setChoice] = useState<ModelChoice>(DEFAULT_MODEL)
+  // Only what the person chose is state: a plain chat instead of the project's crew (×), and a model of their own.
+  // Who starts the chat and its model follow from the project; picking another project forgets both choices.
+  const [plain, setPlain] = useState(false)
+  const [picked, setPicked] = useState<ModelChoice>()
   const chat = useRef<Promise<string> | null>(null)
 
   const available = callable(agents, projectId)
-  const pickAgent = (id: string | null) => {
-    setAgentId(id)
-    const a = agents.find((x) => x.id === id)
-    if (a) setChoice({ model: a.model, accountId: a.accountId, effort: a.effort })
+  const teams = teamsIn(useList(teamsAtom), projectId)
+  const pickProject = (id: string | null) => {
+    setProjectId(id)
+    setPlain(false)
+    setPicked(undefined)
   }
-  const lead = available.find((a) => a.id === agentId)
   // "#" in the box calls an agent (a chip, "@handle" in the text, as in a chat; typing filters, so a long team stays
   // usable). Who is named joins the new chat when the message is sent (see `callWith`).
   const sources: ComposerSources = {
-    leads: agentOptions(available, available.map((a) => a.id), { member: (a) => a.title || modelLabel(a.model), outside: "" }).map((o) => ({
+    leads: agentOptions(available, available.map((a) => a.id), { member: (a) => a.title || modelLabel(a.model), outside: "" }).map((o): ComposerOption => ({
       id: o.id,
       label: o.label,
       hint: o.hint,
-      icon: <AgentAvatar id={o.agent.id} name={o.agent.name} tone={agentTone(o.agent, agents)} size={16} />
-    }))
+      icon: <AgentAvatar id={o.agent.id} name={o.agent.name} tone={agentTone(o.agent, agents)} size={16} />,
+      tint: agentTint(o.agent, agents)
+    })).concat(teams.map((x) => ({ id: x.handle, label: x.name, hint: t("teams.option", { count: x.agentIds.length }), icon: <Users className="size-4" /> })))
   }
-  // A project's chat starts with its default agent (Agents tab of the project), if it has one.
-  const defaultAgent = projects.find((p) => p.id === projectId)?.defaultAgentId ?? null
+  // A project's chat starts with who takes part in it (Agents tab of the project): its agents and its teams' members;
+  // the lead's model is the chat's unless the person picked one.
+  const members = plain ? [] : projectCrew(projects.find((p) => p.id === projectId), available, teams)
+  const lead = members[0]
+  const choice = picked ?? (lead ? { model: lead.model, accountId: lead.accountId, effort: lead.effort } : DEFAULT_MODEL)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new route project resets the draft
   useEffect(() => {
-    setProjectId(initialProject ?? null)
+    pickProject(initialProject ?? null)
     chat.current = null
   }, [initialProject])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new project or default resets the pick
-  useEffect(() => {
-    pickAgent(agents.some((a) => a.id === defaultAgent) ? defaultAgent : null)
-  }, [projectId, defaultAgent, agents.length])
 
-  // Who is in the chat a message starts: the chosen lead (or the project's default), then everyone the text names.
-  // With no lead chosen, the first one named leads (and the chat takes its model).
+  // Who is in the chat a message starts: the crew, then everyone the text names. With no one yet, the first one
+  // named leads (and the chat takes its model).
   const callWith = (text: string) => {
-    const named = toJoin(text, agentId ? [agentId] : [], available)
-    return { agentIds: [...(agentId ? [agentId] : []), ...named.map((a) => a.id)], ...(!agentId && named[0] && { model: named[0].model }) }
+    const named = toJoin(text, members.map((a) => a.id), available, teams).slice(0, 8 - members.length) // a chat holds 8
+    return { agentIds: [...members.map((a) => a.id), ...named.map((a) => a.id)], ...(!members.length && named[0] && { model: named[0].model }) }
   }
   // One chat per draft, however many files are attached before sending.
-  const ensureChat = (call: { agentIds: string[]; model?: string } = { agentIds: agentId ? [agentId] : [] }) =>
+  const ensureChat = (call: { agentIds: string[]; model?: string } = { agentIds: members.map((a) => a.id) }) =>
     (chat.current ??= createChat({ payload: { projectId, ...choice, ...call }, reactivityKeys: ["chats"] }).then(
       (c) => c.id,
       (e: unknown) => {
@@ -70,9 +73,9 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
 
   const submit = async (text: string, attachmentIds: ReadonlyArray<string>) => {
     const call = callWith(text)
-    const created = chat.current !== null // a file was attached first: the chat exists with only its lead
+    const created = chat.current !== null // a file was attached first: the chat exists with only its crew
     const chatId = await ensureChat(call)
-    if (created && call.agentIds.length > (agentId ? 1 : 0)) {
+    if (created && call.agentIds.length > members.length) {
       try {
         await updateChat({ params: { id: chatId }, payload: call, reactivityKeys: ["chats", "context"] })
       } catch {
@@ -84,8 +87,10 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col items-center justify-center overflow-auto px-7 py-10">
-      <div className="flex w-full max-w-2xl flex-col gap-6">
+    <div className="relative flex h-full min-h-0 flex-col items-center justify-center overflow-auto px-7 py-10">
+      {/* Orbits behind it, after the mark (decoration only). */}
+      <OrbitBackdrop className="absolute inset-0" />
+      <div className="relative flex w-full max-w-2xl flex-col gap-6">
         <div className="flex flex-col gap-1.5 text-center">
           <h1 className="text-lg font-semibold">{t("home.title")}</h1>
           <p className="text-muted">{t("home.subtitle")}</p>
@@ -101,19 +106,22 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
               aria-label={t("home.project")}
               value={projectId ?? ""}
               onChange={(v) => {
-                setProjectId(v || null)
-                pickAgent(null)
+                pickProject(v || null)
               }}
               options={[{ value: "", label: t("home.noProject") }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
               searchLabel={t("home.searchProjects")}
             />
-            {lead && (
-              // Who answers, once picked ("#" in the box, or the project's default): its face and name, × goes back
-              // to a plain chat. Picking happens in the box itself, so there is no list of names here.
-              <span className="flex h-control-sm items-center gap-1.5 rounded-full bg-control pr-0.5 pl-1 text-sm text-fg">
-                <AgentAvatar id={lead.id} name={lead.name} tone={agentTone(lead, agents)} size={20} />
-                <span className="max-w-40 truncate">{t("home.answers", { name: lead.name })}</span>
-                <IconButton label={t("home.clearAgent", { name: lead.name })} size="xs" shape="pill" onPress={() => pickAgent(null)}>
+            {members.length > 0 && (
+              // Who the chat starts with (the project's crew): their faces and who, × goes back to a plain chat. More
+              // join with "#" in the box, so there is no list of names here.
+              <span className={cn("flex h-control-sm items-center gap-1.5 rounded-full border pr-0.5 pl-1 text-sm", members.length === 1 ? `tinted ${agentTint(members[0]!, agents)}` : "border-transparent bg-control text-fg")}>
+                <span className="flex -space-x-1.5">
+                  {members.slice(0, 3).map((a) => (
+                    <AgentAvatar key={a.id} id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} />
+                  ))}
+                </span>
+                <span className="max-w-48 truncate">{members.length === 1 ? t("home.answers", { name: members[0]!.name }) : t("home.crew", { count: members.length })}</span>
+                <IconButton label={t("home.clearCrew")} size="xs" shape="pill" onPress={() => setPlain(true)}>
                   <X className="size-3.5" />
                 </IconButton>
               </span>
@@ -125,7 +133,7 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
             onSubmit={submit}
             upload={(f) => ensureChat().then((id) => uploadAttachment(id, f))}
             placeholder={t(available.length ? "home.placeholder" : "home.placeholderPlain")}
-            tools={<ModelPicker value={choice} onChange={setChoice} />}
+            tools={<ModelPicker value={choice} onChange={setPicked} />}
           />
         </div>
       </div>

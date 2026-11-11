@@ -41,5 +41,5 @@ export async function redact(text: string): Promise<string> {
 export const hasCredential = async (text: string) => (await redact(text)) !== text
 
 // Single-line logfmt, masked.
-export const maskedLogger = Logger.formatLogFmt.pipe(Logger.map(mask), Logger.withConsoleLog)
+const maskedLogger = Logger.formatLogFmt.pipe(Logger.map(mask), Logger.withConsoleLog)
 export const LoggerLive = Logger.layer([maskedLogger])

@@ -11,7 +11,7 @@ import { OwnComputer } from "./own-computer.tsx"
 import { Globe, IconButton, MousePointerClick, Plug, Rows, Segmented, SettingRow, SquareTerminal, X } from "@/ui"
 
 // A server the agent was given nothing for follows the server's own mode (as on the server).
-export const grantOf = (p: AgentPermissions, s: McpServer): Grant => p.grants[s.id] ?? (s.mode === "read" ? "read" : "write")
+const grantOf = (p: AgentPermissions, s: McpServer): Grant => p.grants[s.id] ?? (s.mode === "read" ? "read" : "write")
 
 // Files and commands, in the words of the other rows: ask = reads, edits wait; workspace = reads and writes in its
 // folder; full = everything, without asking.
@@ -107,7 +107,7 @@ export function PermissionsEditor({
       <ComputerApps value={value.apps ?? []} onChange={(apps) => onChange({ ...value, apps })} />
       {showAlways && value.always.length > 0 && (
         <section className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium text-muted">{t("agent.perm.always")}</h3>
+          <h2 className="text-sm font-medium text-muted">{t("agent.perm.always")}</h2>
           <div className="flex flex-wrap gap-1.5">
             {value.always.map((key) => (
               <span key={key} className="flex h-control-sm items-center gap-1 rounded-full border border-subtle bg-surface pr-0.5 pl-3 text-sm">

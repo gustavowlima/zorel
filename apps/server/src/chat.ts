@@ -39,7 +39,7 @@ export const members = (store: Repository, chat: Chat) =>
 
 // The model that learns from a chat: the one chosen in Settings, else ZOREL_MEMORY_MODEL, else the chat's provider's
 // small model (consolidate falls back to the chat's own model when that one fails).
-export const memoryModelFor = (store: Repository, chatModel: string) =>
+const memoryModelFor = (store: Repository, chatModel: string) =>
   Effect.map(store.preference("memoryModel"), (chosen) => chosen || process.env.ZOREL_MEMORY_MODEL || cheapModel(chatModel))
 
 const STREAM = 10 // candidates each recall source (map, facts by words, past messages) brings to the fusion
@@ -48,7 +48,7 @@ const MEANING_MIN = 0.25 // cosine below this isn't "about the same thing" for a
 const RECALL_CHARS = 2_000 // the most the recalled facts take in a turn
 
 // A bounded piece of a past message around the words that matched, with who said it and where.
-export interface Excerpt {
+interface Excerpt {
   readonly id: string
   readonly chatId: string
   readonly chatTitle: string
@@ -208,10 +208,15 @@ export const ask = Effect.fn("ask")(function* (model: string, text: string) {
 
 // ---------- consolidation (continuous learning) ----------
 
+// The reply's text, its error and what it used (spec 012: a routine's cheap check counts toward the agent's month).
+const COLLECT: Partial<Record<EngineEvent["type"], (acc: Collected, ev: never) => Collected>> = {
+  text: (acc, ev: Extract<EngineEvent, { type: "text" }>) => ({ ...acc, text: acc.text + ev.delta }),
+  error: (acc, ev: Extract<EngineEvent, { type: "error" }>) => ({ ...acc, error: ev.message }),
+  done: (acc, ev: Extract<EngineEvent, { type: "done" }>) => ({ ...acc, tokens: ev.usage.inputTokens + ev.usage.outputTokens })
+}
+type Collected = { text: string; error: string | undefined; tokens: number }
 const collect = (events: Stream.Stream<EngineEvent>) =>
-  Stream.runFold(events, () => ({ text: "", error: undefined as string | undefined }), (acc, ev) =>
-    ev.type === "text" ? { ...acc, text: acc.text + ev.delta } : ev.type === "error" ? { ...acc, error: ev.message } : acc
-  )
+  Stream.runFold(events, (): Collected => ({ text: "", error: undefined, tokens: 0 }), (acc, ev) => COLLECT[ev.type]?.(acc, ev as never) ?? acc)
 
 // How much a consolidation takes. "window": what leaves the window once it's over MAX_AFTER messages or
 // HISTORY_CHARS characters (summary + learning);
@@ -332,7 +337,10 @@ export const consolidate = Effect.fn("consolidate")(function* (chatId: string, h
     // Each fact kept or proposed goes on the map of its scope (what it's about, how those relate).
     const known = yield* knownNames(store, chat)
     const map = (m: Memory | undefined, mapped: Mapped) => (m ? store.linkMemory(m.id, m.scope, mapped, known).pipe(Effect.asVoid) : Effect.void)
-    const onItsOwn = (yield* store.preference("memoryApproval")) === "undo" ? facts.filter((f) => !f.replaces) : []
+    // Text from outside (a webhook, a watched connector) in the stretch isn't the person: what it yields waits for
+    // review even when new facts are kept at once (spec 011).
+    const outside = yield* store.hasOutside(chat.id, stretch[0]!.at - 1, stretch.at(-1)!.at)
+    const onItsOwn = !outside && (yield* store.preference("memoryApproval")) === "undo" ? facts.filter((f) => !f.replaces) : []
     const saved: Memory[] = []
     for (const { mapped, ...f } of onItsOwn.slice(0, MAX_AUTO)) {
       const m = yield* store.addMemory({ ...f, state: "active", origin: "auto", chatId: chat.id })

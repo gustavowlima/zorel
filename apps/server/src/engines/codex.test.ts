@@ -3,7 +3,7 @@ import { Effect, Fiber, Stream } from "effect"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { EngineEvent } from "#server/engines.ts"
-import { openCodexSession } from "#server/engines/codex.ts"
+import { openCodexSession, sandboxFor } from "#server/engines/codex.ts"
 import type { EngineSession } from "#server/engines/session.ts"
 
 const fake = join(import.meta.dir, "fixtures", "fake-codex-app-server.ts")
@@ -62,4 +62,10 @@ test("codex: effort goes with the turn (max = xhigh); steering joins the running
   const events = await Effect.runPromise(Fiber.join(fiber))
   expect(events.map((x) => (x.type === "text" ? x.delta : x.type))).toEqual(["partial", "\n\ncorrected: use the src folder", "done"])
   await Effect.runPromise(s.close)
+})
+
+test("on Windows, Codex below full access reads only: each write asks through Zorel", () => {
+  expect(sandboxFor("workspace", "win32")).toBe("read-only")
+  expect(sandboxFor("workspace", "darwin")).toBe("workspace-write")
+  expect(sandboxFor("full", "win32")).toBe("danger-full-access")
 })

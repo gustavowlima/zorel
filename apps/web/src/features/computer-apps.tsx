@@ -38,7 +38,7 @@ export function ComputerApps({ value, onChange }: { value: ReadonlyArray<Desktop
   }
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium text-muted">{t("computer.title")}</h3>
+      <h2 className="text-sm font-medium text-muted">{t("computer.title")}</h2>
       <p className="max-w-prose text-sm text-dim">{t("computer.intro")}</p>
       <Rows>
         {!status.supported ? (
@@ -51,7 +51,8 @@ export function ComputerApps({ value, onChange }: { value: ReadonlyArray<Desktop
           </SettingRow>
         ) : (
           <>
-            {status.accessibility === "denied" && (
+            {/* Anything short of granted (denied, not asked yet, unknown) means clicks won't go through: say so. */}
+            {status.accessibility !== null && status.accessibility !== "granted" && (
               <SettingRow icon={<AppWindow />} title={<span className="text-warning">{t("computer.noPermission")}</span>} hint={status.suggestion ?? undefined}>
                 <Button size="sm" variant="secondary" onPress={() => void guide({ reactivityKeys: [] })}>
                   {t("computer.guide")}

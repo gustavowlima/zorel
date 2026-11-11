@@ -205,8 +205,8 @@ export function ProcessesSection() {
     <Section title={t("processes.title")}>
       {usage.memory > 0 && (
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-          <Stat icon={<Cpu />} value={cpuText(usage.cpu)} label={t("processes.usage.cpu")} hint={t("processes.usage.cores", { count: usage.cores })} />
-          <Stat icon={<MemoryStick />} value={formatBytes(usage.memory)} label={t("processes.usage.memory")} hint={t("processes.usage.ofMemory", { total: formatBytes(usage.totalMemory) })} />
+          <Stat tone="bg-series-1/15 text-series-1" icon={<Cpu />} value={cpuText(usage.cpu)} label={t("processes.usage.cpu")} hint={t("processes.usage.cores", { count: usage.cores })} />
+          <Stat tone="bg-series-7/15 text-series-7" icon={<MemoryStick />} value={formatBytes(usage.memory)} label={t("processes.usage.memory")} hint={t("processes.usage.ofMemory", { total: formatBytes(usage.totalMemory) })} />
           <span className="ml-auto flex items-center gap-1.5 text-xs text-muted">
             <Dot tone="success" />
             {t("processes.usage.live")}
@@ -214,7 +214,7 @@ export function ProcessesSection() {
         </div>
       )}
       {rows.length === 0 ? (
-        <EmptyState icon={<Activity />} title={t("processes.empty")} hint={t("processes.emptyHint")} />
+        <EmptyState inset icon={<Activity />} title={t("processes.empty")} hint={t("processes.emptyHint")} />
       ) : (
         <div className="flex flex-col">
           <Columns />
@@ -239,9 +239,10 @@ export function ProcessesSection() {
 }
 
 // CPU or memory in the summary line: icon, value, what it is and its scale.
-const Stat = ({ icon, value, label, hint }: { icon: ReactNode; value: string; label: string; hint: string }) => (
+// A live number with its own color (the chart series'), so the two read apart at a glance.
+const Stat = ({ icon, value, label, hint, tone }: { icon: ReactNode; value: string; label: string; hint: string; tone: string }) => (
   <span className="flex items-center gap-2">
-    <IconTile size="sm">{icon}</IconTile>
+    <IconTile size="sm" className={tone}>{icon}</IconTile>
     <span className="flex flex-col leading-tight">
       <span className="font-semibold tabular-nums">
         {value} <span className="font-normal text-muted">{label}</span>

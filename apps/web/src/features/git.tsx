@@ -9,7 +9,7 @@ import { AsyncResult } from "effect/reactivity"
 import { useAtomValue } from "@effect/atom-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { gitAtom, mutations, useInvalidate, useMutation } from "../client.ts"
-import { ArrowUp, ArrowUpRight, BareTextarea, Button, Check, cx, FileIcon, FolderOpen, GitBranch, GitPullRequest, Input, Milestone, Milestones, Sparkles, Spinner, StatusMark, Textarea } from "@/ui"
+import { ArrowUp, ArrowUpRight, BareTextarea, Button, Check, cn, FileIcon, Fold, FolderOpen, GitBranch, GitPullRequest, Input, Milestone, Milestones, Sparkles, Spinner, StatusMark, Textarea } from "@/ui"
 
 const errorOf = (e: unknown) => (e as { message?: string })?.message || t("git.failed")
 
@@ -42,7 +42,7 @@ export function useIsRepo(chatId: string) {
 
 type Step = "commit" | "push" | "pr" | "branch" | "draft" | "worktree"
 
-export function GitPanel({ chatId, worktree, after }: { chatId: string; worktree: string | null; after?: ReactNode }) {
+export function GitPanel({ chatId, worktree }: { chatId: string; worktree: string | null }) {
   const result = useAtomValue(gitAtom(chatId))
   const invalidate = useInvalidate()
   // Fresh each time the tab is shown (a shell or an agent may have committed meanwhile).
@@ -127,21 +127,24 @@ export function GitPanel({ chatId, worktree, after }: { chatId: string; worktree
                 <Button size="sm" variant="ghost" className="-ml-2.5 self-start" aria-expanded={showFiles} onPress={() => setShowFiles(!showFiles)}>
                   {showFiles ? t("git.hideFiles") : t("git.showFiles", { count: s.files.length })}
                 </Button>
-                {showFiles && (
-                  <ul className="-mx-2 flex max-h-72 flex-col overflow-y-auto">
+                {/* The fold clips, so it carries the list's bleed; -mt-2 cancels the column gap while it's closed. */}
+                <div className="-mx-2 -mt-2">
+                <Fold open={showFiles}>
+                  <ul className="mt-2 flex max-h-72 flex-col overflow-y-auto">
                     {s.files.map((f) => {
                       const cut = f.path.lastIndexOf("/")
                       return (
                         <li key={f.path} className="flex h-control-sm items-center gap-2 rounded-control px-2 text-sm hover:bg-hover" title={f.path}>
                           <FileIcon name={f.path.slice(cut + 1)} />
-                          <span className={cx("shrink-0 truncate", f.status === "deleted" ? "text-muted line-through" : "text-fg")}>{f.path.slice(cut + 1)}</span>
+                          <span className={cn("shrink-0 truncate", f.status === "deleted" ? "text-muted line-through" : "text-fg")}>{f.path.slice(cut + 1)}</span>
                           <span className="min-w-0 flex-1 truncate text-dim">{cut > 0 ? f.path.slice(0, cut) : ""}</span>
                           <StatusMark status={f.status} />
                         </li>
                       )
                     })}
                   </ul>
-                )}
+                </Fold>
+                </div>
               </>
             )}
           </Milestone>
@@ -152,7 +155,7 @@ export function GitPanel({ chatId, worktree, after }: { chatId: string; worktree
               hint={pushPending && s.pr ? t("git.updatesPr", { number: s.pr.number }) : undefined}
             >
               {pushPending && (
-                <Button size="sm" variant={firstPending === "push" ? "default" : "ghost"} className={cx("self-start", firstPending !== "push" && "-ml-2.5")} isDisabled={!!busy} onPress={() => act("push", () => push({ params: { id: chatId }, ...keys }), t("git.pushed"))}>
+                <Button size="sm" variant={firstPending === "push" ? "default" : "ghost"} className={cn("self-start", firstPending !== "push" && "-ml-2.5")} isDisabled={!!busy} onPress={() => act("push", () => push({ params: { id: chatId }, ...keys }), t("git.pushed"))}>
                   {busy === "push" ? <Spinner size={12} /> : <ArrowUp />}
                   {s.upstream ? t("git.push", { count: s.ahead }) : t("git.publish")}
                 </Button>
@@ -170,7 +173,7 @@ export function GitPanel({ chatId, worktree, after }: { chatId: string; worktree
                   rel="noopener"
                   className="group flex items-center gap-2.5 self-start rounded-control px-2 py-1 -ml-2 text-sm text-muted transition-colors duration-120 hover:bg-hover hover:text-fg motion-reduce:transition-none"
                 >
-                  <GitPullRequest className={cx("size-4 shrink-0", s.pr.state === "open" ? "text-success" : s.pr.state === "merged" ? "text-accent-text" : "text-muted")} />
+                  <GitPullRequest className={cn("size-4 shrink-0", s.pr.state === "open" ? "text-success" : s.pr.state === "merged" ? "text-accent-text" : "text-muted")} />
                   {t("git.openOnGithub")}
                   <ArrowUpRight className="size-3.5 shrink-0" />
                 </a>
@@ -197,7 +200,7 @@ export function GitPanel({ chatId, worktree, after }: { chatId: string; worktree
                 <Button
                   size="sm"
                   variant={firstPending === "pr" ? "default" : "ghost"}
-                  className={cx("self-start", firstPending !== "pr" && "-ml-2.5")}
+                  className={cn("self-start", firstPending !== "pr" && "-ml-2.5")}
                   isDisabled={!!busy}
                   onPress={() => act("draft", () => draft({ params: { id: chatId }, payload: { kind: "pr" } }).then(setPrForm))}
                 >
@@ -209,13 +212,12 @@ export function GitPanel({ chatId, worktree, after }: { chatId: string; worktree
           )}
         </Milestones>
         {(error || done) && (
-          <p role="status" className={cx("rounded-control px-3 py-2 text-sm", error ? "max-h-32 overflow-auto bg-danger-soft font-mono whitespace-pre-wrap text-danger" : "bg-success-faint text-success")}>
+          <p role="status" className={cn("rounded-control px-3 py-2 text-sm", error ? "max-h-32 overflow-auto bg-danger-soft font-mono whitespace-pre-wrap text-danger" : "bg-success-faint text-success")}>
             {error ?? done}
           </p>
         )}
       </Part>
 
-      {after}
 
       {s.commits.length > 0 && (
         <Part title={t("git.commits")}>
@@ -229,7 +231,7 @@ export function GitPanel({ chatId, worktree, after }: { chatId: string; worktree
                   <span
                     role="img"
                     aria-label={c.pushed ? t("git.pushedCommit") : t("git.notPushed")}
-                    className={cx("relative size-2 rounded-full ring-4 ring-canvas", c.pushed ? "border border-strong bg-canvas" : "bg-accent")}
+                    className={cn("relative size-2 rounded-full ring-4 ring-canvas", c.pushed ? "border border-strong bg-canvas" : "bg-accent")}
                   />
                 </span>
                 <span className="min-w-0 flex-1 truncate text-secondary" title={c.subject}>

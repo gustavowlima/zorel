@@ -75,9 +75,9 @@ test("a window reads as a numbered list; a target is found by number or by text"
 })
 
 test("what commits asks first: sending, deleting, scheduling, a nameless click, Return and bulk-delete keys", () => {
-  for (const n of ["Send", "Delete", "Pay now", "Enviar", "New Event", ""]) expect(riskyClick(n)).toBe(true)
+  for (const n of ["Send", "Delete", "Pay now", "Enviar", "New Event", "", "Move to Trash", "Mover para o Lixo", "Discard", "Schedule", "Agendar", "Decline", "paperplane.fill"]) expect(riskyClick(n)).toBe(true)
   for (const n of ["New Note", "Groceries", "Search", "Bold"]) expect(riskyClick(n)).toBe(false)
-  for (const k of ["return", "cmd+return", "cmd+shift+d", "cmd+backspace"]) expect(riskyKey(k)).toBe(true)
+  for (const k of ["return", "cmd+return", "alt+return", "cmd+shift+d", "cmd+backspace", "delete", "backspace", "space"]) expect(riskyKey(k)).toBe(true)
   for (const k of ["escape", "tab", "cmd+n", "shift+return"]) expect(riskyKey(k)).toBe(false)
 })
 

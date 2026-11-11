@@ -3,9 +3,9 @@
 import type { Agent } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import { agentsAtom, useList } from "../client.ts"
-import { agentTone } from "../labels.ts"
+import { agentTint, agentTone, tintFor } from "../labels.ts"
 import { agentUrl, splitMentions } from "./mentions.ts"
-import { AgentAvatar } from "@/ui"
+import { AgentAvatar, cn, toneOf } from "@/ui"
 
 export function MentionChip({ agent, agents }: { agent: Pick<Agent, "id" | "name">; agents: ReadonlyArray<Agent> }) {
   const full = agents.find((a) => a.id === agent.id)
@@ -14,7 +14,7 @@ export function MentionChip({ agent, agents }: { agent: Pick<Agent, "id" | "name
       href={agentUrl(agent.id)}
       data-mention=""
       title={t("mention.open", { name: agent.name })}
-      className="inline-flex max-w-full items-center gap-1 rounded-full bg-control py-px pr-2 pl-1 align-middle text-base font-medium text-secondary no-underline outline-none transition-colors duration-120 ease-out hover:bg-control-hover hover:text-fg focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
+      className={cn("tinted inline-flex max-w-full items-center gap-1 rounded-full border pr-2 pl-1 leading-snug align-middle text-base font-medium no-underline outline-none transition-colors duration-120 ease-out hover:text-fg focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none", full ? agentTint(full, agents) : tintFor(toneOf(agent.id)))}
     >
       <AgentAvatar id={agent.id} name={agent.name} {...(full && { tone: agentTone(full, agents) })} size={16} />
       <span className="truncate">{agent.name}</span>

@@ -14,6 +14,7 @@ import { basename, relative } from "node:path"
 import { type CliModel, claudeParser, classifyMessage, type EngineEvent, type NativeStep, splitModel, STEP_DETAIL_MAX, STEP_TITLE_MAX, type TurnFile } from "#server/engines.ts"
 import { approvalFor, decideCommand, decideEdit, decideRead } from "#server/engines/policy.ts"
 import { type Approver, type EngineSession, GATEWAY_TOOL_TIMEOUT_MS, type NativeApproval, withoutAppEnv } from "#server/engines/session.ts"
+import { which } from "../cli-install.ts"
 
 const GATEWAY = "zorel"
 // Claude Code's own tools Zorel turns on: files and shell, plus web search and fetch when the agent may use the web.
@@ -101,7 +102,8 @@ export function permissions(access: Access, cwd: string, approve: Approver, web 
     if (tool.startsWith("mcp__")) return allow // the gateway applies the server's mode and its approvals
     if (WEB_TOOLS.includes(tool)) return web ? allow : deny // the agent's web permission
     if (tool === "Skill") return skills ? allow : deny // reading a skill; what it then does goes through the rules above
-    const path = typeof input.file_path === "string" ? input.file_path : (blockedPath ?? undefined)
+    // Read/Edit/Write name it file_path; Grep and Glob name it path.
+    const path = typeof input.file_path === "string" ? input.file_path : typeof input.path === "string" ? input.path : (blockedPath ?? undefined)
     let decision: "allow" | "ask"
     let request: NativeApproval
     if (tool === "Bash") {
@@ -155,7 +157,7 @@ function inbox() {
 // Below full access the shell runs in Claude Code's OS sandbox where there is one (Seatbelt on macOS; bubblewrap and
 // socat on Linux): writes only inside the folder (and temp), no network, and no way for the model to step out of it.
 // Without one (Windows) the shell is held by decideCommand's read-only rule instead.
-export const canSandbox = (platform = process.platform, which = Bun.which) => platform === "darwin" || (platform === "linux" && !!which("bwrap") && !!which("socat"))
+const canSandbox = (platform = process.platform, which = Bun.which) => platform === "darwin" || (platform === "linux" && !!which("bwrap") && !!which("socat"))
 // Two layers, because the SDK filters `managedSettings` to restrictions only (what would widen is dropped without a
 // word): the policy tier holds what the user's own settings must never loosen; the flag layer (`sandbox` option)
 // carries what is a choice of Zorel's. `allowLocalBinding` (dev servers on localhost, tests that open a port) and
@@ -343,7 +345,7 @@ export function childEnv(configDir: string | undefined, platform: NodeJS.Platfor
   return env
 }
 
-export interface ClaudeSessionOptions {
+interface ClaudeSessionOptions {
   readonly model: string // "<provider>/<model>"
   readonly system: string // stable part of the context; a change means a new session
   readonly cwd: string
@@ -356,7 +358,7 @@ export interface ClaudeSessionOptions {
 }
 
 export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | string {
-  const bin = Bun.which("claude")
+  const bin = which("claude")
   if (!bin) return "claude isn't installed or isn't on the PATH."
   mkdirSync(o.cwd, { recursive: true })
   const box = inbox()
@@ -543,7 +545,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
 const CLAUDE_WINDOWS = ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet"] as const
 // A Claude Code session that only answers control requests (usage, models); closed afterwards.
 async function withControl<A>(configDir: string | undefined, read: (q: Query) => Promise<A>, cwd?: string): Promise<A> {
-  const bin = Bun.which("claude")
+  const bin = which("claude")
   if (!bin) throw new Error("claude isn't installed or isn't on the PATH.")
   const box = inbox() // never gets a message
   // With a folder: that project's settings load too (its commands); without, none (limits, models).

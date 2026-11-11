@@ -4,11 +4,11 @@
 // One page rhythm (DESIGN.md › Layout): every header is HEADER (56px, the title 28px from the card's edge, the
 // actions 16px from the window's); a page's body is a Column (centered, 28px around, reading or wide); its sections
 // sit 40px apart, a page's tabs 32px above what they show, and a section's title 12px above its card.
-import { type ReactNode, useLayoutEffect, useState } from "react"
+import { type CSSProperties, type ReactNode, useLayoutEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { Button as AriaButton } from "react-aria-components"
 import { cn } from "@/lib/utils"
-import { ChevronRight } from "./icons"
+import { ChevronRight, Plug } from "./icons"
 
 // A page's header bar. In the desktop app it moves up into the window's title bar (the #titlebar-slot the shell
 // renders): the card starts with the page itself. Elsewhere it is the card's top bar.
@@ -26,9 +26,10 @@ export function Screen({ title, subtitle, actions, children, bodyClassName }: { 
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader className={HEADER}>
         <h1 className="truncate text-lg font-semibold">{title}</h1>
-        {subtitle && <span className="min-w-0 flex-1 truncate text-muted">{subtitle}</span>}
-        {!subtitle && <span className="flex-1" />}
-        {actions && <div className="flex items-center gap-2">{actions}</div>}
+        {/* A phone keeps the title and the actions: the subtitle steps aside, and the actions wrap instead of being cut. */}
+        {subtitle && <span className="hidden min-w-0 flex-1 truncate text-muted sm:block">{subtitle}</span>}
+        <span className={cn("flex-1", subtitle && "sm:hidden")} />
+        {actions && <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>}
       </PageHeader>
       {/* A plain body scrolls, and keeps its scrollbar's room even when it doesn't, so the centered column doesn't
           shift as a page grows past the window (a tab to the next). A body laid out by the screen does its own. */}
@@ -87,11 +88,37 @@ export function SettingRow({ icon, title, hint, children, className }: { icon?: 
 // The square that holds an icon beside a row or a heading: sm 28px, md 32px, lg 40px (empty states). A translucent
 // control tone, so it reads on the canvas and on a surface alike.
 const TILE = { sm: "size-7 rounded-control [&_svg]:size-4", md: "size-8 rounded-control [&_svg]:size-4", lg: "size-10 rounded-card [&_svg]:size-5" } as const
-export function IconTile({ size = "md", className, children }: { size?: keyof typeof TILE; className?: string; children: ReactNode }) {
+export function IconTile({ size = "md", className, style, children }: { size?: keyof typeof TILE | undefined; className?: string | undefined; style?: CSSProperties | undefined; children: ReactNode }) {
   return (
-    <span aria-hidden="true" className={cn("flex shrink-0 items-center justify-center bg-control text-secondary", TILE[size], className)}>
+    <span aria-hidden="true" style={style} className={cn("flex shrink-0 items-center justify-center bg-control text-secondary", TILE[size], className)}>
       {children}
     </span>
+  )
+}
+
+// A brand's mark (a connector's logo: simple-icons' path and hex) in its own color, or a plug when there is none.
+// tile: on a 14% wash of the color, lifted toward the text (Settings, a server's row); inline: the bare 16px mark (a
+// list's option). A near-black brand (GitHub, Notion, Vercel, Sentry) would vanish on the dark canvas, so it stays
+// neutral.
+export type Brand = { readonly hex: string; readonly path: string }
+function brandTint(hex: string): CSSProperties | undefined {
+  const [r, g, b] = [0, 2, 4].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number]
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.25 ? undefined : ({ "--tint": `#${hex}` } as CSSProperties)
+}
+export function BrandMark({ brand, variant = "tile" }: { brand: Brand | undefined; variant?: "tile" | "inline" }) {
+  const tint = brand && brandTint(brand.hex)
+  const mark = brand ? (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={cn(variant === "inline" && "size-4", variant === "inline" && tint && "tint-text")} style={variant === "inline" ? tint : undefined}>
+      <path d={brand.path} />
+    </svg>
+  ) : (
+    <Plug className={cn(variant === "inline" && "size-4 text-muted")} />
+  )
+  if (variant === "inline") return mark
+  return (
+    <IconTile style={tint} className={tint && "brand-tile!"}>
+      {mark}
+    </IconTile>
   )
 }
 
@@ -110,7 +137,19 @@ export function Notice({ tone = "warning", icon, title, children, action, classN
   )
 }
 
-export function EmptyState({ icon, title, hint, action }: { icon?: ReactNode; title: ReactNode; hint?: ReactNode; action?: ReactNode }) {
+// inset: an empty list inside a section, a card the size of a row, not a page's centred block.
+export function EmptyState({ icon, title, hint, action, inset }: { icon?: ReactNode; title: ReactNode; hint?: ReactNode; action?: ReactNode; inset?: boolean }) {
+  if (inset)
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-3 rounded-card border border-dashed border-subtle px-4 py-3.5">
+        {icon && <IconTile className="text-muted">{icon}</IconTile>}
+        <div className="flex min-w-0 flex-1 basis-60 flex-col">
+          <p className="font-medium text-fg">{title}</p>
+          {hint && <p className="text-pretty text-sm text-muted">{hint}</p>}
+        </div>
+        {action}
+      </div>
+    )
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
       {icon && (
@@ -145,9 +184,10 @@ export const Code = ({ children, className }: { children: ReactNode; className?:
 
 // A whole row as one press target (the row's content stays on top, unpressable): on hover a faint wash that reaches
 // 6px from the group's edge.
-export const RowHit = ({ label, onPress, className }: { label: string; onPress: () => void; className?: string }) => (
+export const RowHit = ({ label, onPress, className, expanded }: { label: string; onPress: () => void; className?: string; expanded?: boolean }) => (
   <AriaButton
     aria-label={label}
+    {...(expanded !== undefined && { "aria-expanded": expanded })}
     onPress={onPress}
     className={cn("absolute -inset-x-2.5 inset-y-1 cursor-default rounded-control outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:bg-control data-pressed:bg-control-hover motion-reduce:transition-none", className)}
   />
@@ -184,7 +224,8 @@ export function ListRow({
         <span className="truncate font-medium">{title}</span>
         {hint && <span className={cn("truncate text-sm", hintTone === "warning" ? "text-warning" : hintTone === "success" ? "text-success" : "text-muted")}>{hint}</span>}
       </span>
-      {aside && <span className="pointer-events-none relative shrink-0 text-sm text-muted tabular-nums">{aside}</span>}
+      {/* At most a bit under half the row: in a narrow window the title keeps its room and the aside ends with "…". */}
+      {aside && <span className="pointer-events-none relative max-w-[45%] min-w-0 shrink-0 truncate text-sm text-muted tabular-nums">{aside}</span>}
       {trailing && <span className="relative flex shrink-0 items-center gap-2">{trailing}</span>}
       <ChevronRight className="pointer-events-none relative size-4 shrink-0 text-muted" />
     </div>

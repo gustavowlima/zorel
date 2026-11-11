@@ -8,28 +8,29 @@ import { AsyncResult } from "effect/reactivity"
 import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zorel/contracts/events"
 import { formatCompact, formatDuration, formatTime, locale, t } from "@zorel/i18n"
 import { memo, type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
-import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
-import { agentName, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText, waitLabel } from "../labels.ts"
+import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, teamsAtom, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
+import { agentName, agentTint, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText, waitLabel } from "../labels.ts"
 import { ChatMarkdown } from "./chat-markdown.tsx"
 import { MemoryChip } from "./memory.tsx"
 import { MentionText } from "./mention.tsx"
 import { commandOf, extraArgs } from "./receipt-args.ts"
 import { go, liveStepsOpen } from "../state.ts"
-import { agentOptions, callable, toJoin } from "./agent-options.ts"
+import { agentOptions, callable, teamsIn, toJoin } from "./agent-options.ts"
 import { Composer, type ComposerOption, type ComposerSources, SendError } from "./composer.tsx"
 import { ContextMeter } from "./context-meter.tsx"
 import { QueuePanel, useQueue } from "./queue.tsx"
+import { TaskDrawer, useTaskLinks } from "./task-drawer.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { chatDelta, Delta, type Focus, PinItem, type Pins, RunControl, type ShellPin, SIDE_ICON, SidePanel, type SideTab, sideLabel, TurnChanges, usePins } from "./workspace.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { AccessChip } from "./access-chip.tsx"
 import { GitControl } from "./git.tsx"
-import { ContextMenu, HEADER, PageHeader } from "@/ui"
+import { ContextMenu, Drawer, Fold, HEADER, PageHeader } from "@/ui"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import { ChatProcesses } from "./processes.tsx"
 import { QuestionAnswer } from "./question.tsx"
 import {
-  Button, Check, ChevronDown, CircleAlert, CircleCheck, CircleX, Clock, ConfirmDialog, Copy, cx, Dialog, DisclosurePill, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
+  Button, Check, ChevronDown, CircleAlert, CircleCheck, CircleX, Clock, ConfirmDialog, Copy, cn, Dialog, DisclosurePill, EmptyState, Field, File, IconButton, ImageViewer, Info, Input, Menu, MenuItem,
   MenuSeparator, MessageCircle, MessageCircleQuestion, ShieldAlert, Minimize2, MoreHorizontal, PanelRight, Pencil, RefreshCw, Search, Shuffle, Sparkles, Spinner, Square, SquarePen, SquareTerminal, StepHead, StepList, StepNote, StepRow, Switch, Tooltip, Trash2, Users, Wrench, FileText
 } from "@/ui"
 import { interleave, kindOf, type SummaryKind, type SummaryStep, summarize } from "./steps.ts"
@@ -62,8 +63,10 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
   // message naming it is sent (not when picked, so a chip taken back leaves no stray member): the server only calls
   // members, so the send waits for that. The lead and the model stay.
   const available = callable(agents, chat.projectId)
+  // A team named with @ (spec 010) brings its members in; the server routes the message to the one who fits.
+  const teams = teamsIn(useList(teamsAtom), chat.projectId)
   const submit = async (text: string, attachmentIds: ReadonlyArray<string>) => {
-    const joining = toJoin(text, chat.agentIds, available)
+    const joining = toJoin(text, chat.agentIds, available, teams)
     if (joining.length) {
       try {
         await updateChat({ params: { id: chat.id }, payload: { agentIds: [...chat.agentIds, ...joining.map((a) => a.id)] }, reactivityKeys: ["chats", "context"] })
@@ -84,8 +87,13 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
   const second = team[1]
   const projects = useList(projectsAtom)
   const project = projects.find((p) => p.id === chat.projectId)
-  // The side panel and its tab (Changes, Files, Browser, Terminal); undefined: closed.
-  const [panel, setPanel] = useState<SideTab>()
+  // What opens beside the chat, one at a time: the side panel on a tab (Changes, Files, Browser, Terminal), or a task
+  // a teammate was given from here.
+  const [drawer, setDrawer] = useState<{ panel: SideTab } | { task: string }>()
+  const panel = drawer && "panel" in drawer ? drawer.panel : undefined
+  const setPanel = (tab: SideTab | undefined) => setDrawer(tab && { panel: tab })
+  const openTask = (task: string) => setDrawer({ task })
+  const taskLink = useTaskLinks(chat, openTask)
   const pins = usePins(chat.id)
   // A turn ended: an agent may have created or changed a teammate (zorel_create_agent / zorel_update_agent).
   const invalidate = useInvalidate()
@@ -106,7 +114,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
   useEffect(() => {
     if (!previewDone) return
     shownPreviews.current.add(previewDone.id)
-    setPanel("browser")
+    setDrawer({ panel: "browser" })
   }, [previewDone])
   const [focus, setFocus] = useState<Focus>()
   const view = (f: Focus) => {
@@ -125,8 +133,11 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
     id: o.id,
     label: o.label,
     hint: o.hint,
-    icon: <AuthorAvatar agent={o.agent} model={null} size={16} />
+    icon: <AuthorAvatar agent={o.agent} model={null} size={16} />,
+    tint: agentTint(o.agent, agents)
   }))
+  // Then the teams: `@team` reaches the member who fits.
+  for (const x of teams) people.push({ id: x.handle, label: x.name, hint: t("teams.option", { count: x.agentIds.length }), icon: <Users className="size-4" /> })
   const sourcesWith = (files: ReadonlyArray<WorkspaceFile>): ComposerSources => ({
     leads: people,
     // "@": the agents, then the project's files (the agent reads them with its tools).
@@ -149,7 +160,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
         team={team}
         delta={chatDelta(state.messages)}
         panelOpen={!!panel}
-        onPanel={() => setPanel(panel ? undefined : project?.path ? "git" : "changes")}
+        onPanel={() => setPanel(panel ? undefined : "changes")}
         workspace={!!project?.path}
         pins={pins}
         panel={panel}
@@ -161,7 +172,8 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
         onRun={openInBrowser}
       />
       <div className="flex min-h-0 flex-1">
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* Catches clicks on this chat's task links inside the transcript (they stay links: a link's Enter is a click). */}
+      <div className="flex min-w-0 flex-1 flex-col" onClickCapture={taskLink}>
       <Timeline chat={chat} state={state} agents={agents} onView={view} onEdit={setRewind} onStop={() => void interrupt({ payload: { chatId: chat.id } })} at={at} />
       <RewindDialog
         chatId={chat.id}
@@ -192,7 +204,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
             <Clock className="size-4 shrink-0 text-muted" />
             <span className="flex-1 text-secondary">{waitLabel(w, agents)}</span>
             {w.taskChatId && (
-              <Button size="sm" variant="ghost" onPress={() => go({ view: "chat", id: w.taskChatId! })}>
+              <Button size="sm" variant="ghost" onPress={() => openTask(w.taskChatId!)}>
                 {t("status.openTask")}
               </Button>
             )}
@@ -254,7 +266,8 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
         </div>
       </div>
       </div>
-      {panel && (
+      <Drawer open={!!panel}>
+        {panel && (
         <SidePanel
           chat={chat}
           project={project}
@@ -271,7 +284,9 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
           pins={pins}
           shellFocus={shellFocus}
         />
-      )}
+        )}
+      </Drawer>
+      <TaskDrawer chat={chat} taskId={drawer && "task" in drawer ? drawer.task : undefined} onClose={() => setDrawer(undefined)} />
       </div>
     </section>
   )
@@ -332,7 +347,7 @@ function ChatHeader({
 
   return (
     <>
-      <PageHeader className={cx(HEADER, "gap-x-3")}>
+      <PageHeader className={cn(HEADER, "gap-x-3")}>
         <div className="flex min-w-0 flex-1 items-baseline gap-3">
           <h1 className="truncate text-lg font-semibold">{chatTitle(chat)}</h1>
           <Button size="sm" variant="ghost" className="-ml-2 shrink-0 text-muted" onPress={() => go(project ? { view: "project", id: project.id, tab: "overview" } : { view: "home" })}>
@@ -578,7 +593,7 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at }: { 
             <div
               key={item.message.id}
               data-message={item.message.id}
-              className={cx("scroll-mt-6 rounded-card transition-colors duration-700", item.message.at <= chat.summaryUntil && "opacity-55", marked === item.message.id && "bg-accent-faint")}
+              className={cn("scroll-mt-6 rounded-card transition-colors duration-700", item.message.at <= chat.summaryUntil && "opacity-55", marked === item.message.id && "bg-accent-faint")}
               title={item.message.at <= chat.summaryUntil ? t("chat.coveredBySummary") : undefined}
             >
               {item.message.role === "user" ? (
@@ -621,12 +636,12 @@ function Summary({ text }: { text: string }) {
       <DisclosurePill expanded={open} onToggle={() => setOpen(!open)} controls={id} leading={<Sparkles className="size-3.5 text-muted" />}>
         {t("chat.summaryTitle")}
       </DisclosurePill>
-      {open && (
+      <Fold open={open}>
         <div id={id} className="flex flex-col gap-1.5 rounded-card border border-subtle px-4 py-3">
           <p className="text-sm text-dim">{t("chat.summaryHint")}</p>
           <p className="whitespace-pre-wrap text-secondary">{text}</p>
         </div>
-      )}
+      </Fold>
     </div>
   )
 }
@@ -647,7 +662,7 @@ function UserMessage({ message: m, onEdit }: { message: Message; onEdit?: (() =>
                 href={attachmentUrl(a.id)}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex h-control-sm max-w-60 items-center gap-1.5 rounded-full bg-surface px-3 text-sm text-secondary outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent"
+                className="inline-flex h-control-sm max-w-60 items-center gap-1.5 rounded-full border border-subtle bg-raised px-3 text-sm text-secondary outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent"
               >
                 <File className="size-3.5 shrink-0 text-muted" />
                 <span className="truncate">{a.name}</span>
@@ -656,7 +671,7 @@ function UserMessage({ message: m, onEdit }: { message: Message; onEdit?: (() =>
           )}
         </div>
       )}
-      <div className="rounded-sheet bg-surface px-4 py-2.5 text-chat whitespace-pre-wrap">
+      <div className="rounded-sheet border border-subtle bg-raised px-4 py-2.5 text-chat whitespace-pre-wrap">
         <MentionText text={m.text} />
       </div>
       <MessageActions text={m.text} at={m.at} align="end" onEdit={onEdit} />
@@ -675,7 +690,7 @@ function MessageActions({ text, at, details, align = "start", onEdit }: { text: 
     })
   return (
     <div
-      className={cx(
+      className={cn(
         // Laid over the gap below the message, so it takes no height of its own.
         "absolute top-full z-10 flex h-6 items-center gap-0.5 text-sm text-dim opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none",
         align === "end" ? "right-0" : "-left-1.5"
@@ -780,7 +795,7 @@ function Reply({
         {(!continued || pill) && (
           <div className="flex min-h-7 flex-wrap items-center gap-x-2.5 gap-y-2.5">
             {!continued && (
-              <strong className="font-semibold" title={model ? modelLabel(model) : undefined}>
+              <strong className={cn("font-semibold", agent && `tint-text ${agentTint(agent, agents)}`)} title={model ? modelLabel(model) : undefined}>
                 {agentName(agentId, agents)}
               </strong>
             )}
@@ -844,7 +859,7 @@ function AgentReply({
       footer={
         <>
           {ending && (
-            <span className={cx("inline-flex items-center gap-1.5 text-sm", ending.tone === "danger" ? "text-danger" : "text-warning")}>
+            <span className={cn("inline-flex items-center gap-1.5 text-sm", ending.tone === "danger" ? "text-danger" : "text-warning")}>
               <CircleAlert className="size-3.5" />
               {ending.tone === "danger" ? t("chat.failed") : ending.text}
             </span>
@@ -939,7 +954,7 @@ function StoredActivity({ steps, durationMs }: { steps: Message["steps"]; durati
         {refused > 0 && <span className="shrink-0 text-warning">· {t("activity.refused", { count: refused })}</span>}
         {durationMs !== null && durationMs >= 1000 && <span className="shrink-0 text-dim tabular-nums">· {formatDuration(durationMs)}</span>}
       </StepHead>
-      {open && (
+      <Fold open={open}>
         <StepList id={id}>
           {shown.map((s, i) =>
             s.tool === "thought" ? (
@@ -953,7 +968,7 @@ function StoredActivity({ steps, durationMs }: { steps: Message["steps"]; durati
             )
           )}
         </StepList>
-      )}
+      </Fold>
     </div>
   )
 }
@@ -999,7 +1014,7 @@ function StepOutput({ result }: { result: string }) {
   return (
     <>
       {/* Its lines as it wrote them (a test run reads line by line), three of them until "Show all". */}
-      <pre className={cx("overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm whitespace-pre-wrap text-muted", all && "max-h-96")}>
+      <pre className={cn("overflow-auto rounded-control bg-code px-2.5 py-1.5 font-mono text-sm whitespace-pre-wrap text-muted", all && "max-h-96")}>
         {/* Clamped inside the padding, so a fourth line doesn't peek through it. */}
         <span className={all ? undefined : "line-clamp-3"}>{result}</span>
       </pre>
@@ -1062,7 +1077,7 @@ function LiveMessage({ live, agents, receipts, bare, onStop }: { live: LiveTurn;
         <div className="flex h-7 max-w-full min-w-0 items-center gap-2 text-base text-muted">
           <span className="flex w-4 shrink-0 justify-center [&_svg]:size-3.5">{current?.status === "waiting" ? <Clock className="text-accent-text" /> : <Spinner size={12} className="text-muted" />}</span>
           {/* One element for every state, so the sweep doesn't restart each time the label changes. */}
-          <span className={cx("truncate", idle || current?.status === "waiting" ? undefined : "shimmer-text")}>{what}</span>
+          <span className={cn("truncate", idle || current?.status === "waiting" ? undefined : "shimmer-text")}>{what}</span>
           {elapsed >= SHOW_TIME_AFTER_MS && <span className="shrink-0 text-dim tabular-nums">{`· ${formatDuration(elapsed)}`}</span>}
           {onStop && (
             <Tooltip content={t("composer.stop")}>
@@ -1112,7 +1127,7 @@ function LiveSteps({ steps }: { steps: ReadonlyArray<WorkStep> }) {
         {failed > 0 && <span className="shrink-0 text-danger">· {t("activity.errors", { count: failed })}</span>}
         {refused > 0 && <span className="shrink-0 text-warning">· {t("activity.refused", { count: refused })}</span>}
       </StepHead>
-      {open && (
+      <Fold open={open}>
         <StepList id={id}>
           {steps.map((s, i) => {
             const facts = [
@@ -1134,7 +1149,7 @@ function LiveSteps({ steps }: { steps: ReadonlyArray<WorkStep> }) {
             )
           })}
         </StepList>
-      )}
+      </Fold>
     </div>
   )
 }
@@ -1260,9 +1275,11 @@ function ApprovalCard({ approval: a }: { approval: Approval }) {
       <Button size="sm" variant="default" isPending={pending === "approved"} isDisabled={!!pending} onPress={() => choose("approved")}>
         {t("approval.allow")}
       </Button>
-      {details && <pre className="max-h-48 basis-full overflow-auto rounded-control bg-code px-3 py-2 font-mono text-sm text-secondary">{a.args}</pre>}
       {error && <p className="basis-full text-sm text-danger">{error}</p>}
       </div>
+      <Fold open={details}>
+        <pre className="max-h-48 overflow-auto rounded-control bg-code px-3 py-2 font-mono text-sm text-secondary">{a.args}</pre>
+      </Fold>
     </TrayCard>
   )
 }
@@ -1307,9 +1324,9 @@ function ReceiptCard({ receipt: r }: { receipt: Receipt }) {
         <span className="min-w-0 flex-1 truncate text-left" title={summary}>
           {summary}
         </span>
-        <ChevronDown aria-hidden="true" className={cx("size-3.5 shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none", open && "rotate-180")} />
+        <ChevronDown aria-hidden="true" className={cn("size-3.5 shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none", open && "rotate-180")} />
       </Button>
-      {open && (
+      <Fold open={open}>
         <div id={id} className="flex flex-col gap-2 rounded-card border border-subtle bg-code px-3 py-2.5 text-sm">
           {question || !summary.includes(command) ? <p className="text-secondary">{summary}</p> : null}
           {command && (
@@ -1330,7 +1347,7 @@ function ReceiptCard({ receipt: r }: { receipt: Receipt }) {
             </div>
           )}
         </div>
-      )}
+      </Fold>
     </div>
   )
 }

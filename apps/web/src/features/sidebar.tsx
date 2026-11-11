@@ -17,7 +17,7 @@ import { NewProjectButton } from "./project.tsx"
 import { byTurn, ordered, type Statuses, visibleChats } from "./sidebar-order.ts"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  ChevronRight, Fold, Marker, Menu, MoreHorizontal, NavItem, Search, Pause, Play, PanelLeftClose, PanelLeftOpen, AlarmClock, Bot, Brain, Button, ConfirmDialog, ContextMenu, ChartColumn, cx, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, SquarePen, Tooltip, Trash2, useNavReorder, Width
+  ChevronRight, Fold, Marker, Menu, MoreHorizontal, NavItem, Search, Pause, Play, PanelLeftClose, PanelLeftOpen, AlarmClock, Bot, Brain, Button, ConfirmDialog, ContextMenu, ChartColumn, cn, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, LimitRing, Meter, type RingTone, Settings, Spinner, SquarePen, Tooltip, Trash2, useNavReorder, Width
 } from "@/ui"
 
 // Open and folded widths (App animates between them; the desktop title bar lines up with the open one).
@@ -47,7 +47,7 @@ function Places({ route, folded }: { route: Route; folded: boolean }) {
   const places: Place[] = [
     { key: "inbox", icon: <Inbox />, label: t("nav.needsYou"), active: route.view === "inbox", go: () => go({ view: "inbox" }), count: needsYou },
     { key: "agents", icon: <Bot />, label: t("nav.agents"), active: ["agents", "agent", "new-agent", "builder"].includes(route.view), go: () => go({ view: "agents" }) },
-    { key: "routines", icon: <AlarmClock />, label: t("nav.routines"), active: route.view === "routines", go: () => go({ view: "routines" }) },
+    { key: "routines", icon: <AlarmClock />, label: t("nav.routines"), active: route.view === "routines" || route.view === "routine-flow" || route.view === "routine-run", go: () => go({ view: "routines" }) },
     // Pages is a view of Memory (its header's switch): Memory stays current there.
     { key: "memory", icon: <Brain />, label: t("nav.memory"), active: route.view === "memory" || route.view === "pages", go: () => go({ view: "memory" }) }
   ]
@@ -78,7 +78,7 @@ function Places({ route, folded }: { route: Route; folded: boolean }) {
           active={!!p.active}
           onPress={p.go}
           aria-label={p.count ? `${p.label} (${p.count})` : p.label}
-          className={cx("h-9", p.active && "border-transparent bg-control-hover")}
+          className={cn("h-9", p.active && "border-transparent bg-control-hover")}
           trailing={p.count ? <Count n={p.count} /> : undefined}
         >
           {p.label}
@@ -94,7 +94,7 @@ function Head({ route, folded, onToggle }: { route: Route; folded: boolean; onTo
   const label = folded ? t("nav.showSidebar") : t("nav.hideSidebar")
   const button = (
     <Tooltip content={label} placement={folded ? "right" : "bottom"}>
-      <IconButton label={label} onPress={onToggle} className={cx("text-muted", folded && "size-10 rounded-card [&_svg]:size-5")}>
+      <IconButton label={label} onPress={onToggle} className={cn("text-muted", folded && "size-10 rounded-card [&_svg]:size-5")}>
         {folded ? <PanelLeftOpen /> : <PanelLeftClose />}
       </IconButton>
     </Tooltip>
@@ -106,7 +106,7 @@ function Head({ route, folded, onToggle }: { route: Route; folded: boolean; onTo
       <Logo className="mr-1.5 size-5 shrink-0" />
       <span className="min-w-0 flex-1 truncate font-semibold">{t("app.name")}</span>
       <Tooltip content={t("nav.newChat")} placement="bottom">
-        <IconButton label={t("nav.newChat")} onPress={() => go({ view: "home" })} className={cx("text-muted", newChat && "bg-control-hover text-fg")}>
+        <IconButton label={t("nav.newChat")} onPress={() => go({ view: "home" })} className={cn("text-muted", newChat && "bg-control-hover text-fg")}>
           <SquarePen />
         </IconButton>
       </Tooltip>
@@ -125,7 +125,7 @@ function Head({ route, folded, onToggle }: { route: Route; folded: boolean; onTo
 function Foot({ route, folded, paused, onPause }: { route: Route; folded: boolean; paused: boolean; onPause: (paused: boolean) => void }) {
   const side = folded ? "right" : "top"
   return (
-    <div className={cx("flex shrink-0 gap-1", folded ? "flex-col items-start pt-2 pl-2" : "items-center pt-2 pr-2 pl-3.25")}>
+    <div className={cn("flex shrink-0 gap-1", folded ? "flex-col items-start pt-2 pl-2" : "items-center pt-2 pr-2 pl-3.25")}>
       {folded && <UpdateItem />}
       <UsageFoot active={route.view === "usage"} placement={side} />
       {!folded && <span className="flex-1" />}
@@ -160,7 +160,7 @@ function UpdateItem() {
   return (
     <span className="relative">
       <Tooltip content={label} placement="right">
-        <IconButton label={label} isDisabled={!update.ready || !!update.installing} onPress={() => void desktopUpdate.install()} className={cx("relative size-10 rounded-card [&_svg]:size-5", update.ready ? "text-accent-text" : "text-dim")}>
+        <IconButton label={label} isDisabled={!update.ready || !!update.installing} onPress={() => void desktopUpdate.install()} className={cn("relative size-10 rounded-card [&_svg]:size-5", update.ready ? "text-accent-text" : "text-dim")}>
           <Download />
         </IconButton>
       </Tooltip>
@@ -176,7 +176,7 @@ function UpdateCard() {
   return (
     <section aria-label={t("update.title", { version: update.version })} className="mx-2.5 mt-2 flex flex-col gap-2 rounded-card border border-subtle p-3">
       <div className="flex items-center gap-2">
-        <Download className={cx("size-4 shrink-0", update.ready ? "text-accent-text" : "text-muted")} />
+        <Download className={cn("size-4 shrink-0", update.ready ? "text-accent-text" : "text-muted")} />
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{t("update.title", { version: update.version })}</span>
       </div>
       {update.installing ? (
@@ -230,7 +230,7 @@ function RailItem({
         <IconButton
           label={count ? `${label} (${count})` : label}
           onPress={onPress}
-          className={cx("relative rounded-card", small ? "size-8 [&_svg]:size-4" : "size-10 [&_svg]:size-5", active ? "text-accent-text data-hovered:bg-transparent" : "text-muted")}
+          className={cn("relative rounded-card", small ? "size-8 [&_svg]:size-4" : "size-10 [&_svg]:size-5", active ? "text-accent-text data-hovered:bg-transparent" : "text-muted")}
           {...(active && { "aria-current": "page" as const })}
         >
           {children}
@@ -261,19 +261,24 @@ export function Sidebar({
   onPause: (paused: boolean) => void
 }) {
   const projects = useList(projectsAtom)
-  const chats = useList(chatsAtom)
+  // A task a teammate was given lives under the chat it came from (that chat's drawer), not in the list; when it waits
+  // for you, its chat shows it waiting.
+  const allChats = useList(chatsAtom)
+  const chats = allChats.filter((c) => !c.parentId)
   const agents = useList(agentsAtom)
-  const statuses = useStatuses()
+  const own = useStatuses()
+  const statuses = { ...own }
+  for (const c of allChats) if (c.parentId && own[c.id]?.state === "waiting" && own[c.parentId]?.state !== "waiting") statuses[c.parentId] = { ...own[c.id]!, chatId: c.parentId }
   // A chat the server started (a task one agent gave another, a routine's) shows up by its status: read the list
   // again, once per unknown chat (hidden ones, like the Builder's, never join the list).
   const invalidate = useInvalidate()
   const asked = useRef(new Set<string>())
   useEffect(() => {
-    const fresh = Object.keys(statuses).filter((id) => !asked.current.has(id) && !chats.some((c) => c.id === id))
+    const fresh = Object.keys(own).filter((id) => !asked.current.has(id) && !allChats.some((c) => c.id === id))
     if (!fresh.length) return
     for (const id of fresh) asked.current.add(id)
     invalidate(["chats"])
-  }, [statuses, chats, invalidate])
+  }, [own, allChats, invalidate])
 
   const [expanded, setExpanded] = useState(() => readSet(EXPANDED_KEY))
   const [all, setAll] = useState<ReadonlySet<string>>(new Set()) // groups showing every chat
@@ -391,7 +396,7 @@ export function Sidebar({
   }
 
   return (
-    <nav aria-label={t("nav.label")} className={cx("flex shrink-0 flex-col overflow-hidden pb-3", folded ? "w-14" : "w-67")}>
+    <nav aria-label={t("nav.label")} className={cn("flex shrink-0 flex-col overflow-hidden pb-3", folded ? "w-14" : "w-67")}>
       <Head route={route} folded={folded} onToggle={onToggle} />
       <Places route={route} folded={folded} />
 
@@ -402,7 +407,7 @@ export function Sidebar({
       ) : (
       <>
       <ContextMenu label={t("common.more")} menuFor={menuFor} className="mt-4 flex min-h-0 flex-1 flex-col pl-2">
-      <div ref={listRef} onScroll={measure} className={cx("scroll-quiet flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain pr-2.5 pb-2", edges.above && edges.below ? "fade-y" : edges.above ? "fade-top" : edges.below && "fade-bottom")}>
+      <div ref={listRef} onScroll={measure} className={cn("scroll-quiet flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain pr-2.5 pb-2", edges.above && edges.below ? "fade-y" : edges.above ? "fade-top" : edges.below && "fade-bottom")}>
         <section className="flex flex-col gap-px">
           <NavLabel
             hint={t("nav.chatsHint")}
@@ -653,7 +658,7 @@ function ChatItem({
       })}
       trailing={live?.state === "running" ? <Spinner size={11} className="text-muted" label={said ?? ""} /> : formatAge(at)}
       actions={<RowMenu name={chatTitle(chat)}>{menu}</RowMenu>}
-      {...(line && { detail: <span className={cx("truncate", live?.state === "waiting" ? "text-accent-text" : live?.state === "failed" ? "text-danger" : undefined)}>{line}</span> })}
+      {...(line && { detail: <span className={cn("truncate", live?.state === "waiting" ? "text-accent-text" : live?.state === "failed" ? "text-danger" : undefined)}>{line}</span> })}
       nested={nested}
       last={last}
       dragLabel={t("nav.reorder", { name: chatTitle(chat) })}
@@ -694,7 +699,7 @@ function UsageFoot({ active, placement }: { active: boolean; placement: "right" 
         shape="pill"
         aria-label={`${t("nav.usage")}: ${sentence}`}
         onPress={() => go({ view: "usage" })}
-        className={cx("p-0 text-fg data-hovered:text-fg", small ? "size-8" : "size-10", active && "ring-1 ring-strong")}
+        className={cn("p-0 text-fg data-hovered:text-fg", small ? "size-8" : "size-10", active && "ring-1 ring-strong")}
       >
         <LimitRing
           size={small ? 28 : 34}
@@ -732,7 +737,7 @@ function UsageDetail({ rows }: { rows: ReadonlyArray<{ account: ProviderAccount;
               </LimitRing>
               <span className="flex min-w-0 flex-col gap-0.5">
                 <span className="font-medium text-fg">{r.account.label}</span>
-                <span className={cx("text-xs", TONE_TEXT[tone])}>
+                <span className={cn("text-xs", TONE_TEXT[tone])}>
               {r.pace.runsOutAt
                 ? t("nav.usageRunsOut", { window: windowLabel(r.w.id), time: formatTime(r.pace.runsOutAt) })
                 : leftAtReset !== null

@@ -13,7 +13,7 @@ const MAX_AGE_MS = 24 * 60 * 60_000
 const PROVIDERS = ["anthropic", "openai", "openrouter"] as const // the only ones Zorel prices today
 
 // USD per million tokens.
-export interface Price {
+interface Price {
   readonly input: number
   readonly output: number
   readonly cacheRead: number
@@ -24,7 +24,7 @@ type Model = {
   readonly family?: string
   readonly release_date?: string
 }
-export type Catalog = Partial<Record<(typeof PROVIDERS)[number], Record<string, Model>>>
+type Catalog = Partial<Record<(typeof PROVIDERS)[number], Record<string, Model>>>
 
 const priceOf = (m: Model | undefined): Price | undefined =>
   m?.cost?.input === undefined || m.cost.output === undefined ? undefined : { input: m.cost.input, output: m.cost.output, cacheRead: m.cost.cache_read ?? m.cost.input }
@@ -51,7 +51,7 @@ export function priceFor(catalog: Catalog, model: string): Price | undefined {
 }
 
 // Context window in tokens, or null when the catalog doesn't know the model.
-export const windowFor = (catalog: Catalog, model: string): number | null => entryOf(catalog, model)?.limit?.context ?? null
+const windowFor = (catalog: Catalog, model: string): number | null => entryOf(catalog, model)?.limit?.context ?? null
 
 // Our input counts include the cached tokens (they are read at the cache price).
 export function costOf(price: Price | undefined, t: { inputTokens: number; outputTokens: number; cachedTokens: number }): number | null {
@@ -65,7 +65,7 @@ export const billingOf = (model: string): "subscription" | "api" | "local" => {
   return provider === "claude-cli" || provider === "codex-cli" ? "subscription" : provider === "ollama" || provider === "lmstudio" ? "local" : "api"
 }
 
-export interface PricingService {
+interface PricingService {
   readonly cost: (model: string, tokens: { inputTokens: number; outputTokens: number; cachedTokens: number }) => number | null
   readonly contextWindow: (model: string) => number | null
 }

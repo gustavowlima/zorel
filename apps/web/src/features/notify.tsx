@@ -2,30 +2,20 @@
 // chat starts waiting for you, fails, or finishes while you look elsewhere (another chat, or the window hidden).
 // On by default once the person allowed them; the switch is in Settings › General. Clicking one opens the chat.
 // A sound can play for the same moments, on its own switch (it works with the system's notifications off).
+// Routine chats (spec 012) don't use those moments: a routine tells the person through its notices, only when its
+// run found something or needs them.
 import type { ChatStatus } from "@zorel/contracts/events"
 import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
-import { agentsAtom, chatsAtom, useList, useStatuses } from "../client.ts"
+import { agentsAtom, chatsAtom, routinesAtom, useInvalidate, useList, useNotice, useReading, useStatuses } from "../client.ts"
 import { chatTitle, noteworthy, statusLabel } from "../labels.ts"
-import { go, type Route } from "../state.ts"
+import { go, type Route, store, stored } from "../state.ts"
 import { Button, SettingRow, Switch } from "@/ui"
 
 const KEY = "zorel.notify"
 const SOUND_KEY = "zorel.sound"
 const supported = typeof Notification !== "undefined"
 const desktop = (window as { zorelDesktop?: { notificationSettings?: () => Promise<boolean> } }).zorelDesktop
-const stored = (key: string) => {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-const store = (key: string, on: boolean) => {
-  try {
-    localStorage.setItem(key, on ? "1" : "0")
-  } catch {}
-}
 const soundOn = () => stored(SOUND_KEY) === "1"
 
 // A short two-note chime, made on the spot (no audio file to ship): a soft sine, rising a fifth.
@@ -50,23 +40,41 @@ export function chime() {
   }
   setTimeout(() => void ctx.close(), (CHIME.at(-1)!.at + NOTE_S) * 1000 + 100)
 }
-const enabled = () => {
-  try {
-    return supported && Notification.permission === "granted" && localStorage.getItem(KEY) !== "0"
-  } catch {
-    return false
-  }
-}
+const enabled = () => supported && Notification.permission === "granted" && stored(KEY) !== "0"
 
 export function useNotifications(route: Route) {
   const statuses = useStatuses()
   const chats = useList(chatsAtom)
   const agents = useList(agentsAtom)
+  const routines = useReading(routinesAtom).items
+  const invalidate = useInvalidate()
+  const notice = useNotice()
   const last = useRef<Record<string, ChatStatus["state"]>>({})
+  const shown = useRef<string>(undefined)
   useEffect(() => {
+    if (!notice || shown.current === notice.id) return
+    shown.current = notice.id
+    invalidate(["today", "routines"])
+    const looking = !document.hidden && route.view === "chat" && route.id === notice.chatId
+    if (looking) return
+    if (soundOn()) chime()
+    if (!enabled()) return
+    const n = new Notification(notice.title, { body: notice.outcome === "needs" ? t("notify.routineNeeds", { text: notice.text }) : notice.text, tag: notice.id })
+    n.onclick = () => {
+      window.focus()
+      go({ view: "chat", id: notice.chatId })
+      n.close()
+    }
+  }, [notice, route, invalidate])
+  useEffect(() => {
+    const routineChats = new Set(routines.map((r) => r.chatId))
     for (const s of Object.values(statuses)) {
       const kind = noteworthy(last.current[s.chatId], s.state)
       last.current[s.chatId] = s.state
+      if (routineChats.has(s.chatId)) {
+        if (kind) invalidate(["today", "routines"]) // a run ended: the history and Today read it
+        continue
+      }
       const looking = !document.hidden && route.view === "chat" && route.id === s.chatId
       if (!kind || looking) continue
       if (soundOn()) chime()
@@ -79,7 +87,7 @@ export function useNotifications(route: Route) {
         n.close()
       }
     }
-  }, [statuses, chats, agents, route])
+  }, [statuses, chats, agents, route, routines, invalidate])
 }
 
 // Settings › General: on/off (asking the system's permission the first time), a test, and in the desktop app the
@@ -110,7 +118,7 @@ export function NotifySetting() {
         isDisabled={Notification.permission === "denied"}
         onChange={(next) => {
           const save = (v: boolean) => {
-            store(KEY, v)
+            store(KEY, v ? "1" : "0")
             setOn(v && Notification.permission === "granted")
           }
           if (next && Notification.permission !== "granted") void Notification.requestPermission().then((p) => save(p === "granted"))
@@ -133,7 +141,7 @@ export function SoundSetting() {
         aria-label={t("notify.sound")}
         isSelected={on}
         onChange={(v) => {
-          store(SOUND_KEY, v)
+          store(SOUND_KEY, v ? "1" : "0")
           setOn(v)
           if (v) chime()
         }}

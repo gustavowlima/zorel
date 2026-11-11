@@ -6,9 +6,9 @@ import { type AgentPermissions, DEFAULT_PERMISSIONS, type Grant, type McpServer,
 export const permissionsOf = (agent: { permissions?: AgentPermissions } | undefined): AgentPermissions => agent?.permissions ?? DEFAULT_PERMISSIONS
 
 // A server the agent was given nothing for follows the server's own mode.
-export const grantFor = (p: AgentPermissions, server: Pick<McpServer, "id" | "mode">): Grant => p.grants[server.id] ?? (server.mode === "read" ? "read" : "write")
+const grantFor = (p: AgentPermissions, server: Pick<McpServer, "id" | "mode">): Grant => p.grants[server.id] ?? (server.mode === "read" ? "read" : "write")
 
-export interface ToolRoute {
+interface ToolRoute {
   readonly expose: boolean
   readonly approve: boolean
   readonly alwaysKey: string // the rule "Always allow" saves
@@ -20,7 +20,8 @@ export function mcpRoute(p: AgentPermissions, server: Pick<McpServer, "id" | "mo
   const grant = grantFor(p, server)
   const alwaysKey = `${server.id}:${tool.name}`
   const expose = grant === "write" || (grant === "read" && tool.cls === "read")
-  const asks = (tool.cls === "sensitive" && server.mode !== "auto") || (tool.cls === "write" && (server.mode === "approve" || askFirst))
+  // "Ask first" covers every tool that isn't a read, a sensitive one on an "auto" server too.
+  const asks = (tool.cls === "sensitive" && server.mode !== "auto") || (tool.cls === "write" && server.mode === "approve") || (tool.cls !== "read" && askFirst)
   return { expose, approve: expose && asks && !p.always.includes(alwaysKey), alwaysKey }
 }
 
@@ -28,9 +29,25 @@ export function mcpRoute(p: AgentPermissions, server: Pick<McpServer, "id" | "mo
 // whatever the access level, and can't be allowed for good.
 export const RISKY = /\b(buy|pay|purchase|checkout|order|place order|publish|post|send|submit|confirm|delete|remove|transfer|donate|subscribe|book|sign up|comprar|pagar|publicar|enviar|confirmar|apagar|excluir|remover|transferir|assinar)\b/i
 
-export function browserRoute(p: AgentPermissions, name: string, args: Record<string, unknown>, writes: boolean, askFirst: boolean): { approve: boolean; alwaysKey: string | null } {
+// `names`: what the action commits to as the page names it (browser.ts actionNames), not the agent's own label.
+// A host on the local network (not this computer): a router's page, a NAS, a cloud's metadata service. An agent's own
+// servers stay on 127.0.0.1/localhost and don't ask.
+export function privateHost(url: unknown): boolean {
+  if (typeof url !== "string" || !url.trim()) return false // a click or a key has no address
+  let host: string
+  try {
+    host = new URL(String(url).includes("://") ? String(url) : `https://${url}`).hostname.toLowerCase().replace(/^\[|\]$/g, "")
+  } catch {
+    return false
+  }
+  if (host === "localhost" || /^127\./.test(host) || host === "::1") return false
+  return /^(10\.|192\.168\.|169\.254\.|0\.0\.0\.0$|172\.(1[6-9]|2\d|3[01])\.)/.test(host) || /^(fc|fd|fe80)/.test(host) || host.endsWith(".local") || host.endsWith(".internal") || !host.includes(".")
+}
+
+export function browserRoute(p: AgentPermissions, args: Record<string, unknown>, writes: boolean, askFirst: boolean, names = ""): { approve: boolean; alwaysKey: string | null } {
   const label = typeof args.element === "string" ? args.element : ""
-  if (name === "browser_click" && RISKY.test(label)) return { approve: true, alwaysKey: null }
+  if (RISKY.test(`${label} ${names}`)) return { approve: true, alwaysKey: null }
+  if (privateHost(args.url)) return { approve: true, alwaysKey: null } // opening a local-network page always asks
   if (writes && askFirst) return { approve: !p.always.includes("browser"), alwaysKey: "browser" }
   return { approve: false, alwaysKey: null }
 }

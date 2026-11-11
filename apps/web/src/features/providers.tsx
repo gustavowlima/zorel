@@ -12,17 +12,18 @@ import { accountsAtom, agentsAtom, keysAtom, modelsAtom, mutations, useInvalidat
 import { LimitWindows } from "./limits.tsx"
 import { modelName, modelNote, providerLabel, splitModel } from "../labels.ts"
 import { go } from "../state.ts"
-import { Badge, Button, ChevronRight, ConfirmButton, cx, Dot, Input, ListRow, Plus, ProviderIcon, Rows, Section, SettingRow } from "@/ui"
+import { Badge, Button, ChevronRight, ConfirmButton, cn, Dot, Fold, Input, ListRow, Plus, ProviderIcon, Rows, Section, SettingRow } from "@/ui"
 
 type KeyInfo = typeof KeyInfoSchema.Type
 
 type Provider = {
-  readonly id: "claude" | "chatgpt" | "openrouter" | "ollama" | "lmstudio"
+  readonly id: "claude" | "chatgpt" | "openrouter" | "ollama" | "lmstudio" | "gemini" | "opencode" | "antigravity"
   readonly icon: string
   readonly account?: AccountProvider // signs in with an official CLI
   readonly key?: string // takes an API key
   readonly harnesses: ReadonlyArray<string> // model id prefixes it serves
   readonly keyUrl?: string // where to get an API key
+  readonly cli?: true // an agent CLI (ACP): installed on this computer, signed in with its own command
 }
 
 const PROVIDERS: ReadonlyArray<Provider> = [
@@ -30,7 +31,10 @@ const PROVIDERS: ReadonlyArray<Provider> = [
   { id: "chatgpt", icon: "codex", account: "codex", key: "OPENAI_API_KEY", harnesses: ["codex-cli", "openai"], keyUrl: "https://platform.openai.com/api-keys" },
   { id: "openrouter", icon: "openrouter", key: "OPENROUTER_API_KEY", harnesses: ["openrouter"], keyUrl: "https://openrouter.ai/keys" },
   { id: "ollama", icon: "ollama", harnesses: ["ollama"] },
-  { id: "lmstudio", icon: "lmstudio", harnesses: ["lmstudio"] }
+  { id: "lmstudio", icon: "lmstudio", harnesses: ["lmstudio"] },
+  { id: "gemini", icon: "gemini-cli", harnesses: ["gemini-cli"], cli: true },
+  { id: "opencode", icon: "opencode", harnesses: ["opencode"], cli: true },
+  { id: "antigravity", icon: "antigravity", harnesses: ["antigravity"], cli: true }
 ]
 
 // The provider page that sets up a model's harness ("claude-cli" → claude).
@@ -77,7 +81,8 @@ function summaryText(p: Provider, s: State) {
     return signedIn.length > 1 ? t("providers.andMore", { name: first, count: signedIn.length - 1 }) : first
   }
   if (s.key?.set) return t("providers.keySaved")
-  if (s.running) return t("providers.running")
+  if (s.running) return p.cli ? t("providers.installed") : t("providers.running")
+  if (p.cli) return t("providers.notInstalled")
   return p.account ? t("accounts.signedOut") : p.key ? t("providers.noKey") : t("providers.notRunning")
 }
 
@@ -150,6 +155,42 @@ function ProviderList() {
   )
 }
 
+type CliId = "gemini" | "opencode" | "antigravity"
+// Antigravity and OpenCode ship one program per system: Zorel installs it from the official source, checked.
+// Gemini CLI is an npm package (it needs Node.js): its page gives the command instead.
+const INSTALLABLE: ReadonlySet<CliId> = new Set(["antigravity", "opencode"])
+
+function CliInstall({ id, name, installed }: { id: CliId; name: string; installed: boolean }) {
+  const install = useMutation(mutations.installCli)
+  const invalidate = useInvalidate()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+  const doInstall = () => {
+    if (id === "gemini") return
+    setBusy(true)
+    setError(undefined)
+    install({ params: { id }, reactivityKeys: ["models"] })
+      .catch((e: unknown) => setError((e as { message?: string })?.message || t("providers.installFailed", { name })))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <Group title={t("providers.cli")}>
+      <Row title={installed ? t("providers.installed") : t("providers.notInstalled")} hint={installed ? t(`providers.cliHints.${id}`) : t(`providers.cliInstallHints.${id}`)}>
+        {!installed && INSTALLABLE.has(id) ? (
+          <Button size="sm" variant="default" isPending={busy} onPress={doInstall}>
+            {t("providers.install")}
+          </Button>
+        ) : (
+          <Button size="sm" variant="secondary" onPress={() => invalidate(["models"])}>
+            {t("providers.checkAgain")}
+          </Button>
+        )}
+      </Row>
+      {error && <p className="text-sm text-danger">{error}</p>}
+    </Group>
+  )
+}
+
 function ProviderPage({ provider: p }: { provider: Provider }) {
   const s = useStates()(p)
   const agents = useList(agentsAtom).filter((a) => p.harnesses.includes(splitModel(a.model).provider))
@@ -188,7 +229,8 @@ function ProviderPage({ provider: p }: { provider: Provider }) {
 
       {p.account && <SignIns provider={p.account} accounts={s.accounts} />}
       {s.key && <ApiKey info={s.key} name={name} url={p.keyUrl} alternative={!!p.account} />}
-      {!p.account && !p.key && (
+      {p.cli && <CliInstall id={p.id as CliId} name={name} installed={s.running} />}
+      {!p.account && !p.key && !p.cli && (
         <Group title={t("providers.server")}>
           <Row title={s.running ? t("providers.running") : t("providers.notRunning")} hint={t(`model.hints.${p.id === "ollama" ? "ollama" : "lmstudio"}`)}>
             <Button size="sm" variant="secondary" onPress={() => invalidate(["models"])}>
@@ -248,7 +290,7 @@ function SignIns({ provider, accounts }: { provider: AccountProvider; accounts: 
       {accounts.map((a) => (
         <AccountRow key={a.id} account={a} />
       ))}
-      {adding && (
+      <Fold open={adding}>
         <form
           className="flex flex-wrap items-center gap-3 py-3.5"
           onSubmit={(e) => {
@@ -280,7 +322,7 @@ function SignIns({ provider, accounts }: { provider: AccountProvider; accounts: 
             {t("common.cancel")}
           </Button>
         </form>
-      )}
+      </Fold>
       {error && <p className="py-3 text-sm text-danger">{error}</p>}
     </Group>
   )
@@ -307,7 +349,7 @@ function AccountRow({ account: a }: { account: ProviderAccount }) {
             <span className="truncate font-medium">{a.loggedIn ? (a.identity ?? t("accounts.signedIn")) : a.label}</span>
             {a.isDefault && <Badge>{t("accounts.default")}</Badge>}
           </span>
-          <span className={cx("truncate text-sm", a.loggedIn ? "text-muted" : "text-warning")}>{a.loggedIn ? a.label : status}</span>
+          <span className={cn("truncate text-sm", a.loggedIn ? "text-muted" : "text-warning")}>{a.loggedIn ? a.label : status}</span>
         </span>
         <Button size="sm" variant={a.loggedIn ? "secondary" : "default"} isPending={a.loggingIn} isDisabled={a.loggingIn} onPress={signIn}>
           {a.loggedIn ? t("providers.reconnect") : t("accounts.signIn")}

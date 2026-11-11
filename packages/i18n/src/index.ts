@@ -2,6 +2,7 @@
 // the source; another language enters only complete (`satisfies Messages` breaks the typecheck on a
 // missing or extra key). Plurals, numbers, dates and durations go through Intl, no library.
 import { en } from "./en.ts"
+import { ptBR } from "./pt-BR.ts"
 
 type Plural = { readonly one: string; readonly other: string }
 type Leaf = string | Plural
@@ -13,11 +14,35 @@ type Paths<T, P extends string = ""> = {
   [K in keyof T & string]: T[K] extends Leaf ? `${P}${K}` : Paths<T[K], `${P}${K}.`>
 }[keyof T & string]
 export type MessageKey = Paths<Messages>
-export type Params = Readonly<Record<string, string | number>>
+type Params = Readonly<Record<string, string | number>>
 
-// The single place that decides the language. Only "en" exists today.
-const CATALOGS: Record<string, Tree> = { en }
-export const locale = (): string => "en"
+// The single place that decides the language: the person's choice on this computer (Settings › General), else the
+// system's (a Portuguese system gets pt-BR), else English. Read once per page load: changing it reloads the app.
+const LANGUAGES = ["en", "pt-BR"] as const
+export type Language = (typeof LANGUAGES)[number]
+export type LanguagePref = "system" | Language
+const CATALOGS: Record<Language, Tree> = { en, "pt-BR": ptBR }
+const PREF_KEY = "zorel.language"
+export function languagePref(): LanguagePref {
+  try {
+    const v = globalThis.localStorage?.getItem(PREF_KEY)
+    return v === "en" || v === "pt-BR" ? v : "system"
+  } catch {
+    return "system" // storage blocked: follow the system
+  }
+}
+export function setLanguagePref(pref: LanguagePref) {
+  try {
+    if (pref === "system") globalThis.localStorage?.removeItem(PREF_KEY)
+    else globalThis.localStorage?.setItem(PREF_KEY, pref)
+  } catch {}
+}
+const systemLanguage = (): Language => (globalThis.navigator?.language?.toLowerCase().startsWith("pt") ? "pt-BR" : "en")
+let current: Language | undefined
+export const locale = (): Language => {
+  current ??= languagePref() === "system" ? systemLanguage() : (languagePref() as Language)
+  return current
+}
 
 const lookup = (key: string): Leaf | undefined => {
   let node: Leaf | Tree | undefined = CATALOGS[locale()]

@@ -13,6 +13,10 @@ import { HomeView } from "./features/home.tsx"
 import { AgentsView } from "./features/agents.tsx"
 import { BuilderView } from "./features/builder.tsx"
 import { RoutinesView } from "./features/routines.tsx"
+import { FlowEditorView } from "./features/flow-editor.tsx"
+import { RunTraceView } from "./features/run-trace.tsx"
+import { TodayView } from "./features/today.tsx"
+import { useActivity } from "./features/your-day.tsx"
 import { InboxView } from "./features/inbox.tsx"
 import { MemoryView } from "./features/memory.tsx"
 import { PagesView } from "./features/pages.tsx"
@@ -42,6 +46,7 @@ export function App() {
   const sidebar = useSidebar()
   const desktop = document.documentElement.dataset.shell === "desktop" // the desktop app: a title bar runs above everything
   useNotifications(route)
+  useActivity()
   const paused = AsyncResult.getOrElse(useAtomValue(preferencesAtom), () => undefined)?.paused ?? false
   const setPause = useMutation(mutations.pause)
   useRefetchOnSettle()
@@ -107,6 +112,12 @@ function Screen({ route }: { route: Route }) {
       return <AgentsView />
     case "routines":
       return <RoutinesView />
+    case "routine-flow":
+      return <FlowEditorView key={route.id} routineId={route.id} />
+    case "routine-run":
+      return <RunTraceView key={route.runId} routineId={route.id} runId={route.runId} />
+    case "today":
+      return <TodayView />
     case "knowledge":
       return <OldKnowledgeLink id={route.id} />
     case "memory":
@@ -114,7 +125,7 @@ function Screen({ route }: { route: Route }) {
     case "pages":
       return <PagesView selected={route.id} />
     case "skills":
-      return <SettingsView tab="skills" skill={{ selected: route.id, computer: route.computer }} />
+      return <SettingsView tab="skills" skill={{ selected: route.id, file: route.file }} />
     case "usage":
       return <UsageView key={route.agentId ?? "all"} agentId={route.agentId} />
     case "settings":
@@ -122,14 +133,15 @@ function Screen({ route }: { route: Route }) {
     case "builder":
       return <BuilderView key={route.projectId ?? "global"} projectId={route.projectId} />
     case "new-agent":
-      return <AgentView projectId={route.projectId} />
+      // Keyed: each agent (and a new one) is its own form, so nothing of the last one (its tab, its draft) carries over.
+      return <AgentView key={`new:${route.projectId ?? "global"}:${route.teamId ?? ""}`} projectId={route.projectId} {...(route.teamId && { teamId: route.teamId })} />
     case "project": {
       const project = projects.find((p) => p.id === route.id)
       return project ? <ProjectView project={project} tab={route.tab} /> : <NotFound />
     }
     case "agent": {
       const agent = agents.find((a) => a.id === route.id)
-      return agent ? <AgentView agent={agent} projectId={agent.projectId} tab={route.tab} /> : <NotFound />
+      return agent ? <AgentView key={agent.id} agent={agent} projectId={agent.projectId} tab={route.tab} /> : <NotFound />
     }
     case "chat": {
       const chat = chats.find((c) => c.id === route.id)

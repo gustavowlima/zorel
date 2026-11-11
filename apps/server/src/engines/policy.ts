@@ -6,7 +6,7 @@ import type { Access } from "@zorel/contracts"
 import { isAbsolute, relative, resolve } from "node:path"
 import type { NativeApproval } from "#server/engines/session.ts"
 
-export type Decision = "allow" | "ask"
+type Decision = "allow" | "ask"
 
 // Commands that destroy, publish or reach the network always ask in workspace mode (also called by path or quoted:
 // /usr/bin/curl, "curl"). A heuristic: the OS sandbox is the boundary (claude-sdk.ts); without one, see SAFE below.

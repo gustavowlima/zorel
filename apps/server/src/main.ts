@@ -2,15 +2,15 @@ import { discovered, pickedEntries, serializePicks } from "./file-skills.ts"
 import { listFolders } from "./folders.ts"
 import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, CronInvalid, DesktopInstallFailed, GitFailed, isTeammate, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
+import { Api, CliInstallFailed, CronInvalid, FlowConflict, FlowInvalid, type FlowGraph, type RoutineDelivery, type RoutineSchedule, synthesizeFlow, validateFlow, RoutineInvalid, RoutineQueueFull, TeamHandleTaken, TeamInvalid, DesktopInstallFailed, GitFailed, isTeammate, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
 import { ZorelRpc } from "@zorel/contracts/events"
-import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER } from "@zorel/contracts/session"
-import { Effect, Layer, Schema } from "effect"
+import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER, SESSION_STDIN_ENV } from "@zorel/contracts/session"
+import { Effect, Layer, Schema, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
 import { HttpApiBuilder, HttpApiError } from "effect/http-api"
 import { randomBytes, timingSafeEqual } from "node:crypto"
-import { existsSync, mkdirSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, normalize, resolve, sep } from "node:path"
 import { ask, consolidate, DataDir, DbPath, prepare } from "./chat.ts"
@@ -18,12 +18,13 @@ import * as Git from "./git.ts"
 import { MAX_AFTER, snippet } from "./context.ts"
 
 const CHARS_PER_TOKEN = 4 // rough, provider-neutral: the meter says it is an estimate
-import { Store, type Repository } from "./db.ts"
+import { Store, type Repository, type RunRow, type StepRow } from "./db.ts"
 import { PAGES_DIR } from "./page-files.ts"
 import { PageSync } from "./page-sync.ts"
 import { Engines, listModels, splitModel } from "./engines.ts"
 import { claudeCommands } from "./engines/claude-sdk.ts"
 import { API_KEYS, mcpEnvName, oauthKey, Secrets } from "./secrets.ts"
+import { addCliDirsToPath, installCli } from "./cli-install.ts"
 import { desktopCli, desktopStatus, installDesktop } from "./desktop.ts"
 import { computersFor } from "./computer.ts"
 import { isZorel } from "./desktop-apps.ts"
@@ -31,12 +32,17 @@ import { newPairingCode, pairingCode, TELEGRAM_KEY, TelegramChannel, telegramUse
 import { Accounts } from "./accounts.ts"
 import { Actor } from "./access.ts"
 import { Actions, Audit, changed } from "./audit.ts"
-import { LoggerLive } from "./observability.ts"
+import { LoggerLive, redact } from "./observability.ts"
 import { MAX_RUNNING_KEY, parseMaxRunning, Runtime, type RuntimeService } from "./runtime.ts"
-import { RoutineScheduler, runRoutine } from "./routines.ts"
+import { notices, resolveStep, RoutineScheduler, runRoutine } from "./routines.ts"
+import { optionsOf, savedArgsProblem, testToolStep, testTrigger, toolState } from "./flows.ts"
+import { permissionsOf } from "./permissions.ts"
+import { nextScheduled, plannedRuns, todayOf } from "./routine-runs.ts"
+import { briefFrom, noteActivity, profileOf, saveProfile, toContract } from "./time-profile.ts"
 import { createRoutineFor, newToken, nextRun } from "./schedule.ts"
 import { BUILDER } from "./team.ts"
-import { Tools } from "./tools.ts"
+import { handleClash, holds, invalidMembers, teamHandle } from "./agent-teams.ts"
+import { resultText, Tools } from "./tools.ts"
 import { billingOf, Pricing } from "./pricing.ts"
 import { clean, measure } from "./storage.ts"
 import { Workspace } from "./workspace.ts"
@@ -91,13 +97,13 @@ const Projects = HttpApiBuilder.group(Api, "projects", (h) =>
       .handle("update", ({ params, payload }) =>
         Effect.gen(function* () {
           const before = yield* store.project(params.id)
-          // The default agent must be one the project's chats can have: global, or of this project.
-          if (payload.defaultAgentId) {
-            const a = yield* store.agent(payload.defaultAgentId)
-            if (!a || (a.projectId !== null && a.projectId !== params.id)) return yield* notFound()
-          }
+          // Who joins its chats must be in reach of them: global, or of this project (agents and teams alike).
+          const near = (x: { projectId: string | null } | undefined) => !!x && (x.projectId === null || x.projectId === params.id)
+          const inReach = (ids: ReadonlyArray<string> | undefined, all: ReadonlyArray<{ id: string; projectId: string | null }>) => (ids ?? []).every((id) => near(all.find((x) => x.id === id)))
+          if (payload.agentIds?.length && !inReach(payload.agentIds, yield* store.agents())) return yield* notFound()
+          if (payload.teamIds?.length && !inReach(payload.teamIds, yield* store.teams())) return yield* notFound()
           const after = yield* Effect.flatMap(withPath(payload), (p) => found(store.updateProject(params.id, p)))
-          if (before) yield* audit.record(Actions.projectUpdated, { target: after, ...changed(before, after, ["name", "brief", "path", "defaultAgentId"]) })
+          if (before) yield* audit.record(Actions.projectUpdated, { target: after, ...changed(before, after, ["name", "brief", "path", "agentIds", "teamIds"]) })
           return after
         })
       )
@@ -129,22 +135,84 @@ const AGENT_FIELDS = ["name", "title", "description", "instructions", "model", "
 const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
+    const runtime = yield* Runtime
     const audit = yield* Audit
+    const dataDir = yield* DataDir
+    // Teams (spec 010). An agent's name must not take a team's handle, and the teams it joins must be able to hold it.
+    const agentTeamsOk = (agent: { projectId: string | null; id?: string }, name: string | undefined, teamIds: ReadonlyArray<string> | undefined) =>
+      Effect.gen(function* () {
+        const teams = yield* store.teams()
+        const clash = name === undefined ? undefined : handleClash(teamHandle(name), agent, { agents: [], teams })
+        if (clash) return yield* new TeamHandleTaken({ message: clash })
+        for (const id of teamIds ?? []) {
+          const team = teams.find((t) => t.id === id)
+          if (!team) return yield* notFound()
+          if (!holds(team, agent)) return yield* new TeamInvalid({ message: `The team ${team.name} belongs to another project.` })
+        }
+      })
+    // A team's name and members, checked before it is saved. self: the team being changed.
+    const teamOk = (team: { projectId: string | null; id?: string }, name: string | undefined, agentIds: ReadonlyArray<string> | undefined) =>
+      Effect.gen(function* () {
+        const [agents, teams] = [yield* store.agents(), yield* store.teams()]
+        const clash = name === undefined ? undefined : handleClash(teamHandle(name), team, { agents, teams })
+        if (clash) return yield* new TeamHandleTaken({ message: clash })
+        const invalid = agentIds && invalidMembers(team, agentIds, agents)
+        if (invalid) return yield* new TeamInvalid({ message: invalid })
+      })
+    const teamById = (id: string) => Effect.map(store.teams(), (ts) => ts.find((t) => t.id === id))
     return h
       .handle("list", () => store.agents())
+      .handle("teams", () => store.teams())
+      .handle("createTeam", ({ payload }) =>
+        Effect.gen(function* () {
+          if (!(yield* projectOk(store, payload.projectId))) return yield* notFound()
+          yield* teamOk({ projectId: payload.projectId }, payload.name, payload.agentIds)
+          const team = (yield* teamById(yield* store.createTeam(payload)))!
+          yield* audit.record(Actions.teamCreated, { target: team, after: { name: team.name, members: team.agentIds.length } })
+          return team
+        })
+      )
+      .handle("updateTeam", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const before = yield* teamById(params.id)
+          if (!before) return yield* notFound()
+          yield* teamOk({ projectId: before.projectId, id: before.id }, payload.name, payload.agentIds)
+          yield* store.updateTeam(before.id, payload)
+          const after = (yield* teamById(before.id))!
+          yield* audit.record(Actions.teamUpdated, { target: after, ...changed(before, after, ["name", "agentIds"] as const) })
+          return after
+        })
+      )
+      .handle("removeTeam", ({ params }) =>
+        Effect.gen(function* () {
+          const team = yield* teamById(params.id)
+          yield* store.removeTeam(params.id)
+          if (team) yield* audit.record(Actions.teamDeleted, { target: team })
+        })
+      )
       .handle("create", ({ payload }) =>
-        Effect.flatMap(projectOk(store, payload.projectId), (ok) => (ok ? store.createAgent(payload) : notFound())).pipe(
-          Effect.tap((a) => audit.record(Actions.agentCreated, { target: a, after: { name: a.name, model: a.model, access: a.access } }))
-        )
+        Effect.gen(function* () {
+          if (!(yield* projectOk(store, payload.projectId))) return yield* notFound()
+          const { teamIds, ...input } = payload
+          yield* agentTeamsOk({ projectId: payload.projectId }, payload.name, teamIds)
+          const a = yield* store.createAgent(input)
+          if (teamIds) yield* store.setAgentTeams(a.id, teamIds)
+          yield* audit.record(Actions.agentCreated, { target: a, after: { name: a.name, model: a.model, access: a.access } })
+          return a
+        })
       )
       .handle("update", ({ params, payload }) =>
         Effect.gen(function* () {
           const before = yield* store.agent(params.id)
           // "archived" is a switch; the row keeps when (null: not archived). Archiving again keeps the first time.
-          const { archived, ...rest } = payload
+          const { archived, teamIds, ...rest } = payload
+          if (before) yield* agentTeamsOk({ projectId: before.projectId, id: before.id }, rest.name, teamIds)
           const archivedAt = archived === undefined ? undefined : archived ? (before?.archivedAt ?? Date.now()) : null
           const after = yield* found(store.updateAgent(params.id, { ...rest, ...(archivedAt !== undefined && { archivedAt }) }))
+          if (teamIds) yield* store.setAgentTeams(after.id, teamIds)
           if (before) yield* audit.record(Actions.agentUpdated, { target: after, ...changed(before, after, AGENT_FIELDS) })
+          // Archived: its computers stop (their files stay for a restore).
+          if (archived) yield* Effect.tryPromise(() => computersFor(dataDir).stopAgent(params.id)).pipe(Effect.ignore)
           return after
         })
       )
@@ -159,7 +227,7 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
           if (!existing) yield* audit.record(Actions.agentCreated, { target: builder, after: { name: builder.name, model: builder.model, access: builder.access } })
           // Each visit starts fresh. Old Builder conversations are tidied away, but never one opened in the last
           // hour: another tab, window or the desktop app may be in the middle of it (deleting it broke their send).
-          for (const old of yield* store.hiddenChats(payload.projectId, Date.now() - BUILDER_KEEP_MS)) yield* store.removeChat(old.id)
+          for (const old of yield* store.hiddenChats(payload.projectId, Date.now() - BUILDER_KEEP_MS)) yield* store.removeChat(old.id).pipe(Effect.andThen(runtime.release(old.id)))
           const chat = yield* store.createChat({ projectId: payload.projectId, agentIds: [builder.id], model: payload.model, hidden: true })
           return (yield* store.updateChat(chat.id, { title: "Build agents" }))!
         })
@@ -257,6 +325,7 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
           }
         }).pipe(
           Effect.andThen(store.removeChat(params.id)),
+          Effect.andThen(runtime.release(params.id)), // its sessions and open streams end, nothing kept live for it (spec 011)
           Effect.tap(() =>
             Effect.sync(() => {
               rmSync(join(dataDir, "attachments", params.id), { recursive: true, force: true })
@@ -672,6 +741,31 @@ const ToolsGroup = HttpApiBuilder.group(Api, "tools", (h) =>
       .handle("decide", ({ params, payload }) =>
         runtime.decide(params.id, payload.approve ? "approved" : "denied").pipe(Effect.catchTag("ApprovalNotFound", () => notFound()))
       )
+      // Spec 013: the step picker's list, each tool with whether this agent can use it now.
+      .handle("catalog", ({ params, query }) =>
+        Effect.gen(function* () {
+          const server = yield* found(store.mcpServer(params.id))
+          const agent = yield* found(store.agent(query.agentId))
+          const perms = permissionsOf(agent)
+          return yield* Effect.promise(() =>
+            hub.tools(server).then(
+              (tools) => ({ tools: tools.map((t) => ({ name: t.name, description: t.description, cls: t.cls, inputSchema: t.inputSchema, ...(t.outputSchema && { outputSchema: t.outputSchema }), state: toolState(server, hub.refused.has(server.id), t, perms) })), error: null }),
+              (e: unknown) => ({ tools: [], error: e instanceof Error ? e.message : String(e) })
+            )
+          )
+        })
+      )
+      // Ids picked by name: what a read tool lists. A tool that may change something is refused.
+      .handle("options", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const server = yield* found(store.mcpServer(params.id))
+          if (!server.enabled) return yield* new HttpApiError.BadRequest()
+          const tool = (yield* Effect.tryPromise(() => hub.tools(server)).pipe(Effect.mapError(() => new HttpApiError.BadRequest()))).find((t) => t.name === payload.tool)
+          if (tool?.cls !== "read") return yield* new HttpApiError.BadRequest()
+          const res = yield* Effect.tryPromise(() => hub.call(server, tool.name, { ...payload.args })).pipe(Effect.mapError(() => new HttpApiError.BadRequest()))
+          return res.isError ? [] : optionsOf(resultText(res)).slice(0, 500)
+        })
+      )
   })
 )
 
@@ -721,7 +815,8 @@ const FAILOVER_TERMS = "failover_terms_accepted_at"
 const MEMORY_APPROVAL = "memoryApproval" // "review" (default) or "undo": see Preferences
 const MEMORY_MODEL = "memoryModel" // "" (automatic) or a model id: see Preferences
 const preferencesOf = (store: Repository) =>
-  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills"), store.preference(MAX_RUNNING_KEY), store.preference(MEMORY_APPROVAL), store.preference(MEMORY_MODEL)]), ([v, p, n, m, a, mm]) => ({
+  Effect.map(Effect.all([store.preference(FAILOVER_TERMS), store.preference("paused"), store.preference("nativeSkills"), store.preference(MAX_RUNNING_KEY), store.preference(MEMORY_APPROVAL), store.preference(MEMORY_MODEL), profileOf(store)]), ([v, p, n, m, a, mm, time]) => ({
+    timeProfile: toContract(time),
     memoryApproval: a === "undo" ? ("undo" as const) : ("review" as const),
     memoryModel: mm ?? "",
     failoverTermsAcceptedAt: v ? Number(v) : null,
@@ -750,6 +845,7 @@ const useOf = (pids: Iterable<number>, procs: ReadonlyArray<Proc>, cpu: Readonly
   return { cpu: Math.round(c * 10) / 10, memory: m }
 }
 
+const CLI_NAMES = { antigravity: "Antigravity", opencode: "OpenCode" } as const
 const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
   Effect.gen(function* () {
     const secrets = yield* Secrets
@@ -867,6 +963,12 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       // The harnesses' own skills on or off (the next session of each chat picks it up).
       .handle("nativeSkills", ({ payload }) => Effect.andThen(store.setPreference("nativeSkills", payload.enabled ? "1" : "0"), preferencesOf(store)))
       .handle("memoryApproval", ({ payload }) => Effect.andThen(store.setPreference(MEMORY_APPROVAL, payload.approval), preferencesOf(store)))
+      .handle("timeProfile", ({ payload }) =>
+        Effect.gen(function* () {
+          if (!(yield* saveProfile(store, payload))) return yield* Effect.fail(new HttpApiError.BadRequest())
+          return yield* preferencesOf(store)
+        })
+      )
       .handle("memoryModel", ({ payload }) => Effect.andThen(store.setPreference(MEMORY_MODEL, payload.model), preferencesOf(store)))
       .handle("maxRunning", ({ payload }) => Effect.andThen(runtime.setMaxRunning(payload.value), preferencesOf(store)))
       .handle("acceptFailoverTerms", () =>
@@ -884,6 +986,12 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
         Effect.promise(() => installDesktop(dataDir)).pipe(
           Effect.flatMap((r) => (r.ok ? Effect.promise(() => desktopStatus(dataDir)) : Effect.fail(new DesktopInstallFailed({ message: r.error })))),
           Effect.tap(() => audit.record(Actions.desktopInstalled, { target: { id: "agent-desktop", name: "agent-desktop" } }))
+        )
+      )
+      .handle("installCli", ({ params }) =>
+        Effect.promise(() => installCli(params.id)).pipe(
+          Effect.flatMap((r) => (r.ok ? accounts.forgetCliModels : Effect.fail(new CliInstallFailed({ message: r.error })))),
+          Effect.tap(() => audit.record(Actions.cliInstalled, { target: { id: params.id, name: CLI_NAMES[params.id] } }))
         )
       )
       // macOS: opens System Settings with agent-desktop's guide to the Accessibility permission.
@@ -915,13 +1023,14 @@ const RpcHandlers = ZorelRpc.toLayer(
     const runtime = yield* Runtime
     const store = yield* Store
     return {
-      send: (p) => runtime.send(p),
+      send: (p) => noteActivity(store).pipe(Effect.andThen(runtime.send(p))), // the person is here (spec 012)
       steer: (p) => runtime.steer(p.chatId, p.text, p.attachmentIds),
       interrupt: (p) => runtime.interrupt(p.chatId),
       retry: (p) => runtime.retry(p.chatId, p.messageId),
       decide: (p) => runtime.decide(p.approvalId, p.outcome, p.reason),
       subscribeChat: (p) => runtime.subscribeChat(p.chatId),
       subscribeStatus: () => runtime.subscribeStatus,
+      notices: () => Stream.fromPubSub(notices),
       approvals: () => store.openApprovals(),
       runs: (p) => store.runsOf(p.chatId)
     }
@@ -1065,8 +1174,11 @@ const hostname = (value: string | undefined) => {
     return "invalid"
   }
 }
-export const SESSION = process.env[SESSION_ENV] || randomBytes(SESSION_BYTES).toString("hex")
+// From the desktop app: one line on stdin, which it then closes. Else the environment (development), else a new one.
+const fromStdin = process.env[SESSION_STDIN_ENV] === "1" ? readFileSync(0, "utf8").trim() : ""
+export const SESSION = fromStdin || process.env[SESSION_ENV] || randomBytes(SESSION_BYTES).toString("hex")
 delete process.env[SESSION_ENV]
+delete process.env[SESSION_STDIN_ENV]
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
 const cookieOf = (cookie: string | undefined) => (cookie ?? "").split(/;\s*/).find((c) => c.startsWith(`${SESSION_COOKIE}=`))?.slice(SESSION_COOKIE.length + 1) ?? ""
 // Open without the secret: the web app's files, the login link, the OAuth return (state-bound) and routine webhooks (token-bound).
@@ -1137,14 +1249,63 @@ const PagesGroup = HttpApiBuilder.group(Api, "pages", (h) =>
 const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
   Effect.gen(function* () {
     const store = yield* Store
-    const services = yield* Effect.context<Store | Runtime>()
+    const audit = yield* Audit
+    const { hub } = yield* Tools
+    const dataDir = yield* DataDir
+    const services = yield* Effect.context<Store | Runtime | DataDir | Engines | Secrets | Tools>()
+    const zone = Effect.map(profileOf(store), (p) => p.zone)
     const schedule = (cron: string | null) =>
-      Effect.suspend(() => {
-        if (cron === null) return Effect.succeed(null)
-        const next = nextRun(cron)
-        return "error" in next ? Effect.fail(new CronInvalid({ message: next.error })) : Effect.succeed(next.at)
+      Effect.gen(function* () {
+        if (cron === null) return null
+        const next = nextRun(cron, new Date(), yield* zone)
+        return "error" in next ? yield* Effect.fail(new CronInvalid({ message: next.error })) : next.at
       })
     const run = (id: string, key: string, payload?: unknown) => runRoutine(id, key, payload).pipe(Effect.provide(services))
+    // Spec 012: "look first" needs an outside trigger (a watched connector or the webhook); a page to update must be one the routine's agent can reach.
+    const settingsOk = (agentProjectId: string | null, s: { lookFirst?: boolean | undefined; watch?: unknown; webhook?: unknown; delivery?: RoutineDelivery | undefined }) =>
+      Effect.gen(function* () {
+        if (s.lookFirst && !s.watch && !s.webhook) return yield* Effect.fail(new RoutineInvalid({ message: "Look first works with a watched connector or the webhook." }))
+        const pageId = s.delivery?.pageId
+        if (s.delivery?.channels.includes("page") && !pageId) return yield* Effect.fail(new RoutineInvalid({ message: "Pick the page to update." }))
+        if (pageId) {
+          const page = yield* store.page(pageId)
+          const reach = ["user", agentProjectId && `project:${agentProjectId}`].filter(Boolean)
+          if (!page || !(reach.includes(page.scope) || page.scope.startsWith("agent:"))) return yield* Effect.fail(new RoutineInvalid({ message: "That page isn't one this routine can update." }))
+        }
+        // Spec 013: each connector destination is a tool that writes, its text field is one of its inputs, and the rest
+        // fits the tool's description. A connector that doesn't answer now isn't held against the save.
+        for (const d of s.delivery?.connectors ?? []) {
+          const server = yield* store.mcpServer(d.serverId)
+          if (!server) return yield* Effect.fail(new RoutineInvalid({ message: "That connector isn't here anymore." }))
+          const tools = yield* Effect.promise(() => hub.tools(server).catch(() => undefined))
+          if (!tools) continue
+          const tool = tools.find((x) => x.name === d.tool)
+          if (!tool || tool.cls === "read") return yield* Effect.fail(new RoutineInvalid({ message: `${server.name} has no tool ${d.tool} that posts.` }))
+          if (!(d.textField in ((tool.inputSchema as { properties?: object }).properties ?? {}))) return yield* Effect.fail(new RoutineInvalid({ message: `${d.tool} has no input ${d.textField}.` }))
+          const bad = savedArgsProblem(tool.inputSchema, { ...d.args, [d.textField]: "text" })
+          if (bad) return yield* Effect.fail(new RoutineInvalid({ message: `${d.tool}: ${bad.field ? `${bad.field}: ` : ""}${bad.problem}` }))
+        }
+      })
+    // Spec 013: the flow's own rules (shared with the editor), then each tool step against its connector: the tool is
+    // there and its fixed inputs fit. A connector that doesn't answer now isn't held against the save.
+    const flowOk = (graph: FlowGraph) =>
+      Effect.gen(function* () {
+        const checked = validateFlow(graph)
+        if (!checked.ok) return yield* Effect.fail(new FlowInvalid({ message: checked.problem, ...(checked.nodeId && { nodeId: checked.nodeId }), ...(checked.field && { field: checked.field }) }))
+        for (const n of graph.nodes) {
+          const c = n.kind === "tool" ? n.config : n.kind === "trigger" && (n.config.on === "watch" || n.config.on === "message") ? { serverId: n.config.serverId!, tool: n.config.tool!, args: n.config.args ?? {} } : undefined
+          if (!c) continue
+          const server = yield* store.mcpServer(c.serverId)
+          if (!server) return yield* Effect.fail(new FlowInvalid({ message: "That connector isn't here anymore.", nodeId: n.id, field: "serverId" }))
+          const tools = yield* Effect.promise(() => hub.tools(server).catch(() => undefined))
+          if (!tools) continue
+          const tool = tools.find((t) => t.name === c.tool)
+          if (!tool) return yield* Effect.fail(new FlowInvalid({ message: `${server.name} has no tool ${c.tool}.`, nodeId: n.id, field: "tool" }))
+          if (n.kind === "trigger" && tool.cls !== "read") return yield* Effect.fail(new FlowInvalid({ message: "A watch can only use a tool that reads.", nodeId: n.id, field: "tool" }))
+          const bad = savedArgsProblem(tool.inputSchema, c.args)
+          if (bad) return yield* Effect.fail(new FlowInvalid({ message: bad.problem, nodeId: n.id, field: bad.field ? `args.${bad.field}` : "args" }))
+        }
+      })
     return h
       .handle("list", () => store.routines())
       .handle("create", ({ payload }) =>
@@ -1152,7 +1313,8 @@ const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
           const agent = yield* store.agent(payload.agentId)
           if (!agent) return yield* notFound()
           if (payload.watch && !(yield* store.mcpServer(payload.watch.serverId))) return yield* notFound()
-          return yield* createRoutineFor(store, agent, payload).pipe(Effect.mapError((message) => new CronInvalid({ message })))
+          yield* settingsOk(agent.projectId, payload)
+          return yield* createRoutineFor(store, agent, payload, yield* zone).pipe(Effect.mapError((message) => new CronInvalid({ message })))
         })
       )
       .handle("update", ({ params, payload }) =>
@@ -1161,9 +1323,18 @@ const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
           if (!r) return yield* notFound()
           const cron = payload.cron === undefined ? r.cron : payload.cron
           const enabled = payload.enabled ?? r.enabled
-          const nextRunAt = enabled ? yield* schedule(cron) : null
+          // Spec 013: turning on a routine whose steps or destinations use a connector that's gone is refused.
+          if (enabled && !r.enabled) {
+            const graph = r.version !== null ? yield* store.versionOf(r.id, r.version) : undefined
+            const used = [...(graph?.nodes ?? []).flatMap((n) => (n.kind === "tool" ? [n.config.serverId] : n.kind === "trigger" && n.config.serverId ? [n.config.serverId] : [])), ...(r.delivery.connectors ?? []).map((d) => d.serverId)]
+            for (const id of new Set(used)) if (!(yield* store.mcpServer(id))) return yield* Effect.fail(new RoutineInvalid({ message: "A step or destination uses a connector that isn't here anymore. Fix it in the steps first." }))
+          }
+          const nextRunAt = !enabled ? null : r.schedule ? nextScheduled(r.schedule, yield* zone, Date.now()) : yield* schedule(cron)
           const token = payload.webhook === undefined ? r.token : payload.webhook ? (r.token ?? newToken()) : null
-          return (yield* store.updateRoutine(r.id, { name: payload.name, prompt: payload.prompt, cron, enabled, nextRunAt, token }))!
+          const agent = yield* store.agent(r.agentId)
+          yield* settingsOk(agent?.projectId ?? null, { lookFirst: payload.lookFirst ?? r.lookFirst, watch: r.watch, webhook: token, delivery: payload.delivery ?? r.delivery })
+          const { onDayStart, lookFirst, delivery, tell, urgent } = payload
+          return (yield* store.updateRoutine(r.id, { name: payload.name, prompt: payload.prompt, cron, enabled, nextRunAt, token, onDayStart, lookFirst, delivery, tell, urgent }))!
         })
       )
       .handle("remove", ({ params }) => store.removeRoutine(params.id))
@@ -1172,11 +1343,158 @@ const RoutinesGroup = HttpApiBuilder.group(Api, "routines", (h) =>
         Effect.gen(function* () {
           const r = yield* store.routineByToken(params.token)
           if (!r || !r.enabled) return yield* notFound()
-          yield* run(r.id, `hook-${Date.now()}`, payload)
+          if ((yield* run(r.id, `hook-${Date.now()}`, payload ?? {})) === "full") return yield* Effect.fail(new RoutineQueueFull({ message: "20 events are already waiting for this routine. Try again later." }))
+        })
+      )
+      .handle("history", ({ params, query }) =>
+        Effect.gen(function* () {
+          if (!(yield* store.routine(params.id))) return yield* notFound()
+          return (yield* store.routineRunsOf(params.id, query.before)).map(({ payload: _p, ...run }) => run)
+        })
+      )
+      .handle("clearHistory", ({ params }) =>
+        Effect.gen(function* () {
+          const r = yield* store.routine(params.id)
+          if (!r) return yield* notFound()
+          yield* store.clearRoutineRuns(r.id)
+          yield* audit.record(Actions.routineHistoryCleared, { target: { id: r.id, name: r.name } })
+        })
+      )
+      .handle("week", ({ query }) =>
+        Effect.gen(function* () {
+          if (!(query.to > query.from) || query.to - query.from > 31 * 24 * 60 * 60_000) return yield* Effect.fail(new HttpApiError.BadRequest())
+          const p = yield* profileOf(store)
+          const runs = (yield* store.routineRunsBetween(query.from, query.to)).map(({ payload: _p, report: _r, ...run }) => run)
+          return { runs, planned: plannedRuns(yield* store.routines(), p.zone, p.start, Math.max(query.from, Date.now()), query.to) }
+        })
+      )
+      .handle("today", () =>
+        Effect.gen(function* () {
+          const from = yield* briefFrom(store)
+          const t = todayOf((yield* store.routineRunsBetween(from, Date.now() + 1)).map(({ payload: _p, report: _r, ...run }) => run), from)
+          return { from, ...t }
+        })
+      )
+      .handle("todayRead", ({ payload }) => store.readRoutineRuns(payload.runIds))
+      .handle("activity", () => noteActivity(store).pipe(Effect.asVoid))
+      // ---------- flows (spec 013) ----------
+      .handle("flow", ({ params }) =>
+        Effect.gen(function* () {
+          const r = yield* found(store.routine(params.id))
+          const graph = r.version !== null ? yield* store.versionOf(r.id, r.version) : undefined
+          return { version: graph ? r.version : null, graph: graph ?? synthesizeFlow(r) }
+        })
+      )
+      .handle("flowVersion", ({ params }) =>
+        Effect.gen(function* () {
+          const graph = yield* store.versionOf(params.id, params.n)
+          return graph ? { version: params.n, graph } : yield* notFound()
+        })
+      )
+      .handle("saveFlow", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const r = yield* found(store.routine(params.id))
+          if (payload.baseVersion !== r.version) return yield* Effect.fail(new FlowConflict({ message: "The routine was saved elsewhere meanwhile. Reload it to see the newer version.", version: r.version }))
+          yield* flowOk(payload.graph)
+          // The trigger sets when the routine runs (the clock, the watch and the webhook read these columns).
+          const t = payload.graph.nodes.find((n) => n.kind === "trigger")!.config as Extract<FlowGraph["nodes"][number], { kind: "trigger" }>["config"]
+          const cron = t.on === "schedule" ? (t.cron ?? null) : null
+          const timed = SCHEDULES[t.on]?.(t) ?? null
+          const triggerId = payload.graph.nodes.find((n) => n.kind === "trigger")!.id
+          const nextRunAt = !r.enabled ? null : timed ? nextScheduled(timed, yield* zone, Date.now()) : yield* schedule(cron).pipe(Effect.mapError((e) => new FlowInvalid({ message: e.message, nodeId: triggerId, field: "cron" })))
+          if (timed?.kind === "once" && nextRunAt === null) return yield* Effect.fail(new FlowInvalid({ message: "That time has already passed.", nodeId: triggerId, field: "date" }))
+          const watching = t.on === "watch" || t.on === "message"
+          const watch = watching && t.serverId && t.tool ? { serverId: t.serverId, tool: t.tool, args: t.args ?? {}, ...(t.more?.length && { more: t.more }), ...(t.filter?.trim() && { filter: t.filter.trim() }), ...(t.on === "message" && { each: true }) } : null
+          const prompt = payload.graph.nodes.find((n) => n.kind === "agent")?.config as { prompt?: string } | undefined
+          const version = yield* store.addVersion(r.id, payload.graph)
+          yield* store.updateRoutine(r.id, {
+            cron, nextRunAt, watch, schedule: timed, watchEvery: t.every ?? 5, ...(channelsOf(watch) !== channelsOf(r.watch) && { watchSeen: null, watchAt: null }),
+            onDayStart: t.on === "dayStart", lookFirst: watching && !!t.lookFirst, token: t.on === "webhook" ? (r.token ?? newToken()) : null,
+            ...(prompt?.prompt && { prompt: prompt.prompt.slice(0, 8000) })
+          })
+          return { version }
+        })
+      )
+      .handle("testStep", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const r = yield* found(store.routine(params.id))
+          const node = payload.graph.nodes.find((n) => n.id === payload.nodeId)
+          if (node?.kind !== "tool") return yield* Effect.fail(new FlowInvalid({ message: "Only a connector tool step can be tested alone.", nodeId: payload.nodeId }))
+          return yield* testToolStep(r, node).pipe(Effect.provide(services))
+        })
+      )
+      // A destination tested without sending (FR-016): checked like a save, then the arguments it would post, with the
+      // routine's last result in its text field.
+      .handle("testDelivery", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const r = yield* found(store.routine(params.id))
+          const agent = yield* store.agent(r.agentId)
+          yield* settingsOk(agent?.projectId ?? null, { delivery: { channels: [], connectors: [payload] } })
+          const text = (yield* store.lastReport(r.id))?.report || "(the routine's result)"
+          const shown = yield* Effect.promise(() => redact(JSON.stringify({ ...payload.args, [payload.textField]: text }, null, 2)))
+          return { output: shown, dry: true, error: null }
+        })
+      )
+      .handle("testNewTrigger", ({ payload }) =>
+        Effect.gen(function* () {
+          yield* found(store.agent(payload.agentId))
+          return yield* testTrigger({ watch: null, watchSeen: null, agentId: payload.agentId, prompt: payload.prompt }, payload.trigger, yield* zone).pipe(Effect.provide(services))
+        })
+      )
+      .handle("testTrigger", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const r = yield* found(store.routine(params.id))
+          const trigger = payload.graph.nodes.find((n) => n.kind === "trigger")
+          if (trigger?.kind !== "trigger") return yield* Effect.fail(new FlowInvalid({ message: "A routine has exactly one trigger." }))
+          return yield* testTrigger(r, trigger.config, yield* zone).pipe(Effect.provide(services))
+        })
+      )
+      .handle("runDetail", ({ params }) =>
+        Effect.gen(function* () {
+          const run = yield* found(store.routineRun(params.runId))
+          if (run.routineId !== params.id) return yield* notFound()
+          return { run: runOut(run), steps: (yield* store.stepsOfRun(run.id)).map(stepOut) }
+        })
+      )
+      .handle("stepOutput", ({ params }) =>
+        Effect.gen(function* () {
+          const run = yield* found(store.routineRun(params.runId))
+          const step = yield* found(store.runStep(params.stepId))
+          if (run.routineId !== params.id || step.runId !== run.id) return yield* notFound()
+          // The path comes from the database (written by flows.ts under dataDir/runs), never from the request.
+          const text = step.outputFile ? yield* Effect.promise(() => Bun.file(join(dataDir, step.outputFile!)).text().catch(() => step.output)) : step.output
+          return { text }
+        })
+      )
+      .handle("uncertain", () =>
+        Effect.gen(function* () {
+          const out = []
+          for (const step of yield* store.uncertainSteps()) {
+            const run = yield* store.routineRun(step.runId)
+            if (run) out.push({ routineId: run.routineId, runId: run.id, stepId: step.id, nodeId: step.nodeId, at: step.startedAt })
+          }
+          return out
+        })
+      )
+      .handle("resolveStep", ({ params, payload }) =>
+        Effect.gen(function* () {
+          const run = yield* found(store.routineRun(params.runId))
+          if (run.routineId !== params.id) return yield* notFound()
+          if (!(yield* resolveStep(run.id, payload.stepId, payload.choice).pipe(Effect.provide(services)))) return yield* new HttpApiError.BadRequest()
         })
       )
   })
 )
+
+const runOut = ({ payload: _p, ...run }: RunRow) => run
+// What a watch reads (a change starts it over, its first poll only learning); its filter and runs-per-item don't.
+const channelsOf = (w: { serverId: string; tool: string; args: unknown; more?: unknown } | null) => (w ? JSON.stringify([w.serverId, w.tool, w.args, w.more ?? []]) : "")
+// The flow trigger kinds that run at set times other than cron (spec 013), as the routine's schedule column.
+const SCHEDULES: Partial<Record<string, (t: { date?: string | undefined; time?: string | undefined; day?: number | undefined }) => RoutineSchedule | null>> = {
+  once: (t) => (t.date && t.time ? { kind: "once", date: t.date, time: t.time } : null),
+  monthly: (t) => (t.day && t.time ? { kind: "monthly", day: t.day, time: t.time } : null)
+}
+const stepOut = ({ outputFile, mayHaveWritten: _m, ...s }: StepRow) => ({ ...s, full: outputFile !== null })
 
 export const AppLive = (webDir?: string) =>
   Layer.mergeAll(
@@ -1206,7 +1524,7 @@ export const services = (dbPath: string, dataDir: string, secrets?: Layer.Layer<
   return Layer.mergeAll(Layer.provideMerge(Runtime.layer, withAccounts), Actor.local)
 }
 
-export interface StartOptions {
+interface StartOptions {
   readonly port?: number
   readonly dataDir?: string
   readonly webDir?: string
@@ -1234,6 +1552,8 @@ export async function start(o: StartOptions = {}) {
     BunRuntime.runMain
   )
   watchParent()
+  addCliDirsToPath() // agent CLIs installed in their usual folders are found even when this process's PATH lacks them
+  process.on("exit", () => computersFor(dataDir).stopAll()) // the containers this run used don't outlive it
   // The desktop app brings its own secret; elsewhere this link is how the owner's browser gets in.
   if (!process.env.ZOREL_PARENT_PID) console.info(`Open Zorel: ${process.env.ZOREL_WEB_ORIGIN ?? `http://127.0.0.1:${port}`}${LOGIN_PATH}?t=${SESSION}`)
   return `http://127.0.0.1:${port}`

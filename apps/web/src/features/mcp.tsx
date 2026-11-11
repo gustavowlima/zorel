@@ -2,7 +2,7 @@
 // (OAuth in the browser, or a token, or nothing). Servers: mode, on/off, test the connection and see the tools each
 // mode exposes, add local (command) or remote (URL) servers. Secrets go to the system keychain.
 import type { McpServer, ToolInfo } from "@zorel/contracts"
-import { t } from "@zorel/i18n"
+import { type Messages, t } from "@zorel/i18n"
 import { type FormEvent, type ReactNode, useEffect, useState } from "react"
 import { type SimpleIcon, siAirtable, siAtlassian, siClickup, siFigma, siGithub, siHuggingface, siIntercom, siLinear, siNotion, siPaypal, siSentry, siSquare, siStripe, siSupabase, siTodoist, siVercel, siWebflow, siWix } from "simple-icons"
 import { splitCommand } from "../labels.ts"
@@ -10,7 +10,7 @@ import { AsyncResult } from "effect/reactivity"
 import { useAtomValue } from "@effect/atom-react"
 import { mutations, serversAtom, signedInAtom, useInvalidate, useMutation, useReading } from "../client.ts"
 import { ReadingState } from "./reading.tsx"
-import { Badge, Button, Check, Code, ConfirmButton, Dialog, EmptyState, Field, IconButton, IconTile, Input, Menu, MenuItem, MenuSeparator, MoreHorizontal, Plug, Plus, RefreshCw, Rows, Section, Select, Spinner, Switch, Textarea, Trash2 } from "@/ui"
+import { Badge, BrandMark, Button, Check, Code, ConfirmButton, Dialog, EmptyState, Field, Fold, IconButton, Input, Menu, MenuItem, MenuSeparator, MoreHorizontal, Plug, Plus, RefreshCw, Rows, Section, Select, Spinner, Switch, Textarea, Trash2 } from "@/ui"
 
 const MODES = ["read", "approve", "auto"] as const
 const modeOptions = () => MODES.map((m) => ({ value: m, label: t(`mcp.modes.${m}`) }))
@@ -44,6 +44,7 @@ export function McpSection({ projectId }: { projectId: string | null }) {
         <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["servers"])} />
         {!reading.loading && !reading.failed && servers.length === 0 && (
           <EmptyState
+            inset
             icon={<Plug />}
             title={t("mcp.empty")}
             hint={t("mcp.emptyHint")}
@@ -65,11 +66,11 @@ export function McpSection({ projectId }: { projectId: string | null }) {
       </Section>
       {/* Reference, quieter than the list. */}
       <Section title={t("mcp.modesTitle")}>
-        <dl className="grid grid-cols-3 gap-x-6 gap-y-1.5 text-sm">
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-sm sm:grid-cols-4">
           {MODES.map((m) => (
             <div key={m} className="contents">
               <dt className="text-secondary">{t(`mcp.modes.${m}`)}</dt>
-              <dd className="col-span-2 text-muted">{t(`mcp.modeHints.${m}`)}</dd>
+              <dd className="mb-1.5 text-muted sm:col-span-3 sm:mb-0">{t(`mcp.modeHints.${m}`)}</dd>
             </div>
           ))}
         </dl>
@@ -101,6 +102,7 @@ function ServerRow({ server: s }: { server: McpServer }) {
   return (
     <div className="flex flex-col gap-3 py-3.5">
       <div className="flex flex-wrap items-center gap-3">
+        <BrandMark brand={iconOfServer(s)} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="font-medium">
             {s.name}
@@ -120,9 +122,9 @@ function ServerRow({ server: s }: { server: McpServer }) {
       </div>
       {failed && <p className="text-sm text-danger">{failed}</p>}
       {tools?.error && <p className="text-sm text-danger">{t("mcp.failed", { error: tools.error })}</p>}
-      {tools && !tools.error && (
+      <Fold open={!!tools && !tools.error}>
         <ul className="flex flex-col gap-1.5">
-          {tools.tools.map((tool) => (
+          {tools?.tools.map((tool) => (
             <li key={tool.name} className={visible(tool.cls) ? "flex items-center gap-2" : "flex items-center gap-2 opacity-40"} title={visible(tool.cls) ? tool.description : t("mcp.hiddenInReadMode")}>
               <Badge tone={CLS_TONE[tool.cls]}>{t(`mcp.cls.${tool.cls}`)}</Badge>
               <Code>{tool.name}</Code>
@@ -130,7 +132,7 @@ function ServerRow({ server: s }: { server: McpServer }) {
             </li>
           ))}
         </ul>
-      )}
+      </Fold>
     </div>
   )
 }
@@ -210,7 +212,8 @@ function NewServer({ projectId, onDone }: { projectId: string | null; onDone: ()
 
 // The connectors: hosted MCP servers that sign in with OAuth (discovery + dynamic registration, oauth.ts), GitHub
 // with a token (its server doesn't register clients), and a few that need nothing. Writes wait for approval.
-type Connector = { id: string; name: string; url?: string; command?: string; auth: "oauth" | "token" | "none"; tokenUrl?: string; icon?: SimpleIcon }
+// The id is a key of connectors.about: a connector without its description doesn't compile.
+type Connector = { id: keyof Messages["connectors"]["about"]; name: string; url?: string; command?: string; auth: "oauth" | "token" | "none"; tokenUrl?: string; icon?: SimpleIcon }
 const CONNECTORS: ReadonlyArray<Connector> = [
   { id: "github", name: "GitHub", url: "https://api.githubcopilot.com/mcp/", auth: "token", tokenUrl: "https://github.com/settings/personal-access-tokens/new", icon: siGithub },
   { id: "notion", name: "Notion", url: "https://mcp.notion.com/mcp", auth: "oauth", icon: siNotion },
@@ -239,23 +242,11 @@ const CONNECTORS: ReadonlyArray<Connector> = [
   { id: "playwright", name: "Playwright", command: "npx -y @playwright/mcp@latest", auth: "none" }
 ]
 const matches = (c: Connector, s: McpServer) => (c.url ? s.url === c.url : [s.command, ...s.args].join(" ") === c.command)
+// The brand mark of a server added from the catalog (none for a custom one).
+export const iconOfServer = (s: McpServer) => CONNECTORS.find((c) => matches(c, s))?.icon
 const WAIT_MS = 5 * 60_000
 const FAILED = () => ({ ok: false, text: t("connectors.failed") })
 
-// A brand's mark (simple-icons, CC0) in one color on a neutral tile, like the rest of the UI; a plug when there's none.
-function ConnectorLogo({ icon }: { icon: SimpleIcon | undefined }) {
-  return (
-    <IconTile>
-      {icon ? (
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-          <path d={icon.path} />
-        </svg>
-      ) : (
-        <Plug />
-      )}
-    </IconTile>
-  )
-}
 
 const NO_STATE: { signedIn: ReadonlyArray<string>; refused: ReadonlyArray<string> } = { signedIn: [], refused: [] }
 
@@ -277,7 +268,7 @@ function Connectors({ servers }: { servers: ReadonlyArray<McpServer> }) {
   }, [waiting, signedIn, invalidate])
   return (
     <Section title={t("connectors.title")} description={t("connectors.intro")}>
-      <div className="grid items-start gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-2 xl:grid-cols-2">
         {CONNECTORS.map((c) => {
           const server = servers.find((s) => matches(c, s))
           // attention: the service refused what Zorel holds, or an OAuth sign-in never finished.
@@ -344,7 +335,7 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
     }
   }
   const disconnect = () => server && void remove({ params: { id: server.id }, reactivityKeys: ["servers"] }).catch(() => setResult(FAILED()))
-  const hint: ReactNode = result && !busy ? result.text : waiting ? t("connectors.waiting") : status === "attention" ? t("connectors.attention") : t(`connectors.about.${c.id}` as "connectors.about.github")
+  const hint: ReactNode = result && !busy ? result.text : waiting ? t("connectors.waiting") : status === "attention" ? t("connectors.attention") : t(`connectors.about.${c.id}`)
   const menu = server && (
     <Menu
       label={t("connectors.actions", { name: c.name })}
@@ -367,7 +358,7 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
   return (
     <div className="flex flex-col gap-3 rounded-card border border-subtle p-3">
       <div className="flex items-center gap-3">
-        <ConnectorLogo icon={c.icon} />
+        <BrandMark brand={c.icon} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate font-medium">{c.name}</span>
           <span className={result?.ok === false ? "truncate text-sm text-danger" : result?.ok ? "truncate text-sm text-success" : status === "attention" && !waiting ? "truncate text-sm text-warning" : "truncate text-sm text-muted"}>{hint}</span>
@@ -387,7 +378,7 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
         )}
         {menu}
       </div>
-      {asking && (
+      <Fold open={asking}>
         <form
           className="flex flex-col gap-2"
           onSubmit={(e) => {
@@ -410,7 +401,7 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
             )}
           </div>
         </form>
-      )}
+      </Fold>
     </div>
   )
 }

@@ -2,17 +2,17 @@
 // kill -9 mid-turn becomes `interrupted` with the partial text on the next boot.
 import { expect, test } from "bun:test"
 import { type ChatEvent, type ChatStatus, ErrorCode } from "@zorel/contracts/events"
-import { Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer, Logger, Stream } from "effect"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Accounts } from "./accounts.ts"
 import { Audit } from "./audit.ts"
 import { BrowserService } from "./browser.ts"
-import { consolidate, DataDir, mapEarlierFacts } from "./chat.ts"
+import { Busy, consolidate, DataDir, mapEarlierFacts, NotFound } from "./chat.ts"
 import { Store } from "./db.ts"
 import { Engines, type EngineEvent } from "./engines.ts"
-import { Runtime, replyTiming, runawayGuard } from "./runtime.ts"
+import { quietly, Runtime, replyTiming, runawayGuard } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
 import { Tools } from "./tools.ts"
 import { Pricing } from "./pricing.ts"
@@ -595,6 +595,35 @@ test("failover: a subscription limit holds the account until its reset, then the
   }))
 })
 
+test("failover (spec 011): a limit on a route without an account holds until its reset, across a restart; a past one is dropped", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "zorel-aside-"))
+  const db = join(dir, "zorel.db")
+  const calls: string[] = []
+  const until = Date.now() + 2 * 60 * 60_000 // two hours: well past the 10 minutes other failures get
+  let chatId = ""
+  await runWith(db, scripted({ "a/m": [{ message: "usage limit reached", failure: { reason: "limit", until } }] }, calls), Effect.gen(function* () {
+    const store = yield* Store
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "a/m" })
+    chatId = chat.id
+    yield* store.updateChat(chat.id, { failover: [{ model: "b/m", accountId: null }] })
+    yield* sendAndWait(chat.id, "one")
+    expect(calls).toEqual(["a/m", "b/m"])
+    expect(JSON.parse((yield* store.preference("setAsideRoutes"))!)).toEqual({ "provider:a": { until, reason: "limit" } })
+  }))
+  // A restart: the route is still set aside, so the turn goes straight to the alternative.
+  await runWith(db, scripted({}, calls), Effect.gen(function* () {
+    yield* sendAndWait(chatId, "two")
+    expect(calls).toEqual(["a/m", "b/m", "b/m"])
+    // Its reset now in the past: the next start drops it.
+    yield* (yield* Store).setPreference("setAsideRoutes", JSON.stringify({ "provider:a": { until: Date.now() - 1, reason: "limit" } }))
+  }))
+  await runWith(db, scripted({}, calls), Effect.gen(function* () {
+    yield* sendAndWait(chatId, "three")
+    expect(calls.at(-1)).toBe("a/m")
+  }))
+  rmSync(dir, { recursive: true, force: true })
+})
+
 test("failover: when every route fails, the turn fails once and lists each attempt", () => {
   const calls: string[] = []
   const down = { message: "fetch failed", failure: { reason: "network" as const } }
@@ -800,6 +829,7 @@ test("start_task: the teammate's answer comes back to the asking chat and the as
     expect(seen.some((s) => s.waits?.[0]?.agentId === lead.id && s.waits[0].on[0] === helper.id && s.waits[0].taskChatId !== null)).toBe(true)
     expect(seen.at(-1)?.waits).toEqual([])
     expect((yield* store.chats()).find((c) => c.id !== chat.id)?.access).toBe("workspace") // the chat's level carries over
+    expect((yield* store.chats()).find((c) => c.id !== chat.id)?.parentId).toBe(chat.id) // still under the asking chat after it reported back
     const runs = yield* store.agentRuns(lead.id) // its sessions' runs, newest first: the wrap-up, then the delegation
     expect(runs.map((r) => [r.chatId, r.state, r.preview])).toEqual([[chat.id, "completed", "thanks, got it"], [chat.id, "completed", "started"]])
   })))
@@ -1141,3 +1171,41 @@ test("earlier facts go on the map once, on the small model", () =>
       })
     ).pipe(Effect.provide(layer(":memory:", Mapper)))
   ))
+
+test("quietly (spec 011): a failure in background work is logged once with the chat; busy, gone and fine say nothing", async () => {
+  const lines: string[] = []
+  const capture = Logger.formatLogFmt.pipe(Logger.map((l) => lines.push(l)))
+  const run = (e: Effect.Effect<unknown, unknown>) => Effect.runPromise(e.pipe(quietly("consolidation", "chat-1"), Effect.provide(Logger.layer([capture]))))
+  await run(Effect.fail(new Busy()))
+  await run(Effect.fail(new NotFound()))
+  await run(Effect.succeed(1))
+  expect(lines).toEqual([])
+  await run(Effect.die(new Error("disk is full")))
+  await run(Effect.fail(new Error("no model answered")))
+  expect(lines).toHaveLength(2)
+  expect(lines[0]).toContain("consolidation failed")
+  expect(lines[0]).toContain("chat-1")
+  expect(lines[0]).toContain("disk is full")
+  expect(lines[1]).toContain("no model answered")
+})
+
+test("release (spec 011): a deleted chat's open stream ends, and it can't be subscribed again", () =>
+  runWith(":memory:", Echo, Effect.gen(function* () {
+    const store = yield* Store
+    const runtime = yield* Runtime
+    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "a/m" })
+    yield* sendAndWait(chat.id, "hi") // the hub exists and has had events
+    const ready = yield* Deferred.make<void>()
+    const open = yield* runtime.subscribeChat(chat.id).pipe(
+      Stream.tap((e) => (e._tag === "snapshot" ? Deferred.succeed(ready, undefined) : Effect.void)),
+      Stream.runDrain,
+      Effect.forkChild
+    )
+    yield* Deferred.await(ready)
+    yield* store.removeChat(chat.id)
+    yield* runtime.release(chat.id)
+    const ended = yield* Fiber.join(open).pipe(Effect.timeout("1 second"), Effect.exit)
+    expect(Exit.isSuccess(ended)).toBe(true) // the stream ended by itself, not by the timeout
+    const again = yield* runtime.subscribeChat(chat.id).pipe(Stream.runDrain, Effect.exit)
+    expect(Exit.isFailure(again)).toBe(true)
+  })))
