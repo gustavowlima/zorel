@@ -95,16 +95,19 @@ export const en = {
     noProject: "No project",
     answers: "{name} answers",
     crew: { one: "1 agent", other: "{count} agents" },
-    clearCrew: "Start without agents: a plain chat",
+    whoAnswers: "Who answers",
+    searchAgents: "Search agents",
     searchProjects: "Search projects",
-    placeholder: "Message · # call an agent",
-    placeholderPlain: "Message"
+    placeholder: "Message · # call an agent"
   },
   chat: {
     editFromHere: "Edit from here",
     replyLimit: "Stopped at its reply limit",
     monthlyLimit: "Over its monthly token limit: it didn't start",
     continue: "Continue",
+    whoContinues: "Who continues this chat?",
+    whoContinuesHint: "Its agent was archived or deleted.",
+    needsAgent: "Pick who continues this chat first.",
     retry: "Try again",
     raiseLimit: "Raise the limit",
     rewindTitle: "Edit from here?",
@@ -406,7 +409,7 @@ export const en = {
     crewNoTeams: "No teams yet. Create one on the Agents screen.",
     crewAgents: "Agents",
     crewCount: { one: "New chats start with 1 agent.", other: "New chats start with {count} agents." },
-    crewEmpty: "No one picked: new chats start without agents.",
+    crewEmpty: "No one picked: new chats start with the agent you used last.",
     crewFailed: "Couldn't save who takes part. Try again.",
     onlyHere: "This project only",
     ownAgents: "This project's agents",
@@ -448,6 +451,7 @@ export const en = {
   },
   agent: {
     archive: "Archive",
+    lastAgent: "Your only agent: create another to archive or delete it",
     restoreArchived: "Restore",
     archivedTitle: "This agent is archived",
     archivedBody: "It answers no one and runs no routine; its chats and history stay. Restore it to bring it back to the team.",
@@ -512,6 +516,10 @@ export const en = {
       connectorHint: "A connected service (MCP).",
       off: "Off in Settings",
       noConnectors: "No connectors yet. Add GitHub, Notion and others in Settings, then choose here what it may do there.",
+      accessTitle: "Access",
+      toolsTitle: "Tools",
+      toolsHint: "The services connected to Zorel and the apps on this computer. A new connector starts read-only for every agent.",
+      connectorsTitle: "Connectors",
       level: { none: "No access", read: "Read", write: "Read and write", full: "Everything", use: "Use it" },
       always: "Always allowed",
       alwaysBrowser: "Browser actions",
@@ -771,6 +779,29 @@ export const en = {
       upload: "{name} is attaching files to",
       dialog: "{name} is answering a dialog",
       steps: "{name} is doing a few steps"
+    },
+    // The browser card in a reply: whose browser, what the agent did there, a picture of it now.
+    card: {
+      title: "{name}'s browser",
+      takeOver: "Take over",
+      picture: "The browser now",
+      failed: "didn't work",
+      did: {
+        navigate: "Opened",
+        read: "Read the page",
+        click: "Clicked",
+        type: "Typed",
+        press: "Pressed",
+        hover: "Pointed at",
+        select: "Chose",
+        scroll: "Scrolled",
+        wait: "Waited",
+        tabs: "Used the tabs",
+        back: "Went back",
+        upload: "Attached files",
+        dialog: "Answered a dialog",
+        steps: "Did a few steps"
+      }
     }
   },
   storage: {
@@ -980,9 +1011,33 @@ export const en = {
     use: "Read and use",
     remove: "Remove {name}",
     add: "Add app",
-    addPlaceholder: "An app's name, e.g. Notes",
+    search: "Search apps",
+    open: "Open",
+    addTyped: "Add \u201c{name}\u201d",
+    noApps: "No app by that name.",
+    chosen: { one: "1 app it may use", other: "{count} apps it may use" },
+    none: "No apps yet: add the ones it may use.",
     own: "Own computer",
-    ownContainer: "Linux container",
+    ownContainer: "Isolated Linux",
+    ownHostLabel: "This computer",
+    ownHost: "Unlocked: its commands run straight on your computer, as you, with no sandbox (Full access). It reaches your folders without lending them.",
+    state: { off: "off", pulling: "getting ready", starting: "starting", running: "on", stopped: "stopped", unavailable: "unavailable" },
+    stateHint: {
+      off: "It starts by itself the first time the agent uses it, or now.",
+      pulling: "Downloading the computer's system (only the first time, a few minutes)…",
+      starting: "Starting…",
+      running: "Running: its servers' pages open in the chat's browser.",
+      stopped: "Stopped: its files are kept; it starts again when used.",
+      unavailable: ""
+    },
+    start: "Start",
+    openFolder: "Open folder",
+    restart: "Restart",
+    lentTitle: "Folders of your computer",
+    lentHint: "Lend a project's folder for it to work in. It changes the real files, so use git to undo.",
+    lend: "Lend folder…",
+    lentPath: "A folder's full path, e.g. /Users/me/projects/site",
+    unlend: "Stop lending {path}",
     ownNone: "None: it works on this computer, inside its sandbox and its access level.",
     ownReady: "An isolated Linux ({engine}) where it installs and runs anything without asking. The chat's project folder is lent to it; the first start downloads the system (a few minutes).",
     ownChecking: "Checking for Podman or Docker…",
@@ -992,6 +1047,9 @@ export const en = {
   },
   channels: {
     telegram: "Telegram",
+    agent: "Who answers",
+    agentHint: "New Telegram chats start with this agent.",
+    agentDefault: "Not picked: the agent you used last answers.",
     telegramIntro: "Message Zorel from your phone through your own Telegram bot. Each Telegram chat becomes a Zorel chat; replies come back there, and approvals wait for you in the app. Only accounts you pair can use it.",
     token: "Bot token",
     tokenHint: "Create a bot with",
@@ -1963,5 +2021,40 @@ export const en = {
     title: "Not found",
     body: "It may have been deleted.",
     home: "Go home"
+  },
+  // The first run (spec 015): the person's first agent, before anything else.
+  firstRun: {
+    title: "Your first agent",
+    subtitle: "In Zorel you work with agents. Make the first one: you can change all of it later.",
+    name: "Name",
+    defaultName: "Atlas",
+    for: "What it's for",
+    purpose: { research: "Research", writing: "Writing", code: "Code", operations: "Operations", own: "Something else" },
+    purposeHint: {
+      research: "Finds sources, compares them and answers with links",
+      writing: "Drafts, edits and summaries in your voice",
+      code: "Reads, changes and tests software with you",
+      operations: "Keeps your routine work in order with your tools",
+      own: "Describe it in your own words"
+    },
+    own: "What it does",
+    ownHint: "For example: follows my sales pipeline and drafts the replies",
+    ai: "Which AI it uses",
+    aiHint: "The subscriptions and keys you connected. Each agent can use its own.",
+    looking: "Looking for the AIs on this computer…",
+    noAi: "No AI connected yet: sign in to a subscription or add a key.",
+    connect: "Connect an AI",
+    create: "Create {name}",
+    creating: "Creating…",
+    failed: "Couldn't create the agent. Try again."
+  },
+  // The desktop app's own dialogs.
+  desktop: {
+    quit: {
+      title: "Quit Zorel?",
+      body: "Agents stop working and routines don't run until you open Zorel again. Closing the window keeps them running.",
+      dontAsk: "Don't ask again",
+      quit: "Quit"
+    }
   }
 }

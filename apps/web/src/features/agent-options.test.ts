@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { agentOptions, callable, projectCrew, teamsIn, toJoin, withTeam } from "./agent-options.ts"
+import { agentOptions, callable, lastUsedAgent, projectCrew, teamsIn, toJoin, withTeam } from "./agent-options.ts"
 
 const agent = (id: string, name: string, o: { projectId?: string | null; builtin?: boolean } = {}) => ({ id, name, projectId: o.projectId ?? null, builtin: o.builtin ?? false })
 const lead = agent("a1", "Tech Leader")
@@ -86,5 +86,19 @@ describe("projectCrew", () => {
     expect(projectCrew(undefined, [lead], teams)).toEqual([])
     const many = Array.from({ length: 10 }, (_, i) => agent(`m${i}`, `M${i}`))
     expect(projectCrew({ agentIds: many.map((a) => a.id), teamIds: [] }, many, [])).toHaveLength(8)
+  })
+})
+
+describe("lastUsedAgent", () => {
+  test("the most recent chat's callable agent, else the first callable one", () => {
+    const chats = [
+      { agentIds: ["a2"], lastAt: 10, createdAt: 1 },
+      { agentIds: ["gone", "a3"], lastAt: null, createdAt: 20 },
+      { agentIds: [], lastAt: 30, createdAt: 2 }
+    ]
+    expect(lastUsedAgent(chats, [lead, dev, qa])?.id).toBe("a3") // newest with a callable agent (by lastAt, else createdAt)
+    expect(lastUsedAgent(chats, [lead, dev])?.id).toBe("a2") // its agent isn't callable here: the next chat's
+    expect(lastUsedAgent([], [lead, dev])?.id).toBe("a1")
+    expect(lastUsedAgent(chats, [])).toBeUndefined()
   })
 })

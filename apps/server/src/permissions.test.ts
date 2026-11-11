@@ -3,14 +3,15 @@ import { DEFAULT_PERMISSIONS } from "@zorel/contracts"
 import { accessChange, browserRoute, mcpRoute, privateHost, withAlways } from "./permissions.ts"
 
 const server = { id: "s1", mode: "approve" as const }
-const p = (over = {}) => ({ ...DEFAULT_PERMISSIONS, ...over })
+const p = (over = {}) => ({ ...DEFAULT_PERMISSIONS, grants: { s1: "write" as const }, ...over })
 
 test("grants decide which tools an agent sees", () => {
   expect(mcpRoute(p({ grants: { s1: "none" } }), server, { name: "get", cls: "read" }, false).expose).toBe(false)
   expect(mcpRoute(p({ grants: { s1: "read" } }), server, { name: "get", cls: "read" }, false).expose).toBe(true)
   expect(mcpRoute(p({ grants: { s1: "read" } }), server, { name: "create", cls: "write" }, false).expose).toBe(false)
-  // No grant: the server's mode (a read-only server shows reading tools only).
-  expect(mcpRoute(p(), { id: "s2", mode: "read" }, { name: "create", cls: "write" }, false).expose).toBe(false)
+  // No grant (a new connector): read-only, whatever the server's mode.
+  expect(mcpRoute(p(), { id: "s2", mode: "auto" }, { name: "get", cls: "read" }, false).expose).toBe(true)
+  expect(mcpRoute(p(), { id: "s2", mode: "auto" }, { name: "create", cls: "write" }, false).expose).toBe(false)
 })
 
 test("destructive tools ask unless allowed for good or the server is trusted", () => {

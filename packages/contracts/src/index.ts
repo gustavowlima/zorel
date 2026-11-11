@@ -109,7 +109,11 @@ export const AgentPermissions = Schema.Struct({
   grants: Schema.Record(Schema.String, Grant),
   always: Schema.Array(Schema.String.check(Schema.isMaxLength(200))).check(Schema.isMaxLength(200)),
   apps: Schema.optional(Schema.Array(DesktopApp).check(Schema.isMaxLength(50))), // none when absent
-  computer: Schema.optional(Schema.Literals(["none", "container"])) // its own Linux computer (spec 009); none when absent
+  // Where it runs commands (spec 009): none (this computer, inside its sandbox and access level), its own isolated
+  // Linux container, or this computer without a sandbox ("host": full access); none when absent.
+  computer: Schema.optional(Schema.Literals(["none", "container", "host"])),
+  // Folders on this computer lent to its Linux container, besides the chat's project folder (absolute paths).
+  lent: Schema.optional(Schema.Array(Schema.String.check(Schema.isMaxLength(1000))).check(Schema.isMaxLength(10)))
 })
 export type AgentPermissions = typeof AgentPermissions.Type
 export const DEFAULT_PERMISSIONS: AgentPermissions = { web: true, browser: true, grants: {}, always: [] }
@@ -579,6 +583,8 @@ const MemoryVersion = Schema.Struct({ id: Id, title: Schema.String, text: Schema
 // turn's context in that scope.
 // file: its Markdown file inside the knowledge folder ("projects/zorel/Deploy.md"); null until written.
 // The container engine for agents' own computers (spec 009): podman, docker, or null with what to do.
+// One agent's computer now: off, getting its system (first time), starting, running, stopped, or unavailable (problem).
+const ComputerState = Schema.Struct({ state: Schema.Literals(["off", "pulling", "starting", "running", "stopped", "unavailable"]), problem: Schema.NullOr(Schema.String) })
 const ComputerStatus = Schema.Struct({ engine: Schema.NullOr(Schema.Literals(["podman", "docker"])), problem: Schema.NullOr(Schema.String) })
 // agent-desktop on this computer (spec 008). accessibility: macOS's permission (granted, denied, unknown).
 export const DesktopStatus = Schema.Struct({ supported: Schema.Boolean, installed: Schema.Boolean, version: Schema.String, accessibility: Schema.NullOr(Schema.String), suggestion: Schema.NullOr(Schema.String) })
@@ -588,10 +594,17 @@ export class CliInstallFailed extends Schema.Error<CliInstallFailed>("zorel/CliI
 // would take a team's handle.
 export class TeamHandleTaken extends Schema.Error<TeamHandleTaken>("zorel/TeamHandleTaken")({ _tag: Schema.tag("TeamHandleTaken"), message: Schema.String }, { httpApiStatus: 409 }) {}
 // A member the team can't hold: outside its reach (a global team holds global agents only), or Zorel's own agent.
+// Every chat has an agent (spec 015): a chat with none is refused, and the person's last agent can't be archived or deleted.
+export class ChatNeedsAgentError extends Schema.Error<ChatNeedsAgentError>("zorel/ChatNeedsAgent")({ _tag: Schema.tag("ChatNeedsAgentError") }, { httpApiStatus: 400 }) {}
+export class LastAgent extends Schema.Error<LastAgent>("zorel/LastAgent")({ _tag: Schema.tag("LastAgent") }, { httpApiStatus: 409 }) {}
 export class TeamInvalid extends Schema.Error<TeamInvalid>("zorel/TeamInvalid")({ _tag: Schema.tag("TeamInvalid"), message: Schema.String }, { httpApiStatus: 400 }) {}
 export class DesktopInstallFailed extends Schema.Error<DesktopInstallFailed>("zorel/DesktopInstallFailed")({ _tag: Schema.tag("DesktopInstallFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
+// An app on this computer: its name, and where the desktop app draws its icon from (a bundle, a shortcut, an icon file).
+export const InstalledApp = Schema.Struct({ name: Schema.String, path: Schema.NullOr(Schema.String) })
+export type InstalledApp = typeof InstalledApp.Type
 // Telegram channel: whether the bot token is set, how many accounts are paired, and the open pairing code.
-const TelegramStatus = Schema.Struct({ tokenSet: Schema.Boolean, fromEnv: Schema.Boolean, users: Schema.Number, pairing: Schema.NullOr(Schema.Struct({ code: Schema.String, until: Schema.Number })) })
+// agentId: who answers Telegram now (the chosen agent, else the one used last); null with no agents.
+const TelegramStatus = Schema.Struct({ tokenSet: Schema.Boolean, fromEnv: Schema.Boolean, users: Schema.Number, agentId: Schema.NullOr(Id), chosen: Schema.Boolean, pairing: Schema.NullOr(Schema.Struct({ code: Schema.String, until: Schema.Number })) })
 export const Page = Schema.Struct({ id: Id, scope: MemoryScope, title: Schema.String, body: Schema.String, pinned: Schema.Boolean, file: Schema.optionalKey(Schema.NullOr(Schema.String)), updatedAt: Schema.Number, createdAt: Schema.Number })
 export type Page = typeof Page.Type
 const PageVersion = Schema.Struct({ id: Schema.String, n: Schema.Number, title: Schema.String, body: Schema.String, by: Schema.String, at: Schema.Number })
@@ -828,12 +841,12 @@ export const Api = HttpApi.make("zorel")
     HttpApiGroup.make("agents")
       .add(HttpApiEndpoint.get("list", "/api/agents", { success: Schema.Array(Agent) }))
       .add(HttpApiEndpoint.post("create", "/api/agents", { payload: NewAgent, success: Agent, error: [HttpApiError.NotFound, TeamHandleTaken, TeamInvalid] }))
-      .add(HttpApiEndpoint.patch("update", "/api/agents/:id", { params: idParam, payload: AgentPatch, success: Agent, error: [HttpApiError.NotFound, TeamHandleTaken, TeamInvalid] }))
+      .add(HttpApiEndpoint.patch("update", "/api/agents/:id", { params: idParam, payload: AgentPatch, success: Agent, error: [HttpApiError.NotFound, TeamHandleTaken, TeamInvalid, LastAgent] }))
       .add(HttpApiEndpoint.get("teams", "/api/teams", { success: Schema.Array(AgentTeam) }))
       .add(HttpApiEndpoint.post("createTeam", "/api/teams", { payload: NewAgentTeam, success: AgentTeam, error: [HttpApiError.NotFound, TeamHandleTaken, TeamInvalid] }))
       .add(HttpApiEndpoint.patch("updateTeam", "/api/teams/:id", { params: idParam, payload: AgentTeamPatch, success: AgentTeam, error: [HttpApiError.NotFound, TeamHandleTaken, TeamInvalid] }))
       .add(HttpApiEndpoint.delete("removeTeam", "/api/teams/:id", { params: idParam }))
-      .add(HttpApiEndpoint.delete("remove", "/api/agents/:id", { params: idParam }))
+      .add(HttpApiEndpoint.delete("remove", "/api/agents/:id", { params: idParam, error: LastAgent }))
       // A chat with the Builder (created the first time), in a project or General.
       .add(HttpApiEndpoint.post("builder", "/api/agents/builder", { payload: Schema.Struct({ projectId: Schema.NullOr(Id), model: ModelId }), success: Chat, error: HttpApiError.NotFound }))
       // Its sessions' runs, newest first: each time it worked, in which chat, how long, its steps and tokens.
@@ -889,8 +902,8 @@ export const Api = HttpApi.make("zorel")
   .add(
     HttpApiGroup.make("chats")
       .add(HttpApiEndpoint.get("list", "/api/chats", { success: Schema.Array(Chat) }))
-      .add(HttpApiEndpoint.post("create", "/api/chats", { payload: NewChat, success: Chat, error: HttpApiError.NotFound }))
-      .add(HttpApiEndpoint.patch("update", "/api/chats/:id", { params: idParam, payload: ChatPatch, success: Chat, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("create", "/api/chats", { payload: NewChat, success: Chat, error: [HttpApiError.NotFound, ChatNeedsAgentError] }))
+      .add(HttpApiEndpoint.patch("update", "/api/chats/:id", { params: idParam, payload: ChatPatch, success: Chat, error: [HttpApiError.NotFound, ChatNeedsAgentError] }))
       .add(HttpApiEndpoint.delete("remove", "/api/chats/:id", { params: idParam }))
       .add(HttpApiEndpoint.put("reorder", "/api/chats/order", { payload: ChatOrder }))
       .add(HttpApiEndpoint.get("messages", "/api/chats/:id/messages", { params: idParam, success: Schema.Array(Message) }))
@@ -995,6 +1008,11 @@ export const Api = HttpApi.make("zorel")
       // An agent's own computer (spec 009): the container engine found, and erasing an agent's computers.
       .add(HttpApiEndpoint.get("computer", "/api/computer", { success: ComputerStatus }))
       .add(HttpApiEndpoint.post("eraseComputer", "/api/computer/erase/:id", { params: idParam }))
+      // An agent's computer from its page: what it's doing now, start it, restart it, open its own folder here.
+      .add(HttpApiEndpoint.get("computerState", "/api/computer/:id/state", { params: idParam, success: ComputerState, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("computerStart", "/api/computer/:id/start", { params: idParam, success: ComputerState, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("computerRestart", "/api/computer/:id/restart", { params: idParam, success: ComputerState, error: HttpApiError.NotFound }))
+      .add(HttpApiEndpoint.post("computerOpen", "/api/computer/:id/open", { params: idParam, error: HttpApiError.NotFound }))
       // Computer apps (spec 008): agent-desktop's state, its in-app install, the macOS permission guide, open apps.
       .add(HttpApiEndpoint.get("desktop", "/api/desktop", { success: DesktopStatus }))
       .add(HttpApiEndpoint.post("installDesktop", "/api/desktop/install", { success: DesktopStatus, error: DesktopInstallFailed }))
@@ -1002,8 +1020,11 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.post("installCli", "/api/cli/:id/install", { params: { id: Schema.Literals(["antigravity", "opencode"]) }, error: CliInstallFailed }))
       .add(HttpApiEndpoint.post("desktopGuide", "/api/desktop/guide"))
       .add(HttpApiEndpoint.get("desktopRunning", "/api/desktop/running", { success: Schema.Array(Schema.String) }))
+      // The apps installed on this computer (names), for picking which an agent may use.
+      .add(HttpApiEndpoint.get("installedApps", "/api/desktop/apps", { success: Schema.Array(InstalledApp) }))
       // Telegram channel (spec 007): the bot token goes through setKey (TELEGRAM_BOT_TOKEN); pairing here.
       .add(HttpApiEndpoint.get("telegram", "/api/channels/telegram", { success: TelegramStatus }))
       .add(HttpApiEndpoint.post("telegramPair", "/api/channels/telegram/pair", { success: TelegramStatus }))
       .add(HttpApiEndpoint.delete("telegramUnpair", "/api/channels/telegram/users", { success: TelegramStatus }))
+      .add(HttpApiEndpoint.put("telegramAgent", "/api/channels/telegram/agent", { payload: Schema.Struct({ agentId: Id }), success: TelegramStatus, error: HttpApiError.NotFound }))
   )

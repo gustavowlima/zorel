@@ -134,7 +134,7 @@ export const REMEMBER_TOOL = {
   writes: false
 } as const
 
-// MCP tools on demand (reference apps defer them): past MCP_DEFER_CHARS of definitions, a turn lists these two instead
+// MCP tools on demand: past MCP_DEFER_CHARS of definitions, a turn lists these two instead
 // of every server's tools, and the agent finds and calls what it needs.
 export const MCP_DEFER_CHARS = 10_000
 export const FIND_TOOLS_TOOL = {
@@ -205,9 +205,10 @@ const RANK: Record<Access, number> = { ask: 0, workspace: 1, full: 2 }
 export const narrower = (a: Access, b: Access): Access => (RANK[a] <= RANK[b] ? a : b)
 // The level an agent works at in a chat: the chat's when the person set one there (for every agent in it, wider or
 // narrower than their own: the person chose it for this chat, Full access after a warning), else the agent's own
-// (workspace with no agent). The Builder keeps its own: it designs agents, it never needs more.
-export const effectiveAccess = (chat: { readonly access: Access | null }, agent: { readonly access: Access; readonly builtin?: string | null | undefined } | undefined): Access => {
-  const own = agent?.access ?? "workspace"
+// (workspace with no agent). The Builder keeps its own: it designs agents, it never needs more. An agent whose computer
+// is "this computer" (no sandbox) works at Full access: that's what the choice means.
+export const effectiveAccess = (chat: { readonly access: Access | null }, agent: { readonly access: Access; readonly builtin?: string | null | undefined; readonly permissions?: { readonly computer?: string | undefined } } | undefined): Access => {
+  const own = agent?.permissions?.computer === "host" ? "full" : (agent?.access ?? "workspace")
   return agent?.builtin ? own : (chat.access ?? own)
 }
 const LIMITS = { name: 80, title: 60, description: 300, instructions: 8000 } as const

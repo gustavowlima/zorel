@@ -144,7 +144,10 @@ beforeAll(async () => {
   // waits for the server (up to 15 s: a cold CI runner is slow)
   for (let i = 0; i < 750 && !failed && !(await fetch(`${base}/api/models`).catch(() => null)); i++) await Bun.sleep(20)
   if (failed) throw new Error(`the test server didn't start:\n${failed}`)
+  // Every chat needs an agent (spec 015): the tests that don't care who answers use this global one.
+  PLAIN = (await api((c) => c.agents.create({ payload: { projectId: null, name: "Tester", instructions: "", model: "claude-cli/sonnet" } }))).id
 }, 20_000)
+let PLAIN = ""
 afterAll(() => stop())
 
 const api = <A, E>(f: (c: HttpApiClient.ForApi<typeof Api>) => Effect.Effect<A, E>) =>
@@ -331,7 +334,9 @@ test("MCP tools: read mode hides writes; approve mode asks and respects the deci
   const inspected = await api((c) => c.tools.inspect({ params: { id: server.id } }))
   expect(inspected).toEqual({ tools: [{ name: "search_docs", description: "Searches the docs", cls: "read" }, { name: "delete_page", description: "Deletes a page", cls: "sensitive" }], error: null })
 
-  const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [], model: "claude-cli/sonnet" } }))
+  // A new connector is read-only for agents (spec 015 era default): this one is given write to test the server's modes.
+  const writer = await api((c) => c.agents.create({ payload: { projectId: project.id, name: "Writer", instructions: "", model: "claude-cli/sonnet", permissions: { web: false, browser: false, grants: { [server.id]: "write" }, always: [] } } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [writer.id], model: "claude-cli/sonnet" } }))
   let r = await send(chat.id, { text: "tool:docs__search_docs" })
   let msg = dones(r.events)[0]!
   expect(msg.text).toBe("docs__search_docs => result of search_docs") // only the read one listed
@@ -353,7 +358,7 @@ test("MCP tools: read mode hides writes; approve mode asks and respects the deci
   expect(toolCalls).toEqual(["search_docs", "delete_page"])
 
   // chat outside the project doesn't see the server
-  const other = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "claude-cli/sonnet" } }))
+  const other = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [PLAIN], model: "claude-cli/sonnet" } }))
   await send(other.id, { text: "hi" })
   expect(turns.at(-1)!.tools?.defs.map((d) => d.name).every(zorelOwn)).toBe(true)
 })
@@ -369,7 +374,7 @@ test("API keys: saved through the interface, never returned; unknown name 404", 
 })
 
 test("errors at the boundary: invalid input 400, missing chat 404, another project's agent 404", async () => {
-  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [PLAIN], model: "ollama/llama3" } }))
   const sendExit = (chatId: string, text: string, model?: string) =>
     rpc((c) => Effect.exit(c.send({ chatId, clientId: crypto.randomUUID(), text, ...(model && { model }) } as never)))
   expect(Exit.isFailure(await sendExit(chat.id, "   "))).toBe(true) // empty text: rejected by the schema
@@ -416,7 +421,7 @@ test("local only: an odd Host (DNS rebinding) and another site's Origin (CSRF) g
 test("learning: forgotten ones go to consolidation and can be restored; a cap of 20 pending", async () => {
   const forgotten = await api((c) => c.memories.create({ payload: { scope: "user", kind: "fact", title: "", text: "Likes emojis" } }))
   await api((c) => c.memories.update({ params: { id: forgotten.id }, payload: { state: "forgotten" } }))
-  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [PLAIN], model: "ollama/llama3" } }))
   await send(chat.id, { text: "hi" })
 
   manyMemories = 25
@@ -449,7 +454,7 @@ test("accounts: defaults are created by themselves and can't be removed; an extr
 }, 20_000) // runs the real claude/codex status commands, whose latency depends on the machine
 
 test("attachments: upload, a message with files, the engine gets paths; text inline, image by name; deleting the chat deletes the files", async () => {
-  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [PLAIN], model: "ollama/llama3" } }))
   const up = async (name: string, mime: string, body: BodyInit) => {
     const r = await fetch(`${base}/api/chats/${chat.id}/attachments`, { method: "POST", headers: { "content-type": mime, "x-file-name": encodeURIComponent(name) }, body })
     return { status: r.status, json: (await r.json()) as { id: string; name: string; size: number } }
@@ -494,8 +499,8 @@ test("sidebar order: projects in the given order (new ones on top); chats only r
   expect(ids.indexOf(fresh.id)).toBeLessThan(ids.indexOf(a.id)) // not placed yet: on top
   expect(ids.indexOf(a.id)).toBeLessThan(ids.indexOf(b.id))
 
-  const inA = await api((c) => c.chats.create({ payload: { projectId: a.id, agentIds: [], model: "ollama/llama3" } }))
-  const inB = await api((c) => c.chats.create({ payload: { projectId: b.id, agentIds: [], model: "ollama/llama3" } }))
+  const inA = await api((c) => c.chats.create({ payload: { projectId: a.id, agentIds: [PLAIN], model: "ollama/llama3" } }))
+  const inB = await api((c) => c.chats.create({ payload: { projectId: b.id, agentIds: [PLAIN], model: "ollama/llama3" } }))
   await api((c) => c.chats.reorder({ payload: { projectId: a.id, ids: [inB.id, inA.id] } }))
   const chats = await api((c) => c.chats.list())
   const after = (id: string) => chats.find((x) => x.id === id)!
@@ -538,7 +543,7 @@ test("audit log: changes with before → after; an API key only by name, never i
 
 test("storage: measures the data folder; cleaning only removes folders of chats and projects that no longer exist", async () => {
   const dir = join(tmpdir(), "zorel-test")
-  const live = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
+  const live = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [PLAIN], model: "ollama/llama3" } }))
   mkdirSync(join(dir, "runs", live.id), { recursive: true })
   writeFileSync(join(dir, "runs", live.id, "notes.md"), "x".repeat(2048))
   mkdirSync(join(dir, "runs", "deleted-chat"), { recursive: true })
@@ -557,7 +562,7 @@ test("storage: measures the data folder; cleaning only removes folders of chats 
 })
 
 test("terminal: opening a file only inside the chat folder; with no shells, the list is empty", async () => {
-  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [PLAIN], model: "ollama/llama3" } }))
   expect(await api((c) => c.chats.terminals({ params: { id: chat.id } }))).toEqual([])
   const open = (path: string) => api((c) => Effect.exit(c.chats.openFile({ params: { id: chat.id }, payload: { path } })))
   expect(Exit.isFailure(await open("../../../etc/hosts"))).toBe(true) // outside the chat's folder
@@ -565,7 +570,7 @@ test("terminal: opening a file only inside the chat folder; with no shells, the 
 })
 
 test("context: estimates the next turn part by part; messages count", async () => {
-  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "ollama/llama3" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [PLAIN], model: "ollama/llama3" } }))
   const empty = await api((c) => c.chats.context({ params: { id: chat.id } }))
   await rpc((c) => c.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "x".repeat(400) }))
   for (let i = 0; i < 50 && (await api((c) => c.chats.messages({ params: { id: chat.id } }))).length < 2; i++) await Bun.sleep(20)
@@ -601,7 +606,7 @@ test("routines: created with their own chat, invalid cron 400, the webhook sends
 })
 
 test("pause all: new messages wait in the queue; resuming answers", async () => {
-  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "claude-cli/sonnet" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [PLAIN], model: "claude-cli/sonnet" } }))
   await api((c) => c.settings.pause({ payload: { paused: true } }))
   expect((await api((c) => c.settings.preferences())).paused).toBe(true)
   await rpc((c) => c.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "hi" }))
@@ -619,7 +624,7 @@ test("snippet: the words around the first match, one line", () => {
 })
 
 test("edit from here: the conversation goes back to before the message and it comes back as text", async () => {
-  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "claude-cli/sonnet" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [PLAIN], model: "claude-cli/sonnet" } }))
   await send(chat.id, { text: "first" })
   await send(chat.id, { text: "second" })
   const msgs = await api((c) => c.chats.messages({ params: { id: chat.id } }))
@@ -650,7 +655,7 @@ test("who joins a project's chats: agents and teams, only global ones or the pro
 
 test("pages by agents: writing in the project becomes a version, search and read; the pinned one enters the context", async () => {
   const project = await api((c) => c.projects.create({ payload: { name: "Wiki", brief: "" } }))
-  const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [], model: "claude-cli/sonnet" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [PLAIN], model: "claude-cli/sonnet" } }))
   const write = dones((await send(chat.id, { text: 'tool:zorel_knowledge_write {"title":"Deploy","body":"We deploy on Fly.io.","scope":"project"}' })).events)[0]!
   expect(write.text).toContain('Saved "Deploy"')
   const page = (await api((c) => c.pages.list())).find((p) => p.title === "Deploy")!
@@ -681,7 +686,8 @@ test("agent permissions: connector per agent, always-allow saved, and requesting
   let r = await send(chat.id, { text: 'tool:zorel_request_access {"what":"kb","level":"read","reason":"look up docs"}' }, () => true)
   expect(dones(r.events)[0]!.text).toContain("Granted: read kb")
   expect((await api((c) => c.agents.list())).find((a) => a.id === agent.id)!.permissions.grants[server.id]).toBe("read")
-  await send(chat.id, { text: "hi" })
+  // Zorel starts the next turn by itself, with the access in place (no message from the person).
+  expect(dones(r.events)).toHaveLength(2)
   expect(turns.at(-1)!.tools?.defs.map((d) => d.name).filter((n) => n.startsWith("kb__"))).toEqual(["kb__search_docs"])
 
   // Read and write: a destructive tool asks; "Always allow" saves the rule and the next call doesn't ask.
@@ -697,7 +703,7 @@ test("agent permissions: connector per agent, always-allow saved, and requesting
 test("skills: read, propose an improvement, approve seeing the change and restore the previous version", async () => {
   const project = await api((c) => c.projects.create({ payload: { name: "Skills", brief: "" } }))
   const skill = await api((c) => c.memories.create({ payload: { scope: `project:${project.id}`, kind: "skill", title: "Release", text: "1. bun test\n2. tag" } }))
-  const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [], model: "claude-cli/sonnet" } }))
+  const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [PLAIN], model: "claude-cli/sonnet" } }))
   expect(dones((await send(chat.id, { text: 'tool:zorel_read_skill {"skill":"release"}' })).events)[0]!.text).toContain("1. bun test")
   const proposed = dones((await send(chat.id, { text: 'tool:zorel_propose_skill {"title":"Release","steps":"1. bun test\\n2. lint\\n3. tag","reason":"lint caught a bug","improves":"Release"}' })).events)[0]!
   expect(proposed.text).toContain("seeing what changes")
@@ -763,8 +769,8 @@ const listening = (chatId: string, act: () => Promise<unknown>) =>
 
 test("outside text (spec 011): a webhook run asks even at Full access, what it hands off too; the person's own message and a plain run don't", async () => {
   const server = await api((c) => c.tools.create({ payload: { projectId: null, name: "docs", command: "", args: [], url: `http://localhost:${mcp.port}/mcp`, env: {}, mode: "auto" } }))
-  const helper = await api((c) => c.agents.create({ payload: { projectId: null, name: "Helper Out", instructions: "Helps.", model: "claude-cli/sonnet", access: "full" } }))
-  const ops = await api((c) => c.agents.create({ payload: { projectId: null, name: "Ops Out", instructions: "Runs ops.", model: "claude-cli/sonnet", access: "full" } }))
+  const helper = await api((c) => c.agents.create({ payload: { projectId: null, name: "Helper Out", instructions: "Helps.", model: "claude-cli/sonnet", access: "full", permissions: { web: false, browser: false, grants: { [server.id]: "write" }, always: [] } } }))
+  const ops = await api((c) => c.agents.create({ payload: { projectId: null, name: "Ops Out", instructions: "Runs ops.", model: "claude-cli/sonnet", access: "full", permissions: { web: false, browser: false, grants: { [server.id]: "write" }, always: [] } } }))
   const r = await api((c) => c.routines.create({ payload: { agentId: ops.id, name: "Cleanup", prompt: "tool:docs__delete_page", cron: null, webhook: true } }))
   const asked = (events: ChatEvent[]) => events.filter((e) => e._tag === "approval").length
 
@@ -923,6 +929,7 @@ test("routines (spec 012): quiet hours hold pings for Today; urgent needs you st
 test("routines (spec 012): a run that waits for approval needs you before it ends", async () => {
   const server = await api((c) => c.tools.create({ payload: { projectId: null, name: "docs2", command: "", args: [], url: `http://localhost:${mcp.port}/mcp`, env: {}, mode: "approve" } }))
   const r = await routine("Wade")
+  await api((c) => c.agents.update({ params: { id: r.agentId }, payload: { permissions: { web: false, browser: false, grants: { [server.id]: "write" }, always: [] } } }))
   await api((c) => c.routines.update({ params: { id: r.id }, payload: { prompt: "tool:docs2__delete_page" } }))
   const got = await noticesWhile(() => listening(r.chatId, () => api((c) => c.routines.run({ params: { id: r.id } }))), doneRuns(r.id, 1))
   expect(got[0]?.outcome).toBe("needs") // told while it waited
@@ -1152,7 +1159,7 @@ test("many MCP tools: the turn lists find/use instead, and a found tool is calle
   try {
     const project = await api((c) => c.projects.create({ payload: { name: "Big", brief: "" } }))
     await api((c) => c.tools.create({ payload: { projectId: project.id, name: "docs", command: "", args: [], url: `http://localhost:${mcp.port}/mcp`, env: {}, mode: "read" } }))
-    const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [], model: "claude-cli/sonnet" } }))
+    const chat = await api((c) => c.chats.create({ payload: { projectId: project.id, agentIds: [PLAIN], model: "claude-cli/sonnet" } }))
     const found = dones((await send(chat.id, { text: 'tool:zorel_find_tools {"query":"search the docs"}' })).events)[0]!
     const listed = turns.at(-1)!.tools!.defs.map((d) => d.name)
     expect(listed).toEqual(expect.arrayContaining(["zorel_find_tools", "zorel_use_tool"]))
@@ -1297,3 +1304,10 @@ test("routine flows P2 (spec 013): schedules from the trigger, a connector desti
   await api((c) => c.tools.remove({ params: { id: server.id } }))
   expect(await api((c) => c.routines.update({ params: { id: r.id }, payload: { enabled: true } })).catch((e: unknown) => e)).toMatchObject({ _tag: "RoutineInvalid" })
 }, 20_000)
+
+test("every chat has an agent (spec 015): none is refused at create and update", async () => {
+  const err = (p: Promise<unknown>) => p.then(() => undefined, (e: { _tag?: string }) => e._tag)
+  expect(await err(api((c) => c.chats.create({ payload: { projectId: null, agentIds: [], model: "claude-cli/sonnet" } })))).toBe("ChatNeedsAgentError")
+  const chat = await api((c) => c.chats.create({ payload: { projectId: null, agentIds: [PLAIN], model: "claude-cli/sonnet" } }))
+  expect(await err(api((c) => c.chats.update({ params: { id: chat.id }, payload: { agentIds: [] } })))).toBe("ChatNeedsAgentError")
+})

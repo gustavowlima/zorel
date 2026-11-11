@@ -3,7 +3,7 @@
 // Chaining: a reply that mentions another member queues that member's turn (up to MAX_DEPTH without a message from you).
 import { APPROVAL_MS } from "./engines/session.ts"
 import { type Access, type Agent, type Chat, type Effort, type FailoverTarget, type FailureReason, type FileChange, MAX_RUNNING_DEFAULT, type Memory, type Step, type Switch } from "@zorel/contracts"
-import { type Approval, ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
+import { type Approval, ApprovalNotFound, type ApprovalOutcome, type ChatEvent, ChatNeedsAgent, ChatNotFound, type ChatStatus, ErrorCode, type Turn, type WorkStep } from "@zorel/contracts/events"
 import { Cause, Context, Deferred, Duration, Effect, Fiber, Layer, PubSub, Schedule, Stream } from "effect"
 import { Accounts } from "./accounts.ts"
 import { ask, Busy, consolidate, DataDir, knownNames, mapEarlierFacts, members, NotFound, pinBudget, prepare } from "./chat.ts"
@@ -166,7 +166,7 @@ export type FinishedTurn = { readonly turnId: string; readonly chatId: string; r
 export interface RuntimeService {
   // opts.outside (spec 011): the text came from outside (a webhook or a watched connector); its turns run at "ask".
   // Server-only: no RPC field sets it.
-  readonly send: (input: SendInput, opts?: { readonly outside?: boolean }) => Effect.Effect<{ turnId: string }, ChatNotFound>
+  readonly send: (input: SendInput, opts?: { readonly outside?: boolean }) => Effect.Effect<{ turnId: string }, ChatNotFound | ChatNeedsAgent>
   // Corrects the agent mid-turn when the engine supports it (Codex); otherwise queues it like `send`.
   readonly steer: (chatId: string, text: string, attachmentIds?: ReadonlyArray<string>) => Effect.Effect<{ readonly joined: boolean }, ChatNotFound>
   readonly interrupt: (chatId: string) => Effect.Effect<void>
@@ -871,7 +871,12 @@ const makeRuntime = Effect.gen(function* () {
         const fresh = accessChange(permissionsOf((await run(store.agent(agent.id))) ?? agent), String(args.what ?? ""), typeof args.level === "string" ? args.level : undefined, servers)
         if (typeof fresh !== "string") await run(store.updateAgent(agent.id, { permissions: fresh.next }))
         await finish(s, "ok", change.label)
-        return textResult(`Granted: ${change.label}. It works from your next turn.`)
+        // A turn's tools are fixed when it starts (the engine lists them once), so the access lands in a turn of its
+        // own: queued now, it starts as soon as this one ends, without the person writing again.
+        const next = await run(store.enqueueTurn({ chatId: chat.id, agentId: agent.id, model: row.model, accountId: row.accountId, clientId: null, depth: row.depth }))
+        await run(publish(chat.id, ev("queued", { turn: store.toTurn(next) })))
+        await run(ensureWorker(chat.id))
+        return textResult(`Granted: ${change.label}. Zorel starts your next turn as soon as this one ends, with the access in place: end this turn now with one short line, then continue the task there.`)
       }
       if (name === READ_RESULT_TOOL.name) return readResult(chat.id, args)
       if (name === MEMORY_TOOL.name) return memoryCall(args)
@@ -884,9 +889,11 @@ const makeRuntime = Effect.gen(function* () {
         const s = await step(name === "computer_run" ? String(args.command ?? "").slice(0, 120) : `${name.replace("computer_", "")} ${String(args.path ?? "")}`.trim(), name)
         // The chat's project folder is lent when it may be (inside home, not hidden, not Zorel's): read-only at "ask".
         const project = projectFor(chat, chat.projectId ? await run(store.project(chat.projectId)) : undefined)
-        const lent = project?.path && !checkFolder(project.path, { dataDir }) ? { path: project.path, readOnly: askFirst } : null
+        // The folders it may reach: the chat's project folder, and the ones the person lent it on its page (each
+        // checked again: a folder can change since it was lent), read-only at "ask".
+        const lents = [...new Set([...(project?.path ? [project.path] : []), ...(perms.lent ?? [])])].filter((p) => !checkFolder(p, { dataDir })).map((path) => ({ path, readOnly: askFirst }))
         if (WRITING_COMPUTER_TOOLS.has(name)) onWrite()
-        const r = guarded(await computers.call({ agentId: agent?.id ?? "none", projectId: chat.projectId, lent }, name, args), "your computer")
+        const r = guarded(await computers.call({ agentId: agent?.id ?? "none", projectId: chat.projectId, lents }, name, args), "your computer")
         const out = resultText(r)
         keep({ tool: name, args: JSON.stringify(args).slice(0, 300), status: r.isError ? "error" : "ok", result: out.slice(0, STEP_RESULT_CHARS) })
         await finish(s, r.isError ? "error" : "ok", out)
@@ -1619,6 +1626,7 @@ const makeRuntime = Effect.gen(function* () {
         if (existing) return { turnId: existing.id } // resending the same clientId doesn't duplicate
         let chat = yield* store.chat(input.chatId)
         if (!chat) return yield* new ChatNotFound({ chatId: input.chatId })
+        if (!(yield* members(store, chat)).length) return yield* new ChatNeedsAgent({ chatId: chat.id }) // nothing answers anonymously
         if (input.model && input.model !== chat.model) chat = (yield* store.updateChat(chat.id, { model: input.model }))!
         if (chat.title === "New chat" || chat.title === "Novo chat") chat = (yield* store.updateChat(chat.id, { title: input.text.replace(/\s+/g, " ").slice(0, 60) }))!
         if (chat.resumeAt && !input.clientId.startsWith("resume:")) yield* store.setResumeAt(chat.id, null) // you went on yourself

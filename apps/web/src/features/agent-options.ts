@@ -2,7 +2,7 @@
 // (not the Builder; the project's own and the global ones), the list itself (the chat's members first, in the chat's
 // order, then the rest, each with the line that says what it is or that it joins the chat), and who a message
 // calls that is not in the chat yet (they join when it is sent).
-import { type Agent, type AgentTeam, MENTION_RE, isTeammate, type Project } from "@zorel/contracts"
+import { type Agent, type AgentTeam, type Chat, MENTION_RE, isTeammate, type Project } from "@zorel/contracts"
 
 const CHAT_MEMBERS_MAX = 8 // NewChat/ChatPatch agentIds
 import { handleOf } from "../labels.ts"
@@ -68,4 +68,15 @@ export function projectCrew<A extends Pick<Agent, "id">>(project: Pick<Project, 
   if (!project) return []
   const ids = [...project.agentIds, ...project.teamIds.flatMap((id) => teams.find((x) => x.id === id)?.agentIds ?? [])]
   return [...new Set(ids)].flatMap((id) => callable.find((a) => a.id === id) ?? []).slice(0, CHAT_MEMBERS_MAX)
+}
+
+// The agent used last (spec 015): the first callable agent of the most recent chat that has one, else the first
+// callable agent. A new chat with nobody picked starts with it.
+export function lastUsedAgent<A extends Pick<Agent, "id">>(chats: ReadonlyArray<Pick<Chat, "agentIds" | "lastAt" | "createdAt">>, callable: ReadonlyArray<A>): A | undefined {
+  const recent = [...chats].sort((a, b) => (b.lastAt ?? b.createdAt) - (a.lastAt ?? a.createdAt))
+  for (const c of recent) for (const id of c.agentIds) {
+    const a = callable.find((x) => x.id === id)
+    if (a) return a
+  }
+  return callable[0]
 }

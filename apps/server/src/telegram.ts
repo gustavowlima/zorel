@@ -4,7 +4,8 @@
 // through the runtime like one typed in the app and the reply comes back. The token lives in the keychain.
 import type { Approval, ChatEvent } from "@zorel/contracts/events"
 import { Effect, Layer, Schedule, Stream } from "effect"
-import { Store } from "./db.ts"
+import { type Repository, Store } from "./db.ts"
+import { isTeammate } from "@zorel/contracts"
 import { Runtime } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
 import { noteActivity } from "./time-profile.ts"
@@ -12,6 +13,7 @@ import { noteActivity } from "./time-profile.ts"
 export const TELEGRAM_KEY = "TELEGRAM_BOT_TOKEN"
 const USERS = "telegramUsers" // JSON: paired Telegram user ids
 const CHATS = "telegramChats" // JSON: Telegram chat id → Zorel chat id
+export const TELEGRAM_AGENT = "telegramAgent" // the agent that answers Telegram (Settings › Channels); unset: the one used last
 const OFFSET = "telegramOffset" // the next update to read
 const PAIR_MS = 10 * 60_000
 const POLL_S = 25 // Telegram holds the request open this long when there's nothing new
@@ -125,8 +127,10 @@ export const TelegramChannel = Layer.effectDiscard(
         const map = json<Record<string, string>>(yield* store.preference(CHATS), {})
         let chatId = map[chatTg]
         if (!chatId || !(yield* store.chat(chatId))) {
-          const model = (yield* store.chats())[0]?.model ?? "claude-cli/sonnet" // the model of the latest chat
-          chatId = (yield* store.createChat({ projectId: null, agentIds: [], model, title: "Telegram" })).id
+          // Answered by an agent, never anonymously (spec 015): the one chosen for Telegram, else the one used last.
+          const agent = yield* channelAgent(store, yield* store.preference(TELEGRAM_AGENT))
+          if (!agent) return yield* say(token, chatTg, "Create an agent in Zorel first: it answers here.")
+          chatId = (yield* store.createChat({ projectId: null, agentIds: [agent.id], model: agent.model, accountId: agent.accountId, title: "Telegram" })).id
           yield* store.setPreference(CHATS, JSON.stringify({ ...map, [chatTg]: chatId }))
         }
         yield* Effect.promise(() => call(token, "sendChatAction", { chat_id: chatTg, action: "typing" }).catch(() => undefined))
@@ -197,3 +201,18 @@ export const TelegramChannel = Layer.effectDiscard(
     yield* Effect.forkScoped(Effect.repeat(poll, Schedule.forever))
   })
 )
+
+// Who answers a channel: the chosen agent while it's a global teammate, else the agent of the most recent chat that
+// has one, else the first teammate; none when the person has no agents.
+export const channelAgent = (store: Repository, chosen: string | null | undefined) =>
+  Effect.gen(function* () {
+    const agents = (yield* store.agents()).filter((a) => isTeammate(a) && a.projectId === null)
+    const pick = agents.find((a) => a.id === chosen)
+    if (pick) return pick
+    const recent = [...(yield* store.chats())].sort((a, b) => (b.lastAt ?? b.createdAt) - (a.lastAt ?? a.createdAt))
+    for (const c of recent) for (const id of c.agentIds) {
+      const a = agents.find((x) => x.id === id)
+      if (a) return a
+    }
+    return agents[0]
+  })

@@ -10,13 +10,16 @@ import { Accounts } from "./accounts.ts"
 import { Audit } from "./audit.ts"
 import { BrowserService } from "./browser.ts"
 import { Busy, consolidate, DataDir, mapEarlierFacts, NotFound } from "./chat.ts"
-import { Store } from "./db.ts"
+import { type Repository, Store } from "./db.ts"
 import { Engines, type EngineEvent } from "./engines.ts"
 import { quietly, Runtime, replyTiming, runawayGuard } from "./runtime.ts"
 import { Secrets } from "./secrets.ts"
 import { Tools } from "./tools.ts"
 import { Pricing } from "./pricing.ts"
 import { Workspace } from "./workspace.ts"
+
+// Every chat needs an agent (spec 015): tests that don't care who answers get a plain one, on the chat's model.
+const plainAgent = (store: Repository) => store.createAgent({ projectId: null, name: "Tester", instructions: "", model: "x/y" })
 
 // Prices for tests (USD per million tokens): no network.
 const PRICES = { anthropic: { "claude-sonnet-5-5": { cost: { input: 2, output: 10, cache_read: 0.1 }, family: "claude-sonnet", release_date: "2026-09-28" } } }
@@ -57,7 +60,7 @@ test("resending the same clientId returns the same turn and doesn't duplicate th
   runWith(":memory:", Echo, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
     const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
     const a = yield* runtime.send({ chatId: chat.id, clientId: "client-123", text: "hi" })
     const b = yield* runtime.send({ chatId: chat.id, clientId: "client-123", text: "hi" })
@@ -74,7 +77,7 @@ test("interrupting keeps the partial text and emits interrupted", () =>
   runWith(":memory:", Hanging, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
     const c = yield* collect(chat.id, (e) => e._tag === "interrupted")
     yield* runtime.send({ chatId: chat.id, clientId: "client-456", text: "hi" })
     // waits for the first text before interrupting
@@ -94,7 +97,7 @@ const restingState = (engines: Layer.Layer<Engines>) =>
   runWith(":memory:", engines, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
     const c = yield* collect(chat.id, (e) => e._tag === "status" && e.status.state !== "running")
     yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "hi" })
     yield* c.done
@@ -124,7 +127,7 @@ test("a step keeps where the reply's text stood when it began, and goes out afte
   runWith(":memory:", Interleaved, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
     const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
     yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "hi" })
     yield* c.done
@@ -144,7 +147,7 @@ test("kill -9 mid-turn: on the next boot the turn becomes interrupted with the p
     Effect.scoped(
       Effect.gen(function* () {
         const store = yield* Store
-        const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+        const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
         const t = yield* store.enqueueTurn({ chatId: chat.id, agentId: null, model: "x/y", clientId: "client-789", depth: 0 })
         yield* store.startTurn(t.id)
         yield* store.savePartial(t.id, "halfway")
@@ -191,7 +194,7 @@ test("native session: opens once, later turns send only what is new, a stable-co
   runWith(":memory:", Sessions, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/haiku" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "claude-cli/haiku" })
     const turnOnce = (text: string) =>
       Effect.gen(function* () {
         const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
@@ -234,7 +237,7 @@ test("native session: interrupting stops the turn but keeps the session", () =>
   runWith(":memory:", Sessions, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/haiku" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "claude-cli/haiku" })
     const before = sessionLog.opened.length
     const c = yield* collect(chat.id, (e) => e._tag === "interrupted")
     yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "slow" })
@@ -351,7 +354,7 @@ test("send now: a message of yours runs before the hand-offs already queued", ()
 test("nextQueued: your messages go first, each group in order; a wrap-up or a task result waits behind what it awaits", () =>
   runWith(":memory:", Echo, Effect.gen(function* () {
     const store = yield* Store
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
     const add = (depth: number) => store.enqueueTurn({ chatId: chat.id, agentId: null, model: "x/y", clientId: null, depth })
     const chained = [yield* add(2), yield* add(1)]
     const mine = [yield* add(0), yield* add(0)]
@@ -370,7 +373,7 @@ test("accounts: the chat's account reaches the session as its login folder; swit
     const runtime = yield* Runtime
     yield* store.ensureAccount({ id: "work", label: "Claude work", kind: "subscription", provider: "claude", home: "/tmp/zorel-acc-work", secret: null, baseUrl: null, identity: null })
     yield* store.ensureAccount({ id: "cdx", label: "Codex 2", kind: "subscription", provider: "codex", home: "/tmp/zorel-acc-cdx", secret: null, baseUrl: null, identity: null })
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/haiku", accountId: "work" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "claude-cli/haiku", accountId: "work" })
     const turnOnce = (text: string) =>
       Effect.gen(function* () {
         const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
@@ -421,7 +424,7 @@ test("steering: joins the running turn when the session can; otherwise it become
   runWith(":memory:", Steerable, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "codex-cli/default" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "codex-cli/default" })
     const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
     yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "slow" })
     while (!c.events.some((e) => e._tag === "text")) yield* Effect.sleep("10 millis")
@@ -452,7 +455,7 @@ test("steering without engine support: stops the running turn and sends the mess
     hangs.calls = 0
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
     const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
     yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "long job" })
     while (!c.events.some((e) => e._tag === "text")) yield* Effect.sleep("10 millis")
@@ -468,7 +471,7 @@ test("steering with images: the running turn is stopped too, the message is not 
   runWith(":memory:", Steerable, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "codex-cli/default" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "codex-cli/default" })
     const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
     yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "slow" })
     while (!c.events.some((e) => e._tag === "text")) yield* Effect.sleep("10 millis")
@@ -482,7 +485,7 @@ test("effort: the chat's level reaches the session on every turn", () =>
   runWith(":memory:", Sessions, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/haiku", effort: "high" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "claude-cli/haiku", effort: "high" })
     const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
     yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "think" })
     yield* c.done
@@ -493,7 +496,7 @@ test("switching Claude → Codex → Claude: the Claude session survives and get
   runWith(":memory:", Sessions, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/haiku" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "claude-cli/haiku" })
     const turnOnce = (text: string, model: string) =>
       Effect.gen(function* () {
         const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
@@ -566,7 +569,7 @@ test("failover: errors another model would repeat, or a turn without alternative
     expect(calls).toEqual(["a/m"]) // content error: no switch
     expect((yield* store.messages(withList.id)).at(-1)).toMatchObject({ error: "prompt too long", switches: [] })
 
-    const noList = yield* store.createChat({ projectId: null, agentIds: [], model: "a/m" })
+    const noList = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "a/m" })
     yield* sendAndWait(noList.id, "hi")
     expect(calls).toEqual(["a/m", "a/m"]) // failover off: empty list
   }))
@@ -577,7 +580,7 @@ test("failover: a subscription limit holds the account until its reset, then the
   const until = Date.now() + 400
   return runWith(":memory:", scripted({ "claude-cli/sonnet": [{ message: "usage limit reached", failure: { reason: "limit", until } }] }, calls), Effect.gen(function* () {
     const store = yield* Store
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/sonnet" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "claude-cli/sonnet" })
     yield* store.updateChat(chat.id, { failover: [{ model: "b/m", accountId: null }] }) // the chat's own list
 
     yield* sendAndWait(chat.id, "one")
@@ -603,7 +606,7 @@ test("failover (spec 011): a limit on a route without an account holds until its
   let chatId = ""
   await runWith(db, scripted({ "a/m": [{ message: "usage limit reached", failure: { reason: "limit", until } }] }, calls), Effect.gen(function* () {
     const store = yield* Store
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "a/m" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "a/m" })
     chatId = chat.id
     yield* store.updateChat(chat.id, { failover: [{ model: "b/m", accountId: null }] })
     yield* sendAndWait(chat.id, "one")
@@ -629,7 +632,7 @@ test("failover: when every route fails, the turn fails once and lists each attem
   const down = { message: "fetch failed", failure: { reason: "network" as const } }
   return runWith(":memory:", scripted({ "a/m": [down], "b/m": [down] }, calls), Effect.gen(function* () {
     const store = yield* Store
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "a/m" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "a/m" })
     yield* store.updateChat(chat.id, { failover: [{ model: "b/m", accountId: null }] })
     const events = yield* sendAndWait(chat.id, "hi")
     expect(calls).toEqual(["a/m", "b/m"])
@@ -661,7 +664,7 @@ test("workspace: the agent works in the project folder; the turn records what it
   return runWith(":memory:", editing, Effect.gen(function* () {
     const store = yield* Store
     const project = yield* store.createProject({ name: "app", brief: "", path: folder })
-    const chat = yield* store.createChat({ projectId: project.id, agentIds: [], model: "x/y" })
+    const chat = yield* store.createChat({ projectId: project.id, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
     const events = yield* sendAndWait(chat.id, "change a")
     expect(events.some((e) => e._tag === "step-finished" && e.step.kind === "edit" && e.step.status === "ok")).toBe(true)
     const reply = (yield* store.messages(chat.id)).at(-1)!
@@ -696,7 +699,7 @@ test("timing steps: Thought before the tools, Replied after, both for the reader
   })
   return runWith(":memory:", thinking, Effect.gen(function* () {
     const store = yield* Store
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/opus" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "claude-cli/opus" })
     yield* sendAndWait(chat.id, "status?")
     const reply = (yield* store.messages(chat.id)).at(-1)!
     expect(reply.steps.map((s) => s.tool)).toEqual(["thought", "run", "reply"])
@@ -850,7 +853,7 @@ test("ask_user: the question waits as a card and the answer comes back to the ag
   runWith(":memory:", Asking, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
     const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
     yield* runtime.send({ chatId: chat.id, clientId: "ask-1", text: "start the server" })
     while (!c.events.some((e) => e._tag === "approval")) yield* Effect.sleep("10 millis")
@@ -973,8 +976,8 @@ test("a limit on chats at work: over it a chat waits for a free slot, then start
         throw new Error(`${chatId} never reached ${state}`)
       })
     yield* runtime.setMaxRunning(1)
-    const a = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
-    const b = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const a = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
+    const b = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
     yield* runtime.send({ chatId: a.id, clientId: crypto.randomUUID(), text: "first" })
     yield* until(a.id, "running")
     yield* runtime.send({ chatId: b.id, clientId: crypto.randomUUID(), text: "second" })
@@ -1050,16 +1053,16 @@ test("an agent over its month's tokens doesn't start, and says so", () =>
     expect(all.at(-1)).toMatchObject({ error: ErrorCode.monthlyLimit, text: "" })
   })))
 
-test("an archived agent answers no one in its chats", () =>
+test("an archived agent answers no one in its chats, and nothing answers in its place (spec 015)", () =>
   runWith(":memory:", Echo, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
     const a = yield* store.createAgent({ projectId: null, name: "Gone", instructions: "", model: "x/y" })
     yield* store.updateAgent(a.id, { archivedAt: Date.now() })
     const chat = yield* store.createChat({ projectId: null, agentIds: [a.id], model: "x/y" })
-    yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "hello" })
-    const [reply] = yield* replies(chat.id)
-    expect(reply?.agentId).toBeNull() // the chat's model answers, not the archived agent
+    const sent = yield* runtime.send({ chatId: chat.id, clientId: crypto.randomUUID(), text: "hello" }).pipe(Effect.flip)
+    expect(sent._tag).toBe("ChatNeedsAgent") // the app asks who continues; the message isn't saved meanwhile
+    expect(yield* store.messages(chat.id)).toEqual([])
   })))
 
 // Quiet learning (consolidate "quiet"): a short chat learns on the provider's small model, leaves its summary and
@@ -1081,7 +1084,7 @@ test("quiet learning: a short chat learns on the small model; the summary stays;
     Effect.scoped(
       Effect.gen(function* () {
         const store = yield* Store
-        const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "claude-cli/sonnet" })
+        const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "claude-cli/sonnet" })
         const say = (role: "user" | "assistant", text: string) =>
           Effect.andThen(Effect.sleep("2 millis"), store.addMessage({ chatId: chat.id, role, agentId: null, text, model: null, error: null, steps: [], inputTokens: 0, outputTokens: 0 }))
         yield* say("user", "I prefer tabs over spaces")
@@ -1125,7 +1128,7 @@ test("reading tools come once there's something to read: pages, skills, memories
   runWith(":memory:", ToolLister, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "x/y" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "x/y" })
     const turnOnce = (text: string) =>
       Effect.gen(function* () {
         const c = yield* collect(chat.id, (e) => e._tag === "turn-completed")
@@ -1159,7 +1162,7 @@ test("earlier facts go on the map once, on the small model", () =>
       Effect.gen(function* () {
         const store = yield* Store
         const p = yield* store.createProject({ name: "Zorel", brief: "" })
-        yield* store.createChat({ projectId: p.id, agentIds: [], model: "claude-cli/sonnet" })
+        yield* store.createChat({ projectId: p.id, agentIds: [(yield* plainAgent(store)).id], model: "claude-cli/sonnet" })
         for (const text of ["Deploys go to Vercel", "Deploys happen on Fridays", "Previews deploy on Vercel"]) yield* store.addMemory({ scope: `project:${p.id}`, text, state: "active", origin: "manual", chatId: null })
         yield* Effect.sleep("2 millis")
         expect(yield* mapEarlierFacts()).toBe(3)
@@ -1193,7 +1196,7 @@ test("release (spec 011): a deleted chat's open stream ends, and it can't be sub
   runWith(":memory:", Echo, Effect.gen(function* () {
     const store = yield* Store
     const runtime = yield* Runtime
-    const chat = yield* store.createChat({ projectId: null, agentIds: [], model: "a/m" })
+    const chat = yield* store.createChat({ projectId: null, agentIds: [(yield* plainAgent(store)).id], model: "a/m" })
     yield* sendAndWait(chat.id, "hi") // the hub exists and has had events
     const ready = yield* Deferred.make<void>()
     const open = yield* runtime.subscribeChat(chat.id).pipe(

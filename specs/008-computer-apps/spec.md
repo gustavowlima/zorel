@@ -3,7 +3,7 @@
 **Feature Branch**: `feat/memory-efficiency` | **Created**: 2026-11-08 | **Status**: Implemented
 
 **Input**: "precisamos do agent desktop da vercel … opcional para baixar e instalar" (2026-11-08), then
-"sim" to: native in-app install + a reference app's usage model (per agent, per app, few tools, approval only on
+"sim" to: native in-app install + a usage model per agent and per app (few tools, approval only on
 what commits).
 
 ## Baseline
@@ -63,10 +63,10 @@ every change asks, as for the browser.
 
 ## Assumptions
 
-- Ported from a reference app (Apache-2.0, credited in NOTICE): the numbered list (`itemize`), picking by number or
+- Ported from third-party Apache-2.0 code (credited in NOTICE): the numbered list (`itemize`), picking by number or
   text (`pick`), risky click/key rules, key names per OS.
 - v1 opens apps by name (`agent-desktop launch`, and `open -a` with Chromium accessibility on macOS);
-  a reference app's Windows/Linux app resolution through the Start menu and `.desktop` files is left for later.
+  Windows/Linux app resolution through the Start menu and `.desktop` files is left for later.
 - macOS Accessibility must be granted to the app that runs Zorel; agent-desktop's own guide shows how.
 
 ## Tasks

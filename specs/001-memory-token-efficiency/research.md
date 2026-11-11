@@ -55,7 +55,7 @@ memory benchmarks. No open questions remain.
   full text is kept for the turn (in memory, per chat, last 20 results). A new internal tool
   `zorel_read_result` returns a slice by offset or the lines matching a text. ≥5× smaller for every
   result over the limit (16,000 → ≤3,200 with the line).
-- **Rationale**: same idea as Mastra's observations and reference apps deferring big payloads,
+- **Rationale**: same idea as Mastra's observations and deferring big payloads,
   without a model call (D0 light first).
 - **Alternatives rejected**: summarizing with the cheap model (latency and cost per call, may drop
   the detail the agent needs); writing results to files (the agent's sandbox may not read Zorel's

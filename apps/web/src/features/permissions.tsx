@@ -1,8 +1,8 @@
-// What an agent may reach, as plain choices: one row per power, an icon,
-// what it means in a sentence, and a selector — files and commands (read / read and write / everything), the web
-// (no access / read), its own browser (no access / use it), and each connector (no access / read / read and
-// write). Under them, the actions allowed for good from an approval card, each removable. Destructive actions
-// always ask (server rule). Used by the agent page and by Build with AI.
+// What an agent may reach, as plain choices in two parts. Access: files and commands (read / read and write /
+// everything), the web (no access / read), its own browser, its own computer. Tools: each connector (no access /
+// read / read and write; a new one starts read-only) and the computer's apps. Under them, the actions allowed for
+// good from an approval card, each removable. Destructive actions always ask (server rule). Used by the agent page
+// and by Build with AI.
 import type { Access, AgentPermissions, Grant, McpServer } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
 import type { ReactNode } from "react"
@@ -10,8 +10,12 @@ import { ComputerApps } from "./computer-apps.tsx"
 import { OwnComputer } from "./own-computer.tsx"
 import { Globe, IconButton, MousePointerClick, Plug, Rows, Segmented, SettingRow, SquareTerminal, X } from "@/ui"
 
-// A server the agent was given nothing for follows the server's own mode (as on the server).
-const grantOf = (p: AgentPermissions, s: McpServer): Grant => p.grants[s.id] ?? (s.mode === "read" ? "read" : "write")
+// A connector the agent was given nothing for (a new one) is read-only, and a server in read mode caps it at
+// reading (as on the server).
+const grantOf = (p: AgentPermissions, s: McpServer): Grant => {
+  const given = p.grants[s.id] ?? "read"
+  return s.mode === "read" && given === "write" ? "read" : given
+}
 
 // Files and commands, in the words of the other rows: ask = reads, edits wait; workspace = reads and writes in its
 // folder; full = everything, without asking.
@@ -44,7 +48,9 @@ export function PermissionsEditor({
     return `${servers.find((s) => s.id === key.slice(0, at))?.name ?? key.slice(0, at)} · ${key.slice(at + 1)}`
   }
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
+      <section className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium text-muted">{t("agent.perm.accessTitle")}</h2>
       <Rows>
         <Power
           icon={<SquareTerminal />}
@@ -85,7 +91,20 @@ export function PermissionsEditor({
             />
           }
         />
-        <OwnComputer value={value.computer ?? "none"} onChange={(computer) => onChange({ ...value, computer })} agentId={agentId} />
+        <OwnComputer value={value.computer ?? "none"} onChange={(computer) => onChange({ ...value, computer })} lent={value.lent ?? []} onLent={(lent) => onChange({ ...value, lent })} agentId={agentId} />
+      </Rows>
+      </section>
+      <section className="flex flex-col gap-5">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-sm font-medium text-muted">{t("agent.perm.toolsTitle")}</h2>
+          <p className="max-w-prose text-sm text-dim">{t("agent.perm.toolsHint")}</p>
+        </div>
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium">{t("agent.perm.connectorsTitle")}</h3>
+          {servers.length === 0 ? (
+            <p className="text-sm text-muted">{t("agent.perm.noConnectors")}</p>
+          ) : (
+            <Rows>
         {servers.map((s) => (
           <Power
             key={s.id}
@@ -97,14 +116,16 @@ export function PermissionsEditor({
                 label={s.name}
                 value={grantOf(value, s)}
                 onChange={(g) => onChange({ ...value, grants: { ...value.grants, [s.id]: g } })}
-                options={(["none", "read", "write"] as const).map((g) => ({ id: g, label: t(`agent.perm.level.${g}`) }))}
+                options={(s.mode === "read" ? (["none", "read"] as const) : (["none", "read", "write"] as const)).map((g) => ({ id: g, label: t(`agent.perm.level.${g}`) }))}
               />
             }
           />
         ))}
-      </Rows>
-      {servers.length === 0 && <p className="text-sm text-muted">{t("agent.perm.noConnectors")}</p>}
-      <ComputerApps value={value.apps ?? []} onChange={(apps) => onChange({ ...value, apps })} />
+            </Rows>
+          )}
+        </div>
+        <ComputerApps value={value.apps ?? []} onChange={(apps) => onChange({ ...value, apps })} />
+      </section>
       {showAlways && value.always.length > 0 && (
         <section className="flex flex-col gap-2">
           <h2 className="text-sm font-medium text-muted">{t("agent.perm.always")}</h2>

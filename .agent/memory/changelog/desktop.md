@@ -10,3 +10,6 @@
 2026-11-04 | removed browser-host.ts and remote-debugging-port; agents use the server's Chrome over pipe | Electron CDP without authentication
 2026-11-04 | no clipboard-read in the window; keep awake on AC power; shortcut to notification settings | review of the window's permissions
 2026-11-04 | no keychain identity discovery; ad hoc signs the bundled Chromium | a revoked Apple Development cert made macOS flag the app as malware and trash it
+2026-11-11 | quit question in Zorel's own dialog, native as fallback | user: native dialog off the design system
+2026-11-11 | electron-vite for build and dev (HMR, main restart) | user: desktop is the focus
+2026-11-11 | own computer: host option, lent folders, live state, start/restart/open; Podman always when installed; app icons | user request

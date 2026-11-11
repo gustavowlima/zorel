@@ -16,6 +16,28 @@ test("the engine: Podman when it works, Docker when only it does, else what the 
   expect(problemOf("docker", "permission denied while trying to connect to the docker.sock")).toContain("docker group")
 })
 
+test("Podman is always the engine when installed: a stopped machine is started, never replaced by Docker", async () => {
+  const calls: string[] = []
+  // `podman info` fails until `podman machine start` ran; Docker works all along.
+  let started = false
+  const run: Runner = async (bin, args) => {
+    calls.push(`${bin} ${args.slice(0, 2).join(" ")}`)
+    if (bin === "docker") return { code: 0, stdout: "", stderr: "" }
+    if (args[0] === "machine") {
+      started = true
+      return { code: 0, stdout: "", stderr: "" }
+    }
+    return started ? { code: 0, stdout: "arm64", stderr: "" } : { code: 125, stdout: "", stderr: "Error: unable to connect to Podman socket: connection refused" }
+  }
+  expect(await detectEngine(run, "darwin")).toEqual({ engine: "podman", problem: null })
+  expect(calls).toEqual(["podman info --format", "podman machine start", "podman info --format"]) // Docker never asked
+  // The machine won't start: say so, still no Docker in its place.
+  const stuck: Runner = async (bin, args) => (bin === "docker" ? { code: 0, stdout: "", stderr: "" } : args[0] === "machine" ? { code: 125, stdout: "", stderr: "Error: podman-machine-default: VM does not exist" } : { code: 125, stdout: "", stderr: "Cannot connect to Podman" })
+  const r = await detectEngine(stuck, "darwin")
+  expect(r.engine).toBeNull()
+  expect(r.problem).toContain("podman machine init")
+})
+
 test("only a folder inside home can be lent: not home itself, hidden ones, system settings or Zorel's data", () => {
   const home = mkdtempSync(join(tmpdir(), "zorel-home-"))
   for (const d of ["code/app", ".ssh", "Library/Keys", "zorel-data"]) mkdirSync(join(home, d), { recursive: true })
@@ -30,7 +52,7 @@ test("only a folder inside home can be lent: not home itself, hidden ones, syste
 })
 
 test("container arguments: local-only ports, the lent folder read-only when asked, keep-id for rootless Podman on Linux", () => {
-  const base = { name: "zorel-abc-agent-proj", install: "abc", agentId: "agent", work: "/data/work", lent: { path: "/home/me/app", readOnly: true } }
+  const base = { name: "zorel-abc-agent-proj", install: "abc", agentId: "agent", work: "/data/work", lents: [{ path: "/home/me/app", readOnly: true }] }
   const mac = runArgs({ ...base, engine: "podman", platform: "darwin" })
   expect(mac).toContain("type=bind,src=/home/me/app,dst=/projects/app,readonly")
   expect(mac).toContain("no-new-privileges")
@@ -38,18 +60,23 @@ test("container arguments: local-only ports, the lent folder read-only when aske
   expect(mac).not.toContain("--userns=keep-id:uid=0,gid=0")
   expect(runArgs({ ...base, engine: "podman", platform: "linux" })).toContain("--userns=keep-id:uid=0,gid=0")
   expect(runArgs({ ...base, engine: "docker", platform: "linux" })).not.toContain("--userns=keep-id:uid=0,gid=0")
-  expect(runArgs({ ...base, engine: "docker", lent: null }).some((a) => a.includes("/projects"))).toBe(false)
+  expect(runArgs({ ...base, engine: "docker", lents: [] }).some((a) => a.includes("/projects"))).toBe(false)
   expect(containerName("/data/a", "agent-123456789", null)).not.toBe(containerName("/data/b", "agent-123456789", null)) // two installs never share
   // A writable repo keeps its .git read-only (host git runs its hooks and config); the mount is labeled so a change of
   // folder or level makes the container again.
   const repo = mkdtempSync(join(tmpdir(), "zorel-repo-"))
   mkdirSync(join(repo, ".git"))
-  const rw = runArgs({ ...base, engine: "docker", lent: { path: repo, readOnly: false } })
+  const rw = runArgs({ ...base, engine: "docker", lents: [{ path: repo, readOnly: false }] })
   expect(rw).toContain(`type=bind,src=${join(repo, ".git")},dst=/projects/${folderName(repo)}/.git,readonly`)
   // A folder with ":" in its name stays one mount.
-  expect(runArgs({ ...base, engine: "docker", lent: { path: "/home/me/a:b", readOnly: false } })).toContain("type=bind,src=/home/me/a:b,dst=/projects/a-b")
-  expect(rw).toContain(`zorel.mount=${mountOf({ path: repo, readOnly: false })}`)
-  expect(mountOf({ path: repo, readOnly: true })).not.toBe(mountOf({ path: repo, readOnly: false }))
+  expect(runArgs({ ...base, engine: "docker", lents: [{ path: "/home/me/a:b", readOnly: false }] })).toContain("type=bind,src=/home/me/a:b,dst=/projects/a-b")
+  expect(rw).toContain(`zorel.mount=${mountOf([{ path: repo, readOnly: false }])}`)
+  expect(mountOf([{ path: repo, readOnly: true }])).not.toBe(mountOf([{ path: repo, readOnly: false }]))
+  // Several folders lent: each its own mount; two with the same name don't collide; the label doesn't depend on order.
+  const two = runArgs({ ...base, engine: "docker", lents: [{ path: "/home/me/app", readOnly: false }, { path: "/home/me/work/app", readOnly: true }] })
+  expect(two).toContain("type=bind,src=/home/me/app,dst=/projects/app")
+  expect(two).toContain("type=bind,src=/home/me/work/app,dst=/projects/app-2,readonly")
+  expect(mountOf([{ path: "/a", readOnly: true }, { path: "/b", readOnly: false }])).toBe(mountOf([{ path: "/b", readOnly: false }, { path: "/a", readOnly: true }]))
 })
 
 test("command output keeps its start and, mostly, its end; a timeout says how to run long things", () => {

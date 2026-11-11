@@ -100,6 +100,6 @@ packages/i18n/src/en.ts
 
 | Choice | Why needed | Simpler alternative rejected because |
 |---|---|---|
-| `@xyflow/react` dependency | The person chose a canvas editor; the library measured fastest among the ready ones | A hand-made canvas is about 3k lines (a reference app); a list-only editor was declined |
+| `@xyflow/react` dependency | The person chose a canvas editor; the library measured fastest among the ready ones | A hand-made canvas is about 3k lines; a list-only editor was declined |
 | `ajv` as a direct dependency | Server-side validation of arbitrary tool schemas (constitution II) | Hand-written JSON Schema checks would be partial; ajv is already installed through the MCP SDK |
 | Nullable `approvals.turn_id` | Run steps need approvals without a model turn | A fake turn per tool step would fight the runtime's queue and boot recovery |

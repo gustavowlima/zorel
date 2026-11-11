@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from "@modelcontextprotocol/sdk/types.js"
-import { type Agent, type AgentPermissions, type FlowGraph, type FlowNode, type McpServer, validateFlow } from "@zorel/contracts"
+import { type Agent, type AgentPermissions, DEFAULT_PERMISSIONS, type FlowGraph, type FlowNode, type McpServer, validateFlow } from "@zorel/contracts"
 import { Effect, Layer, ManagedRuntime, Stream } from "effect"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -93,7 +93,8 @@ let server: McpServer
 let agent: Agent
 beforeAll(async () => {
   server = await go(withStore((s) => s.createMcpServer({ projectId: null, name: "Chat", command: "", args: [], url: `http://127.0.0.1:${mcp.port}`, envKeys: [], mode: "auto", auth: "none" })))
-  agent = await go(withStore((s) => s.createAgent({ projectId: null, name: "Atlas", instructions: "", model: "x/y", access: "workspace" })))
+  // Write on the connector given outright: a new one would be read-only.
+  agent = await go(withStore((s) => s.createAgent({ projectId: null, name: "Atlas", instructions: "", model: "x/y", access: "workspace", permissions: { ...DEFAULT_PERMISSIONS, grants: { [server.id]: "write" } } })))
   flowTiming.retryMs = 1
 })
 beforeEach(() => {

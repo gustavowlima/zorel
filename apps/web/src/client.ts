@@ -41,7 +41,9 @@ export const keysAtom = Zorel.query("settings", "keys", { reactivityKeys: ["keys
 export const telegramAtom = Zorel.query("settings", "telegram", { reactivityKeys: ["telegram"] })
 export const desktopAtom = Zorel.query("settings", "desktop", { reactivityKeys: ["desktop"] })
 export const computerAtom = Zorel.query("settings", "computer", { reactivityKeys: ["computer"] })
+export const computerStateAtom = (id: string) => Zorel.query("settings", "computerState", { params: { id }, reactivityKeys: ["computer"] })
 export const desktopRunningAtom = Zorel.query("settings", "desktopRunning", { reactivityKeys: ["desktop"] })
+export const installedAppsAtom = Zorel.query("settings", "installedApps", { reactivityKeys: ["desktop"] })
 export const auditAtom = (query: { kind?: AuditKind; q?: string; from?: number; to?: number; page?: number }) =>
   Zorel.query("settings", "audit", { query, reactivityKeys: ["audit"] })
 export const storageAtom = Zorel.query("settings", "storage", { reactivityKeys: ["storage"] })
@@ -158,8 +160,12 @@ export const mutations = {
   installDesktop: Zorel.mutation("settings", "installDesktop"),
   installCli: Zorel.mutation("settings", "installCli"),
   eraseComputer: Zorel.mutation("settings", "eraseComputer"),
+  computerStart: Zorel.mutation("settings", "computerStart"),
+  computerRestart: Zorel.mutation("settings", "computerRestart"),
+  computerOpen: Zorel.mutation("settings", "computerOpen"),
   desktopGuide: Zorel.mutation("settings", "desktopGuide"),
   telegramUnpair: Zorel.mutation("settings", "telegramUnpair"),
+  telegramAgent: Zorel.mutation("settings", "telegramAgent"),
   undo: Zorel.mutation("chats", "undo"),
   readLimits: Zorel.mutation("accounts", "limits"),
   cleanStorage: Zorel.mutation("settings", "cleanStorage"),

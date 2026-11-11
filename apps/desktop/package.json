@@ -6,22 +6,27 @@
   "private": true,
   "main": "dist/main.cjs",
   "scripts": {
-    "main": "bun build src/main.ts src/preload.ts --target=node --format=cjs --external electron --outdir dist --entry-naming [name].cjs",
+    "dev": "ZOREL_DEV_PORT=4327 electron-vite dev --watch",
+    "main": "electron-vite build",
     "server": "bun scripts/server.ts && bun scripts/playwright.ts && bun scripts/onnx.ts",
-    "start": "bun run --cwd ../web build && bun run main && electron .",
-    "prebuild": "bun run --cwd ../web build && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run browser && bun run licenses && bun run main",
+    "start": "bun run main && electron .",
+    "prebuild": "bun run main && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run browser && bun run licenses",
     "build": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --publish never",
     "icons": "sh scripts/icons.sh",
     "release": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --publish always",
-    "prerelease": "bun run --cwd ../web build && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run browser && bun run licenses && bun run main",
+    "prerelease": "bun run main && rm -rf build && mkdir build && cp -R ../web/dist build/web && cp -R ../server/drizzle build/drizzle && bun run server && bun run browser && bun run licenses",
     "browser": "PLAYWRIGHT_BROWSERS_PATH=build/browsers bun ../server/node_modules/playwright-core/cli.js install chromium-headless-shell && rm -rf build/browsers/ffmpeg-*",
     "licenses": "bun ../../scripts/third-party-licenses.ts build/THIRD_PARTY_LICENSES.md"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.4",
     "@types/node": "24.19.2",
+    "@vitejs/plugin-react": "^6.2.1",
     "@zorel/contracts": "workspace:*",
     "electron": "45.0.0",
-    "electron-builder": "26.18.0"
+    "electron-builder": "26.18.0",
+    "electron-vite": "6.0.0",
+    "vite": "^8.3.5"
   },
   "dependencies": {
     "electron-updater": "6.8.11"

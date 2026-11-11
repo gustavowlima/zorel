@@ -4,14 +4,20 @@ import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { t } from "@zorel/i18n"
 import { useState } from "react"
-import { mutations, telegramAtom, useMutation } from "../client.ts"
-import { Button, ConfirmButton, Input, Rows, Section, SettingRow } from "@/ui"
+import { isTeammate } from "@zorel/contracts"
+import { agentsAtom, mutations, telegramAtom, useList, useMutation } from "../client.ts"
+import { agentTone } from "../labels.ts"
+import { AgentAvatar, Button, ConfirmButton, Input, Rows, Section, Select, SettingRow } from "@/ui"
 
 export function ChannelsSection() {
   const status = AsyncResult.getOrElse(useAtomValue(telegramAtom), () => undefined)
   const setKey = useMutation(mutations.setKey)
   const pair = useMutation(mutations.telegramPair)
   const unpair = useMutation(mutations.telegramUnpair)
+  const pickAgent = useMutation(mutations.telegramAgent)
+  // Who answers there: a global agent of the person's (spec 015); unset, the one used last.
+  const agents = useList(agentsAtom)
+  const global = agents.filter((a) => isTeammate(a) && a.projectId === null)
   const [draft, setDraft] = useState("")
   const [error, setError] = useState<string>()
   const saveToken = (value: string) => {
@@ -73,6 +79,18 @@ export function ChannelsSection() {
                 {t("channels.unpair")}
               </ConfirmButton>
             )}
+          </SettingRow>
+        )}
+        {status.tokenSet && status.agentId && (
+          <SettingRow title={t("channels.agent")} hint={status.chosen ? t("channels.agentHint") : t("channels.agentDefault")}>
+            <Select
+              size="sm"
+              className="w-56"
+              aria-label={t("channels.agent")}
+              value={status.agentId}
+              onChange={(agentId) => void pickAgent({ payload: { agentId }, reactivityKeys: ["telegram"] })}
+              options={global.map((a) => ({ value: a.id, label: a.name, icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} /> }))}
+            />
           </SettingRow>
         )}
       </Rows>

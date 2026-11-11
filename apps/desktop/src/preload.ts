@@ -13,6 +13,20 @@ contextBridge.exposeInMainWorld("zorelDesktop", {
   pickFolder: (start?: string): Promise<string | null> => ipcRenderer.invoke("folder:pick", start),
   // Keep the computer awake (on power) so routines run on time.
   keepAwake: { get: (): Promise<boolean> => ipcRenderer.invoke("awake:get"), set: (on: boolean): Promise<boolean> => ipcRenderer.invoke("awake:set", on) },
+  // The apps' icons (path → data URL) for the apps picker.
+  appIcons: (paths: ReadonlyArray<string>): Promise<Record<string, string>> => ipcRenderer.invoke("apps:icons", paths),
+  // "Quit Zorel?" asked in Zorel's own dialog: the app asks (onAsk), the page answers once.
+  quit: {
+    onAsk: (callback: () => void) => {
+      const listener = () => {
+        ipcRenderer.send("quit:shown")
+        callback()
+      }
+      ipcRenderer.on("quit:ask", listener)
+      return () => void ipcRenderer.off("quit:ask", listener)
+    },
+    answer: (a: { quit: boolean; dontAsk: boolean }) => void ipcRenderer.invoke("quit:answer", a)
+  },
   // A new version: downloading (ready false) or ready to install with a restart.
   update: {
     get: (): Promise<Update> => ipcRenderer.invoke("update:get"),

@@ -6,7 +6,7 @@ import { type ChildProcess, execFile, spawn } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { existsSync, openSync, readFileSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
-import { join } from "node:path"
+import { isAbsolute, join } from "node:path"
 import { app, BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, powerMonitor, powerSaveBlocker, session, shell, Tray } from "electron"
 import { SESSION_BYTES, SESSION_HEADER, SESSION_STDIN_ENV } from "@zorel/contracts/session"
 import { autoUpdater } from "electron-updater"
@@ -17,6 +17,11 @@ const appDir = app.getAppPath()
 const root = dev ? join(appDir, "..", "..") : process.resourcesPath
 let server: ChildProcess | undefined
 let url = ""
+// In development (electron-vite dev) the window loads the interface from Vite (instant updates); its proxy reaches the
+// server on a fixed port. Packaged, the server serves the interface itself on a free port.
+const rendererUrl = dev ? process.env.ELECTRON_RENDERER_URL : undefined
+const DEV_PORT = Number(process.env.ZOREL_DEV_PORT ?? 4317) // the port apps/web's Vite proxy points at (desktop:dev sets 4327)
+const pageUrl = () => rendererUrl ?? url
 // The server's per-launch secret: only this process and the server know it. Every request the app window makes to the
 // server gets it as a header (auth()), so the page never holds it and nothing the server spawns inherits it.
 const secret = randomBytes(SESSION_BYTES).toString("hex")
@@ -25,7 +30,7 @@ let tray: Tray | undefined
 let quitting = false
 // Quitting asks first (agents and routines stop), unless the person said not to, an update or the system is closing
 // the app, or it is quitting on an error. One question at a time, however many times Quit is pressed.
-let confirmQuit = true
+let confirmQuit = !rendererUrl // under electron-vite dev a restart is a quit: no question in its way
 let asking = false
 // The newest release: downloading (percent), then ready; installing once Restart was pressed (it can't be pressed
 // again), and why an install failed (the button comes back to try again).
@@ -47,6 +52,17 @@ const loginShellPath = () =>
 
 const READY_EVERY_MS = 100
 const READY_TRIES = 1200 // 2 minutes: room for the keychain prompt on a new build's first launch
+// The development port, once the last run's server let it go (electron-vite restarts the app on a main-process change;
+// the old server may still be closing). Up to 10 seconds, then it tries anyway.
+const portFree = (port: number) =>
+  new Promise<boolean>((resolve) => {
+    const probe = createServer().once("error", () => resolve(false))
+    probe.listen(port, "127.0.0.1", () => probe.close(() => resolve(true)))
+  })
+async function devPort() {
+  for (let i = 0; i < 100 && !(await portFree(DEV_PORT)); i++) await new Promise((r) => setTimeout(r, 100))
+  return DEV_PORT
+}
 const freePort = () =>
   new Promise<number>((resolve, reject) => {
     const probe = createServer().once("error", reject)
@@ -57,7 +73,7 @@ const freePort = () =>
   })
 
 async function startServer() {
-  const port = await freePort()
+  const port = rendererUrl ? await devPort() : await freePort()
   const log = openSync(join(app.getPath("logs"), "server.log"), "a")
   const [cmd, args] = dev ? ["bun", [join(root, "apps/server/src/main.ts")]] : [join(root, process.platform === "win32" ? "zorel-server.exe" : "zorel-server"), []]
   server = spawn(cmd, args, {
@@ -105,7 +121,7 @@ function openWindow() {
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false, preload: join(appDir, "dist", "preload.cjs") }
   })
   // An app, not a page: no pinch or Ctrl+wheel zoom.
-  win.webContents.setVisualZoomLevelLimits(1, 1)
+  win.webContents.setVisualZoomLevelLimits(1, 1).catch(() => undefined) // the page may reload first (Vite, in development)
   // Right-click where the page has no menu of its own: Cut/Copy/Paste on text, nothing elsewhere (no Back, Reload or
   // Inspect). The page's own menus (rows, tabs) cancel the event, so they never reach this.
   win.webContents.on("context-menu", (_e, p) => {
@@ -124,7 +140,7 @@ function openWindow() {
   // The app's own pages stay in the window; every other link opens in the default browser. Compared by origin, not
   // by prefix: "http://127.0.0.1:<port>@elsewhere/" starts like the app's address but is another site. A link to
   // the app's own files (an attachment) downloads here, where the request carries the secret.
-  const ours = (to: string) => URL.canParse(to) && new URL(to).origin === new URL(url).origin
+  const ours = (to: string) => URL.canParse(to) && new URL(to).origin === new URL(pageUrl()).origin
   const external = (to: string) => {
     if (/^https?:\/\//.test(to)) void shell.openExternal(to)
   }
@@ -138,7 +154,7 @@ function openWindow() {
     e.preventDefault()
     external(to)
   })
-  void win.loadURL(`${url}/?shell=desktop`)
+  void win.loadURL(`${pageUrl()}/?shell=desktop`)
 }
 
 // Open at login (Settings › General, desktop only): started that way, Zorel runs without a window (the server and
@@ -219,12 +235,39 @@ const developerId = () =>
     execFile("codesign", ["-dv", "--verbose=2", join(process.execPath, "..", "..", "..")], (_e, out, err) => resolve(/Authority=Developer ID Application/.test(`${out}${err}`)))
   })
 
-// "Quit Zorel?" (the native dialog): Quit, or Cancel to keep it running; "Don't ask again" is kept on this computer.
+// "Quit Zorel?": Quit, or Cancel to keep it running; "Don't ask again" is kept on this computer. Asked in Zorel's own
+// dialog (the window, shown if hidden); the native one only when the page doesn't take the question in time (it
+// isn't loaded, or there's no window).
 const NO_ASK = () => join(app.getPath("userData"), "quit-without-asking")
 const askedNotTo = () => existsSync(NO_ASK())
-async function askToQuit() {
-  if (asking) return
-  asking = true
+type QuitAnswer = { quit: boolean; dontAsk: boolean }
+let answerQuit: ((a: QuitAnswer) => void) | undefined
+const PAGE_ASK_MS = 1500 // how long the page has to show its dialog before the native one stands in
+
+function askInPage(): Promise<QuitAnswer | undefined> {
+  const w = win
+  if (!w || w.isDestroyed()) return Promise.resolve(undefined)
+  w.show()
+  w.focus()
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      ipcMain.removeAllListeners("quit:shown")
+      answerQuit = undefined
+      resolve(undefined)
+    }, PAGE_ASK_MS)
+    ipcMain.once("quit:shown", (e) => {
+      if (e.sender === w.webContents) clearTimeout(timer)
+    })
+    answerQuit = (a) => {
+      clearTimeout(timer)
+      answerQuit = undefined
+      resolve(a)
+    }
+    w.webContents.send("quit:ask")
+  })
+}
+
+async function askNatively(): Promise<QuitAnswer> {
   const options = {
     type: "question" as const,
     message: "Quit Zorel?",
@@ -236,9 +279,16 @@ async function askToQuit() {
   }
   const shown = win && !win.isDestroyed() && win.isVisible() ? win : undefined
   const { response, checkboxChecked } = await (shown ? dialog.showMessageBox(shown, options) : dialog.showMessageBox(options))
+  return { quit: response === 0, dontAsk: checkboxChecked }
+}
+
+async function askToQuit() {
+  if (asking) return
+  asking = true
+  const answer = (await askInPage()) ?? (await askNatively())
   asking = false
-  if (response !== 0) return
-  if (checkboxChecked) writeFileSync(NO_ASK(), "")
+  if (!answer.quit) return
+  if (answer.dontAsk) writeFileSync(NO_ASK(), "")
   confirmQuit = false
   app.quit()
 }
@@ -299,9 +349,10 @@ function permissions() {
 
 // The server's secret on every request to it from the app's own session (the agents' tabs live in other partitions).
 function auth() {
-  const host = new URL(url).host
+  // The server, and in development Vite too (its proxy passes the header on to the server).
+  const hosts = new Set([new URL(url).host, ...(rendererUrl ? [new URL(rendererUrl).host] : [])])
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ["http://127.0.0.1/*", "ws://127.0.0.1/*"] }, (d, done) =>
-    done({ requestHeaders: URL.canParse(d.url) && new URL(d.url).host === host ? { ...d.requestHeaders, [SESSION_HEADER]: secret } : d.requestHeaders })
+    done({ requestHeaders: URL.canParse(d.url) && hosts.has(new URL(d.url).host) ? { ...d.requestHeaders, [SESSION_HEADER]: secret } : d.requestHeaders })
   )
 }
 
@@ -340,6 +391,25 @@ function systemIpc() {
     if (!fromApp(e) || !target) return false
     void shell.openExternal(target)
     return true
+  })
+  // The apps' own icons for the apps picker, drawn by the system from each app's path. Only paths that are apps (a
+  // bundle, a shortcut, a program) or icon files from an icon folder: a page can't use this to see other files.
+  const icons = new Map<string, string>()
+  ipcMain.handle("apps:icons", async (e, paths: unknown) => {
+    if (!fromApp(e) || !Array.isArray(paths)) return {}
+    const asked = paths.filter((p): p is string => typeof p === "string" && isAppPath(p)).slice(0, 400)
+    const out: Record<string, string> = {}
+    for (const p of asked) {
+      if (!icons.has(p)) icons.set(p, await appIcon(p))
+      const icon = icons.get(p)
+      if (icon) out[p] = icon
+    }
+    return out
+  })
+  ipcMain.handle("quit:answer", (e, a: unknown) => {
+    if (!fromApp(e) || !a || typeof a !== "object") return
+    const { quit, dontAsk } = a as Record<string, unknown>
+    answerQuit?.({ quit: quit === true, dontAsk: dontAsk === true })
   })
   ipcMain.handle("awake:get", (e) => (fromApp(e) ? !!readPrefs().keepAwake : false))
   ipcMain.handle("awake:set", (e, on: unknown) => {
@@ -386,6 +456,12 @@ else {
   powerMonitor.on("shutdown", () => {
     confirmQuit = false
   })
+  // Told to stop by a signal (a terminal's Ctrl+C, the system, electron-vite restarting the app): no question.
+  for (const signal of ["SIGTERM", "SIGINT"] as const)
+    process.on(signal, () => {
+      confirmQuit = false
+      app.quit()
+    })
   void app
     .whenReady()
     .then(loginShellPath)
@@ -407,4 +483,23 @@ else {
       server?.kill("SIGTERM")
       app.quit()
     })
+}
+
+// An app's path, by kind: a macOS bundle, a Windows shortcut or program, or an icon file inside an icon folder (Linux).
+const isAppPath = (p: string) => isAbsolute(p) && (/\.app$/i.test(p) || /\.(lnk|exe)$/i.test(p) || (/[\\/](icons|pixmaps)[\\/]/.test(p) && /\.(png|svg)$/i.test(p)))
+// The icon as a data URL: an icon file as it is (small), else the system's thumbnail of the app (its real icon on
+// macOS and Windows), else its file icon; "" when there's none.
+async function appIcon(p: string): Promise<string> {
+  if (/\.(png|svg)$/i.test(p)) {
+    try {
+      const data = readFileSync(p)
+      if (data.length > 512 * 1024) return ""
+      return `data:${p.toLowerCase().endsWith(".svg") ? "image/svg+xml" : "image/png"};base64,${data.toString("base64")}`
+    } catch {
+      return ""
+    }
+  }
+  const thumb = await nativeImage.createThumbnailFromPath(p, { width: 64, height: 64 }).catch(() => undefined) // macOS and Windows only
+  if (thumb && !thumb.isEmpty()) return thumb.toDataURL()
+  return app.getFileIcon(p, { size: "normal" }).then((i) => i.toDataURL(), () => "")
 }

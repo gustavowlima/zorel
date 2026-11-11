@@ -434,7 +434,7 @@ export function toolState(server: { enabled: boolean; mode: "read" | "approve" |
   if (!server.enabled) return "off" as const
   if (refused) return "signed-out" as const
   if (mcpRoute(perms, server, tool, false).expose) return "usable" as const
-  return (perms.grants[server.id] ?? (server.mode === "read" ? "read" : "write")) === "read" ? ("read-only" as const) : ("no-access" as const)
+  return (perms.grants[server.id] ?? "read") === "read" ? ("read-only" as const) : ("no-access" as const) // a new connector: read-only
 }
 
 // Test now for a tool step: a read runs once, alone; a write never runs (the arguments it would send instead).

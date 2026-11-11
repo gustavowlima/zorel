@@ -20,10 +20,11 @@ export function Menu({ trigger, children, label }: { trigger: ReactNode; childre
   )
 }
 
-export function MenuItem({ children, onAction, tone = "default", icon }: { children: ReactNode; onAction: () => void; tone?: "default" | "danger"; icon?: ReactNode }) {
+export function MenuItem({ children, onAction, tone = "default", icon, isDisabled }: { children: ReactNode; onAction: () => void; tone?: "default" | "danger"; icon?: ReactNode; isDisabled?: boolean }) {
   return (
     <MenuItemPrimitive
       onAction={onAction}
+      isDisabled={isDisabled ?? false}
       className={cn(
         "flex h-control-sm cursor-default items-center gap-2 rounded-md px-2 text-base outline-none data-disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
         // Focus speaks the item's own voice: blue for an ordinary item, red for a destructive one (never blue on red).

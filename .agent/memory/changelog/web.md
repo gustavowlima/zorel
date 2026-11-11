@@ -48,11 +48,11 @@
 2026-11-05 | live steps list opens by default and shows title + detail per step | the user should see the steps without opening "Working"; contract got `detail`
 2026-11-05 | live steps open/folded is a per-browser switch in Settings > General (default open) | the user wanted it open but customizable
 2026-11-05 | StoredStep with a title is a collapsed summary row that opens to command and output | stored Step now carries title/detail; old steps keep the previous layout
-2026-11-05 | finished steps: "Done ·" prefix, per-step duration, Thought/Replied rows without chevron; Stop button beside the live pill | match the a reference app summary; timing now saved by the server (Step.ms, thought/reply steps)
+2026-11-05 | finished steps: "Done ·" prefix, per-step duration, Thought/Replied rows without chevron; Stop button beside the live pill | timing now saved by the server (Step.ms, thought/reply steps)
 2026-11-05 | Stop beside the live pill is wired (chat and builder) and only shown when one turn is running; "Done" only on replies without error | review: Stop was dead code, and Done showed on stopped/failed replies
 2026-11-05 | Send now says what happened (joined or stopped) and the queue shows replies ahead | the server now returns { joined } and the wait looked like a hang
 2026-11-05 | agent page tab "Memory & skills" (memory mode, knowledge access, skills by agent), "Used by" field in Knowledge and Settings, "Remembered N things" line with Undo; the "Knows" section left Activity | the server now gates memory, knowledge and skills per agent; the prototype HTML did not follow the design system, so the screen was built with the real components
-2026-11-05 | Knowledge split into Memory (memory.tsx: tabs by owner, review strip, teach field, Move, Still true?, delete for good), Pages (PagesView) and Skills (skills.tsx, with the computer's skills moved from Settings); routes #/memory, #/pages, #/skills, old #/knowledge links redirect (OldKnowledgeLink); server: MemoryPatch.scope (scopeExists, audience follows), DELETE /api/memories/:id only for forgotten | phase 2 of the memory work (a reference app prototype approved): one place per job
+2026-11-05 | Knowledge split into Memory (memory.tsx: tabs by owner, review strip, teach field, Move, Still true?, delete for good), Pages (PagesView) and Skills (skills.tsx, with the computer's skills moved from Settings); routes #/memory, #/pages, #/skills, old #/knowledge links redirect (OldKnowledgeLink); server: MemoryPatch.scope (scopeExists, audience follows), DELETE /api/memories/:id only for forgotten | phase 2 of the memory work (prototype approved): one place per job
 2026-11-05 | MemoryChip in the chat timeline from memoriesAtom (chatId, origin auto, not forgotten), with Keep / Move / Undo; the client-only "remembered" note only triggers a refresh now; MoveMenu shared with Memory | the note vanished on reload and didn't say which agent kept what
 2026-11-05 | Memory › Map (memory-map.tsx): canvas force map of GET /api/memories/map with type chips, zoom, hover-lit links and a point panel (facts + links); MapPoint.memoryIds | stage A3 of the memory map
 2026-11-08 | 12 connectors beyond code (Todoist, ClickUp, monday, Airtable, Intercom, Canva, Gamma, Webflow, Wix, PayPal, Square, Hugging Face) | general platform: the store was nearly all dev tools
@@ -85,10 +85,10 @@
 2026-11-10 | Teams section, agent form teams, Add a team in pickers, @team joins members; project label Team → Agents | spec 010
 2026-11-10 | Routines Week view, routine History and Settings dialogs, Today page, Your day settings, routine notices | spec 012
 2026-11-10 | spec 013 P1-b: flow editor (lazy React Flow canvas + List), step panels, schema form, tool picker, Run view, Needs you rows for uncertain writes and Ask me; Dialog scrolls its body | the routine flows UI; long dialogs overflowed the window
-2026-11-10 | New routine rebuilt on the flow model (a reference app's fields, no JSON); canvas drag flicker fixed (keep RF measured nodes) | the user saw the old form and the canvas flickered
+2026-11-10 | New routine rebuilt on the flow model (the trigger's own fields, no JSON); canvas drag flicker fixed (keep RF measured nodes) | the user saw the old form and the canvas flickered
 2026-11-10 | pt-BR interface (catalog + language setting, system default) | user request; PRODUCT.md said English only for now
 2026-11-10 | tool choice is connector first (ConnectorTool), pt-BR rewritten for natural voice | user feedback
-2026-11-10 | New routine dialog is a step list (start unchosen, steps inline, add step), tabs removed | user: time was set before finishing; wanted steps like a reference app
+2026-11-10 | New routine dialog is a step list (start unchosen, steps inline, add step), tabs removed | user: time was set before finishing; wanted steps
 2026-11-10 | tool arguments: Form | JSON modes (CodeMirror, schema-aware) | user asked for both
 2026-11-10 | week: dotted half-hour hover with time; day-start line in the legend | user asked
 2026-11-10 | project default agent replaced by a crew (agents + teams) | the internal router already chooses who answers; user wanted to pick several agents or teams
@@ -100,3 +100,9 @@
 2026-11-10 | delegated tasks live under their chat (parentId) and open in a drawer, not as sidebar chats | user request
 2026-11-10 | browser cards per agent, owner-aware panel input, empty Changes without a pill, task report card + task chip | user requests
 2026-11-10 | task drawer state unified and moved to task-drawer.tsx; empty Changes tab derived, no effect | ponytail review
+2026-11-10 | browser card in replies + Browser panel opens when an agent starts browsing | user: the agent opened a page and nothing showed
+2026-11-11 | image viewer is a full-screen lightbox | user: the framed viewer looked bad
+2026-11-11 | browser card: no step list, panel no longer opens by itself; dev proxy fixed for the picture | user feedback
+2026-11-11 | spec 015: agents mandatory (first run, no plain chat, last agent kept, orphan chats ask who continues) | user decision
+2026-11-11 | permissions tab split into Access/Tools; app picker with search; nested form fixed | user: apps section broken and hard to use
+2026-11-11 | own computer: host option, lent folders, live state, start/restart/open; Podman always when installed; app icons | user request

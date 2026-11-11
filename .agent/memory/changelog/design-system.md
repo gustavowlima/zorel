@@ -22,7 +22,7 @@
 2026-11-05 | IconTile, Notice; hairline lists through Rows; check:ui hand-list, hand-notice | ideas from the old design-system-pass worktree, rewritten on current main
 2026-11-05 | agent avatars from open-bot-avatar in a tinted tile; Builder review takes the middle | user asked for friendlier avatars and a clearer proposal panel
 2026-11-05 | project agent picker as avatar tiles, Builder chat fixed right, model per card | user: too compact, Assistant label, customize before create
-2026-11-05 | FacePicker on home, project overview Team→Chats→About, sidebar folds under 900px | user asked for a more intuitive, fluid UI after a reference app
+2026-11-05 | FacePicker on home, project overview Team→Chats→About, sidebar folds under 900px | user asked for a more intuitive, fluid UI
 2026-11-05 | FacePicker removed; Select gets option icons + search past 8 options | user: a row of faces does not scale to hundreds of agents
 2026-11-05 | floating lists unified (focus blue, float surface, 6px rows), open triggers lit, popover body shrinks, team picker search | user asked for layout+polish of menus, inputs, selects, dropdowns
 2026-11-05 | Popover triggers light while open (data-popup-open wrapper); context menu checked on screen | leftover items from the menus/selects polish
@@ -37,6 +37,9 @@
 2026-11-10 | EmptyState gains inset (dashed row card) for empties inside a Section; MCP modes legend sm:grid-cols-4 | plain EmptyState in sections left the project Tools tab sparse
 2026-11-10 | subtle motion across the app: sliding tab/segment pill, Fold cards, overlay exits, check fade, page crossfade | /impeccable animate
 2026-11-10 | title bar drag note: .app-drag (Electron), not Electrobun | stale name
-2026-11-10 | agent colors allowed beyond the avatar as the identity tint (chosen/live things about one agent) | user: the app felt lifeless; a reference app reference
+2026-11-10 | agent colors allowed beyond the avatar as the identity tint (chosen/live things about one agent) | user: the app felt lifeless
 2026-11-10 | darker neutral scale, settling content swaps, per-tab tint, orbit backdrop, page editor toolbar + page headings | user requests
 2026-11-10 | SETTLE moved from ui/tabs.tsx to ui/motion.tsx | motion primitives in one place
+2026-11-10 | logo: blue core removed, one color | user request
+2026-11-11 | logo core back, white like the rest (removing it was a misread) | user: the dot should be white
+2026-11-11 | app-full: full-screen layers start under the desktop title bar | user: tabs hidden behind the macOS window buttons

@@ -2,6 +2,7 @@
 // live statuses: when a chat settles, what the server changed on its own (title, proposed memories,
 // usage, open approvals) is refetched.
 import type { ChatStatus } from "@zorel/contracts/events"
+import { isTeammate } from "@zorel/contracts"
 import { useAtomValue } from "@effect/atom-react"
 import { t } from "@zorel/i18n"
 import { AsyncResult } from "effect/reactivity"
@@ -29,6 +30,8 @@ import { go, type Route, useRoute, useSidebar } from "./state.ts"
 import { Button, CircleAlert, EmptyState, Pause, Spinner, Width } from "@/ui"
 import { useNotifications } from "./features/notify.tsx"
 import { Palette } from "./features/palette.tsx"
+import { FirstRun } from "./features/first-run.tsx"
+import { QuitDialog } from "./features/quit-dialog.tsx"
 
 export function App() {
   const route = useRoute()
@@ -52,11 +55,22 @@ export function App() {
   useRefetchOnSettle()
   useRetryWhileOffline(offline)
 
+  // No agent of the person's own yet (the Builder doesn't count): the first run comes before anything else (spec 015).
+  const agentsResult = useAtomValue(agentsAtom)
+  if (AsyncResult.isSuccess(agentsResult) && !agentsResult.value.some(isTeammate))
+    return (
+      <div className="flex h-full flex-col bg-canvas">
+        {desktop && <div className="app-drag h-12 shrink-0" />}
+        <FirstRun />
+      </div>
+    )
+
   return (
     <div className="flex h-full flex-col bg-frame">
       {desktop && <TitleBar sidebarHidden={sidebar.hidden} />}
     <div className="flex min-h-0 flex-1">
       <Palette onToggleSidebar={sidebar.toggle} />
+      <QuitDialog />
       {/* One sidebar: open, or folded to its icons (⌘B); the card follows in the same spring. */}
       <Width width={sidebar.hidden ? SIDEBAR_FOLDED : SIDEBAR_WIDTH} className="flex shrink-0 overflow-hidden">
         <Sidebar

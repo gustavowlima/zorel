@@ -2,8 +2,8 @@
 
 **Feature Branch**: `feat/memory-efficiency` | **Created**: 2026-11-08 | **Status**: Implemented
 
-**Input**: item 1 of the platform list (2026-11-08): load MCP tools only when needed. a reference app defers MCP
-tools behind a tool search (239k → 11k tokens); a reference app "Defers Codex MCP tools" (idea only).
+**Input**: item 1 of the platform list (2026-11-08): load MCP tools only when needed: deferring them behind a
+tool search is a known pattern (reported 239k → 11k tokens).
 
 ## Baseline
 

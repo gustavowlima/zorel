@@ -3,7 +3,7 @@
 **Feature Branch**: `feat/memory-efficiency` | **Created**: 2026-11-08 | **Status**: Implemented
 
 **Input**: item 1 of the platform list (2026-11-08): connector store with OAuth, for a general agent
-platform (reference apps direction), not only code.
+platform, not only code.
 
 ## Baseline
 

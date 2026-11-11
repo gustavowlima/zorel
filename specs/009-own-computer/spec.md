@@ -2,8 +2,8 @@
 
 **Feature Branch**: `feat/memory-efficiency` | **Created**: 2026-11-09 | **Status**: Implemented
 
-**Input**: "falta garantir computadores próprios com podman correto?" then "prossiga" (2026-11-08/09). a reference app
-gives each agent a Linux container (Docker only); Zorel has none: agents run on the person's machine inside
+**Input**: "falta garantir computadores próprios com podman correto?" then "prossiga" (2026-11-08/09). Giving
+each agent a Linux container is a common pattern; Zorel has none: agents run on the person's machine inside
 the OS sandbox (Seatbelt, bubblewrap).
 
 ## User Scenarios & Testing
@@ -51,7 +51,7 @@ one status each.
 
 ## Assumptions
 
-- Derived from a reference app's `src/core/computer.ts` (Apache-2.0, NOTICE): folder checks, container arguments,
+- Derived from third-party Apache-2.0 code (credited in NOTICE): folder checks, container arguments,
   output clipping, the per-install name prefix. Not ported in v1: services with logs, screenshots, show_file,
   "this computer" (the Mac) mode, moving folders between projects.
 - macOS and Windows run Podman in its own VM (`podman machine`), which shares the home folder by default.

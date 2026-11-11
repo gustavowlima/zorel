@@ -10,6 +10,9 @@ import { agentsAtom, useList } from "../client.ts"
 import { agentName, agentTint, agentTone } from "../labels.ts"
 import { AgentAvatar, AgentPointer, ArrowRight, Button, ChevronRight, cn, Globe, IconButton, Input, LayoutGrid, Maximize2, Minimize2, Plus, RefreshCw, Spinner, Tooltip, X } from "@/ui"
 
+// Asked from a reply's browser card: that agent's browser, full screen or not; onExit runs when full screen ends (the
+// chat closes a panel it opened only for it).
+export type BrowserFocus = { owner: string; full: boolean; onExit?: (() => void) | undefined }
 type Tab = { id: string; title: string; url: string; active: boolean; owner: string } // owner: an agent's id, "assistant" or "you"
 const YOU = "you"
 const PREVIEW_MS = 4000 // the cards' pictures refresh this often while the cards show
@@ -55,7 +58,7 @@ function keyFrame(e: KeyboardEvent): Frame | undefined {
   return { t: "key", key: [...mods, e.key === " " ? "Space" : e.key].join("+") }
 }
 
-export function BrowserPanel({ chatId, openUrl, newTab = 0 }: { chatId: string; openUrl?: { url: string } | undefined; newTab?: number }) {
+export function BrowserPanel({ chatId, openUrl, focus, newTab = 0 }: { chatId: string; openUrl?: { url: string } | undefined; focus?: BrowserFocus | undefined; newTab?: number }) {
   const [tabs, setTabs] = useState<ReadonlyArray<Tab>>([])
   const [held, setHeld] = useState(false)
   const [frame, setFrame] = useState<string>()
@@ -158,6 +161,24 @@ export function BrowserPanel({ chatId, openUrl, newTab = 0 }: { chatId: string; 
     if (tab && !tab.active) send({ t: "view", id: tab.id })
     setCards(false)
   }
+  // Asked from a reply's browser card: that browser, full screen to take it over. It waits for the chat's tabs (a
+  // panel just opened has none yet).
+  const [want, setWant] = useState(focus)
+  const exitFull = useRef<(() => void) | undefined>(undefined)
+  const leaveFull = () => {
+    setFull(false)
+    exitFull.current?.()
+    exitFull.current = undefined
+  }
+  useEffect(() => setWant(focus), [focus])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: open reads the tabs given here
+  useEffect(() => {
+    if (!want || !tabs.some((x) => x.owner === want.owner)) return
+    open(want.owner)
+    setFull(want.full)
+    exitFull.current = want.full ? want.onExit : undefined
+    setWant(undefined)
+  }, [want, tabs])
   const ownerLabel = (owner: string) => (owner === YOU ? t("browser.yours") : agentName(owner === "assistant" ? null : owner, agents))
   const newTabFrame = (): Frame => (shown === YOU ? { t: "newtab" } : { t: "newtab", owner: shown })
 
@@ -169,10 +190,10 @@ export function BrowserPanel({ chatId, openUrl, newTab = 0 }: { chatId: string; 
   return (
     <section
       aria-label={t("browser.title")}
-      className={cn("flex min-h-0 min-w-0 flex-1 flex-col", full && "fixed inset-0 z-50 animate-in bg-canvas fade-in-0 zoom-in-98 motion-reduce:animate-none")}
+      className={cn("flex min-h-0 min-w-0 flex-1 flex-col", full && "app-full fixed inset-0 z-50 animate-in bg-canvas fade-in-0 zoom-in-98 motion-reduce:animate-none")}
       // Esc leaves full screen, except on the page itself (there it's the page's key).
       onKeyDown={(e) => {
-        if (full && e.key === "Escape" && !(e.target as HTMLElement).closest("[role=application]")) setFull(false)
+        if (full && e.key === "Escape" && !(e.target as HTMLElement).closest("[role=application]")) leaveFull()
       }}
     >
       {showCards ? (
@@ -206,7 +227,7 @@ export function BrowserPanel({ chatId, openUrl, newTab = 0 }: { chatId: string; 
           </Tooltip>
         </div>
         <Tooltip content={full ? t("browser.exitFullScreen") : t("browser.fullScreen")}>
-          <IconButton label={full ? t("browser.exitFullScreen") : t("browser.fullScreen")} size="xs" onPress={() => setFull(!full)}>
+          <IconButton label={full ? t("browser.exitFullScreen") : t("browser.fullScreen")} size="xs" onPress={() => (full ? leaveFull() : setFull(true))}>
             {full ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
           </IconButton>
         </Tooltip>

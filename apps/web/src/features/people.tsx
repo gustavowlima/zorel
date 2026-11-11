@@ -36,7 +36,7 @@ export function TeamPicker({ chat }: { chat: Chat }) {
   const shown = q ? candidates.filter((a) => `${a.name} ${handleOf(a)} ${a.title}`.toLowerCase().includes(q)) : candidates
   const setTeam = (agentIds: ReadonlyArray<string>, model?: string) =>
     update({ params: { id: chat.id }, payload: { agentIds, ...(model && { model }) }, reactivityKeys: ["chats"] })
-  // No agents to pick: the model answers on its own and the model chip already says which.
+  // Nothing to show or pick (no agents at all; the first run makes one).
   if (!lead && candidates.length === 0 && teams.length === 0) return null
 
   return (
@@ -83,9 +83,12 @@ export function TeamPicker({ chat }: { chat: Chat }) {
                 {t("team.makeLead")}
               </Button>
             )}
-            <IconButton label={t("team.removeMember", { name: a.name })} size="xs" onPress={() => void setTeam(chat.agentIds.filter((x) => x !== a.id))}>
-              <X className="size-3.5" />
-            </IconButton>
+            {/* A chat always keeps one agent (spec 015): the last one can't be removed, only swapped for another. */}
+            {team.length > 1 && (
+              <IconButton label={t("team.removeMember", { name: a.name })} size="xs" onPress={() => void setTeam(chat.agentIds.filter((x) => x !== a.id))}>
+                <X className="size-3.5" />
+              </IconButton>
+            )}
           </div>
         ))}
         {candidates.length > 0 && (

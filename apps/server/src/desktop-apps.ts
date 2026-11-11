@@ -1,8 +1,8 @@
 // Computer apps (spec 008): an agent uses the apps the person gave it (Notes, Calendar, Spotify…), each "read" or
 // "use", through agent-desktop (desktop.ts). It reads a window as a numbered list and clicks or writes by number or
 // by the text it sees; nothing moves the mouse. A click or key that sends, pays, publishes, schedules or deletes
-// waits for the person. The numbered list, picking a target, and the risky click and key rules derive from a reference app
-// (Apache-2.0, see NOTICE: src/core/apps.ts).
+// waits for the person. The numbered list, picking a target, and the risky click and key rules derive from
+// third-party code (Apache-2.0, see NOTICE).
 import type { DesktopApp } from "@zorel/contracts"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { normalize } from "./db.ts"

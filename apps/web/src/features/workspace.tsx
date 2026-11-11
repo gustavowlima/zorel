@@ -17,7 +17,7 @@ const commentText = (c: LineComment) =>
   t("diff.commentRef", { path: c.path, lines: c.start === c.end ? t("diff.line", { n: c.start }) : t("diff.lines", { from: c.start, to: c.end }), side: c.side === "deletions" ? t("diff.old") : t("diff.new"), text: c.text.trim() })
 import { Button, parentOf, ChevronDown, ChevronRight, ChevronsDownUp, Columns2, ConfirmButton, ConfirmDialog, ContextMenu, Copy, cn, Dialog, EmptyState, ExternalLink, Field, File, FileIcon, FilePlus, FileTree, Folder, FolderOpen, GitBranch, Globe, GitPullRequest, IconButton, Input, Menu, MenuItem, MenuSeparator, PanelRight, Pencil, Pin, PinOff, Play, Plus, Popover, Rows2, SearchInput, Server, SETTLE, Spinner, Square, SquareTerminal, StatusMark, Tab, TabList, TabPanel, Tabs, Tooltip, Trash2, Undo2, X } from "@/ui"
 import { Shell } from "./shell.tsx"
-import { BrowserPanel } from "./browser.tsx"
+import { type BrowserFocus, BrowserPanel } from "./browser.tsx"
 import { GitPanel, useIsRepo } from "./git.tsx"
 import { stored, store, storedJson } from "../state.ts"
 
@@ -145,6 +145,7 @@ export function SidePanel({
   onFocus,
   onClose,
   browserUrl,
+  browserFocus,
   onOpenUrl,
   onAddToChat,
   pins,
@@ -160,6 +161,7 @@ export function SidePanel({
   onFocus: (f: Focus) => void
   onClose: () => void
   browserUrl: { url: string } | undefined
+  browserFocus?: BrowserFocus | undefined
   onOpenUrl: (url: string) => void
   onAddToChat: (text: string) => void // plain text into the message box
   pins: Pins
@@ -331,7 +333,7 @@ export function SidePanel({
         )}
         {shown.includes("browser") && (
           <TabPanel id="browser" keepMounted className="flex min-h-0 flex-1 flex-col">
-            <BrowserPanel chatId={chat.id} openUrl={browserUrl} newTab={fresh.browser} />
+            <BrowserPanel chatId={chat.id} openUrl={browserUrl} focus={browserFocus} newTab={fresh.browser} />
           </TabPanel>
         )}
         {shown.includes("terminal") && (

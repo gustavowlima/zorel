@@ -2,8 +2,8 @@
 
 **Feature Branch**: `feat/memory-efficiency` | **Created**: 2026-11-08 | **Status**: Implemented
 
-**Input**: item 1 of the platform list (2026-11-08): external channels (a reference app has Slack, Telegram,
-WhatsApp, Discord, Signal; ideas only). Telegram first: a bot token is the whole setup and long polling
+**Input**: item 1 of the platform list (2026-11-08): external channels (Slack, Telegram,
+WhatsApp, Discord, Signal are the common ones). Telegram first: a bot token is the whole setup and long polling
 needs no public address, which fits a local app.
 
 ## User Story 1 - Talk to Zorel from the phone (P1)

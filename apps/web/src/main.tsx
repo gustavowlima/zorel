@@ -19,7 +19,8 @@ try {
 applyTheme()
 // Inside the desktop app (?shell=desktop): the sidebar's brand row is the title bar and leaves room for the
 // window buttons.
-if (new URLSearchParams(location.search).get("shell") === "desktop") document.documentElement.dataset.shell = "desktop"
+// The preload's bridge says it too, so a reload that loses the query (dev server) keeps the title bar.
+if (new URLSearchParams(location.search).get("shell") === "desktop" || "zorelDesktop" in window) document.documentElement.dataset.shell = "desktop"
 
 // No browser right-click menu over the app: Zorel's own menus open where it has one (ContextMenu). Text fields and
 // the terminal keep the native one, for copy and paste.

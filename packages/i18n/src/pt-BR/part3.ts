@@ -626,5 +626,38 @@ export const part3 = {
     title: "Não encontrado",
     body: "Pode ter sido excluído.",
     home: "Ir para o início"
+  },
+  firstRun: {
+    title: "Seu primeiro agente",
+    subtitle: "No Zorel você trabalha com agentes. Crie o primeiro: dá para mudar tudo depois.",
+    name: "Nome",
+    defaultName: "Atlas",
+    for: "Para que serve",
+    purpose: { research: "Pesquisa", writing: "Escrita", code: "Código", operations: "Operações", own: "Outra coisa" },
+    purposeHint: {
+      research: "Busca fontes, compara e responde com links",
+      writing: "Rascunhos, revisões e resumos no seu jeito",
+      code: "Lê, altera e testa software com você",
+      operations: "Mantém sua rotina em ordem com as suas ferramentas",
+      own: "Descreva com as suas palavras"
+    },
+    own: "O que ele faz",
+    ownHint: "Por exemplo: acompanha meu funil de vendas e rascunha as respostas",
+    ai: "Qual IA ele usa",
+    aiHint: "As assinaturas e chaves que você conectou. Cada agente pode usar a sua.",
+    looking: "Procurando as IAs deste computador…",
+    noAi: "Nenhuma IA conectada ainda: entre numa assinatura ou adicione uma chave.",
+    connect: "Conectar uma IA",
+    create: "Criar {name}",
+    creating: "Criando…",
+    failed: "Não deu para criar o agente. Tente de novo."
+  },
+  desktop: {
+    quit: {
+      title: "Sair do Zorel?",
+      body: "Os agentes param de trabalhar e as rotinas não rodam até você abrir o Zorel de novo. Fechar a janela mantém tudo rodando.",
+      dontAsk: "Não perguntar de novo",
+      quit: "Sair"
+    }
   }
 }

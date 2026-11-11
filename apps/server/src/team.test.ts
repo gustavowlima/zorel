@@ -15,6 +15,10 @@ test("effectiveAccess: the chat's level for every agent in it when set, else the
   expect(effectiveAccess({ access: null }, undefined)).toBe("workspace") // a chat with no agent
   expect(effectiveAccess({ access: "full" }, undefined)).toBe("full")
   expect(effectiveAccess({ access: "full" }, agent({ access: "workspace", builtin: "builder" }))).toBe("workspace")
+  // "This computer" (no sandbox) is Full access; a chat can still narrow it.
+  const host = { ...agent({ access: "workspace" }), permissions: { computer: "host" } }
+  expect(effectiveAccess({ access: null }, host)).toBe("full")
+  expect(effectiveAccess({ access: "ask" }, host)).toBe("ask")
 })
 
 test("narrower keeps the smaller access", () => {

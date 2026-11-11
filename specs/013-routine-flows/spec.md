@@ -316,7 +316,7 @@ Atlas, and the others end quietly with no notification.
 - **Canvas:** the editor uses React Flow, loaded only on the routine editor screen. This was decided on 2026-11-10 from
   a measured comparison (2000 nodes: 65 ms to open, against 5.3 s and 12.5 s for the alternatives). The list view is
   the accessible and phone path.
-- **One kind of tool step for every connector:** no connector-specific step kinds (unlike a reference app's fixed nodes).
+- **One kind of tool step for every connector:** no connector-specific step kinds (no fixed per-service nodes).
 - **Conditions:** "simple rule" means a small fixed set of checks on an earlier step's output (has items, is empty,
   contains text, a field equals a value). There is no expression language.
 - **Retries:** one try by default and up to 3, 30 s apart. Reads may retry on any failure that surely didn't run;

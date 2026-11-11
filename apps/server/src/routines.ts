@@ -46,8 +46,9 @@ export const runRoutine = (id: string, key: string, payload?: unknown, label?: s
     const r = yield* store.routine(id)
     if (!r) return "missing" as Started
     const at = Date.now()
-    // An archived agent runs no routine (restoring it brings them back).
-    if ((yield* store.agent(r.agentId))?.archivedAt) {
+    // An archived (or gone) agent runs no routine: nothing answers without an agent (restoring it brings them back).
+    const owner = yield* store.agent(r.agentId)
+    if (!owner || owner.archivedAt) {
       yield* store.updateRoutine(r.id, { lastRunAt: at, lastStatus: "skipped" })
       return "skipped" as Started
     }

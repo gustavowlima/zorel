@@ -16,8 +16,7 @@ Read in the code on 2026-11-10 unless a source is given.
   The editor and the save handler both call `validateFlow`, so they can't disagree (FR-003, FR-004, FR-021).
 - **Why contracts**: it is already the only place for types that cross the network, and it already holds small pure
   rules (`isTeammate`). Effect Schema decodes the graph at the HTTP boundary.
-- **Idea from a reference app**: one ports table read by every editor (`WORKFLOW_PORTS`). This is an idea only, no code: the
-  license is noncommercial.
+- **Idea**: one ports table read by every editor (`WORKFLOW_PORTS`).
 
 ## R2. Versions and old routines
 
@@ -65,9 +64,8 @@ Read in the code on 2026-11-10 unless a source is given.
 
   Retries happen only on "yes" (writes) or on any failure (reads), up to the step's setting (1 by default, max 3,
   30 s apart).
-- **Source of the idea**: a reference app's `connectors.ts` distinguishes "the call never ran, so it can go again" from
-  "Connection closed", which the SDK gives to every call already sent, so a write could go twice. That is Apache-2.0,
-  but here only the idea is used.
+- **The distinction that matters**: "the call never ran, so it can go again" versus "Connection closed", which the
+  SDK gives to every call already sent, so a write could go twice.
 
 ## R5. Tool steps go through the same rules as a chat (FR-010)
 

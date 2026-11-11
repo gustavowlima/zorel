@@ -1,15 +1,15 @@
-// Home = a new chat: pick the project and the agent (or none) above the box, the model in it, and type. The chat
+// Home = a new chat: pick the project and who answers above the box (always an agent, spec 015), the model in it, and type. The chat
 // is created on the first send (or the first attachment, which needs a chat to belong to), then the screen
 // moves to it.
 import { t } from "@zorel/i18n"
 import { useEffect, useRef, useState } from "react"
-import { agentsAtom, mutations, projectsAtom, teamsAtom, uploadAttachment, useList, useMutation } from "../client.ts"
+import { agentsAtom, chatsAtom, mutations, projectsAtom, teamsAtom, uploadAttachment, useList, useMutation } from "../client.ts"
 import { go } from "../state.ts"
-import { agentOptions, callable, projectCrew, teamsIn, toJoin } from "./agent-options.ts"
+import { agentOptions, callable, lastUsedAgent, projectCrew, teamsIn, toJoin } from "./agent-options.ts"
 import { Composer, type ComposerOption, type ComposerSources, SendError } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import { agentTint, agentTone, modelLabel } from "../labels.ts"
-import { AgentAvatar, cn, Folder, IconButton, OrbitBackdrop, Select, Users, X } from "@/ui"
+import { AgentAvatar, cn, Folder, OrbitBackdrop, Select, Users } from "@/ui"
 
 const DEFAULT_MODEL: ModelChoice = { model: "claude-cli/sonnet", accountId: null, effort: null }
 
@@ -20,17 +20,18 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
   const send = useMutation(mutations.send)
   const updateChat = useMutation(mutations.updateChat)
   const [projectId, setProjectId] = useState<string | null>(initialProject ?? null)
-  // Only what the person chose is state: a plain chat instead of the project's crew (×), and a model of their own.
-  // Who starts the chat and its model follow from the project; picking another project forgets both choices.
-  const [plain, setPlain] = useState(false)
+  // Only what the person chose is state: who answers outside a crew, and a model of their own. Who starts the chat
+  // and its model follow from the project; picking another project forgets both choices.
+  const [chosen, setChosen] = useState<string>()
   const [picked, setPicked] = useState<ModelChoice>()
+  const chats = useList(chatsAtom)
   const chat = useRef<Promise<string> | null>(null)
 
   const available = callable(agents, projectId)
   const teams = teamsIn(useList(teamsAtom), projectId)
   const pickProject = (id: string | null) => {
     setProjectId(id)
-    setPlain(false)
+    setChosen(undefined)
     setPicked(undefined)
   }
   // "#" in the box calls an agent (a chip, "@handle" in the text, as in a chat; typing filters, so a long team stays
@@ -44,9 +45,12 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
       tint: agentTint(o.agent, agents)
     })).concat(teams.map((x) => ({ id: x.handle, label: x.name, hint: t("teams.option", { count: x.agentIds.length }), icon: <Users className="size-4" /> })))
   }
-  // A project's chat starts with who takes part in it (Agents tab of the project): its agents and its teams' members;
-  // the lead's model is the chat's unless the person picked one.
-  const members = plain ? [] : projectCrew(projects.find((p) => p.id === projectId), available, teams)
+  // A project's chat starts with who takes part in it (Agents tab of the project): its agents and its teams' members.
+  // With no crew, one agent answers: the one picked here, else the one used last. The lead's model is the chat's unless
+  // the person picked one.
+  const crew = projectCrew(projects.find((p) => p.id === projectId), available, teams)
+  const single = available.find((a) => a.id === chosen) ?? lastUsedAgent(chats, available)
+  const members = crew.length ? crew : single ? [single] : []
   const lead = members[0]
   const choice = picked ?? (lead ? { model: lead.model, accountId: lead.accountId, effort: lead.effort } : DEFAULT_MODEL)
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a new route project resets the draft
@@ -111,20 +115,29 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
               options={[{ value: "", label: t("home.noProject") }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
               searchLabel={t("home.searchProjects")}
             />
-            {members.length > 0 && (
-              // Who the chat starts with (the project's crew): their faces and who, × goes back to a plain chat. More
-              // join with "#" in the box, so there is no list of names here.
-              <span className={cn("flex h-control-sm items-center gap-1.5 rounded-full border pr-0.5 pl-1 text-sm", members.length === 1 ? `tinted ${agentTint(members[0]!, agents)}` : "border-transparent bg-control text-fg")}>
+            {crew.length > 0 ? (
+              // Who the chat starts with (the project's crew): their faces and who. More join with "#" in the box.
+              <span className={cn("flex h-control-sm items-center gap-1.5 rounded-full border px-1.5 text-sm", crew.length === 1 ? `tinted ${agentTint(crew[0]!, agents)}` : "border-transparent bg-control text-fg")}>
                 <span className="flex -space-x-1.5">
-                  {members.slice(0, 3).map((a) => (
+                  {crew.slice(0, 3).map((a) => (
                     <AgentAvatar key={a.id} id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} />
                   ))}
                 </span>
-                <span className="max-w-48 truncate">{members.length === 1 ? t("home.answers", { name: members[0]!.name }) : t("home.crew", { count: members.length })}</span>
-                <IconButton label={t("home.clearCrew")} size="xs" shape="pill" onPress={() => setPlain(true)}>
-                  <X className="size-3.5" />
-                </IconButton>
+                <span className="max-w-48 truncate">{crew.length === 1 ? t("home.answers", { name: crew[0]!.name }) : t("home.crew", { count: crew.length })}</span>
               </span>
+            ) : (
+              single && (
+                // Who answers: the agent used last, or another one picked here.
+                <Select
+                  variant="ghost"
+                  className="w-auto max-w-64"
+                  aria-label={t("home.whoAnswers")}
+                  value={single.id}
+                  onChange={setChosen}
+                  options={available.map((a) => ({ value: a.id, label: a.name, icon: <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} /> }))}
+                  searchLabel={t("home.searchAgents")}
+                />
+              )
             )}
           </div>
           <Composer
@@ -132,7 +145,7 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
             sources={sources}
             onSubmit={submit}
             upload={(f) => ensureChat().then((id) => uploadAttachment(id, f))}
-            placeholder={t(available.length ? "home.placeholder" : "home.placeholderPlain")}
+            placeholder={t("home.placeholder")}
             tools={<ModelPicker value={choice} onChange={setPicked} />}
           />
         </div>

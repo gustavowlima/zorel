@@ -40,3 +40,15 @@ export function CheckList({
     </CheckboxGroup>
   )
 }
+
+// One box with its label ("Don't ask again"), drawn like a CheckList row's box.
+export function Tick({ checked, onChange, children }: { checked: boolean; onChange: (checked: boolean) => void; children: ReactNode }) {
+  return (
+    <Checkbox isSelected={checked} onChange={onChange} className="group flex cursor-default items-center gap-2.5 rounded-control text-sm text-secondary outline-none data-focus-visible:ring-2 data-focus-visible:ring-accent">
+      <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center rounded-sm border border-strong text-accent-text group-data-selected:border-accent-line group-data-selected:bg-accent-soft">
+        <Check className="size-3 opacity-0 transition-opacity duration-120 group-data-selected:opacity-100 motion-reduce:transition-none" />
+      </span>
+      {children}
+    </Checkbox>
+  )
+}

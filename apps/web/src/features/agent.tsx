@@ -12,11 +12,11 @@ import { AgentMemory } from "./agent-memory.tsx"
 import { AgentWork } from "./agent-work.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { AgentRoutines } from "./routines.tsx"
-import { useArchive } from "./agents.tsx"
+import { isLastAgent, useArchive } from "./agents.tsx"
 import { PermissionsEditor } from "./permissions.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import {
-  AgentAvatar, Archive, ArchiveRestore, Button, ChartColumn, CheckList, column, ConfirmDialog, cn, Download, Field, IconButton, Input, ListRow, Menu, MenuItem, MoreHorizontal, Notice, Rows, Screen, Section, Select, SettingRow, Tab, TabList,
+  AgentAvatar, Archive, ArchiveRestore, Button, ChartColumn, CheckList, column, ConfirmDialog, cn, Download, Field, IconButton, Info, Input, ListRow, Menu, MenuItem, MoreHorizontal, Notice, Rows, Screen, Section, Select, SettingRow, Tab, TabList,
   TabPanel, Tabs, Textarea, Trash2, Undo2
 } from "@/ui"
 
@@ -74,6 +74,7 @@ export function AgentView({ agent, projectId, tab: opened, teamId }: { agent?: A
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
   const archive = useArchive()
+  const last = !!agent && isLastAgent(agent, agents)
   const limits = useMutation(mutations.updateAgent)
   // The token limits apply at once (not part of the profile's Save): a limit is a guard, not a draft.
   const setLimit = (field: "monthlyTokens" | "replyTokens", v: string) =>
@@ -129,10 +130,12 @@ export function AgentView({ agent, projectId, tab: opened, teamId }: { agent?: A
               <MenuItem icon={<Download />} onAction={() => exportAgent(agent)}>
                 {t("agent.export")}
               </MenuItem>
-              <MenuItem icon={agent.archivedAt ? <ArchiveRestore /> : <Archive />} onAction={() => archive(agent, !agent.archivedAt)}>
+              {/* The person's last agent stays (spec 015): every chat needs one. */}
+              {last && <MenuItem icon={<Info />} isDisabled onAction={() => {}}>{t("agent.lastAgent")}</MenuItem>}
+              <MenuItem icon={agent.archivedAt ? <ArchiveRestore /> : <Archive />} isDisabled={last} onAction={() => archive(agent, !agent.archivedAt)}>
                 {agent.archivedAt ? t("agent.restoreArchived") : t("agent.archive")}
               </MenuItem>
-              <MenuItem icon={<Trash2 />} tone="danger" onAction={() => setConfirm(true)}>
+              <MenuItem icon={<Trash2 />} tone="danger" isDisabled={last} onAction={() => setConfirm(true)}>
                 {t("agent.deleteAction")}
               </MenuItem>
             </Menu>

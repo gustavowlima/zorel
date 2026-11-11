@@ -6,7 +6,12 @@ import { type AgentPermissions, DEFAULT_PERMISSIONS, type Grant, type McpServer,
 export const permissionsOf = (agent: { permissions?: AgentPermissions } | undefined): AgentPermissions => agent?.permissions ?? DEFAULT_PERMISSIONS
 
 // A server the agent was given nothing for follows the server's own mode.
-const grantFor = (p: AgentPermissions, server: Pick<McpServer, "id" | "mode">): Grant => p.grants[server.id] ?? (server.mode === "read" ? "read" : "write")
+// A connector the agent was given nothing for (a new one) is read-only: writing is a choice made per agent. A server
+// in read mode caps every agent at reading, whatever it was given.
+const grantFor = (p: AgentPermissions, server: Pick<McpServer, "id" | "mode">): Grant => {
+  const given = p.grants[server.id] ?? "read"
+  return server.mode === "read" && given === "write" ? "read" : given
+}
 
 interface ToolRoute {
   readonly expose: boolean
@@ -56,7 +61,7 @@ export function browserRoute(p: AgentPermissions, args: Record<string, unknown>,
 export const REQUEST_ACCESS_TOOL = {
   name: "zorel_request_access",
   description:
-    "Ask the user for access you don't have: what = 'web' (search and read pages), 'browser' (your own browser) or a connector's name (an MCP server here) with level 'read' or 'write'. Say why in reason. The user approves or declines on a card; granted access works from your next turn.",
+    "Ask the user for access you don't have: what = 'web' (search and read pages), 'browser' (your own browser) or a connector's name (an MCP server here) with level 'read' or 'write'. Say why in reason. The user approves or declines on a card; when granted, Zorel starts your next turn by itself with the access in place.",
   inputSchema: {
     properties: {
       what: { type: "string" },

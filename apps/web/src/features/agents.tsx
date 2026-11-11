@@ -11,7 +11,7 @@ import { exportAgent, importedAgent } from "./agent.tsx"
 import { TeamsSection } from "./teams.tsx"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { AgentAvatar, Archive, ArchiveRestore, Bot, Button, ChevronDown, Column, cn, MessageCircle, Settings, ConfirmDialog, Dot, Download, EmptyState, Fold, IconButton, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, SearchInput, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
+import { AgentAvatar, Archive, ArchiveRestore, Bot, Button, ChevronDown, Column, cn, MessageCircle, Settings, ConfirmDialog, Dot, Download, EmptyState, Fold, IconButton, Info, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, SearchInput, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
 
 // The agents working now, each with what it's doing (a chat of theirs running or waiting; waiting on you first).
 export function useWorking() {
@@ -33,6 +33,7 @@ export function AgentItem({ agent, agents, status, onDelete }: { agent: Agent; a
   const working = !!status
   const line = status?.label || agent.title || agent.description || agent.instructions.trim().split("\n")[0]
   const archive = useArchive()
+  const last = isLastAgent(agent, agents)
   return (
     <ListRow
       label={`${t("agents.open")}: ${agent.name}`}
@@ -80,11 +81,13 @@ export function AgentItem({ agent, agents, status, onDelete }: { agent: Agent; a
           <MenuItem icon={<Download />} onAction={() => exportAgent(agent)}>
             {t("agent.export")}
           </MenuItem>
-          <MenuItem icon={agent.archivedAt ? <ArchiveRestore /> : <Archive />} onAction={() => archive(agent, !agent.archivedAt)}>
+          {/* The person's last agent stays (spec 015): every chat needs one. */}
+          {last && <MenuItem icon={<Info />} isDisabled onAction={() => {}}>{t("agent.lastAgent")}</MenuItem>}
+          <MenuItem icon={agent.archivedAt ? <ArchiveRestore /> : <Archive />} isDisabled={last} onAction={() => archive(agent, !agent.archivedAt)}>
             {agent.archivedAt ? t("agent.restoreArchived") : t("agent.archive")}
           </MenuItem>
           <MenuSeparator />
-          <MenuItem icon={<Trash2 />} tone="danger" onAction={() => onDelete(agent)}>
+          <MenuItem icon={<Trash2 />} tone="danger" isDisabled={last} onAction={() => onDelete(agent)}>
             {t("agent.deleteAction")}
           </MenuItem>
         </Menu>
@@ -95,6 +98,9 @@ export function AgentItem({ agent, agents, status, onDelete }: { agent: Agent; a
 }
 
 // Archiving keeps an agent and its history but takes it off the team: it answers no one and runs no routine.
+// The person's only active agent (spec 015): it can't be archived or deleted until another exists.
+export const isLastAgent = (agent: Agent, agents: ReadonlyArray<Agent>) => isTeammate(agent) && !agents.some((a) => a.id !== agent.id && isTeammate(a))
+
 export function useArchive() {
   const update = useMutation(mutations.updateAgent)
   return (agent: Agent, archived: boolean) => void update({ params: { id: agent.id }, payload: { archived }, reactivityKeys: ["agents"] })

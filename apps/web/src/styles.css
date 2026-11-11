@@ -285,6 +285,8 @@ img, svg, a { -webkit-user-drag: none; }
 
 /* Desktop app: the rail, the sidebar top and screen headers move the window; their controls stay clickable. */
 [data-shell="desktop"] .app-drag { -webkit-app-region: drag; }
+/* A full-screen layer (the browser, an image) starts under the desktop app's title bar: the window buttons live there. */
+[data-shell="desktop"] .app-full { top: 3rem; }
 [data-shell="desktop"] .app-drag :is(button, a, input, select, textarea, [role], [contenteditable]) { -webkit-app-region: no-drag; }
 .scroll-quiet::-webkit-scrollbar { display: none; }
 a { text-underline-offset: 3px; }

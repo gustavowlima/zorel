@@ -188,7 +188,7 @@ export class Browsers {
 
   // A small picture of each browser in the chat (its shown tab, else its latest one), for the panel's cards: taken
   // by Chrome at a third of the size, so a card's preview is a few KB, not a full frame.
-  async previews(chatId: string): Promise<Record<string, string>> {
+  async previews(chatId: string, scale = 0.3): Promise<Record<string, string>> {
     const c = this.chat(chatId)
     // Each browser's picture: its shown tab, else its newest.
     const pick = new Map<string, Page>()
@@ -201,7 +201,7 @@ export class Browsers {
       [...pick].map(async ([owner, page]) => {
         const cdp = await page.context().newCDPSession(page).catch(() => undefined)
         if (!cdp) return
-        const shot = (await cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 55, clip: { x: 0, y: 0, width: VIEWPORT.width, height: VIEWPORT.height, scale: 0.3 } }).catch(() => undefined)) as { data: string } | undefined
+        const shot = (await cdp.send("Page.captureScreenshot", { format: "jpeg", quality: 55, clip: { x: 0, y: 0, width: VIEWPORT.width, height: VIEWPORT.height, scale } }).catch(() => undefined)) as { data: string } | undefined
         await cdp.detach().catch(() => undefined)
         if (shot) out[owner] = shot.data
       })
@@ -815,6 +815,26 @@ async function applyPanelFrame(b: Browsers, chatId: string, f: PanelFrame, reply
       return void (await page.reload({ timeout: NAV_MS }).catch(() => undefined))
   }
 }
+
+// GET /api/browser/picture?chat=…&owner=… : one browser's picture now (JPEG), for the browser card in a reply; 204
+// when that browser has no tab. Behind the same session check as the rest of /api.
+export const BrowserPicture = HttpRouter.add(
+  "GET",
+  "/api/browser/picture",
+  Effect.gen(function* () {
+    const req = yield* HttpServerRequest.HttpServerRequest
+    const q = new URL(req.url, "http://x").searchParams
+    const chatId = q.get("chat") ?? ""
+    const owner = ownerOf(q.get("owner")) ?? YOU
+    const store = yield* Store
+    if (!(yield* store.chat(chatId))) return HttpServerResponse.jsonUnsafe({ error: "chat_not_found" }, { status: 404 })
+    const b = yield* BrowserService
+    const shot = (yield* Effect.promise(() => b.previews(chatId, CARD_SCALE).catch(() => ({}) as Record<string, string>)))[owner]
+    if (!shot) return HttpServerResponse.empty({ status: 204 })
+    return HttpServerResponse.uint8Array(Buffer.from(shot, "base64"), { contentType: "image/jpeg", headers: { "cache-control": "no-store" } })
+  })
+)
+const CARD_SCALE = 0.6 // a reply's browser card is about half the page's width
 
 // GET /api/browser?chat=… upgrades to a WebSocket: down, the chat's state as text ({"t":"state",tabs,userControl})
 // and the active tab's frames as JPEG bytes; up, PanelFrame JSON. Local only (LocalOnly checks Host and Origin).

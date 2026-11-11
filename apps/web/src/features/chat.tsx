@@ -2,14 +2,14 @@
 // right, each agent's reply with its activity pill, approvals waiting for you, handoffs between agents),
 // and the message box. State is the chat atom: snapshot + live events, so a turn keeps going if the tab
 // closes and the screen catches up when it reopens.
-import { type Agent, type Chat, type FailoverTarget, type Memory, type Message, type ProviderAccount, skillHandle, type WorkspaceFile, workSteps } from "@zorel/contracts"
+import { type Agent, type Chat, type FailoverTarget, type Memory, type Message, type ProviderAccount, isTeammate, skillHandle, type WorkspaceFile, workSteps } from "@zorel/contracts"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { type Approval, ErrorCode, isInterruption, type WorkStep } from "@zorel/contracts/events"
 import { formatCompact, formatDuration, formatTime, locale, t } from "@zorel/i18n"
-import { memo, type ReactNode, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
+import { memo, type ReactNode, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, attachmentUrl, chatAtom, commandsAtom, filesAtom, memoriesAtom, type ChatState, type LiveTurn, mutations, type Note, projectsAtom, type Receipt, teamsAtom, uploadAttachment, useChat, useList, useInvalidate, useMutation } from "../client.ts"
-import { agentName, agentTint, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText, waitLabel } from "../labels.ts"
+import { agentName, agentTint, agentTone, chatTitle, formatCost, handleOf, modelLabel, providerLabel, splitModel, switchText, waitLabel } from "../labels.ts"
 import { ChatMarkdown } from "./chat-markdown.tsx"
 import { MemoryChip } from "./memory.tsx"
 import { MentionText } from "./mention.tsx"
@@ -20,12 +20,14 @@ import { Composer, type ComposerOption, type ComposerSources, SendError } from "
 import { ContextMeter } from "./context-meter.tsx"
 import { QueuePanel, useQueue } from "./queue.tsx"
 import { TaskDrawer, useTaskLinks } from "./task-drawer.tsx"
+import { BrowserCard, BrowserCards, isBrowserStep } from "./browser-card.tsx"
+import type { BrowserFocus } from "./browser.tsx"
 import { FailoverEditor, useTermsPending } from "./failover.tsx"
 import { chatDelta, Delta, type Focus, PinItem, type Pins, RunControl, type ShellPin, SIDE_ICON, SidePanel, type SideTab, sideLabel, TurnChanges, usePins } from "./workspace.tsx"
 import { ModelPicker } from "./model-picker.tsx"
 import { AccessChip } from "./access-chip.tsx"
 import { GitControl } from "./git.tsx"
-import { ContextMenu, Drawer, Fold, HEADER, PageHeader } from "@/ui"
+import { AgentAvatar, ContextMenu, Drawer, Fold, HEADER, PageHeader } from "@/ui"
 import { AuthorAvatar, TeamPicker } from "./people.tsx"
 import { ChatProcesses } from "./processes.tsx"
 import { QuestionAnswer } from "./question.tsx"
@@ -43,6 +45,8 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
   const interrupt = useMutation(mutations.interrupt)
   const updateChat = useMutation(mutations.updateChat)
   const team = chat.agentIds.flatMap((id) => agents.find((a) => a.id === id) ?? [])
+  // Its agents all archived or deleted (or a chat from before spec 015): nothing answers until someone continues it.
+  const orphan = agents.length > 0 && !team.some(isTeammate)
   const busy = state.pending > 0 || !!state.live
 
   const sendNow = useCallback(
@@ -67,6 +71,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
   const teams = teamsIn(useList(teamsAtom), chat.projectId)
   const submit = async (text: string, attachmentIds: ReadonlyArray<string>) => {
     const joining = toJoin(text, chat.agentIds, available, teams)
+    if (orphan && !joining.length) throw new SendError(t("chat.needsAgent")) // the text stays in the box
     if (joining.length) {
       try {
         await updateChat({ params: { id: chat.id }, payload: { agentIds: [...chat.agentIds, ...joining.map((a) => a.id)] }, reactivityKeys: ["chats", "context"] })
@@ -105,6 +110,13 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
   const [browserUrl, setBrowserUrl] = useState<{ url: string }>() // a new object each time, so the same URL opens again
   const openInBrowser = (url: string) => {
     setBrowserUrl({ url })
+    setPanel("browser")
+  }
+  // A reply's browser card opens the panel on that agent's browser (full screen to take it over).
+  // Full screen from a closed panel: leaving it closes the panel again.
+  const [browserFocus, setBrowserFocus] = useState<BrowserFocus>()
+  const openBrowser = (owner: string, full: boolean) => {
+    setBrowserFocus({ owner, full, onExit: full && !panel ? () => setPanel(undefined) : undefined })
     setPanel("browser")
   }
   // An agent started a preview (zorel_preview): its page is the chat's active tab, so the Browser panel opens on it.
@@ -174,7 +186,9 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
       <div className="flex min-h-0 flex-1">
       {/* Catches clicks on this chat's task links inside the transcript (they stay links: a link's Enter is a click). */}
       <div className="flex min-w-0 flex-1 flex-col" onClickCapture={taskLink}>
-      <Timeline chat={chat} state={state} agents={agents} onView={view} onEdit={setRewind} onStop={() => void interrupt({ payload: { chatId: chat.id } })} at={at} />
+      <BrowserCards.Provider value={{ open: openBrowser }}>
+        <Timeline chat={chat} state={state} agents={agents} onView={view} onEdit={setRewind} onStop={() => void interrupt({ payload: { chatId: chat.id } })} at={at} />
+      </BrowserCards.Provider>
       <RewindDialog
         chatId={chat.id}
         message={rewind}
@@ -235,6 +249,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
           }}
           onRemove={(item) => queue.remove(item.id)}
         />
+        {orphan && <WhoContinues agents={available} all={agents} onPick={(a) => void updateChat({ params: { id: chat.id }, payload: { agentIds: [a.id], model: a.model, accountId: a.accountId }, reactivityKeys: ["chats", "context"] })} />}
         <WithFiles projectId={project?.path ? project.id : undefined} chatId={chat.id}>
           {(files) => (
             <Composer
@@ -279,6 +294,7 @@ export function ChatView({ chat, at }: { chat: Chat; at?: string | undefined }) 
           onFocus={setFocus}
           onClose={() => setPanel(undefined)}
           browserUrl={browserUrl}
+          browserFocus={browserFocus}
           onOpenUrl={openInBrowser}
           onAddToChat={(text) => insertRef.current?.(text)}
           pins={pins}
@@ -569,7 +585,11 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at }: { 
     return () => clearTimeout(id)
   }, [ready, at])
 
+  // Each agent's latest reply that used its browser shows the picture live (older ones would show today's page).
+  const cards = useContext(BrowserCards)
+  const liveCards = new Set(new Map(state.messages.filter((m) => m.steps.some(isBrowserStep)).map((m) => [m.agentId, m.id])).values())
   return (
+    <BrowserCards.Provider value={{ ...cards, live: liveCards }}>
     <div
       ref={scroller}
       onScroll={(e) => {
@@ -613,6 +633,7 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at }: { 
       </div>
       </div>
     </div>
+    </BrowserCards.Provider>
   )
 }
 
@@ -898,6 +919,7 @@ function AgentReply({
       }
     >
       <StoredReply message={m} />
+      {m.steps.some(isBrowserStep) && <BrowserCard chatId={m.chatId} messageId={m.id} agentId={m.agentId} steps={m.steps.filter(isBrowserStep)} agents={agents} />}
       <TurnChanges message={m} onView={onView} />
       {ending?.tone === "danger" && <pre className="overflow-auto rounded-control bg-code px-3 py-2 font-mono text-sm whitespace-pre-wrap text-danger">{ending.text}</pre>}
     </Reply>
@@ -1371,6 +1393,25 @@ function Separator({ children }: { children: ReactNode }) {
       <span aria-hidden="true" className="h-px flex-1 bg-subtle" />
       <span className="max-w-xl text-center">{children}</span>
       <span aria-hidden="true" className="h-px flex-1 bg-subtle" />
+    </div>
+  )
+}
+
+// A chat whose agents are gone: who continues it, picked before the next message (spec 015).
+function WhoContinues({ agents, all, onPick }: { agents: ReadonlyArray<Agent>; all: ReadonlyArray<Agent>; onPick: (a: Agent) => void }) {
+  return (
+    <div role="status" className="mb-2 flex flex-col gap-2 rounded-card border border-subtle bg-surface px-3.5 py-2.5">
+      <span className="text-sm">
+        <span className="font-medium">{t("chat.whoContinues")}</span> <span className="text-muted">{t("chat.whoContinuesHint")}</span>
+      </span>
+      <span className="flex flex-wrap gap-1.5">
+        {agents.slice(0, 8).map((a) => (
+          <Button key={a.id} size="sm" variant="secondary" onPress={() => onPick(a)}>
+            <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, all)} size={16} />
+            {a.name}
+          </Button>
+        ))}
+      </span>
     </div>
   )
 }

@@ -161,6 +161,8 @@ export type ChatEvent = typeof ChatEvent.Type
 // ---------- RPC over WebSocket at /rpc ----------
 
 export class ChatNotFound extends Schema.TaggedError<ChatNotFound>()("ChatNotFound", { chatId: Id }) {}
+// Every reply comes from an agent: a chat whose agents are all gone (archived, deleted) asks who continues it first.
+export class ChatNeedsAgent extends Schema.TaggedError<ChatNeedsAgent>()("ChatNeedsAgent", { chatId: Id }) {}
 export class ApprovalNotFound extends Schema.TaggedError<ApprovalNotFound>()("ApprovalNotFound", { approvalId: Id }) {} // already decided or expired
 
 const SendPayload = {
@@ -185,7 +187,7 @@ export const Notice = Schema.Struct({
 export type Notice = typeof Notice.Type
 
 export const ZorelRpc = RpcGroup.make(
-  Rpc.make("send", { payload: SendPayload, success: Schema.Struct({ turnId: Id }), error: ChatNotFound }),
+  Rpc.make("send", { payload: SendPayload, success: Schema.Struct({ turnId: Id }), error: Schema.Union([ChatNotFound, ChatNeedsAgent]) }),
   Rpc.make("steer", {
     payload: { chatId: Id, text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100_000)), attachmentIds: Schema.optional(Schema.Array(Schema.String).check(Schema.isMaxLength(MAX_ATTACHMENTS))) },
     // joined: the message went into the reply in progress; false: that reply was stopped and the message is a turn of its own.

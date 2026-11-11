@@ -2,10 +2,10 @@ import { discovered, pickedEntries, serializePicks } from "./file-skills.ts"
 import { listFolders } from "./folders.ts"
 import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, CliInstallFailed, CronInvalid, FlowConflict, FlowInvalid, type FlowGraph, type RoutineDelivery, type RoutineSchedule, synthesizeFlow, validateFlow, RoutineInvalid, RoutineQueueFull, TeamHandleTaken, TeamInvalid, DesktopInstallFailed, GitFailed, isTeammate, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
+import { Api, ChatNeedsAgentError, CliInstallFailed, LastAgent, CronInvalid, FlowConflict, FlowInvalid, type FlowGraph, type RoutineDelivery, type RoutineSchedule, synthesizeFlow, validateFlow, RoutineInvalid, RoutineQueueFull, TeamHandleTaken, TeamInvalid, DesktopInstallFailed, GitFailed, isTeammate, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
 import { ZorelRpc } from "@zorel/contracts/events"
 import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER, SESSION_STDIN_ENV } from "@zorel/contracts/session"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { Effect, Layer, Schema, Semaphore, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
 import { HttpApiBuilder, HttpApiError } from "effect/http-api"
@@ -26,9 +26,10 @@ import { claudeCommands } from "./engines/claude-sdk.ts"
 import { API_KEYS, mcpEnvName, oauthKey, Secrets } from "./secrets.ts"
 import { addCliDirsToPath, installCli } from "./cli-install.ts"
 import { desktopCli, desktopStatus, installDesktop } from "./desktop.ts"
-import { computersFor } from "./computer.ts"
+import { installedApps } from "./installed-apps.ts"
+import { checkFolder, computersFor } from "./computer.ts"
 import { isZorel } from "./desktop-apps.ts"
-import { newPairingCode, pairingCode, TELEGRAM_KEY, TelegramChannel, telegramUsers, unpairTelegram } from "./telegram.ts"
+import { channelAgent, newPairingCode, pairingCode, TELEGRAM_AGENT, TELEGRAM_KEY, TelegramChannel, telegramUsers, unpairTelegram } from "./telegram.ts"
 import { Accounts } from "./accounts.ts"
 import { Actor } from "./access.ts"
 import { Actions, Audit, changed } from "./audit.ts"
@@ -52,7 +53,7 @@ import { applyPendingImport, cancelImport, exportWorkspace, MAX_IMPORT_BYTES, pe
 import { cpus, totalmem } from "node:os"
 import { listProcs, type Proc, sample, subtree } from "./procs.ts"
 import { closeTerminal, liveTerminals, scriptsOf, serversUnder, TerminalSocket, terminalsOf } from "./terminals.ts"
-import { BrowserService, BrowserSocket } from "./browser.ts"
+import { BrowserPicture, BrowserService, BrowserSocket } from "./browser.ts"
 
 const BUILDER_KEEP_MS = 60 * 60 * 1000 // a Builder conversation younger than this is someone's, not litter
 
@@ -68,6 +69,20 @@ const skillAgents = (store: Repository, ids: ReadonlyArray<string> | undefined) 
 const found = <A, E, R>(e: Effect.Effect<A | undefined, E, R>) => Effect.flatMap(e, (a) => (a === undefined ? notFound() : Effect.succeed(a)))
 const exists = <A>(e: Effect.Effect<A | undefined>) => Effect.map(e, (a) => a !== undefined)
 
+// The person's last agent can't go (archived or deleted): every chat needs one to answer. One check at a time, so two
+// windows removing the last two can't both pass.
+const agentGuard = Semaphore.makeUnsafe(1)
+export const keepsAnAgent = (store: Repository, goingId: string) =>
+  Effect.flatMap(store.agents(), (all) => (all.some((a) => isTeammate(a) && a.id !== goingId) ? Effect.void : Effect.fail(new LastAgent())))
+// Folders lent to an agent's computer: each one a folder that may be lent (inside home, not hidden or Zorel's own).
+const lentOk = (paths: ReadonlyArray<string> | undefined) =>
+  Effect.gen(function* () {
+    const dataDir = yield* DataDir
+    for (const path of paths ?? []) {
+      const why = checkFolder(path, { dataDir })
+      if (why) return yield* new TeamInvalid({ message: `${path}: ${why}` })
+    }
+  })
 // A chat's agents: they exist and are global or from the same project.
 const validAgents = (store: Repository, agentIds: ReadonlyArray<string>, projectId: string | null) =>
   Effect.forEach(agentIds, store.agent).pipe(Effect.map((as) => as.every((a) => !!a && (a.projectId === null || a.projectId === projectId))))
@@ -195,6 +210,7 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
           if (!(yield* projectOk(store, payload.projectId))) return yield* notFound()
           const { teamIds, ...input } = payload
           yield* agentTeamsOk({ projectId: payload.projectId }, payload.name, teamIds)
+          yield* lentOk(payload.permissions?.lent)
           const a = yield* store.createAgent(input)
           if (teamIds) yield* store.setAgentTeams(a.id, teamIds)
           yield* audit.record(Actions.agentCreated, { target: a, after: { name: a.name, model: a.model, access: a.access } })
@@ -206,9 +222,11 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
           const before = yield* store.agent(params.id)
           // "archived" is a switch; the row keeps when (null: not archived). Archiving again keeps the first time.
           const { archived, teamIds, ...rest } = payload
+          yield* lentOk(payload.permissions?.lent)
           if (before) yield* agentTeamsOk({ projectId: before.projectId, id: before.id }, rest.name, teamIds)
           const archivedAt = archived === undefined ? undefined : archived ? (before?.archivedAt ?? Date.now()) : null
-          const after = yield* found(store.updateAgent(params.id, { ...rest, ...(archivedAt !== undefined && { archivedAt }) }))
+          const save = found(store.updateAgent(params.id, { ...rest, ...(archivedAt !== undefined && { archivedAt }) }))
+          const after = yield* (archived && !before?.archivedAt ? agentGuard.withPermits(1)(Effect.andThen(keepsAnAgent(store, params.id), save)) : save)
           if (teamIds) yield* store.setAgentTeams(after.id, teamIds)
           if (before) yield* audit.record(Actions.agentUpdated, { target: after, ...changed(before, after, AGENT_FIELDS) })
           // Archived: its computers stop (their files stay for a restore).
@@ -250,7 +268,7 @@ const Agents = HttpApiBuilder.group(Api, "agents", (h) =>
       .handle("remove", ({ params }) =>
         Effect.gen(function* () {
           const agent = yield* store.agent(params.id)
-          yield* store.removeAgent(params.id)
+          yield* agentGuard.withPermits(1)(Effect.andThen(keepsAnAgent(store, params.id), store.removeAgent(params.id)))
           if (agent) yield* audit.record(Actions.agentDeleted, { target: agent })
         })
       )
@@ -301,6 +319,7 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
       .handle("create", ({ payload }) =>
         Effect.gen(function* () {
           if (!(yield* projectOk(store, payload.projectId)) || !(yield* validAgents(store, payload.agentIds, payload.projectId))) return yield* notFound()
+          if (!payload.agentIds.length) return yield* new ChatNeedsAgentError()
           return yield* store.createChat(payload)
         })
       )
@@ -308,6 +327,7 @@ const Chats = HttpApiBuilder.group(Api, "chats", (h) =>
         Effect.gen(function* () {
           const chat = yield* store.chat(params.id)
           if (!chat || (payload.agentIds && !(yield* validAgents(store, payload.agentIds, chat.projectId)))) return yield* notFound()
+          if (payload.agentIds?.length === 0) return yield* new ChatNeedsAgentError()
           const updated = yield* found(store.updateChat(params.id, payload))
           // The level agents work at is a security choice: it leaves a record, like the same choice on an agent.
           if (payload.access !== undefined && payload.access !== chat.access) yield* audit.record(Actions.chatAccessChanged, { target: { id: chat.id, name: chat.title }, ...changed(chat, updated, ["access"] as const) })
@@ -853,12 +873,12 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
     const store = yield* Store
     const audit = yield* Audit
     const runtime = yield* Runtime
-    const telegramStatus = Effect.map(telegramUsers.pipe(Effect.provideService(Store, store)), (users) => ({
-      tokenSet: !!secrets.get(TELEGRAM_KEY),
-      fromEnv: secrets.fromEnv(TELEGRAM_KEY),
-      users: users.length,
-      pairing: pairingCode() ?? null
-    }))
+    const telegramStatus = Effect.gen(function* () {
+      const users = yield* telegramUsers.pipe(Effect.provideService(Store, store))
+      const chosen = yield* store.preference(TELEGRAM_AGENT)
+      const agent = yield* channelAgent(store, chosen)
+      return { tokenSet: !!secrets.get(TELEGRAM_KEY), fromEnv: secrets.fromEnv(TELEGRAM_KEY), users: users.length, agentId: agent?.id ?? null, chosen: !!agent && agent.id === chosen, pairing: pairingCode() ?? null }
+    })
     const { hub } = yield* Tools
     const workspace = yield* Workspace
     // The folder of every chat (a worktree, the project's, or its own), servers found under them in one pass; then
@@ -978,6 +998,34 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
         )
       )
       .handle("computer", () => Effect.promise(() => computersFor(dataDir).status(true)))
+      .handle("computerState", ({ params }) => Effect.flatMap(store.agent(params.id), (a) => (a ? Effect.promise(() => computersFor(dataDir).state(a.id)) : notFound())))
+      .handle("computerStart", ({ params }) =>
+        Effect.gen(function* () {
+          const a = yield* store.agent(params.id)
+          if (!a) return yield* notFound()
+          // Outside any chat: only the folders lent to it (each checked), read-only when it works at "ask".
+          const p = permissionsOf(a)
+          const lents = (p.lent ?? []).filter((path) => !checkFolder(path, { dataDir })).map((path) => ({ path, readOnly: a.access === "ask" }))
+          computersFor(dataDir).start({ agentId: a.id, lents })
+          return yield* Effect.promise(() => computersFor(dataDir).state(a.id))
+        })
+      )
+      .handle("computerRestart", ({ params }) =>
+        Effect.gen(function* () {
+          const a = yield* store.agent(params.id)
+          if (!a) return yield* notFound()
+          yield* Effect.promise(() => computersFor(dataDir).restart(a.id).catch(() => undefined))
+          return yield* Effect.promise(() => computersFor(dataDir).state(a.id))
+        })
+      )
+      .handle("computerOpen", ({ params }) =>
+        Effect.gen(function* () {
+          const a = yield* store.agent(params.id)
+          if (!a) return yield* notFound()
+          const folder = computersFor(dataDir).workFolder(a.id)
+          yield* Effect.sync(() => Bun.spawn(osCommand("open", folder), { stdout: "ignore", stderr: "ignore", windowsHide: true } as never))
+        })
+      )
       .handle("eraseComputer", ({ params }) =>
         Effect.promise(() => computersFor(dataDir).erase(params.id)).pipe(Effect.tap(() => audit.record(Actions.computerErased, { target: { id: params.id, name: params.id } })))
       )
@@ -997,6 +1045,7 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       // macOS: opens System Settings with agent-desktop's guide to the Accessibility permission.
       .handle("desktopGuide", () => Effect.promise(() => desktopCli(dataDir)(["permissions", "--guide"], 15_000)).pipe(Effect.asVoid))
       // The apps open now (to pick from), never Zorel itself.
+      .handle("installedApps", () => Effect.sync(() => installedApps()))
       .handle("desktopRunning", () =>
         Effect.promise(() => desktopCli(dataDir)(["list-apps"], 20_000)).pipe(
           Effect.map((r) => [...new Set(((r.data?.apps ?? []) as Array<{ name?: string; presentation?: string }>).filter((a) => a.presentation === "foreground" && a.name && !isZorel(a.name)).map((a) => a.name!))].sort())
@@ -1005,6 +1054,14 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       .handle("telegram", () => telegramStatus)
       .handle("telegramPair", () => Effect.sync(newPairingCode).pipe(Effect.andThen(telegramStatus)))
       .handle("telegramUnpair", () => unpairTelegram.pipe(Effect.provideService(Store, store), Effect.andThen(telegramStatus)))
+      .handle("telegramAgent", ({ payload }) =>
+        Effect.gen(function* () {
+          const a = yield* store.agent(payload.agentId)
+          if (!a || !isTeammate(a) || a.projectId !== null) return yield* notFound() // a global teammate answers a channel
+          yield* store.setPreference(TELEGRAM_AGENT, a.id)
+          return yield* telegramStatus
+        })
+      )
       .handle("keys", () => Effect.sync(() => API_KEYS.map((name) => ({ name, set: !!secrets.get(name), fromEnv: secrets.fromEnv(name) }))))
       // The value never reaches the audit log: only which key was set or cleared.
       .handle("setKey", ({ params, payload }) =>
@@ -1511,6 +1568,7 @@ export const AppLive = (webDir?: string) =>
     OAuthCallback,
     TerminalSocket,
     BrowserSocket,
+    BrowserPicture,
     ...(webDir && existsSync(join(webDir, "index.html")) ? [WebRoute(webDir)] : [])
   )
 
