@@ -4,6 +4,44 @@ What changed in each version of Zorel. The format follows [Keep a Changelog](htt
 and versions follow [Semantic Versioning](https://semver.org) (while in 0.x, a minor version may change things). Each
 section is also the release's notes on GitHub.
 
+## [0.6.0] - 2026-11-10
+
+### Added
+
+- **Routine flows.** A routine is a trigger plus steps (a connector's tool, an agent, a cheap check, a yes/no
+  condition, Ask me, end), built as a list in New routine or on a canvas. Runs go step by step, resume after a
+  restart and never send a write twice. Triggers: at a time (weekly, once, monthly), when your day starts, something
+  new in a connector, a message in a channel, a webhook, or by hand; **Test now** shows what one would find.
+- **Routines that report:** run history with outcomes, what changed since the last report, a week view and Today;
+  results go to a notification, Telegram (with Yes/No buttons), a page or any connector.
+- **Agent teams:** call `@team` and one member answers; projects name the agents and teams that take part, and each
+  message goes to the right one.
+- **Tasks beside the chat:** a task an agent gives a teammate opens in a drawer next to the chat instead of filling
+  the sidebar; the teammate's report shows its status, how it checked and a link to the task.
+- **Browser cards:** one card per agent's browser (and yours) with a live picture; open one to see its tabs. The
+  Browser panel also opens full screen, with the agent's pointer and what it's doing.
+- **Antigravity** (Google's agent CLI) as an engine, under Zorel's access levels; Antigravity and OpenCode install
+  from inside Zorel.
+- **Zorel in Brazilian Portuguese:** follows the system's language, or pick it in Settings › General.
+- Page editor with a formatting toolbar and real heading sizes; tool arguments in Form or JSON mode.
+
+### Changed
+
+- New logo, a darker neutral palette, and content that settles in softly on every tab and list; the new chat shows
+  the logo's orbits behind it.
+- Every screen works in a window 390 px wide.
+- Desktop updates: Restart shows it's updating, can't be pressed twice, and says why an install failed.
+
+### Security
+
+- The desktop app hands the server its secret on stdin, not in the environment; agents get their own process
+  namespace; agent-desktop downloads are checked against pinned SHA-256 values; containers run with
+  no-new-privileges and stop when Zorel exits.
+- Text from webhooks and watched connectors is outside data: runs it starts are capped at "Ask first" and facts
+  learned from it go to review.
+- Opening a local-network page (192.168.x, 10.x, .local) asks first; risky commands from every engine reach the
+  approval card; Codex on Windows asks before writing below full access.
+
 ## [0.5.0] - 2026-11-09
 
 ### Added
@@ -137,6 +175,7 @@ The first public version.
 - The local API requires a per-launch session secret; agents can't call it.
 - Imported workspaces arrive with routines and connectors off and full access capped.
 
+[0.6.0]: https://github.com/gustavowlima/zorel/releases/tag/v0.6.0
 [0.5.0]: https://github.com/gustavowlima/zorel/releases/tag/v0.5.0
 [0.4.0]: https://github.com/gustavowlima/zorel/releases/tag/v0.4.0
 [0.3.0]: https://github.com/gustavowlima/zorel/releases/tag/v0.3.0
