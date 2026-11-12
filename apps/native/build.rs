@@ -2,7 +2,7 @@
 // by `bun run schema`) becomes Rust types with typify, written to OUT_DIR/wire.rs and included by src/net/types.rs.
 use std::{env, fs, path::Path};
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 const WIRE: &str = "../../packages/contracts/schema/wire.json";
 
@@ -32,7 +32,8 @@ fn main() {
 //   ignored when decoding;
 // - "anything but null" (`not: {type: null}`, a flow step's free-form config) is read as any JSON value;
 // - Effect's JSON codec writes a non-finite number as the string "Infinity"/"-Infinity"/"NaN", so every number is
-//   anyOf [number, those strings]; the engine sends finite numbers, so this client reads plain numbers.
+//   anyOf [number, those strings(, null)]; the engine sends finite numbers, so that member is dropped and a lone
+//   remaining member replaces the anyOf (a plain number, or number | null → Option<f64>).
 fn normalize(v: &mut Value) {
     match v {
         Value::Object(o) => {
@@ -45,8 +46,15 @@ fn normalize(v: &mut Value) {
             if o.get("not") == Some(&serde_json::json!({ "type": "null" })) {
                 o.remove("not");
             }
-            if is_effect_number(o) {
-                *o = Map::from_iter([("type".to_string(), Value::String("number".into()))]);
+            if let Some(Value::Array(any)) = o.get_mut("anyOf") {
+                any.retain(|m| *m != non_finite());
+                if any.len() == 1 {
+                    let only = any.remove(0);
+                    o.remove("anyOf");
+                    if let Value::Object(only) = only {
+                        o.extend(only);
+                    }
+                }
             }
             o.values_mut().for_each(normalize);
         }
@@ -55,11 +63,7 @@ fn normalize(v: &mut Value) {
     }
 }
 
-fn is_effect_number(o: &Map<String, Value>) -> bool {
-    let Some(Value::Array(any)) = o.get("anyOf") else {
-        return false;
-    };
-    any.len() == 2
-        && any[0] == serde_json::json!({ "type": "number" })
-        && any[1] == serde_json::json!({ "type": "string", "enum": ["Infinity", "-Infinity", "NaN"] })
+// The member Effect adds next to every number for non-finite values.
+fn non_finite() -> Value {
+    serde_json::json!({ "type": "string", "enum": ["Infinity", "-Infinity", "NaN"] })
 }

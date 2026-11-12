@@ -41,7 +41,7 @@ component tests per research R7). No pixel-size tests.
 - [X] T009 Type the routes outside `HttpApi` in `packages/contracts/src/routes.ts` (`RouteError`, `WorkspaceImport`, `ServerInfo`, `ATTACHMENT_NAME_HEADER`; the upload already answers the contract's `Attachment`) and use them in `apps/server/src/main.ts`, `server-routes.ts`, `apps/web/src/client.ts`, `auth-client.ts`, `features/storage.tsx`. Narrowed: raw uploads/downloads stay `HttpRouter` routes (HttpApi gains nothing for binary bodies); team, device and sign-in routes are typed with T047 (team servers), not needed by the prototype
 - [X] T010 Write `packages/contracts/scripts/export-schema.ts` (`bun run schema`, `--check` in `ci.yml`): one draft 2020-12 `packages/contracts/schema/wire.json` whose `$defs` are every HttpApi endpoint's body and result (`ChatsListSuccess`…), every RPC's payload/result/error (stream RPCs: their element, `…Item`), and the browser/terminal socket and raw-route bodies (an OpenAPI file was dropped: nothing consumed it)
 - [X] T011 [P] Write `scripts/export-tokens.ts` (`bun run tokens`, `--check` in `ci.yml`): reads the `--z-*` roles from `apps/web/src/styles.css` (dark `:root` + light override, the only source), resolves `var()` / `color-mix(in srgb, …)`, writes `apps/native/src/theme/tokens.rs` (`Palette` DARK/LIGHT, size/fraction/ms consts) formatted by rustfmt; fails on a value it can't read or a non-colour that differs by theme
-- [X] T012 [P] Write `scripts/export-i18n.ts` (`bun run i18n:native`, `--check` in CI): `packages/i18n` (en + pt-BR) → `apps/native/locales/app.json` (rust-i18n v2 JSON, key → `{en, pt-BR}`), `{name}` → `%{name}`, plural `{one, other}` → `.one` / `.other` keys
+- [X] T012 [P] Write `scripts/export-i18n.ts` (`bun run i18n:native`, `--check` in CI): `packages/i18n` (en + pt-BR) → `apps/native/locales/<lang>.json` (one file per language, rust-i18n reads the language from the file name), `{name}` → `%{name}`, plural `{one, other}` → `.one` / `.other` keys
 - [X] T013 Extend `scripts/check-i18n.ts` to scan `apps/native/src/**/*.rs`: every `t!("…")` key must be a text and every `tn("…", n)` key a plural in the exported catalog
 - [X] T014 Run `bun run test` (513 pass), `typecheck`, `lint` (32 pre-existing warnings), `check:i18n`, `check:ui`, `schema/tokens/i18n:native --check`; record the Phase A result in `.agent/memory/desktop.md`
 
@@ -67,8 +67,8 @@ component tests per research R7). No pixel-size tests.
 
 ### State and text
 
-- [ ] T022 [P] [US1] Status + chat list entities in `apps/native/src/state/chats.rs` fed by `subscribeStatus` and the chats endpoint
-- [ ] T023 [P] [US1] Chat view state in `apps/native/src/state/chat.rs`: rows with stable ids, streaming tail kept apart, approvals, drafts per chat
+- [X] T022 [P] [US1] Status + chat list entities in `apps/native/src/state/chats.rs` fed by `subscribeStatus` and the chats endpoint — pure `ChatList` (status per chat; an unknown chat asks for a refetch); sidebar order ported from apps/web sidebar-order.ts with the screen (T031)
+- [X] T023 [P] [US1] Chat view state in `apps/native/src/state/chat.rs`: rows with stable ids, streaming tail kept apart, approvals, drafts per chat — pure `ChatLog` reducer (snapshot, messages, turns, streaming tail per turn, steps, approvals, status) with a test; the screen owns it
 - [X] T024 [P] [US1] i18n in `apps/native/src/i18n.rs`: `rust_i18n::i18n!("locales", fallback = "en")` in `lib.rs`, system language (pt → pt-BR), `tn(key, count)` over icu_plurals; test for en and pt-BR. `extend!(gpui_component)` not needed: only gpui-base is used
 - [ ] T025 [P] [US1] Theme load in `apps/native/src/theme/mod.rs`: `tokens.rs` (`Palette` by appearance), follows system light/dark, exposes reduced-motion
 

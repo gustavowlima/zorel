@@ -1,4 +1,4 @@
-// Interface text (spec 019): the catalog is packages/i18n, exported to locales/app.json by `bun run i18n:native`.
+// Interface text (spec 019): the catalog is packages/i18n, exported to locales/<lang>.json by `bun run i18n:native`.
 // t!("key") for a text, tn("key", n) for a plural; `bun run check:i18n` fails on a key the catalog lacks (rust-i18n
 // would otherwise show the key itself).
 use icu_plurals::{PluralCategory, PluralRuleType, PluralRules, PluralRulesOptions};

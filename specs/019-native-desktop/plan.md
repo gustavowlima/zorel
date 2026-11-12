@@ -77,7 +77,7 @@ apps/native/                      # new: the GPUI desktop client (Cargo workspac
 ├── Cargo.toml
 ├── AGENTS.md                     # gpui-kit-shaped guide for agents (research R7)
 ├── build.rs                      # packages/contracts/schema/*.json → Rust types (typify); tokens include
-├── locales/app.json              # generated from packages/i18n (rust-i18n v2 format)
+├── locales/<lang>.json              # generated from packages/i18n (one file per language)
 ├── deny.toml                     # cargo-deny policy (licences, advisories, sources, bans)
 └── src/
     ├── main.rs                   # app start, single instance, window
@@ -94,7 +94,7 @@ rust-toolchain.toml
 packages/contracts/src/           # + browser.ts, terminal.ts, attachments, setup/invite/search/import schemas
 scripts/export-tokens.ts          # apps/web/src/styles.css (the token source) → apps/native/src/theme/tokens.rs
 scripts/export-schema.ts          # contracts → packages/contracts/schema/*.json (OpenApi.fromApi + Schema.toJsonSchemaDocument)
-scripts/export-i18n.ts            # packages/i18n → apps/native/locales/app.json
+scripts/export-i18n.ts            # packages/i18n → apps/native/locales/<lang>.json
 .claude/skills/gpui-kit*/         # vendored gpui-kit skills, pinned (research R7)
 apps/desktop/                     # Electron: unchanged until the switch, removed one release after
 ```

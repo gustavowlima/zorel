@@ -52,8 +52,8 @@ Motion uses `gpui_base::spring` / transitions with Zorel's motion tokens and alw
 
 ## i18n
 
-Text comes from `packages/i18n` only, exported to `locales/app.json` (rust-i18n format) by `scripts/export-i18n.ts`.
-Never edit `locales/app.json`. Accessible names come from the catalog too (unlike gpui-kit's own crates). Plurals go
+Text comes from `packages/i18n` only, exported to `locales/<lang>.json` (rust-i18n format) by `scripts/export-i18n.ts`.
+Never edit `locales/<lang>.json`. Accessible names come from the catalog too (unlike gpui-kit's own crates). Plurals go
 through the helper in `src/i18n.rs`. `bun run check:i18n` fails on a `t!` key missing from the catalog.
 
 ## Dependencies
