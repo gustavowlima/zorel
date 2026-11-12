@@ -9,7 +9,7 @@ on:
       - apps/native/**
       - packages/contracts/**
       - packages/i18n/**
-      - packages/design-tokens/**
+      - apps/web/src/styles.css
       - Cargo.toml
       - Cargo.lock
       - rust-toolchain.toml
@@ -21,7 +21,7 @@ on:
       - apps/native/**
       - packages/contracts/**
       - packages/i18n/**
-      - packages/design-tokens/**
+      - apps/web/src/styles.css
       - Cargo.toml
       - Cargo.lock
       - rust-toolchain.toml

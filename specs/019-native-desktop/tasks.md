@@ -28,7 +28,7 @@ component tests per research R7). No pixel-size tests.
 - [X] T003 [P] Add `apps/native/deny.toml` (licence allow-list Apache/MIT/BSD/ISC/Zlib/Unicode/MPL-2.0; deny GPL/AGPL/LGPL; ban Zed crates `ui`, `theme`, `editor`, `terminal`, `markdown`, `auto_update`; `unknown-git = "deny"`, allow-git only the pinned Zed repo; advisories on)
 - [X] T004 [P] Add `_typos.toml` and `.rustfmt.toml` at repo root, and npm scripts in `package.json`: `native` (`cargo run -p zorel-native`), `native:check` (`cargo fmt --check && cargo clippy -p zorel-native -- --deny warnings && typos && cargo machete && cargo deny --manifest-path apps/native/Cargo.toml check`)
 - [X] T005 [P] Write `apps/native/AGENTS.md` in gpui-kit's shape (research R7): Coding Guides first, overview, commands, architecture constraints (`RenderOnce` vs `Entity<T>`, state ownership, stable `ElementId`, behaviour in gpui-base vs presentation in `src/ui/`), theme, i18n, dependencies, release (bump the `gpui-pre-*` family together, exact pins), platform support, testing; point to it from `.agent/memory/desktop.md`
-- [X] T006 Add CI jobs (macOS, Windows, Linux) under `.github/workflows/`: a Rust job running `bun run native:check` and `cargo test -p zorel-native --locked`, triggered only by changes in `apps/native/**`, `packages/contracts/**`, `packages/i18n/**`, `packages/design-tokens/**`, `Cargo.*`, `rust-toolchain.toml`, with the cargo registry and `target/` cached; the existing Bun jobs ignore `apps/native/**`
+- [X] T006 Add CI jobs (macOS, Windows, Linux) under `.github/workflows/`: a Rust job running `bun run native:check` and `cargo test -p zorel-native --locked`, triggered only by changes in `apps/native/**`, `packages/contracts/**`, `packages/i18n/**`, `apps/web/src/styles.css`, `Cargo.*`, `rust-toolchain.toml`, with the cargo registry and `target/` cached; the existing Bun jobs ignore `apps/native/**`
 
 ---
 
@@ -40,7 +40,7 @@ component tests per research R7). No pixel-size tests.
 - [X] T008 [P] Move the terminals socket frames used in `apps/web/src/features/shell.tsx:86-90` into `packages/contracts/src/terminal.ts`; server and web decode with them
 - [X] T009 Type the routes outside `HttpApi` in `packages/contracts/src/routes.ts` (`RouteError`, `WorkspaceImport`, `ServerInfo`, `ATTACHMENT_NAME_HEADER`; the upload already answers the contract's `Attachment`) and use them in `apps/server/src/main.ts`, `server-routes.ts`, `apps/web/src/client.ts`, `auth-client.ts`, `features/storage.tsx`. Narrowed: raw uploads/downloads stay `HttpRouter` routes (HttpApi gains nothing for binary bodies); team, device and sign-in routes are typed with T047 (team servers), not needed by the prototype
 - [X] T010 Write `packages/contracts/scripts/export-schema.ts` (`bun run schema`): `OpenApi.fromApi(Api)` → `packages/contracts/schema/openapi.json`; one draft 2020-12 `packages/contracts/schema/wire.json` whose `$defs` are every RPC payload/result/error (stream RPCs: their element, `…Item`) plus the browser/terminal socket and raw-route bodies; `bun run schema --check` in `ci.yml`
-- [ ] T011 [P] Create `packages/design-tokens/` with `tokens.json` seeded from the 252 `--z-*` declarations in `apps/web/src/styles.css` (light + dark, type, radius, space, agent hues, motion tiers in gpui-kit `MotionTokens` shape) and `generate.ts` that writes the `--z-*` block back into `apps/web/src/styles.css` (byte-identical output on first run) and `apps/native/themes/zorel.json` (gpui-kit `ThemeSet`) + `apps/native/src/theme/tokens.rs` (Zorel-only tokens)
+- [X] T011 [P] Write `scripts/export-tokens.ts` (`bun run tokens`, `--check` in `ci.yml`): reads the `--z-*` roles from `apps/web/src/styles.css` (dark `:root` + light override, the only source), resolves `var()` / `color-mix(in srgb, …)`, writes `apps/native/src/theme/tokens.rs` (`Palette` DARK/LIGHT, size/fraction/ms consts) formatted by rustfmt; fails on a value it can't read or a non-colour that differs by theme
 - [ ] T012 [P] Write `scripts/export-i18n.ts`: `packages/i18n` (en + pt-BR) → `apps/native/locales/ui.yml` (`_version: 2`), `{name}` → `%{name}`, plural `{one, other}` → `.one` / `.other` subkeys
 - [ ] T013 Extend `scripts/check-i18n.ts` to scan `apps/native/src/**/*.rs` for `t!("…")` keys and fail when a key is missing from the catalog
 - [ ] T014 Run `bun run test`, `bun run typecheck`, `bun run check:i18n`, `bun run check:ui`; record the Phase A result in `.agent/memory/desktop.md`
@@ -70,7 +70,7 @@ component tests per research R7). No pixel-size tests.
 - [ ] T022 [P] [US1] Status + chat list entities in `apps/native/src/state/chats.rs` fed by `subscribeStatus` and the chats endpoint
 - [ ] T023 [P] [US1] Chat view state in `apps/native/src/state/chat.rs`: rows with stable ids, streaming tail kept apart, approvals, drafts per chat
 - [ ] T024 [P] [US1] i18n in `apps/native/src/i18n.rs`: `rust_i18n::i18n!("locales", fallback = "en")`, `extend!(gpui_component)` before `gpui_kit::init`, `plural(key, count)` over icu_plurals; unit test for en and pt-BR plurals in the same file
-- [ ] T025 [P] [US1] Theme load in `apps/native/src/theme/mod.rs`: `themes/zorel.json` + `tokens.rs`, follows system light/dark, exposes reduced-motion
+- [ ] T025 [P] [US1] Theme load in `apps/native/src/theme/mod.rs`: `tokens.rs` (`Palette` by appearance), follows system light/dark, exposes reduced-motion
 
 ### Zorel components (on gpui-base, research R7 tests)
 
@@ -144,7 +144,7 @@ component tests per research R7). No pixel-size tests.
 
 **Independent Test**: recordings of the main flows; reduce-motion on stops decorative motion.
 
-- [ ] T063 [P] [US3] Motion tokens wired in `apps/native/src/theme/motion.rs` from `packages/design-tokens` (duration tiers, easing, control/movement springs)
+- [ ] T063 [P] [US3] Motion tokens wired in `apps/native/src/theme/motion.rs` added to the `--z-*` block in `apps/web/src/styles.css` and exported by `scripts/export-tokens.ts` (duration tiers, easing, control/movement springs)
 - [ ] T064 [P] [US3] Screen transitions (Home ↔ chat ↔ Needs you) with `gpui_base` presence/transition in `apps/native/src/screens/router.rs`, keeping scroll position and no layout jump
 - [ ] T065 [P] [US3] Springy side panels (task, browser, files) with `gpui_base::spring` in `apps/native/src/ui/panel.rs`
 - [ ] T066 [P] [US3] Streaming text smoothing (fade/advance per chunk, opacity only) in `apps/native/src/ui/markdown.rs`

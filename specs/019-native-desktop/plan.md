@@ -78,7 +78,6 @@ apps/native/                      # new: the GPUI desktop client (Cargo workspac
 ├── AGENTS.md                     # gpui-kit-shaped guide for agents (research R7)
 ├── build.rs                      # packages/contracts/schema/*.json → Rust types (typify); tokens include
 ├── locales/ui.yml                # generated from packages/i18n (rust-i18n format)
-├── themes/zorel.json             # generated gpui-kit ThemeSet (light + dark)
 ├── deny.toml                     # cargo-deny policy (licences, advisories, sources, bans)
 └── src/
     ├── main.rs                   # app start, single instance, window
@@ -93,7 +92,7 @@ apps/native/                      # new: the GPUI desktop client (Cargo workspac
 Cargo.toml                        # workspace root (members: apps/native)
 rust-toolchain.toml
 packages/contracts/src/           # + browser.ts, terminal.ts, attachments, setup/invite/search/import schemas
-packages/design-tokens/           # new: tokens source → generates apps/web CSS block + Rust theme data
+scripts/export-tokens.ts          # apps/web/src/styles.css (the token source) → apps/native/src/theme/tokens.rs
 scripts/export-schema.ts          # contracts → packages/contracts/schema/*.json (OpenApi.fromApi + Schema.toJsonSchemaDocument)
 scripts/export-i18n.ts            # packages/i18n → apps/native/locales/ui.yml
 .claude/skills/gpui-kit*/         # vendored gpui-kit skills, pinned (research R7)
@@ -113,7 +112,7 @@ separate team, or publishing a crate.
 
 | Phase | Content | Exit |
 |---|---|---|
-| **A. Ground** | Missing wire types into `packages/contracts`; schema export + CI drift check; tokens package; i18n export; vendored gpui-kit skills + NOTICE credit; `apps/native/AGENTS.md`. Useful to web regardless. | `bun run test` green; schema JSON checked in |
+| **A. Ground** | Missing wire types into `packages/contracts`; schema export + CI drift check; tokens export; i18n export; vendored gpui-kit skills + NOTICE credit; `apps/native/AGENTS.md`. Useful to web regardless. | `bun run test` green; schema JSON checked in |
 | **B. Prototype** (≤ 2 weeks) | `apps/native`: engine spawn, rpc client, sidebar, one chat (history, streaming, composer, approval card), faces/ring/tokens, browser panel frames. Measured per quickstart.md. | Gate report: SC-001..SC-004 met → go; else no-go recorded, Electron path (virtualise + incremental markdown) taken instead |
 | **C. Shell parity** | Tray, menus, notifications→deep link, updates (Velopack, signed), keep-awake, dialogs, single instance, team servers. Clean data folder (no migration, Zorel is in development). | Shell checklist passes on 3 OSes |
 | **D. Screens** | Home, Needs you, Agents, Projects, Routines, Memory, Settings, onboarding, tasks, files/diffs, terminal, attachments, shortcuts. Parity checklist per screen. | Parity checklist 100% on 3 OSes (SC-007) |
@@ -128,7 +127,7 @@ separate team, or publishing a crate.
 | AccessKit bugs upstream | screen-reader pass in each phase; contribute fixes; block release only on Zorel-critical paths |
 | Motion quality | `gpui_base::spring`/transitions (keyed, reduced-motion aware); prototype proves one springy panel and a screen transition |
 | JPEG frame upload cost | prototype gate on browser panel at 30 fps |
-| Two UIs drift | one contract, one token source, one i18n source, parity checklist in CI review |
+| Two UIs drift | one contract, one token source (styles.css), one i18n source, parity checklist in CI review |
 | Velopack rollback/notarisation unverified | phase C spike; fallback gpui-updater-core |
 | Effect rpc envelope undocumented | contract tests against a live engine on every CI run |
 

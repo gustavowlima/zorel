@@ -33,10 +33,11 @@ No migration from Electron's files: Zorel is in development and the native app s
 | `prefs.json` | open at login, keep awake, window bounds |
 | `window-state.json` | drafts, last route |
 
-## DesignTokens (packages/design-tokens)
+## DesignTokens
 
-One source: `{ themes: { light, dark }, color.*, type.*, radius.*, space.*, motion.* }` → generates the `--z-*` block
-in `apps/web/src/styles.css` and `apps/native` theme data. The 252 current `--z-*` declarations are the seed.
+One source: the `--z-*` roles in `apps/web/src/styles.css` (dark `:root`, light override). `scripts/export-tokens.ts`
+resolves them into `apps/native/src/theme/tokens.rs`: `Palette` (every colour role) as `DARK` and `LIGHT`, plus size,
+fraction and duration constants shared by both themes.
 
 ## ParityItem
 

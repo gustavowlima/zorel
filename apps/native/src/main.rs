@@ -1,11 +1,20 @@
 // Zorel's native desktop client (spec 019): a GPUI window on gpui-base. The engine stays the Bun server.
 use gpui_kit::*;
 
+mod theme;
+
 struct App;
 
 impl Render for App {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().flex().items_center().justify_center().child("Zorel")
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(theme::tokens::DARK.bg_canvas)
+            .text_color(theme::tokens::DARK.text)
+            .child("Zorel")
     }
 }
 
