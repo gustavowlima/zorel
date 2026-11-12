@@ -197,10 +197,24 @@ pub fn safe_link(url: &str) -> bool {
 
 /// The agents a text may mention (`@handle`): each drawn in its colour, a click opens it.
 pub struct Mentions {
-    /// (handle, lowercase, without @; agent id; its hue)
-    pub people: Vec<(String, String, Rgba)>,
+    pub people: Vec<Person>,
     pub open: OpenMention,
 }
+
+/// An agent a text may mention.
+pub struct Person {
+    /// Its handle, lowercase, without the @.
+    pub handle: String,
+    pub id: String,
+    pub name: String,
+    /// Its face's tone, and the hue its name is drawn in.
+    pub tone: usize,
+    pub hue: Rgba,
+}
+
+/// Where a mention's face sits: room no line breaks inside, ahead of the name.
+const FACE_ROOM: &str = "\u{2007}\u{2007}\u{202F}";
+const MENTION_FACE: f32 = 16.;
 
 pub type OpenMention = Rc<dyn Fn(String, &mut Window, &mut App) + 'static>;
 
@@ -290,44 +304,88 @@ fn inline(id: SharedString, text: &Inline, p: &tokens::Palette, mentions: Option
             (r, open)
         })
         .collect();
-    // Mentions of known agents (outside code): their colour on a soft wash, a click opens the agent.
+    // Mentions of known agents (outside code) read as the agent: its face and its name in its colour; a click
+    // opens it. The "@handle" is replaced in the text, so the other marks move with it.
+    let mut shown = text.text.clone();
+    let mut faces: Vec<(usize, AnyElement)> = Vec::new();
     if let Some(m) = mentions {
         let in_code = |r: &Range<usize>| {
             text.marks
                 .iter()
                 .any(|(c, k)| matches!(k, Mark::Code) && c.start < r.end && r.start < c.end)
         };
-        for (range, handle) in mention_ranges(&text.text) {
-            let Some((_, id, hue)) = m.people.iter().find(|(h, _, _)| *h == handle) else {
-                continue;
+        let found: Vec<(Range<usize>, &Person)> = mention_ranges(&text.text)
+            .into_iter()
+            .filter(|(r, _)| !in_code(r))
+            .filter_map(|(r, handle)| m.people.iter().find(|p| p.handle == handle).map(|p| (r, p)))
+            .collect();
+        if !found.is_empty() {
+            // Old offset → new: shifted by the mentions before it; inside one, to its end.
+            let swaps: Vec<(Range<usize>, usize)> = found
+                .iter()
+                .map(|(r, person)| (r.clone(), FACE_ROOM.len() + person.name.len()))
+                .collect();
+            let map = |o: usize| -> usize {
+                let mut delta: isize = 0;
+                for (r, len) in &swaps {
+                    if r.end <= o {
+                        delta += *len as isize - r.len() as isize;
+                    } else if r.start < o {
+                        return (r.start as isize + delta) as usize + len;
+                    }
+                }
+                (o as isize + delta) as usize
             };
-            if in_code(&range) {
-                continue;
+            let overlaps = |a: &Range<usize>| found.iter().any(|(r, _)| a.start < r.end && r.start < a.end);
+            highlights = highlights
+                .into_iter()
+                .filter(|(r, _)| !overlaps(r))
+                .map(|(r, h)| (map(r.start)..map(r.end), h))
+                .collect();
+            links = links
+                .into_iter()
+                .filter(|(r, _)| !overlaps(r))
+                .map(|(r, a)| (map(r.start)..map(r.end), a))
+                .collect();
+            let mut out = String::new();
+            let mut at = 0;
+            for (r, person) in &found {
+                out.push_str(&text.text[at..r.start]);
+                let start = out.len();
+                out.push_str(FACE_ROOM);
+                let name_at = out.len();
+                out.push_str(&person.name);
+                highlights.push((
+                    name_at..out.len(),
+                    HighlightStyle {
+                        color: Some(person.hue.into()),
+                        font_weight: Some(FontWeight::SEMIBOLD),
+                        ..Default::default()
+                    },
+                ));
+                let (open, agent) = (m.open.clone(), person.id.clone());
+                links.push((
+                    start..out.len(),
+                    Rc::new(move |window, cx| open(agent.clone(), window, cx)),
+                ));
+                faces.push((
+                    start,
+                    crate::ui::face::AgentFace::new(SharedString::from(format!("{id}-m{start}")), person.tone)
+                        .size(MENTION_FACE)
+                        .into_any_element(),
+                ));
+                at = r.end;
             }
-            highlights.retain(|(r, _)| r.end <= range.start || range.end <= r.start);
-            highlights.push((
-                range.clone(),
-                HighlightStyle {
-                    color: Some((*hue).into()),
-                    font_weight: Some(FontWeight::SEMIBOLD),
-                    background_color: Some(crate::ui::motion::fade(*hue, 0.14).into()),
-                    ..Default::default()
-                },
-            ));
-            let (open, id) = (m.open.clone(), id.clone());
-            links.push((range, Rc::new(move |window, cx| open(id.clone(), window, cx))));
+            out.push_str(&text.text[at..]);
+            shown = out;
+            highlights.sort_by_key(|(r, _)| r.start);
         }
-        highlights.sort_by_key(|(r, _)| r.start);
     }
     // Selectable (drag, double-click, ⌘C), its marks kept; links and mentions act on a click.
-    crate::ui::selectable::Selectable::new(
-        id,
-        text.text.clone(),
-        highlights,
-        crate::ui::motion::fade(p.accent, 0.35),
-    )
-    .links(links)
-    .into_any_element()
+    crate::ui::selectable::Selectable::new(id, shown, highlights, crate::ui::motion::fade(p.accent, 0.35))
+        .links(links)
+        .inline(faces)
+        .into_any_element()
 }
 
 /// A table, frameless: hairlines under the header and between rows, bold header, 12px cells; each column's share

@@ -15,6 +15,8 @@ pub struct Selectable {
     styled: StyledText,
     color: Hsla,
     links: Rc<Vec<(Range<usize>, Action)>>,
+    /// Elements drawn in the text's flow, each at the start of the room left for it (a mention's face).
+    inline: Vec<(usize, AnyElement)>,
 }
 
 /// What clicking a range does (open a URL, open an agent).
@@ -35,7 +37,14 @@ impl Selectable {
             text,
             color: color.into(),
             links: Rc::new(Vec::new()),
+            inline: Vec::new(),
         }
+    }
+
+    /// Elements to draw at byte offsets of the text (the text leaves room for them), vertically centred on the line.
+    pub fn inline(mut self, items: Vec<(usize, AnyElement)>) -> Self {
+        self.inline = items;
+        self
     }
 
     /// Ranges that act when clicked (a link, a mention).
@@ -55,7 +64,7 @@ impl IntoElement for Selectable {
 
 impl Element for Selectable {
     type RequestLayoutState = TextSelectionHandle;
-    type PrepaintState = Hitbox;
+    type PrepaintState = (Hitbox, Vec<AnyElement>);
 
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())
@@ -100,7 +109,23 @@ impl Element for Selectable {
             .with_text_bounds(vec![bounds])
             .with_rendered_element(handle, window, cx);
         handle.register(registration, window, cx);
-        hitbox
+        // The inline elements, placed where their room starts on its line.
+        let layout = self.styled.layout().clone();
+        let line = layout.line_height();
+        let mut placed = Vec::new();
+        for (at, mut el) in std::mem::take(&mut self.inline) {
+            let Some(origin) = layout.position_for_index(at) else {
+                continue;
+            };
+            let size = el.layout_as_root(AvailableSpace::min_size(), window, cx);
+            el.prepaint_at(
+                point(origin.x + px(1.), origin.y + (line - size.height) / 2.),
+                window,
+                cx,
+            );
+            placed.push(el);
+        }
+        (hitbox, placed)
     }
 
     fn paint(
@@ -109,7 +134,7 @@ impl Element for Selectable {
         inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         handle: &mut Self::RequestLayoutState,
-        hitbox: &mut Self::PrepaintState,
+        (hitbox, placed): &mut Self::PrepaintState,
         window: &mut Window,
         cx: &mut App,
     ) {
@@ -166,6 +191,9 @@ impl Element for Selectable {
         }
         self.styled
             .paint(global_id, inspector_id, bounds, &mut (), &mut (), window, cx);
+        for el in placed {
+            el.paint(window, cx);
+        }
     }
 }
 

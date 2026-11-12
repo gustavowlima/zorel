@@ -970,11 +970,14 @@ impl ChatScreen {
             .iter()
             .filter(|a| a.archived_at.is_none())
             .map(|a| {
-                (
-                    crate::state::crew::handle_of(&a.name).to_lowercase(),
-                    a.id.clone(),
-                    face::hue(p, store.tone(Some(&a.id))),
-                )
+                let tone = store.tone(Some(&a.id));
+                markdown::Person {
+                    handle: crate::state::crew::handle_of(&a.name).to_lowercase(),
+                    id: a.id.clone(),
+                    name: a.name.clone(),
+                    tone,
+                    hue: face::hue(p, tone),
+                }
             })
             .collect();
         let view = cx.entity().downgrade();
