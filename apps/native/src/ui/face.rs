@@ -86,13 +86,21 @@ pub struct Gaze {
 
 impl Global for Gaze {}
 
-/// How near the pointer must come for a face to look at it.
-const REACH: f32 = 220.;
+/// How near the pointer must come for a face to look at it: a few faces' widths from its centre.
+const REACH: f32 = 3.;
+
+fn reach(size: f32) -> f32 {
+    size * REACH
+}
 
 /// The window's pointer moved (Root calls this): faces near it redraw to follow it.
 pub fn follow(position: Point<Pixels>, window: &mut Window, cx: &mut App) {
     let gaze = cx.default_global::<Gaze>();
-    let near = |p: Point<Pixels>| gaze.faces.values().any(|b| distance(b.center(), p) < REACH * 1.2);
+    let near = |p: Point<Pixels>| {
+        gaze.faces
+            .values()
+            .any(|b| distance(b.center(), p) < reach(f32::from(b.size.width)) * 1.2)
+    };
     let wake = near(position) || gaze.pointer.is_some_and(near);
     gaze.pointer = Some(position);
     if wake {
@@ -106,14 +114,15 @@ fn distance(a: Point<Pixels>, b: Point<Pixels>) -> f32 {
 }
 
 /// Where the eyes look: toward the pointer, up to `max` px, more the nearer it is; centred when it's far.
-fn look(center: Point<Pixels>, pointer: Option<Point<Pixels>>, max: f32) -> (f32, f32) {
+fn look(center: Point<Pixels>, pointer: Option<Point<Pixels>>, size: f32) -> (f32, f32) {
     let Some(p) = pointer else { return (0., 0.) };
     let (dx, dy) = (f32::from(p.x - center.x), f32::from(p.y - center.y));
     let d = (dx * dx + dy * dy).sqrt();
-    if d < 1. || d > REACH {
+    let range = reach(size);
+    if d < 1. || d > range {
         return (0., 0.);
     }
-    let pull = max * (1. - d / REACH).clamp(0.35, 1.);
+    let pull = size * 0.08 * (1. - d / range).clamp(0.35, 1.);
     (dx / d * pull, dy / d * pull)
 }
 
@@ -130,7 +139,7 @@ impl RenderOnce for AgentFace {
         // It looks toward the pointer when it comes near (springing), and blinks when the pointer lands on it.
         let bounds = cx.default_global::<Gaze>().faces.get(&self.id).copied();
         let pointer = cx.default_global::<Gaze>().pointer;
-        let (lx, ly) = bounds.map_or((0., 0.), |b| look(b.center(), pointer, s * 0.08));
+        let (lx, ly) = bounds.map_or((0., 0.), |b| look(b.center(), pointer, s));
         let key = self.id.to_string();
         let ox = gpui_kit::base::spring(
             SharedString::from(format!("{key}-look-x")),
@@ -303,14 +312,17 @@ fn ring(color: Rgba, size: f32, gap: f32, dot: f32) -> impl IntoElement {
 mod gaze_tests {
     use gpui_kit::{point, px};
 
-    use super::{REACH, look};
+    use super::{look, reach};
 
     #[test]
     fn eyes_look_toward_a_near_pointer_and_rest_when_it_is_far() {
         let center = point(px(100.), px(100.));
-        let (x, y) = look(center, Some(point(px(140.), px(100.))), 2.);
-        assert!(x > 0. && x <= 2. && y.abs() < 1e-5);
-        assert_eq!(look(center, Some(point(px(100. + REACH + 1.), px(100.))), 2.), (0., 0.));
-        assert_eq!(look(center, None, 2.), (0., 0.));
+        let (x, y) = look(center, Some(point(px(130.), px(100.))), 20.);
+        assert!(x > 0. && x <= 1.6 && y.abs() < 1e-5); // at most 8% of a 20px face
+        assert_eq!(
+            look(center, Some(point(px(100. + reach(20.) + 1.), px(100.))), 20.),
+            (0., 0.)
+        );
+        assert_eq!(look(center, None, 20.), (0., 0.));
     }
 }

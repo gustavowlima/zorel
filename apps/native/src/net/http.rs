@@ -110,7 +110,10 @@ impl Http {
         if !status.is_success() {
             return Err(HttpError::Status(status, response.text().await.unwrap_or_default()));
         }
-        response.json().await.map_err(HttpError::Network)
+        // An empty body (204, or a route that answers nothing) reads as JSON null, so `()`/`Value` callers don't fail.
+        let body = response.bytes().await.map_err(HttpError::Network)?;
+        let text = if body.is_empty() { &b"null"[..] } else { &body[..] };
+        serde_json::from_slice(text).map_err(|e| HttpError::Status(status, format!("bad JSON: {e}")))
     }
 }
 
