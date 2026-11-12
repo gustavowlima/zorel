@@ -14,7 +14,7 @@ use crate::{
     screens::{
         chat::ChatScreen,
         inbox::{Inbox, InboxEvent},
-        sidebar,
+        sidebar::{Sidebar, SidebarEvent},
     },
     shell::notify::{self, Moment, Notifier},
     state::{
@@ -22,7 +22,6 @@ use crate::{
         store::{StatusChanged, Store},
     },
     theme,
-    ui::nav::NavRow,
 };
 
 struct Root {
@@ -32,6 +31,7 @@ struct Root {
     /// The open chat's screen (kept while its chat is open; a new chat builds a new one).
     chat: Option<(String, Entity<ChatScreen>)>,
     inbox: Option<Entity<Inbox>>,
+    sidebar: Option<Entity<Sidebar>>,
     notifier: Notifier,
     /// A clicked notification sends its chat id here.
     clicked: tokio::sync::mpsc::UnboundedSender<String>,
@@ -72,6 +72,7 @@ impl Root {
             route,
             chat: None,
             inbox: None,
+            sidebar: None,
             notifier: Notifier::default(),
             clicked,
             open_first,
@@ -104,7 +105,26 @@ impl Root {
             InboxEvent::OpenChat(id) => this.navigate(Route::Chat { id: id.clone() }, window, cx),
         })
         .detach();
-        cx.observe(&inbox, |_, _, cx| cx.notify()).detach(); // its count shows in the sidebar
+        let sidebar = cx.new(|cx| Sidebar::new(store.clone(), cx));
+        cx.subscribe_in(
+            &sidebar,
+            window,
+            |this, _, event: &SidebarEvent, window, cx| match event {
+                SidebarEvent::Navigate(route) => this.navigate(route.clone(), window, cx),
+            },
+        )
+        .detach();
+        // Needs you's count shows in the sidebar.
+        cx.observe(&inbox, |this, inbox, cx| {
+            let pending = inbox.read(cx).count();
+            if let Some(sidebar) = &this.sidebar {
+                sidebar.update(cx, |s, cx| {
+                    s.pending = pending;
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
         cx.spawn_in(window, async move |this, cx| {
             while let Some(notice) = notices.recv().await {
                 let _ = this.update_in(cx, |this, window, _| {
@@ -122,6 +142,7 @@ impl Root {
         .detach();
         self.store = Some(store);
         self.inbox = Some(inbox);
+        self.sidebar = Some(sidebar);
         if let Route::Chat { id } = self.route.clone() {
             self.navigate(Route::Chat { id }, window, cx);
         }
@@ -136,6 +157,13 @@ impl Root {
                 }
             }
             Route::Home { .. } => {}
+        }
+        if let Some(sidebar) = &self.sidebar {
+            let route = route.clone();
+            sidebar.update(cx, |s, cx| {
+                s.route = route;
+                cx.notify();
+            });
         }
         self.route = route;
         cx.notify();
@@ -199,38 +227,6 @@ impl Render for Root {
             ConnectionState::Reconnecting => Some(t!("app.offline").into_owned()),
             ConnectionState::Down(reason) => Some(t!("app.stopped", reason = reason).into_owned()),
         };
-        let mut rows: Vec<AnyElement> = Vec::new();
-        if let Some(store) = &self.store {
-            let store = store.read(cx);
-            let pending = self.inbox.as_ref().map(|i| i.read(cx).count()).unwrap_or(0);
-            rows.push(
-                NavRow::new("nav-inbox", t!("inbox.title").into_owned())
-                    .active(self.route == Route::Inbox)
-                    .when(pending > 0, |r| {
-                        r.trailing(div().text_color(p.warning).child(pending.to_string()))
-                    })
-                    .on_click(cx.listener(|this, _, window, cx| this.navigate(Route::Inbox, window, cx)))
-                    .into_any_element(),
-            );
-            for chat in sidebar::ordered(&store.chats) {
-                let id = chat.id.clone();
-                let active = self.route == (Route::Chat { id: id.clone() });
-                rows.push(
-                    sidebar::row(
-                        chat,
-                        store.status(&chat.id),
-                        store.tone(chat.agent_ids.first().map(String::as_str)),
-                        active,
-                    )
-                    .on_click(
-                        cx.listener(move |this, _, window, cx| {
-                            this.navigate(Route::Chat { id: id.clone() }, window, cx)
-                        }),
-                    )
-                    .into_any_element(),
-                );
-            }
-        }
         let main: Option<AnyElement> = match &self.route {
             Route::Inbox => self.inbox.clone().map(|i| i.into_any_element()),
             Route::Chat { id } => self
@@ -246,17 +242,7 @@ impl Render for Root {
             .bg(p.bg_frame)
             .text_color(p.text)
             .text_size(px(13.5))
-            .child(
-                div()
-                    .w(px(260.))
-                    .flex_none()
-                    .flex()
-                    .flex_col()
-                    .gap(px(1.))
-                    .p(px(8.))
-                    .pt(px(40.))
-                    .children(rows),
-            )
+            .when_some(self.sidebar.clone(), |c, sidebar| c.child(sidebar))
             .child(
                 div()
                     .flex_1()
