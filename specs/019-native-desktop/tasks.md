@@ -78,18 +78,18 @@ component tests per research R7). No pixel-size tests.
 - [X] T027 [P] [US1] `apps/native/src/ui/face.rs`: AgentFace (hue, eyes open/happy/asleep/aside/up, states idle/working/waiting/done/failed) and WorkingRing, matching `apps/web/src/ui/face.tsx`; builder test — static eyes; alive eyes and the waiting dot's breathing go with T067
 - [X] T028 [P] [US1] `apps/native/src/ui/layout.rs`: card, row, section, QuietCard, EmptyState shells from `apps/web/src/ui/layout.tsx` — `card()` and `row()`; QuietCard/EmptyState with the screens that use them
 - [X] T029 [P] [US1] `apps/native/src/ui/markdown.rs`: pulldown-cmark → Zorel blocks (paragraph, heading, list item, quote, code, rule; tables as text) with marks and links → GPUI text runs; raw HTML shown as text; links open only if http(s)/mailto; tested. Parsing stays on the UI thread for now (a reply is a few KB) and code blocks have no syntax colours yet — both noted with `ponytail:`
-- [ ] T030 [P] [US1] `apps/native/src/ui/input.rs`: composer on gpui-base Input/Textarea (IME, paste, submit, multiline)
+- [X] T030 [P] [US1] `apps/native/src/ui/input.rs`: composer on gpui-base Input/Textarea (IME, paste, submit, multiline) — the composer is gpui-base's `Textarea` (IME, paste, auto-grow 1–8 rows); Enter sends, Shift+Enter breaks the line
 
 ### Screens
 
-- [ ] T031 [US1] Sidebar in `apps/native/src/screens/sidebar.rs` (chat list with faces and status, matching `apps/web/src/features/sidebar.tsx` essentials) using a virtual list
-- [ ] T032 [US1] Chat screen in `apps/native/src/screens/chat.rs`: virtual list anchored to bottom, cached row heights, streaming reply, composer, approval card with allow/deny
+- [X] T031 [US1] Sidebar in `apps/native/src/screens/sidebar.rs` (chat list with faces and status, matching `apps/web/src/features/sidebar.tsx` essentials) using a virtual list — `src/screens/sidebar.rs` (order ported from sidebar-order.ts, tested; face shows each chat's state); rows are built each render (fine for hundreds, `ponytail:` noted)
+- [X] T032 [US1] Chat screen in `apps/native/src/screens/chat.rs`: virtual list anchored to bottom, cached row heights, streaming reply, composer, approval card with allow/deny — `src/screens/chat.rs`: GPUI `list` anchored to the bottom with tail follow; a text delta re-measures only its reply's row; approval card with Allow/Deny over RPC; markdown cached per message id. `--open <chat>` opens one at start (measurements)
 - [ ] T033 [US1] Browser panel spike in `apps/native/src/screens/browser.rs`: `/api/browser` socket, JPEG decode off-thread with `image` (jpeg only), drop late frames, `RenderImage`
 - [ ] T034 [US1] Needs you screen in `apps/native/src/screens/inbox.rs` (for SC-004 effort measure), timed against the web implementation history of `apps/web/src/features/inbox.tsx`
 
 ### Measure and decide
 
-- [ ] T035 [P] [US1] `scripts/seed-long-chat.ts`: seeds a temp `ZOREL_HOME` with one chat of ≥ 500 messages (code, tables, an open approval)
+- [X] T035 [P] [US1] `scripts/seed-long-chat.ts`: seeds a temp `ZOREL_HOME` with one chat of ≥ 500 messages (code, tables, an open approval) — writes N messages (code, tables, lists, quotes, links) into a throwaway folder; refuses a real `.zorel` path
 - [ ] T036 [P] [US1] Frame log in `apps/native/src/debug/frames.rs` (frame times to a file behind `ZOREL_FRAME_LOG`) and launch timestamp to chat list painted
 - [ ] T037 [US1] `scripts/measure-desktop.ts`: sums `footprint` (macOS) of the client's processes, drives the scroll, reads frame logs; runs both clients per quickstart.md, 3 runs, medians
 - [ ] T038 [US1] Run the procedure on macOS; also `MTL_HUD_ENABLED=1` and `samply record` captures attached to the report

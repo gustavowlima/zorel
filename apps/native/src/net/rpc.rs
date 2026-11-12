@@ -5,7 +5,7 @@
 //         the next chunk only then) · {_tag:"Interrupt", requestId} · {_tag:"Ping"}
 //   down: {_tag:"Chunk", requestId, values:[…]} · {_tag:"Exit", requestId, exit:{_tag:"Success",value}|{_tag:"Failure",
 //         cause:[…]}} · {_tag:"Defect", defect} · {_tag:"Pong"}
-// One socket per engine, owned by a task. Streams survive a dropped connection: the task reconnects with backoff
+// One socket per engine, owned by a task on the app's network runtime (callable from GPUI's thread). Streams survive a dropped connection: the task reconnects with backoff
 // (0.5 s → 10 s) and asks for each live stream again; the engine starts every stream with a fresh snapshot, so
 // subscribers just replace their state. A unary call in flight when the socket drops fails with Disconnected.
 use std::{collections::HashMap, time::Duration};
@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest, http::HeaderValue};
 
-use crate::{engine::Engine, net::http::SESSION_HEADER};
+use crate::{engine::Engine, net::http::SESSION_HEADER, runtime};
 
 const BACKOFF_FIRST: Duration = Duration::from_millis(500);
 const BACKOFF_MAX: Duration = Duration::from_secs(10);
@@ -70,7 +70,7 @@ impl Rpc {
         let (commands, rx) = mpsc::unbounded_channel();
         let (up, connected) = watch::channel(false);
         let url = format!("{}/rpc", engine.url.replacen("http", "ws", 1));
-        tokio::spawn(run(url, engine.token.clone(), rx, up));
+        runtime::spawn(run(url, engine.token.clone(), rx, up));
         Self { commands, connected }
     }
 
@@ -103,7 +103,7 @@ impl Rpc {
             payload,
             items: raw_tx,
         });
-        tokio::spawn(async move {
+        runtime::spawn(async move {
             while let Some(value) = raw.recv().await {
                 match serde_json::from_value::<T>(value) {
                     Ok(item) => {

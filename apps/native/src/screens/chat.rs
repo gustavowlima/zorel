@@ -1,0 +1,296 @@
+// One chat (spec 019 T030/T032): its history and live reply in a list anchored to the bottom that follows the tail
+// while you're there, the approval cards that wait for you, and the composer. Rows are measured lazily by GPUI's
+// list (only what's on screen is laid out); a streaming delta re-measures only the reply's own row.
+use std::collections::HashMap;
+
+use gpui_kit::{
+    base::input::{InputEvent, Textarea, TextareaState},
+    *,
+};
+use rust_i18n::t;
+use serde_json::json;
+
+use crate::{
+    net::{
+        rpc::Rpc,
+        types::{MessageRole, SubscribeChatItem},
+    },
+    state::chat::ChatLog,
+    theme::{self, tokens},
+    ui::{
+        button::{Button, Size, Variant},
+        face::{AgentFace, FaceState},
+        layout,
+        markdown::{self, Block},
+    },
+};
+
+/// What a list row shows: a message, the reply being written for a turn, or an approval waiting for you.
+#[derive(Clone, PartialEq)]
+enum Row {
+    Message(usize),
+    Partial(String),
+    Approval(usize),
+}
+
+pub struct ChatScreen {
+    chat_id: String,
+    rpc: Rpc,
+    /// The agents' order, for each agent's hue (`AgentFace` tone).
+    tones: HashMap<String, usize>,
+    log: ChatLog,
+    rows: Vec<Row>,
+    list: ListState,
+    /// Parsed markdown per message id: a finished message is parsed once.
+    parsed: HashMap<String, Vec<Block>>,
+    composer: Entity<TextareaState>,
+    _subscriptions: Vec<Subscription>,
+}
+
+impl ChatScreen {
+    pub fn new(
+        chat_id: String,
+        rpc: Rpc,
+        tones: HashMap<String, usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let list = ListState::new(0, ListAlignment::Bottom, px(600.));
+        list.set_follow_mode(FollowMode::Tail);
+        let composer = cx.new(|cx| {
+            let mut state = TextareaState::new(window, cx).placeholder(t!("composer.placeholder").into_owned());
+            state.set_auto_grow(1, 8, cx);
+            state
+        });
+        let send = cx.subscribe_in(&composer, window, |this, _, event: &InputEvent, window, cx| {
+            if let InputEvent::PressEnter { shift: false, .. } = event {
+                this.send(window, cx);
+            }
+        });
+        let mut events = rpc.stream::<SubscribeChatItem>("subscribeChat", Some(json!({ "chatId": chat_id })));
+        cx.spawn(async move |this, cx| {
+            while let Some(event) = events.recv().await {
+                if this.update(cx, |this, cx| this.apply(event, cx)).is_err() {
+                    return; // the screen is gone; dropping `events` stops the stream
+                }
+            }
+        })
+        .detach();
+        Self {
+            chat_id,
+            rpc,
+            tones,
+            log: ChatLog::default(),
+            rows: Vec::new(),
+            list,
+            parsed: HashMap::new(),
+            composer,
+            _subscriptions: vec![send],
+        }
+    }
+
+    fn apply(&mut self, event: SubscribeChatItem, cx: &mut Context<Self>) {
+        // A text delta only grows its reply's row: re-measure that one, not the list.
+        let delta_turn = match &event {
+            SubscribeChatItem::Text { turn_id, .. } => Some(turn_id.clone()),
+            _ => None,
+        };
+        self.log.apply(event);
+        let rows = self.rows();
+        match delta_turn.and_then(|turn| rows.iter().position(|r| matches!(r, Row::Partial(t) if *t == turn))) {
+            Some(ix) if rows == self.rows => self.list.splice(ix..ix + 1, 1),
+            _ => {
+                self.list.reset(rows.len());
+                self.rows = rows;
+            }
+        }
+        cx.notify();
+    }
+
+    fn rows(&self) -> Vec<Row> {
+        let messages = (0..self.log.messages.len()).map(Row::Message);
+        let partial = self
+            .log
+            .turns
+            .iter()
+            .filter(|t| self.log.partial.contains_key(&t.id))
+            .map(|t| Row::Partial(t.id.clone()));
+        let approvals = (0..self.log.approvals.len()).map(Row::Approval);
+        messages.chain(partial).chain(approvals).collect()
+    }
+
+    fn send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let text = self.composer.read(cx).value().trim().to_string();
+        if text.is_empty() {
+            return;
+        }
+        self.composer.update(cx, |c, cx| c.set_value("", window, cx));
+        let (rpc, chat_id) = (self.rpc.clone(), self.chat_id.clone());
+        let client_id = format!("native-{}", uuid());
+        cx.background_spawn(async move {
+            let payload = json!({ "chatId": chat_id, "clientId": client_id, "text": text });
+            if let Err(e) = rpc.call::<serde_json::Value>("send", Some(payload)).await {
+                eprintln!("send: {e}"); // ponytail: shown in the chat with the error states (T059)
+            }
+        })
+        .detach();
+    }
+
+    fn decide(&self, approval_id: String, outcome: &'static str, cx: &mut Context<Self>) {
+        let rpc = self.rpc.clone();
+        cx.background_spawn(async move {
+            let payload = json!({ "approvalId": approval_id, "outcome": outcome });
+            if let Err(e) = rpc.call::<serde_json::Value>("decide", Some(payload)).await {
+                eprintln!("decide: {e}");
+            }
+        })
+        .detach();
+    }
+
+    fn render_row(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let p = theme::palette(window);
+        let Some(row) = self.rows.get(ix).cloned() else {
+            return div().into_any_element();
+        };
+        let body = match row {
+            Row::Message(i) => {
+                let m = &self.log.messages[i];
+                let blocks = self
+                    .parsed
+                    .entry(m.id.clone())
+                    .or_insert_with(|| markdown::parse(&m.text));
+                let text = markdown::render(&m.id, blocks, window);
+                match m.role {
+                    MessageRole::User => div().flex().justify_end().child(
+                        div()
+                            .max_w(px(560.))
+                            .rounded(px(tokens::RADIUS_CARD))
+                            .bg(p.bg_control)
+                            .px(px(12.))
+                            .py(px(8.))
+                            .child(text),
+                    ),
+                    _ => self.agent_row(m.agent_id.as_deref(), FaceState::Idle, text, &m.id),
+                }
+            }
+            Row::Partial(turn_id) => {
+                let agent = self
+                    .log
+                    .turns
+                    .iter()
+                    .find(|t| t.id == turn_id)
+                    .and_then(|t| t.agent_id.clone());
+                let text = self.log.partial.get(&turn_id).map(String::as_str).unwrap_or_default();
+                let blocks = markdown::parse(text);
+                let body = markdown::render(&turn_id, &blocks, window);
+                self.agent_row(agent.as_deref(), FaceState::Working, body, &turn_id)
+            }
+            Row::Approval(i) => {
+                let a = &self.log.approvals[i];
+                let id = a.id.clone();
+                let (allow, deny) = (id.clone(), id.clone());
+                layout::card(p)
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.))
+                    .p(px(14.))
+                    .child(
+                        div()
+                            .text_color(p.warning)
+                            .text_sm()
+                            .child(t!("approval.waiting").into_owned()),
+                    )
+                    .child(div().child(a.summary.clone()))
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(8.))
+                            .justify_end()
+                            .child(
+                                Button::new(
+                                    SharedString::from(format!("deny-{id}")),
+                                    t!("approval.deny").into_owned(),
+                                )
+                                .size(Size::Sm)
+                                .on_click(cx.listener(move |this, _, _, cx| this.decide(deny.clone(), "denied", cx))),
+                            )
+                            .child(
+                                Button::new(
+                                    SharedString::from(format!("allow-{id}")),
+                                    t!("approval.allow").into_owned(),
+                                )
+                                .variant(Variant::Primary)
+                                .size(Size::Sm)
+                                .on_click(
+                                    cx.listener(move |this, _, _, cx| this.decide(allow.clone(), "approved", cx)),
+                                ),
+                            ),
+                    )
+            }
+        };
+        div()
+            .px(px(24.))
+            .py(px(8.))
+            .max_w(px(760.))
+            .w_full()
+            .mx_auto()
+            .child(body)
+            .into_any_element()
+    }
+
+    fn agent_row(&self, agent_id: Option<&str>, state: FaceState, body: Div, key: &str) -> Div {
+        let tone = agent_id.and_then(|a| self.tones.get(a)).copied().unwrap_or(0);
+        div()
+            .flex()
+            .gap(px(10.))
+            .child(
+                div().pt(px(2.)).child(
+                    AgentFace::new(SharedString::from(format!("face-{key}")), tone)
+                        .size(20.)
+                        .state(state),
+                ),
+            )
+            .child(div().flex_1().min_w_0().child(body))
+    }
+}
+
+impl Render for ChatScreen {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let p = theme::palette(window);
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .bg(p.bg_canvas)
+            .child(
+                list(
+                    self.list.clone(),
+                    cx.processor(|this, ix, window, cx| this.render_row(ix, window, cx)),
+                )
+                .flex_1(),
+            )
+            .child(
+                div()
+                    .px(px(24.))
+                    .pb(px(16.))
+                    .pt(px(8.))
+                    .max_w(px(760.))
+                    .w_full()
+                    .mx_auto()
+                    .child(
+                        layout::card(p)
+                            .px(px(12.))
+                            .py(px(8.))
+                            .text_color(p.text)
+                            .child(Textarea::new(&self.composer)),
+                    ),
+            )
+    }
+}
+
+// A client id for `send` (idempotency): 16 random bytes as hex.
+fn uuid() -> String {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).expect("the system's random source");
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
