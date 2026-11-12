@@ -19,6 +19,7 @@ use crate::{
     ui::{
         button::{Button, Size, Variant},
         face::AgentFace,
+        header::Header,
         segmented::{self, Segmented},
     },
 };
@@ -250,32 +251,17 @@ impl Inbox {
             t!("inbox.subtitle").into_owned()
         };
         let empty = items.is_empty();
-        div().id("inbox").size_full().overflow_y_scroll().child(
+        // The title and the filter sit in the screen's top bar; the page starts with how many wait.
+        let page = div().id("inbox").flex_1().min_h_0().overflow_y_scroll().child(
             div()
                 .max_w(px(720.))
                 .mx_auto()
                 .px(px(space::X6))
-                .py(px(space::X8))
+                .py(px(space::X6))
                 .flex()
                 .flex_col()
                 .gap(px(space::X5))
-                .child(
-                    div()
-                        .flex()
-                        .items_end()
-                        .justify_between()
-                        .child(
-                            div()
-                                .child(
-                                    div()
-                                        .text_size(px(22.))
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .child(t!("inbox.title").into_owned()),
-                                )
-                                .child(div().text_color(p.text_muted).child(subtitle)),
-                        )
-                        .child(tab_row),
-                )
+                .child(div().text_color(p.text_muted).child(subtitle))
                 .when(empty, |c| {
                     c.child(
                         div()
@@ -303,6 +289,12 @@ impl Inbox {
                             .child(t!("inbox.thatsAll").into_owned()),
                     )
                 }),
-        )
+        );
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .child(Header::new(t!("inbox.title").into_owned()).trailing(tab_row))
+            .child(page)
     }
 }
