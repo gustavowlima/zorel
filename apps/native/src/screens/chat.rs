@@ -1,10 +1,11 @@
-// One chat (spec 019 T030/T032): its history and live reply in a list anchored to the bottom that follows the tail
-// while you're there, the approval cards that wait for you, and the composer. Rows are measured lazily by GPUI's
-// list (only what's on screen is laid out); a streaming delta re-measures only the reply's own row.
+// One chat (spec 019 T030/T032): its history and live reply in the kit's MessageScroller (virtualised, follows the
+// tail while you're there, keeps your place when you scroll up and offers a jump back), the approval cards that wait
+// for you, and the composer. A streaming delta re-measures only the reply's own row.
 use std::collections::HashMap;
 
 use gpui_kit::{
     base::input::{InputEvent, Textarea, TextareaState},
+    component::message_scroller::{MessageScroller, MessageScrollerState},
     *,
 };
 use rust_i18n::t;
@@ -40,7 +41,8 @@ pub struct ChatScreen {
     tones: HashMap<String, usize>,
     log: ChatLog,
     rows: Vec<Row>,
-    list: ListState,
+    /// The kit's message scroller: follows the tail, keeps the reader's place when scrolled up, offers a jump back.
+    scroller: Entity<MessageScrollerState>,
     /// Parsed markdown per message id: a finished message is parsed once.
     parsed: HashMap<String, Vec<Block>>,
     composer: Entity<TextareaState>,
@@ -55,8 +57,8 @@ impl ChatScreen {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let list = ListState::new(0, ListAlignment::Bottom, px(600.));
-        list.set_follow_mode(FollowMode::Tail);
+        let scroller = cx.new(|cx| MessageScrollerState::new(0, cx));
+        cx.observe(&scroller, |_, _, cx| cx.notify()).detach();
         let composer = cx.new(|cx| {
             let mut state = TextareaState::new(window, cx).placeholder(t!("composer.placeholder").into_owned());
             state.set_auto_grow(1, 8, cx);
@@ -82,7 +84,7 @@ impl ChatScreen {
             tones,
             log: ChatLog::default(),
             rows: Vec::new(),
-            list,
+            scroller,
             parsed: HashMap::new(),
             composer,
             _subscriptions: vec![send],
@@ -98,9 +100,14 @@ impl ChatScreen {
         self.log.apply(event);
         let rows = self.rows();
         match delta_turn.and_then(|turn| rows.iter().position(|r| matches!(r, Row::Partial(t) if *t == turn))) {
-            Some(ix) if rows == self.rows => self.list.splice(ix..ix + 1, 1),
+            Some(ix) if rows == self.rows => {
+                self.scroller.update(cx, |s, cx| {
+                    s.remeasure_items(ix..ix + 1, cx);
+                });
+            }
             _ => {
-                self.list.reset(rows.len());
+                let count = rows.len();
+                self.scroller.update(cx, |s, cx| s.reset(count, cx));
                 self.rows = rows;
             }
         }
@@ -263,8 +270,9 @@ impl Render for ChatScreen {
             .size_full()
             .bg(p.bg_canvas)
             .child(
-                list(
-                    self.list.clone(),
+                MessageScroller::new(
+                    SharedString::from(format!("chat-{}", self.chat_id)),
+                    self.scroller.clone(),
                     cx.processor(|this, ix, window, cx| this.render_row(ix, window, cx)),
                 )
                 .flex_1(),
