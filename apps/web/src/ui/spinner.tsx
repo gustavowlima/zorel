@@ -1,32 +1,35 @@
-// Activity indicators. The spinner takes the text color (so it fits a filled button) and rotates only
-// while motion is allowed; with "reduce motion" it is a still arc, so the state still reads.
+// Activity indicators (spec 018). Loading and working share one shape: a flat full ring in the current colour with a
+// dot travelling round it (never a one-sided arc, no glow). With "reduce motion" the dot stops and the ring stays, so
+// the state still reads.
 import { t } from "@zorel/i18n"
-import { CircleAlert, Clock } from "lucide-react"
+import type { CSSProperties } from "react"
+import { CircleAlert } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function Spinner({ size = 14, className, label }: { size?: number; className?: string; label?: string }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      strokeWidth={3}
-      className={cn("shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none", className)}
-      role="img"
-      aria-hidden={label ? undefined : true}
+    <span
+      {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true })}
+      className={cn("z-orb", className)}
+      style={{ width: size, height: size } as CSSProperties}
     >
-      <title>{label ?? ""}</title>
-      <circle cx="12" cy="12" r="9" stroke="currentColor" opacity={0.25} />
-      <path d="M21 12a9 9 0 0 0-9-9" strokeLinecap="round" stroke="currentColor" />
-    </svg>
+      <span className="z-ring" style={{ inset: 0 } as CSSProperties}>
+        <i />
+      </span>
+    </span>
   )
 }
 
-// A chat's state in the sidebar and headers: working, waiting for you, failed; idle shows nothing.
+// A chat's state in the sidebar and headers: working (the ring), waiting for you (a breathing amber dot), failed;
+// idle shows nothing.
 export function ChatStatusIcon({ state, size = 12 }: { state: "idle" | "running" | "waiting" | "failed"; size?: number }) {
-  if (state === "running") return <Spinner size={size} label={t("activity.working")} className="text-success" />
-  if (state === "waiting") return <Clock size={size} strokeWidth={2.5} className="shrink-0 text-accent-text" aria-label={t("approval.waiting")} role="img" />
+  if (state === "running") return <Spinner size={size} label={t("activity.working")} className="text-secondary" />
+  if (state === "waiting")
+    return (
+      <span role="img" aria-label={t("approval.waiting")} className="inline-flex shrink-0 items-center justify-center" style={{ width: size, height: size } as CSSProperties}>
+        <span className="z-mark z-mark-wait" style={{ position: "static", width: Math.max(6, size * 0.6), height: Math.max(6, size * 0.6), boxShadow: "none" } as CSSProperties} />
+      </span>
+    )
   if (state === "failed") return <CircleAlert size={size} strokeWidth={2.5} className="shrink-0 text-danger" aria-label={t("chat.failed")} role="img" />
   return null
 }

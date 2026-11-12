@@ -49,7 +49,7 @@ export const StepList = ({ id, children }: { id?: string; children: ReactNode })
 )
 
 type Tone = "default" | "danger" | "warning" | "waiting"
-const TONE: Record<Tone, string> = { default: "text-dim", danger: "text-danger", warning: "text-warning", waiting: "text-accent-text" }
+const TONE: Record<Tone, string> = { default: "text-dim", danger: "text-danger", warning: "text-warning", waiting: "text-warning" }
 
 export function StepRow({
   icon,

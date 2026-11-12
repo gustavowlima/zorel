@@ -17,7 +17,6 @@ Parts of this project derive from:
   Not bundled: downloaded from its official release when the person installs it (apps/server/src/desktop.ts).
 
 - Lobe Icons (https://github.com/lobehub/lobe-icons), MIT License, Copyright LobeHub.
-- Open Bot Avatar (https://github.com/DominikScholz/open-bot-avatar), MIT License, Copyright Dominik Scholz: the agents' avatars.
   Used: provider logos (Claude, Codex, opencode, OpenRouter, Ollama) in
   apps/web/src/ui/provider-icon.tsx, from @lobehub/icons-static-svg 1.102.0.
 

@@ -11,7 +11,7 @@ import { exportAgent, importedAgent } from "./agent.tsx"
 import { TeamsSection } from "./teams.tsx"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { AgentAvatar, Archive, ArchiveRestore, Bot, Button, ChevronDown, Column, cn, MessageCircle, Settings, ConfirmDialog, Dot, Download, EmptyState, Fold, IconButton, Info, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, SearchInput, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
+import { AgentAvatar, Archive, ArchiveRestore, Bot, Button, ChevronDown, Column, cn, MessageCircle, Settings, ConfirmDialog, Download, EmptyState, Fold, IconButton, Info, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, SearchInput, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
 
 // The agents working now, each with what it's doing (a chat of theirs running or waiting; waiting on you first).
 export function useWorking() {
@@ -38,13 +38,12 @@ export function AgentItem({ agent, agents, status, onDelete }: { agent: Agent; a
     <ListRow
       label={`${t("agents.open")}: ${agent.name}`}
       onPress={() => go({ view: "agent", id: agent.id, tab: "work" })}
-      icon={<AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={28} />}
+      icon={<AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={28} state={status ? (status.state === "waiting" ? "waiting" : status.state === "failed" ? "failed" : "working") : undefined} />}
       title={
         <span className="flex items-center gap-2">
           <span className="truncate">{agent.name}</span>
           {working && (
-            <span className={cn("inline-flex shrink-0 items-center gap-1 text-sm font-normal", status?.state === "waiting" ? "text-warning" : "text-accent-text")}>
-              <Dot tone={status?.state === "waiting" ? "warning" : "accent"} />
+            <span className={cn("inline-flex shrink-0 items-center gap-1 text-sm font-normal", status?.state === "waiting" ? "text-warning" : "text-secondary")}>
               {status?.state === "waiting" ? t("agent.work.waiting") : t("agents.working")}
             </span>
           )}
