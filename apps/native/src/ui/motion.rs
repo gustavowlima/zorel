@@ -110,10 +110,56 @@ fn set_pressed(p: &mut Pointer, pressed: bool, cx: &mut Context<Pointer>) {
     cx.notify();
 }
 
-/// A colour that eases to `target` (HOVER_MS).
+/// A colour that eases to `target` (HOVER_MS), mixed with premultiplied alpha: a fade from transparent, or between
+/// washes of different tones, never passes through a darker or brighter colour (HSLA mixing does, and it flashes).
 pub fn color(id: &ElementId, channel: &str, target: Rgba, window: &mut Window, cx: &mut App) -> Hsla {
     let key = ElementId::from(SharedString::from(format!("{id}-{channel}")));
-    transition(key, Hsla::from(target), Transition::new(ms(HOVER_MS)), window, cx)
+    let paint = transition(key, Paint::from(target), Transition::new(ms(HOVER_MS)), window, cx);
+    Hsla::from(Rgba::from(paint))
+}
+
+/// A colour with premultiplied alpha, the space colours mix in without fringes.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Paint([f32; 4]);
+
+impl From<Rgba> for Paint {
+    fn from(c: Rgba) -> Self {
+        Self([c.r * c.a, c.g * c.a, c.b * c.a, c.a])
+    }
+}
+
+impl From<Paint> for Rgba {
+    fn from(Paint([r, g, b, a]): Paint) -> Self {
+        if a <= f32::EPSILON {
+            return Rgba {
+                r: 0.,
+                g: 0.,
+                b: 0.,
+                a: 0.,
+            };
+        }
+        Rgba {
+            r: r / a,
+            g: g / a,
+            b: b / a,
+            a,
+        }
+    }
+}
+
+impl gpui_kit::base::Interpolate for Paint {
+    fn interpolate(&self, target: &Self, progress: f32) -> Self {
+        let mix = |i: usize| self.0[i] + (target.0[i] - self.0[i]) * progress;
+        Self([mix(0), mix(1), mix(2), mix(3)])
+    }
+}
+
+/// `color` at `share` of its alpha (a lighter wash of the same tone).
+pub fn fade(color: Rgba, share: f32) -> Rgba {
+    Rgba {
+        a: color.a * share,
+        ..color
+    }
 }
 
 /// How far the control sinks: 1 px while pressed, back up on a quick, slightly bouncy spring.
@@ -126,4 +172,29 @@ pub fn sink(id: &ElementId, pressed: bool, window: &mut Window, cx: &mut App) ->
         window,
         cx,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui_kit::{Rgba, base::Interpolate as _};
+
+    use super::Paint;
+
+    #[test]
+    fn a_fade_from_transparent_keeps_its_tone() {
+        let white = Rgba {
+            r: 1.,
+            g: 1.,
+            b: 1.,
+            a: 0.1,
+        };
+        let clear = Rgba {
+            r: 0.,
+            g: 0.,
+            b: 0.,
+            a: 0.,
+        };
+        let mid = Rgba::from(Paint::from(clear).interpolate(&Paint::from(white), 0.5));
+        assert!((mid.r - 1.).abs() < 1e-5 && (mid.a - 0.05).abs() < 1e-5);
+    }
 }

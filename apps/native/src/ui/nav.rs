@@ -153,10 +153,11 @@ impl RenderOnce for NavRow {
         let p = theme::palette(window);
         let pointer = motion::pointer(&self.id, window, cx);
         let hovered = pointer.read(cx).hovered && !self.disabled;
+        // One tone at three strengths (prototype: hover wash 4.5%, open wash-2 7%), so moving between them never flashes.
         let wash = match (self.active, hovered) {
-            (true, _) => p.bg_control_hover,
-            (false, true) => p.bg_hover,
-            (false, false) => Rgba { a: 0., ..p.bg_hover },
+            (true, _) => p.bg_control,
+            (false, true) => motion::fade(p.bg_control, 0.65),
+            (false, false) => motion::fade(p.bg_control, 0.),
         };
         let bg = motion::color(&self.id, "wash", wash, window, cx);
         let lit = self.active || hovered;
