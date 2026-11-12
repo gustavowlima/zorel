@@ -4,6 +4,7 @@ import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
 import { Api, ChatNeedsAgentError, CliInstallFailed, LastAgent, CronInvalid, FlowConflict, FlowInvalid, type FlowGraph, type RoutineDelivery, type RoutineSchedule, synthesizeFlow, validateFlow, RoutineInvalid, RoutineQueueFull, TeamHandleTaken, TeamInvalid, DesktopInstallFailed, GitFailed, isTeammate, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
 import { ApprovalNotFound, ChatNotFound, ZorelRpc } from "@zorel/contracts/events"
+import { ATTACHMENT_NAME_HEADER, type WorkspaceImport as WorkspaceImportState } from "@zorel/contracts/routes"
 import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER, SESSION_STDIN_ENV } from "@zorel/contracts/session"
 import { Effect, Layer, Schema, Semaphore, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -1220,7 +1221,7 @@ const AttachmentUpload = HttpRouter.add(
     if (declared > MAX_ATTACHMENT_BYTES) return HttpServerResponse.jsonUnsafe({ error: "too_large" }, { status: 413 })
     const body = new Uint8Array(yield* req.arrayBuffer)
     if (!body.length || body.length > MAX_ATTACHMENT_BYTES) return HttpServerResponse.jsonUnsafe({ error: body.length ? "too_large" : "empty" }, { status: body.length ? 413 : 400 })
-    const name = decodeURIComponent(req.headers["x-file-name"] ?? "file").replace(/[/\\]/g, "_").slice(0, 200) || "file"
+    const name = decodeURIComponent(req.headers[ATTACHMENT_NAME_HEADER] ?? "file").replace(/[/\\]/g, "_").slice(0, 200) || "file"
     const mime = (req.headers["content-type"] ?? "application/octet-stream").split(";")[0]!.trim().slice(0, 100)
     const id = crypto.randomUUID()
     const dir = join(dataDir, "attachments", chatId)
@@ -1275,13 +1276,13 @@ const WorkspaceImport = HttpRouter.add(
   Effect.gen(function* () {
     const req = yield* HttpServerRequest.HttpServerRequest
     const dataDir = yield* DataDir
-    if (req.method === "GET") return HttpServerResponse.jsonUnsafe({ pending: pendingImport(dataDir) })
+    if (req.method === "GET") return HttpServerResponse.jsonUnsafe({ pending: pendingImport(dataDir) } satisfies WorkspaceImportState)
     if (req.method === "DELETE") return yield* Effect.sync(() => cancelImport(dataDir)).pipe(Effect.as(HttpServerResponse.empty({ status: 204 })))
     if (req.method !== "POST") return HttpServerResponse.empty({ status: 405 })
     if (Number(req.headers["content-length"] ?? 0) > MAX_IMPORT_BYTES) return HttpServerResponse.jsonUnsafe({ error: "too_large" }, { status: 413 })
     const body = new Uint8Array(yield* req.arrayBuffer)
     return yield* Effect.tryPromise(() => stageImport(body, dataDir)).pipe(
-      Effect.map((counts) => HttpServerResponse.jsonUnsafe({ pending: true, ...counts })),
+      Effect.map((counts) => HttpServerResponse.jsonUnsafe({ pending: true, ...counts } satisfies WorkspaceImportState)),
       Effect.catch(() => Effect.succeed(HttpServerResponse.jsonUnsafe({ error: "not_an_export" }, { status: 400 })))
     )
   }).pipe(Effect.orDie)

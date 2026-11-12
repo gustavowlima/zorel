@@ -1,5 +1,6 @@
 // Server mode's front door (spec 014): the guard every request passes, Better Auth's routes, and the first owner's
 // setup. Locally none of this is loaded (main.ts keeps LocalOnly and the per-launch secret).
+import type { ServerInfo } from "@zorel/contracts/routes"
 import { Effect, Layer } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Actor } from "./access.ts"
@@ -76,7 +77,7 @@ export function serverRoutes(mode: ServerMode, a: ZorelAuth, setup: ReturnType<t
   )
 
   // Whether this is a server and whether it still needs its first owner (the web app shows the setup or sign-in).
-  const ServerInfo = HttpRouter.add("GET", "/api/server", () => Effect.succeed(HttpServerResponse.jsonUnsafe({ mode: "server", needsOwner: !hasOwner(a) })))
+  const ServerInfo = HttpRouter.add("GET", "/api/server", () => Effect.succeed(HttpServerResponse.jsonUnsafe({ mode: "server", needsOwner: !hasOwner(a) } satisfies ServerInfo)))
 
   // The first owner: with the token printed at start, once.
   const Setup = HttpRouter.add("POST", "/api/setup", (req) =>

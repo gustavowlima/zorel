@@ -4,8 +4,11 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./browser": "./src/browser.ts",
     "./events": "./src/events.ts",
-    "./session": "./src/session.ts"
+    "./routes": "./src/routes.ts",
+    "./session": "./src/session.ts",
+    "./terminal": "./src/terminal.ts"
   },
   "dependencies": {
     "effect": "4.1.2"

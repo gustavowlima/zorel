@@ -1,6 +1,7 @@
 // Settings › Storage: how much Zorel's data folder takes on this computer, split by what
 // it holds (a segmented bar with its legend), by project, the largest chats, and what can be cleaned up safely.
 // Measured on open and on demand; cleanups are confirmed and go to the audit log.
+import type { WorkspaceImport } from "@zorel/contracts/routes"
 import { useAtomValue } from "@effect/atom-react"
 import type { StorageReport } from "@zorel/contracts"
 import { formatAge, formatBytes, formatPercent, t } from "@zorel/i18n"
@@ -172,17 +173,17 @@ function Cleanups({ report }: { report: StorageReport }) {
 // travel: they stay in this computer's keychain.
 function Move() {
   const [file, setFile] = useState<File>()
-  const [state, setState] = useState<{ pending: boolean; projects?: number; chats?: number; error?: boolean; busy?: boolean }>({ pending: false })
+  const [state, setState] = useState<WorkspaceImport & { error?: boolean; busy?: boolean }>({ pending: false })
   useEffect(() => {
     fetch("/api/workspace/import")
-      .then((r) => r.json() as Promise<{ pending: boolean }>)
+      .then((r) => r.json() as Promise<WorkspaceImport>)
       .then((r) => setState({ pending: r.pending }), () => {})
   }, [])
   const upload = async (f: File) => {
     setState({ pending: false, busy: true })
     const r = await fetch("/api/workspace/import", { method: "POST", body: f }).catch(() => undefined)
-    const body = r?.ok ? ((await r.json()) as { projects: number; chats: number }) : undefined
-    setState(body ? { pending: true, ...body } : { pending: false, error: true })
+    const body = r?.ok ? ((await r.json()) as WorkspaceImport) : undefined
+    setState(body ?? { pending: false, error: true })
   }
   const cancel = () => void fetch("/api/workspace/import", { method: "DELETE" }).then(() => setState({ pending: false }))
   return (

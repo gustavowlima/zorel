@@ -10,7 +10,8 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs"
 import { execFile } from "node:child_process"
 import { dirname, join, resolve, sep } from "node:path"
-import { Context, Effect, Layer } from "effect"
+import { type BrowserAct, type BrowserTab, PanelFrame } from "@zorel/contracts/browser"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type * as Playwright from "playwright-core"
 import type { Browser, BrowserContext, CDPSession, Dialog, Page } from "playwright-core"
@@ -41,13 +42,7 @@ const YOU = "you" // the profile of the tabs a person opens from the panel
 const IV_BYTES = 12 // AES-GCM nonce
 const TAG_BYTES = 16 // AES-GCM tag
 
-interface TabInfo {
-  readonly id: string
-  readonly title: string
-  readonly url: string
-  readonly active: boolean
-  readonly owner: string // whose browser it's in: an agent's profile (its id), "assistant", or "you"
-}
+type TabInfo = BrowserTab
 
 interface ChatBrowser {
   readonly tabs: Map<string, Page>
@@ -64,17 +59,7 @@ interface ChatBrowser {
   lastAct?: BrowserAct | undefined // for a panel that attaches mid-work
 }
 
-// An agent at work in a chat's browser, for the panel: the tool, the element by its name and where it is (fractions
-// of the frame), then done. What it types never travels: it may be a password.
-export interface BrowserAct {
-  readonly agentId: string | null
-  readonly tool: string
-  readonly target?: string | undefined
-  readonly x?: number | undefined
-  readonly y?: number | undefined
-  readonly done?: boolean | undefined
-  readonly at: number
-}
+export type { BrowserAct }
 
 // A Browser panel attached to a chat: it gets state changes and the active tab's frames.
 export interface Watcher {
@@ -832,55 +817,25 @@ export class BrowserService extends Context.Service<BrowserService, Browsers>()(
 
 // ---------- the Browser panel's socket ----------
 
-// From the panel: input on the active tab (positions are fractions of the frame), navigation, tabs, control.
-type PanelFrame =
-  | { t: "click"; x: number; y: number; button?: "left" | "right"; clicks?: number }
-  | { t: "wheel"; x: number; y: number; dx: number; dy: number }
-  | { t: "key"; key: string }
-  | { t: "text"; text: string }
-  | { t: "nav"; url: string }
-  | { t: "open"; url: string; owner?: string | undefined } // a page the app opens (a server from the Terminal panel): a new tab, control unchanged
-  | { t: "back" | "forward" | "reload" | "release" | "previews" }
-  | { t: "newtab"; owner?: string | undefined }
-  | { t: "tab" | "close" | "view"; id: string }
-
-const frac = (n: unknown) => (typeof n === "number" && n >= 0 && n <= 1 ? n : undefined)
 // A browser named by the panel: a profile's shape (profileOf), else none (the person's own).
 const ownerOf = (o: unknown) => (typeof o === "string" && /^[a-z0-9-]{1,64}$/.test(o) ? o : undefined)
-// One frame from the panel, or undefined when it isn't one of ours.
+const clampWheel = (n: number) => Math.max(-5000, Math.min(5000, n))
+const decodeFrame = Schema.decodeUnknownOption(Schema.fromJsonString(PanelFrame))
+// One frame from the panel (the contract's shape), normalized: a click is left or right, once or twice; a wheel step is
+// bounded; an owner that isn't a profile means the person's own browser. Undefined when it isn't one of ours.
 export function parsePanelFrame(raw: string): PanelFrame | undefined {
-  try {
-    const f = JSON.parse(raw) as Record<string, unknown>
-    const x = frac(f.x)
-    const y = frac(f.y)
-    switch (f.t) {
-      case "click":
-        return x !== undefined && y !== undefined ? { t: "click", x, y, button: f.button === "right" ? "right" : "left", clicks: f.clicks === 2 ? 2 : 1 } : undefined
-      case "wheel":
-        return x !== undefined && y !== undefined && typeof f.dx === "number" && typeof f.dy === "number" ? { t: "wheel", x, y, dx: Math.max(-5000, Math.min(5000, f.dx)), dy: Math.max(-5000, Math.min(5000, f.dy)) } : undefined
-      case "key":
-        return typeof f.key === "string" && f.key.length > 0 && f.key.length <= 40 ? { t: "key", key: f.key } : undefined
-      case "text":
-        return typeof f.text === "string" && f.text.length <= 10_000 ? { t: "text", text: f.text } : undefined
-      case "nav":
-        return typeof f.url === "string" && f.url.length <= 4000 ? { t: "nav", url: f.url } : undefined
-      case "open":
-        return typeof f.url === "string" && f.url.length <= 4000 ? { t: "open", url: f.url, owner: ownerOf(f.owner) } : undefined
-      case "newtab":
-        return { t: "newtab", owner: ownerOf(f.owner) }
-      case "back":
-      case "forward":
-      case "reload":
-      case "release":
-      case "previews":
-        return { t: f.t }
-      case "tab":
-      case "close":
-      case "view":
-        return typeof f.id === "string" ? { t: f.t, id: f.id } : undefined
-    }
-  } catch {}
-  return undefined
+  const f = Option.getOrUndefined(decodeFrame(raw))
+  switch (f?.t) {
+    case "click":
+      return { t: "click", x: f.x, y: f.y, button: f.button === "right" ? "right" : "left", clicks: f.clicks === 2 ? 2 : 1 }
+    case "wheel":
+      return { ...f, dx: clampWheel(f.dx), dy: clampWheel(f.dy) }
+    case "open":
+    case "newtab":
+      return { ...f, owner: ownerOf(f.owner) }
+    default:
+      return f
+  }
 }
 
 // What a panel frame does. Any input means a person is driving: the browser is theirs until "release". Looking is not

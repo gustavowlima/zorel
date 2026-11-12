@@ -9,7 +9,8 @@
 // and Origin before the upgrade).
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import { Effect } from "effect"
+import { TerminalFrame, type TerminalMessage } from "@zorel/contracts/terminal"
+import { Effect, Option, Schema } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Socket } from "effect/socket"
 import { Store } from "./db.ts"
@@ -19,22 +20,12 @@ import { listeners, listProcs, type Proc, subtree } from "./procs.ts"
 import { which } from "./cli/index.ts"
 
 const MAX_TERMINALS = 12 // live shells at once, across chats
-const MAX_INPUT = 64 * 1024 // one input frame (a paste)
 const SCROLLBACK = 256 * 1024 // output kept for a reattach
-const size = (n: unknown, max: number) => (typeof n === "number" && Number.isInteger(n) && n >= 2 && n <= max ? n : undefined)
+const size = (n: unknown, max: number) => (typeof n === "number" && Number.isInteger(n) && n >= 2 && n <= max ? n : undefined) // cols/rows in the URL
 
-// One frame from the browser, or undefined when it isn't one of ours.
-export function parseFrame(raw: string): { t: "i"; d: string } | { t: "r"; c: number; r: number } | { t: "k" } | undefined {
-  try {
-    const f = JSON.parse(raw) as { t?: unknown; d?: unknown; c?: unknown; r?: unknown }
-    if (f.t === "i" && typeof f.d === "string" && f.d.length <= MAX_INPUT) return { t: "i", d: f.d }
-    if (f.t === "k") return { t: "k" }
-    const c = size(f.c, 1000)
-    const r = size(f.r, 500)
-    if (f.t === "r" && c && r) return { t: "r", c, r }
-  } catch {}
-  return undefined
-}
+// One frame from the browser (the contract's shape), or undefined when it isn't one of ours.
+const decodeFrame = Schema.decodeUnknownOption(Schema.fromJsonString(TerminalFrame))
+export const parseFrame = (raw: string): TerminalFrame | undefined => Option.getOrUndefined(decodeFrame(raw))
 
 // The last `max` bytes written, in order.
 export class Ring {
@@ -205,7 +196,7 @@ export const TerminalSocket = HttpRouter.add(
     const bye = () => run(write(new Socket.CloseEvent(4000, "ended")))
     session.send = (chunk) => run(write(chunk))
     session.close = bye
-    yield* write(JSON.stringify({ t: "s", id: session.id, n: session.n }))
+    yield* write(JSON.stringify({ t: "s", id: session.id, n: session.n } satisfies TerminalMessage))
     const replay = session.output.read()
     if (replay.length) yield* write(replay)
     if (session.ended) bye()

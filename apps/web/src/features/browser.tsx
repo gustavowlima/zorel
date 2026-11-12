@@ -4,7 +4,9 @@
 // agents' browser tools are refused; "Hand back" returns it. Positions go up as fractions of the frame.
 // While an agent works, its pointer moves over the page to where it acts, and the bar says what it's doing.
 import type { Agent } from "@zorel/contracts"
+import { type BrowserAct as Act, type BrowserTab as Tab, type PanelFrame as Frame, PanelMessage } from "@zorel/contracts/browser"
 import { t } from "@zorel/i18n"
+import { Option, Schema } from "effect"
 import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react"
 import { agentsAtom, useList } from "../client.ts"
 import { agentName, agentTint, agentTone } from "../labels.ts"
@@ -13,24 +15,11 @@ import { AgentAvatar, AgentPointer, ArrowRight, Button, ChevronRight, cn, Globe,
 // Asked from a reply's browser card: that agent's browser, full screen or not; onExit runs when full screen ends (the
 // chat closes a panel it opened only for it).
 export type BrowserFocus = { owner: string; full: boolean; onExit?: (() => void) | undefined }
-type Tab = { id: string; title: string; url: string; active: boolean; owner: string } // owner: an agent's id, "assistant" or "you"
 const YOU = "you"
 const isYours = (owner: string) => owner === YOU || owner.startsWith(`${YOU}--`)
 const agentOf = (owner: string) => owner.split("--")[0]!
 const PREVIEW_MS = 4000 // the cards' pictures refresh this often while the cards show
-type Frame =
-  | { t: "click"; x: number; y: number; button?: "left" | "right"; clicks?: number }
-  | { t: "wheel"; x: number; y: number; dx: number; dy: number }
-  | { t: "key"; key: string }
-  | { t: "text"; text: string }
-  | { t: "nav"; url: string }
-  | { t: "open"; url: string; owner?: string }
-  | { t: "back" | "forward" | "reload" | "release" | "previews" }
-  | { t: "newtab"; owner?: string }
-  | { t: "tab" | "close" | "view"; id: string }
-
-// An agent's action, from the server (BrowserAct): its tool, the element's name and where it is, then done.
-type Act = { agentId: string | null; tool: string; target?: string; x?: number; y?: number; done?: boolean; at: number }
+const decodeMessage = Schema.decodeUnknownOption(Schema.fromJsonString(PanelMessage))
 const IDLE_MS = 3000 // the pointer and the line stay this long after the agent's last action
 
 // What the bar says for each tool (the element's name follows in quotes).
@@ -94,14 +83,14 @@ export function BrowserPanel({ chatId, openUrl, focus, newTab = 0 }: { chatId: s
     let last: string | undefined
     socket.onmessage = (e) => {
       if (typeof e.data === "string") {
-        const m = JSON.parse(e.data) as { t: string; tabs?: Tab[]; userControl?: boolean; yours?: boolean; masked?: boolean; mayControl?: boolean; message?: string } & Partial<Act>
-        if (m.t === "state") {
-          setTabs(m.tabs ?? [])
-          setHeld(!!m.userControl)
-          setView({ yours: m.yours !== false, masked: !!m.masked, mayControl: m.mayControl !== false })
-        } else if (m.t === "previews") setPreviews((m as { previews?: Record<string, string> }).previews ?? {})
-        else if (m.t === "error") setError(m.message)
-        else if (m.t === "act") setAct(m as Act)
+        const m = Option.getOrUndefined(decodeMessage(e.data))
+        if (m?.t === "state") {
+          setTabs(m.tabs)
+          setHeld(m.userControl)
+          setView({ yours: m.yours, masked: m.masked, mayControl: m.mayControl })
+        } else if (m?.t === "previews") setPreviews(m.previews)
+        else if (m?.t === "error") setError(m.message)
+        else if (m?.t === "act") setAct(m)
         return
       }
       // The newest frame replaces the last one (its object URL is released).

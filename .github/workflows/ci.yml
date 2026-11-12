@@ -23,6 +23,7 @@ jobs:
       - run: bun run lint
       - run: bun run check:ui
       - run: bun run check:i18n
+      - run: bun run schema --check # the JSON Schema other clients generate from (spec 019) matches the contract
       - run: bun run typecheck
       - run: bun run test
       # Memory invariants on 1,000 memories, no model (apps/server/bench): recall in the needles' words, no leaks.

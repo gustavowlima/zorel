@@ -3,6 +3,7 @@
 //   no screen calls reload() by hand.
 // - Turns: AtomRpc over one WebSocket. Each chat is an atom folded from its event stream (snapshot first,
 //   then live events); reconnecting subscribes again and the next snapshot replaces the state.
+import { ATTACHMENT_NAME_HEADER } from "@zorel/contracts/routes"
 import { type AuditKind, Api, type Attachment, MAX_ATTACHMENT_BYTES, type Message, type Switch } from "@zorel/contracts"
 import { type Approval, type ApprovalOutcome, type ChatEvent, type ChatStatus, type Notice, type WorkStep, ZorelRpc } from "@zorel/contracts/events"
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
@@ -385,7 +386,7 @@ export async function uploadAttachment(chatId: string, file: File): Promise<Atta
   if (file.size > MAX_ATTACHMENT_BYTES) throw new Error(t("composer.tooBig", { name: file.name }))
   const r = await fetch(`/api/chats/${chatId}/attachments`, {
     method: "POST",
-    headers: { "content-type": file.type || "application/octet-stream", "x-file-name": encodeURIComponent(file.name) },
+    headers: { "content-type": file.type || "application/octet-stream", [ATTACHMENT_NAME_HEADER]: encodeURIComponent(file.name) },
     body: file
   })
   if (!r.ok) throw new Error(t("composer.uploadFailed", { name: file.name }))

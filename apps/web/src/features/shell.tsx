@@ -9,13 +9,16 @@ import "@xterm/xterm/css/xterm.css"
 import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
 import { type ILink, Terminal } from "@xterm/xterm"
+import { type TerminalFrame, TerminalMessage } from "@zorel/contracts/terminal"
 import { t } from "@zorel/i18n"
+import { Option, Schema } from "effect"
 import { useEffect, useRef, useState } from "react"
 import { Button, MessageCircle } from "@/ui"
 
 const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 // A path printed by a tool: "src/a.ts", "./x.md:12", "/abs/file.json:3:4" (needs a slash or an extension).
 const PATH = /(?<![\w@./-])((?:\.{1,2}\/|\/)?(?:[\w@.-]+\/)*[\w@-][\w@.-]*\.[A-Za-z0-9]{1,8})(?::\d+(?::\d+)?)?(?![\w/])/g
+const decodeMessage = Schema.decodeUnknownOption(Schema.fromJsonString(TerminalMessage))
 const RETRIES = 5
 
 export function Shell({
@@ -82,7 +85,7 @@ export function Shell({
     let tries = 0
     let retry: ReturnType<typeof setTimeout> | undefined
     let disposed = false
-    const send = (frame: object) => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify(frame))
+    const send = (frame: TerminalFrame) => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify(frame))
     const connect = () => {
       const url = new URL("/api/terminals", location.href)
       url.protocol = location.protocol === "https:" ? "wss:" : "ws:"
@@ -93,8 +96,8 @@ export function Shell({
       let attached = false
       socket.onmessage = (e) => {
         if (typeof e.data === "string") {
-          const f = JSON.parse(e.data) as { t?: string; id?: string }
-          if (f.t === "s" && f.id) {
+          const f = Option.getOrUndefined(decodeMessage(e.data))
+          if (f) {
             attached = true
             tries = 0
             if (session.current !== f.id) {
@@ -147,7 +150,7 @@ export function Shell({
         const orphan = ws
         orphan.onclose = null
         orphan.onmessage = (e) => {
-          if (typeof e.data === "string" && (JSON.parse(e.data) as { t?: string }).t === "s") orphan.send(JSON.stringify({ t: "k" }))
+          if (typeof e.data === "string" && Option.isSome(decodeMessage(e.data))) orphan.send(JSON.stringify({ t: "k" } satisfies TerminalFrame))
         }
       } else ws?.close()
       term.dispose()
