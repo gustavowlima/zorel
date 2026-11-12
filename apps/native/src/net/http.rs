@@ -65,6 +65,10 @@ impl Http {
         .await
     }
 
+    pub async fn put<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T, HttpError> {
+        Self::read(self.client.put(format!("{}{path}", self.base)).json(body).send().await).await
+    }
+
     /// DELETE; the engine answers 204 or a small JSON body, neither read.
     pub async fn delete(&self, path: &str) -> Result<(), HttpError> {
         let response = self

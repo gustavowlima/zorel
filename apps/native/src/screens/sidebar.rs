@@ -709,6 +709,8 @@ impl Render for Sidebar {
                         .children(list),
                 )
             })
+            .when(folded, |c| c.child(div().flex_1())) // folded: the foot sits at the bottom
+            .child(self.foot(folded, window, cx))
     }
 }
 

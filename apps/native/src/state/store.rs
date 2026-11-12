@@ -9,8 +9,8 @@ use crate::{
         http::{Http, HttpError},
         rpc::Rpc,
         types::{
-            Agent, AgentsListSuccess, Chat, ChatStatus, ChatsListSuccess, Project, ProjectsListSuccess, Routine,
-            RoutinesListSuccess,
+            AccountsListSuccess, Agent, AgentsListSuccess, Chat, ChatStatus, ChatsListSuccess, Preferences, Project,
+            ProjectsListSuccess, ProviderAccount, Routine, RoutinesListSuccess,
         },
     },
     runtime,
@@ -30,6 +30,9 @@ pub struct Store {
     pub projects: Vec<Project>,
     pub chats: ChatList,
     pub routines: Vec<Routine>,
+    pub accounts: Vec<ProviderAccount>,
+    /// All agents paused (Settings › General, the sidebar's Pause).
+    pub paused: bool,
 }
 
 impl Store {
@@ -42,6 +45,8 @@ impl Store {
             projects: Vec::new(),
             chats: ChatList::default(),
             routines: Vec::new(),
+            accounts: Vec::new(),
+            paused: false,
         };
         store.load(cx);
         store.follow_statuses(cx);
@@ -57,16 +62,20 @@ impl Store {
                 let projects: ProjectsListSuccess = http.get("/api/projects").await?;
                 let chats: ChatsListSuccess = http.get("/api/chats").await?;
                 let routines: RoutinesListSuccess = http.get("/api/routines").await?;
-                Ok::<_, HttpError>((agents, projects, chats, routines))
+                let accounts: AccountsListSuccess = http.get("/api/accounts").await?;
+                let preferences: Preferences = http.get("/api/preferences").await?;
+                Ok::<_, HttpError>((agents, projects, chats, routines, accounts, preferences))
             })
             .await;
             match got {
-                Ok(Ok((agents, projects, chats, routines))) => {
+                Ok(Ok((agents, projects, chats, routines, accounts, preferences))) => {
                     let _ = this.update(cx, |this, cx| {
                         this.agents = agents.0;
                         this.projects = projects.0;
                         this.chats.chats = chats.0;
                         this.routines = routines.0;
+                        this.accounts = accounts.0;
+                        this.paused = preferences.paused;
                         this.loaded = true;
                         cx.notify();
                     });
@@ -86,6 +95,56 @@ impl Store {
             {
                 let _ = this.update(cx, |this, cx| {
                     this.chats.chats = chats.0;
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// Pauses or resumes every agent (running work stops; new messages and routines wait).
+    pub fn set_paused(&mut self, paused: bool, cx: &mut Context<Self>) {
+        self.paused = paused;
+        cx.notify();
+        let http = self.http.clone();
+        runtime::spawn(async move {
+            if let Err(e) = http
+                .put::<_, serde_json::Value>("/api/pause", &serde_json::json!({ "paused": paused }))
+                .await
+            {
+                eprintln!("pause: {e}");
+            }
+        });
+    }
+
+    /// Reads every subscription account's limits again (one at a time, as the web), then reloads the accounts.
+    pub fn refresh_limits(&self, cx: &mut Context<Self>) {
+        let http = self.http.clone();
+        let ids: Vec<String> = self
+            .accounts
+            .iter()
+            .filter(|a| a.logged_in && matches!(a.kind, crate::net::types::ProviderAccountKind::Subscription))
+            .map(|a| a.id.clone())
+            .collect();
+        cx.spawn(async move |this, cx| {
+            let fetched = runtime::spawn(async move {
+                for id in ids {
+                    if let Err(e) = http
+                        .post::<_, serde_json::Value>(
+                            &format!("/api/accounts/{id}/limits?fresh=1"),
+                            &serde_json::json!({}),
+                        )
+                        .await
+                    {
+                        eprintln!("limits: {e}");
+                    }
+                }
+                http.get::<AccountsListSuccess>("/api/accounts").await
+            })
+            .await;
+            if let Ok(Ok(accounts)) = fetched {
+                let _ = this.update(cx, |this, cx| {
+                    this.accounts = accounts.0;
                     cx.notify();
                 });
             }

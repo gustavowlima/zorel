@@ -209,6 +209,11 @@ pub fn duration(ms: f64, l: Lang) -> String {
     }
 }
 
+/// 42% (the same in both catalog languages).
+pub fn percent(ratio: f64) -> String {
+    format!("{}%", (ratio * 100.).round() as i64)
+}
+
 /// "Ana, Rex, and Leo" / "Ana, Rex e Leo".
 pub fn list(items: &[String], l: Lang) -> String {
     let and = match l {

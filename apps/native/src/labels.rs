@@ -42,3 +42,115 @@ pub fn wait_label(wait: &AgentWait, store: &Store) -> String {
     )
     .into_owned()
 }
+
+// ---------- usage windows (labels.ts windowLabel / windowMinutes / paceOf) ----------
+
+/// A window at 80% or more is flagged before it runs out (packages/contracts LIMIT_ALERT).
+pub const LIMIT_ALERT: f64 = 0.8;
+
+const NAMED_WINDOWS: [&str; 5] = [
+    "five_hour",
+    "seven_day",
+    "seven_day_opus",
+    "seven_day_sonnet",
+    "seven_day_oauth_apps",
+];
+
+/// "5-hour", "Weekly", "Gemini · 5-hour", "3-day"…
+pub fn window_label(id: &str) -> String {
+    if NAMED_WINDOWS.contains(&id) {
+        return t!(format!("usage.windows.{id}")).into_owned();
+    }
+    if let Some(model) = id.strip_prefix("model:") {
+        return model.to_string();
+    }
+    if let Some((len, group)) = id.split_once(':').filter(|(len, _)| len.ends_with('m')) {
+        return format!("{group} · {}", window_label(len));
+    }
+    match id.strip_suffix('m').and_then(|m| m.parse::<f64>().ok()) {
+        Some(m) if m % 1440. == 0. => t!("usage.windows.days", count = (m / 1440.) as i64).into_owned(),
+        Some(m) => t!("usage.windows.hours", count = (m / 60.).round() as i64).into_owned(),
+        None => id.to_string(),
+    }
+}
+
+/// How long a window lasts in minutes (None for one scoped to a model).
+pub fn window_minutes(id: &str) -> Option<f64> {
+    if id.starts_with("model:") {
+        return None;
+    }
+    let named = match id {
+        "five_hour" => Some(300.),
+        "seven_day" | "seven_day_opus" | "seven_day_sonnet" | "seven_day_oauth_apps" => Some(10_080.),
+        _ => None,
+    };
+    named.or_else(|| {
+        id.split(':')
+            .next()
+            .and_then(|l| l.strip_suffix('m'))
+            .and_then(|m| m.parse().ok())
+    })
+}
+
+/// How a limit window is going: used (0..1) and, when the burn so far would empty it before it resets, roughly when.
+pub struct Pace {
+    pub used: f64,
+    pub runs_out_at: Option<f64>,
+    /// For sorting: above 1 when it runs out early (the earlier, the higher), else `used`.
+    pub risk: f64,
+}
+
+pub fn pace_of(id: &str, used_percent: f64, resets_at: Option<f64>, now: f64) -> Pace {
+    let used = used_percent / 100.;
+    let (Some(minutes), Some(resets)) = (window_minutes(id), resets_at) else {
+        return Pace {
+            used,
+            runs_out_at: None,
+            risk: used,
+        };
+    };
+    let length = minutes * 60_000.;
+    let start = resets - length;
+    let elapsed = ((now - start) / length).clamp(0., 1.);
+    let out = (used > 0. && elapsed >= 0.1).then(|| start + (now - start) / used);
+    let runs_out_at = out.filter(|o| *o < resets);
+    let risk = runs_out_at.map_or(used, |o| 1. + (resets - o) / length);
+    Pace {
+        used,
+        runs_out_at,
+        risk,
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Tone {
+    Ok,
+    Warning,
+    Critical,
+}
+
+pub fn tone_of(pace: &Pace) -> Tone {
+    match pace {
+        p if p.used >= 0.95 => Tone::Critical,
+        p if p.runs_out_at.is_some() || p.used >= LIMIT_ALERT => Tone::Warning,
+        _ => Tone::Ok,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Tone, pace_of, tone_of, window_minutes};
+
+    #[test]
+    fn windows_and_pace() {
+        assert_eq!(window_minutes("five_hour"), Some(300.));
+        assert_eq!(window_minutes("300m:Gemini"), Some(300.));
+        assert_eq!(window_minutes("model:opus"), None);
+        // Half the window gone, 80% used: it runs out before it resets.
+        let length = 300. * 60_000.;
+        let pace = pace_of("five_hour", 80., Some(length), length / 2.);
+        assert!(pace.runs_out_at.is_some() && pace.risk > 1.);
+        assert_eq!(tone_of(&pace), Tone::Warning);
+        assert_eq!(tone_of(&pace_of("model:x", 96., None, 0.)), Tone::Critical);
+    }
+}

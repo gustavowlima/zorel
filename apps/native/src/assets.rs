@@ -21,7 +21,10 @@ icon_assets!(
         Gauge,
         Folder,
         Users,
-        ArrowUp
+        ArrowUp,
+        ChartColumn,
+        RefreshCw,
+        Settings
     ]
 );
 
