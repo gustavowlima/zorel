@@ -249,6 +249,7 @@ describe("childEnv", () => {
     const e = childEnv("/acct", "linux", { A: "1" }, zsh)
     expect(e).toMatchObject({ A: "1", CLAUDE_CONFIG_DIR: "/acct" })
     expect(Number(e.MCP_TOOL_TIMEOUT)).toBeGreaterThan(30 * 60_000)
+    expect(Number(e.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT)).toBeGreaterThan(30 * 60_000) // an unanswered card is not "idle"
   })
 })
 

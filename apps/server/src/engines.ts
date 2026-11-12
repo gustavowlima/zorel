@@ -20,6 +20,7 @@ import { openClaudeSession } from "#server/engines/claude-sdk.ts"
 import { openCodexSession } from "#server/engines/codex.ts"
 import type { Approver } from "#server/engines/session.ts"
 import type { EngineSession } from "#server/engines/session.ts"
+import { GATEWAY_TOOL_TIMEOUT_MS } from "#server/engines/session.ts"
 import { Secrets, type SecretStore } from "./secrets.ts"
 import { resultText, type Session, type ToolDef } from "./tools.ts"
 import { which } from "./cli/index.ts"
@@ -326,7 +327,7 @@ export const claudeArgs = (t: Turn) => [
   "--setting-sources", "", // ignores the user's hooks, plugins and permissions
   "--no-session-persistence",
   ...(t.tools
-    ? ["--mcp-config", JSON.stringify({ mcpServers: { [GATEWAY]: { type: "http", url: t.tools.url } } }), "--allowedTools", `mcp__${GATEWAY}`] // the gateway decides
+    ? ["--mcp-config", JSON.stringify({ mcpServers: { [GATEWAY]: { type: "http", url: t.tools.url, timeout: GATEWAY_TOOL_TIMEOUT_MS } } }), "--allowedTools", `mcp__${GATEWAY}`] // the gateway decides
     : [])
 ]
 

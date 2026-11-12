@@ -342,6 +342,8 @@ export function childEnv(configDir: string | undefined, platform: NodeJS.Platfor
   if (configDir) env.CLAUDE_CONFIG_DIR = configDir
   // A gateway call may wait on an approval card (up to 30 min): Claude Code's MCP timeout must outlast it.
   env.MCP_TOOL_TIMEOUT = String(GATEWAY_TOOL_TIMEOUT_MS)
+  // Claude Code ≥ 2.1.187 also aborts a call with no response for 5 min (an unanswered question did): same window.
+  env.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT = String(GATEWAY_TOOL_TIMEOUT_MS)
   return env
 }
 
@@ -392,7 +394,7 @@ export function openClaudeSession(o: ClaudeSessionOptions): EngineSession | stri
       ...SETTINGS,
       // Policy tier (the user's own settings can't loosen it) plus the flag layer for what the tier would drop.
       ...settingsLayers(confined),
-      mcpServers: { [GATEWAY]: { type: "http", url: o.gatewayUrl } },
+      mcpServers: { [GATEWAY]: { type: "http", url: o.gatewayUrl, timeout: GATEWAY_TOOL_TIMEOUT_MS } }, // also the idle-abort floor
       strictMcpConfig: true,
       persistSession: false, // Zorel's context is the source of truth; resuming uses the checkpoint
       includePartialMessages: true,
