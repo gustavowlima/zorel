@@ -114,7 +114,7 @@ const SANE_SINCE: f64 = 946_684_800_000.; // 2000-01-01: older is not a real tim
 
 /// Short age for lists: now, 5m, 2h, 3d, 2w; older than 8 weeks the date (Mar 4, or Mar 4, 2025).
 pub fn age(at: f64, now: f64, l: Lang) -> String {
-    if !(at >= SANE_SINCE) {
+    if at.is_nan() || at < SANE_SINCE {
         return String::new();
     }
     let s = ((now - at) / 1000.).max(0.);
