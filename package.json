@@ -15,7 +15,9 @@
     "typecheck": "tsc -p apps/server && tsc -p apps/web",
     "lint": "biome lint",
     "check:ui": "bun scripts/check-ui.ts",
-    "check:i18n": "bun scripts/check-i18n.ts"
+    "check:i18n": "bun scripts/check-i18n.ts",
+    "native": "cargo run -p zorel-native",
+    "native:check": "cargo fmt --check && cargo clippy -p zorel-native --locked -- --deny warnings && typos apps/native && cargo machete apps/native && cargo deny --manifest-path apps/native/Cargo.toml check"
   },
   "devDependencies": {
     "@babel/parser": "7.29.12",

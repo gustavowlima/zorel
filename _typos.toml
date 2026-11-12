@@ -1,0 +1,3 @@
+# Spell check for the native client (spec 019): `bun run native:check` runs typos on apps/native only.
+[files]
+extend-exclude = ["apps/native/locales/*.yml"]

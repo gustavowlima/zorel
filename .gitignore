@@ -14,3 +14,6 @@ dist
 
 # Agent worktrees (local only)
 .claude/worktrees/
+
+# Rust (spec 019)
+target/

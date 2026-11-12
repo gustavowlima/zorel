@@ -1,0 +1,12 @@
+[package]
+name = "zorel-native"
+version = "0.0.0"
+description = "Zorel's native desktop client (spec 019)"
+publish = false
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# Only gpui-base (unstyled behaviour): Zorel draws its own components. Pinned exactly; bump the whole gpui-pre family
+# together (apps/native/AGENTS.md › Release).
+gpui-kit = { version = "=0.9.1", default-features = false }

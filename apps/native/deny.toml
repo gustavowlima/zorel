@@ -1,0 +1,44 @@
+# Supply-chain policy for the native client (spec 019, research R4.8). Run: cargo deny --manifest-path apps/native/Cargo.toml check
+
+[graph]
+all-features = false
+
+[advisories]
+# Vulnerable and yanked crates fail; unmaintained ones are reported for review.
+yanked = "deny"
+unmaintained = "workspace"
+
+[licenses]
+# Apache-2.0 compatible only. GPL/AGPL/LGPL are absent from the allow-list, so any of them fails the build.
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "MIT",
+  "MIT-0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "MPL-2.0",
+  "CC0-1.0",
+  "BSL-1.0",
+  "0BSD",
+  "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.9
+unused-allowed-license = "allow"
+
+[bans]
+multiple-versions = "allow"
+# Zed's GPL crates (ui, theme, editor, terminal, markdown, auto_update) are not published under those names on
+# crates.io, and crates.io names like `markdown` belong to unrelated permissive crates (gpui-base uses markdown-rs).
+# What keeps GPL out is the licence allow-list above plus `unknown-git = "deny"`, not a name list.
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Only Zed's repository, always pinned by rev in Cargo.toml (gpui_tokio).
+allow-git = ["https://github.com/zed-industries/zed"]
