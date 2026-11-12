@@ -15,7 +15,7 @@ const api = async <T>(path: string, body: unknown): Promise<T> => {
   return r.json() as Promise<T>
 }
 const model = "anthropic/claude-sonnet-4-5"
-const agent = await api<{ id: string }>("/api/agents", { projectId: null, name: "Builder", instructions: "Builds things.", model })
+const agent = await api<{ id: string }>("/api/agents", { projectId: null, name: "Atlas", instructions: "Helps with the code.", model })
 const chat = await api<{ id: string }>("/api/chats", { projectId: null, agentIds: [agent.id], model })
 
 const REPLIES = [
