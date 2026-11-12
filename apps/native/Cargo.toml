@@ -32,4 +32,4 @@ path = "src/main.rs"
 
 [package.metadata.cargo-machete]
 # Used only by the generated wire types (OUT_DIR/wire.rs), which cargo-machete doesn't read.
-ignored = ["regress", "serde"]
+ignored = ["regress", "serde_json"]
