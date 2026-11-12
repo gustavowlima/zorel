@@ -15,9 +15,7 @@ use crate::{
     ui::{
         button::{Button, Size, Variant},
         face::AgentFace,
-        layout,
-        segmented::{self, Segmented},
-        space,
+        layout, space,
     },
 };
 
@@ -87,9 +85,6 @@ pub struct Edit {
 pub struct Card<'a> {
     pub drafts: &'a [ProposedAgent],
     pub edits: &'a [Edit],
-    /// Which draft shows its editor (its model picker and access).
-    pub editing: Option<usize>,
-    pub pickers: Vec<Option<AnyElement>>,
     /// Hues for the proposed faces (after the existing agents', so they don't repeat).
     pub first_tone: usize,
     pub busy: bool,
@@ -97,7 +92,6 @@ pub struct Card<'a> {
     pub on_create: Act,
     pub on_discard: Act,
     pub on_edit: OnIndex,
-    pub on_access: OnAccess,
 }
 
 const ACCESS: [(ProposedAgentAccess, &str); 3] = [
@@ -117,7 +111,6 @@ fn access_key(a: ProposedAgentAccess) -> &'static str {
 pub fn card(c: Card, window: &Window) -> AnyElement {
     let p = theme::palette(window);
     let team = c.drafts.len() > 1;
-    let mut pickers = c.pickers;
     let members: Vec<AnyElement> = c
         .drafts
         .iter()
@@ -131,9 +124,7 @@ pub fn card(c: Card, window: &Window) -> AnyElement {
                 crate::labels::model_name(&model, c.models),
                 t!(access_key(access))
             );
-            let editing = c.editing == Some(i);
-            let (on_edit, on_access) = (c.on_edit.clone(), c.on_access.clone());
-            let picker = pickers.get_mut(i).and_then(Option::take);
+            let on_edit = c.on_edit.clone();
             layout::card(p)
                 .p(px(space::X4))
                 .flex()
@@ -179,54 +170,6 @@ pub fn card(c: Card, window: &Window) -> AnyElement {
                     )
                 })
                 .child(div().text_sm().text_color(p.text_muted).child(facts))
-                // Edit first, inline: its AI and how far it may act.
-                .when(editing, |c| {
-                    let selected = ACCESS.iter().position(|(x, _)| *x == access).unwrap_or(0);
-                    let pick: segmented::OnPick = Rc::new(move |ix, window, cx| on_access(i, ACCESS[ix].0, window, cx));
-                    c.child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(space::X2))
-                            .pt(px(space::X2))
-                            .border_t_1()
-                            .border_color(p.border)
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .gap(px(space::X3))
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(p.text_muted)
-                                            .child(t!("builder.model").into_owned()),
-                                    )
-                                    .children(picker),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .gap(px(space::X3))
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(p.text_muted)
-                                            .child(t!("access.title").into_owned()),
-                                    )
-                                    .child(Segmented::new(
-                                        SharedString::from(format!("draft-access-{i}")),
-                                        t!("access.title").into_owned(),
-                                        ACCESS.iter().map(|(_, k)| t!(*k).into_owned().into()).collect(),
-                                        selected,
-                                        pick,
-                                    )),
-                            ),
-                    )
-                })
                 .into_any_element()
         })
         .collect();
@@ -311,4 +254,122 @@ pub fn creating(window: &Window) -> AnyElement {
         .text_color(p.text_muted)
         .child(t!("builder.creating").into_owned())
         .into_any_element()
+}
+
+/// The setup drawer for one proposed agent: who it is (its profile as the Builder wrote it), its AI (the model) and
+/// how far it may act without asking (access, each level with what it means). What's changed here is what Create
+/// makes.
+pub struct Editor<'a> {
+    pub index: usize,
+    pub draft: &'a ProposedAgent,
+    pub edit: Edit,
+    pub tone: usize,
+    pub picker: AnyElement,
+    pub on_access: OnAccess,
+    pub on_close: crate::ui::drawer::OnClose,
+}
+
+pub fn editor(e: Editor, window: &mut Window, cx: &mut App) -> AnyElement {
+    use crate::ui::drawer::{self, Drawer};
+    let p = theme::palette(window);
+    let d = e.draft;
+    let i = e.index;
+    let access = e.edit.access.unwrap_or(d.access);
+    let selected = ACCESS.iter().position(|(x, _)| *x == access).unwrap_or(0);
+    let on_access = e.on_access.clone();
+    let pick: drawer::OnPick = Rc::new(move |ix, window, cx| on_access(i, ACCESS[ix].0, window, cx));
+    let access_options: Vec<(String, String)> = ACCESS
+        .iter()
+        .map(|(_, key)| (t!(*key).into_owned(), t!(format!("{key}Hint")).into_owned()))
+        .collect();
+    let text = |s: &str| {
+        div()
+            .text_color(p.text_secondary)
+            .child(s.to_string())
+            .into_any_element()
+    };
+    let mut profile = vec![drawer::field(
+        t!("agents.title").into_owned(),
+        None,
+        text(&d.title),
+        window,
+    )];
+    if !d.description.is_empty() {
+        profile.push(drawer::field(
+            t!("builder.details", name = d.name).into_owned(),
+            None,
+            text(&d.description),
+            window,
+        ));
+    }
+    if !d.reason.is_empty() {
+        profile.push(drawer::field(
+            t!("builder.why").into_owned(),
+            None,
+            text(&d.reason),
+            window,
+        ));
+    }
+    if !d.instructions.is_empty() {
+        profile.push(drawer::field(
+            t!("builder.seeInstructions").into_owned(),
+            None,
+            div()
+                .px(px(space::X3))
+                .py(px(space::X2_5))
+                .rounded(px(crate::theme::tokens::RADIUS_CONTROL))
+                .bg(p.bg_code)
+                .text_sm()
+                .text_color(p.text_secondary)
+                .child(d.instructions.clone())
+                .into_any_element(),
+            window,
+        ));
+    }
+    let close = e.on_close.clone();
+    Drawer {
+        id: SharedString::from(format!("draft-drawer-{i}")),
+        mark: Some(
+            AgentFace::new(SharedString::from(format!("draft-drawer-face-{i}")), e.tone)
+                .size(36.)
+                .into_any_element(),
+        ),
+        title: d.name.clone(),
+        subtitle: Some(t!("builder.proposedBy").into_owned()),
+        sections: vec![
+            drawer::section(t!("builder.details", name = d.name).into_owned(), None, profile, window),
+            drawer::section(
+                t!("builder.model").into_owned(),
+                None,
+                vec![div().flex().child(e.picker).into_any_element()],
+                window,
+            ),
+            drawer::section(
+                t!("access.title").into_owned(),
+                None,
+                vec![drawer::choices(
+                    &format!("draft-access-{i}"),
+                    access_options,
+                    selected,
+                    pick,
+                    window,
+                    cx,
+                )],
+                window,
+            ),
+        ],
+        actions: vec![
+            Button::new(
+                SharedString::from(format!("draft-done-{i}")),
+                t!("builder.done").into_owned(),
+            )
+            .variant(Variant::Primary)
+            .size(Size::Sm)
+            .on_click(move |_, window, cx| close(window, cx))
+            .into_any_element(),
+        ],
+        close_label: t!("common.close").into_owned(),
+        on_close: e.on_close,
+    }
+    .render(window)
 }

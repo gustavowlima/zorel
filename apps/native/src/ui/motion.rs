@@ -30,6 +30,25 @@ pub const PAGE_MS: u64 = 180;
 /// A new row joining a list (a message arriving).
 pub const ENTER_MS: u64 = 220;
 
+/// Slides `element` in from `from` px to its right (a drawer), fading in, once per `key`.
+pub fn slide_in<E: IntoElement + Styled + 'static>(
+    element: E,
+    key: impl Into<ElementId>,
+    ms_: u64,
+    from: f32,
+) -> AnyElement {
+    element
+        .with_animation(
+            key,
+            Animation::new(ms(ms_)).with_easing(ease_out_quint),
+            move |el, t| el.opacity(t).relative().left(px(from * (1. - t))),
+        )
+        .into_any_element()
+}
+
+/// A drawer coming in from the side.
+pub const DRAWER_MS: u64 = 240;
+
 /// Fades `element` in while it rises `rise` px, once per `key` (a new key plays it again).
 /// It positions `element` relatively: never give it an absolutely placed element (wrap that one instead).
 pub fn enter<E: IntoElement + Styled + 'static>(

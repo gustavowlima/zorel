@@ -48,10 +48,13 @@ use crate::{
     ui::{
         button::{Button, Size, Variant},
         code::MONO,
-        face::{self, AgentFace, FaceState, WorkingRing},
+        face::{self, AgentFace, FaceState},
         icon::{self, icon},
+        loader::Loader,
         markdown::{self, Block},
-        motion, space,
+        motion,
+        shimmer::shimmer,
+        space,
     },
 };
 
@@ -203,10 +206,75 @@ impl ChatScreen {
         cx.notify();
     }
 
+    /// The open proposal's setup drawer (one proposed agent), over the conversation.
+    fn editor(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let i = self.builder.as_ref()?.editing?;
+        let drafts = self.drafts();
+        let draft = drafts.get(i)?.clone();
+        let store = self.store.clone();
+        let view = cx.entity().downgrade();
+        let mode = self.builder.as_mut()?;
+        let picker = mode
+            .pickers
+            .entry(i)
+            .or_insert_with(|| {
+                let view = view.clone();
+                let on_change: crate::screens::model_picker::OnChange = Rc::new(move |choice, _, cx| {
+                    let _ = view.update(cx, |this, cx| {
+                        if let Some(m) = &mut this.builder
+                            && let Some(e) = m.edits.get_mut(i)
+                        {
+                            e.model = Some(choice);
+                        }
+                        cx.notify();
+                    });
+                });
+                cx.new(|cx| ModelPicker::new(store.clone(), false, on_change, window, cx))
+            })
+            .clone();
+        let edit = mode.edits.get(i).cloned().unwrap_or_default();
+        let value = edit.model.clone().unwrap_or(ModelChoice {
+            model: draft.model.clone(),
+            account_id: None,
+            effort: None,
+        });
+        picker.update(cx, |p, cx| p.set_value(value, cx));
+        let tone = self.store.read(cx).agents.len() + i;
+        let (access, close) = (view.clone(), view);
+        Some(crate::screens::proposal::editor(
+            crate::screens::proposal::Editor {
+                index: i,
+                draft: &draft,
+                edit,
+                tone,
+                picker: picker.into_any_element(),
+                on_access: Rc::new(move |i, a, _, cx| {
+                    let _ = access.update(cx, |this, cx| {
+                        if let Some(m) = &mut this.builder
+                            && let Some(e) = m.edits.get_mut(i)
+                        {
+                            e.access = Some(a);
+                        }
+                        cx.notify();
+                    });
+                }),
+                on_close: Rc::new(move |_, cx| {
+                    let _ = close.update(cx, |this, cx| {
+                        if let Some(m) = &mut this.builder {
+                            m.editing = None;
+                        }
+                        cx.notify();
+                    });
+                }),
+            },
+            window,
+            cx,
+        ))
+    }
+
     fn proposal_row(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let drafts = self.drafts();
         let approval = self.proposal().map(|a| a.id.clone());
-        let store = self.store.clone();
         let Some(mode) = &mut self.builder else {
             return div().into_any_element();
         };
@@ -218,45 +286,11 @@ impl ChatScreen {
             };
         }
         mode.edits.resize(drafts.len(), Default::default());
-        let editing = mode.editing;
-        let mut pickers: Vec<Option<AnyElement>> = Vec::new();
-        for (i, d) in drafts.iter().enumerate() {
-            if editing != Some(i) {
-                pickers.push(None);
-                continue;
-            }
-            let view = cx.entity().downgrade();
-            let picker = mode
-                .pickers
-                .entry(i)
-                .or_insert_with(|| {
-                    let on_change: crate::screens::model_picker::OnChange = Rc::new(move |choice, _, cx| {
-                        let _ = view.update(cx, |this, cx| {
-                            if let Some(m) = &mut this.builder
-                                && let Some(e) = m.edits.get_mut(i)
-                            {
-                                e.model = Some(choice);
-                            }
-                            cx.notify();
-                        });
-                    });
-                    cx.new(|cx| ModelPicker::new(store.clone(), false, on_change, window, cx))
-                })
-                .clone();
-            let value = mode.edits[i].model.clone().unwrap_or(ModelChoice {
-                model: d.model.clone(),
-                account_id: None,
-                effort: None,
-            });
-            picker.update(cx, |p, cx| p.set_value(value, cx));
-            pickers.push(Some(picker.into_any_element()));
-        }
         let edits = mode.edits.clone();
         let busy = mode.busy;
         let first_tone = self.store.read(cx).agents.len();
         let models = self.store.read(cx).models.clone();
-        let (create, discard, edit, access) = (
-            cx.entity().downgrade(),
+        let (create, discard, edit) = (
             cx.entity().downgrade(),
             cx.entity().downgrade(),
             cx.entity().downgrade(),
@@ -265,8 +299,6 @@ impl ChatScreen {
             crate::screens::proposal::Card {
                 drafts: &drafts,
                 edits: &edits,
-                editing,
-                pickers,
                 first_tone,
                 busy,
                 models: &models,
@@ -279,17 +311,7 @@ impl ChatScreen {
                 on_edit: Rc::new(move |i, _, cx| {
                     let _ = edit.update(cx, |this, cx| {
                         if let Some(m) = &mut this.builder {
-                            m.editing = if m.editing == Some(i) { None } else { Some(i) };
-                        }
-                        this.relayout_all(cx);
-                    });
-                }),
-                on_access: Rc::new(move |i, a, _, cx| {
-                    let _ = access.update(cx, |this, cx| {
-                        if let Some(m) = &mut this.builder
-                            && let Some(e) = m.edits.get_mut(i)
-                        {
-                            e.access = Some(a);
+                            m.editing = Some(i);
                         }
                         cx.notify();
                     });
@@ -1015,13 +1037,10 @@ impl ChatScreen {
         )
     }
 
-    /// Solo chats are bare; a reply continues the previous when the same agent answers within 5 minutes.
-    fn voice(&self, i: usize, m: &Message, cx: &App) -> (bool, bool) {
-        let bare = self
-            .store
-            .read(cx)
-            .chat(&self.chat_id)
-            .is_none_or(|c| c.agent_ids.len() <= 1);
+    /// Every reply shows who answers (face and name, as the prototype); it continues the previous one (no face again)
+    /// when the same agent answers within 5 minutes.
+    fn voice(&self, i: usize, m: &Message, _: &App) -> (bool, bool) {
+        let bare = false;
         let continued = i > 0 && {
             let prev = &self.log.messages[i - 1];
             matches!(prev.role, MessageRole::Assistant)
@@ -1205,11 +1224,14 @@ impl ChatScreen {
             .get(turn_id)
             .map(|t| t.chars().take(*self.shown.get(turn_id).unwrap_or(&0)).collect())
             .unwrap_or_default();
+        // With the Builder's proposal out, its waiting step is the card itself: not repeated as a step or a status.
+        let proposal_out = self.proposal().is_some();
         let live_steps: Vec<WorkStep> = self
             .log
             .steps
             .iter()
             .filter(|s| s.turn_id == turn_id)
+            .filter(|s| !(proposal_out && matches!(s.status, WorkStepStatus::Waiting)))
             .cloned()
             .collect();
         let mut column: Vec<AnyElement> = Vec::new();
@@ -1227,7 +1249,7 @@ impl ChatScreen {
                             _ => p.text_secondary,
                         };
                         let mark: AnyElement = if running {
-                            WorkingRing::new(SharedString::from(format!("live-step-{}", s.id)))
+                            Loader::new(SharedString::from(format!("live-step-{}", s.id)))
                                 .size(icon::XS)
                                 .into_any_element()
                         } else {
@@ -1273,32 +1295,36 @@ impl ChatScreen {
             .map(|at| format::now_ms() - at)
             .filter(|ms| *ms >= 5000. && !waiting)
             .map(|ms| format::duration(ms, format::lang()));
-        column.push(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(space::X2))
-                .text_sm()
-                .text_color(if waiting { p.warning } else { p.text_muted })
-                .child(WorkingRing::new(SharedString::from(format!("live-ring-{turn_id}"))).size(icon::SM))
-                .child(
-                    div().truncate().child(label).with_animation(
-                        SharedString::from(format!("breathe-{turn_id}")),
-                        Animation::new(Duration::from_millis(1600))
-                            .repeat()
-                            .with_easing(pulsating_between(0.55, 1.)),
-                        |el, t| el.opacity(t),
-                    ),
-                )
-                .when_some(elapsed, |r, e| {
-                    r.child(div().flex_none().text_color(p.text_dim).child(format!("· {e}")))
-                })
-                .into_any_element(),
-        );
+        // What it does now: Zorel's mark turning, a light passing over the words, how long once past 5s.
+        if !proposal_out {
+            let tone_of_text = if waiting { p.warning } else { p.text_muted };
+            column.push(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(space::X2))
+                    .text_sm()
+                    .child(
+                        Loader::new(SharedString::from(format!("live-mark-{turn_id}")))
+                            .size(icon::SM)
+                            .color(tone_of_text),
+                    )
+                    .child(div().min_w_0().child(shimmer(
+                        SharedString::from(format!("live-shimmer-{turn_id}")),
+                        label,
+                        tone_of_text,
+                        if waiting { p.warning } else { p.text },
+                    )))
+                    .when_some(elapsed, |r, e| {
+                        r.child(div().flex_none().text_color(p.text_dim).child(format!("· {e}")))
+                    })
+                    .into_any_element(),
+            );
+        }
         let store = self.store.read(cx);
         let tone = store.tone(agent.as_deref());
         let name = store.agent_name(agent.as_deref());
-        let bare = store.chat(&self.chat_id).is_none_or(|c| c.agent_ids.len() <= 1);
+        let bare = false;
         reply_frame(
             turn_id,
             (!bare).then_some((tone, name, face::hue(p, tone), None)),
@@ -1437,7 +1463,9 @@ impl ChatScreen {
             self.model.update(cx, |m, cx| m.set_value(choice, cx));
         }
         let bottom = self.bottom(window, cx);
+        let editor = self.editor(window, cx);
         div()
+            .relative()
             .flex()
             .flex_col()
             .size_full()
@@ -1451,6 +1479,7 @@ impl ChatScreen {
                 .flex_1(),
             )
             .child(bottom)
+            .children(editor)
     }
 }
 

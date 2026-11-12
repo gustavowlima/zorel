@@ -126,9 +126,18 @@ fn look(center: Point<Pixels>, pointer: Option<Point<Pixels>>, size: f32) -> (f3
     (dx / d * pull, dy / d * pull)
 }
 
-/// A blink: the eyes close to a line and open again.
+/// How a blink feels: the eyes close to a line and open again in BLINK_MS, at the start of each EVERY_MS while the
+/// pointer stays on the face (so it blinks as you arrive, then now and then, like a person).
+const BLINK_MS: f32 = 200.;
+const EVERY_MS: u64 = 2600;
+
+/// The eyes' height (1 = open) at `t` of a blink cycle.
 fn blink(t: f32) -> f32 {
-    1. - 0.88 * (t * std::f32::consts::PI).sin()
+    let at = t * EVERY_MS as f32;
+    if at >= BLINK_MS {
+        return 1.;
+    }
+    1. - 0.88 * (at / BLINK_MS * std::f32::consts::PI).sin()
 }
 
 impl RenderOnce for AgentFace {
@@ -177,12 +186,13 @@ impl RenderOnce for AgentFace {
                 .mt(px(-s * tokens::EYE_LIFT))
                 .rounded_full()
                 .bg(p.eye);
-            if count == 0 {
+            // Blinks while the pointer is on it (a new hover starts the rhythm again).
+            if !hovered {
                 return e.into_any_element();
             }
             e.with_animation(
                 SharedString::from(format!("{key}-blink-{count}-{n}")),
-                Animation::new(motion::ms(220)),
+                Animation::new(motion::ms(EVERY_MS)).repeat(),
                 move |el, t| el.h(px(eye_h * blink(t))),
             )
             .into_any_element()
@@ -312,7 +322,15 @@ fn ring(color: Rgba, size: f32, gap: f32, dot: f32) -> impl IntoElement {
 mod gaze_tests {
     use gpui_kit::{point, px};
 
-    use super::{look, reach};
+    use super::{blink, look, reach};
+
+    #[test]
+    fn a_blink_closes_then_the_eyes_stay_open_until_the_next() {
+        assert!(blink(0.) > 0.99);
+        assert!(blink(0.1 / 2.6 * 1.) > 0.); // ~100ms in: closing
+        assert!(blink(100. / 2600.) < 0.2); // the middle of the blink: nearly shut
+        assert!((blink(0.5) - 1.).abs() < 1e-6); // between blinks: open
+    }
 
     #[test]
     fn eyes_look_toward_a_near_pointer_and_rest_when_it_is_far() {
