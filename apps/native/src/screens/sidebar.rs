@@ -44,6 +44,8 @@ const LOOSE: &str = "chats";
 
 pub enum SidebarEvent {
     Navigate(Route),
+    /// The search bar: open the palette.
+    Palette,
 }
 
 impl EventEmitter<SidebarEvent> for Sidebar {}
@@ -695,6 +697,8 @@ impl Render for Sidebar {
             .on_click(cx.listener(|this, _, _, cx| this.toggle_folded(cx)));
         let search = div()
             .id("search")
+            .cursor_pointer()
+            .on_click(cx.listener(|_, _, _, cx| cx.emit(SidebarEvent::Palette)))
             .flex()
             .items_center()
             .gap(px(8.))

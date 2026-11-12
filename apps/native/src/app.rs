@@ -14,9 +14,13 @@ use crate::{
     screens::{
         chat::ChatScreen,
         inbox::{Inbox, InboxEvent},
+        palette,
         sidebar::{Sidebar, SidebarEvent},
     },
-    shell::notify::{self, Moment, Notifier},
+    shell::{
+        menus::{OpenPalette, ToggleSidebar},
+        notify::{self, Moment, Notifier},
+    },
     state::{
         connection::{ConnectionState, EngineConnection, Target},
         store::{StatusChanged, Store},
@@ -37,6 +41,8 @@ struct Root {
     clicked: tokio::sync::mpsc::UnboundedSender<String>,
     /// `--open <chat id>`: the chat to open once loaded (measurements, deep links).
     open_first: Option<String>,
+    /// Keyboard actions (⌘K, ⌘B) dispatch from the focused element up: the root holds focus when nothing else does.
+    focus: FocusHandle,
 }
 
 impl Root {
@@ -64,6 +70,8 @@ impl Root {
             }
         })
         .detach();
+        let focus = cx.focus_handle();
+        focus.focus(window, cx);
         let open_first = flag("--open");
         let route = open_first.clone().map(|id| Route::Chat { id }).unwrap_or_default();
         Self {
@@ -76,6 +84,7 @@ impl Root {
             notifier: Notifier::default(),
             clicked,
             open_first,
+            focus,
         }
     }
 
@@ -111,6 +120,7 @@ impl Root {
             window,
             |this, _, event: &SidebarEvent, window, cx| match event {
                 SidebarEvent::Navigate(route) => this.navigate(route.clone(), window, cx),
+                SidebarEvent::Palette => this.open_palette(window, cx),
             },
         )
         .detach();
@@ -145,6 +155,25 @@ impl Root {
         self.sidebar = Some(sidebar);
         if let Route::Chat { id } = self.route.clone() {
             self.navigate(Route::Chat { id }, window, cx);
+        }
+    }
+
+    // ⌘K: the palette; what it picks comes back here.
+    fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(store) = self.store.clone() else { return };
+        let root = cx.entity().downgrade();
+        let on_pick: palette::OnPick = std::rc::Rc::new(move |target, window, cx| {
+            let _ = root.update(cx, |this, cx| match target {
+                palette::Target::Go(route) => this.navigate(route, window, cx),
+                palette::Target::ToggleSidebar => this.toggle_sidebar(cx),
+            });
+        });
+        palette::open(&store, on_pick, window, cx);
+    }
+
+    fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
+        if let Some(sidebar) = &self.sidebar {
+            sidebar.update(cx, |s, cx| s.toggle_folded(cx));
         }
     }
 
@@ -242,6 +271,9 @@ impl Render for Root {
             .bg(p.bg_frame)
             .text_color(p.text)
             .text_size(px(13.5))
+            .track_focus(&self.focus)
+            .on_action(cx.listener(|this, _: &OpenPalette, window, cx| this.open_palette(window, cx)))
+            .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
             .when_some(self.sidebar.clone(), |c, sidebar| c.child(sidebar))
             .child(
                 div()

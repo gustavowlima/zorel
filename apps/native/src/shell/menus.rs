@@ -12,7 +12,19 @@ fn m(key: &str) -> SharedString {
     t!(format!("desktop.menu.{key}")).into_owned().into()
 }
 
-actions!(zorel, [Quit, Hide, HideOthers, ShowAll, Minimize, Zoom]);
+actions!(
+    zorel,
+    [
+        Quit,
+        Hide,
+        HideOthers,
+        ShowAll,
+        Minimize,
+        Zoom,
+        OpenPalette,
+        ToggleSidebar
+    ]
+);
 
 pub fn install(cx: &mut App) {
     cx.on_action(|_: &Quit, cx| cx.quit());
@@ -26,6 +38,16 @@ pub fn install(cx: &mut App) {
         KeyBinding::new("cmd-h", Hide, None),
         KeyBinding::new("alt-cmd-h", HideOthers, None),
         KeyBinding::new("cmd-m", Minimize, None),
+    ]);
+    // The palette and the sidebar, as the web: ⌘K / Ctrl K and ⌘B / Ctrl B.
+    let (palette, sidebar) = if cfg!(target_os = "macos") {
+        ("cmd-k", "cmd-b")
+    } else {
+        ("ctrl-k", "ctrl-b")
+    };
+    cx.bind_keys([
+        KeyBinding::new(palette, OpenPalette, None),
+        KeyBinding::new(sidebar, ToggleSidebar, None),
     ]);
     if cfg!(target_os = "macos") {
         cx.set_menus(vec![
