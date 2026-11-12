@@ -67,7 +67,8 @@ export function RoutinesView() {
       title={t("routines.title")}
       subtitle={t("routines.pageHint")}
       actions={
-        withRoutines.length > 0 && (
+        // The week is always there (spec 018): even with no routine yet, an empty slot starts one.
+        (
           <>
             <Segmented
               label={t("routines.view")}
@@ -81,18 +82,20 @@ export function RoutinesView() {
                 { id: "list", label: t("routines.list") }
               ]}
             />
-            {newButton("secondary")}
+            {newButton(withRoutines.length ? "secondary" : "default")}
           </>
         )
       }
     >
-      {view === "week" && withRoutines.length > 0 ? (
+      {view === "week" ? (
         <div className={cn("px-7 py-5", SETTLE)}>
           <RoutineWeek
-            onCreate={(s) => {
-              setSlot(s)
-              setAdding(true)
-            }}
+            {...(team.length > 0 && {
+              onCreate: (s: Slot) => {
+                setSlot(s)
+                setAdding(true)
+              }
+            })}
             onOpen={(routineId, runId) => setShowing({ routineId, runId })}
           />
         </div>

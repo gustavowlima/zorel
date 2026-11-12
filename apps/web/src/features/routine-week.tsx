@@ -161,7 +161,7 @@ export function RoutineWeek({ onCreate, onOpen }: { onCreate?: (slot: Slot) => v
           {profile && <span className="flex items-center gap-1.5"><span className="w-3 border-t border-dotted border-strong" />{t("routines.legend.dayStart")}</span>}
         </div>
         <span className="text-sm text-muted num">
-          {[`${t("routines.stats.runs")} ${done.length}`, `${t("routines.stats.told")} ${done.filter((r) => r.deliveredAt).length}`].join(" · ")}
+          {done.length > 0 && [`${t("routines.stats.runs")} ${done.length}`, `${t("routines.stats.told")} ${done.filter((r) => r.deliveredAt).length}`].join(" · ")}
           {needs.length > 0 && (
             <Button size="sm" variant="ghost" className="ml-1 text-warning" onPress={() => go({ view: "inbox" })}>
               {t("routines.sideNeeds", { count: needs.length })}
