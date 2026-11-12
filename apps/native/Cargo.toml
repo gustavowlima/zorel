@@ -9,7 +9,7 @@ license.workspace = true
 [dependencies]
 # Only gpui-base (unstyled behaviour): Zorel draws its own components. Pinned exactly; bump the whole gpui-pre family
 # together (apps/native/AGENTS.md › Release).
-gpui-kit = { version = "=0.9.1", default-features = false, features = ["component"] }
+gpui-kit = { version = "=0.9.1", default-features = false, features = ["component", "assets"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regress = "0.12" # the patterns typify generates checks for (src/net/types.rs)
@@ -17,6 +17,8 @@ regress = "0.12" # the patterns typify generates checks for (src/net/types.rs)
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "process", "io-util"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 getrandom = "0.4" # the per-launch session secret
+dirs = "7" # where interface preferences live (state/prefs.rs)
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] } # local time for ages, times and dates (format.rs)
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 # Text from packages/i18n (locales/<lang>.json), gpui-kit's i18n convention; plural rules from ICU; the system language.

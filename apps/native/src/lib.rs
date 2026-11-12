@@ -2,7 +2,9 @@
 rust_i18n::i18n!("locales", fallback = "en");
 
 pub mod app;
+pub mod assets;
 pub mod engine;
+pub mod format;
 pub mod i18n;
 pub mod net;
 pub mod route;

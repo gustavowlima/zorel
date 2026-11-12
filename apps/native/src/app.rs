@@ -339,7 +339,9 @@ pub fn show_window(cx: &mut App) {
 pub fn run() {
     i18n::init();
     let target = target();
-    let app = gpui_kit::application().with_quit_mode(QuitMode::Explicit);
+    let app = gpui_kit::application()
+        .with_assets(crate::assets::Assets)
+        .with_quit_mode(QuitMode::Explicit);
     app.on_reopen(show_window);
     app.run(move |cx| {
         // The kit's own component strings (it ships pt-BR) follow the same language as ours.
