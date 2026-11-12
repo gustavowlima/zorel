@@ -151,6 +151,12 @@ pub fn face_state(status: Option<&ChatStatus>) -> FaceState {
     }
 }
 
+/// What every row reads: the store and each chat's (lifted) status.
+struct Lists<'a> {
+    store: &'a Store,
+    statuses: &'a HashMap<String, ChatStatus>,
+}
+
 impl Sidebar {
     fn chat_row(
         &self,
@@ -207,12 +213,12 @@ impl Sidebar {
         &self,
         key: &str,
         chats: Vec<&Chat>,
-        statuses: &HashMap<String, ChatStatus>,
+        lists: &Lists,
         nested: bool,
-        store: &Store,
         window: &Window,
         cx: &Context<Self>,
     ) -> Vec<AnyElement> {
+        let (store, statuses) = (lists.store, lists.statuses);
         let all = self.show_all.contains(key);
         let open = match &self.route {
             Route::Chat { id } => Some(id.clone()),
@@ -524,9 +530,11 @@ impl Render for Sidebar {
                         let rows = self.group_rows(
                             &project.id,
                             ordered(chats, &statuses),
-                            &statuses,
+                            &Lists {
+                                store,
+                                statuses: &statuses,
+                            },
                             true,
-                            store,
                             window,
                             cx,
                         );
@@ -572,7 +580,17 @@ impl Render for Sidebar {
                             .into_any_element(),
                     );
                 }
-                let rows = self.group_rows(LOOSE, ordered(loose, &statuses), &statuses, false, store, window, cx);
+                let rows = self.group_rows(
+                    LOOSE,
+                    ordered(loose, &statuses),
+                    &Lists {
+                        store,
+                        statuses: &statuses,
+                    },
+                    false,
+                    window,
+                    cx,
+                );
                 list.extend(rows);
             }
         }
