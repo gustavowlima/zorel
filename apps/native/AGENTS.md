@@ -22,6 +22,7 @@ regresses.
 
 ```bash
 bun run native            # cargo run -p zorel-native
+bun run native:dev -- --engine http://127.0.0.1:4319 --token <t>   # rebuild + relaunch on save (watchexec; no Rust hot reload in GPUI)
 bun run native:check      # fmt, clippy -D warnings, typos, cargo machete, cargo deny
 cargo test -p zorel-native
 MTL_HUD_ENABLED=1 bun run native   # FPS on macOS

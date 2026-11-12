@@ -20,6 +20,7 @@
     "tokens": "bun scripts/export-tokens.ts",
     "i18n:native": "bun scripts/export-i18n.ts",
     "native": "cargo run -p zorel-native",
+    "native:dev": "watchexec --restart --watch apps/native/src --watch apps/native/assets --watch apps/native/locales --watch apps/native/themes --exts rs,json,svg -- cargo run -p zorel-native --",
     "native:check": "cargo fmt --check && cargo clippy -p zorel-native --locked -- --deny warnings && typos apps/native && cargo machete apps/native && cargo deny --manifest-path apps/native/Cargo.toml check"
   },
   "devDependencies": {
