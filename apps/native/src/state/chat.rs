@@ -154,7 +154,9 @@ mod tests {
     fn a_thought_lasts_until_the_next_text() {
         let mut log = ChatLog::default();
         log.apply(event(json!({ "_tag": "turn-started", "turn": turn("running") })));
-        log.apply(event(json!({ "_tag": "reasoning", "turnId": "t", "delta": "Weighing " })));
+        log.apply(event(
+            json!({ "_tag": "reasoning", "turnId": "t", "delta": "Weighing " }),
+        ));
         log.apply(event(json!({ "_tag": "reasoning", "turnId": "t", "delta": "options" })));
         assert!(log.thought["t"].now && log.thought["t"].text == "Weighing options");
         log.apply(event(json!({ "_tag": "text", "turnId": "t", "delta": "Hi" })));

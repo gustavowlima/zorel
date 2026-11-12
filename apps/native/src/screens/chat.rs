@@ -1254,7 +1254,13 @@ impl ChatScreen {
                             .justify_center()
                             .child(icon(IconName::Sparkles, icon::XS).text_color(p.text_muted)),
                     )
-                    .child(t!("activity.thought", time = format::duration(thought.took, format::lang())).into_owned())
+                    .child(
+                        t!(
+                            "activity.thought",
+                            time = format::duration(thought.took, format::lang())
+                        )
+                        .into_owned(),
+                    )
                     .into_any_element(),
             );
         }

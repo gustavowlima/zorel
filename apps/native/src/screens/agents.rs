@@ -135,30 +135,27 @@ impl Agents {
         )
         .size(28.)
         .state(state);
-        // ⋯ and right-click: archive or restore, delete (not the last agent).
+        // ⋯ and right-click: archive or restore, delete. The only agent has neither (every chat needs one): no menu
+        // that only says why it can't.
         let (store_a, store_d, a2) = (self.store.clone(), self.store.clone(), agent.clone());
         let (id, archived) = (agent.id.clone(), agent.archived_at.is_some());
         let items: menu::Items = Rc::new(move || {
             let (store_a, store_d, id, a2) = (store_a.clone(), store_d.clone(), id.clone(), a2.clone());
-            let mut m = Menu::default();
-            if last {
-                m = m.item(t!("agent.lastAgent").into_owned(), |_, _| {});
-                return m.build();
-            }
-            m.item(
-                if archived {
-                    t!("agent.restoreArchived")
-                } else {
-                    t!("agent.archive")
-                }
-                .into_owned(),
-                move |_, cx| Self::archive(&store_a, id.clone(), !archived, cx),
-            )
-            .separator()
-            .danger(t!("agent.deleteAction").into_owned(), move |window, cx| {
-                Self::delete(&store_d, &a2, window, cx)
-            })
-            .build()
+            Menu::default()
+                .item(
+                    if archived {
+                        t!("agent.restoreArchived")
+                    } else {
+                        t!("agent.archive")
+                    }
+                    .into_owned(),
+                    move |_, cx| Self::archive(&store_a, id.clone(), !archived, cx),
+                )
+                .separator()
+                .danger(t!("agent.deleteAction").into_owned(), move |window, cx| {
+                    Self::delete(&store_d, &a2, window, cx)
+                })
+                .build()
         });
         let more = menu::dropdown(
             SharedString::from(format!("agent-more-{}", agent.id)),
@@ -178,9 +175,8 @@ impl Agents {
         .leading(face)
         .detail(line, (state == FaceState::Waiting).then_some(p.warning))
         .emphasis(true)
-        .menu(items)
+        .when(!last, |r| r.menu(items).on_hover_trailing(more))
         .trailing(div().text_sm().text_color(p.text_muted).child(model))
-        .on_hover_trailing(more)
         .on_click(cx.listener(move |_, _, _, cx| cx.emit(AgentsEvent::ChatWith(id.clone()))))
         .into_any_element()
     }
