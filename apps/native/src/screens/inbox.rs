@@ -4,6 +4,10 @@
 // ponytail: a routine's "uncertain" step (spec 013) and editing an "Ask me" step land with the routines screen (T054).
 use gpui_kit::{
     base::input::{Textarea, TextareaState},
+    component::{
+        Sizable as _,
+        tab::{Tab, TabBar},
+    },
     prelude::FluentBuilder,
     *,
 };
@@ -397,26 +401,24 @@ impl Render for Inbox {
         }
         items.sort_by(|a, b| b.0.total_cmp(&a.0));
 
-        let tab_row = div()
-            .flex()
-            .gap(px(4.))
-            .children(tabs.into_iter().map(|(f, key, count)| {
+        // The kit's segmented tabs (themed from styles.css), as the web's Tabs.
+        let selected = tabs.iter().position(|(f, _, _)| *f == filter).unwrap_or(0);
+        let order: Vec<Filter> = tabs.iter().map(|(f, _, _)| *f).collect();
+        let tab_row = TabBar::new("inbox-filter")
+            .segmented()
+            .small()
+            .selected_index(selected)
+            .on_click(cx.listener(move |this, ix: &usize, _, cx| {
+                this.filter = order[*ix];
+                cx.notify();
+            }))
+            .children(tabs.into_iter().map(|(_, key, count)| {
                 let label = if count > 0 {
                     format!("{} {count}", t!(key))
                 } else {
                     t!(key).into_owned()
                 };
-                Button::new(SharedString::from(format!("tab-{key}")), label)
-                    .variant(if f == filter {
-                        Variant::Secondary
-                    } else {
-                        Variant::Ghost
-                    })
-                    .size(Size::Sm)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.filter = f;
-                        cx.notify();
-                    }))
+                Tab::new().label(label)
             }));
         let subtitle = if total > 0 {
             tn("inbox.waiting", total as i64)
