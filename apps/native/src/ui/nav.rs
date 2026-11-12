@@ -174,11 +174,32 @@ impl RenderOnce for NavRow {
                 .map(|i| icon(i, icon::MD).text_color(mark_color).into_any_element())
         });
         let tall = self.detail.is_some();
-        let trailing = if hovered {
-            self.on_hover.or(self.trailing)
-        } else {
-            self.trailing
-        };
+        // The hover-only controls (+, ⋯) stay mounted and fade in and out over the trailing detail: a menu opened
+        // from them stays open when the pointer leaves the row.
+        let shown = gpui_kit::base::transition(
+            ElementId::from(SharedString::from(format!("{}-reveal", self.id))),
+            if hovered { 1. } else { 0. },
+            gpui_kit::base::Transition::new(motion::ms(motion::HOVER_MS)),
+            window,
+            cx,
+        );
+        let (rest, on_hover) = (self.trailing, self.on_hover);
+        let has_rest = rest.is_some();
+        let trailing = (rest.is_some() || on_hover.is_some()).then(|| {
+            div()
+                .relative()
+                .flex()
+                .items_center()
+                .when_some(rest, |s, t| s.child(div().opacity(1. - shown).child(t)))
+                .when_some(on_hover, |s, h| {
+                    let h = div().flex().items_center().opacity(shown).child(h);
+                    if has_rest {
+                        s.child(h.absolute().right_0().top_0().bottom_0())
+                    } else {
+                        s.child(h)
+                    }
+                })
+        });
         // Screen readers: a button named by its label, the detail as its description, selected when open.
         let label = self.label.clone();
         let description = self.detail.as_ref().map(|(d, _)| d.clone());

@@ -625,26 +625,7 @@ impl Sidebar {
                         .into_any_element(),
                     );
                     if expanded {
-                        if chats.is_empty() {
-                            let start = project.id.clone();
-                            list.push(
-                                NavRow::new(
-                                    SharedString::from(format!("start-{}", project.id)),
-                                    t!("nav.emptyProjectStart").into_owned(),
-                                )
-                                .leading(div().size(px(20.)))
-                                .indent(space::X3)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.go(
-                                        Route::Home {
-                                            project_id: Some(start.clone()),
-                                        },
-                                        cx,
-                                    )
-                                }))
-                                .into_any_element(),
-                            );
-                        }
+                        // An empty project shows nothing under it (its + starts a chat).
                         let rows = self.group_rows(
                             &project.id,
                             ordered(chats, &statuses),

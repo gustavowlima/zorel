@@ -772,9 +772,9 @@ fn option_row(
         &id,
         "bg",
         if hovered {
-            p.accent_soft
+            p.bg_control
         } else {
-            Rgba { a: 0., ..p.accent_soft }
+            motion::fade(p.bg_control, 0.)
         },
         window,
         cx,

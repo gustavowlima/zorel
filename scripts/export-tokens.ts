@@ -134,7 +134,7 @@ const ROLE: Record<string, string> = {
   "link.foreground": "link", "link.active.foreground": "link-hover", "link.hover.foreground": "link-hover",
   "list.background": "bg-canvas", "list.active.background": "bg-control-active", "list.active.border": "accent-line",
   "list.even.background": "bg-canvas", "list.head.background": "bg-surface", "list.hover.background": "bg-hover",
-  "muted.background": "bg-control", "muted.foreground": "text-muted", "popover.background": "bg-float", "popover.foreground": "text",
+  "muted.background": "bg-control", "muted.foreground": "text-muted", "popover.background": "bg-surface", "popover.foreground": "text",
   "primary.background": "accent", "primary.active.background": "accent-hover", "primary.foreground": "on-accent", "primary.hover.background": "accent-hover",
   "progress_bar.background": "accent", "scrollbar.background": "bg-canvas", "scrollbar.thumb.background": "border-strong",
   "scrollbar.thumb.hover.background": "text-dim", "secondary.background": "bg-control", "secondary.active.background": "bg-control-active",

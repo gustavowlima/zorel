@@ -168,7 +168,7 @@ fn surface(key: &ElementId, entries: Vec<Entry>, close: Action, window: &mut Win
             let hovered = pointer.read(cx).hovered;
             let (wash, fg) = match danger {
                 true => (p.danger_soft, p.danger),
-                false => (p.accent_soft, if hovered { p.text } else { p.text_secondary }),
+                false => (p.bg_control, if hovered { p.text } else { p.text_secondary }),
             };
             let bg = motion::color(
                 &id,

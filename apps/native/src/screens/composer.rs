@@ -372,7 +372,7 @@ impl Composer {
                     .h(px(tokens::CONTROL_H))
                     .px(px(space::X2_5))
                     .rounded(px(tokens::RADIUS_ROW))
-                    .when(on, |r| r.bg(p.accent_soft))
+                    .when(on, |r| r.bg(p.bg_control))
                     .text_color(if on { p.text } else { p.text_secondary })
                     .child(div().flex_none().w(px(icon::MD)).flex().justify_center().child(mark))
                     .child(div().flex_none().max_w(px(220.)).truncate().child(o.label.clone()))

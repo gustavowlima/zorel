@@ -229,7 +229,7 @@ impl Palette {
                         .px(px(space::X2_5))
                         .py(px(space::X1_5))
                         .rounded(px(tokens::RADIUS_ROW))
-                        .when(on, |r| r.bg(p.accent_soft))
+                        .when(on, |r| r.bg(p.bg_control))
                         .text_color(if on { p.text } else { p.text_secondary })
                         .child(icon(entry.icon, icon::MD).text_color(if on { p.accent_text } else { p.text_muted }))
                         .child(
