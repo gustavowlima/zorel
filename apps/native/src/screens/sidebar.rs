@@ -46,7 +46,7 @@ pub enum SidebarEvent {
 impl EventEmitter<SidebarEvent> for Sidebar {}
 
 pub struct Sidebar {
-    store: Entity<Store>,
+    pub(super) store: Entity<Store>,
     prefs: Prefs,
     /// Groups showing every chat ("chats" or a project id); in memory only, as the web.
     show_all: HashSet<String>,
@@ -197,7 +197,11 @@ impl Sidebar {
         let age = format::age(at, format::now_ms(), format::lang());
         let id = chat.id.clone();
         let active = self.route == (Route::Chat { id: id.clone() });
+        let menu = Self::chat_menu(&cx.entity(), chat.id.clone(), chat.title.clone());
+        let more = more_button(format!("chat-more-{}", chat.id), chat_title(chat), menu.clone());
         NavRow::new(SharedString::from(format!("chat-{}", chat.id)), chat_title(chat))
+            .menu(menu)
+            .on_hover_trailing(more)
             .leading(leading)
             .when_some(detail, |r, d| r.detail(d, tone))
             .trailing(div().text_xs().text_color(p.text_dim).child(age))
@@ -415,11 +419,19 @@ impl Render for Sidebar {
                         .count()
                 })
                 .sum();
+            let view = cx.entity();
+            let add_project = Button::new("new-project")
+                .ghost()
+                .xsmall()
+                .icon(IconName::Plus)
+                .tooltip(t!("nav.newProject").into_owned())
+                .on_click(move |_, window, cx| Self::new_project(&view, window, cx))
+                .into_any_element();
             list.push(self.section(
                 "projects",
                 t!("nav.projects").into_owned(),
                 projects_waiting,
-                None,
+                Some(add_project),
                 window,
                 cx,
             ));
@@ -471,6 +483,12 @@ impl Render for Sidebar {
                             .into_any_element(),
                     };
                     let (toggle, new_in) = (project.id.clone(), project.id.clone());
+                    let menu = Self::project_menu(&cx.entity(), project.id.clone(), project.name.clone());
+                    let more = more_button(
+                        format!("project-more-{}", project.id),
+                        project.name.clone(),
+                        menu.clone(),
+                    );
                     list.push(
                         NavRow::new(
                             SharedString::from(format!("project-{}", project.id)),
@@ -481,6 +499,7 @@ impl Render for Sidebar {
                         } else {
                             IconName::ChevronRight
                         })
+                        .expanded(expanded)
                         .active(
                             self.route
                                 == (Route::Home {
@@ -488,20 +507,27 @@ impl Render for Sidebar {
                                 }),
                         )
                         .trailing(trailing)
+                        .menu(menu)
                         .on_hover_trailing(
-                            Button::new(SharedString::from(format!("new-in-{}", project.id)))
-                                .ghost()
-                                .xsmall()
-                                .icon(IconName::Plus)
-                                .tooltip(t!("nav.newChatIn", name = project.name).into_owned())
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.go(
-                                        Route::Home {
-                                            project_id: Some(new_in.clone()),
-                                        },
-                                        cx,
-                                    )
-                                })),
+                            div()
+                                .flex()
+                                .items_center()
+                                .child(
+                                    Button::new(SharedString::from(format!("new-in-{}", project.id)))
+                                        .ghost()
+                                        .xsmall()
+                                        .icon(IconName::Plus)
+                                        .tooltip(t!("nav.newChatIn", name = project.name).into_owned())
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.go(
+                                                Route::Home {
+                                                    project_id: Some(new_in.clone()),
+                                                },
+                                                cx,
+                                            )
+                                        })),
+                                )
+                                .child(more),
                         )
                         .on_click(cx.listener(move |this, _, _, cx| this.toggle_project(&toggle, cx)))
                         .into_any_element(),
@@ -733,4 +759,15 @@ mod tests {
         let statuses = HashMap::from([("task".to_string(), status("task", "waiting"))]);
         assert_eq!(lifted(&chats, &statuses)["parent"].state, ChatStatusState::Waiting);
     }
+}
+
+/// The ⋯ button that opens a row's menu (same items as its right-click).
+fn more_button(id: String, name: String, menu: crate::ui::nav::MenuBuilder) -> impl IntoElement {
+    use gpui_kit::component::menu::DropdownMenu as _;
+    Button::new(SharedString::from(id))
+        .ghost()
+        .xsmall()
+        .icon(IconName::Ellipsis)
+        .tooltip(t!("nav.moreFor", name = name).into_owned())
+        .dropdown_menu(move |m, window, cx| menu(m, window, cx))
 }

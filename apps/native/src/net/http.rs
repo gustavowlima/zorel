@@ -65,6 +65,20 @@ impl Http {
         .await
     }
 
+    /// DELETE; the engine answers 204 or a small JSON body, neither read.
+    pub async fn delete(&self, path: &str) -> Result<(), HttpError> {
+        let response = self
+            .client
+            .delete(format!("{}{path}", self.base))
+            .send()
+            .await
+            .map_err(HttpError::Network)?;
+        match response.status() {
+            s if s.is_success() => Ok(()),
+            s => Err(HttpError::Status(s, response.text().await.unwrap_or_default())),
+        }
+    }
+
     async fn read<T: DeserializeOwned>(sent: reqwest::Result<reqwest::Response>) -> Result<T, HttpError> {
         let response = sent.map_err(HttpError::Network)?;
         let status = response.status();

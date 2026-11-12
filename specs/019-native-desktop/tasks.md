@@ -132,7 +132,7 @@ component tests per research R7). No pixel-size tests.
 - [ ] T059 [P] [US2] Chat extras: mentions, model picker, queue, question, context meter, run trace, steps, attachments, image viewer, browser card, palette (`mention.tsx`, `model-picker.tsx`, `queue.tsx`, `question.tsx`, `context-meter.tsx`, `run-trace.tsx`, `steps.ts`, `browser-card.tsx`, `palette.tsx`) → `apps/native/src/screens/chat/`
 - [ ] T060 [US2] Keyboard shortcuts parity (`apps/web/src/features/palette.tsx` and global handlers) as GPUI actions + keybindings in `apps/native/src/actions.rs`
 - [ ] T061 [US2] Parity checklist table (data-model ParityItem) appended to this file; every row done or n/a on macOS, Windows, Linux (SC-007)
-- [ ] T062 [US2] Accessibility pass: every interactive element has role/name/state from the catalog; UI integration tests assert focus order and accessibility for chat, composer, approval card, Needs you (`apps/native/tests/a11y.rs`)
+- [ ] T062 [US2] Accessibility pass: every interactive element has role/name/state from the catalog; UI integration tests assert focus order and accessibility for chat, composer, approval card, Needs you (`apps/native/tests/a11y.rs`) — Note (2026-11-12): rows set role/label/description/selected/expanded (NavRow), but gpui-pre 0.3.12 exposes no element tree to macOS accessibility yet (agent-desktop sees only the window controls); recheck on each gpui-pre bump
 
 **Checkpoint**: native app is a full replacement on 3 OSes.
 

@@ -2,9 +2,11 @@
 // icon or any element), a label that truncates with an optional detail line under it, a trailing element that a
 // hover-only element (+, ⋯) replaces while hovered; open = the control wash. Rail mode shows only the mark, square.
 // Hover eases in and out (ui/motion), so every list of places moves the same way.
+use std::rc::Rc;
+
 use gpui_kit::{
     assets::IconName,
-    component::{Icon, Sizable as _},
+    component::{Icon, Sizable as _, menu::PopupMenu},
     prelude::FluentBuilder,
     *,
 };
@@ -15,6 +17,8 @@ use crate::{
 };
 
 type OnClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
+/// A row's actions, built on demand: the right-click menu and its ⋯ button share one builder.
+pub type MenuBuilder = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static>;
 
 #[derive(IntoElement)]
 pub struct NavRow {
@@ -31,6 +35,8 @@ pub struct NavRow {
     emphasis: bool,
     disabled: bool,
     on_click: Option<OnClick>,
+    menu: Option<MenuBuilder>,
+    expanded: Option<bool>,
 }
 
 impl NavRow {
@@ -49,6 +55,8 @@ impl NavRow {
             emphasis: false,
             disabled: false,
             on_click: None,
+            menu: None,
+            expanded: None,
         }
     }
 
@@ -106,6 +114,18 @@ impl NavRow {
         self
     }
 
+    /// A row that opens and closes what's under it (a project): screen readers hear its state.
+    pub fn expanded(mut self, expanded: bool) -> Self {
+        self.expanded = Some(expanded);
+        self
+    }
+
+    /// The row's actions on right-click (Menu key and Shift+F10 included).
+    pub fn menu(mut self, menu: MenuBuilder) -> Self {
+        self.menu = Some(menu);
+        self
+    }
+
     pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(Box::new(handler));
         self
@@ -142,8 +162,16 @@ impl RenderOnce for NavRow {
         } else {
             self.trailing
         };
+        // Screen readers: a button named by its label, the detail as its description, selected when open.
+        let label = self.label.clone();
+        let description = self.detail.as_ref().map(|(d, _)| d.clone());
         let row = div()
             .id(self.id)
+            .role(Role::Button)
+            .aria_label(label)
+            .when_some(description, |r, d| r.aria_description(d))
+            .aria_selected(self.active)
+            .when_some(self.expanded, |r, e| r.aria_expanded(e))
             .flex()
             .flex_none()
             .items_center()
