@@ -44,3 +44,4 @@
 2026-11-11 | logo core back, white like the rest (removing it was a misread) | user: the dot should be white
 2026-11-11 | app-full: full-screen layers start under the desktop title bar | user: tabs hidden behind the macOS window buttons
 2026-11-11 | soft button variant, onboarding patterns (opaque cards over the set, transform-only motion, core cut in the mark) | user feedback
+2026-11-12 | spec 018 implemented: three token layers, new neutrals/blue #2a6af0/states/agent hues, 6-step type, 32/26 controls, radius 10/16, faces with white pill eyes + flat working ring, amber waiting, quiet links, personal action colour, Home first, search field, no New chat button, Builder card, week without side panel, first-run ready step | user asked for the design refresh spec and its implementation

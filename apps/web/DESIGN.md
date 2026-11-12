@@ -2,79 +2,82 @@
 name: Zorel
 description: An AI agent workspace for code, dark, compact and quiet.
 colors:
-  frame: "#0b0c0e"
-  canvas: "#131416"
-  sidebar: "#0f1113"
-  surface: "#18191c"
-  raised: "#1c1e21"
-  float: "rgba(32, 34, 37, 0.86)"
-  control: "rgba(255, 255, 255, 0.07)"
-  control-hover: "rgba(255, 255, 255, 0.09)"
-  control-active: "rgba(255, 255, 255, 0.12)"
-  code: "#111315"
-  border-subtle: "rgba(255, 255, 255, 0.06)"
-  border-strong: "rgba(255, 255, 255, 0.1)"
-  text: "#ffffff"
-  text-secondary: "#dbdcdf"
-  text-muted: "#96989c"
-  text-dim: "#8a8c90"
-  signal-blue: "#0071e3"
-  signal-blue-hover: "#1f8fff"
-  signal-blue-text: "#42a0ff"
-  signal-blue-soft: "rgba(0, 124, 247, 0.16)"
-  signal-blue-faint: "rgba(0, 124, 247, 0.08)"
-  signal-blue-line: "rgba(0, 124, 247, 0.35)"
-  success: "#31cf76"
-  success-faint: "rgba(49, 207, 118, 0.07)"
-  success-line: "rgba(49, 207, 118, 0.3)"
-  warning: "#ff9412"
-  danger: "#fd2f3b"
-  danger-soft: "rgba(253, 47, 59, 0.16)"
+  frame: "#0b0c10"
+  canvas: "#121419"
+  sidebar: "#0b0c10"
+  surface: "#191b21"
+  raised: "#202229"
+  float: "rgba(32, 34, 41, 0.86)"
+  control: "rgba(232, 238, 255, 0.07)"
+  control-hover: "rgba(232, 238, 255, 0.09)"
+  control-active: "rgba(232, 238, 255, 0.12)"
+  code: "#0e1014"
+  border-subtle: "rgba(232, 238, 255, 0.07)"
+  border-strong: "rgba(232, 238, 255, 0.11)"
+  text: "#f3f3f6"
+  text-secondary: "#c4c4ce"
+  text-muted: "#8e8f9b"
+  text-dim: "#8a8b97"
+  signal-blue: "#2a6af0"
+  signal-blue-hover: "#2259d6"
+  signal-blue-text: "#7aa9ff"
+  signal-blue-soft: "rgba(42, 106, 240, 0.16)"
+  signal-blue-faint: "rgba(42, 106, 240, 0.08)"
+  signal-blue-line: "rgba(42, 106, 240, 0.35)"
+  success: "#62cf9b"
+  success-faint: "rgba(98, 207, 155, 0.07)"
+  success-line: "rgba(98, 207, 155, 0.3)"
+  warning: "#eea95e"
+  danger: "#f27d7d"
+  danger-soft: "rgba(242, 125, 125, 0.16)"
   on-accent: "#ffffff"
   overlay: "rgba(0, 0, 0, 0.5)"
   diff-add: "rgba(49, 207, 118, 0.1)"
   diff-del: "rgba(255, 107, 115, 0.1)"
-  agent-violet: "#918ddf"
-  agent-teal: "#00afa9"
-  agent-rose: "#d47795"
-  agent-ochre: "#aa9935"
-  agent-orchid: "#bd7dc1"
-  agent-clay: "#d67d5e"
-  on-agent: "#101419"
+  agent-lavender: "#b6a3f0"
+  agent-aqua: "#47c7c7"
+  agent-rose: "#ec93a8"
+  agent-lime: "#afb965"
+  agent-orchid: "#dd96cd"
+  agent-coral: "#eb9a75"
+  on-agent: "#0b0c10"
 typography:
   title:
     fontFamily: "Inter Variable, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
-    fontSize: "15px"
+    fontSize: "17px"
     fontWeight: 600
+    letterSpacing: "-0.018em"
   body:
     fontFamily: "Inter Variable, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
-    fontSize: "13px"
+    fontSize: "13.5px"
     fontWeight: 400
   body-medium:
     fontFamily: "Inter Variable, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
-    fontSize: "13px"
+    fontSize: "13.5px"
     fontWeight: 500
   small:
     fontFamily: "Inter Variable, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
-    fontSize: "12px"
+    fontSize: "12.5px"
     fontWeight: 400
   label:
     fontFamily: "Inter Variable, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
-    fontSize: "11px"
+    fontSize: "11.5px"
     fontWeight: 500
-    letterSpacing: "0.025em"
+    letterSpacing: "0.01em"
   code:
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace"
     fontSize: "12px"
 rounded:
   inline: "4px"
-  control: "8px"
-  card: "12px"
-  sheet: "16px"
+  control-sm: "8px"
+  control: "10px"
+  row: "10px"
+  card: "16px"
+  sheet: "20px"
   pill: "9999px"
 spacing:
   control-xs: "24px"
-  control-sm: "28px"
+  control-sm: "26px"
   control: "32px"
   control-lg: "36px"
   1: "4px"
@@ -162,6 +165,36 @@ components:
 
 # Design System: Zorel
 
+## Design refresh (spec 018, 2026-11-12) — read first
+
+Normative for everything below; where an older section disagrees, this one wins (specs/018-design-refresh/spec.md).
+
+- **Tokens in three layers** (`styles.css`): base `--z-base-*` (the palette: the only literals), roles `--z-*` (canvas,
+  text, accent, warning = waiting, success = done, danger = failed, agent-1…6, link…), component tokens
+  (`--z-control-h` 32 / `-sm` 26 / `-xs` 24 / `-lg` 36, `--z-radius-control` 10 / `-sm` 8, `--z-radius-row` 10,
+  `--z-radius-card` 16, `--z-inset-card` 6, `--z-radius-sheet` 20, `--z-icon-stroke` 1.6, `--z-eye-*`, `--z-ring-*`).
+  Screens read roles and component tokens only. A theme overrides base or role tokens; `tokens.test.ts` holds the
+  contrast floors (text 16, secondary 10, muted 5.5, link 7 on the canvas; white on the accent 4.5) and one OKLCH
+  lightness/chroma for the six agent hues.
+- **Personal accent**: Settings › Appearance › Action colour (per browser, `zorel.accent`), refused with the reason when
+  white can't be read on it (`theme.ts`). Blue stays the default and the only action colour.
+- **Links** are the text tone (secondary, brighter on hover), never blue; check:ui rule `blue-link`.
+- **Type**: Inter with optical sizing; label 11.5 · small 12.5 · body 13.5 · lead 14.5 · title 17 · display 26; tabular
+  figures only on numbers that line up (`num`).
+- **Agents are faces** (`ui/face.tsx`, behind `AgentAvatar`): a circle in the hue with two white pill eyes; working =
+  a flat ring with a travelling dot; waiting = a breathing amber dot; done/failed = green/red dot; alive faces glance and
+  blink; reduced motion stills it all. People are rounded squares (`PersonAvatar`). Loading uses the same ring
+  (`Spinner`). Waiting is amber everywhere (never blue).
+- **Screens**: Home first in the sidebar (start · needs you · working now · today); search is a field under the head
+  (no New chat button: + on Chats/Projects, ⌘N); Builder proposals are cards in its chat (Create / Edit first /
+  Discard); Routines' week has no side panel (counts in one line, faces on runs, fill by outcome); the first agent
+  made from the first run gets a "ready" step.
+- **Phone app** (design reference for its spec): tab bar (Home, Chats, For you with count, Agents, More), 30px large
+  titles on top-level screens, pushed screens (chat, Builder) without the tab bar, approvals in a bottom sheet with
+  full-width 50px buttons, Routines as an agenda (Today / Tomorrow / When something happens), and sign-in by QR pairing
+  exactly as the server does it (Settings › Phones › Pair a phone, 5 minutes; "confirm on the computer" by name; Face ID
+  to approve).
+
 ## Overview
 
 **Creative North Star: "The Night Workbench"**
@@ -206,7 +239,7 @@ Layered near-black neutral grays, one signal blue and three state colors. All va
 - **Diff** (diff-add, diff-del): background of added and removed lines.
 
 ### Agent identity
-- **Six colors** (agent-violet, agent-teal, agent-rose, agent-ochre, agent-orchid, agent-clay): each agent gets one, in the order it joins the project. They appear in the avatar and, since 2026-11-10, as the **identity tint** (below); never on a plain button, a link or a state. The avatar is a little object with eyes (Open Bot Avatar, MIT) inside a solid tile of the agent's color (22% of it mixed into the raised tone, so overlapping faces don't show through): the shape comes from the agent's id, so teammates differ by shape as well as color. Lists and the chat use still SVGs; the Builder's review shows them live (breathing, blinking), still under reduced motion. All six share one lightness and chroma (OKLCH 68% 0.12) and keep their hues clear of danger, warning, success and the blue, so an avatar never reads as a state or an action.
+- **Six colors** (agent-violet, agent-teal, agent-rose, agent-ochre, agent-orchid, agent-clay): each agent gets one, in the order it joins the project. They appear in the avatar and, since 2026-11-10, as the **identity tint** (below); never on a plain button, a link or a state. The avatar is a little object with eyes (Open Bot Avatar, MIT) inside a solid **round** tile of the agent's color (a circle, like the mark's dots and the orbits: what is alive is round; people keep rounded corners; the object fills 72% so it stays inside the circle) (22% of it mixed into the raised tone, so overlapping faces don't show through): the shape comes from the agent's id, so teammates differ by shape as well as color. Lists and the chat use still SVGs; the Builder's review shows them live (breathing, blinking), still under reduced motion. All six share one lightness and chroma (OKLCH 68% 0.12) and keep their hues clear of danger, warning, success and the blue, so an avatar never reads as a state or an action.
 
 ### Named Rules
 **The One Voice Rule.** Signal blue is the only accent. If it appears on something that is not an action, focus, selection or link, it is wrong.
@@ -466,7 +499,7 @@ Something about one agent, when chosen or live, wears that agent's color: the li
 - The rail only shows what is actually a path: each subscription account (with the initial when there is more than one for the same provider), API providers with a key, and local servers (Ollama, LM Studio) only while they are running. An API provider with a subscription's logo (Anthropic ↔ Claude, OpenAI ↔ Codex) only appears with a key, so it does not look like a second account.
 
 ### Agent message
-- **Avatar:** 28px square, 8–9px corners, identity color, white initial. Name in 13px semibold and, on the same line, the activity pill.
+- **Avatar:** 28px circle in the agent's identity color (`AgentAvatar`). Name in 13px semibold and, on the same line, the activity pill.
 - **Sequence:** consecutive replies from the same agent (within 5 min, with no notice between them) show the avatar and name only on the first; the others align the text in the same column.
 - **Message actions:** below each message (yours on the right, the agent's on the left), over the space between messages and without taking up height: copy, details (a tooltip with model, tokens, account and cost) and the time. They appear on hover or focus, always on touch. Only the ending that matters (failed, canceled) stays always visible. 28px rhythm between messages.
 - **Streaming reply:** no typing dots (the pill already spins); the text reveals frame by frame toward what arrived (about 6 frames to catch up; all at once with reduced motion), and only its last block re-renders.
