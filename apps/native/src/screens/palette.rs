@@ -186,6 +186,13 @@ impl Palette {
 
 impl Render for Palette {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::hot::call(|| self.view(window, cx))
+    }
+}
+
+impl Palette {
+    // The render body, behind Subsecond's reload point (crate::hot).
+    fn view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let p = theme::palette(window);
         let groups = self.groups(cx);
         let mut rows: Vec<AnyElement> = Vec::new();

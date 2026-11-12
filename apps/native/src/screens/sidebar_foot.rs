@@ -167,7 +167,8 @@ impl Sidebar {
             .map(|pop| layout::float(pop, p))
             .anchor(Anchor::BottomLeft) // opens above the foot, folded or not
             .trigger(
-                Button::icon_only("usage-trigger", IconName::ChartColumn, t!("nav.usage").into_owned()).size(Size::Sm),
+                Button::icon_only("usage-trigger", IconName::ChartColumn, t!("nav.usage").into_owned())
+                    .size(if folded { Size::Lg } else { Size::Sm }),
             )
             .w(px(320.))
             .child(
@@ -212,10 +213,10 @@ impl Sidebar {
                 t!("pause.all").into_owned()
             },
         )
-        .size(Size::Sm)
+        .size(if folded { Size::Lg } else { Size::Sm })
         .on_click(move |_, _, cx| store_entity.update(cx, |s, cx| s.set_paused(!paused, cx)));
         let settings = Button::icon_only("settings", IconName::Settings, t!("nav.settings").into_owned())
-            .size(Size::Sm)
+            .size(if folded { Size::Lg } else { Size::Sm })
             .disabled(true);
         div()
             .flex()

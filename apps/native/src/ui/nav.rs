@@ -199,7 +199,7 @@ impl RenderOnce for NavRow {
             .when(self.active || self.emphasis, |r| r.font_weight(FontWeight::MEDIUM))
             .map(|r| {
                 if self.rail {
-                    r.size(px(40.)).justify_center()
+                    r.size(px(tokens::CONTROL_H_LG)).justify_center() // the rail's square, as every rail item
                 } else {
                     r.gap(px(space::X2_5))
                         .h(px(if tall { 52. } else { 32. }))

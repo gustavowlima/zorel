@@ -267,6 +267,13 @@ impl Root {
 
 impl Render for Root {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::hot::call(|| self.view(window, cx))
+    }
+}
+
+impl Root {
+    // The render body, behind Subsecond's reload point (crate::hot).
+    fn view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let p = theme::palette(window);
         let status = match &self.connection.read(cx).state {
             ConnectionState::Starting => Some(t!("app.starting").into_owned()),

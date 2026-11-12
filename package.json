@@ -3,7 +3,10 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "bun run --filter '*' dev",
     "test": "bun test apps/server apps/web apps/desktop/src packages",
@@ -21,7 +24,8 @@
     "i18n:native": "bun scripts/export-i18n.ts",
     "native": "cargo run -p zorel-native",
     "native:dev": "watchexec --restart --watch apps/native/src --watch apps/native/assets --watch apps/native/locales --watch apps/native/themes --exts rs,json,svg -- cargo run -p zorel-native --",
-    "native:check": "cargo fmt --check && cargo clippy -p zorel-native --locked -- --deny warnings && typos apps/native && cargo machete apps/native && cargo deny --manifest-path apps/native/Cargo.toml check"
+    "native:check": "cargo fmt --check && cargo clippy -p zorel-native --locked -- --deny warnings && typos apps/native && cargo machete apps/native && cargo deny --manifest-path apps/native/Cargo.toml check",
+    "native:hot": "dx serve -p zorel-native --bin zorel-native --desktop --hot-patch --features hotreload -i false --open false"
   },
   "devDependencies": {
     "@babel/parser": "7.29.12",

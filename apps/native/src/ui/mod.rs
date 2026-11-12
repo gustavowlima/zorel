@@ -2,6 +2,7 @@ pub mod button;
 pub mod code;
 pub mod dialog;
 pub mod face;
+pub mod header;
 pub mod icon;
 pub mod layout;
 pub mod markdown;

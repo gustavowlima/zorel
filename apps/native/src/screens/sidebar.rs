@@ -34,9 +34,9 @@ use crate::{
 const OPEN_WIDTH: f32 = 268.;
 /// The macOS window buttons sit over the sidebar's top.
 const TRAFFIC_LIGHTS: f32 = 36.;
-const RAIL_WIDTH: f32 = 56.;
-/// What sits on the folded rail: a 40px column (the rail less its 8px sides).
-const RAIL_ITEM: f32 = RAIL_WIDTH - 16.;
+const RAIL_WIDTH: f32 = 56.; // RAIL_ITEM + 2 × space::X2_5
+/// Every item on the folded rail is this square (fold, search, places, foot), centred: 10px each side.
+const RAIL_ITEM: f32 = tokens::CONTROL_H_LG;
 const VISIBLE: usize = 5;
 const LOOSE: &str = "chats";
 
@@ -370,6 +370,13 @@ impl Sidebar {
 
 impl Render for Sidebar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::hot::call(|| self.view(window, cx))
+    }
+}
+
+impl Sidebar {
+    // The render body, behind Subsecond's reload point (crate::hot).
+    fn view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let p = theme::palette(window);
         let folded = self.prefs.sidebar_folded;
         let width = spring(
@@ -710,8 +717,13 @@ impl Render for Sidebar {
                 t!("nav.hideSidebar").into_owned()
             },
         )
-        .size(Size::Sm)
+        .size(if folded { Size::Lg } else { Size::Sm })
         .on_click(cx.listener(|this, _, _, cx| this.toggle_folded(cx)));
+        // Folded, the search is one more rail square (same shape, wash and hover as the places).
+        let rail_search = NavRow::new("search-rail", t!("nav.searchOrGo").into_owned())
+            .icon(IconName::Search)
+            .rail(true)
+            .on_click(cx.listener(|_, _, _, cx| cx.emit(SidebarEvent::Palette)));
         let search = div()
             .id("search")
             .cursor_pointer()
@@ -721,13 +733,7 @@ impl Render for Sidebar {
             .gap(px(space::X2))
             .h(px(tokens::CONTROL_H))
             // Folded, the search is a square on the rail's column, its glass centred like the places' marks.
-            .map(|s| {
-                if folded {
-                    s.w(px(RAIL_ITEM)).justify_center()
-                } else {
-                    s.px(px(space::X2_5))
-                }
-            })
+            .px(px(space::X2_5))
             .rounded(px(tokens::RADIUS_CONTROL))
             .bg(p.bg_control)
             .text_color(p.text_muted)
@@ -754,9 +760,13 @@ impl Render for Sidebar {
             .h_full()
             .flex()
             .flex_col()
-            .gap(px(space::X4))
+            .gap(px(if folded { space::X2 } else { space::X4 }))
             .py(px(space::X2))
-            .px(px(if folded { 8. } else { 12. }))
+            .px(px(if folded {
+                (RAIL_WIDTH - RAIL_ITEM) / 2.
+            } else {
+                space::X3
+            }))
             .pt(px(TRAFFIC_LIGHTS)) // clears the window's traffic lights (macOS chrome, not spacing)
             .bg(p.bg_sidebar)
             .text_color(p.text_secondary)
@@ -781,7 +791,7 @@ impl Render for Sidebar {
                     })
                     .child(fold),
             )
-            .child(search)
+            .map(|c| if folded { c.child(rail_search) } else { c.child(search) })
             .child(div().flex().flex_col().gap(px(space::X0_5)).children(places))
             .when(!folded, |c| {
                 c.child(
