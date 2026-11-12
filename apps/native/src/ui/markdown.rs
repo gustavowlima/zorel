@@ -175,7 +175,7 @@ pub fn render(id: &str, blocks: &[Block], window: &Window) -> Div {
     for (i, block) in blocks.iter().enumerate() {
         let key = SharedString::from(format!("{id}-{i}"));
         column = column.child(match block {
-            Block::Paragraph(text) => div().child(inline(key, text, p)),
+            Block::Paragraph(text) => div().min_w_0().child(inline(key, text, p)),
             Block::Heading(level, text) => div()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(px(match level {
@@ -192,7 +192,8 @@ pub fn render(id: &str, blocks: &[Block], window: &Window) -> Div {
                     Some(n) => format!("{n}."),
                     None => "•".to_string(),
                 }))
-                .child(div().flex_1().child(inline(key, text, p))),
+                // min_w_0: a flex child is as wide as its text otherwise, and the line never wraps.
+                .child(div().flex_1().min_w_0().child(inline(key, text, p))),
             Block::Quote(text) => div()
                 .border_l_2()
                 .border_color(p.border_strong)

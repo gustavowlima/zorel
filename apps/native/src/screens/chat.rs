@@ -54,12 +54,13 @@ use crate::{
         markdown::{self, Block},
         motion,
         shimmer::shimmer,
-        space,
+        space, step_tree,
     },
 };
 
 /// The timeline's column (prototype: a comfortable reading width).
-const COLUMN: f32 = 720.;
+/// The conversation's column: wide enough to use a big window, still a comfortable line; narrower windows wrap.
+const COLUMN: f32 = 920.;
 /// A reply continues the previous one (no face, no name) when the same agent answers within this.
 const CONTINUES_MS: f64 = 5. * 60. * 1000.;
 /// Frames a revealed delta takes to show (the web's ~6).
@@ -1102,80 +1103,89 @@ impl ChatScreen {
             .filter(|s| s.tool != "thought" || s.ms.unwrap_or(0.) >= 1000.)
             .collect();
         let l = format::lang();
-        let head_key = key.to_string();
-        let mut head = fold_head(key, open, window, cx)
-            .on_click(cx.listener(move |this, _, _, cx| this.toggle(head_key.clone(), cx)))
-            .child(div().truncate().child(steps::sentence(&summary)));
+        let mut parts: Vec<AnyElement> = vec![div().truncate().child(steps::sentence(&summary)).into_any_element()];
         if summary.failed > 0 {
-            head = head.child(
+            parts.push(
                 div()
                     .flex_none()
                     .text_color(p.danger)
-                    .child(format!("· {}", tn("activity.errors", summary.failed as i64))),
+                    .child(format!("· {}", tn("activity.errors", summary.failed as i64)))
+                    .into_any_element(),
             );
         }
         if summary.refused > 0 {
-            head = head.child(
+            parts.push(
                 div()
                     .flex_none()
                     .text_color(p.warning)
-                    .child(format!("· {}", tn("activity.refused", summary.refused as i64))),
+                    .child(format!("· {}", tn("activity.refused", summary.refused as i64)))
+                    .into_any_element(),
             );
         }
         if let Some(ms) = took.filter(|ms| *ms >= 1000.) {
-            head = head.child(
+            parts.push(
                 div()
                     .flex_none()
                     .text_color(p.text_dim)
-                    .child(format!("· {}", format::duration(ms, l))),
+                    .child(format!("· {}", format::duration(ms, l)))
+                    .into_any_element(),
             );
         }
+        let view = cx.entity().downgrade();
+        let head_key = key.to_string();
+        let toggle: step_tree::OnToggle = Rc::new(move |_, cx| {
+            let _ = view.update(cx, |this, cx| this.toggle(head_key.clone(), cx));
+        });
+        let head = step_tree::head(
+            step_tree::Head {
+                key: key.to_string(),
+                open,
+                rows: !shown.is_empty(),
+                leading: None,
+                parts,
+                on_toggle: toggle,
+            },
+            window,
+            cx,
+        );
+        // The last step that is work (a thought after it doesn't carry the trunk on).
+        let last_work = shown.iter().rposition(|s| s.tool != "thought");
         let list = open.then(|| {
             let rows: Vec<AnyElement> = shown
                 .iter()
                 .enumerate()
                 .map(|(n, s)| {
                     if s.tool == "thought" {
-                        step_line(
-                            &format!("{key}-{n}"),
-                            IconName::Brain,
-                            p.text_muted,
+                        step_tree::note(
                             t!("activity.thought", time = format::duration(s.ms.unwrap_or(0.), l)).into_owned(),
-                            None,
-                            p,
+                            last_work.is_none_or(|w| n > w),
+                            window,
                         )
-                        .into_any_element()
                     } else {
-                        self.stored_step(&format!("{key}-{n}"), s, window, cx)
+                        self.stored_step(&format!("{key}-{n}"), s, Some(n) == last_work, window, cx)
                     }
                 })
                 .collect();
             motion::enter(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(space::X0_5))
-                    .pl(px(space::X1))
-                    .border_l_1()
-                    .border_color(p.border)
-                    .ml(px(space::X1_5))
-                    .children(rows),
+                step_tree::list(rows),
                 SharedString::from(format!("fold-{key}")),
                 motion::MENU_IN_MS,
                 4.,
             )
         });
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(space::X1))
-            .child(head)
-            .children(list)
-            .into_any_element()
+        div().flex().flex_col().child(head).children(list).into_any_element()
     }
 
-    /// One finished step: what it was, failed/refused/how long; it opens to its command and the start of its output.
-    fn stored_step(&mut self, key: &str, s: &Step, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    /// One finished step: its title in plain words (the command, path or URL on hover), how long it took or that it
+    /// failed; it opens to the whole command and the start of its output.
+    fn stored_step(
+        &mut self,
+        key: &str,
+        s: &Step,
+        last: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let p = theme::palette(window);
         let title = s
             .title
@@ -1192,46 +1202,59 @@ impl ChatScreen {
         } else {
             s.detail.clone().unwrap_or_default()
         };
-        let (color, fact) = match s.status {
-            StepStatus::Error => (p.danger, Some(t!("activity.failedStep").into_owned())),
-            StepStatus::Refused => (p.warning, Some(t!("activity.refusedStep").into_owned())),
+        let hint = s
+            .detail
+            .clone()
+            .filter(|d| !d.is_empty())
+            .or_else(|| (s.tool == "run").then(|| s.args.clone()))
+            .filter(|h| *h != title);
+        let (tone, fact) = match s.status {
+            StepStatus::Error => (
+                step_tree::Tone::Danger,
+                Some((t!("activity.failedStep").into_owned(), p.danger)),
+            ),
+            StepStatus::Refused => (
+                step_tree::Tone::Warning,
+                Some((t!("activity.refusedStep").into_owned(), p.warning)),
+            ),
             _ => (
-                p.text_secondary,
+                step_tree::Tone::Default,
                 s.ms.filter(|ms| *ms >= 1000.)
-                    .map(|ms| format::duration(ms, format::lang())),
+                    .map(|ms| (format::duration(ms, format::lang()), p.text_dim)),
             ),
         };
         let can_open = !command.is_empty() || !s.result.is_empty();
         let open = self.open.contains(key);
-        let line_key = key.to_string();
-        let line = step_line(key, glyph_of(&s.tool), color, title, fact, p).when(can_open, |l| {
-            l.cursor_pointer()
-                .on_click(cx.listener(move |this, _, _, cx| this.toggle(line_key.clone(), cx)))
+        let toggle = can_open.then(|| {
+            let (view, k) = (cx.entity().downgrade(), key.to_string());
+            Rc::new(move |_: &mut Window, cx: &mut App| {
+                let _ = view.update(cx, |this, cx| this.toggle(k.clone(), cx));
+            }) as step_tree::OnToggle
         });
-        let detail = (open && can_open).then(|| {
-            let result: String = s.result.lines().take(3).collect::<Vec<_>>().join("\n");
-            motion::enter(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(space::X1))
-                    .pl(px(space::X6))
-                    .when(!command.is_empty(), |c| {
-                        c.child(code_box(command.clone(), p.text_secondary, p))
-                    })
-                    .when(!result.is_empty(), |c| c.child(code_box(result, p.text_muted, p))),
-                SharedString::from(format!("step-{key}")),
-                motion::MENU_IN_MS,
-                4.,
-            )
-        });
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(space::X1))
-            .child(line)
-            .children(detail)
-            .into_any_element()
+        let result: String = s.result.lines().take(3).collect::<Vec<_>>().join("\n");
+        let mut body = Vec::new();
+        if !command.is_empty() {
+            body.push(code_box(command, p.text_secondary, p).into_any_element());
+        }
+        if !result.is_empty() {
+            body.push(code_box(result, p.text_muted, p).into_any_element());
+        }
+        step_tree::Row {
+            key: key.to_string(),
+            icon: icon(glyph_of(&s.tool), icon::XS).into_any_element(),
+            tone,
+            title,
+            facts: fact
+                .map(|(f, c)| div().text_color(c).child(f).into_any_element())
+                .into_iter()
+                .collect(),
+            hint,
+            last,
+            open,
+            on_toggle: toggle,
+            body,
+        }
+        .render(window, cx)
     }
 
     /// A turn in progress, laid out as it happens (the web's LiveMessage): what it has written so far, cut where steps
@@ -1440,78 +1463,104 @@ impl ChatScreen {
                     .into_any_element()
             }
         });
-        let mut head = fold_head(key, open, window, cx)
-            .on_click(cx.listener(move |this, _, _, cx| this.toggle(closed_key.clone(), cx)))
-            .children(lead)
-            .child(div().truncate().child(steps::sentence(&summary)));
+        let mut parts: Vec<AnyElement> = vec![div().truncate().child(steps::sentence(&summary)).into_any_element()];
         if summary.failed > 0 {
-            head = head.child(
+            parts.push(
                 div()
                     .flex_none()
                     .text_color(p.danger)
-                    .child(format!("· {}", tn("activity.errors", summary.failed as i64))),
+                    .child(format!("· {}", tn("activity.errors", summary.failed as i64)))
+                    .into_any_element(),
             );
         }
         if summary.refused > 0 {
-            head = head.child(
+            parts.push(
                 div()
                     .flex_none()
                     .text_color(p.warning)
-                    .child(format!("· {}", tn("activity.refused", summary.refused as i64))),
+                    .child(format!("· {}", tn("activity.refused", summary.refused as i64)))
+                    .into_any_element(),
             );
         }
-        let list = open.then(|| {
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(space::X0_5))
-                .pl(px(space::X1))
-                .border_l_1()
-                .border_color(p.border)
-                .ml(px(space::X1_5))
-                .children(group.iter().map(|s| {
-                    let (color, fact) = match s.status {
-                        WorkStepStatus::Waiting => (p.warning, Some(t!("activity.waiting").into_owned())),
-                        WorkStepStatus::Error => (p.danger, Some(t!("activity.failedStep").into_owned())),
-                        WorkStepStatus::Refused => (p.warning, Some(t!("activity.refusedStep").into_owned())),
-                        _ => (
-                            p.text_secondary,
-                            s.duration_ms
-                                .filter(|ms| *ms >= 1000.)
-                                .map(|ms| format::duration(ms, format::lang())),
-                        ),
-                    };
-                    let mark: AnyElement = match s.status {
-                        WorkStepStatus::Running => Loader::new(SharedString::from(format!("live-step-{}", s.id)))
-                            .size(icon::XS)
-                            .into_any_element(),
-                        WorkStepStatus::Waiting => icon(IconName::Clock, icon::XS).into_any_element(),
-                        _ => icon(glyph_of(&kind_key(s)), icon::XS).into_any_element(),
-                    };
-                    motion::enter(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(space::X2))
-                            .min_h(px(tokens::CONTROL_H_SM))
-                            .text_sm()
-                            .text_color(color)
-                            .child(div().flex_none().w(px(icon::MD)).flex().justify_center().child(mark))
-                            .child(div().flex_1().min_w_0().truncate().child(s.title.clone()))
-                            .when_some(fact, |r, f| r.child(div().flex_none().text_color(p.text_dim).child(f))),
-                        SharedString::from(format!("live-step-in-{}", s.id)),
-                        motion::ENTER_MS,
-                        4.,
-                    )
-                }))
+        let view = cx.entity().downgrade();
+        let toggle: step_tree::OnToggle = Rc::new(move |_, cx| {
+            let _ = view.update(cx, |this, cx| this.toggle(closed_key.clone(), cx));
         });
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(space::X1))
-            .child(head)
-            .children(list)
-            .into_any_element()
+        let head = step_tree::head(
+            step_tree::Head {
+                key: key.to_string(),
+                open,
+                rows: !group.is_empty(),
+                leading: lead,
+                parts,
+                on_toggle: toggle,
+            },
+            window,
+            cx,
+        );
+        let list = open.then(|| {
+            let n = group.len();
+            step_tree::list(
+                group
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| {
+                        let (tone, fact) = match s.status {
+                            WorkStepStatus::Waiting => (
+                                step_tree::Tone::Warning,
+                                Some((t!("activity.waiting").into_owned(), p.warning)),
+                            ),
+                            WorkStepStatus::Error => (
+                                step_tree::Tone::Danger,
+                                Some((t!("activity.failedStep").into_owned(), p.danger)),
+                            ),
+                            WorkStepStatus::Refused => (
+                                step_tree::Tone::Warning,
+                                Some((t!("activity.refusedStep").into_owned(), p.warning)),
+                            ),
+                            _ => (
+                                step_tree::Tone::Default,
+                                s.duration_ms
+                                    .filter(|ms| *ms >= 1000.)
+                                    .map(|ms| (format::duration(ms, format::lang()), p.text_dim)),
+                            ),
+                        };
+                        let mark: AnyElement = match s.status {
+                            WorkStepStatus::Running => Loader::new(SharedString::from(format!("live-step-{}", s.id)))
+                                .size(icon::XS)
+                                .into_any_element(),
+                            WorkStepStatus::Waiting => icon(IconName::Clock, icon::XS).into_any_element(),
+                            _ => icon(glyph_of(&kind_key(s)), icon::XS).into_any_element(),
+                        };
+                        motion::enter(
+                            div().child(
+                                step_tree::Row {
+                                    key: format!("live-{}", s.id),
+                                    icon: mark,
+                                    tone,
+                                    title: s.title.clone(),
+                                    facts: fact
+                                        .map(|(f, c)| div().text_color(c).child(f).into_any_element())
+                                        .into_iter()
+                                        .collect(),
+                                    hint: (!s.detail.is_empty() && s.detail != s.title).then(|| s.detail.clone()),
+                                    last: i + 1 == n,
+                                    open: false,
+                                    on_toggle: None,
+                                    body: Vec::new(),
+                                }
+                                .render(window, cx),
+                            ),
+                            SharedString::from(format!("live-step-in-{}", s.id)),
+                            motion::ENTER_MS,
+                            4.,
+                        )
+                        .into_any_element()
+                    })
+                    .collect(),
+            )
+        });
+        div().flex().flex_col().child(head).children(list).into_any_element()
     }
 
     /// What waits above the box: approvals and questions of this chat and the queue (Stop is in the reply and the box).
@@ -1703,44 +1752,6 @@ fn reply_frame(
 }
 
 /// A fold's head: a chevron that turns (spring) and what's inside, muted until hovered.
-fn fold_head(key: &str, open: bool, window: &mut Window, cx: &mut App) -> Stateful<Div> {
-    let p = theme::palette(window);
-    let id = ElementId::from(SharedString::from(format!("fold-head-{key}")));
-    let pointer = motion::pointer(&id, window, cx);
-    let hovered = pointer.read(cx).hovered;
-    let fg = motion::color(
-        &id,
-        "fg",
-        if hovered || open { p.text } else { p.text_muted },
-        window,
-        cx,
-    );
-    let turn = gpui_kit::base::spring(
-        SharedString::from(format!("fold-turn-{key}")),
-        px(if open { 0. } else { -90. }),
-        motion::settle(motion::SETTLE_MS),
-        window,
-        cx,
-    );
-    let head = div()
-        .id(id)
-        .role(Role::Button)
-        .aria_expanded(open)
-        .flex()
-        .items_center()
-        .gap(px(space::X1_5))
-        .min_h(px(tokens::CONTROL_H_SM))
-        .text_sm()
-        .text_color(fg)
-        .cursor_pointer()
-        .child(
-            icon(IconName::ChevronDown, icon::XS)
-                .text_color(fg)
-                .rotate(radians(f32::from(turn).to_radians())),
-        );
-    motion::track(head, &pointer)
-}
-
 fn step_line(
     key: &str,
     glyph: IconName,
