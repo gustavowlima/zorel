@@ -110,7 +110,9 @@ mod tests {
         ));
         assert!(log.partial.is_empty() && log.turns.is_empty());
         assert_eq!(log.messages.len(), 1);
-        log.apply(event(json!({ "_tag": "message", "message": message("m1", "Good day") }))); // a replay: no duplicate
+        log.apply(event(
+            json!({ "_tag": "message", "message": message("m1", "Good day") }),
+        )); // a replay: no duplicate
         assert_eq!(log.messages.len(), 1);
         assert_eq!(log.revision, 5);
     }
