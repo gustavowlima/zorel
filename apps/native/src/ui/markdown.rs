@@ -215,7 +215,7 @@ pub struct Person {
 /// Where a mention's face sits: room no line breaks inside, ahead of the name.
 /// A chip's inner padding (start and end) and the face's room (two figure spaces) with a gap before the name:
 /// all non-breaking, so the chip stays on one line.
-const CHIP_PAD: &str = "\u{202F}";
+const CHIP_PAD: &str = "\u{202F}\u{202F}";
 const FACE_ROOM: &str = "\u{2007}\u{2007}\u{202F}\u{202F}";
 const MENTION_FACE: f32 = 16.;
 

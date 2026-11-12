@@ -1845,7 +1845,7 @@ fn reply_frame(
         .flex()
         .gap(px(space::X3))
         .when(!bare, |r| {
-            r.child(div().flex_none().w(px(28.)).pt(px(space::X0_5)).children(face))
+            r.child(div().flex_none().w(px(28.)).children(face))
         })
         .child(
             div()
@@ -1856,9 +1856,11 @@ fn reply_frame(
                 .gap(px(space::X2))
                 .when_some(who, |c, (_, name, hue, model)| {
                     c.child(
+                        // As tall as the face, its words centred on it.
                         div()
                             .flex()
-                            .items_baseline()
+                            .items_center()
+                            .h(px(28.))
                             .gap(px(space::X2))
                             .child(div().font_weight(FontWeight::SEMIBOLD).text_color(hue).child(name))
                             .when_some(model, |r, m| r.child(div().text_xs().text_color(p.text_dim).child(m))),
