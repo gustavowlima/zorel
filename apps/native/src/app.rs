@@ -288,6 +288,7 @@ pub fn run() {
     let target = target();
     gpui_kit::application().run(move |cx| {
         gpui_kit::init(cx);
+        crate::shell::menus::install(cx);
         let connection = cx.new(|cx| EngineConnection::new(target, cx));
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(

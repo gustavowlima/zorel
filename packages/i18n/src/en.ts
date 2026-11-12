@@ -2240,6 +2240,23 @@ export const en = {
   },
   // The desktop app's own dialogs.
   desktop: {
+    menu: {
+      services: "Services",
+      hide: "Hide Zorel",
+      hideOthers: "Hide Others",
+      showAll: "Show All",
+      quit: "Quit Zorel",
+      edit: "Edit",
+      undo: "Undo",
+      redo: "Redo",
+      cut: "Cut",
+      copy: "Copy",
+      paste: "Paste",
+      selectAll: "Select All",
+      window: "Window",
+      minimize: "Minimize",
+      zoom: "Zoom"
+    },
     quit: {
       title: "Quit Zorel?",
       body: "Agents stop working and routines don't run until you open Zorel again. Closing the window keeps them running.",

@@ -109,7 +109,7 @@ component tests per research R7). No pixel-size tests.
 ### Shell (plan Phase C)
 
 - [ ] T041 [P] [US2] Tray with gpui-tray in `apps/native/src/shell/tray.rs` (open, new chat, quit; ksni fallback on Linux if needed)
-- [ ] T042 [P] [US2] App menus with `cx.set_menus` in `apps/native/src/shell/menus.rs` (app, Edit, Window on macOS; in-window elsewhere; no reload/devtools)
+- [X] T042 [P] [US2] App menus in `apps/native/src/shell/menus.rs`: macOS app menu (Services, hide, hide others, show all, quit), Edit on gpui-base's input actions, Window (minimize, zoom); ⌘Q ⌘H ⌥⌘H ⌘M; labels from `desktop.menu.*` in packages/i18n; no menu bar on Windows/Linux, as Electron. (Servers submenu with T047)
 - [ ] T043 [P] [US2] Notifications with notify-rust in `apps/native/src/shell/notify.rs`: approvals/questions/notices → system notification → click opens that chat at the item; verify click-through in a signed macOS bundle
 - [ ] T044 [P] [US2] Keep-awake on AC power (keepawake + starship-battery polled 60 s) in `apps/native/src/shell/awake.rs`, pref in `prefs.json`
 - [ ] T045 [P] [US2] Dialogs (rfd folder picker, xdg-portal on Linux), open-in-system links (http(s) only), downloads to the Downloads folder in `apps/native/src/shell/system.rs`

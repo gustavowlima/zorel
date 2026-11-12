@@ -758,6 +758,23 @@ export const part3 = {
     connect: "Conectar uma IA"
   },
   desktop: {
+    menu: {
+      services: "Serviços",
+      hide: "Ocultar o Zorel",
+      hideOthers: "Ocultar os outros",
+      showAll: "Mostrar tudo",
+      quit: "Sair do Zorel",
+      edit: "Editar",
+      undo: "Desfazer",
+      redo: "Refazer",
+      cut: "Recortar",
+      copy: "Copiar",
+      paste: "Colar",
+      selectAll: "Selecionar tudo",
+      window: "Janela",
+      minimize: "Minimizar",
+      zoom: "Zoom"
+    },
     quit: {
       title: "Sair do Zorel?",
       body: "Os agentes param de trabalhar e as rotinas não rodam até você abrir o Zorel de novo. Fechar a janela mantém tudo rodando.",
