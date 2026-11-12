@@ -3,6 +3,9 @@
 // the Store loads what every screen reads; the sidebar and the main area follow a Route, as the web's.
 use std::path::PathBuf;
 
+use crate::ui::button::{self as btn, Button, Variant};
+use gpui_kit::assets::IconName;
+
 use gpui_kit::{component as gpui_component, prelude::FluentBuilder, *};
 use rust_i18n::t;
 
@@ -376,14 +379,26 @@ impl Root {
     }
 
     /// The title strip in the frame above the card: what the open screen is (and, for a chat, its project and lead).
-    fn strip(&self, cx: &App) -> Header {
+    fn strip(&self, cx: &mut Context<Self>) -> Header {
+        // Agents: its action (build one with AI) sits in the strip, beside the title.
+        if self.route == Route::Agents {
+            return Header::new(t!("agents.title").into_owned()).trailing(
+                Button::new("agents-new", t!("agents.withAi").into_owned())
+                    .icon(IconName::Sparkles)
+                    .variant(Variant::Primary)
+                    .size(btn::Size::Sm)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.navigate(Route::Builder { project_id: None }, window, cx)
+                    })),
+            );
+        }
         let Some(store) = self.store.as_ref().map(|s| s.read(cx)) else {
             return Header::new("");
         };
         match &self.route {
             Route::Home { .. } => Header::new(t!("nav.homeScreen").into_owned()),
             Route::Inbox => Header::new(t!("inbox.title").into_owned()),
-            Route::Agents => Header::new(t!("agents.title").into_owned()),
+            Route::Agents => unreachable!("drawn above"),
             Route::Builder { .. } => {
                 Header::new(t!("builder.title").into_owned()).context(t!("builder.subtitle").into_owned())
             }

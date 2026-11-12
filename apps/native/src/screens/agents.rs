@@ -297,23 +297,6 @@ impl Agents {
                 .flex()
                 .flex_col()
                 .gap(px(space::X7))
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap(px(space::X4))
-                        .child(div().text_color(p.text_muted).child(t!("agents.subtitle").into_owned()))
-                        .child(
-                            Button::new("agents-new", t!("agents.withAi").into_owned())
-                                .icon(IconName::Sparkles)
-                                .variant(Variant::Primary)
-                                .size(Size::Sm)
-                                .on_click(cx.listener(|_, _, _, cx| {
-                                    cx.emit(AgentsEvent::Navigate(Route::Builder { project_id: None }))
-                                })),
-                        ),
-                )
                 .when(empty, |c| {
                     c.child(
                         div()
