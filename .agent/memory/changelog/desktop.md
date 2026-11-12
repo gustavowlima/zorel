@@ -24,3 +24,4 @@
 2026-11-12 | own components on gpui-base; gpui-component kept only for heavy non-visual widgets | owner: kit visuals (one radius, stroke 2, 20/24/32 heights) do not match the prototype
 2026-11-12 | spacing scale ui/space; menu/select rows 26→32px | owner found 26px menu rows cramped
 2026-11-12 | hot reload via Subsecond (native:hot); ui/header top bar; uniform rail squares | owner asked for hot reload, the prototype's top bar and a standard folded sidebar
+2026-11-12 | title moved from a bar inside the card to a strip of the frame above it | owner: it is a recessed space of the container, not a continuous bar
