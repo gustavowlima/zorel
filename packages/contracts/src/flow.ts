@@ -9,7 +9,7 @@ export const Text = (max: number) => Schema.String.check(Schema.isMaxLength(max)
 const Pos = Schema.Finite
 
 // A field's value: a literal, or what an earlier step gave ({ $from: "n2", path: "items.0.id" }).
-export const ValueRef = Schema.Struct({ $from: NodeId, path: Schema.optional(Text(200)) })
+export const ValueRef = Schema.Struct({ $from: NodeId, path: Schema.optional(Text(200)) }).annotate({ identifier: "ValueRef" })
 export type ValueRef = typeof ValueRef.Type
 export const isRef = (v: unknown): v is ValueRef =>
   !!v && typeof v === "object" && !Array.isArray(v) && typeof (v as { $from?: unknown }).$from === "string"
@@ -20,7 +20,7 @@ const LocalTime = Schema.String.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d
 export const RoutineSchedule = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("once"), date: LocalDate, time: LocalTime }),
   Schema.Struct({ kind: Schema.Literal("monthly"), day: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 31 })), time: LocalTime })
-])
+]).annotate({ identifier: "RoutineSchedule" })
 export type RoutineSchedule = typeof RoutineSchedule.Type
 // Minutes between a watched connector's checks, never under one.
 const WATCH_EVERY = [1, 5, 15, 60] as const
@@ -40,7 +40,7 @@ export const TriggerConfig = Schema.Struct({
   tool: Schema.optional(Text(200)),
   args: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   lookFirst: Schema.optional(Schema.Boolean)
-})
+}).annotate({ identifier: "TriggerConfig" })
 const ToolConfig = Schema.Struct({
   serverId: Schema.String,
   tool: Text(200),
@@ -67,12 +67,12 @@ export const FlowNode = Schema.Union([
   node("condition", ConditionConfig),
   node("approval", ApprovalConfig),
   node("end", Schema.Struct({}))
-])
+]).annotate({ identifier: "FlowNode" })
 export type FlowNode = typeof FlowNode.Type
 export type FlowKind = FlowNode["kind"]
-export const FlowEdge = Schema.Struct({ id: NodeId, from: NodeId, to: NodeId, branch: Schema.optional(Schema.Literals(["yes", "no"])) })
+export const FlowEdge = Schema.Struct({ id: NodeId, from: NodeId, to: NodeId, branch: Schema.optional(Schema.Literals(["yes", "no"])) }).annotate({ identifier: "FlowEdge" })
 export type FlowEdge = typeof FlowEdge.Type
-export const FlowGraph = Schema.Struct({ nodes: Schema.Array(FlowNode).check(Schema.isMaxLength(MAX_STEPS + 1)), edges: Schema.Array(FlowEdge).check(Schema.isMaxLength(64)) })
+export const FlowGraph = Schema.Struct({ nodes: Schema.Array(FlowNode).check(Schema.isMaxLength(MAX_STEPS + 1)), edges: Schema.Array(FlowEdge).check(Schema.isMaxLength(64)) }).annotate({ identifier: "FlowGraph" })
 export type FlowGraph = typeof FlowGraph.Type
 
 // ---------- ports ----------

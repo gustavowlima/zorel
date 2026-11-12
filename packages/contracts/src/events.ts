@@ -32,7 +32,7 @@ export const Usage = Schema.Struct({
   inputTokens: Schema.Number,
   outputTokens: Schema.Number,
   cachedTokens: Schema.Number
-})
+}).annotate({ identifier: "Usage" })
 export type Usage = typeof Usage.Type
 
 export const Turn = Schema.Struct({
@@ -48,7 +48,7 @@ export const Turn = Schema.Struct({
   firstTokenAt: Schema.NullOr(Millis), // latency to first text
   error: Schema.NullOr(Schema.String), // ErrorCode or the engine message
   usage: Usage
-})
+}).annotate({ identifier: "Turn" })
 export type Turn = typeof Turn.Type
 
 // ---------- steps (the activity pill and the expanded detail) ----------
@@ -69,7 +69,7 @@ export const WorkStep = Schema.Struct({
   durationMs: Schema.NullOr(Schema.Number),
   changes: Schema.Array(FileChange), // edits made in this step; the full patch comes from Workspace (phase 3)
   output: Schema.String // start of the result, truncated
-})
+}).annotate({ identifier: "WorkStep" })
 export type WorkStep = typeof WorkStep.Type
 
 // ---------- approvals (ARCHITECTURE §9.2) ----------
@@ -87,13 +87,13 @@ export const ProposedAgent = Schema.Struct({
   permissions: AgentPermissions,
   scope: Schema.Literals(["project", "global"]),
   reason: Schema.String // why it's the one ("" when not said)
-})
+}).annotate({ identifier: "ProposedAgent" })
 export type ProposedAgent = typeof ProposedAgent.Type
 // What a proposal card is about, as data, so each screen words it in the person's language.
 export const ProposalOf = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("create"), agents: Schema.Array(ProposedAgent) }),
   Schema.Struct({ kind: Schema.Literal("update"), name: Schema.String })
-])
+]).annotate({ identifier: "ProposalOf" })
 export type ProposalOf = typeof ProposalOf.Type
 
 export const Approval = Schema.Struct({
@@ -112,7 +112,7 @@ export const Approval = Schema.Struct({
   proposal: Schema.optional(Schema.NullOr(ProposalOf)), // a proposal to create or change agents
   createdAt: Millis,
   expiresAt: Millis
-})
+}).annotate({ identifier: "Approval" })
 export type Approval = typeof Approval.Type
 
 // What the person set on a proposed agent before approving it (the builder's panel): its AI and its powers.
@@ -122,7 +122,7 @@ export const AgentOverride = Schema.Struct({
   effort: Schema.optional(Schema.NullOr(Effort)),
   access: Schema.optional(Access),
   permissions: Schema.optional(AgentPermissions)
-})
+}).annotate({ identifier: "AgentOverride" })
 export type AgentOverride = typeof AgentOverride.Type
 
 export const ApprovalOutcome = Schema.Literals(["approved", "always", "denied", "expired"])
@@ -132,7 +132,7 @@ export type ApprovalOutcome = typeof ApprovalOutcome.Type
 
 // An agent of this chat waiting on teammates: their answers to its @mention here (taskChatId null), or a task it
 // gave with zorel_start_task (taskChatId: the task's chat).
-export const AgentWait = Schema.Struct({ agentId: Id, on: Schema.Array(Id), taskChatId: Schema.NullOr(Id) })
+export const AgentWait = Schema.Struct({ agentId: Id, on: Schema.Array(Id), taskChatId: Schema.NullOr(Id) }).annotate({ identifier: "AgentWait" })
 export type AgentWait = typeof AgentWait.Type
 
 export const ChatStatus = Schema.Struct({
@@ -144,13 +144,13 @@ export const ChatStatus = Schema.Struct({
   updatedAt: Millis,
   waits: Schema.optionalKey(Schema.Array(AgentWait)), // absent or empty: nobody waits on a teammate
   agentIds: Schema.optionalKey(Schema.Array(Id)) // two or more agents at work at once (spec 016); absent: one or none
-})
+}).annotate({ identifier: "ChatStatus" })
 export type ChatStatus = typeof ChatStatus.Type
 
 // ---------- turn context (the "18k context" and the inspector) ----------
 
 const ContextLayer = Schema.Struct({ id: Schema.String, label: Schema.String, tokens: Schema.Number })
-export const ContextUsage = Schema.Struct({ layers: Schema.Array(ContextLayer), total: Schema.Number, limit: Schema.Number })
+export const ContextUsage = Schema.Struct({ layers: Schema.Array(ContextLayer), total: Schema.Number, limit: Schema.Number }).annotate({ identifier: "TurnContext" })
 export type ContextUsage = typeof ContextUsage.Type
 
 // ---------- chat events ----------
@@ -218,7 +218,7 @@ export const Notice = Schema.Struct({
   title: Schema.String,
   text: Schema.String,
   outcome: Schema.Literals(["nothing", "something", "needs"])
-})
+}).annotate({ identifier: "Notice" })
 export type Notice = typeof Notice.Type
 
 export const ZorelRpc = RpcGroup.make(

@@ -19,9 +19,9 @@ export type AccountProvider = typeof AccountProvider.Type
 // Limit windows of a subscription (ARCHITECTURE §10.2), as the harness reports them: Claude's 5-hour and
 // weekly windows (rate_limit_event, /usage), Codex's primary and secondary (account/rateLimits).
 // id: "five_hour", "seven_day", "seven_day_opus"… or "<minutes>m" for a window known only by its length.
-export const AccountWindow = Schema.Struct({ id: Schema.String, usedPercent: Schema.Number, resetsAt: Schema.NullOr(Schema.Number) })
+export const AccountWindow = Schema.Struct({ id: Schema.String, usedPercent: Schema.Number, resetsAt: Schema.NullOr(Schema.Number) }).annotate({ identifier: "AccountWindow" })
 export type AccountWindow = typeof AccountWindow.Type
-export const AccountUsage = Schema.Struct({ windows: Schema.Array(AccountWindow), readAt: Schema.Number })
+export const AccountUsage = Schema.Struct({ windows: Schema.Array(AccountWindow), readAt: Schema.Number }).annotate({ identifier: "AccountUsage" })
 export type AccountUsage = typeof AccountUsage.Type
 export const LIMIT_ALERT = 0.8 // a window at 80% or more is flagged before it runs out
 
@@ -38,7 +38,7 @@ export const ProviderAccount = Schema.Struct({
   limitedUntil: Schema.NullOr(Schema.Number), // hit its limit: failover skips it until then (epoch ms)
   usage: Schema.NullOr(AccountUsage),
   createdAt: Schema.Number
-})
+}).annotate({ identifier: "ProviderAccount" })
 export type ProviderAccount = typeof ProviderAccount.Type
 const NewAccount = Schema.Struct({ provider: AccountProvider, label: Name })
 const AccountPatch = Schema.Struct({ label: Name })
@@ -54,7 +54,7 @@ export const FileChange = Schema.Struct({
   added: Schema.Number,
   removed: Schema.Number,
   status: Schema.Literals(["added", "modified", "deleted"])
-})
+}).annotate({ identifier: "FileChange" })
 export type FileChange = typeof FileChange.Type
 
 // Access level of an agent (ARCHITECTURE §9.2), chosen only by you. workspace: reads, edits and runs commands
@@ -64,7 +64,7 @@ export type Access = typeof Access.Type
 
 // Failover (ARCHITECTURE §6.1): ordered alternatives { model, account } tried when the turn fails before
 // acting. Empty list: failover off.
-export const FailoverTarget = Schema.Struct({ model: ModelId, accountId: Schema.NullOr(Id) })
+export const FailoverTarget = Schema.Struct({ model: ModelId, accountId: Schema.NullOr(Id) }).annotate({ identifier: "FailoverTarget" })
 export type FailoverTarget = typeof FailoverTarget.Type
 export const MAX_FAILOVER = 8
 const FailoverList = Schema.Array(FailoverTarget).check(Schema.isMaxLength(MAX_FAILOVER))
@@ -79,7 +79,7 @@ export const Switch = Schema.Struct({
   toAccountId: Schema.NullOr(Id),
   reason: FailureReason,
   until: Schema.NullOr(Schema.Number) // limit: when the account comes back
-})
+}).annotate({ identifier: "Switch" })
 export type Switch = typeof Switch.Type
 
 export const Project = Schema.Struct({
@@ -93,7 +93,7 @@ export const Project = Schema.Struct({
   teamIds: Schema.Array(Id),
   sharedBrowser: Schema.Boolean, // team server: the project's agents keep one set of site logins for all its people
   createdAt: Schema.Number
-})
+}).annotate({ identifier: "Project" })
 export type Project = typeof Project.Type
 
 // Per-agent permissions: what an agent may reach besides its folder (`access` covers files and
@@ -104,7 +104,7 @@ export type Project = typeof Project.Type
 export const Grant = Schema.Literals(["none", "read", "write"])
 export type Grant = typeof Grant.Type
 // An app on the person's computer given to an agent (spec 008): read only, or read and use.
-export const DesktopApp = Schema.Struct({ name: Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(100)), level: Schema.Literals(["read", "use"]) })
+export const DesktopApp = Schema.Struct({ name: Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(100)), level: Schema.Literals(["read", "use"]) }).annotate({ identifier: "DesktopApp" })
 export type DesktopApp = typeof DesktopApp.Type
 export const AgentPermissions = Schema.Struct({
   web: Schema.Boolean,
@@ -117,7 +117,7 @@ export const AgentPermissions = Schema.Struct({
   computer: Schema.optional(Schema.Literals(["none", "container", "host"])),
   // Folders on this computer lent to its Linux container, besides the chat's project folder (absolute paths).
   lent: Schema.optional(Schema.Array(Schema.String.check(Schema.isMaxLength(1000))).check(Schema.isMaxLength(10)))
-})
+}).annotate({ identifier: "AgentPermissions" })
 export type AgentPermissions = typeof AgentPermissions.Type
 export const DEFAULT_PERMISSIONS: AgentPermissions = { web: true, browser: true, grants: {}, always: [] }
 
@@ -148,7 +148,7 @@ export const Agent = Schema.Struct({
   // consults them, "none": no pinned pages in its context and no page tools.
   knowledge: Schema.Literals(["write", "read", "none"]),
   createdAt: Schema.Number
-})
+}).annotate({ identifier: "Agent" })
 export type Agent = typeof Agent.Type
 const MemoryMode = Schema.Literals(["auto", "ask", "read"])
 const KnowledgeAccess = Schema.Literals(["write", "read", "none"])
@@ -167,7 +167,7 @@ export const AgentVersion = Schema.Struct({
     accountId: Schema.NullOr(Schema.String), effort: Schema.NullOr(Effort), failover: FailoverList, access: Access, permissions: Schema.optional(AgentPermissions),
     memory: Schema.optional(MemoryMode), knowledge: Schema.optional(KnowledgeAccess) // absent in versions saved before they existed
   })
-})
+}).annotate({ identifier: "AgentVersion" })
 export type AgentVersion = typeof AgentVersion.Type
 
 // What a routine watches: a connector's read-only tool, called every few minutes; the routine runs when its result
@@ -181,7 +181,7 @@ export const RoutineWatch = Schema.Struct({
   more: Schema.optional(Schema.Array(Schema.Record(Schema.String, Schema.Unknown)).check(Schema.isMaxLength(9))),
   filter: Schema.optional(Schema.String.check(Schema.isMaxLength(500))),
   each: Schema.optional(Schema.Boolean)
-})
+}).annotate({ identifier: "RoutineWatch" })
 export type RoutineWatch = typeof RoutineWatch.Type
 // Spec 012. Where a routine's result goes, and when the person is told.
 export const RoutineChannel = Schema.Literals(["notify", "telegram", "page"])
@@ -194,9 +194,9 @@ export const ConnectorDestination = Schema.Struct({
   args: Schema.Record(Schema.String, Schema.Unknown),
   textField: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
   inThread: Schema.optional(Schema.Boolean)
-})
+}).annotate({ identifier: "ConnectorDestination" })
 export type ConnectorDestination = typeof ConnectorDestination.Type
-export const RoutineDelivery = Schema.Struct({ channels: Schema.Array(RoutineChannel).check(Schema.isMaxLength(3)), pageId: Schema.optional(Id), connectors: Schema.optional(Schema.Array(ConnectorDestination).check(Schema.isMaxLength(3))) })
+export const RoutineDelivery = Schema.Struct({ channels: Schema.Array(RoutineChannel).check(Schema.isMaxLength(3)), pageId: Schema.optional(Id), connectors: Schema.optional(Schema.Array(ConnectorDestination).check(Schema.isMaxLength(3))) }).annotate({ identifier: "RoutineDelivery" })
 export type RoutineDelivery = typeof RoutineDelivery.Type
 export const RoutineTell = Schema.Literals(["every", "something", "brief"]) // every run, when there's something, only in the brief
 export type RoutineTell = typeof RoutineTell.Type
@@ -225,7 +225,7 @@ export const RoutineRun = Schema.Struct({
   startedAt: Schema.NullOr(Schema.Number),
   endedAt: Schema.NullOr(Schema.Number),
   version: Schema.optional(Schema.NullOr(Schema.Number)) // spec 013: the flow version it ran on; null: a spec 012 run
-})
+}).annotate({ identifier: "RoutineRun" })
 export type RoutineRun = typeof RoutineRun.Type
 // Spec 013: one step of a flow run. uncertain: a write that may have gone out when the server stopped (the person
 // decides: send again, skip or stop).
@@ -243,7 +243,7 @@ export const RunStep = Schema.Struct({
   error: Schema.NullOr(Schema.String),
   startedAt: Schema.Number,
   endedAt: Schema.NullOr(Schema.Number)
-})
+}).annotate({ identifier: "RunStep" })
 export type RunStep = typeof RunStep.Type
 const RunDetail = Schema.Struct({ run: RoutineRun, steps: Schema.Array(RunStep) })
 const RoutineFlow = Schema.Struct({ version: Schema.NullOr(Schema.Number), graph: FlowGraph })
@@ -261,23 +261,23 @@ export const CatalogTool = Schema.Struct({
   inputSchema: Schema.Record(Schema.String, Schema.Unknown),
   outputSchema: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   state: ToolState
-})
+}).annotate({ identifier: "CatalogTool" })
 export type CatalogTool = typeof CatalogTool.Type
 export const TriggerTest = Schema.Struct({
   items: Schema.Array(Schema.Struct({ preview: Schema.String, verdict: Schema.Literals(["runs", "seen", "filtered", "checked-out"]) })),
   times: Schema.Array(Schema.Number), // a schedule's next times
   note: Schema.NullOr(Schema.String), // why the check let nothing through, or why the test couldn't run
   first: Schema.Boolean // a watch never checked yet: what's there now counts as seen
-})
+}).annotate({ identifier: "TriggerTest" })
 export type TriggerTest = typeof TriggerTest.Type
 const StepTest = Schema.Struct({ output: Schema.String, dry: Schema.Boolean, error: Schema.NullOr(Schema.String) })
 // What came in since the last brief (the Today page), built from the runs without a model.
-export const Today = Schema.Struct({ from: Schema.Number, needs: Schema.Array(RoutineRun), found: Schema.Array(RoutineRun), quiet: Schema.Number })
+export const Today = Schema.Struct({ from: Schema.Number, needs: Schema.Array(RoutineRun), found: Schema.Array(RoutineRun), quiet: Schema.Number }).annotate({ identifier: "Today" })
 export type Today = typeof Today.Type
-export const RoutineWeek = Schema.Struct({ runs: Schema.Array(RoutineRun), planned: Schema.Array(Schema.Struct({ routineId: Id, at: Schema.Number })) })
+export const RoutineWeek = Schema.Struct({ runs: Schema.Array(RoutineRun), planned: Schema.Array(Schema.Struct({ routineId: Id, at: Schema.Number })) }).annotate({ identifier: "RoutineWeek" })
 export type RoutineWeek = typeof RoutineWeek.Type
 const HourMinute = Schema.String.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/))
-export const QuietHours = Schema.Struct({ from: HourMinute, to: HourMinute })
+export const QuietHours = Schema.Struct({ from: HourMinute, to: HourMinute }).annotate({ identifier: "QuietHours" })
 export type QuietHours = typeof QuietHours.Type
 // The person's time (spec 012): their zone, when their day usually starts (learned from the first activity of the
 // day unless set), and quiet hours that hold pings for the morning brief.
@@ -287,7 +287,7 @@ export const TimeProfile = Schema.Struct({
   dayStartMinutes: Schema.Number, // the start in use, minutes after local midnight
   dayStartSet: Schema.NullOr(Schema.Number), // set by hand; null: learned
   learned: Schema.Number // how many days it was learned from
-})
+}).annotate({ identifier: "TimeProfile" })
 export type TimeProfile = typeof TimeProfile.Type
 const TimeProfileInput = Schema.Struct({
   timeZone: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
@@ -320,14 +320,14 @@ export const Routine = Schema.Struct({
   version: Schema.optional(Schema.NullOr(Schema.Number)), // spec 013: its flow's current version; null: a spec 012 routine
   schedule: Schema.optional(Schema.NullOr(RoutineSchedule)), // spec 013: once or monthly (cron stays for weekly)
   watchEvery: Schema.optional(Schema.Number) // minutes between a watch's checks (1, 5, 15 or 60)
-})
+}).annotate({ identifier: "Routine" })
 export type Routine = typeof Routine.Type
 const Cron = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(9), Schema.isMaxLength(100))
 const RoutineExtras = {
   onDayStart: Schema.optional(Schema.Boolean), lookFirst: Schema.optional(Schema.Boolean), delivery: Schema.optional(RoutineDelivery),
   tell: Schema.optional(RoutineTell), urgent: Schema.optional(Schema.Boolean)
 }
-export const NewRoutine = Schema.Struct({ agentId: Id, name: Name, prompt: Short(8000), cron: Schema.NullOr(Cron), webhook: Schema.Boolean, watch: Schema.optional(Schema.NullOr(RoutineWatch)), ...RoutineExtras })
+export const NewRoutine = Schema.Struct({ agentId: Id, name: Name, prompt: Short(8000), cron: Schema.NullOr(Cron), webhook: Schema.Boolean, watch: Schema.optional(Schema.NullOr(RoutineWatch)), ...RoutineExtras }).annotate({ identifier: "NewRoutine" })
 const RoutinePatch = Schema.Struct({ name: Schema.optional(Name), prompt: Schema.optional(Short(8000)), cron: Schema.optional(Schema.NullOr(Cron)), webhook: Schema.optional(Schema.Boolean), enabled: Schema.optional(Schema.Boolean), ...RoutineExtras })
 // A cron pattern Zorel refuses (with croner's reason).
 // A routine's settings that don't fit together (spec 012), e.g. "look first" without a watched connector.
@@ -337,11 +337,11 @@ export class RoutineQueueFull extends Schema.Error<RoutineQueueFull>("zorel/Rout
 export class CronInvalid extends Schema.Error<CronInvalid>("zorel/CronInvalid")({ _tag: Schema.tag("CronInvalid"), message: Schema.String }, { httpApiStatus: 400 }) {}
 
 // A message that matched a search (Cmd+K): where it is and the words around the match.
-export const SearchHit = Schema.Struct({ chatId: Id, messageId: Id, snippet: Schema.String, at: Schema.Number })
+export const SearchHit = Schema.Struct({ chatId: Id, messageId: Id, snippet: Schema.String, at: Schema.Number }).annotate({ identifier: "SearchHit" })
 export type SearchHit = typeof SearchHit.Type
 
 // An agent's own copy of the project in a chat (spec 016): a git worktree on its own branch.
-export const AgentWorktree = Schema.Struct({ path: Schema.String, branch: Schema.String })
+export const AgentWorktree = Schema.Struct({ path: Schema.String, branch: Schema.String }).annotate({ identifier: "AgentWorktree" })
 export type AgentWorktree = typeof AgentWorktree.Type
 
 export const Chat = Schema.Struct({
@@ -365,7 +365,7 @@ export const Chat = Schema.Struct({
   preview: Schema.NullOr(Schema.String), // start of the last message, one line (sidebar)
   lastAt: Schema.NullOr(Schema.Number), // when the last message was written
   createdAt: Schema.Number
-})
+}).annotate({ identifier: "Chat" })
 export type Chat = typeof Chat.Type
 export const PREVIEW_CHARS = 140
 
@@ -379,7 +379,7 @@ export const AuditEntry = Schema.Struct({
   outcome: Schema.Literals(["success", "failure", "denied"]),
   reason: Schema.NullOr(Schema.String),
   changes: Schema.Array(Schema.Struct({ field: Schema.String, before: Schema.NullOr(Schema.String), after: Schema.NullOr(Schema.String) }))
-})
+}).annotate({ identifier: "AuditEntry" })
 export type AuditEntry = typeof AuditEntry.Type
 export const AUDIT_PAGE = 50 // entries per page of the log
 // What the log can be narrowed to: a kind of change, words in it, a span of time (ms, inclusive start,
@@ -393,7 +393,7 @@ const AuditQuery = {
   to: Schema.optionalKey(Schema.NumberFromString),
   page: Schema.optionalKey(Schema.NumberFromString)
 }
-export const AuditPage = Schema.Struct({ entries: Schema.Array(AuditEntry), total: Schema.Number, page: Schema.Number, pageSize: Schema.Number })
+export const AuditPage = Schema.Struct({ entries: Schema.Array(AuditEntry), total: Schema.Number, page: Schema.Number, pageSize: Schema.Number }).annotate({ identifier: "AuditPage" })
 export type AuditPage = typeof AuditPage.Type
 
 // Storage: Zorel's data folder measured now, where it goes and what can be freed.
@@ -407,7 +407,7 @@ export const StorageReport = Schema.Struct({
   projects: Schema.Array(Schema.Struct({ id: Id, name: Schema.String, bytes: Schema.Number, chats: Schema.Number })),
   chats: Schema.Array(Schema.Struct({ id: Id, title: Schema.String, projectId: Schema.NullOr(Id), bytes: Schema.Number, files: Schema.Number, messages: Schema.Number })),
   cleanup: Schema.Array(Schema.Struct({ id: StorageCleanup, bytes: Schema.Number }))
-})
+}).annotate({ identifier: "StorageReport" })
 export type StorageReport = typeof StorageReport.Type
 
 // How full the next turn's context is: what Zorel puts in it, by part, estimated at ~4 characters a token
@@ -424,12 +424,12 @@ export const ContextUsage = Schema.Struct({
   // What the last reply actually read (input tokens as the engine reported them, its own prompt and tools
   // included): the measured counterpart of the estimate. Null before any reply.
   lastInputTokens: Schema.NullOr(Schema.Number)
-})
+}).annotate({ identifier: "ContextUsage" })
 export type ContextUsage = typeof ContextUsage.Type
 
 // A slash command the chat's engine offers (Claude Code's built-in and custom commands). A message that opens
 // with "/name" runs it in the CLI.
-export const EngineCommand = Schema.Struct({ name: Schema.String, description: Schema.String, argumentHint: Schema.NullOr(Schema.String) })
+export const EngineCommand = Schema.Struct({ name: Schema.String, description: Schema.String, argumentHint: Schema.NullOr(Schema.String) }).annotate({ identifier: "EngineCommand" })
 export type EngineCommand = typeof EngineCommand.Type
 
 // A shell of the chat's Terminal panel (it outlives the panel; see apps/server/src/terminals.ts). busy: something
@@ -438,7 +438,7 @@ const TerminalSession = Schema.Struct({ id: Schema.String, n: Schema.Number, lab
 // A script of the project's package.json; running it opens a Terminal tab (GET /api/terminals?run=name).
 const ProjectScript = Schema.Struct({ name: Schema.String, command: Schema.String })
 // A process listening on TCP ports whose working folder is the chat's (a dev server an agent or a shell started).
-export const LocalServer = Schema.Struct({ pid: Schema.Number, command: Schema.String, ports: Schema.Array(Schema.Number) })
+export const LocalServer = Schema.Struct({ pid: Schema.Number, command: Schema.String, ports: Schema.Array(Schema.Number) }).annotate({ identifier: "LocalServer" })
 // Settings › Processes: what runs in the background now. servers: programs listening on a port inside a chat's
 // folder (an agent's dev server), with the chat whose folder it is; terminals: shells still open; sessions: engine
 // processes kept between turns (Claude Code, Codex); connections: MCP servers with a client open. A server lists
@@ -453,7 +453,7 @@ export const ProcessList = Schema.Struct({
   sessions: Schema.Array(Schema.Struct({ key: Schema.String, chatId: Schema.String, agentId: Schema.NullOr(Schema.String), provider: Schema.String, usedAt: Schema.Number, ...Use })),
   connections: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String, local: Schema.Boolean, ...Use })),
   usage: Schema.Struct({ ...Use, cores: Schema.Number, totalMemory: Schema.Number, parts: Schema.Array(Schema.Struct({ id: UsagePart, ...Use })) })
-})
+}).annotate({ identifier: "ProcessList" })
 export type ProcessList = typeof ProcessList.Type
 export type LocalServer = typeof LocalServer.Type
 // A file to open in the computer's default app, from a path printed in the terminal (relative to the chat's folder).
@@ -468,7 +468,7 @@ export const FsOp = Schema.Struct({
   to: Schema.optional(RelPath),
   paths: Schema.optional(Schema.Array(RelPath).check(Schema.isMaxLength(500))),
   id: Schema.optional(Schema.String.check(Schema.isMaxLength(40)))
-})
+}).annotate({ identifier: "FsOp" })
 
 // Manual order in the sidebar: the ids in their new order. Chats only reorder inside their own group.
 const ProjectOrder = Schema.Struct({ ids: Schema.Array(Id) })
@@ -490,7 +490,7 @@ export const Step = Schema.Struct({
   // Where in the reply's text it began (characters): the chat lays the reply out as text, steps, text… in that order.
   // Absent on Zorel's timing rows and on messages saved before it existed (their steps go above the text).
   at: Schema.optional(Schema.Number)
-})
+}).annotate({ identifier: "Step" })
 export type Step = typeof Step.Type
 // The steps that did work: not Thought or Replied (counted and shown as work, they'd put a pill on every answer).
 export const workSteps = <S extends Pick<Step, "tool">>(steps: ReadonlyArray<S>) => steps.filter((s) => s.tool !== "thought" && s.tool !== "reply")
@@ -508,12 +508,12 @@ export const AgentRun = Schema.Struct({
   outputTokens: Schema.Number,
   preview: Schema.String, // its reply's first words
   steps: Schema.Array(Step)
-})
+}).annotate({ identifier: "AgentRun" })
 export type AgentRun = typeof AgentRun.Type
 
 // A file sent with a message (ARCHITECTURE §12). Images go to the engine as images; other files as text
 // (small text files) or by name until the workspace phase gives agents file tools.
-export const Attachment = Schema.Struct({ id: Id, name: Schema.String, mime: Schema.String, size: Schema.Number })
+export const Attachment = Schema.Struct({ id: Id, name: Schema.String, mime: Schema.String, size: Schema.Number }).annotate({ identifier: "Attachment" })
 export type Attachment = typeof Attachment.Type
 export const MAX_ATTACHMENTS = 10
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
@@ -538,7 +538,7 @@ export const Message = Schema.Struct({
   outputTokens: Schema.Number,
   durationMs: Schema.NullOr(Schema.Number), // how long the turn that wrote it took (null: not a reply, or older data)
   at: Schema.Number
-})
+}).annotate({ identifier: "Message" })
 export type Message = typeof Message.Type
 
 // Scopes: "user" (applies everywhere), "project:<id>", "agent:<id>".
@@ -563,7 +563,7 @@ export const Memory = Schema.Struct({
   agents: Schema.optionalKey(Schema.Array(Id)),
   createdAt: Schema.Number,
   confirmedAt: Schema.Number
-})
+}).annotate({ identifier: "Memory" })
 export type Memory = typeof Memory.Type
 // A skill already on this computer (a SKILL.md of Claude Code, Codex, other agents or a plugin) and whether
 // Zorel's agents use it.
@@ -575,15 +575,15 @@ export const FileSkill = Schema.Struct({
   plugin: Schema.optionalKey(Schema.String),
   enabled: Schema.Boolean,
   agents: Schema.optionalKey(Schema.Array(Id)) // the agents that use it; absent or empty: all of them
-})
+}).annotate({ identifier: "FileSkill" })
 export type FileSkill = typeof FileSkill.Type
 // The memory's map in some scopes: its points (what facts are about; facts: how many living facts mention it,
 // pending: how many of those wait for review) and its links (a relation a fact states, or two points one fact names).
-export const MapPoint = Schema.Struct({ id: Id, scope: Schema.String, name: Schema.String, type: Schema.Literals(["project", "agent", "concept", "subject"]), weight: Schema.Number, facts: Schema.Number, pending: Schema.Number, memoryIds: Schema.Array(Id) })
+export const MapPoint = Schema.Struct({ id: Id, scope: Schema.String, name: Schema.String, type: Schema.Literals(["project", "agent", "concept", "subject"]), weight: Schema.Number, facts: Schema.Number, pending: Schema.Number, memoryIds: Schema.Array(Id) }).annotate({ identifier: "MapPoint" })
 export type MapPoint = typeof MapPoint.Type
 // rel "": named together in a fact. bridge: a link the person made between two projects' maps.
 const MapLink = Schema.Struct({ a: Id, b: Id, rel: Schema.String, bridge: Schema.optionalKey(Schema.Boolean) })
-export const MemoryMap = Schema.Struct({ points: Schema.Array(MapPoint), links: Schema.Array(MapLink) })
+export const MemoryMap = Schema.Struct({ points: Schema.Array(MapPoint), links: Schema.Array(MapLink) }).annotate({ identifier: "MemoryMap" })
 export type MemoryMap = typeof MemoryMap.Type
 const MemoryVersion = Schema.Struct({ id: Id, title: Schema.String, text: Schema.String, by: Schema.String, at: Schema.Number })
 
@@ -595,12 +595,12 @@ const MemoryVersion = Schema.Struct({ id: Id, title: Schema.String, text: Schema
 const ComputerState = Schema.Struct({ state: Schema.Literals(["off", "pulling", "starting", "running", "stopped", "unavailable"]), problem: Schema.NullOr(Schema.String) })
 const ComputerStatus = Schema.Struct({ engine: Schema.NullOr(Schema.Literals(["podman", "docker"])), problem: Schema.NullOr(Schema.String) })
 // agent-desktop on this computer (spec 008). accessibility: macOS's permission (granted, denied, unknown).
-export const DesktopStatus = Schema.Struct({ supported: Schema.Boolean, installed: Schema.Boolean, version: Schema.String, accessibility: Schema.NullOr(Schema.String), suggestion: Schema.NullOr(Schema.String) })
+export const DesktopStatus = Schema.Struct({ supported: Schema.Boolean, installed: Schema.Boolean, version: Schema.String, accessibility: Schema.NullOr(Schema.String), suggestion: Schema.NullOr(Schema.String) }).annotate({ identifier: "DesktopStatus" })
 export type DesktopStatus = typeof DesktopStatus.Type
 // An agent CLI here (spec 014 follow-up): the version that runs, the latest its official source offers, and who keeps
 // it up to date ("self": it updates itself; "zorel": Zorel can; "you": the person's own copy, Homebrew or npm).
 const CliIdSchema = Schema.Literals(["claude", "codex", "antigravity", "opencode"])
-export const CliState = Schema.Struct({ id: CliIdSchema, name: Schema.String, version: Schema.NullOr(Schema.String), latest: Schema.NullOr(Schema.String), keeper: Schema.Literals(["self", "zorel", "you"]), behind: Schema.Boolean, update: Schema.Boolean })
+export const CliState = Schema.Struct({ id: CliIdSchema, name: Schema.String, version: Schema.NullOr(Schema.String), latest: Schema.NullOr(Schema.String), keeper: Schema.Literals(["self", "zorel", "you"]), behind: Schema.Boolean, update: Schema.Boolean }).annotate({ identifier: "CliState" })
 export type CliState = typeof CliState.Type
 export class CliInstallFailed extends Schema.Error<CliInstallFailed>("zorel/CliInstallFailed")({ _tag: Schema.tag("CliInstallFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
 // A team's handle (from its name) is taken by an agent or another team the same chats can see; or an agent's name
@@ -613,17 +613,17 @@ export class LastAgent extends Schema.Error<LastAgent>("zorel/LastAgent")({ _tag
 export class TeamInvalid extends Schema.Error<TeamInvalid>("zorel/TeamInvalid")({ _tag: Schema.tag("TeamInvalid"), message: Schema.String }, { httpApiStatus: 400 }) {}
 export class DesktopInstallFailed extends Schema.Error<DesktopInstallFailed>("zorel/DesktopInstallFailed")({ _tag: Schema.tag("DesktopInstallFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
 // An app on this computer: its name, and where the desktop app draws its icon from (a bundle, a shortcut, an icon file).
-export const InstalledApp = Schema.Struct({ name: Schema.String, path: Schema.NullOr(Schema.String) })
+export const InstalledApp = Schema.Struct({ name: Schema.String, path: Schema.NullOr(Schema.String) }).annotate({ identifier: "InstalledApp" })
 export type InstalledApp = typeof InstalledApp.Type
 // Telegram channel: whether the bot token is set, how many accounts are paired, and the open pairing code.
 // agentId: who answers Telegram now (the chosen agent, else the one used last); null with no agents.
 const TelegramStatus = Schema.Struct({ tokenSet: Schema.Boolean, fromEnv: Schema.Boolean, users: Schema.Number, agentId: Schema.NullOr(Id), chosen: Schema.Boolean, pairing: Schema.NullOr(Schema.Struct({ code: Schema.String, until: Schema.Number })) })
-export const Page = Schema.Struct({ id: Id, scope: MemoryScope, title: Schema.String, body: Schema.String, pinned: Schema.Boolean, file: Schema.optionalKey(Schema.NullOr(Schema.String)), updatedAt: Schema.Number, createdAt: Schema.Number })
+export const Page = Schema.Struct({ id: Id, scope: MemoryScope, title: Schema.String, body: Schema.String, pinned: Schema.Boolean, file: Schema.optionalKey(Schema.NullOr(Schema.String)), updatedAt: Schema.Number, createdAt: Schema.Number }).annotate({ identifier: "Page" })
 export type Page = typeof Page.Type
 const PageVersion = Schema.Struct({ id: Schema.String, n: Schema.Number, title: Schema.String, body: Schema.String, by: Schema.String, at: Schema.Number })
 const PageTitle = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(120))
 const PageBody = Schema.String.check(Schema.isMaxLength(100_000))
-export const NewPage = Schema.Struct({ scope: MemoryScope, title: PageTitle, body: PageBody })
+export const NewPage = Schema.Struct({ scope: MemoryScope, title: PageTitle, body: PageBody }).annotate({ identifier: "NewPage" })
 const PagePatch = Schema.Struct({ title: Schema.optional(PageTitle), body: Schema.optional(PageBody), pinned: Schema.optional(Schema.Boolean) })
 
 
@@ -658,7 +658,7 @@ export const ModelInfo = Schema.Struct({
   // Subscription CLIs: the name and line they give the model today ("Opus 5.5").
   name: Schema.optional(Schema.String),
   note: Schema.optional(Schema.String)
-})
+}).annotate({ identifier: "ModelInfo" })
 export type ModelInfo = typeof ModelInfo.Type
 
 // Tools: MCP servers. mode "read": read tools only; "approve": all, and the ones that
@@ -676,13 +676,13 @@ export const McpServer = Schema.Struct({
   auth: Schema.Literals(["none", "oauth"]), // oauth: the person signs in through the browser; tokens in the keychain
   enabled: Schema.Boolean,
   createdAt: Schema.Number
-})
+}).annotate({ identifier: "McpServer" })
 export type McpServer = typeof McpServer.Type
 
-export const ToolInfo = Schema.Struct({ name: Schema.String, description: Schema.String, cls: Schema.Literals(["read", "write", "sensitive"]) })
+export const ToolInfo = Schema.Struct({ name: Schema.String, description: Schema.String, cls: Schema.Literals(["read", "write", "sensitive"]) }).annotate({ identifier: "ToolInfo" })
 export type ToolInfo = typeof ToolInfo.Type
 
-export const KeyInfo = Schema.Struct({ name: Schema.String, set: Schema.Boolean, fromEnv: Schema.Boolean })
+export const KeyInfo = Schema.Struct({ name: Schema.String, set: Schema.Boolean, fromEnv: Schema.Boolean }).annotate({ identifier: "KeyInfo" })
 
 // Usage (ARCHITECTURE §10.2): finished turns summed per UTC day, project, agent, model and account.
 // The client groups by whichever dimension it shows. Limit windows and cost come in phase 2c.
@@ -699,7 +699,7 @@ export const UsageRow = Schema.Struct({
   durationMs: Schema.Number,
   cost: Schema.NullOr(Schema.Number), // estimated USD (null: no price known for the model)
   billing: Schema.Literals(["api", "subscription", "local"]) // subscription costs are the API equivalent
-})
+}).annotate({ identifier: "UsageRow" })
 export type UsageRow = typeof UsageRow.Type
 export const USAGE_DAYS = 62 // covers this month and the last 30 days
 
@@ -726,19 +726,19 @@ const ProjectPatch = Schema.Struct({ name: Schema.optional(Name), brief: Schema.
 const AgentTitle = Schema.String.check(Schema.isTrimmed(), Schema.isMaxLength(60))
 const AgentDescription = Text(300)
 const NewAgent = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Text(8000), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions), memory: Schema.optional(MemoryMode), knowledge: Schema.optional(KnowledgeAccess) , teamIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) })
-export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(Text(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions), archived: Schema.optional(Schema.Boolean), monthlyTokens: Schema.optional(TOKEN_LIMIT), replyTokens: Schema.optional(TOKEN_LIMIT), memory: Schema.optional(MemoryMode), knowledge: Schema.optional(KnowledgeAccess) , teamIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) })
+export const AgentPatch = Schema.Struct({ name: Schema.optional(Name), title: Schema.optional(AgentTitle), description: Schema.optional(AgentDescription), instructions: Schema.optional(Text(8000)), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), failover: Schema.optional(FailoverList), access: Schema.optional(Access), permissions: Schema.optional(AgentPermissions), archived: Schema.optional(Schema.Boolean), monthlyTokens: Schema.optional(TOKEN_LIMIT), replyTokens: Schema.optional(TOKEN_LIMIT), memory: Schema.optional(MemoryMode), knowledge: Schema.optional(KnowledgeAccess) , teamIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) }).annotate({ identifier: "AgentPatch" })
 // Teams (spec 010): a named, ordered group of agents. Organisation only: adding a team to a chat copies its members
 // (later changes to the team don't touch the chat); `@handle` routes to the member who fits (router.ts), the first
 // when none clearly does. handle: from the name, as an agent's; unique with the agents' in reach.
 export const TEAM_MAX = 20
-export const AgentTeam = Schema.Struct({ id: Id, projectId: Schema.NullOr(Id), name: Schema.String, handle: Schema.String, agentIds: Schema.Array(Id), createdAt: Schema.Number, updatedAt: Schema.Number })
+export const AgentTeam = Schema.Struct({ id: Id, projectId: Schema.NullOr(Id), name: Schema.String, handle: Schema.String, agentIds: Schema.Array(Id), createdAt: Schema.Number, updatedAt: Schema.Number }).annotate({ identifier: "AgentTeam" })
 export type AgentTeam = typeof AgentTeam.Type
 const TeamAgentIds = Schema.Array(Id).check(Schema.isMaxLength(TEAM_MAX))
 const NewAgentTeam = Schema.Struct({ projectId: Schema.NullOr(Id), name: Name, agentIds: TeamAgentIds })
 const AgentTeamPatch = Schema.Struct({ name: Schema.optional(Name), agentIds: Schema.optional(TeamAgentIds) }) // agentIds replaces the list
-export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)) })
-export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) })
-export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: Text(80), text: Short(4000), agents: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) })
+export const NewChat = Schema.Struct({ projectId: Schema.NullOr(Id), agentIds: Schema.Array(Id).check(Schema.isMaxLength(8)), model: ModelId, accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)) }).annotate({ identifier: "NewChat" })
+export const ChatPatch = Schema.Struct({ resumeAt: Schema.optional(Schema.Null), title: Schema.optional(Name), model: Schema.optional(ModelId), accountId: Schema.optional(Schema.NullOr(Id)), effort: Schema.optional(Schema.NullOr(Effort)), access: Schema.optional(Schema.NullOr(Access)), failover: Schema.optional(Schema.NullOr(FailoverList)), agentIds: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(8))) }).annotate({ identifier: "ChatPatch" })
+export const NewMemory = Schema.Struct({ scope: MemoryScope, kind: MemoryKind, title: Text(80), text: Short(4000), agents: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) }).annotate({ identifier: "NewMemory" })
 const MemoryPatch = Schema.Struct({ scope: Schema.optional(MemoryScope), state: Schema.optional(MemoryState), title: Schema.optional(Text(80)), text: Schema.optional(Short(4000)), essential: Schema.optional(Schema.Boolean), agents: Schema.optional(Schema.Array(Id).check(Schema.isMaxLength(50))) })
 // stdio: environment variables; http: headers. Values go to the system keychain.
 const McpEnv = Schema.Record(Schema.String.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_-]*$/)), Text(4000))
@@ -766,7 +766,7 @@ export const MemoryApproval = Schema.Literals(["review", "undo"])
 export type MemoryApproval = typeof MemoryApproval.Type
 // memoryModel: the model that learns from chats (summary, memories, the map); "": automatic, each chat's provider's
 // small model (ZOREL_MEMORY_MODEL overrides the automatic one).
-export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number, maxPerChat: Schema.Number, memoryApproval: MemoryApproval, memoryModel: Schema.String, timeProfile: TimeProfile })
+export const Preferences = Schema.Struct({ failoverTermsAcceptedAt: Schema.NullOr(Schema.Number), paused: Schema.Boolean, nativeSkills: Schema.Boolean, maxRunning: Schema.Number, maxPerChat: Schema.Number, memoryApproval: MemoryApproval, memoryModel: Schema.String, timeProfile: TimeProfile }).annotate({ identifier: "Preferences" })
 
 // Turns (send, events, interrupt, approve): see events.ts (RPC over WebSocket at /rpc).
 const ApprovalDecision = Schema.Struct({ approve: Schema.Boolean })
@@ -783,14 +783,14 @@ export class WorkspaceInvalid extends Schema.Error<WorkspaceInvalid>("zorel/Work
 // Picking a project's folder (the New project dialog): the subfolders of one folder, absolute paths, and which of
 // them are git repositories. `~` and nothing both mean the home folder.
 export const MAX_FOLDERS = 500
-export const Folder = Schema.Struct({ name: Schema.String, path: Schema.String, git: Schema.Boolean })
+export const Folder = Schema.Struct({ name: Schema.String, path: Schema.String, git: Schema.Boolean }).annotate({ identifier: "Folder" })
 export type Folder = typeof Folder.Type
 export const FolderListing = Schema.Struct({
   dir: Schema.String, // the folder listed, absolute and real
   home: Schema.String, // shown as ~
   parent: Schema.NullOr(Schema.String),
   folders: Schema.Array(Folder)
-})
+}).annotate({ identifier: "FolderListing" })
 export type FolderListing = typeof FolderListing.Type
 
 export const FileDiff = Schema.Struct({
@@ -799,7 +799,7 @@ export const FileDiff = Schema.Struct({
   added: Schema.Number,
   removed: Schema.Number,
   patch: Schema.String // unified diff of this file (empty for binary files)
-})
+}).annotate({ identifier: "FileDiff" })
 export type FileDiff = typeof FileDiff.Type
 const TurnDiff = Schema.Struct({ turnId: Id, files: Schema.Array(FileDiff), revertedAt: Schema.NullOr(Schema.Number) })
 // Undo refused: these files changed after the turn (by you or a later turn).
@@ -821,7 +821,7 @@ export const GitStatus = Schema.Struct({
   gh: Schema.Boolean,
   pr: Schema.NullOr(Schema.Struct({ number: Schema.Number, url: Schema.String, state: Schema.String, title: Schema.String })),
   commits: Schema.Array(Schema.Struct({ sha: Schema.String, subject: Schema.String, at: Schema.Number, pushed: Schema.Boolean })) // the latest on the branch
-})
+}).annotate({ identifier: "GitStatus" })
 export type GitStatus = typeof GitStatus.Type
 // git or gh refused (its message, shown as is).
 // What the chat's Run starts: a package.json script, or a command for any stack, in the project or a folder of it.
@@ -831,7 +831,7 @@ export class PreviewFailed extends Schema.Error<PreviewFailed>("zorel/PreviewFai
 export class GitFailed extends Schema.Error<GitFailed>("zorel/GitFailed")({ _tag: Schema.tag("GitFailed"), message: Schema.String }, { httpApiStatus: 400 }) {}
 const GitText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(20_000))
 const GitDraft = Schema.Struct({ title: Schema.String, body: Schema.String })
-export const WorkspaceFile = Schema.Struct({ path: Schema.String, status: Schema.NullOr(Schema.Literals(["added", "modified", "deleted"])) })
+export const WorkspaceFile = Schema.Struct({ path: Schema.String, status: Schema.NullOr(Schema.Literals(["added", "modified", "deleted"])) }).annotate({ identifier: "WorkspaceFile" })
 export type WorkspaceFile = typeof WorkspaceFile.Type
 export const MAX_WORKSPACE_FILES = 5000
 
