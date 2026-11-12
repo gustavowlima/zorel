@@ -23,3 +23,4 @@
 2026-11-12 | native UI standardised on the styles.css scale: own Button/Select/float; bg-float opaque in native tokens | owner asked for pixel-perfect radii, heights and spacing; kit popovers showed text through the translucent float
 2026-11-12 | own components on gpui-base; gpui-component kept only for heavy non-visual widgets | owner: kit visuals (one radius, stroke 2, 20/24/32 heights) do not match the prototype
 2026-11-12 | spacing scale ui/space; menu/select rows 26→32px | owner found 26px menu rows cramped
+2026-11-12 | hot reload via Subsecond (native:hot); ui/header top bar; uniform rail squares | owner asked for hot reload, the prototype's top bar and a standard folded sidebar
