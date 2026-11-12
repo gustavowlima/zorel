@@ -1234,7 +1234,30 @@ impl ChatScreen {
             .filter(|s| !(proposal_out && matches!(s.status, WorkStepStatus::Waiting)))
             .cloned()
             .collect();
+        let thought = self.log.thought.get(turn_id).cloned().unwrap_or_default();
         let mut column: Vec<AnyElement> = Vec::new();
+        // Its thinking: once over, a line saying how long (as a finished reply shows it); while on, its last words.
+        if !thought.now && thought.took >= 1000. {
+            column.push(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(space::X2))
+                    .min_h(px(tokens::CONTROL_H_SM))
+                    .text_sm()
+                    .text_color(p.text_muted)
+                    .child(
+                        div()
+                            .flex_none()
+                            .w(px(icon::MD))
+                            .flex()
+                            .justify_center()
+                            .child(icon(IconName::Sparkles, icon::XS).text_color(p.text_muted)),
+                    )
+                    .child(t!("activity.thought", time = format::duration(thought.took, format::lang())).into_owned())
+                    .into_any_element(),
+            );
+        }
         if !live_steps.is_empty() {
             column.push(
                 div()
@@ -1288,6 +1311,7 @@ impl ChatScreen {
         {
             Some(step) => step.title.clone(),
             None if waiting => t!("activity.waiting").into_owned(),
+            None if thought.now => t!("activity.thinking").into_owned(),
             None => t!("activity.working").into_owned(),
         };
         let started = turn.as_ref().and_then(|t| t.started_at);
@@ -1321,6 +1345,21 @@ impl ChatScreen {
                     .into_any_element(),
             );
         }
+        // While it thinks: the last of its words, quiet, two lines at most (engines that show them).
+        if thought.now && !proposal_out {
+            let words = last_words(&thought.text, 240);
+            if !words.is_empty() {
+                column.push(
+                    div()
+                        .pl(px(icon::SM + space::X2))
+                        .text_sm()
+                        .text_color(p.text_dim)
+                        .line_clamp(2)
+                        .child(words)
+                        .into_any_element(),
+                );
+            }
+        }
         let store = self.store.read(cx);
         let tone = store.tone(agent.as_deref());
         let name = store.agent_name(agent.as_deref());
@@ -1329,7 +1368,12 @@ impl ChatScreen {
             turn_id,
             (!bare).then_some((tone, name, face::hue(p, tone), None)),
             bare,
-            FaceState::Working,
+            // A question or a proposal waits on you: the face says so, not "working".
+            if waiting || proposal_out {
+                FaceState::Waiting
+            } else {
+                FaceState::Working
+            },
             column,
             p,
         )
@@ -1484,6 +1528,20 @@ impl ChatScreen {
 }
 
 /// A reply's frame: the face (and name, in the agent's hue; the model on hover) on the left, then its column.
+/// The tail of a growing text, at most `max` chars, starting at a word, on one line.
+fn last_words(text: &str, max: usize) -> String {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let n = flat.chars().count();
+    if n <= max {
+        return flat;
+    }
+    let tail: String = flat.chars().skip(n - max).collect();
+    match tail.split_once(' ') {
+        Some((_, rest)) => format!("…{rest}"),
+        None => tail,
+    }
+}
+
 fn reply_frame(
     key: &str,
     who: Option<(usize, String, Rgba, Option<String>)>,

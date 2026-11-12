@@ -191,6 +191,7 @@
     "showAll": "Show all",
     "showLess": "Show less",
     "working": "Working",
+    "thinking": "Thinking",
     "waitingFor": "Waiting for %{provider}",
     "usedTools": {
       "one": "Used 1 tool",

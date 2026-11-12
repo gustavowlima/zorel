@@ -176,6 +176,7 @@ export const part1 = {
     showAll: "Mostrar tudo",
     showLess: "Mostrar menos",
     working: "Trabalhando",
+    thinking: "Pensando",
     waitingFor: "Aguardando {provider}",
     usedTools: { one: "Usou 1 ferramenta", other: "Usou {count} ferramentas" },
     steps: { one: "1 etapa", other: "{count} etapas" },

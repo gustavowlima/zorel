@@ -1325,10 +1325,17 @@ const makeRuntime = Effect.gen(function* () {
             Stream.runForEach((batch) =>
               Effect.gen(function* () {
                 let delta = ""
+                let thought = "" // reasoning words in this batch, shown live (not saved: a reply keeps only its timing)
+                let thinkingSeen = false
                 let texts = 0 // text events in `delta`
                 // The batch's text so far goes out before a step, so the step lands after it: in the live view and in
                 // the step's `at` (else a step would come before words the agent wrote first).
                 const flush = Effect.gen(function* () {
+                  if (thinkingSeen) {
+                    yield* publish(chatId, ev("reasoning", { turnId: row.id, delta: thought }))
+                    thought = ""
+                    thinkingSeen = false
+                  }
                   if (delta) {
                     if (!acc.text) yield* store.markFirstToken(row.id)
                     acc.text += delta
@@ -1344,7 +1351,11 @@ const makeRuntime = Effect.gen(function* () {
                     texts++
                     delta += e.delta
                     if (e.delta) timing.text(Date.now())
-                  } else if (e.type === "thinking") timing.thinking(Date.now())
+                  } else if (e.type === "thinking") {
+                    timing.thinking(Date.now())
+                    thinkingSeen = true
+                    thought += e.delta ?? ""
+                  }
                   else if (e.type === "done") acc.usage = { cachedTokens: 0, ...e.usage }
                   else if (e.type === "usage") {
                     // Past the agent's limit for one reply: it stops here, with what it has (Continue goes on).

@@ -1092,6 +1092,17 @@ impl Sidebar {
     }
 }
 
+/// The ⋯ button that opens a row's menu (same items as its right-click).
+fn more_button(id: String, name: String, menu: crate::ui::nav::MenuBuilder) -> impl IntoElement {
+    let trigger = Button::icon_only(
+        SharedString::from(format!("{id}-trigger")),
+        IconName::Ellipsis,
+        t!("nav.moreFor", name = name).into_owned(),
+    )
+    .size(Size::Xs);
+    crate::ui::menu::dropdown(SharedString::from(id), trigger, menu)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -1139,15 +1150,4 @@ mod tests {
         let statuses = HashMap::from([("task".to_string(), status("task", "waiting"))]);
         assert_eq!(lifted(&chats, &statuses)["parent"].state, ChatStatusState::Waiting);
     }
-}
-
-/// The ⋯ button that opens a row's menu (same items as its right-click).
-fn more_button(id: String, name: String, menu: crate::ui::nav::MenuBuilder) -> impl IntoElement {
-    let trigger = Button::icon_only(
-        SharedString::from(format!("{id}-trigger")),
-        IconName::Ellipsis,
-        t!("nav.moreFor", name = name).into_owned(),
-    )
-    .size(Size::Xs);
-    crate::ui::menu::dropdown(SharedString::from(id), trigger, menu)
 }

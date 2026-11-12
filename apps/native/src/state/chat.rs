@@ -13,6 +13,9 @@ pub struct ChatLog {
     /// Steps of the turns in progress (a finished turn's steps live on its message).
     pub steps: Vec<WorkStep>,
     pub approvals: Vec<Approval>,
+    /// What each turn in progress is thinking (its words, when the engine shows them), and whether it is thinking
+    /// now: from a reasoning sign until its next text or step.
+    pub thought: HashMap<String, Thought>,
     pub turns: Vec<Turn>,
     pub status: Option<ChatStatus>,
     /// Moves on every change the screen draws.
@@ -32,8 +35,20 @@ impl ChatLog {
             }
             Event::Message { message } => self.add_message(message),
             Event::Queued { turn } | Event::TurnStarted { turn } => self.put_turn(turn),
-            Event::Text { delta, turn_id } => self.partial.entry(turn_id).or_default().push_str(&delta),
+            Event::Text { delta, turn_id } => {
+                self.stop_thinking(&turn_id);
+                self.partial.entry(turn_id).or_default().push_str(&delta)
+            }
+            Event::Reasoning { delta, turn_id } => {
+                let t = self.thought.entry(turn_id).or_default();
+                if !t.now {
+                    t.since = crate::format::now_ms();
+                }
+                t.now = true;
+                t.text.push_str(&delta);
+            }
             Event::StepStarted { step } | Event::StepFinished { step } => {
+                self.stop_thinking(&step.turn_id);
                 match self.steps.iter_mut().find(|s| s.id == step.id) {
                     Some(known) => *known = step,
                     None => self.steps.push(step),
@@ -47,7 +62,7 @@ impl ChatLog {
             Event::TurnCompleted { message, turn } => self.end_turn(turn, Some(message)),
             Event::TurnFailed { message, turn } | Event::Interrupted { message, turn } => self.end_turn(turn, message),
             Event::Status { status } => self.status = Some(status),
-            // ponytail: reasoning, handoffs, model switches, learning and worktrees aren't drawn by the prototype yet.
+            // ponytail: handoffs, model switches, learning and worktrees aren't drawn by the prototype yet.
             _ => return,
         }
         self.revision += 1;
@@ -66,14 +81,32 @@ impl ChatLog {
         }
     }
 
+    fn stop_thinking(&mut self, turn_id: &str) {
+        if let Some(t) = self.thought.get_mut(turn_id).filter(|t| t.now) {
+            t.now = false;
+            t.took += crate::format::now_ms() - t.since;
+        }
+    }
+
     fn end_turn(&mut self, turn: Turn, message: Option<Message>) {
         self.partial.remove(&turn.id);
+        self.thought.remove(&turn.id);
         self.steps.retain(|s| s.turn_id != turn.id);
         self.turns.retain(|t| t.id != turn.id);
         if let Some(message) = message {
             self.add_message(message);
         }
     }
+}
+
+/// A turn's live reasoning: its words so far, whether it is thinking now and since when (ms).
+#[derive(Default, Clone)]
+pub struct Thought {
+    pub text: String,
+    pub now: bool,
+    pub since: f64,
+    /// How long it thought, summed over its finished stretches (ms).
+    pub took: f64,
 }
 
 #[cfg(test)]
@@ -115,5 +148,16 @@ mod tests {
         )); // a replay: no duplicate
         assert_eq!(log.messages.len(), 1);
         assert_eq!(log.revision, 5);
+    }
+
+    #[test]
+    fn a_thought_lasts_until_the_next_text() {
+        let mut log = ChatLog::default();
+        log.apply(event(json!({ "_tag": "turn-started", "turn": turn("running") })));
+        log.apply(event(json!({ "_tag": "reasoning", "turnId": "t", "delta": "Weighing " })));
+        log.apply(event(json!({ "_tag": "reasoning", "turnId": "t", "delta": "options" })));
+        assert!(log.thought["t"].now && log.thought["t"].text == "Weighing options");
+        log.apply(event(json!({ "_tag": "text", "turnId": "t", "delta": "Hi" })));
+        assert!(!log.thought["t"].now);
     }
 }

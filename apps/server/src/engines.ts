@@ -79,8 +79,9 @@ export interface EngineFailure {
 export type EngineEvent =
   | { readonly type: "text"; readonly delta: string }
   // The engine is reasoning (Claude thinking blocks, Codex reasoning items, ACP thought chunks), one per sign of it.
-  // No content: Zorel only times it. Engines that don't show their reasoning never send it.
-  | { readonly type: "thinking" }
+  // Zorel times it and shows its words live when the engine gives them (Claude's thinking deltas). Engines that don't
+  // show their reasoning never send it.
+  | { readonly type: "thinking"; readonly delta?: string }
   | { readonly type: "done"; readonly usage: Usage }
   // The turn's tokens so far (engines that report them while it runs: Claude, Codex), for a reply's token limit.
   | { readonly type: "usage"; readonly usage: Usage }
@@ -360,7 +361,8 @@ export function claudeParser(): Parser {
           wrote = true
           return [{ type: "text", delta: sep + d.text }]
         }
-        if ((e.type === "content_block_start" && e.content_block?.type === "thinking") || (e.type === "content_block_delta" && d?.type === "thinking_delta")) return [{ type: "thinking" }]
+        if (e.type === "content_block_start" && e.content_block?.type === "thinking") return [{ type: "thinking" }]
+        if (e.type === "content_block_delta" && d?.type === "thinking_delta") return [typeof d.thinking === "string" ? { type: "thinking", delta: d.thinking } : { type: "thinking" }]
         return []
       }
       if (ev.type !== "result") return []

@@ -177,6 +177,7 @@ export const en = {
     showAll: "Show all",
     showLess: "Show less",
     working: "Working",
+    thinking: "Thinking",
     waitingFor: "Waiting for {provider}",
     usedTools: { one: "Used 1 tool", other: "Used {count} tools" },
     steps: { one: "1 step", other: "{count} steps" },

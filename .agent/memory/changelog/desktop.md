@@ -29,3 +29,4 @@
 2026-11-12 | chat screen rebuilt (timeline, live turn reveal, folds, tray, queue, stop, shared composer); page transitions | owner: 'bem interativa fluida e animada' and 'mudança de telas está crua'
 2026-11-12 | composer # @ $ / menus with inline-token chips; mentioned agents join before send | parity/chat.md B
 2026-11-12 | live drag reorder with grip; Pending renamed Notifications | owner: drag looked like a copy-paste; rename asked
+2026-11-12 | live thinking: server publishes reasoning words (Claude thinking deltas) as 'reasoning'; native shows 'Pensando' + last words, then 'Pensou por Xs'; face Waiting when a turn waits on you | user asked for thinking steps and the Builder looked busy while asking
