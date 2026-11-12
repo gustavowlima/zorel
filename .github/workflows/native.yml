@@ -61,6 +61,7 @@ jobs:
           restore-keys: native-${{ runner.os }}-
       - run: cargo install --locked typos-cli cargo-machete cargo-deny
       - run: bun install --frozen-lockfile
+      - run: bun run tokens --check && bun run i18n:native --check && bun run check:i18n # generated inputs and t!/tn keys
       - run: bun run native:check
         shell: bash
       - run: cargo test -p zorel-native --locked

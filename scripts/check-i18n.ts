@@ -38,6 +38,24 @@ for await (const abs of new Glob("src/**/*.tsx").scan({ cwd: ROOT, absolute: tru
   }
 }
 
+// The native client (spec 019): rust-i18n returns the key itself when one is missing, so every key it asks for is
+// checked against the exported catalog here. t!("a.b") is a text; tn("a.b", n) a plural ({ one, other }).
+const NATIVE = new URL("../apps/native/", import.meta.url).pathname
+const catalog = JSON.parse(await Bun.file(`${NATIVE}locales/app.json`).text()) as Record<string, unknown>
+const at = (key: string) => key.split(".").reduce<unknown>((n, k) => (n && typeof n === "object" ? (n as Record<string, unknown>)[k] : undefined), catalog) as Record<string, unknown> | undefined
+const isText = (n: Record<string, unknown> | undefined) => typeof n?.en === "string"
+for await (const abs of new Glob("src/**/*.rs").scan({ cwd: NATIVE, absolute: true })) {
+  const file = relative(NATIVE, abs)
+  const lines = (await Bun.file(abs).text()).split("\n")
+  lines.forEach((text, i) => {
+    for (const m of text.matchAll(/\b(t!|tn)\(\s*"([\w.]+)"/g)) {
+      const node = at(m[2]!)
+      const ok = m[1] === "t!" ? isText(node) : isText(node?.one as Record<string, unknown>) && isText(node?.other as Record<string, unknown>)
+      if (!ok) problems.push(`  apps/native/${file}:${i + 1} ${m[1]}("${m[2]}") is not in packages/i18n${m[1] === "tn" ? " as a plural" : ""}`)
+    }
+  })
+}
+
 if (problems.length) {
   console.error(`check:i18n falhou, texto fora do catálogo (use t() de @zorel/i18n):\n${problems.join("\n")}`)
   process.exit(1)
