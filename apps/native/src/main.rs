@@ -1,8 +1,7 @@
 // Zorel's native desktop client (spec 019): a GPUI window on gpui-base. The engine stays the Bun server.
 use gpui_kit::*;
 
-mod net;
-mod theme;
+use zorel_native::theme;
 
 struct App;
 

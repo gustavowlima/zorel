@@ -13,6 +13,10 @@ gpui-kit = { version = "=0.9.1", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regress = "0.12" # the patterns typify generates checks for (src/net/types.rs)
+# Network on one tokio runtime: HTTP to the engine (reqwest; rustls for team servers), RPC over WebSocket.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "process", "io-util"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+getrandom = "0.4" # the per-launch session secret
 
 [build-dependencies]
 # Wire types generated from packages/contracts/schema/wire.json (build.rs).
@@ -21,3 +25,11 @@ schemars = "0.8"
 serde_json = "1"
 syn = "3"
 prettyplease = "0.3"
+
+[[bin]]
+name = "zorel-native"
+path = "src/main.rs"
+
+[package.metadata.cargo-machete]
+# Used only by the generated wire types (OUT_DIR/wire.rs), which cargo-machete doesn't read.
+ignored = ["regress", "serde"]
