@@ -10,3 +10,14 @@ license.workspace = true
 # Only gpui-base (unstyled behaviour): Zorel draws its own components. Pinned exactly; bump the whole gpui-pre family
 # together (apps/native/AGENTS.md › Release).
 gpui-kit = { version = "=0.9.1", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regress = "0.12" # the patterns typify generates checks for (src/net/types.rs)
+
+[build-dependencies]
+# Wire types generated from packages/contracts/schema/wire.json (build.rs).
+typify = "=0.8.0"
+schemars = "0.8"
+serde_json = "1"
+syn = "3"
+prettyplease = "0.3"

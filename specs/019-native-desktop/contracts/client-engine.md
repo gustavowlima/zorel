@@ -32,5 +32,7 @@ contract test runs it against a live engine.
 
 ## Generation
 
-`scripts/export-schema.ts` → `packages/contracts/schema/openapi.json` + `packages/contracts/schema/rpc.json` + `packages/contracts/schema/sockets.json` (checked in) →
-`apps/native/build.rs` (typify) → Rust types. CI regenerates and fails on `git diff`.
+`packages/contracts/scripts/export-schema.ts` (`bun run schema`) → `packages/contracts/schema/wire.json` (checked in): every HttpApi
+endpoint's body and result as `<Group><Endpoint>Payload/Success`, every RPC's payload, result and stream element
+(`<Rpc>Payload/Success/Item/Error`), the socket and raw-route bodies → `apps/native/build.rs` (typify) → Rust types.
+CI regenerates and fails on a diff.
