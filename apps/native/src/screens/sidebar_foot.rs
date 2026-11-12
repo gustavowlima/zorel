@@ -168,7 +168,7 @@ impl Sidebar {
             .appearance(false)
             .trigger(
                 Button::icon_only("usage-trigger", IconName::ChartColumn, t!("nav.usage").into_owned())
-                    .size(if folded { Size::Lg } else { Size::Sm }),
+                    .size(if folded { Size::Md } else { Size::Sm }),
             )
             .child(
                 layout::panel("usage-panel", p)
@@ -224,10 +224,10 @@ impl Sidebar {
                 t!("pause.all").into_owned()
             },
         )
-        .size(if folded { Size::Lg } else { Size::Sm })
+        .size(if folded { Size::Md } else { Size::Sm })
         .on_click(move |_, _, cx| store_entity.update(cx, |s, cx| s.set_paused(!paused, cx)));
         let settings = Button::icon_only("settings", IconName::Settings, t!("nav.settings").into_owned())
-            .size(if folded { Size::Lg } else { Size::Sm })
+            .size(if folded { Size::Md } else { Size::Sm })
             .disabled(true);
         div()
             .flex()

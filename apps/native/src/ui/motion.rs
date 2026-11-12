@@ -31,6 +31,7 @@ pub const PAGE_MS: u64 = 180;
 pub const ENTER_MS: u64 = 220;
 
 /// Fades `element` in while it rises `rise` px, once per `key` (a new key plays it again).
+/// It positions `element` relatively: never give it an absolutely placed element (wrap that one instead).
 pub fn enter<E: IntoElement + Styled + 'static>(
     element: E,
     key: impl Into<ElementId>,

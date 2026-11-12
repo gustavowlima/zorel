@@ -153,7 +153,7 @@ impl Render for Ghost {
             ),
             DragMark::None => None,
         };
-        let ghost = div()
+        div()
             .flex()
             .items_center()
             .gap(px(crate::ui::space::X2_5))
@@ -161,20 +161,13 @@ impl Render for Ghost {
             .h(px(crate::theme::tokens::CONTROL_H))
             .px(px(crate::ui::space::X2_5))
             .rounded(px(crate::theme::tokens::RADIUS_ROW))
+            // Exactly the row's size and type, washed and lifted by a soft shadow: no border, no entrance, so it
+            // doesn't look like it grows when the drag starts.
             .bg(p.bg_surface)
-            .border_1()
-            .border_color(p.border_strong)
-            .shadow_lg()
+            .shadow_md()
             .text_color(p.text)
-            .font_weight(FontWeight::MEDIUM)
             .children(mark)
-            .child(div().flex_1().min_w_0().truncate().child(row.label.clone()));
-        motion::enter(
-            ghost,
-            SharedString::from(format!("ghost-{}", row.id)),
-            motion::HOVER_MS,
-            2.,
-        )
+            .child(div().flex_1().min_w_0().truncate().child(row.label.clone()))
     }
 }
 

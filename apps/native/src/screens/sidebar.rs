@@ -35,9 +35,9 @@ use crate::{
 const OPEN_WIDTH: f32 = 268.;
 /// The sidebar's places, in their default order.
 const PLACES: [&str; 5] = ["nav-home", "nav-inbox", "nav-agents", "nav-routines", "nav-memory"];
-const RAIL_WIDTH: f32 = 56.; // RAIL_ITEM + 2 × space::X2_5
-/// Every item on the folded rail is this square (fold, search, places, foot), centred: 10px each side.
-const RAIL_ITEM: f32 = tokens::CONTROL_H_LG;
+const RAIL_WIDTH: f32 = 56.; // RAIL_ITEM + 2 × space::X3
+/// Every item on the folded rail is this square (fold, search, places, foot), centred: 12px each side.
+const RAIL_ITEM: f32 = tokens::CONTROL_H;
 const VISIBLE: usize = 5;
 const LOOSE: &str = "chats";
 
@@ -357,7 +357,6 @@ impl Sidebar {
         &self,
         chat: &Chat,
         status: Option<&ChatStatus>,
-        nested: bool,
         store: &Store,
         window: &Window,
         cx: &Context<Self>,
@@ -402,7 +401,7 @@ impl Sidebar {
             .leading(leading)
             .when_some(detail, |r, d| r.detail(d, tone))
             .trailing(div().text_xs().text_color(p.text_dim).child(age))
-            .indent(if nested { space::X3 } else { 0. })
+            .indent(0.)
             .active(active)
             .emphasis(state == FaceState::Waiting)
             .on_click(cx.listener(move |this, _, _, cx| this.go(Route::Chat { id: id.clone() }, cx)))
@@ -414,7 +413,6 @@ impl Sidebar {
         key: &str,
         chats: Vec<&Chat>,
         lists: &Lists,
-        nested: bool,
         window: &Window,
         cx: &Context<Self>,
     ) -> Vec<(String, AnyElement)> {
@@ -443,7 +441,7 @@ impl Sidebar {
             .into_iter()
             .map(|c| {
                 let row = self
-                    .chat_row(c, statuses.get(&c.id), nested, store, window, cx)
+                    .chat_row(c, statuses.get(&c.id), store, window, cx)
                     .reorder(self.reorder_of(key, &c.id, chat_title(c), chat_mark(c, statuses.get(&c.id), store), cx))
                     .lifted(dragging.as_deref() == Some(c.id.as_str()))
                     .into_any_element();
@@ -462,7 +460,7 @@ impl Sidebar {
                 "more".to_string(),
                 NavRow::new(SharedString::from(format!("more-{key}")), label)
                     .leading(div().size(px(20.)))
-                    .indent(if nested { space::X3 } else { 0. })
+                    .indent(0.)
                     .trailing(div().text_color(p.text_dim))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if !this.show_all.remove(&key) {
@@ -860,7 +858,6 @@ impl Sidebar {
                                 store,
                                 statuses: &statuses,
                             },
-                            true,
                             window,
                             cx,
                         );
@@ -950,7 +947,6 @@ impl Sidebar {
                         store,
                         statuses: &statuses,
                     },
-                    false,
                     window,
                     cx,
                 );
@@ -983,7 +979,7 @@ impl Sidebar {
                 t!("nav.hideSidebar").into_owned()
             },
         )
-        .size(if folded { Size::Lg } else { Size::Sm })
+        .size(if folded { Size::Md } else { Size::Sm })
         .on_click(cx.listener(|this, _, _, cx| this.toggle_folded(cx)));
         // Folded, the search is one more rail square (same shape, wash and hover as the places).
         let rail_search = NavRow::new("search-rail", t!("nav.searchOrGo").into_owned())

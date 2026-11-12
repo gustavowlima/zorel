@@ -393,10 +393,11 @@ impl Root {
     }
 }
 
-/// Where the macOS window buttons sit: the sidebar's icon column (its 12px side + the rows' 10px) and the middle of
-/// the space above the head row.
+/// Where the macOS window buttons sit: the sidebar's icon column (its 12px side + the rows' 10px), level with the
+/// screen title.
 const TRAFFIC_LIGHTS_X: f32 = 22.;
-const TRAFFIC_LIGHTS_Y: f32 = 12.;
+/// Their middle on the title strip's middle (the buttons are ~14px tall).
+const TRAFFIC_LIGHTS_Y: f32 = crate::ui::header::HEIGHT / 2. - 7.;
 /// How far the macOS window buttons reach from the left, and the folded rail's width.
 const TRAFFIC_LIGHTS_W: f32 = 90.;
 const RAIL_W: f32 = 56.;

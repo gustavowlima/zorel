@@ -406,22 +406,25 @@ impl Composer {
             })
             .collect();
         let key = format!("composer-menu-{:?}", menu.trigger);
-        Some(motion::enter(
-            layout::panel("composer-menu", p)
+        // Floating above the box: the absolute box places it (out of the flow, nothing moves); the panel inside
+        // enters with motion (motion::enter sets its own position, so it never goes on the absolute box).
+        let panel = layout::panel("composer-menu", p)
+            .w_full()
+            .flex()
+            .flex_col()
+            .role(Role::ListBox)
+            .children(rows);
+        Some(
+            div()
                 .absolute()
                 .bottom_full()
                 .left_0()
                 .mb(px(space::X1_5))
                 .w(px(420.))
                 .max_w_full()
-                .flex()
-                .flex_col()
-                .role(Role::ListBox)
-                .children(rows),
-            SharedString::from(key),
-            motion::MENU_IN_MS,
-            -4.,
-        ))
+                .child(motion::enter(panel, SharedString::from(key), motion::MENU_IN_MS, -4.))
+                .into_any_element(),
+        )
     }
 }
 
