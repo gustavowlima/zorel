@@ -1,14 +1,16 @@
 // The sidebar (spec 019 T031): every top-level chat with its agent's face and state, in the web's order
 // (apps/web/src/features/sidebar-order.ts): whose turn it is first (waiting for you, then working), then chats never
 // placed by hand by latest activity, then the placed ones in their manual order.
-use gpui_kit::{prelude::FluentBuilder, *};
+use gpui_kit::*;
 use rust_i18n::t;
 
 use crate::{
     net::types::{Chat, ChatStatus, ChatStatusState},
     state::chats::ChatList,
-    theme::tokens::Palette,
-    ui::face::{AgentFace, FaceState},
+    ui::{
+        face::{AgentFace, FaceState},
+        nav::NavRow,
+    },
 };
 
 /// Waiting for you, then working, then the rest.
@@ -46,30 +48,20 @@ pub fn face_state(status: Option<&ChatStatus>) -> FaceState {
     }
 }
 
-/// One sidebar row.
-pub fn row(chat: &Chat, status: Option<&ChatStatus>, tone: usize, active: bool, p: &Palette) -> Stateful<Div> {
+/// One sidebar row: the chat's agent face (with its state) and title.
+pub fn row(chat: &Chat, status: Option<&ChatStatus>, tone: usize, active: bool) -> NavRow {
     let title = if chat.title.is_empty() {
         t!("chat.untitled").into_owned()
     } else {
         chat.title.clone()
     };
-    div()
-        .id(SharedString::from(format!("chat-{}", chat.id)))
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .h(px(32.))
-        .px(px(8.))
-        .rounded(px(crate::theme::tokens::RADIUS_ROW))
-        .text_color(if active { p.text } else { p.text_secondary })
-        .when(active, |r| r.bg(p.bg_control_active))
-        .when(!active, |r| r.hover(|s| s.bg(p.bg_hover)))
-        .child(
+    NavRow::new(SharedString::from(format!("chat-{}", chat.id)), title)
+        .leading(
             AgentFace::new(SharedString::from(format!("side-face-{}", chat.id)), tone)
                 .size(18.)
                 .state(face_state(status)),
         )
-        .child(div().flex_1().min_w_0().truncate().child(title))
+        .active(active)
 }
 
 #[cfg(test)]

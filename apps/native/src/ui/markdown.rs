@@ -9,7 +9,10 @@ use std::ops::Range;
 use gpui_kit::*;
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
-use crate::theme::{self, tokens};
+use crate::{
+    theme::{self, tokens},
+    ui::code::code_block,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Mark {
@@ -155,7 +158,6 @@ pub fn safe_link(url: &str) -> bool {
 /// Draws parsed blocks; `id` keeps each block's element id stable across renders.
 pub fn render(id: &str, blocks: &[Block], window: &Window) -> Div {
     let p = theme::palette(window);
-    let mono = SharedString::from("Menlo");
     let mut column = div().flex().flex_col().gap(px(8.)).text_color(p.text);
     for (i, block) in blocks.iter().enumerate() {
         let key = SharedString::from(format!("{id}-{i}"));
@@ -184,15 +186,7 @@ pub fn render(id: &str, blocks: &[Block], window: &Window) -> Div {
                 .pl(px(10.))
                 .text_color(p.text_secondary)
                 .child(inline(key, text, p)),
-            Block::Code { text, .. } => div()
-                .rounded(px(tokens::RADIUS_CONTROL))
-                .bg(p.bg_code)
-                .border_1()
-                .border_color(p.border)
-                .p(px(10.))
-                .font_family(mono.clone())
-                .text_size(px(12.5))
-                .child(text.clone()),
+            Block::Code { text, .. } => code_block(p, text.clone()),
             Block::Rule => div().h(px(1.)).bg(p.border),
         });
     }

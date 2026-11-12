@@ -22,6 +22,7 @@ use crate::{
         connection::{ConnectionState, EngineConnection, Target},
     },
     theme,
+    ui::nav::NavRow,
 };
 
 struct Root {
@@ -277,27 +278,16 @@ impl Render for Root {
                     self.chats.statuses.get(&chat.id),
                     self.tone_of(&chat.agent_ids),
                     active,
-                    p,
                 )
                 .on_click(cx.listener(move |this, _, window, cx| this.open_chat(id.clone(), window, cx)))
                 .into_any_element()
             })
             .collect();
         let pending = self.inbox.as_ref().map(|i| i.read(cx).count()).unwrap_or(0);
-        let inbox_row = div()
-            .id("nav-inbox")
-            .flex()
-            .items_center()
-            .h(px(32.))
-            .px(px(8.))
-            .mb(px(8.))
-            .rounded(px(theme::tokens::RADIUS_ROW))
-            .text_color(if self.inbox_open { p.text } else { p.text_secondary })
-            .when(self.inbox_open, |r| r.bg(p.bg_control_active))
-            .when(!self.inbox_open, |r| r.hover(|s| s.bg(p.bg_hover)))
-            .child(div().flex_1().child(t!("inbox.title").into_owned()))
+        let inbox_row = NavRow::new("nav-inbox", t!("inbox.title").into_owned())
+            .active(self.inbox_open)
             .when(pending > 0, |r| {
-                r.child(div().text_color(p.warning).child(pending.to_string()))
+                r.trailing(div().text_color(p.warning).child(pending.to_string()))
             })
             .on_click(cx.listener(|this, _, _, cx| this.open_inbox(cx)));
         let main: Option<AnyElement> = if self.inbox_open {

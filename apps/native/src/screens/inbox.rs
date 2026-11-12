@@ -21,6 +21,7 @@ use crate::{
     theme::{self, tokens::Palette},
     ui::{
         button::{Button, Size, Variant},
+        code::code_block,
         face::{AgentFace, FaceState},
         layout,
     },
@@ -285,15 +286,7 @@ impl Render for Inbox {
                     );
             } else {
                 let body = match a.kind {
-                    ApprovalKind::Command => div()
-                        .rounded(px(theme::tokens::RADIUS_CONTROL))
-                        .bg(p.bg_code)
-                        .border_1()
-                        .border_color(p.border)
-                        .p(px(10.))
-                        .font_family("Menlo")
-                        .text_size(px(12.5))
-                        .child(a.summary.chars().take(2000).collect::<String>()),
+                    ApprovalKind::Command => code_block(p, a.summary.chars().take(2000).collect::<String>()),
                     _ => div().child(a.summary.clone()).child(
                         div()
                             .mt(px(6.))

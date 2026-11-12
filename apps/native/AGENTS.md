@@ -37,6 +37,9 @@ samply record cargo run -p zorel-native --release
   notifications, updates). Lower layers never import higher ones.
 - **Units.** `RenderOnce` for stateless components; `Entity<T>` when state outlives a frame (lists, composer, panels).
   Custom `Element` only for measured drawing (frames, terminal grid).
+- **Reuse.** Screens compose `src/ui/` components (Button, NavRow, AgentFace, card, code_block, markdown…); look there
+  first, extend a component for a variant, and extract a shared one the second time a style or behaviour repeats.
+  Motion lives in the component (`ui/motion`), so every use moves the same way.
 - **Identity.** Repeated elements get stable domain ids (`ElementId` from chat/message/agent ids), never indexes.
 - **Behaviour vs presentation.** Focus, selection, overlays, virtualisation, springs come from `gpui-base`;
   colours, sizes and motion values come from the theme (`src/theme/tokens.rs`, generated from `apps/web/src/styles.css`). No raw
