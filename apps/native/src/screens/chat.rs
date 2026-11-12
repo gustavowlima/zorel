@@ -961,9 +961,35 @@ impl ChatScreen {
             .into_any_element()
     }
 
+    /// The agents a reply may mention, in their colours; a click starts a chat with one.
+    fn mentions(&self, window: &Window, cx: &mut Context<Self>) -> markdown::Mentions {
+        let p = theme::palette(window);
+        let store = self.store.read(cx);
+        let people = store
+            .agents
+            .iter()
+            .filter(|a| a.archived_at.is_none())
+            .map(|a| {
+                (
+                    crate::state::crew::handle_of(&a.name).to_lowercase(),
+                    a.id.clone(),
+                    face::hue(p, store.tone(Some(&a.id))),
+                )
+            })
+            .collect();
+        let view = cx.entity().downgrade();
+        markdown::Mentions {
+            people,
+            open: Rc::new(move |id, _, cx| {
+                let _ = view.update(cx, |_, cx| cx.emit(ChatEvent::ChatWith(id)));
+            }),
+        }
+    }
+
     /// A finished reply: who (unless solo or continuing), its text and steps as they happened, how it ended.
     fn reply_row(&mut self, i: usize, m: &Message, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = theme::palette(window);
+        let mentions = self.mentions(window, cx);
         let (bare, continued) = self.voice(i, m, cx);
         let last = i + 1 == self.log.messages.len() && !self.busy();
         let mut column: Vec<AnyElement> = Vec::new();
@@ -984,7 +1010,7 @@ impl ChatScreen {
                 Piece::Text(text) => {
                     let key = format!("{}-t{n}", m.id);
                     let blocks = self.parsed.entry(key.clone()).or_insert_with(|| markdown::parse(&text));
-                    column.push(markdown::render(&key, blocks, window).into_any_element());
+                    column.push(markdown::render_with(&key, blocks, Some(&mentions), window).into_any_element());
                 }
                 Piece::Steps(group) => {
                     let mut all = if first { thoughts.clone() } else { Vec::new() };
@@ -1366,6 +1392,7 @@ impl ChatScreen {
             .cloned()
             .collect();
         let thought = self.log.thought.get(turn_id).cloned().unwrap_or_default();
+        let mentions = self.mentions(window, cx);
         let mut column: Vec<AnyElement> = Vec::new();
         // Its thinking, once over: how long (a finished reply keeps it in its steps).
         if !thought.now && thought.took >= 1000. {
@@ -1391,7 +1418,10 @@ impl ChatScreen {
             match piece {
                 Piece::Text(text) => {
                     let blocks = markdown::parse(&text);
-                    column.push(markdown::render(&format!("{turn_id}-t{n}"), &blocks, window).into_any_element());
+                    column.push(
+                        markdown::render_with(&format!("{turn_id}-t{n}"), &blocks, Some(&mentions), window)
+                            .into_any_element(),
+                    );
                 }
                 Piece::Steps(group) => column.push(self.live_group(&format!("{turn_id}-g{n}"), &group, window, cx)),
             }

@@ -376,6 +376,8 @@ impl Root {
                     .child(strip)
                     .child(self.card(main, status, p)),
             )
+            // Draws text selection (ui/selectable) over the window and handles its copy.
+            .child(gpui_kit::base::TextSelectionLayer)
     }
 
     /// The title strip in the frame above the card: what the open screen is (and, for a chat, its project and lead).

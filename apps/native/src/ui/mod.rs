@@ -15,6 +15,7 @@ pub mod nav;
 pub mod reorder;
 pub mod segmented;
 pub mod select;
+pub mod selectable;
 pub mod shimmer;
 pub mod space;
 pub mod step_tree;
