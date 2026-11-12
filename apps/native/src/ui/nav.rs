@@ -4,6 +4,8 @@
 // Hover eases in and out (ui/motion), so every list of places moves the same way.
 use std::rc::Rc;
 
+use gpui_kit::component::menu::ContextMenuExt as _;
+
 use gpui_kit::{
     assets::IconName,
     component::{Icon, Sizable as _, menu::PopupMenu},
@@ -17,6 +19,17 @@ use crate::{
 };
 
 type OnClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
+/// What a dragged row carries: its group (only rows of the same group take the drop) and its id.
+#[derive(Clone)]
+pub struct DragRow {
+    pub group: SharedString,
+    pub id: SharedString,
+    pub label: SharedString,
+}
+
+/// Called on the row a dragged one is dropped on: (dragged, target).
+pub type OnReorder = Rc<dyn Fn(&DragRow, &DragRow, &mut Window, &mut App) + 'static>;
+
 /// A row's actions, built on demand: the right-click menu and its ⋯ button share one builder.
 pub type MenuBuilder = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static>;
 
@@ -37,6 +50,7 @@ pub struct NavRow {
     on_click: Option<OnClick>,
     menu: Option<MenuBuilder>,
     expanded: Option<bool>,
+    reorder: Option<(DragRow, OnReorder)>,
 }
 
 impl NavRow {
@@ -57,6 +71,7 @@ impl NavRow {
             on_click: None,
             menu: None,
             expanded: None,
+            reorder: None,
         }
     }
 
@@ -117,6 +132,12 @@ impl NavRow {
     /// A row that opens and closes what's under it (a project): screen readers hear its state.
     pub fn expanded(mut self, expanded: bool) -> Self {
         self.expanded = Some(expanded);
+        self
+    }
+
+    /// Drag to reorder within the row's group: dropping on a row of the same group moves this one before it.
+    pub fn reorder(mut self, row: DragRow, on_reorder: OnReorder) -> Self {
+        self.reorder = Some((row, on_reorder));
         self
     }
 
@@ -216,6 +237,73 @@ impl RenderOnce for NavRow {
             .when(!self.disabled, |r| {
                 r.when_some(self.on_click, |r, handler| r.on_click(handler))
             });
-        motion::track(row, &pointer)
+        let row = match self.reorder {
+            Some((this_row, on_reorder)) => {
+                let (over, drop_on) = (this_row.clone(), this_row.clone());
+                let accent = p.accent;
+                row.on_drag(this_row, |dragged, _, _, cx| {
+                    cx.new(|_| DragPreview(dragged.label.clone()))
+                })
+                .drag_over::<DragRow>(move |style, dragged, _, _| {
+                    if dragged.group == over.group && dragged.id != over.id {
+                        style.border_t_2().border_color(accent)
+                    } else {
+                        style
+                    }
+                })
+                .on_drop(move |dragged: &DragRow, window, cx| {
+                    if dragged.group == drop_on.group && dragged.id != drop_on.id {
+                        on_reorder(dragged, &drop_on, window, cx);
+                    }
+                })
+            }
+            None => row,
+        };
+        let row = motion::track(row, &pointer);
+        match self.menu {
+            Some(menu) => row
+                .context_menu(move |m, window, cx| menu(m, window, cx))
+                .into_any_element(),
+            None => row.into_any_element(),
+        }
+    }
+}
+
+/// What follows the pointer while a row is dragged: its label on a raised chip.
+struct DragPreview(SharedString);
+
+impl Render for DragPreview {
+    fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let p = theme::palette(window);
+        div()
+            .px(px(10.))
+            .py(px(6.))
+            .rounded(px(tokens::RADIUS_ROW))
+            .bg(p.bg_raised)
+            .border_1()
+            .border_color(p.border_strong)
+            .text_color(p.text)
+            .opacity(0.9)
+            .child(self.0.clone())
+    }
+}
+
+/// Moves `dragged` before `target` in a group's ids (the order sent to the engine).
+pub fn moved_before(ids: &[String], dragged: &str, target: &str) -> Vec<String> {
+    let mut out: Vec<String> = ids.iter().filter(|id| *id != dragged).cloned().collect();
+    let at = out.iter().position(|id| id == target).unwrap_or(out.len());
+    out.insert(at, dragged.to_string());
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::moved_before;
+
+    #[test]
+    fn a_dropped_row_goes_before_its_target() {
+        let ids: Vec<String> = ["a", "b", "c", "d"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(moved_before(&ids, "d", "b"), ["a", "d", "b", "c"]);
+        assert_eq!(moved_before(&ids, "a", "c"), ["b", "a", "c", "d"]);
     }
 }

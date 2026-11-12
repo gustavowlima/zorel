@@ -5,7 +5,10 @@
 // state, open projects and closed sections are remembered (state/prefs.rs).
 // ponytail: row menus (rename, delete), new project, drag to reorder, the foot (usage, pause, settings) and the
 // palette arrive in the next steps of this screen (parity/sidebar.md).
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use gpui_kit::{
     assets::IconName,
@@ -30,7 +33,7 @@ use crate::{
     theme::{self, tokens},
     ui::{
         face::{AgentFace, FaceState},
-        nav::NavRow,
+        nav::{DragRow, NavRow, OnReorder, moved_before},
     },
 };
 
@@ -151,6 +154,43 @@ pub fn face_state(status: Option<&ChatStatus>) -> FaceState {
     }
 }
 
+impl Sidebar {
+    // PUT the group's new order after a drop: a project's chats, or the loose ones (projectId null).
+    fn chat_reorder(&self, key: &str, order: Vec<String>) -> OnReorder {
+        let store = self.store.downgrade();
+        let project = (key != LOOSE).then(|| key.to_string());
+        Rc::new(move |dragged: &DragRow, target: &DragRow, _, cx: &mut App| {
+            let ids = moved_before(&order, &dragged.id, &target.id);
+            let body = serde_json::json!({ "projectId": project, "ids": ids });
+            Self::put_order(&store, "/api/chats/order", body, cx);
+        })
+    }
+
+    fn project_reorder(&self, order: Vec<String>) -> OnReorder {
+        let store = self.store.downgrade();
+        Rc::new(move |dragged: &DragRow, target: &DragRow, _, cx: &mut App| {
+            let ids = moved_before(&order, &dragged.id, &target.id);
+            Self::put_order(&store, "/api/projects/order", serde_json::json!({ "ids": ids }), cx);
+        })
+    }
+
+    fn put_order(store: &WeakEntity<Store>, path: &'static str, body: serde_json::Value, cx: &mut App) {
+        let Some(http) = store.upgrade().map(|s| s.read(cx).http.clone()) else {
+            return;
+        };
+        let store = store.clone();
+        cx.spawn(async move |cx| {
+            if let Ok(Err(e)) =
+                crate::runtime::spawn(async move { http.put::<_, serde_json::Value>(path, &body).await }).await
+            {
+                eprintln!("reorder: {e}");
+            }
+            let _ = store.update(cx, |store, cx| store.load(cx));
+        })
+        .detach();
+    }
+}
+
 /// What every row reads: the store and each chat's (lifted) status.
 struct Lists<'a> {
     store: &'a Store,
@@ -166,7 +206,7 @@ impl Sidebar {
         store: &Store,
         window: &Window,
         cx: &Context<Self>,
-    ) -> AnyElement {
+    ) -> NavRow {
         let p = theme::palette(window);
         let state = face_state(status);
         let live = state != FaceState::Idle;
@@ -209,7 +249,6 @@ impl Sidebar {
             .active(active)
             .emphasis(state == FaceState::Waiting)
             .on_click(cx.listener(move |this, _, _, cx| this.go(Route::Chat { id: id.clone() }, cx)))
-            .into_any_element()
     }
 
     /// A group's rows: the first five plus the open chat, then "Show N more" / "Show less".
@@ -229,6 +268,7 @@ impl Sidebar {
             _ => None,
         };
         let total = chats.len();
+        let order: Vec<String> = chats.iter().map(|c| c.id.clone()).collect();
         let visible: Vec<&Chat> = chats
             .into_iter()
             .enumerate()
@@ -236,9 +276,20 @@ impl Sidebar {
             .map(|(_, c)| c)
             .collect();
         let hidden = total - visible.len();
+        // Drag to reorder within this group: the whole group's new order goes to the engine.
+        let reorder = self.chat_reorder(key, order);
         let mut rows: Vec<AnyElement> = visible
             .into_iter()
-            .map(|c| self.chat_row(c, statuses.get(&c.id), nested, store, window, cx))
+            .map(|c| {
+                let drag = DragRow {
+                    group: key.to_string().into(),
+                    id: c.id.clone().into(),
+                    label: chat_title(c).into(),
+                };
+                self.chat_row(c, statuses.get(&c.id), nested, store, window, cx)
+                    .reorder(drag, reorder.clone())
+                    .into_any_element()
+            })
             .collect();
         if total > VISIBLE {
             let label = if all {
@@ -447,6 +498,7 @@ impl Render for Sidebar {
                             .into_any_element(),
                     );
                 }
+                let project_order = self.project_reorder(store.projects.iter().map(|p| p.id.clone()).collect());
                 for project in &store.projects {
                     let chats: Vec<&Chat> = store
                         .chats
@@ -484,6 +536,11 @@ impl Render for Sidebar {
                     };
                     let (toggle, new_in) = (project.id.clone(), project.id.clone());
                     let menu = Self::project_menu(&cx.entity(), project.id.clone(), project.name.clone());
+                    let drag = DragRow {
+                        group: "projects".into(),
+                        id: project.id.clone().into(),
+                        label: project.name.clone().into(),
+                    };
                     let more = more_button(
                         format!("project-more-{}", project.id),
                         project.name.clone(),
@@ -508,6 +565,7 @@ impl Render for Sidebar {
                         )
                         .trailing(trailing)
                         .menu(menu)
+                        .reorder(drag, project_order.clone())
                         .on_hover_trailing(
                             div()
                                 .flex()
