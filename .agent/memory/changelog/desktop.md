@@ -21,3 +21,4 @@
 2026-11-12 | native client uses gpui-component too, themed from styles.css | owner: use gpui-kit's components; tokens drive the kit's 99 colour keys
 2026-11-12 | native Home built (composer, Needs you, Working now, Today); crew rules in state/crew.rs | parity with apps/web home.tsx and the prototype
 2026-11-12 | native UI standardised on the styles.css scale: own Button/Select/float; bg-float opaque in native tokens | owner asked for pixel-perfect radii, heights and spacing; kit popovers showed text through the translucent float
+2026-11-12 | own components on gpui-base; gpui-component kept only for heavy non-visual widgets | owner: kit visuals (one radius, stroke 2, 20/24/32 heights) do not match the prototype
