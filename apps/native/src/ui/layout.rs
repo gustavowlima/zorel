@@ -24,6 +24,13 @@ pub fn row() -> Div {
         .py(px(space::X1_5))
 }
 
+/// The one floating panel every menu, select, dropdown and popover draws (the context menu's look): `float` on a
+/// stateful box that takes the pointer. Open it with the kit's Popover at `appearance(false)` (the kit's own ring and
+/// padding would double the border) and let it enter with `motion::enter(.., MENU_IN_MS, ..)`.
+pub fn panel(id: impl Into<ElementId>, p: &Palette) -> Stateful<Div> {
+    float(div().id(id), p).occlude()
+}
+
 /// What floats over the page (menus, selects, popovers; web `rounded-card border-strong p-inset`, on the surface tone): the card
 /// radius with the card inset, so the rows inside (row radius) are concentric with it. The kit's popover keeps its
 /// shadow and motion; this only sets Zorel's geometry and colours.

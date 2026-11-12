@@ -49,6 +49,8 @@ impl EventEmitter<SidebarEvent> for Sidebar {}
 pub struct Sidebar {
     pub(super) store: Entity<Store>,
     prefs: Prefs,
+    /// Heights of what opens and closes (sections, projects), for their animation.
+    collapse: crate::ui::collapse::Measured,
     /// Groups showing every chat ("chats" or a project id); in memory only, as the web.
     show_all: HashSet<String>,
     pub route: Route,
@@ -62,6 +64,7 @@ impl Sidebar {
         Self {
             store,
             prefs: Prefs::load(),
+            collapse: Default::default(),
             show_all: HashSet::new(),
             route: Route::default(),
             pending: 0,
@@ -404,6 +407,40 @@ impl Sidebar {
             )
         };
         let (projects_turn, loose_turn) = (turn("projects"), turn(LOOSE));
+        // What opens and closes springs its height; a project's chevron turns.
+        let mut heights: HashMap<String, Option<(Pixels, f32)>> = HashMap::new();
+        let mut project_turns: HashMap<String, Pixels> = HashMap::new();
+        for key in ["projects", LOOSE] {
+            let open = !self.prefs.collapsed_sections.contains(key);
+            heights.insert(key.to_string(), self.collapse.height(key, open, window, cx));
+        }
+        {
+            let route = self.route.clone();
+            let store = self.store.read(cx);
+            let projects: Vec<(String, bool)> = store
+                .projects
+                .iter()
+                .map(|pr| {
+                    let here = matches!(&route, Route::Chat { id } if store.chat(id).and_then(|c| c.project_id.as_deref()) == Some(pr.id.as_str()))
+                        || route == (Route::Home { project_id: Some(pr.id.clone()) });
+                    (pr.id.clone(), here || self.prefs.expanded_projects.contains(&pr.id))
+                })
+                .collect();
+            for (id, open) in projects {
+                let key = format!("project:{id}");
+                heights.insert(key.clone(), self.collapse.height(&key, open, window, cx));
+                project_turns.insert(
+                    id.clone(),
+                    spring(
+                        SharedString::from(format!("project-turn-{id}")),
+                        px(if open { 0. } else { -90. }),
+                        motion::settle(motion::SETTLE_MS),
+                        window,
+                        cx,
+                    ),
+                );
+            }
+        }
         let cx: &Context<Self> = cx; // from here on only listeners and reads
         let store_entity = self.store.clone();
         let store = store_entity.read(cx);
@@ -515,7 +552,9 @@ impl Sidebar {
                 window,
                 cx,
             ));
-            if !self.prefs.collapsed_sections.contains("projects") {
+            let mut section_rows: Vec<AnyElement> = Vec::new();
+            {
+                let list = &mut section_rows;
                 if store.projects.is_empty() {
                     list.push(
                         div()
@@ -577,16 +616,17 @@ impl Sidebar {
                         project.name.clone(),
                         menu.clone(),
                     );
+                    let turn = project_turns.get(&project.id).copied().unwrap_or(px(0.));
                     list.push(
                         NavRow::new(
                             SharedString::from(format!("project-{}", project.id)),
                             project.name.clone(),
                         )
-                        .icon(if expanded {
-                            IconName::ChevronDown
-                        } else {
-                            IconName::ChevronRight
-                        })
+                        .leading(
+                            icon(IconName::ChevronDown, icon::MD)
+                                .text_color(p.text_muted)
+                                .rotate(radians(f32::from(turn).to_radians())),
+                        )
                         .expanded(expanded)
                         .active(
                             self.route
@@ -624,7 +664,7 @@ impl Sidebar {
                         .on_click(cx.listener(move |this, _, _, cx| this.toggle_project(&toggle, cx)))
                         .into_any_element(),
                     );
-                    if expanded {
+                    {
                         // An empty project shows nothing under it (its + starts a chat).
                         let rows = self.group_rows(
                             &project.id,
@@ -637,9 +677,21 @@ impl Sidebar {
                             window,
                             cx,
                         );
-                        list.extend(rows);
+                        let key = format!("project:{}", project.id);
+                        let view = cx.entity().downgrade();
+                        let height = heights.get(&key).copied().flatten();
+                        list.push(self.collapse.wrap(&key, height, rows, move |cx| {
+                            let _ = view.update(cx, |_, cx| cx.notify());
+                        }));
                     }
                 }
+            }
+            {
+                let view = cx.entity().downgrade();
+                let height = heights.get("projects").copied().flatten();
+                list.push(self.collapse.wrap("projects", height, section_rows, move |cx| {
+                    let _ = view.update(cx, |_, cx| cx.notify());
+                }));
             }
             // Chats outside any project.
             let loose: Vec<&Chat> = store
@@ -664,7 +716,9 @@ impl Sidebar {
                 window,
                 cx,
             ));
-            if !self.prefs.collapsed_sections.contains(LOOSE) {
+            let mut loose_rows: Vec<AnyElement> = Vec::new();
+            {
+                let list = &mut loose_rows;
                 if loose.is_empty() {
                     list.push(
                         div()
@@ -689,6 +743,11 @@ impl Sidebar {
                 );
                 list.extend(rows);
             }
+            let view = cx.entity().downgrade();
+            let height = heights.get(LOOSE).copied().flatten();
+            list.push(self.collapse.wrap(LOOSE, height, loose_rows, move |cx| {
+                let _ = view.update(cx, |_, cx| cx.notify());
+            }));
         }
 
         let fold = Button::icon_only(

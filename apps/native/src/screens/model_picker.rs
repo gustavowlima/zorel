@@ -486,7 +486,7 @@ impl ModelPicker {
                 ))
         });
 
-        layout::float(div(), p)
+        layout::panel("model-picker-panel", p)
             .p_0()
             .w(px(448.))
             .flex()

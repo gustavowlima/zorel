@@ -164,32 +164,43 @@ impl Sidebar {
         };
         let store_entity = self.store.clone();
         let usage = Popover::new("usage")
-            .map(|pop| layout::float(pop, p))
             .anchor(Anchor::BottomLeft) // opens above the foot, folded or not
+            .appearance(false)
             .trigger(
                 Button::icon_only("usage-trigger", IconName::ChartColumn, t!("nav.usage").into_owned())
                     .size(if folded { Size::Lg } else { Size::Sm }),
             )
-            .w(px(320.))
             .child(
-                div()
+                layout::panel("usage-panel", p)
+                    .w(px(320.))
                     .flex()
-                    .items_center()
-                    .justify_between()
+                    .flex_col()
+                    .gap(px(space::X2))
+                    .p(px(space::X3))
                     .child(
                         div()
-                            .text_sm()
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(t!("nav.usage").into_owned()),
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(t!("nav.usage").into_owned()),
+                            )
+                            .child(
+                                Button::icon_only(
+                                    "usage-refresh",
+                                    IconName::RefreshCw,
+                                    t!("usage.refresh").into_owned(),
+                                )
+                                .size(Size::Xs)
+                                .disabled(rows.is_empty())
+                                .on_click(move |_, _, cx| store_entity.update(cx, |s, cx| s.refresh_limits(cx))),
+                            ),
                     )
-                    .child(
-                        Button::icon_only("usage-refresh", IconName::RefreshCw, t!("usage.refresh").into_owned())
-                            .size(Size::Xs)
-                            .disabled(rows.is_empty())
-                            .on_click(move |_, _, cx| store_entity.update(cx, |s, cx| s.refresh_limits(cx))),
-                    ),
-            )
-            .child(div().flex().flex_col().children(list));
+                    .child(div().flex().flex_col().children(list)),
+            );
         let usage = div().relative().child(usage).when_some(risk, |c, tone| {
             c.child(
                 div()

@@ -73,8 +73,7 @@ impl Select {
 }
 
 impl RenderOnce for Select {
-    fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
-        let p = theme::palette(window);
+    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let chosen = self.options.iter().find(|o| o.id == self.selected).cloned();
         let trigger = Trigger {
             id: SharedString::from(format!("{}-trigger", self.id)).into(),
@@ -84,17 +83,19 @@ impl RenderOnce for Select {
             open: false,
         };
         let (options, selected, on_pick, key) = (self.options, self.selected, self.on_pick, self.id.to_string());
-        let popover = Popover::new(self.id)
+        let enter_key = SharedString::from(format!("{key}-enter"));
+        Popover::new(self.id)
             .anchor(Anchor::TopLeft)
             .offset(px(6.))
+            .appearance(false)
             .trigger(trigger)
-            .min_w(px(160.))
-            .max_w(px(280.))
-            .max_h(px(320.))
             .content(move |_, window, cx| {
                 let popover = cx.entity();
-                div()
-                    .id("options")
+                let p = theme::palette(window);
+                let list = layout::panel("options", p)
+                    .min_w(px(160.))
+                    .max_w(px(280.))
+                    .max_h(px(320.))
                     .flex()
                     .flex_col()
                     .overflow_y_scroll()
@@ -107,9 +108,9 @@ impl RenderOnce for Select {
                             on_pick(&id, window, cx);
                             popover.update(cx, |s, cx| s.dismiss(window, cx));
                         })
-                    }))
-            });
-        layout::float(popover, p)
+                    }));
+                motion::enter(list, enter_key.clone(), motion::MENU_IN_MS, -4.)
+            })
     }
 }
 

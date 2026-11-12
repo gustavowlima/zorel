@@ -202,8 +202,7 @@ fn surface(key: &ElementId, entries: Vec<Entry>, close: Action, window: &mut Win
         }
     });
     let id = ElementId::from(SharedString::from(format!("{key}-surface")));
-    layout::float(div().id(id), p)
-        .occlude()
+    layout::panel(id, p)
         .role(Role::Menu)
         .min_w(px(192.))
         .flex()

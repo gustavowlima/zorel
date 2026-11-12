@@ -407,7 +407,7 @@ impl Composer {
             .collect();
         let key = format!("composer-menu-{:?}", menu.trigger);
         Some(motion::enter(
-            layout::float(div().id("composer-menu"), p)
+            layout::panel("composer-menu", p)
                 .absolute()
                 .bottom_full()
                 .left_0()
