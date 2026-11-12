@@ -148,6 +148,14 @@ impl Sidebar {
                                 if open {
                                     view.update(cx, |_, cx| cx.emit(SidebarEvent::Navigate(Route::default())));
                                 }
+                                // Gone from the list at once; the engine's delete (it also clears the chat's files)
+                                // and the reload follow, and bring it back only if the delete failed.
+                                let store = view.read(cx).store.clone();
+                                store.update(cx, |s, cx| {
+                                    s.chats.chats.retain(|c| c.id != id);
+                                    s.chats.statuses.remove(&id);
+                                    cx.notify();
+                                });
                                 Self::engine_then_reload(&view, format!("/api/chats/{id}"), cx);
                             })
                             .into_any_element(),
