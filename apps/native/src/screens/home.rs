@@ -40,6 +40,9 @@ use crate::{
     },
 };
 
+/// Home's column: the composer and the feed under it share it (prototype 680).
+const COLUMN: f32 = 680.;
+
 pub enum HomeEvent {
     Navigate(Route),
 }
@@ -551,31 +554,16 @@ impl Home {
             );
         }
         let calm = today.found.is_empty() && today.quiet == 0.;
-        Some(
-            layout::card(p)
-                .flex()
-                .flex_col()
-                .gap(px(space::X1))
-                .child(
-                    div()
-                        .flex()
-                        .items_baseline()
-                        .justify_between()
-                        .px(px(space::X2_5))
-                        .pt(px(space::X1_5))
-                        .pb(px(space::X1_5))
-                        .child(
-                            div()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .child(t!("home.today").into_owned()),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(p.text_dim)
-                                .child(t!("home.todaySince", time = format::time(today.from, now, l)).into_owned()),
-                        ),
-                )
+        // Like the other sections: the title (and since when) above, the rows in a card.
+        let since = div()
+            .text_sm()
+            .text_color(p.text_dim)
+            .child(t!("home.todaySince", time = format::time(today.from, now, l)).into_owned())
+            .into_any_element();
+        let body = if calm && rows.is_empty() {
+            quiet(p, "today-quiet-face", "home.todayQuiet", "home.todayQuietHint")
+        } else {
+            rows_card(p)
                 .when(calm, |c| {
                     c.child(quiet_body(
                         p,
@@ -584,8 +572,9 @@ impl Home {
                         "home.todayQuietHint",
                     ))
                 })
-                .children(rows),
-        )
+                .children(rows)
+        };
+        Some(section(p, t!("home.today").into_owned(), Some(since), body))
     }
 }
 
@@ -612,8 +601,6 @@ impl Home {
         let needs_you = self.needs_you(p, window, cx);
         let working = self.working_now(p, cx);
         let today = self.today_card(p, cx);
-        // The sidebar (272) + the two columns (960) + gutters.
-        let wide = window.viewport_size().width > px(1300.);
         div()
             .id("home")
             .relative()
@@ -632,7 +619,7 @@ impl Home {
                     .child(
                         div()
                             .w_full()
-                            .max_w(px(680.))
+                            .max_w(px(COLUMN))
                             .flex()
                             .flex_col()
                             .gap(px(space::X4))
@@ -662,34 +649,18 @@ impl Home {
                             ),
                     )
                     .child(
-                        // Two columns when the window has room for them (prototype), else one.
+                        // One column on the composer's width, so every edge lines up (as the web): what needs you,
+                        // who works, what came in today.
                         div()
                             .w_full()
-                            .max_w(px(if wide { 960. } else { 680. }))
+                            .max_w(px(COLUMN))
                             .mt(px(space::X10))
                             .flex()
-                            .when(!wide, |c| c.flex_col())
-                            .items_start()
-                            .gap(px(space::X6))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .w_full()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(space::X6))
-                                    .child(needs_you)
-                                    .child(working),
-                            )
-                            .when_some(today, |c, today| {
-                                c.child(
-                                    div()
-                                        .flex_none()
-                                        .map(|d| if wide { d.w(px(340.)) } else { d.w_full() })
-                                        .child(today),
-                                )
-                            }),
+                            .flex_col()
+                            .gap(px(space::X7))
+                            .child(needs_you)
+                            .child(working)
+                            .children(today),
                     ),
             )
     }

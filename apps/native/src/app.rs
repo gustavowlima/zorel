@@ -391,8 +391,12 @@ impl Root {
     }
 }
 
+/// Where the macOS window buttons sit: the sidebar's icon column (its 12px side + the rows' 10px) and the middle of
+/// the space above the head row.
+const TRAFFIC_LIGHTS_X: f32 = 22.;
+const TRAFFIC_LIGHTS_Y: f32 = 12.;
 /// How far the macOS window buttons reach from the left, and the folded rail's width.
-const TRAFFIC_LIGHTS_W: f32 = 80.;
+const TRAFFIC_LIGHTS_W: f32 = 90.;
 const RAIL_W: f32 = 56.;
 
 fn flag(name: &str) -> Option<String> {
@@ -442,7 +446,8 @@ pub fn show_window(cx: &mut App) {
         titlebar: Some(TitlebarOptions {
             title: Some("Zorel".into()),
             appears_transparent: true,
-            ..Default::default()
+            // The window buttons on the sidebar's icon column, centred in the space above the logo.
+            traffic_light_position: Some(point(px(TRAFFIC_LIGHTS_X), px(TRAFFIC_LIGHTS_Y))),
         }),
         ..Default::default()
     };

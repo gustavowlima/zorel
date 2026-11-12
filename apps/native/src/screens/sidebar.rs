@@ -212,19 +212,22 @@ impl Sidebar {
     ) -> NavRow {
         let p = theme::palette(window);
         let state = face_state(status);
-        let live = state != FaceState::Idle;
-        let lead = chat.agent_ids.first().map(String::as_str);
-        let leading: AnyElement = if live {
-            AgentFace::new(SharedString::from(format!("side-face-{}", chat.id)), store.tone(lead))
-                .size(20.)
-                .state(state)
-                .into_any_element()
-        } else if nested {
-            div().size(px(20.)).into_any_element()
-        } else {
-            icon(IconName::MessageCircle, icon::MD)
+        // Always the face of the agent who worked last (the status's, else the lead); a chat that never had one
+        // keeps the default mark.
+        let last = status
+            .and_then(|s| s.agent_id.as_deref())
+            .or(chat.agent_ids.first().map(String::as_str));
+        let leading: AnyElement = match last {
+            Some(agent) => AgentFace::new(
+                SharedString::from(format!("side-face-{}", chat.id)),
+                store.tone(Some(agent)),
+            )
+            .size(20.)
+            .state(state)
+            .into_any_element(),
+            None => icon(IconName::MessageCircle, icon::MD)
                 .text_color(p.text_muted)
-                .into_any_element()
+                .into_any_element(),
         };
         let detail = status.map(|s| status_label(s, store)).filter(|d| !d.is_empty());
         let tone = match state {
@@ -247,7 +250,7 @@ impl Sidebar {
             .leading(leading)
             .when_some(detail, |r, d| r.detail(d, tone))
             .trailing(div().text_xs().text_color(p.text_dim).child(age))
-            .indent(if nested { 18. } else { 0. })
+            .indent(if nested { space::X3 } else { 0. })
             .active(active)
             .emphasis(state == FaceState::Waiting)
             .on_click(cx.listener(move |this, _, _, cx| this.go(Route::Chat { id: id.clone() }, cx)))
@@ -304,7 +307,7 @@ impl Sidebar {
             rows.push(
                 NavRow::new(SharedString::from(format!("more-{key}")), label)
                     .leading(div().size(px(20.)))
-                    .indent(if nested { 18. } else { 0. })
+                    .indent(if nested { space::X3 } else { 0. })
                     .trailing(div().text_color(p.text_dim))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if !this.show_all.remove(&key) {
@@ -630,7 +633,7 @@ impl Sidebar {
                                     t!("nav.emptyProjectStart").into_owned(),
                                 )
                                 .leading(div().size(px(20.)))
-                                .indent(18.)
+                                .indent(space::X3)
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.go(
                                         Route::Home {
@@ -780,7 +783,7 @@ impl Sidebar {
                     .gap(px(space::X2_5))
                     .h(px(crate::ui::header::ROW)) // the head row, level with the screen's title
                     .when(folded, |h| h.justify_center())
-                    .when(!folded, |h| h.pl(px(space::X3)))
+                    .when(!folded, |h| h.pl(px(space::X2_5))) // the logo on the icons' column (row padding)
                     .when(!folded, |h| {
                         h.child(
                             svg()
