@@ -19,6 +19,9 @@ pub struct DragRow {
     pub group: SharedString,
     pub id: SharedString,
     pub label: SharedString,
+    /// What its ghost shows (ui/reorder::Ghost) and how wide it is.
+    pub mark: crate::ui::reorder::DragMark,
+    pub width: f32,
 }
 
 /// How a row takes part in a live reorder (ui/reorder): its payload, what to do while dragging over it, on a drop.
@@ -138,7 +141,7 @@ impl NavRow {
         self
     }
 
-    /// The row being dragged.
+    /// The row being dragged: its place stays open while its ghost follows the pointer.
     pub fn lifted(mut self, lifted: bool) -> Self {
         self.lifted = lifted;
         self
@@ -243,8 +246,9 @@ impl RenderOnce for NavRow {
             .items_center()
             .relative()
             .rounded(px(tokens::RADIUS_ROW))
-            .bg(if self.lifted { p.bg_control_hover.into() } else { bg })
-            .when(self.lifted, |r| r.shadow_md())
+            .bg(bg)
+            // Its ghost follows the pointer: the row's own place stays open (it keeps its size).
+            .when(self.lifted, |r| r.opacity(0.))
             .text_color(fg)
             .children(grip)
             .when(self.disabled, |r| r.opacity(0.45))
@@ -288,19 +292,21 @@ impl RenderOnce for NavRow {
         let row = match self.reorder {
             Some((this_row, on_over, on_drop)) => {
                 let over_row = this_row.clone();
-                row.on_drag(this_row, |_, _, _, cx| cx.new(|_| crate::ui::reorder::Nothing))
-                    .on_drag_move::<DragRow>(move |event, window, cx| {
-                        if !event.bounds.contains(&event.event.position) {
-                            return;
-                        }
-                        let dragged = event.drag(cx).clone();
-                        if dragged.group != over_row.group || dragged.id == over_row.id {
-                            return;
-                        }
-                        let after = event.event.position.y > event.bounds.center().y;
-                        on_over(&dragged, &over_row, after, window, cx);
-                    })
-                    .on_drop(move |dragged: &DragRow, window, cx| on_drop(dragged, window, cx))
+                row.on_drag(this_row, |row, _, _, cx| {
+                    cx.new(|_| crate::ui::reorder::Ghost(row.clone()))
+                })
+                .on_drag_move::<DragRow>(move |event, window, cx| {
+                    if !event.bounds.contains(&event.event.position) {
+                        return;
+                    }
+                    let dragged = event.drag(cx).clone();
+                    if dragged.group != over_row.group || dragged.id == over_row.id {
+                        return;
+                    }
+                    let after = event.event.position.y > event.bounds.center().y;
+                    on_over(&dragged, &over_row, after, window, cx);
+                })
+                .on_drop(move |dragged: &DragRow, window, cx| on_drop(dragged, window, cx))
             }
             None => row,
         };

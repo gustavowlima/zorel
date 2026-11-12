@@ -28,7 +28,7 @@ use crate::{
     ui::{
         face::{AgentFace, FaceState, WorkingRing},
         nav::{DragRow, NavRow, Reorder},
-        reorder::{Flip, OnDrop, OnOver, Preview},
+        reorder::{DragMark, Flip, OnDrop, OnOver, Preview},
     },
 };
 
@@ -125,6 +125,32 @@ fn rank(status: Option<&ChatStatus>) -> u8 {
 }
 
 /// The same ids, in any order (a held order still fits the list).
+/// A place's name and icon (its ghost while dragged).
+fn place_look(id: &str) -> (String, IconName) {
+    const LOOK: [(&str, &str, IconName); 5] = [
+        ("nav-home", "nav.homeScreen", IconName::House),
+        ("nav-inbox", "nav.needsYou", IconName::Inbox),
+        ("nav-agents", "nav.agents", IconName::Bot),
+        ("nav-routines", "nav.routines", IconName::AlarmClock),
+        ("nav-memory", "nav.memory", IconName::Brain),
+    ];
+    LOOK.iter()
+        .find(|(i, _, _)| *i == id)
+        .map_or((id.to_string(), IconName::House), |(_, key, icon)| {
+            (t!(*key).into_owned(), *icon)
+        })
+}
+
+/// A chat's ghost mark: the face of the agent who worked last, else the default chat mark.
+fn chat_mark(chat: &Chat, status: Option<&ChatStatus>, store: &Store) -> DragMark {
+    status
+        .and_then(|s| s.agent_id.as_deref())
+        .or(chat.agent_ids.first().map(String::as_str))
+        .map_or(DragMark::Icon(IconName::MessageCircle), |agent| {
+            DragMark::Face(store.tone(Some(agent)))
+        })
+}
+
 fn same_set(a: &[String], b: &[String]) -> bool {
     a.len() == b.len() && a.iter().all(|id| b.contains(id))
 }
@@ -194,11 +220,15 @@ impl Sidebar {
     }
 
     /// A row's part in a live reorder: dragging over it moves the dragged row there; dropping keeps that order.
-    fn reorder_of(&self, group: &str, id: &str, label: String, cx: &Context<Self>) -> Reorder {
+    fn reorder_of(&self, group: &str, id: &str, label: String, mark: DragMark, cx: &Context<Self>) -> Reorder {
+        let folded = self.prefs.sidebar_folded;
         let row = DragRow {
             group: group.to_string().into(),
             id: id.to_string().into(),
             label: label.into(),
+            mark,
+            // The ghost is as wide as the row it lifts (the open sidebar's content, or the rail's square).
+            width: if folded { RAIL_ITEM } else { OPEN_WIDTH - 2. * space::X3 },
         };
         let (over, dropped) = (cx.entity().downgrade(), cx.entity().downgrade());
         let on_over: OnOver = Rc::new(move |dragged, target, after, _, cx| {
@@ -400,7 +430,7 @@ impl Sidebar {
             .map(|c| {
                 let row = self
                     .chat_row(c, statuses.get(&c.id), nested, store, window, cx)
-                    .reorder(self.reorder_of(key, &c.id, chat_title(c), cx))
+                    .reorder(self.reorder_of(key, &c.id, chat_title(c), chat_mark(c, statuses.get(&c.id), store), cx))
                     .lifted(dragging.as_deref() == Some(c.id.as_str()))
                     .into_any_element();
                 (c.id.clone(), row)
@@ -645,9 +675,9 @@ impl Sidebar {
             .into_iter()
             .filter_map(|id| {
                 let row = by_id.remove(id.as_str())?;
-                let label = id.clone();
+                let (label, mark) = place_look(&id);
                 let row = row
-                    .reorder(self.reorder_of("places", &id, label, cx))
+                    .reorder(self.reorder_of("places", &id, label, DragMark::Icon(mark), cx))
                     .lifted(dragging.as_deref() == Some(id.as_str()))
                     .into_any_element();
                 Some((id, row))
@@ -772,7 +802,13 @@ impl Sidebar {
                         )
                         .trailing(trailing)
                         .menu(menu)
-                        .reorder(self.reorder_of("projects", &project.id, project.name.clone(), cx))
+                        .reorder(self.reorder_of(
+                            "projects",
+                            &project.id,
+                            project.name.clone(),
+                            DragMark::Icon(IconName::Folder),
+                            cx,
+                        ))
                         .lifted(dragging.as_deref() == Some(project.id.as_str()))
                         .on_hover_trailing(
                             div()

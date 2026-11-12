@@ -58,18 +58,22 @@ impl Flip {
         let measure = keys.clone();
         let children = rows.into_iter().zip(&keys).map(|((_, row), key)| {
             let slot = self.0.borrow().get(key).copied().unwrap_or_default();
-            if slot.run == 0 || slot.from.abs() < 0.5 {
-                return row;
-            }
-            let from = slot.from;
-            div()
-                .child(row)
-                .with_animation(
-                    SharedString::from(format!("flip-{key}-{}", slot.run)),
-                    Animation::new(motion::ms(motion::SLIDE_MS)).with_easing(motion::ease_out_quint),
-                    move |el, t| el.relative().top(px(from * (1. - t))),
-                )
-                .into_any_element()
+            // The slide plays inside a wrapper that never moves: the wrapper is what's measured, so a row on its
+            // way doesn't read as moved again (which restarted the slide every frame and flung rows away).
+            let inner = if slot.run == 0 || slot.from.abs() < 0.5 {
+                row
+            } else {
+                let from = slot.from;
+                div()
+                    .child(row)
+                    .with_animation(
+                        SharedString::from(format!("flip-{key}-{}", slot.run)),
+                        Animation::new(motion::ms(motion::SLIDE_MS)).with_easing(motion::ease_out_quint),
+                        move |el, t| el.relative().top(px(from * (1. - t))),
+                    )
+                    .into_any_element()
+            };
+            div().flex_none().child(inner).into_any_element()
         });
         div()
             .flex()
@@ -115,13 +119,58 @@ pub type OnOver = Rc<dyn Fn(&DragRow, &DragRow, bool, &mut Window, &mut App) + '
 /// Called when a dragged row is dropped on a row of its group.
 pub type OnDrop = Rc<dyn Fn(&DragRow, &mut Window, &mut App) + 'static>;
 
-/// An invisible drag preview: the row itself, in the list, is what you see move.
-pub struct Nothing;
+/// What follows the pointer while a row is dragged: the row itself, lifted (its mark, its name, its width), while its
+/// place in the list stays open and the others slide around it.
+pub struct Ghost(pub DragRow);
 
-impl Render for Nothing {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div()
+impl Render for Ghost {
+    fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let p = crate::theme::palette(window);
+        let row = &self.0;
+        let mark: Option<AnyElement> = match row.mark {
+            DragMark::Face(tone) => Some(
+                crate::ui::face::AgentFace::new(SharedString::from(format!("ghost-face-{}", row.id)), tone)
+                    .size(20.)
+                    .into_any_element(),
+            ),
+            DragMark::Icon(name) => Some(
+                crate::ui::icon::icon(name, crate::ui::icon::MD)
+                    .text_color(p.text)
+                    .into_any_element(),
+            ),
+            DragMark::None => None,
+        };
+        let ghost = div()
+            .flex()
+            .items_center()
+            .gap(px(crate::ui::space::X2_5))
+            .w(px(row.width))
+            .h(px(crate::theme::tokens::CONTROL_H))
+            .px(px(crate::ui::space::X2_5))
+            .rounded(px(crate::theme::tokens::RADIUS_ROW))
+            .bg(p.bg_surface)
+            .border_1()
+            .border_color(p.border_strong)
+            .shadow_lg()
+            .text_color(p.text)
+            .font_weight(FontWeight::MEDIUM)
+            .children(mark)
+            .child(div().flex_1().min_w_0().truncate().child(row.label.clone()));
+        motion::enter(
+            ghost,
+            SharedString::from(format!("ghost-{}", row.id)),
+            motion::HOVER_MS,
+            2.,
+        )
     }
+}
+
+/// What a dragged row shows before its name.
+#[derive(Clone, Copy)]
+pub enum DragMark {
+    Face(usize),
+    Icon(gpui_kit::assets::IconName),
+    None,
 }
 
 #[cfg(test)]
