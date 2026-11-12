@@ -15,6 +15,15 @@
         "value": "9px",
         "createdAt": "2026-11-03T17:07:31.450Z",
         "reason": "Agent: initial inside the 16px AgentAvatar tile (ui/avatar.tsx); 11px, the ramp's smallest step, doesn't fit the tile"
+      },
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "apps/web/src/styles.css"
+        ],
+        "createdAt": "2026-11-12T03:02:33.386Z",
+        "reason": "ShimmerText: the documented work-in-progress label (DESIGN.md › Chat), pre-dates spec 018; muted text with a passing band, still under reduced motion"
       }
     ]
   }

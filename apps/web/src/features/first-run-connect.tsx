@@ -141,7 +141,7 @@ function SubscriptionRow({ provider, cli, icon, account }: { provider: "claude" 
   return (
     <EngineLine icon={<ProviderIcon provider={icon} size={24} />} name={name} ready={state === "ready"} status={install.installing ? t("firstRun.installing") : STATUS[state]} action={ACTION[state]}>
       {link && state === "signingIn" && (
-        <a className="text-sm text-accent-text underline" href={link} target="_blank" rel="noreferrer">
+        <a className="text-sm text-secondary underline decoration-strong hover:text-fg" href={link} target="_blank" rel="noreferrer">
           {t("accounts.openLogin")}
         </a>
       )}

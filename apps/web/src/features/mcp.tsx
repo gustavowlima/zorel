@@ -395,7 +395,7 @@ function ConnectorCard({ connector: c, server, status, waiting, onWaiting }: { c
               {t("common.cancel")}
             </Button>
             {c.tokenUrl && (
-              <a href={c.tokenUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-sm text-accent-text hover:underline">
+              <a href={c.tokenUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-sm text-secondary hover:text-fg hover:underline">
                 {t("connectors.createToken")}
               </a>
             )}

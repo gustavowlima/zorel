@@ -10,7 +10,7 @@ import { mutations, preferencesAtom, useMutation } from "../client.ts"
 import { useServer } from "./sign-in.tsx"
 import { TeamSection } from "./team.tsx"
 import { ServersSetting } from "./desktop-servers.tsx"
-import { go, liveStepsOpen, SETTINGS_TABS, type SettingsTab, setLiveStepsOpen, setThemePref, themePref, type ThemePref } from "../state.ts"
+import { accentPref, go, liveStepsOpen, SETTINGS_TABS, type SettingsTab, setAccentPref, setLiveStepsOpen, setThemePref, themePref, type ThemePref } from "../state.ts"
 import { AuditSection } from "./audit.tsx"
 import { SkillsBody } from "./skills.tsx"
 import { ChannelsSection } from "./channels.tsx"
@@ -21,7 +21,7 @@ import { ModelPicker } from "./model-picker.tsx"
 import { ProvidersSection } from "./providers.tsx"
 import { ProcessesSection } from "./processes.tsx"
 import { StorageSection } from "./storage.tsx"
-import { Activity, Button, Column, cn, DisclosurePill, Fold, HardDrive, History, Layers, MessageCircle, NavItem, Plug, Rows, Screen, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch, SETTLE, Users } from "@/ui"
+import { Activity, Button, ColorField, Column, cn, DisclosurePill, Fold, HardDrive, History, Layers, MessageCircle, NavItem, Plug, Rows, Screen, Section, Segmented, Select, SettingRow, Settings, Sparkles, Switch, SETTLE, Users } from "@/ui"
 
 const ICONS: Record<SettingsTab, ReactNode> = { general: <Settings />, team: <Users />, providers: <Sparkles />, mcp: <Plug />, skills: <Layers />, channels: <MessageCircle />, processes: <Activity />, storage: <HardDrive />, audit: <History /> }
 
@@ -227,6 +227,38 @@ function AgentsSetting() {
   )
 }
 
+// The action colour (spec 018): the system colour picker; a colour white can't be read on is refused with why.
+// The theme's own blue, read from the base token (no colour literal in a screen).
+const defaultAccent = () => getComputedStyle(document.documentElement).getPropertyValue("--z-base-blue").trim()
+function AccentRow() {
+  const [accent, setAccent] = useState(accentPref)
+  const [refused, setRefused] = useState(false)
+  return (
+    <SettingRow title={t("appearance.accent")} hint={refused ? <span className="text-warning">{t("appearance.accentContrast")}</span> : t("appearance.accentHint")}>
+      <div className="flex items-center gap-2">
+        {accent && (
+          <Button size="sm" variant="ghost" onPress={() => {
+              setAccentPref(null)
+              setAccent(null)
+              setRefused(false)
+            }}>
+            {t("appearance.accentReset")}
+          </Button>
+        )}
+        <ColorField
+          label={t("appearance.accent")}
+          value={accent ?? defaultAccent()}
+          onChange={(hex) => {
+            const check = setAccentPref(hex)
+            setRefused(check?.ok === false)
+            if (check?.ok) setAccent(check.hex)
+          }}
+        />
+      </div>
+    </SettingRow>
+  )
+}
+
 // Preferences of this computer, one section per topic: Appearance (the theme), then Notifications.
 
 function General() {
@@ -247,6 +279,7 @@ function General() {
             options={(["system", "dark", "light"] as const).map((p) => ({ id: p, label: t(`appearance.${p}`) }))}
           />
         </SettingRow>
+        <AccentRow />
         <SettingRow title={t("appearance.language")} hint={t("appearance.languageHint")}>
           <Select
             aria-label={t("appearance.language")}

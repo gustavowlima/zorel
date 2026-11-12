@@ -31,6 +31,8 @@ export const en = {
     general: "General"
   },
   nav: {
+    homeScreen: "Home",
+    searchOrGo: "Search or go to…",
     label: "Workspace",
     back: "Back",
     forward: "Forward",
@@ -98,6 +100,15 @@ export const en = {
     openTask: "Open the task"
   },
   home: {
+    morning: "Good morning",
+    afternoon: "Good afternoon",
+    evening: "Good evening",
+    needsYou: "Needs you",
+    seeAll: "See all",
+    workingNow: "Working now",
+    today: "Today",
+    todaySince: "since {time}",
+    nextRun: "Next: {name}, {time}",
     title: "What are we working on?",
     subtitle: "Pick a project, type # to call an agent, or just start typing.",
     project: "Project",
@@ -1235,6 +1246,10 @@ export const en = {
     noneYetHint: "Write one, turn on one you already use on this computer, or let the agents propose them as they work."
   },
   appearance: {
+    accent: "Action colour",
+    accentHint: "Main buttons, focus and selection. Agents and states keep their colours.",
+    accentReset: "Use the default blue",
+    accentContrast: "White text can't be read on this colour. Pick a darker one.",
     language: "Language",
     languageHint: "The app's own words. What you and your agents write is never translated.",
     languageSystem: "Same as the system",
@@ -1974,6 +1989,9 @@ export const en = {
     permissions: "Permissions",
     proposal: "Proposal",
     notNow: "Not now",
+    proposedBy: "proposed by the Builder",
+    editFirst: "Edit first",
+    discard: "Discard",
     useIt: "Use this agent",
     createNamed: "Create {name}",
     everyProject: "Every project",
@@ -2173,6 +2191,16 @@ export const en = {
   },
   // The first run (spec 015): the person's first agent, before anything else.
   firstRun: {
+    howSay: "You say what you need",
+    howPropose: "The Builder proposes",
+    howReview: "You review and create",
+    readyTitle: "{name} is ready",
+    readyLede: "It already knows where it works and learns from every conversation, always with your approval.",
+    readyStart: "Start talking",
+    readyMore: "Bring in someone else",
+    readyTipMention: "Call it with @{handle} in any chat",
+    readyTipApprovals: "Approval requests arrive in Needs you",
+    readyTipSearch: "goes anywhere",
     agentTitle: "Your first agent",
     agentLede: "The agent builder asks what you need and proposes the agent, or a whole team, with what each may reach; you review it before anything is created. You can also fill in the form yourself from there.",
     createAgent: "Create agent",

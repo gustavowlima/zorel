@@ -33,3 +33,13 @@ export const Textarea = ({ className, ...p }: Props<ComponentProps<typeof TextAr
 export const BareTextarea = ({ className, ...p }: Props<ComponentProps<typeof TextAreaPrimitive>>) => (
   <TextAreaPrimitive data-slot="textarea" {...p} className={cn("w-full resize-none border-0 bg-transparent px-2 py-0 text-base leading-relaxed text-fg outline-none placeholder:text-dim", className)} />
 )
+
+// A colour: the system's own colour picker behind a swatch, so it feels native on every platform (spec 018,
+// Settings › Appearance). `value` is #rrggbb.
+export function ColorField({ value, onChange, label, className }: { value: string; onChange: (hex: string) => void; label: string; className?: string }) {
+  return (
+    <span className={cn("relative inline-flex size-control shrink-0 overflow-hidden rounded-full border border-strong", className)} style={{ background: value }}>
+      <input type="color" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 size-full cursor-pointer opacity-0" />
+    </span>
+  )
+}

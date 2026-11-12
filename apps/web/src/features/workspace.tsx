@@ -1107,7 +1107,7 @@ function ServerList({ chatId, onOpenUrl }: { chatId: string; onOpenUrl: (url: st
               <span className="truncate text-sm text-fg">{s.command}</span>
               <span className="flex flex-wrap gap-x-2">
                 {s.ports.map((port) => (
-                  <Button key={port} variant="ghost" size="sm" className="h-auto gap-1 p-0 font-mono text-sm text-accent-text data-hovered:bg-transparent data-hovered:underline" onPress={() => onOpenUrl(`http://localhost:${port}`)}>
+                  <Button key={port} variant="ghost" size="sm" className="h-auto gap-1 p-0 font-mono text-sm text-secondary data-hovered:bg-transparent data-hovered:text-fg data-hovered:underline" onPress={() => onOpenUrl(`http://localhost:${port}`)}>
                     <Globe className="size-3" />
                     {`localhost:${port}`}
                   </Button>

@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "src/styles.css"
+        ],
+        "createdAt": "2026-11-12T03:03:55.289Z",
+        "reason": "ShimmerText: the documented work-in-progress label (DESIGN.md › Chat), pre-dates spec 018"
+      }
+    ]
+  }
+}

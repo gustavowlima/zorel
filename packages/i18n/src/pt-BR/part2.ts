@@ -569,6 +569,10 @@ export const part2 = {
     noneYetHint: "Escreva uma, ative uma que você já usa neste computador ou deixe os agentes proporem enquanto trabalham."
   },
   appearance: {
+    accent: "Cor de ação",
+    accentHint: "Botões principais, foco e seleção. Agentes e estados mantêm suas cores.",
+    accentReset: "Usar o azul padrão",
+    accentContrast: "Texto branco não fica legível nessa cor. Escolha uma mais escura.",
     language: "Idioma",
     languageHint: "Os textos do próprio app. O que você e seus agentes escrevem nunca é traduzido.",
     languageSystem: "Igual ao sistema",

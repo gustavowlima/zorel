@@ -51,7 +51,7 @@ export function ChannelsSection() {
               <span className="font-medium">{t("channels.token")}</span>
               <span className="text-sm text-muted">
                 {t("channels.tokenHint")}{" "}
-                <a className="text-accent-text underline" href="https://t.me/BotFather" target="_blank" rel="noreferrer">
+                <a className="text-secondary underline decoration-strong hover:text-fg" href="https://t.me/BotFather" target="_blank" rel="noreferrer">
                   {"@BotFather"}
                 </a>
               </span>

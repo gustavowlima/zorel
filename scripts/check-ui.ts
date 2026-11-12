@@ -8,8 +8,8 @@ import { relative } from "node:path"
 
 const ROOT = new URL("../apps/web/", import.meta.url).pathname
 const BASELINE = `${ROOT}ui-baseline.json`
-// The design system itself (src/ui) may use what screens can't.
-const EXEMPT = [/^src\/ui\//]
+// The design system itself (src/ui, and theme.ts's colour maths) may use what screens can't.
+const EXEMPT = [/^src\/ui\//, /^src\/theme\.ts$/]
 
 interface Rule {
   readonly id: string
@@ -28,6 +28,8 @@ const RULES: ReadonlyArray<Rule> = [
   { id: "hand-notice", hint: "use Notice from @/ui for an alert card on a page", pattern: /role="alert"[^>]*\brounded-card\b/g },
   { id: "hand-search", hint: "use SearchInput from @/ui (the magnifier in one place and size)", pattern: /<Search\b[^>]*\babsolute\b/g },
   { id: "hand-listbox", hint: "use OptionList/OptionRow (or Select, Menu) from @/ui", pattern: /role="(?:listbox|option)"/g },
+  { id: "blue-link", hint: "links use the text tone (text-secondary, hover:text-fg); blue is the main action only", pattern: /text-accent-text[^"]*\bunderline|\bunderline[^"]*text-accent-text/g },
+  { id: "hand-face", hint: "use AgentAvatar/AgentFace from @/ui for an agent", pattern: /rounded-full[^"]*\bbg-agent-\d|\bbg-agent-\d[^"]*rounded-full/g },
   { id: "input-height", hint: "use the Input size prop (size=\"sm\"), not a height class", pattern: /<(?:Input|SearchInput)\b[^>]*className="[^"]*\bh-control/g }
 ]
 

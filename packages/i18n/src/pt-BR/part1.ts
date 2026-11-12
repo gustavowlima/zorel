@@ -30,6 +30,8 @@ export const part1 = {
     general: "Geral"
   },
   nav: {
+    homeScreen: "Início",
+    searchOrGo: "Buscar ou ir para…",
     label: "Espaço de trabalho",
     back: "Voltar",
     forward: "Avançar",
@@ -97,6 +99,15 @@ export const part1 = {
     openTask: "Abrir a tarefa"
   },
   home: {
+    morning: "Bom dia",
+    afternoon: "Boa tarde",
+    evening: "Boa noite",
+    needsYou: "Precisa de você",
+    seeAll: "Ver todas",
+    workingNow: "Trabalhando agora",
+    today: "Hoje",
+    todaySince: "desde {time}",
+    nextRun: "Próxima: {name}, {time}",
     title: "No que vamos trabalhar?",
     subtitle: "Escolha um projeto, digite # para chamar um agente ou simplesmente comece a escrever.",
     project: "Projeto",

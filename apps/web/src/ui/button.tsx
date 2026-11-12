@@ -18,7 +18,7 @@ const buttonVariants = cva(
         soft: "bg-accent-soft text-accent-text data-hovered:bg-accent-line data-hovered:text-fg data-disabled:opacity-50"
       },
       size: {
-        sm: "h-control-sm px-2.5 text-sm",
+        sm: "h-control-sm rounded-control-sm px-2.5 text-sm",
         md: "h-control px-3 text-base",
         lg: "h-control-lg px-4 text-base",
         icon: "size-control-xs"

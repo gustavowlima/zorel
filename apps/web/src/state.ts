@@ -1,6 +1,7 @@
 // Route in the URL hash, and the theme preference. Data lives in atoms (client.ts), not here.
 import { useEffect, useRef, useState } from "react"
 import { flushSync } from "react-dom"
+import { type AccentCheck, accentTokens, checkAccent } from "./theme.ts"
 
 export const SETTINGS_TABS = ["general", "team", "providers", "mcp", "skills", "channels", "processes", "storage", "audit"] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]
@@ -148,6 +149,46 @@ export function themePref(): ThemePref {
 export function applyTheme() {
   const pref = themePref()
   document.documentElement.dataset.theme = pref === "system" ? (prefersLight.matches ? "light" : "dark") : pref
+  applyAccent()
+}
+
+// Spec 018: the first agent made from the first run gets a "ready" step. "pending" while the Builder is open from
+// there; the agent's id once made (builder.tsx); cleared when the person moves on (first-run.tsx).
+export const READY_KEY = "zorel.firstRun.ready"
+
+// ---------- the action colour (spec 018): blue by default, a person's own colour per browser ----------
+
+const ACCENT_KEY = "zorel.accent"
+const ACCENT_TOKENS = ["--z-accent", "--z-accent-hover", "--z-accent-text"]
+
+// The stored override, only when it still passes (a value saved by an older build can't break the buttons).
+export function accentPref(): string | null {
+  const v = stored(ACCENT_KEY)
+  const check = v ? checkAccent(v) : null
+  return check?.ok ? check.hex : null
+}
+
+function applyAccent() {
+  const root = document.documentElement.style
+  for (const name of ACCENT_TOKENS) root.removeProperty(name)
+  const hex = accentPref()
+  if (!hex) return
+  for (const [name, value] of Object.entries(accentTokens(hex, resolvedTheme()))) root.setProperty(name, value)
+}
+
+// Saves and applies a colour, or says why not; null goes back to the default blue.
+export function setAccentPref(value: string | null): AccentCheck | null {
+  if (value === null) {
+    store(ACCENT_KEY, null)
+    applyAccent()
+    return null
+  }
+  const check = checkAccent(value)
+  if (check.ok) {
+    store(ACCENT_KEY, check.hex)
+    applyAccent()
+  }
+  return check
 }
 
 export function setThemePref(pref: ThemePref) {

@@ -513,7 +513,7 @@ function ApiKey({ info, name, url, alternative }: { info: KeyInfo; name: string;
                 {url && (
                   <>
                     {" "}
-                    <a className="text-accent-text underline" href={url} target="_blank" rel="noreferrer">
+                    <a className="text-secondary underline decoration-strong hover:text-fg" href={url} target="_blank" rel="noreferrer">
                       {t("providers.getKey")}
                     </a>
                   </>
