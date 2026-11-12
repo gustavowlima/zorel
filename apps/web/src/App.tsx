@@ -26,12 +26,12 @@ import { SettingsView } from "./features/settings.tsx"
 import { SIDEBAR_FOLDED, SIDEBAR_WIDTH, Sidebar, TitleBar } from "./features/sidebar.tsx"
 import { UsageView } from "./features/usage.tsx"
 import { rememberModels } from "./labels.ts"
-import { go, type Route, useRoute, useSidebar } from "./state.ts"
+import { go, READY_KEY, type Route, stored, useRoute, useSidebar } from "./state.ts"
 import { cn } from "@/lib/utils"
 import { ArrowLeft, Button, CircleAlert, EmptyState, Pause, Spinner, Width } from "@/ui"
 import { useNotifications } from "./features/notify.tsx"
 import { Palette } from "./features/palette.tsx"
-import { FirstRun } from "./features/first-run.tsx"
+import { FirstRun, FirstRunReady } from "./features/first-run.tsx"
 import { Loading } from "./features/loading.tsx"
 import { QuitDialog } from "./features/quit-dialog.tsx"
 
@@ -64,6 +64,15 @@ export function App() {
   // The agent builder and the new-agent form (where the first run sends you to make the first one) open without it.
   const firstTime = AsyncResult.isSuccess(agentsResult) && !agentsResult.value.some(isTeammate)
   const makingFirst = route.view === "builder" || route.view === "new-agent"
+  // The first agent just made from the first run: its "ready" step before the app (spec 018).
+  const ready = stored(READY_KEY)
+  if (ready && ready !== "pending" && AsyncResult.isSuccess(agentsResult) && agentsResult.value.some((a) => a.id === ready))
+    return (
+      <div className="flex h-full flex-col bg-canvas">
+        {desktop && <div className="app-drag h-12 shrink-0" />}
+        <FirstRunReady agentId={ready} />
+      </div>
+    )
   if (firstTime && !makingFirst)
     return (
       <div className="flex h-full flex-col bg-canvas">
