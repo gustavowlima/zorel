@@ -20,3 +20,4 @@
 2026-11-12 | D11/D20 rewritten: the desktop client is native (GPUI, apps/native), the engine stays Bun | owner waived the prototype gate after the 73 MB vs ~530 MB idle measurement
 2026-11-12 | native client uses gpui-component too, themed from styles.css | owner: use gpui-kit's components; tokens drive the kit's 99 colour keys
 2026-11-12 | native Home built (composer, Needs you, Working now, Today); crew rules in state/crew.rs | parity with apps/web home.tsx and the prototype
+2026-11-12 | native UI standardised on the styles.css scale: own Button/Select/float; bg-float opaque in native tokens | owner asked for pixel-perfect radii, heights and spacing; kit popovers showed text through the translucent float
