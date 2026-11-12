@@ -68,7 +68,7 @@ impl Flip {
                     .child(row)
                     .with_animation(
                         SharedString::from(format!("flip-{key}-{}", slot.run)),
-                        Animation::new(motion::ms(motion::SLIDE_MS)).with_easing(motion::ease_out_quint),
+                        Animation::new(motion::ms(motion::REORDER_MS)).with_easing(motion::ease_out_cubic),
                         move |el, t| el.relative().top(px(from * (1. - t))),
                     )
                     .into_any_element()

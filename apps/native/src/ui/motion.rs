@@ -22,6 +22,9 @@ pub const SETTLE_MS: u64 = 200;
 pub const SLIDE_MS: u64 = 260;
 /// A menu or select list entering.
 pub const MENU_IN_MS: u64 = 140;
+/// Rows making room for a dragged one: long enough to be seen sliding, not a jump.
+pub const REORDER_MS: u64 = 320;
+
 /// A screen (page) coming in when you go somewhere: a fade and a short rise.
 pub const PAGE_MS: u64 = 180;
 /// A new row joining a list (a message arriving).
@@ -59,6 +62,11 @@ pub fn ms(ms: u64) -> Duration {
 /// Settling without overshoot (open/close, slides).
 pub fn settle(ms_: u64) -> Spring {
     Spring::new(ms(ms_)).with_damping(1.)
+}
+
+/// A gentle ease-out (cubic): the motion spreads over the whole duration, so a slide reads as a slide.
+pub fn ease_out_cubic(t: f32) -> f32 {
+    1. - (1. - t).powi(3)
 }
 
 /// Zeron's EASE_OUT_QUINT feel for entrances: fast out, soft landing.
