@@ -102,15 +102,15 @@ mod tests {
     fn a_streamed_reply_becomes_its_message() {
         let mut log = ChatLog::default();
         log.apply(event(json!({ "_tag": "turn-started", "turn": turn("running") })));
-        log.apply(event(json!({ "_tag": "text", "turnId": "t", "delta": "Hel" })));
-        log.apply(event(json!({ "_tag": "text", "turnId": "t", "delta": "lo" })));
-        assert_eq!(log.partial["t"], "Hello");
+        log.apply(event(json!({ "_tag": "text", "turnId": "t", "delta": "Good " })));
+        log.apply(event(json!({ "_tag": "text", "turnId": "t", "delta": "day" })));
+        assert_eq!(log.partial["t"], "Good day");
         log.apply(event(
-            json!({ "_tag": "turn-completed", "turn": turn("completed"), "message": message("m1", "Hello") }),
+            json!({ "_tag": "turn-completed", "turn": turn("completed"), "message": message("m1", "Good day") }),
         ));
         assert!(log.partial.is_empty() && log.turns.is_empty());
         assert_eq!(log.messages.len(), 1);
-        log.apply(event(json!({ "_tag": "message", "message": message("m1", "Hello") }))); // a replay: no duplicate
+        log.apply(event(json!({ "_tag": "message", "message": message("m1", "Good day") }))); // a replay: no duplicate
         assert_eq!(log.messages.len(), 1);
         assert_eq!(log.revision, 5);
     }
