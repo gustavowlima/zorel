@@ -10,7 +10,7 @@ component tests per research R7). No pixel-size tests.
 **Before any Rust UI task**: load the `gpui-kit` skill (Coding Guides) and `gpui-kit-design-guides`; Zorel's
 `apps/web/DESIGN.md` + `PRODUCT.md` win on identity.
 
-**Gate**: Phase 4+ (US2, US3) starts only after T040 records **go** (FR-003).
+**Gate**: waived on 2026-11-12 by the product owner: "no comparison in this branch, proceed replacing Electron". The prototype's idle memory was measured (73 MB vs ~530 MB, `prototype-report.md`); T036–T040 are not run in this branch.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -90,11 +90,11 @@ component tests per research R7). No pixel-size tests.
 ### Measure and decide
 
 - [X] T035 [P] [US1] `scripts/seed-long-chat.ts`: seeds a temp `ZOREL_HOME` with one chat of ≥ 500 messages (code, tables, an open approval) — writes N messages (code, tables, lists, quotes, links) into a throwaway folder; refuses a real `.zorel` path
-- [ ] T036 [P] [US1] Frame log in `apps/native/src/debug/frames.rs` (frame times to a file behind `ZOREL_FRAME_LOG`) and launch timestamp to chat list painted
-- [ ] T037 [US1] `scripts/measure-desktop.ts`: sums `footprint` (macOS) of the client's processes, drives the scroll, reads frame logs; runs both clients per quickstart.md, 3 runs, medians
-- [ ] T038 [US1] Run the procedure on macOS; also `MTL_HUD_ENABLED=1` and `samply record` captures attached to the report
-- [ ] T039 [US1] Identity review: light/dark screenshots of sidebar + chat next to the web app, saved under `specs/019-native-desktop/prototype/`
-- [ ] T040 [US1] Write `specs/019-native-desktop/prototype-report.md` (data-model PrototypeReport) with SC-001..SC-004, browser panel fps and the **go / no-go**; on go, rewrite D11 and D20 in `docs/ARCHITECTURE.md`; on no-go, record the Electron alternative (virtualised lists, incremental markdown) and stop
+- [~] T036 [P] [US1] Frame log in `apps/native/src/debug/frames.rs` (frame times to a file behind `ZOREL_FRAME_LOG`) and launch timestamp to chat list painted — skipped: gate waived (see Gate above)
+- [~] T037 [US1] `scripts/measure-desktop.ts`: sums `footprint` (macOS) of the client's processes, drives the scroll, reads frame logs; runs both clients per quickstart.md, 3 runs, medians — skipped: gate waived (see Gate above)
+- [~] T038 [US1] Run the procedure on macOS; also `MTL_HUD_ENABLED=1` and `samply record` captures attached to the report — skipped: gate waived (see Gate above)
+- [~] T039 [US1] Identity review: light/dark screenshots of sidebar + chat next to the web app, saved under `specs/019-native-desktop/prototype/` — skipped: gate waived (see Gate above)
+- [~] T040 [US1] Write `specs/019-native-desktop/prototype-report.md` (data-model PrototypeReport) with SC-001..SC-004, browser panel fps and the **go / no-go**; on go, rewrite D11 and D20 in `docs/ARCHITECTURE.md`; on no-go, record the Electron alternative (virtualised lists, incremental markdown) and stop — skipped: gate waived (see Gate above)
 
 **Checkpoint**: decision recorded. Everything below needs **go**.
 

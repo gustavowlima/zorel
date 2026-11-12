@@ -17,3 +17,4 @@
 2026-11-11 | desktop connects to team servers (own window and partition each); local server starts only when needed | user request
 2026-11-11 | spec 017 P1: server picker, window swap in place, on-demand check | user request
 2026-11-12 | spec 019 planned: native GPUI client proposed to replace Electron, gated by a measured prototype | Electron shell measured at ~530 MB idle and 243 MB of a 571 MB app
+2026-11-12 | D11/D20 rewritten: the desktop client is native (GPUI, apps/native), the engine stays Bun | owner waived the prototype gate after the 73 MB vs ~530 MB idle measurement

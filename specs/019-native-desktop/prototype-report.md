@@ -1,6 +1,6 @@
 # Prototype report (spec 019, Phase B) — partial
 
-**Status**: in progress. The go / no-go is written when every gate below is measured (T040).
+**Status**: closed without the full comparison. On 2026-11-12 the product owner waived the gate ("no comparison in this branch, proceed replacing Electron"); docs/ARCHITECTURE.md D11/D20 were rewritten that day.
 
 **Machine**: Apple Silicon Mac, macOS 27 (Darwin 27.0.0) · **Build**: `cargo build --release` (thin LTO, stripped),
 gpui-kit 0.9.1 (gpui-base only) on gpui-pre 0.3.12 · **Engine**: the Bun server from this checkout, separate process,
