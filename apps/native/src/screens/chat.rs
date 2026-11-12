@@ -521,6 +521,13 @@ impl ChatScreen {
         let snapshot = matches!(event, SubscribeChatItem::Snapshot { .. });
         let known: HashSet<String> = self.log.messages.iter().map(|m| m.id.clone()).collect();
         self.log.apply(event);
+        // A decision made: "Creating" lasts until the Builder's turn ends, not for good.
+        if let Some(mode) = &mut self.builder
+            && mode.busy
+            && self.log.turns.is_empty()
+        {
+            mode.busy = false;
+        }
         if snapshot {
             self.loaded = true;
             // Text already written when we arrive shows at once.
@@ -1049,14 +1056,92 @@ impl ChatScreen {
             .model
             .as_deref()
             .map(|id| crate::labels::model_name(id, &store.models));
-        reply_frame(
-            &m.id,
-            (!bare && !continued).then_some((tone, name, hue, model)),
-            bare,
-            FaceState::Idle,
-            column,
-            p,
-        )
+        // The details behind ⓘ: model, tokens, how long, which account and what it cost (a subscription shows the
+        // API equivalent, not a charge).
+        let account = m
+            .account_id
+            .as_deref()
+            .and_then(|id| store.accounts.iter().find(|a| a.id == id));
+        let subscription =
+            account.is_some_and(|a| matches!(a.kind, crate::net::types::ProviderAccountKind::Subscription));
+        let details: Vec<String> = [
+            model.clone(),
+            (m.input_tokens > 0. || m.output_tokens > 0.).then(|| {
+                t!(
+                    "chat.tokens",
+                    input = format::compact(m.input_tokens),
+                    output = format::compact(m.output_tokens)
+                )
+                .into_owned()
+            }),
+            m.duration_ms
+                .filter(|ms| *ms >= 1000.)
+                .map(|ms| format::duration(ms, format::lang())),
+            account.map(|a| a.label.clone()),
+            m.cost.map(|c| {
+                if subscription {
+                    format!("{} {}", t!("usage.apiEquivalent"), format::cost(c))
+                } else {
+                    format::cost(c)
+                }
+            }),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let group = SharedString::from(format!("reply-{}", m.id));
+        let copied = self.copied.as_deref() == Some(&m.id);
+        let (id, body) = (m.id.clone(), m.text.clone());
+        let actions = div()
+            .flex()
+            .items_center()
+            .gap(px(space::X0_5))
+            .ml(px(-space::X1_5))
+            .h(px(tokens::CONTROL_H_XS))
+            .opacity(0.)
+            .group_hover(group.clone(), |s| s.opacity(1.))
+            .when(!m.text.is_empty(), |r| {
+                r.child(
+                    Button::icon_only(
+                        SharedString::from(format!("copy-{}", m.id)),
+                        if copied { IconName::Check } else { IconName::Copy },
+                        if copied { t!("common.copied") } else { t!("common.copy") }.into_owned(),
+                    )
+                    .size(Size::Xs)
+                    .on_click(cx.listener(move |this, _, _, cx| this.copy(id.clone(), body.clone(), cx))),
+                )
+            })
+            .when(!details.is_empty(), |r| {
+                r.child(
+                    Button::icon_only(
+                        SharedString::from(format!("details-{}", m.id)),
+                        IconName::Info,
+                        t!("chat.details").into_owned(),
+                    )
+                    .size(Size::Xs)
+                    .tooltip(details.join("\n")),
+                )
+            })
+            .child(
+                div()
+                    .px(px(space::X1_5))
+                    .text_xs()
+                    .text_color(p.text_dim)
+                    .child(format::time(m.at, format::now_ms(), format::lang())),
+            )
+            .into_any_element();
+        column.push(actions);
+        div()
+            .group(group)
+            .child(reply_frame(
+                &m.id,
+                (!bare && !continued).then_some((tone, name, hue, model)),
+                bare,
+                FaceState::Idle,
+                column,
+                p,
+            ))
+            .into_any_element()
     }
 
     /// Every reply shows who answers (face and name, as the prototype); it continues the previous one (no face again)

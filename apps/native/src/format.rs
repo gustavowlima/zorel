@@ -278,3 +278,35 @@ mod tests {
         );
     }
 }
+
+/// A count kept short: 950, 1.2k, 34k, 1.5M.
+pub fn compact(n: f64) -> String {
+    match n {
+        n if n >= 1_000_000. => format!("{:.1}M", n / 1_000_000.).replace(".0M", "M"),
+        n if n >= 10_000. => format!("{:.0}k", n / 1000.),
+        n if n >= 1000. => format!("{:.1}k", n / 1000.).replace(".0k", "k"),
+        n => format!("{n:.0}"),
+    }
+}
+
+/// Money in dollars: cents below a dollar keep more digits ($0.0042), above it two.
+pub fn cost(usd: f64) -> String {
+    if usd > 0. && usd < 0.01 {
+        format!("${usd:.4}")
+    } else {
+        format!("${usd:.2}")
+    }
+}
+
+#[cfg(test)]
+mod compact_tests {
+    #[test]
+    fn counts_and_costs_read_short() {
+        assert_eq!(super::compact(950.), "950");
+        assert_eq!(super::compact(1200.), "1.2k");
+        assert_eq!(super::compact(34_000.), "34k");
+        assert_eq!(super::compact(1_500_000.), "1.5M");
+        assert_eq!(super::cost(0.0042), "$0.0042");
+        assert_eq!(super::cost(1.5), "$1.50");
+    }
+}
