@@ -32,5 +32,5 @@ contract test runs it against a live engine.
 
 ## Generation
 
-`scripts/export-schema.ts` → `schema/openapi.json` + `schema/rpc.json` + `schema/sockets.json` (checked in) →
+`scripts/export-schema.ts` → `packages/contracts/schema/openapi.json` + `packages/contracts/schema/rpc.json` + `packages/contracts/schema/sockets.json` (checked in) →
 `apps/native/build.rs` (typify) → Rust types. CI regenerates and fails on `git diff`.

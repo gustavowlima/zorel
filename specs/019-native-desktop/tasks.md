@@ -28,7 +28,7 @@ component tests per research R7). No pixel-size tests.
 - [ ] T003 [P] Add `apps/native/deny.toml` (licence allow-list Apache/MIT/BSD/ISC/Zlib/Unicode/MPL-2.0; deny GPL/AGPL/LGPL; ban Zed crates `ui`, `theme`, `editor`, `terminal`, `markdown`, `auto_update`; `unknown-git = "deny"`, allow-git only the pinned Zed repo; advisories on)
 - [ ] T004 [P] Add `_typos.toml` and `.rustfmt.toml` at repo root, and npm scripts in `package.json`: `native` (`cargo run -p zorel-native`), `native:check` (`cargo fmt --check && cargo clippy -p zorel-native -- --deny warnings && typos && cargo machete && cargo deny --manifest-path apps/native/Cargo.toml check`)
 - [ ] T005 [P] Write `apps/native/AGENTS.md` in gpui-kit's shape (research R7): Coding Guides first, overview, commands, architecture constraints (`RenderOnce` vs `Entity<T>`, state ownership, stable `ElementId`, behaviour in gpui-base vs presentation in `src/ui/`), theme, i18n, dependencies, release (bump the `gpui-pre-*` family together, exact pins), platform support, testing; point to it from `.agent/memory/desktop.md`
-- [ ] T006 Add a CI job (macOS, Windows, Linux) running `bun run native:check` and `cargo test -p zorel-native --locked` in the existing workflow under `.github/workflows/`
+- [ ] T006 Add CI jobs (macOS, Windows, Linux) under `.github/workflows/`: a Rust job running `bun run native:check` and `cargo test -p zorel-native --locked`, triggered only by changes in `apps/native/**`, `packages/contracts/**`, `packages/i18n/**`, `packages/design-tokens/**`, `Cargo.*`, `rust-toolchain.toml`, with the cargo registry and `target/` cached; the existing Bun jobs ignore `apps/native/**`
 
 ---
 
@@ -39,7 +39,7 @@ component tests per research R7). No pixel-size tests.
 - [ ] T007 [P] Move the browser socket messages (`PanelFrame`, state JSON, frame header) from `apps/server/src/browser.ts:836-851` into `packages/contracts/src/browser.ts` as Effect Schemas; make `apps/server/src/browser.ts` and `apps/web/src/features/browser.tsx` decode with them
 - [ ] T008 [P] Move the terminals socket frames used in `apps/web/src/features/shell.tsx:86-90` into `packages/contracts/src/terminal.ts`; server and web decode with them
 - [ ] T009 Add `HttpApi` groups in `packages/contracts/src/index.ts` for attachments upload/get, `/api/search`, `/api/workspace/import`, `/api/server`, `/api/setup`, `/api/invite/:id`, `/api/chats/:id/terminals`, `/api/browser/picture`; switch their server handlers and web callers (`apps/web/src/client.ts:384-393`) to them
-- [ ] T010 Write `scripts/export-schema.ts`: `OpenApi.fromApi(Api)` → `schema/openapi.json`; `Schema.toJsonSchemaDocument` for RPC payloads, `ChatEvent`, browser and terminal messages → `schema/rpc.json`, `schema/sockets.json`; add `bun run schema` and a CI step that fails on `git diff --exit-code schema/`
+- [ ] T010 Write `scripts/export-schema.ts`: `OpenApi.fromApi(Api)` → `packages/contracts/schema/openapi.json`; `Schema.toJsonSchemaDocument` for RPC payloads, `ChatEvent`, browser and terminal messages → `packages/contracts/schema/rpc.json`, `packages/contracts/schema/sockets.json`; add `bun run schema` and a CI step that fails on `git diff --exit-code packages/contracts/schema/`
 - [ ] T011 [P] Create `packages/design-tokens/` with `tokens.json` seeded from the 252 `--z-*` declarations in `apps/web/src/styles.css` (light + dark, type, radius, space, agent hues, motion tiers in gpui-kit `MotionTokens` shape) and `generate.ts` that writes the `--z-*` block back into `apps/web/src/styles.css` (byte-identical output on first run) and `apps/native/themes/zorel.json` (gpui-kit `ThemeSet`) + `apps/native/src/theme/tokens.rs` (Zorel-only tokens)
 - [ ] T012 [P] Write `scripts/export-i18n.ts`: `packages/i18n` (en + pt-BR) → `apps/native/locales/ui.yml` (`_version: 2`), `{name}` → `%{name}`, plural `{one, other}` → `.one` / `.other` subkeys
 - [ ] T013 Extend `scripts/check-i18n.ts` to scan `apps/native/src/**/*.rs` for `t!("…")` keys and fail when a key is missing from the catalog
@@ -57,7 +57,7 @@ component tests per research R7). No pixel-size tests.
 
 ### Engine and network
 
-- [ ] T015 [US1] Generate Rust wire types in `apps/native/build.rs` with typify from `schema/*.json` into `OUT_DIR`, re-exported from `apps/native/src/net/types.rs`
+- [ ] T015 [US1] Generate Rust wire types in `apps/native/build.rs` with typify from `packages/contracts/schema/*.json` into `OUT_DIR`, re-exported from `apps/native/src/net/types.rs`
 - [ ] T016 [P] [US1] Round-trip test `apps/native/tests/schema_roundtrip.rs`: decode real responses captured from a temp engine (`ZOREL_HOME` temp dir) for chats list, snapshot and each `ChatEvent` variant
 - [ ] T017 [US1] Engine supervisor in `apps/native/src/engine/mod.rs`: free loopback port, spawn the server (`bun apps/server/src/main.ts` in dev, compiled binary otherwise) with a cleared env plus `ZOREL_PARENT_PID`, `ZOREL_SESSION_STDIN=1`, the 32-byte secret written to stdin then closed; ready = any non-404; logs to the app data folder; `--engine <url> --token <t>` flags attach to a running engine (quickstart)
 - [ ] T018 [US1] HTTP client in `apps/native/src/net/http.rs`: reqwest with `x-zorel-token` default header, base URL from the connection, typed calls for the endpoints the prototype uses

@@ -70,7 +70,7 @@ only source of wire types). Generate JSON Schema from contracts, then Rust types
   `/api/workspace/import`, `/api/setup`, `/api/invite/:id`. **These move into `packages/contracts` first** (also good for
   the web app).
 
-**Pipeline**: `OpenApi.fromApi(Api)` + `Schema.toJsonSchemaDocument` (Effect 4.1.2) → checked-in `schema/*.json` →
+**Pipeline**: `OpenApi.fromApi(Api)` + `Schema.toJsonSchemaDocument` (Effect 4.1.2) → checked-in `packages/contracts/schema/*.json` →
 `typify` (oxidecomputer) in `build.rs` → serde types. Prefer tagged unions (map to serde enums). typify caveats: weak
 `anyOf/allOf`, `$defs` may need flattening (unverified). CI: regenerate + `git diff --exit-code`; round-trip tests decode
 real server responses.

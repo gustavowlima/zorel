@@ -76,7 +76,7 @@ specs/019-native-desktop/
 apps/native/                      # new: the GPUI desktop client (Cargo workspace member)
 ├── Cargo.toml
 ├── AGENTS.md                     # gpui-kit-shaped guide for agents (research R7)
-├── build.rs                      # schema/*.json → Rust types (typify); tokens include
+├── build.rs                      # packages/contracts/schema/*.json → Rust types (typify); tokens include
 ├── locales/ui.yml                # generated from packages/i18n (rust-i18n format)
 ├── themes/zorel.json             # generated gpui-kit ThemeSet (light + dark)
 ├── deny.toml                     # cargo-deny policy (licences, advisories, sources, bans)
@@ -94,14 +94,20 @@ Cargo.toml                        # workspace root (members: apps/native)
 rust-toolchain.toml
 packages/contracts/src/           # + browser.ts, terminal.ts, attachments, setup/invite/search/import schemas
 packages/design-tokens/           # new: tokens source → generates apps/web CSS block + Rust theme data
-scripts/export-schema.ts          # contracts → schema/*.json (OpenApi.fromApi + Schema.toJsonSchemaDocument)
+scripts/export-schema.ts          # contracts → packages/contracts/schema/*.json (OpenApi.fromApi + Schema.toJsonSchemaDocument)
 scripts/export-i18n.ts            # packages/i18n → apps/native/locales/ui.yml
 .claude/skills/gpui-kit*/         # vendored gpui-kit skills, pinned (research R7)
 apps/desktop/                     # Electron: unchanged until the switch, removed one release after
 ```
 
-**Structure Decision**: one new app (`apps/native`) beside `apps/desktop`; the engine (`apps/server`) and web
-(`apps/web`) unchanged except for contract additions and the token source move.
+**Structure Decision**: stay a monorepo: one new app (`apps/native`) beside `apps/desktop`; the engine (`apps/server`)
+and web (`apps/web`) unchanged except for contract additions and the token source move. Contracts, catalogs and tokens
+have three consumers (server, web, native), so a contract change lands in one commit with a schema drift check instead
+of versioned packages across repos. Generated schemas live with their owner in `packages/contracts/schema/`. The Cargo
+workspace sits at the root with a single member until a second crate exists (no `crates/` folder ahead of need); Bun's
+`apps/*` workspace glob skips `apps/native` (no `package.json`; checked 2026-11-12). CI uses path filters so Rust and Bun
+jobs run only for their inputs, with `target/` cached. Revisit a split only for an independent release cadence, a
+separate team, or publishing a crate.
 
 ## Phases
 
