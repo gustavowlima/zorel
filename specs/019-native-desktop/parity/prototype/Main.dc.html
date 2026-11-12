@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Guia do Zorel — componentes</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="zorel.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.gs{display:flex;flex-direction:column;gap:12px}
+.do{padding:12px 14px;border-radius:12px;background:var(--ok-soft);color:var(--text)}
+.dont{padding:12px 14px;border-radius:12px;background:var(--bad-soft);color:var(--text-2);text-decoration:line-through;text-decoration-color:rgba(242,125,125,.5)}
+</style>
+</helmet>
+<div class="z" style="width: 1440px; height: 900px; background: var(--canvas); padding: 48px; display: flex; flex-direction: column; gap: 32px">
+  <div style="display: flex; align-items: baseline; gap: 16px">
+    <h1 class="t-display">Componentes, estados e voz</h1>
+    <p class="muted">Tudo que se repete nas telas. Círculo é vida; retângulo guarda.</p>
+  </div>
+
+  <div style="flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px">
+    <!-- Column 1 -->
+    <div style="display: flex; flex-direction: column; gap: 32px">
+      <section class="gs">
+        <p class="t-label">Tipografia · Inter com tamanho óptico</p>
+        <p class="t-display">Título 26</p>
+        <p class="t-title">Seção 17</p>
+        <p class="t-lead">Destaque 14,5 · frases que convidam</p>
+        <p class="t-body">Corpo 13,5 · leitura e controles</p>
+        <p class="t-small">Apoio 12,5 · detalhes e metadados</p>
+        <p class="t-label">Rótulo 11,5 · seções</p>
+      </section>
+      <section class="gs">
+        <p class="t-label">Botões · 32 de altura, raio 10</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px">
+          <button class="btn primary">Aprovar</button>
+          <button class="btn">Secundário</button>
+          <button class="btn ghost">Fantasma</button>
+          <button class="btn danger">Excluir</button>
+          <button class="btn icon" aria-label="Adicionar"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13"></path></svg></button>
+          <button class="btn icon primary round" aria-label="Enviar"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width: 2.2"><path d="M12 18.5v-13M6.5 11 12 5.5 17.5 11"></path></svg></button>
+        </div>
+        <p class="t-small">Um azul por área. Enviar é redondo: é a ação que dá vida.</p>
+      </section>
+      <section class="gs">
+        <p class="t-label">Campos</p>
+        <label class="field"><svg class="ic s" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m20 20-4.2-4.2"></path></svg><input placeholder="Buscar agentes, chats, páginas…" aria-label="Buscar"><span class="kbd">⌘K</span></label>
+        <label class="field" style="box-shadow: inset 0 0 0 1px rgba(122,169,255,.55), 0 0 0 3px var(--blue-soft); color: var(--text)"><input value="Revisar a spec 018" aria-label="Campo em foco"></label>
+      </section>
+    </div>
+
+    <!-- Column 2 -->
+    <div style="display: flex; flex-direction: column; gap: 32px">
+      <section class="gs">
+        <p class="t-label">Rostos e estados · o estado mora no rosto</p>
+        <div style="display: flex; gap: 20px">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 10px"><span class="face lime blink" style="width: 40px; height: 40px"><i></i><i></i></span><span class="t-small">Parado</span></div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 10px"><span class="face coral blink" style="width: 40px; height: 40px"><i></i><i></i><span class="arc"></span><span class="orbhead"></span></span><span class="t-small">Trabalhando · órbita</span></div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 10px"><span class="face aqua blink" style="width: 40px; height: 40px"><i></i><i></i><span class="waitdot"></span></span><span class="t-small">Espera você</span></div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 10px"><span class="face orchid" style="width: 40px; height: 40px"><i></i><i></i><span class="okdot"></span></span><span class="t-small">Concluiu</span></div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 10px"><span class="face lime" style="width: 40px; height: 40px"><i></i><i></i><span class="baddot"></span></span><span class="t-small">Falhou</span></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px"><span class="person" style="width: 28px; height: 28px; font-size: 12px">G</span><span class="t-small">Pessoas: quadrado arredondado, nunca na cor de um agente.</span></div>
+      </section>
+      <section class="gs">
+        <p class="t-label">Etiquetas</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px"><span class="tag wait"><span class="dot pulse" style="width: 6px; height: 6px; background: var(--wait)"></span>Espera você</span><span class="tag ok">Concluído</span><span class="tag bad">Falhou</span><span class="tag blue">Novo</span><span class="tag plain">Rascunho</span></div>
+      </section>
+      <section class="gs">
+        <p class="t-label">Escolhas</p>
+        <div style="display: flex; align-items: center; gap: 16px"><span class="seg"><span class="on">Semana</span><span>Lista</span></span><span class="sw on" role="img" aria-label="Ligado"></span><span class="sw" role="img" aria-label="Desligado"></span></div>
+        <div style="display: flex; align-items: center; gap: 12px"><span class="bar" style="width: 160px"><span class="sheen" style="width: 62%; background: var(--a-coral)"></span></span><span class="t-small">Progresso na cor do agente</span></div>
+      </section>
+      <section class="gs">
+        <p class="t-label">Lista em cartão · raio 16, respiro 6, linha 10</p>
+        <div class="card rows">
+          <div class="row hover"><span class="face coral blink" style="width: 28px; height: 28px"><i></i><i></i><span class="arc"></span><span class="orbhead"></span></span><span class="grow">Ferramentas só de agentes<br><span class="t-small">Atlas · rodando testes</span></span><span class="t-small">agora</span></div>
+          <div class="row"><span class="face orchid" style="width: 28px; height: 28px"><i></i><i></i></span><span class="grow">Revisão da spec 017<br><span class="t-small">Rosa · concluído</span></span><span class="t-small">2 h</span></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Column 3 -->
+    <div style="display: flex; flex-direction: column; gap: 32px">
+      <section class="gs">
+        <p class="t-label">Voz · fale como um colega de equipe</p>
+        <div class="do">Nova quer rodar <span class="mono">docker push</span>. Aprova?</div>
+        <div class="dont">Ação pendente requer autorização do usuário.</div>
+        <div class="do">Pronto. Atlas corrigiu os 2 testes e abriu o diff.</div>
+        <div class="dont">Operação concluída com sucesso!</div>
+        <p class="t-small">Verbos no presente, o nome do agente primeiro, sem exclamações nem jargão.</p>
+      </section>
+      <section class="gs">
+        <p class="t-label">Movimento · com intenção</p>
+        <ul class="t-small" style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--text-2)">
+          <li>Só transform e opacidade; nada de desfoque animado.</li>
+          <li>Entrada em sequência de 60 ms; nada passa de 700 ms.</li>
+          <li>Movimento contínuo só onde há vida: arco, ponto que respira, órbita.</li>
+          <li>Com “reduzir movimento”, tudo para e o estado continua legível.</li>
+        </ul>
+      </section>
+      <section class="gs">
+        <p class="t-label">Vazio com personalidade</p>
+        <div class="card" style="padding: 24px; display: flex; align-items: center; gap: 20px">
+          <div class="mini-orbit" style="width: 72px; height: 72px; flex-shrink: 0" aria-hidden="true">
+            <span style="position: absolute; left: 26px; top: 26px; width: 20px; height: 20px; border-radius: 50%; background: var(--blue-soft)"></span>
+            <div class="ride"><span style="left: 28px; top: -8px"><span class="face solid aqua" style="width: 16px; height: 16px"><i></i><i></i></span></span></div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px"><p style="font-weight: 600">Nada esperando por você</p><p class="t-small">Seus agentes seguem em órbita. Avisamos quando alguém precisar.</p></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

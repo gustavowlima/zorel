@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Barra lateral do Zorel</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="zorel.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}</style>
+</helmet>
+<nav class="z" aria-label="Navegação" style="width: 272px; height: 884px; flex-shrink: 0; display: flex; flex-direction: column; padding: 8px 12px; gap: 16px; background: var(--frame)">
+  <div style="display: flex; align-items: center; gap: 10px; height: 36px; padding-left: 12px">
+    <svg width="20" height="20" viewBox="0 0 100 100" aria-hidden="true" style="color: var(--text)"><circle cx="50" cy="50" r="11" fill="currentColor"></circle><path d="M18 50a32 32 0 0 1 32-32" stroke="currentColor" stroke-width="9" fill="none"></path><circle cx="50" cy="18" r="7" fill="currentColor"></circle><path d="M82 50a32 32 0 0 1-32 32" stroke="currentColor" stroke-width="9" fill="none"></path><circle cx="50" cy="82" r="7" fill="currentColor"></circle></svg>
+    <span style="font-weight: 600; font-size: 15px; letter-spacing: -0.01em; flex: 1">Zorel</span>
+    <button class="btn icon ghost" aria-label="Recolher barra lateral (⌘B)" style="color: var(--muted)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3.5"></rect><path d="M9.5 4.5v15"></path></svg></button>
+  </div>
+
+  <button class="btn" style="justify-content: flex-start; background: var(--wash); color: var(--muted); font-weight: 400; padding: 0 10px"><svg class="ic s" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m20 20-4.2-4.2"></path></svg>Buscar ou ir para…<span class="grow"></span><span class="kbd">⌘K</span></button>
+
+  <div style="display: flex; flex-direction: column; gap: 1px">
+    <a class="{{c.home}}" href="#"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z"></path></svg>Início</a>
+    <a class="{{c.inbox}}" href="#"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13.5h4.2l1.6 2.5h4.4l1.6-2.5H20"></path><path d="M6.2 5h11.6L20 13.5V19H4v-5.5z"></path></svg>Precisa de você<span class="grow"></span><span style="display: inline-flex; align-items: center; gap: 6px; color: var(--wait); font-size: 12px; font-weight: 600"><span class="dot pulse" style="width: 6px; height: 6px; background: var(--wait)"></span>3</span></a>
+    <a class="{{c.agents}}" href="#"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M5 12a7 7 0 0 1 7-7"></path><circle cx="12" cy="5" r="1.2"></circle><path d="M19 12a7 7 0 0 1-7 7"></path><circle cx="12" cy="19" r="1.2"></circle></svg>Agentes</a>
+    <a class="{{c.knowledge}}" href="#"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H19v16H6.5A1.5 1.5 0 0 1 5 18.5z"></path><path d="M9 8h6"></path></svg>Conhecimento</a>
+    <a class="{{c.routines}}" href="#"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l2.5 1.5"></path></svg>Rotinas</a>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0">
+    <div class="sec"><span class="grow">Projetos</span><button class="btn sm icon ghost" aria-label="Novo chat num projeto (⌘N)" style="width: 22px; height: 22px; color: var(--muted)"><svg class="ic xs" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width: 2"><path d="M12 5.5v13M5.5 12h13"></path></svg></button></div>
+    <a class="{{c.project}}" href="#"><svg class="ic s" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"></path></svg>zero</a>
+    <a href="#" class="{{chatCls}}" style="display: flex; align-items: center; gap: 12px; padding: 6px 12px 6px 28px; border-radius: 10px">
+      <span class="face coral blink" style="width: 24px; height: 24px"><i></i><i></i><span class="arc"></span><span class="orbhead"></span></span>
+      <span style="display: flex; flex-direction: column; min-width: 0"><span style="color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Ferramentas só de agentes</span><span style="color: var(--muted); font-size: 12px; line-height: 16px">Atlas · rodando testes</span></span>
+    </a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; padding: 6px 12px 6px 28px; border-radius: 10px">
+      <span class="face aqua blink" style="width: 24px; height: 24px"><i></i><i></i></span>
+      <span style="display: flex; flex-direction: column; min-width: 0"><span style="color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Publicar imagem no GHCR</span><span style="color: var(--wait); font-size: 12px; line-height: 16px">Nova · espera você</span></span>
+    </a>
+    <a class="nav" href="#" style="padding-left: 64px">Revisão da spec 017</a>
+    <a class="nav" href="#"><svg class="ic s" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5"></path></svg>site</a>
+    <a class="nav" href="#"><svg class="ic s" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 7 5 5-5 5"></path></svg>infra</a>
+    <div class="sec" style="margin-top: 8px"><span class="grow">Chats</span><button class="btn sm icon ghost" aria-label="Novo chat" style="width: 22px; height: 22px; color: var(--muted)"><svg class="ic xs" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width: 2"><path d="M12 5.5v13M5.5 12h13"></path></svg></button></div>
+    <a class="nav" href="#" style="padding-left: 40px">Ideias de onboarding</a>
+    <a class="nav" href="#" style="padding-left: 40px">Comparar provedores</a>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 12px; height: 44px; padding-left: 8px">
+    <span class="person" style="width: 28px; height: 28px; font-size: 12px">G</span>
+    <span style="flex: 1; color: var(--text-2)">Gustavo</span>
+    <button class="btn icon ghost" aria-label="Notificações" style="color: var(--muted)"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 9a5.5 5.5 0 0 1 11 0c0 6 2.5 8 2.5 8H4s2.5-2 2.5-8"></path><path d="M10.3 20a1.9 1.9 0 0 0 3.4 0"></path></svg></button>
+    <a class="{{c.settings}}" href="#" aria-label="Configurações" style="width: 36px; padding: 0; justify-content: center"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"></path><circle cx="16" cy="7" r="2"></circle><circle cx="8" cy="17" r="2"></circle></svg></a>
+  </div>
+</nav>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"active":{"editor":"enum","options":["home","inbox","agents","knowledge","routines","project","chat","settings"],"default":"inbox"},"$preview":{"width":272,"height":884}}'>
+class Component extends DCLogic {
+renderVals() {
+const a = this.props.active ?? 'inbox';
+const keys = ['home','inbox','agents','knowledge','routines','project','settings'];
+const c = {};
+keys.forEach((k) => { c[k] = a === k ? 'nav on' : 'nav'; });
+return { c, chatCls: a === 'chat' ? 'chatrow on' : 'chatrow' };
+}
+}
+</script>
+</body>
+</html>
