@@ -1,7 +1,7 @@
 // The Routines page's week (spec 012): seven days from 07:00 to 22:00, each run at its time, colored by how it
 // ended (needs you, something new, nothing new), the planned ones dashed, quiet hours shaded and the line where the
-// person's day usually starts. A run opens its routine's chat. On the side: what needs the person and the week's
-// counts. On a phone the grid scrolls sideways inside its box. An empty slot, clicked, starts a new routine at that
+// person's day usually starts. A run opens its routine's chat. Spec 018: no side panel — the week's counts sit in one
+// line above the grid; the face says who ran it, the fill says how it ended (never an agent-coloured block). On a phone the grid scrolls sideways inside its box. An empty slot, clicked, starts a new routine at that
 // day and time (on the hour or the half hour, by where it was clicked), like a calendar. Runs close in time cascade
 // (each later one a little to the right, on top, readable; hover shows the whole line). A coming run of a simple
 // schedule (a time on some days) can be dragged to another time or day: the routine's schedule moves with it.
@@ -13,8 +13,8 @@ import { type PointerEvent, useEffect, useRef, useState } from "react"
 import { agentsAtom, mutations, preferencesAtom, routineWeekAtom, useList, useMutation, useReading, routinesAtom } from "../client.ts"
 import { go, type Route } from "../state.ts"
 import { lanesOf, moveCron } from "./week-lanes.ts"
-import { Button, ChevronLeft, ChevronRight, cn, Dot, IconButton, ListRow, Rows, Section, Tooltip } from "@/ui"
-import { agentTint, hm, toMinutes } from "../labels.ts"
+import { AgentAvatar, Button, ChevronLeft, ChevronRight, cn, Dot, IconButton, Tooltip } from "@/ui"
+import { agentTone, hm, toMinutes } from "../labels.ts"
 
 const DAY = 24 * 60 * 60_000
 // The whole day; the grid scrolls inside its card and opens an hour before your day starts.
@@ -41,7 +41,7 @@ const topOf = (minutes: number) => Math.min(Math.max(((minutes - FIRST_HOUR * 60
 
 // How each outcome looks on the grid. Opaque, so a block cascading over another stays readable.
 const LOOK: Record<"needs" | "something" | "nothing" | "planned", string> = {
-  needs: "border border-warning bg-raised text-fg",
+  needs: "border border-warning/50 bg-raised text-warning",
   something: "border border-strong bg-raised text-fg",
   nothing: "border border-subtle bg-surface text-dim",
   planned: "border border-dashed border-strong bg-surface text-muted"
@@ -88,9 +88,9 @@ export function RoutineWeek({ onCreate, onOpen }: { onCreate?: (slot: Slot) => v
   const byId = new Map<string, Routine>(routines.map((r) => [r.id, r]))
   const agents = useList(agentsAtom)
   // Whose routine a block is: its agent's color down its left edge (identity tint); the border keeps the outcome.
-  const edgeOf = (b: Block) => {
+  const faceOf = (b: Block) => {
     const a = agents.find((x) => x.id === b.agentId)
-    return a ? `tint-edge ${agentTint(a, agents)}` : undefined
+    return a ? <AgentAvatar id={a.id} name={a.name} tone={agentTone(a, agents)} size={16} /> : null
   }
   const profile = prefs?.timeProfile
   const runs = week?.runs ?? []
@@ -160,6 +160,14 @@ export function RoutineWeek({ onCreate, onOpen }: { onCreate?: (slot: Slot) => v
           <span className="flex items-center gap-1.5"><span className="h-1.5 w-3 rounded-sm border border-dashed border-dim" />{t("routines.legend.planned")}</span>
           {profile && <span className="flex items-center gap-1.5"><span className="w-3 border-t border-dotted border-strong" />{t("routines.legend.dayStart")}</span>}
         </div>
+        <span className="text-sm text-muted num">
+          {[`${t("routines.stats.runs")} ${done.length}`, `${t("routines.stats.told")} ${done.filter((r) => r.deliveredAt).length}`].join(" · ")}
+          {needs.length > 0 && (
+            <Button size="sm" variant="ghost" className="ml-1 text-warning" onPress={() => go({ view: "inbox" })}>
+              {t("routines.sideNeeds", { count: needs.length })}
+            </Button>
+          )}
+        </span>
         {profile && (
           <span className="ml-auto text-sm text-dim">
             {[t("routines.dayStartsAround", { time: hm(profile.dayStartMinutes) }), quiet && t("routines.quietFromTo", { from: quiet.from, to: quiet.to })].filter(Boolean).join(" · ")}{" "}
@@ -171,7 +179,7 @@ export function RoutineWeek({ onCreate, onOpen }: { onCreate?: (slot: Slot) => v
       </div>
 
       <div className="flex flex-wrap items-start gap-4">
-        <div ref={scroller} className="min-w-0 overflow-auto rounded-card border border-subtle bg-surface" style={{ flex: "999 1 40rem", maxHeight: "calc(100vh - 13rem)" }}>
+        <div ref={scroller} className="min-w-0 overflow-auto rounded-card border border-subtle bg-surface" style={{ flex: "1 1 100%", maxHeight: "calc(100vh - 13rem)" }}>
           <div className="grid min-w-180" style={{ gridTemplateColumns: "3.25rem repeat(7, minmax(0, 1fr))" }}>
             {/* The days stay on top while the hours scroll under them. */}
             <div className="sticky top-0 z-30 h-11 border-b border-subtle bg-surface" />
@@ -223,7 +231,10 @@ export function RoutineWeek({ onCreate, onOpen }: { onCreate?: (slot: Slot) => v
                   const style = { top: topOf(b.minutes), height: BLOCK_PX, left: 4 + b.lane * CASCADE_PX, right: 4, zIndex: b.lane + 1 }
                   const body = (
                     <>
-                      <span className="w-full truncate font-medium">{b.title}</span>
+                      <span className="flex w-full min-w-0 items-center gap-1.5 font-medium">
+                        {faceOf(b)}
+                        <span className="truncate">{b.title}</span>
+                      </span>
                       <span className="w-full truncate opacity-80">{b.meta}</span>
                     </>
                   )
@@ -246,7 +257,7 @@ export function RoutineWeek({ onCreate, onOpen }: { onCreate?: (slot: Slot) => v
                             variant="ghost"
                             aria-label={`${b.title}: ${b.meta}. ${t("routines.dragHint")}`}
                             onPress={() => press(b)}
-                            className={cn(box, "inset-0 cursor-grab", LOOK[b.look], edgeOf(b), dragging && "ring-2 ring-accent")}
+                            className={cn(box, "inset-0 cursor-grab", LOOK[b.look], dragging && "ring-2 ring-accent")}
                           >
                             {dragging && to ? (
                               <>
@@ -263,7 +274,7 @@ export function RoutineWeek({ onCreate, onOpen }: { onCreate?: (slot: Slot) => v
                   }
                   return (
                     <Tooltip key={b.key} content={`${b.title}: ${b.meta}`}>
-                      <Button variant="ghost" aria-label={`${b.title}: ${b.meta}`} onPress={() => press(b)} className={cn(box, LOOK[b.look], edgeOf(b), "hover:z-40")} style={style}>
+                      <Button variant="ghost" aria-label={`${b.title}: ${b.meta}`} onPress={() => press(b)} className={cn(box, LOOK[b.look], "hover:z-40")} style={style}>
                         {body}
                       </Button>
                     </Tooltip>
@@ -275,37 +286,10 @@ export function RoutineWeek({ onCreate, onOpen }: { onCreate?: (slot: Slot) => v
           </div>
         </div>
 
-        <aside className="flex min-w-60 flex-1 basis-64 flex-col gap-5 xl:max-w-80">
-          {needs.length > 0 && (
-            <Section title={t("routines.sideNeeds", { count: needs.length })}>
-              <Rows>
-                {needs.map((run) => {
-                  const r = byId.get(run.routineId)
-                  return <ListRow key={run.id} label={run.summary} title={run.summary} hint={r?.name} onPress={() => r && go(run.version != null ? { view: "routine-run", id: r.id, runId: run.id } : { view: "chat", id: r.chatId })} />
-                })}
-              </Rows>
-            </Section>
-          )}
-          <Section title={t("routines.thisWeekTitle")}>
-            <Rows>
-              <Stat label={t("routines.stats.runs")} value={String(done.length)} />
-              <Stat label={t("routines.stats.told")} value={String(done.filter((r) => r.deliveredAt).length)} />
-              <Stat label={t("routines.stats.checked")} value={String(done.filter((r) => r.outcome === "nothing" && !r.turnId).length)} />
-              <Stat label={t("routines.stats.cost")} value={`$${done.reduce((n, r) => n + (r.cost ?? 0), 0).toFixed(2)}`} />
-            </Rows>
-          </Section>
-        </aside>
       </div>
     </div>
   )
 }
-
-const Stat = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex items-center justify-between py-2.5">
-    <span className="text-muted">{label}</span>
-    <span className="tabular-nums">{value}</span>
-  </div>
-)
 
 // Quiet hours on one day's column; a window across midnight is two bands (evening and morning).
 function QuietBands({ from, to }: { from: number; to: number }) {

@@ -1115,7 +1115,7 @@ function LiveMessage({ live, agents, receipts, bare, onStop, status }: { live: L
         // Below everything so far: the words and steps grow above it and the status stays at the end. Stop sits beside
         // the words (a button inside a button isn't valid); it is the composer's action too.
         <div className="flex h-7 max-w-full min-w-0 items-center gap-2 text-base text-muted">
-          <span className="flex w-4 shrink-0 justify-center [&_svg]:size-3.5">{current?.status === "waiting" ? <Clock className="text-accent-text" /> : <Spinner size={12} className="text-muted" />}</span>
+          <span className="flex w-4 shrink-0 justify-center [&_svg]:size-3.5">{current?.status === "waiting" ? <Clock className="text-warning" /> : <Spinner size={12} className="text-muted" />}</span>
           {/* One element for every state, so the sweep doesn't restart each time the label changes. */}
           <span className={cn("truncate", idle || current?.status === "waiting" ? undefined : "shimmer-text")}>{what}</span>
           {/* No clock while it waits for you: nothing is being worked on then. */}
@@ -1163,7 +1163,7 @@ function LiveSteps({ steps }: { steps: ReadonlyArray<WorkStep> }) {
         open={open}
         onToggle={() => setOpen(!open)}
         controls={id}
-        {...(working && { leading: working.status === "waiting" ? <Clock className="text-accent-text" /> : <Spinner size={12} className="text-muted" /> })}
+        {...(working && { leading: working.status === "waiting" ? <Clock className="text-warning" /> : <Spinner size={12} className="text-muted" /> })}
       >
         <span className="truncate">{text}</span>
         {failed > 0 && <span className="shrink-0 text-danger">· {t("activity.errors", { count: failed })}</span>}
@@ -1173,7 +1173,7 @@ function LiveSteps({ steps }: { steps: ReadonlyArray<WorkStep> }) {
         <StepList id={id}>
           {steps.map((s, i) => {
             const facts = [
-              s.status === "waiting" && <span key="w" className="text-accent-text">{t("activity.waiting")}</span>,
+              s.status === "waiting" && <span key="w" className="text-warning">{t("activity.waiting")}</span>,
               s.status === "error" && <span key="e" className="text-danger">{t("activity.failedStep")}</span>,
               s.status === "refused" && <span key="r" className="text-warning">{t("activity.refusedStep")}</span>,
               s.durationMs !== null && s.durationMs >= 1000 && <span key="t">{formatDuration(s.durationMs)}</span>
@@ -1330,8 +1330,8 @@ function ApprovalCard({ approval: a }: { approval: Approval }) {
 // one piece; the accent only in the small line that says who waits, with its icon.
 function TrayCard({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
   return (
-    <section aria-label={label} className="flex w-full flex-col gap-2.5 rounded-card border border-strong bg-canvas px-3.5 py-3">
-      <span className="flex items-center gap-1.5 text-sm text-accent-text [&_svg]:size-3.5">
+    <section aria-label={label} className="flex w-full flex-col gap-2.5 rounded-card border border-strong bg-wait-soft px-3.5 py-3">
+      <span className="flex items-center gap-1.5 text-sm text-warning [&_svg]:size-3.5">
         {icon}
         {label}
       </span>
