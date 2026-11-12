@@ -244,10 +244,10 @@ fn route(
             };
             if let Some(reply) = calls.remove(&id) {
                 let _ = reply.send(result);
-            } else if let Some(live) = streams.remove(&id) {
-                if let Err(e) = result {
-                    eprintln!("rpc {}: ended: {e}", live.tag);
-                }
+            } else if let Some(live) = streams.remove(&id)
+                && let Err(e) = result
+            {
+                eprintln!("rpc {}: ended: {e}", live.tag);
             }
             None
         }
