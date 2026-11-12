@@ -74,9 +74,9 @@ component tests per research R7). No pixel-size tests.
 
 ### Zorel components (on gpui-base, research R7 tests)
 
-- [ ] T026 [P] [US1] `apps/native/src/ui/button.rs` (variants of `apps/web/src/ui/button.tsx`, visible hover/focus/pressed/disabled) with a builder test
-- [ ] T027 [P] [US1] `apps/native/src/ui/face.rs`: AgentFace (hue, eyes open/happy/asleep/aside/up, states idle/working/waiting/done/failed) and WorkingRing, matching `apps/web/src/ui/face.tsx`; builder test
-- [ ] T028 [P] [US1] `apps/native/src/ui/layout.rs`: card, row, section, QuietCard, EmptyState shells from `apps/web/src/ui/layout.tsx`
+- [X] T026 [P] [US1] `apps/native/src/ui/button.rs` (variants of `apps/web/src/ui/button.tsx`, visible hover/focus/pressed/disabled) with a builder test — `src/ui/button.rs`: Primary/Secondary/Ghost/Destructive, Sm/Md, on gpui-base's Button (activation, focus, a11y label)
+- [X] T027 [P] [US1] `apps/native/src/ui/face.rs`: AgentFace (hue, eyes open/happy/asleep/aside/up, states idle/working/waiting/done/failed) and WorkingRing, matching `apps/web/src/ui/face.tsx`; builder test — static eyes; alive eyes and the waiting dot's breathing go with T067
+- [X] T028 [P] [US1] `apps/native/src/ui/layout.rs`: card, row, section, QuietCard, EmptyState shells from `apps/web/src/ui/layout.tsx` — `card()` and `row()`; QuietCard/EmptyState with the screens that use them
 - [ ] T029 [P] [US1] `apps/native/src/ui/markdown.rs`: pulldown-cmark parse off the UI thread, only the streaming tail re-parsed, raw HTML ignored, links checked http(s) before `cx.open_url`; tree-sitter colours painted after layout; test that HTML and `javascript:` links are inert
 - [ ] T030 [P] [US1] `apps/native/src/ui/input.rs`: composer on gpui-base Input/Textarea (IME, paste, submit, multiline)
 
