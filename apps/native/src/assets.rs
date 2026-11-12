@@ -6,6 +6,49 @@ use gpui_kit::{AssetSource, Result, SharedString, assets::icon_assets};
 
 pub const LOGO: &str = "zorel/logo.svg";
 
+/// The providers' marks (assets/providers, single colour), by asset path.
+const PROVIDERS: [(&str, &[u8]); 8] = [
+    ("providers/claude.svg", include_bytes!("../assets/providers/claude.svg")),
+    ("providers/codex.svg", include_bytes!("../assets/providers/codex.svg")),
+    ("providers/gemini.svg", include_bytes!("../assets/providers/gemini.svg")),
+    (
+        "providers/opencode.svg",
+        include_bytes!("../assets/providers/opencode.svg"),
+    ),
+    (
+        "providers/openrouter.svg",
+        include_bytes!("../assets/providers/openrouter.svg"),
+    ),
+    ("providers/ollama.svg", include_bytes!("../assets/providers/ollama.svg")),
+    (
+        "providers/antigravity.svg",
+        include_bytes!("../assets/providers/antigravity.svg"),
+    ),
+    (
+        "providers/lmstudio.svg",
+        include_bytes!("../assets/providers/lmstudio.svg"),
+    ),
+];
+
+/// A provider's mark for a provider or a model id's prefix ("claude-cli" → claude); None for one without a mark.
+pub fn provider_mark(provider: &str) -> Option<&'static str> {
+    const ALIASES: [(&str, &str); 5] = [
+        ("claude-cli", "claude"),
+        ("anthropic", "claude"),
+        ("codex-cli", "codex"),
+        ("openai", "codex"),
+        ("gemini-cli", "gemini"),
+    ];
+    let key = ALIASES
+        .iter()
+        .find(|(a, _)| *a == provider)
+        .map_or(provider, |(_, k)| k);
+    PROVIDERS
+        .iter()
+        .map(|(path, _)| *path)
+        .find(|path| path.strip_prefix("providers/").and_then(|p| p.strip_suffix(".svg")) == Some(key))
+}
+
 icon_assets!(
     ZorelIcons,
     [
@@ -26,7 +69,8 @@ icon_assets!(
         RefreshCw,
         Settings,
         File,
-        Close
+        Close,
+        Box
     ]
 );
 
@@ -46,6 +90,9 @@ impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         if path == LOGO {
             return Ok(Some(Cow::Borrowed(include_bytes!("../assets/logo.svg"))));
+        }
+        if let Some(mark) = PROVIDERS.iter().find(|(p, _)| *p == path).map(|(_, bytes)| *bytes) {
+            return Ok(Some(Cow::Borrowed(mark)));
         }
         let bytes = match ZorelIcons.load(path)? {
             Some(bytes) => Some(bytes),

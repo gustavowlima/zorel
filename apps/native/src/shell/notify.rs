@@ -54,6 +54,9 @@ pub fn notice_body(notice: &Notice) -> String {
 
 /// Shows a notification; a click sends `chat_id` to `clicked`.
 pub fn show(title: String, body: String, chat_id: String, clicked: mpsc::UnboundedSender<String>) {
+    if !can_notify() {
+        return;
+    }
     std::thread::spawn(move || {
         let shown = notify_rust::Notification::new()
             .appname("Zorel")
@@ -69,6 +72,38 @@ pub fn show(title: String, body: String, chat_id: String, clicked: mpsc::Unbound
             Err(e) => eprintln!("notification: {e}"),
         }
     });
+}
+
+/// macOS delivers notifications for an app bundle only: from a bare binary (cargo run) notify-rust falls back to an
+/// app named "use_default" and macOS asks the person where that app is. So outside a .app it stays silent.
+// ponytail: the packaged app (T048) carries its own bundle identifier; notifications work there.
+fn can_notify() -> bool {
+    if !cfg!(target_os = "macos") {
+        return true;
+    }
+    let bundled = std::env::current_exe()
+        .map(|exe| exe.to_string_lossy().contains(".app/Contents/MacOS/"))
+        .unwrap_or(false);
+    if !bundled {
+        eprintln!("notification skipped: not running from an app bundle");
+        return false;
+    }
+    // Inside a bundle notify-rust still needs the bundle's identifier, or it asks for "use_default" too.
+    static SET: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SET.get_or_init(|| match bundle_identifier() {
+        #[cfg(target_os = "macos")]
+        Some(id) => notify_rust::set_application(&id).is_ok(),
+        _ => false,
+    })
+}
+
+/// CFBundleIdentifier from the running bundle's Info.plist.
+fn bundle_identifier() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let plist = std::fs::read_to_string(exe.parent()?.parent()?.join("Info.plist")).ok()?;
+    let after = plist.split("<key>CFBundleIdentifier</key>").nth(1)?;
+    let value = after.split("<string>").nth(1)?.split("</string>").next()?;
+    Some(value.trim().to_string())
 }
 
 #[cfg(test)]

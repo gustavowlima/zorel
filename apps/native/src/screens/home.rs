@@ -22,7 +22,7 @@ use crate::{
     screens::{
         approval,
         composer::{Composer, Draft},
-        model_picker::ModelChoice,
+        model_picker::{ModelChoice, ModelPicker},
     },
     state::{
         crew::{self, CHAT_MEMBERS_MAX},
@@ -56,6 +56,8 @@ pub struct Home {
     /// The chat a draft created when sending failed after it: the next try reuses it.
     draft_chat: Option<String>,
     composer: Entity<Composer>,
+    /// The model the new chat runs on (in the composer's tools).
+    model: Entity<ModelPicker>,
     today: Option<Today>,
     /// An answer box per open question shown here.
     answers: HashMap<String, Entity<TextareaState>>,
@@ -76,6 +78,18 @@ impl Home {
             // Who is working comes and goes with statuses; a run that finishes may bring something for Today.
             cx.subscribe(&store, |this, _, _: &StatusChanged, cx| this.refresh(cx)),
         ];
+        let view = cx.entity().downgrade();
+        let on_change: crate::screens::model_picker::OnChange = Rc::new(move |choice, _, cx| {
+            let _ = view.update(cx, |this, cx| {
+                this.picked = Some(choice);
+                cx.notify();
+            });
+        });
+        let model = cx.new(|cx| ModelPicker::new(store.clone(), false, on_change, window, cx));
+        let tools = model.clone();
+        composer.update(cx, |c, _| {
+            c.set_tools(Rc::new(move |_, _| tools.clone().into_any_element()))
+        });
         composer.update(cx, |c, cx| c.focus(window, cx));
         let mut home = Self {
             store,
@@ -84,6 +98,7 @@ impl Home {
             picked: None,
             draft_chat: None,
             composer,
+            model,
             today: None,
             answers: HashMap::new(),
             _subscriptions: subscriptions,
@@ -601,23 +616,9 @@ impl Home {
             _ => "home.evening",
         };
         let greeting = format!("{} · {}", t!(part), format::weekday_date(now, format::lang()));
-        let tools = {
-            let store = self.store.read(cx);
-            let choice = self.choice(store);
-            labels::model_name(&choice.model, &store.models)
-        };
-        // ponytail: the model shows as text here; picking another one lands with the model picker (next pass).
-        self.composer.update(cx, |c, _| {
-            let tools = tools.clone();
-            c.set_tools(Rc::new(move |window, _| {
-                div()
-                    .px(px(space::X2))
-                    .text_sm()
-                    .text_color(theme::palette(window).text_muted)
-                    .child(tools.clone())
-                    .into_any_element()
-            }))
-        });
+        // The model picker shows the chat's model to be: the person's pick, else the lead's.
+        let choice = self.choice(self.store.read(cx));
+        self.model.update(cx, |m, cx| m.set_value(choice, cx));
         let scope = self.scope_row(p, cx);
         let needs_you = self.needs_you(p, window, cx);
         let working = self.working_now(p, cx);
