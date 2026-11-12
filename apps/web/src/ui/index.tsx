@@ -4,7 +4,7 @@ import type { ReactNode } from "react"
 
 export { cn } from "@/lib/utils"
 export { AgentAvatar, ModelAvatar, toneOf } from "./avatar"
-export { AgentFace, type FaceState, PersonAvatar, WorkingRing } from "./face"
+export { AgentFace, EmptyOrbit, type FaceState, PersonAvatar, WorkingRing } from "./face"
 export { Button, type ButtonProps, IconButton } from "./button"
 export { ChoiceCards } from "./choice"
 export { CheckList, Tick } from "./checklist"

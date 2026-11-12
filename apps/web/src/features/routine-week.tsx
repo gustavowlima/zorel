@@ -103,7 +103,9 @@ export function RoutineWeek({ onCreate, onOpen }: { onCreate?: (slot: Slot) => v
     ...runs.map(blockOf).filter((b): b is Block => !!b),
     ...(week?.planned ?? []).map((p, i) => ({ key: `p${i}`, day: Math.floor((p.at - from) / DAY), minutes: minutesOf(p.at), title: byId.get(p.routineId)?.name ?? "", agentId: byId.get(p.routineId)?.agentId, routineId: p.routineId, meta: t("routines.legend.planned"), look: "planned" as const, open: plannedOpen(byId.get(p.routineId)), routine: byId.get(p.routineId) }))
   ]
-  const today = Math.floor((Date.now() - from) / DAY)
+  const now = useNow()
+  const today = Math.floor((now - from) / DAY)
+  const nowTop = topOf(minutesOf(now))
   const quiet = profile?.quietHours
   // Where a drag lands: whole days sideways, SNAP minutes up or down, kept inside the week and the shown hours.
   const landing = (b: Block, d: Drag) => {
@@ -193,11 +195,22 @@ export function RoutineWeek({ onCreate, onOpen }: { onCreate?: (slot: Slot) => v
               )
             })}
             <div className="relative" style={{ height: (LAST_HOUR - FIRST_HOUR) * HOUR_PX }}>
-              {hours.map((h) => (
-                <span key={h} className="absolute right-2 text-xs text-dim tabular-nums" style={{ top: h === FIRST_HOUR ? 2 : (h - FIRST_HOUR) * HOUR_PX - 7 }}>
-                  {hm(h * 60)}
+              {hours.map((h) => {
+                const top = h === FIRST_HOUR ? 2 : (h - FIRST_HOUR) * HOUR_PX - 7
+                // The now label takes the place of an hour it would cover.
+                if (today >= 0 && today < 7 && Math.abs(top + 7 - nowTop) < 14) return null
+                return (
+                  <span key={h} className="absolute right-2 text-xs text-dim tabular-nums" style={{ top }}>
+                    {hm(h * 60)}
+                  </span>
+                )
+              })}
+              {/* Now, in the hours column: the time on the action blue, over the hour it covers. */}
+              {today >= 0 && today < 7 && (
+                <span className="absolute right-1 z-20 rounded-control-sm bg-accent px-1 text-xs font-semibold text-on-accent tabular-nums" style={{ top: nowTop - 8 }}>
+                  {hm(minutesOf(now))}
                 </span>
-              ))}
+              )}
             </div>
             {DAYS.map((d) => (
               <div key={`col-${d}`} onPointerMove={onCreate && hoverAt(d)} onPointerLeave={() => setHover(undefined)} className={cn("relative border-l border-subtle", d > 4 && "bg-canvas")} style={{ height: (LAST_HOUR - FIRST_HOUR) * HOUR_PX }}>
@@ -280,7 +293,12 @@ export function RoutineWeek({ onCreate, onOpen }: { onCreate?: (slot: Slot) => v
                     </Tooltip>
                   )
                 })}
-                {d === today && <div className="absolute inset-x-0 border-t border-accent-text" style={{ top: topOf(minutesOf(Date.now())) }} />}
+                {/* Now: a 2px line in the action blue across today, a dot where it starts, over everything. */}
+                {d === today && (
+                  <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 z-40 h-0.5 bg-accent" style={{ top: nowTop - 1 }}>
+                    <span className="absolute top-1/2 -left-1.25 size-2.5 -translate-y-1/2 rounded-full bg-accent ring-2 ring-surface" />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -306,4 +324,14 @@ function QuietBands({ from, to }: { from: number; to: number }) {
       })}
     </>
   )
+}
+
+// The time, ticking once a minute (the now line moves with it).
+function useNow() {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+  return now
 }

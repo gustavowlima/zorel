@@ -2,7 +2,7 @@
 // ring in the hue with one dot travelling round it; waiting for the person = a breathing amber dot; done / failed =
 // a green / red dot. Alive faces (working or waiting) glance and blink. Every motion is transform/opacity and stops
 // under reduced motion (styles.css › Face). People are rounded squares (PersonAvatar), never in an agent hue.
-import type { CSSProperties } from "react"
+import type { CSSProperties, ReactNode } from "react"
 import { cn } from "@/lib/utils"
 
 export type FaceState = "idle" | "working" | "waiting" | "done" | "failed"
@@ -81,6 +81,31 @@ export function PersonAvatar({ name, size = 24, className }: { name: string; siz
       style={{ width: size, height: size, borderRadius: "30%", fontSize: Math.round(size * 0.42) } as CSSProperties}
     >
       {name.trim().charAt(0).toUpperCase() || "?"}
+    </span>
+  )
+}
+
+// The empty-state illustration (spec 018): Zorel's signature — the screen's icon in the core, two orbits, three agent
+// faces riding the outer one slowly (each turned back so it stays upright), cut out of the ring. Decoration only;
+// still under reduced motion.
+const SEATS = [
+  { left: 54, top: -10 }, // 0°
+  { left: 109.43, top: 86 }, // 120°
+  { left: -1.43, top: 86 } // 240° (ring radius 64 in a 128 box, faces 20)
+]
+export function EmptyOrbit({ icon, className }: { icon?: ReactNode; className?: string | undefined }) {
+  return (
+    <span aria-hidden="true" className={cn("relative block size-32 shrink-0", className)}>
+      <span className="absolute inset-0 rounded-full ring-1 ring-strong ring-inset" />
+      <span className="absolute inset-6 rounded-full ring-1 ring-subtle ring-inset" />
+      <span className="absolute inset-10.5 flex items-center justify-center rounded-full bg-control text-secondary [&_svg]:size-5">{icon}</span>
+      <span className="z-orbit-ride absolute inset-0">
+        {SEATS.map((seat, i) => (
+          <span key={seat.left} className="z-orbit-seat absolute" style={{ left: seat.left, top: seat.top, width: 20, height: 20 } as CSSProperties}>
+            <AgentFace tone={i} size={20} solid className="ring-4 ring-canvas" />
+          </span>
+        ))}
+      </span>
     </span>
   )
 }

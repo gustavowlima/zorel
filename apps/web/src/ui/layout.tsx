@@ -4,6 +4,7 @@
 // One page rhythm (DESIGN.md › Layout): every header is HEADER (56px, the title 28px from the card's edge, the
 // actions 16px from the window's); a page's body is a Column (centered, 28px around, reading or wide); its sections
 // sit 40px apart, a page's tabs 32px above what they show, and a section's title 12px above its card.
+import { EmptyOrbit } from "./face"
 import { type CSSProperties, type ReactNode, useLayoutEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { Button as AriaButton } from "react-aria-components"
@@ -155,11 +156,8 @@ export function EmptyState({ icon, title, hint, action, inset }: { icon?: ReactN
     )
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-      {icon && (
-        <IconTile size="lg" className="mb-1 text-muted">
-          {icon}
-        </IconTile>
-      )}
+      {/* A whole screen with nothing yet shows Zorel's signature: the screen's icon in the core, agents in orbit. */}
+      <EmptyOrbit icon={icon} className="mb-5" />
       <p className="font-medium text-fg">{title}</p>
       {hint && <p className="max-w-sm text-pretty text-muted">{hint}</p>}
       {action && <div className="mt-2">{action}</div>}

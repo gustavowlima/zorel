@@ -391,6 +391,9 @@ body {
 .z-orb { position: relative; display: inline-block; flex-shrink: 0; border-radius: 9999px; }
 .z-orb .z-ring > i::after { width: 4px; height: 4px; margin: -1.25px 0 0 -2px; }
 @keyframes z-turn { to { transform: rotate(360deg); } }
+/* EmptyOrbit: the faces ride the ring once a minute; each seat turns back so its face stays upright. */
+.z-orbit-ride { animation: z-turn 60s linear infinite; }
+.z-orbit-seat { animation: z-turn 60s linear infinite reverse; }
 /* State marks: waiting breathes at the top right; done and failed sit at the bottom right. */
 .z-mark { position: absolute; border-radius: 9999px; box-shadow: 0 0 0 2px var(--z-bg-canvas); }
 .z-mark-wait { right: -2px; top: -2px; background: var(--z-warning); animation: z-breathe 1.8s ease-in-out infinite; }
@@ -398,7 +401,7 @@ body {
 .z-mark-failed { right: -2px; bottom: -2px; background: var(--z-danger); }
 @keyframes z-breathe { 50% { transform: scale(0.72); opacity: 0.55; } }
 @media (prefers-reduced-motion: reduce) {
-  .z-face[data-alive] > .z-eye, .z-ring > i, .z-mark-wait { animation: none; }
+  .z-face[data-alive] > .z-eye, .z-ring > i, .z-mark-wait, .z-orbit-ride, .z-orbit-seat { animation: none; }
 }
 
 /* One icon stroke everywhere (spec 018): CSS wins over lucide's presentation attribute. */
