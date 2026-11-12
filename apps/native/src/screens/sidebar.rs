@@ -32,8 +32,6 @@ use crate::{
 };
 
 const OPEN_WIDTH: f32 = 268.;
-/// The macOS window buttons sit over the sidebar's top.
-const TRAFFIC_LIGHTS: f32 = 36.;
 const RAIL_WIDTH: f32 = 56.; // RAIL_ITEM + 2 × space::X2_5
 /// Every item on the folded rail is this square (fold, search, places, foot), centred: 10px each side.
 const RAIL_ITEM: f32 = tokens::CONTROL_H_LG;
@@ -772,7 +770,7 @@ impl Sidebar {
             } else {
                 space::X3
             }))
-            .pt(px(TRAFFIC_LIGHTS)) // clears the window's traffic lights (macOS chrome, not spacing)
+            .pt(px(crate::ui::header::TOP)) // clears the traffic lights; the title strip shares it
             .bg(p.bg_sidebar)
             .text_color(p.text_secondary)
             .child(
@@ -780,7 +778,7 @@ impl Sidebar {
                     .flex()
                     .items_center()
                     .gap(px(space::X2_5))
-                    .h(px(36.))
+                    .h(px(crate::ui::header::ROW)) // the head row, level with the screen's title
                     .when(folded, |h| h.justify_center())
                     .when(!folded, |h| h.pl(px(space::X3)))
                     .when(!folded, |h| {
