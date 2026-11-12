@@ -3,11 +3,7 @@
 // that slides to the next choice on a spring (measured from the options as laid out), so the row never jumps.
 use std::rc::Rc;
 
-use gpui_kit::{
-    base::{Spring, spring},
-    prelude::FluentBuilder,
-    *,
-};
+use gpui_kit::{base::spring, prelude::FluentBuilder, *};
 
 use crate::ui::space;
 use crate::{
@@ -64,7 +60,7 @@ impl RenderOnce for Segmented {
         let target = laid.read(cx).0.get(self.selected).copied();
         // The marker springs to the chosen option; before the first layout it is drawn on the option itself.
         let marker = target.map(|(left, width)| {
-            let policy = || Spring::new(std::time::Duration::from_millis(260)).with_damping(1.);
+            let policy = || motion::settle(motion::SLIDE_MS);
             let left = spring(SharedString::from(format!("{key}-x")), left, policy(), window, cx);
             let width = spring(SharedString::from(format!("{key}-w")), width, policy(), window, cx);
             div()

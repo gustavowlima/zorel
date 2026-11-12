@@ -10,17 +10,12 @@ use std::{
     rc::Rc,
 };
 
-use gpui_kit::{
-    assets::IconName,
-    base::{Spring, spring},
-    prelude::FluentBuilder,
-    *,
-};
+use gpui_kit::{assets::IconName, base::spring, prelude::FluentBuilder, *};
 use rust_i18n::t;
 
 use crate::ui::button::{Button, Size};
 use crate::ui::icon::{self, icon};
-use crate::ui::space;
+use crate::ui::{motion, space};
 
 use crate::{
     format,
@@ -380,7 +375,7 @@ impl Render for Sidebar {
         let width = spring(
             "sidebar-width",
             px(if folded { RAIL_WIDTH } else { OPEN_WIDTH }),
-            Spring::new(std::time::Duration::from_millis(220)).with_damping(1.),
+            motion::settle(motion::SETTLE_MS),
             window,
             cx,
         );
@@ -390,7 +385,7 @@ impl Render for Sidebar {
             spring(
                 SharedString::from(format!("section-turn-{key}")),
                 px(if closed { -90. } else { 0. }),
-                Spring::new(std::time::Duration::from_millis(200)).with_damping(1.),
+                motion::settle(motion::SETTLE_MS),
                 window,
                 cx,
             )

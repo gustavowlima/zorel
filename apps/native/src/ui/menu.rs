@@ -2,7 +2,7 @@
 // ⋯ button under it. It floats on `layout::float` (card radius, inset 6) with 32px rows at the row radius, concentric;
 // a focused row speaks its own voice (accent wash, or danger for a destructive one). It enters in 140ms (fade and a
 // 4px rise, Zeron's MENU_IN), and closes on a pick, a click outside or Escape.
-use std::{rc::Rc, time::Duration};
+use std::rc::Rc;
 
 use gpui_kit::{
     assets::IconName,
@@ -216,13 +216,8 @@ fn enter(surface: Stateful<Div>, key: &ElementId) -> AnyElement {
     surface
         .with_animation(
             ElementId::from(SharedString::from(format!("{key}-enter"))),
-            Animation::new(Duration::from_millis(140)).with_easing(ease_out_quint()),
+            Animation::new(motion::ms(motion::MENU_IN_MS)).with_easing(motion::ease_out_quint),
             |el, t| el.opacity(t).mt(px(space::X1 * (1. - t))),
         )
         .into_any_element()
-}
-
-/// Zeron's EASE_OUT_QUINT feel (cubic-bezier(0.22, 1, 0.36, 1)), as a curve GPUI takes.
-fn ease_out_quint() -> impl Fn(f32) -> f32 {
-    |t| 1. - (1. - t).powi(5)
 }
