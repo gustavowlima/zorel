@@ -8188,6 +8188,7 @@ dependencies = [
  "gpui-kit",
  "icu_locale_core",
  "icu_plurals",
+ "notify-rust",
  "prettyplease",
  "pulldown-cmark",
  "regress",

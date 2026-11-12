@@ -110,7 +110,7 @@ component tests per research R7). No pixel-size tests.
 
 - [ ] T041 [P] [US2] Tray with gpui-tray in `apps/native/src/shell/tray.rs` (open, new chat, quit; ksni fallback on Linux if needed)
 - [X] T042 [P] [US2] App menus in `apps/native/src/shell/menus.rs`: macOS app menu (Services, hide, hide others, show all, quit), Edit on gpui-base's input actions, Window (minimize, zoom); ⌘Q ⌘H ⌥⌘H ⌘M; labels from `desktop.menu.*` in packages/i18n; no menu bar on Windows/Linux, as Electron. (Servers submenu with T047)
-- [ ] T043 [P] [US2] Notifications with notify-rust in `apps/native/src/shell/notify.rs`: approvals/questions/notices → system notification → click opens that chat at the item; verify click-through in a signed macOS bundle
+- [X] T043 [P] [US2] Notifications in `apps/native/src/shell/notify.rs` (notify-rust): the web's rules — a chat that starts waiting, fails or finishes while you look elsewhere (not routine chats), and each routine notice; a click brings Zorel forward and opens the chat (`wait_for_action` on a thread per notification). Tested rules. `ponytail:` no in-app switch/chime yet (T056); macOS shows them only for a signed bundle (T048) — not yet seen live
 - [ ] T044 [P] [US2] Keep-awake on AC power (keepawake + starship-battery polled 60 s) in `apps/native/src/shell/awake.rs`, pref in `prefs.json`
 - [ ] T045 [P] [US2] Dialogs (rfd folder picker, xdg-portal on Linux), open-in-system links (http(s) only), downloads to the Downloads folder in `apps/native/src/shell/system.rs`
 - [ ] T046 [P] [US2] Single instance + open at login (`--hidden`) in `apps/native/src/shell/instance.rs`

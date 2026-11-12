@@ -9,13 +9,14 @@ use rust_i18n::t;
 use crate::{
     engine::Launch,
     i18n,
-    net::types::{AgentsListSuccess, ChatStatus, ChatsListSuccess},
+    net::types::{AgentsListSuccess, ChatStatus, ChatsListSuccess, Notice, RoutinesListSuccess},
     runtime,
     screens::{
         chat::ChatScreen,
         inbox::{Directory, Inbox, InboxEvent},
         sidebar,
     },
+    shell::notify::{self, Moment, Notifier},
     state::{
         chats::ChatList,
         connection::{ConnectionState, EngineConnection, Target},
@@ -34,6 +35,9 @@ struct Root {
     /// Needs you; shown instead of a chat when `inbox_open`.
     inbox: Option<Entity<Inbox>>,
     inbox_open: bool,
+    notifier: Notifier,
+    /// A clicked notification sends its chat id here.
+    clicked: tokio::sync::mpsc::UnboundedSender<String>,
     /// `--open <chat id>`: the chat to open once loaded (the prototype's measurements).
     open_first: Option<String>,
 }
@@ -49,6 +53,17 @@ impl Root {
         })
         .detach();
         cx.observe_window_appearance(window, |_, _, cx| cx.notify()).detach(); // light/dark follows the system
+        let (clicked, mut clicks) = tokio::sync::mpsc::unbounded_channel::<String>();
+        cx.spawn_in(window, async move |this, cx| {
+            while let Some(chat_id) = clicks.recv().await {
+                let _ = this.update_in(cx, |this, window, cx| {
+                    cx.activate(true);
+                    window.activate_window();
+                    this.open_chat(chat_id, window, cx);
+                });
+            }
+        })
+        .detach();
         Self {
             connection,
             loaded: false,
@@ -58,6 +73,8 @@ impl Root {
             open: None,
             inbox: None,
             inbox_open: false,
+            notifier: Notifier::default(),
+            clicked,
             open_first: flag("--open"),
         }
     }
@@ -69,6 +86,22 @@ impl Root {
             return;
         };
         let mut statuses = rpc.stream::<ChatStatus>("subscribeStatus", None);
+        let mut notices = rpc.stream::<Notice>("notices", None);
+        cx.spawn_in(window, async move |this, cx| {
+            while let Some(notice) = notices.recv().await {
+                let _ = this.update_in(cx, |this, window, _| {
+                    if !this.looking_at(&notice.chat_id, window) {
+                        notify::show(
+                            notice.title.clone(),
+                            notify::notice_body(&notice),
+                            notice.chat_id.clone(),
+                            this.clicked.clone(),
+                        );
+                    }
+                });
+            }
+        })
+        .detach();
         let inbox = cx.new(|cx| Inbox::new(http.clone(), rpc.clone(), cx));
         cx.subscribe_in(&inbox, window, |this, _, event: &InboxEvent, window, cx| match event {
             InboxEvent::OpenChat(id) => this.open_chat(id.clone(), window, cx),
@@ -76,20 +109,22 @@ impl Root {
         .detach();
         cx.observe(&inbox, |_, _, cx| cx.notify()).detach(); // its count shows in the sidebar
         self.inbox = Some(inbox);
-        cx.spawn(async move |this, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             let fetch = http.clone();
             let lists = runtime::spawn(async move {
                 let agents: AgentsListSuccess = fetch.get("/api/agents").await?;
                 let chats: ChatsListSuccess = fetch.get("/api/chats").await?;
-                Ok::<_, crate::net::http::HttpError>((agents, chats))
+                let routines: RoutinesListSuccess = fetch.get("/api/routines").await?;
+                Ok::<_, crate::net::http::HttpError>((agents, chats, routines))
             })
             .await;
             match lists {
-                Ok(Ok((agents, chats))) => {
+                Ok(Ok((agents, chats, routines))) => {
                     let _ = this.update_in(cx, |this, window, cx| {
                         this.tones = agents.iter().enumerate().map(|(i, a)| (a.id.clone(), i)).collect();
                         this.agent_names = agents.iter().map(|a| (a.id.clone(), a.name.clone())).collect();
                         this.chats.chats = chats.0;
+                        this.notifier.routine_chats = routines.iter().map(|r| r.chat_id.clone()).collect();
                         this.share_directory(cx);
                         if let Some(id) = this.open_first.take() {
                             this.open_chat(id, window, cx);
@@ -101,7 +136,8 @@ impl Root {
                 Err(e) => eprintln!("load: {e}"),
             }
             while let Some(status) = statuses.recv().await {
-                let unknown = this.update(cx, |this, cx| {
+                let unknown = this.update_in(cx, |this, window, cx| {
+                    this.notify_status(&status, window);
                     let unknown = this.chats.apply_status(status);
                     if let Some(inbox) = &this.inbox {
                         inbox.update(cx, |inbox, cx| inbox.refresh(cx)); // approvals come and go with statuses
@@ -129,6 +165,46 @@ impl Root {
             }
         })
         .detach();
+    }
+
+    // Whether the person is looking at this chat right now (no notification then).
+    fn looking_at(&self, chat_id: &str, window: &Window) -> bool {
+        window.is_window_active() && !self.inbox_open && self.open.as_ref().is_some_and(|(id, _)| id == chat_id)
+    }
+
+    // A chat that starts waiting, fails or finishes while you look elsewhere.
+    fn notify_status(&mut self, status: &ChatStatus, window: &Window) {
+        let Some(moment) = self.notifier.moment(&status.chat_id, status.state.clone()) else {
+            return;
+        };
+        if self.looking_at(&status.chat_id, window) {
+            return;
+        }
+        let title = self
+            .chats
+            .chats
+            .iter()
+            .find(|c| c.id == status.chat_id)
+            .map(|c| c.title.clone())
+            .filter(|t| !t.is_empty());
+        let agent = status
+            .agent_id
+            .as_ref()
+            .and_then(|a| self.agent_names.get(a))
+            .cloned()
+            .unwrap_or_else(|| t!("app.name").into_owned());
+        let body = match moment {
+            Moment::Done => t!("notify.done").into_owned(),
+            Moment::Failed => t!("status.failed").into_owned(),
+            Moment::Waiting if status.label == "question" => t!("status.asking", agent = agent).into_owned(),
+            Moment::Waiting => t!("status.waiting", agent = agent).into_owned(),
+        };
+        notify::show(
+            title.unwrap_or_else(|| t!("app.name").into_owned()),
+            body,
+            status.chat_id.clone(),
+            self.clicked.clone(),
+        );
     }
 
     // Chat titles and agent names for the screens that show other chats' items (Needs you).
