@@ -3,8 +3,8 @@
 // (waiting for you, then working), then chats never placed by hand by latest activity, then the placed ones. Five chats
 // per group until "Show more"; the open chat always shows. Folded (⌘B) it is a 56px rail of the places. Its folded
 // state, open projects and closed sections are remembered (state/prefs.rs).
-// ponytail: row menus (rename, delete), new project, drag to reorder, the foot (usage, pause, settings) and the
-// palette arrive in the next steps of this screen (parity/sidebar.md).
+// Row menus and new project: sidebar_actions.rs; the foot (usage, pause, settings): sidebar_foot.rs.
+// ponytail: Routines and Memory stay disabled until their screens exist.
 use std::{
     collections::{HashMap, HashSet},
     rc::Rc,
@@ -36,6 +36,9 @@ const OPEN_WIDTH: f32 = 268.;
 /// The sidebar's places, in their default order.
 const PLACES: [&str; 5] = ["nav-home", "nav-inbox", "nav-agents", "nav-routines", "nav-memory"];
 const RAIL_WIDTH: f32 = 56.; // RAIL_ITEM + 2 × space::X3
+/// Below this window width the sidebar stays folded.
+const NARROW: f32 = 900.;
+
 /// Every item on the folded rail is this square (fold, search, places, foot), centred: 12px each side.
 const RAIL_ITEM: f32 = tokens::CONTROL_H;
 const VISIBLE: usize = 5;
@@ -67,6 +70,8 @@ pub struct Sidebar {
     pub route: Route,
     /// Needs you: open approvals and proposed memories (from Root).
     pub pending: usize,
+    /// The chats and projects list: whether more lies past its top or bottom edge (its fades).
+    list_scroll: ScrollHandle,
 }
 
 impl Sidebar {
@@ -83,6 +88,7 @@ impl Sidebar {
             show_all: HashSet::new(),
             route: Route::default(),
             pending: 0,
+            list_scroll: ScrollHandle::new(),
         }
     }
 
@@ -537,7 +543,8 @@ impl Sidebar {
     // The render body, behind Subsecond's reload point (crate::hot).
     fn view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let p = theme::palette(window);
-        let folded = self.prefs.sidebar_folded;
+        // A narrow window keeps the rail (the web folds below 900px), whatever was chosen.
+        let folded = self.prefs.sidebar_folded || window.viewport_size().width < px(NARROW);
         let width = spring(
             "sidebar-width",
             px(if folded { RAIL_WIDTH } else { OPEN_WIDTH }),
@@ -607,7 +614,10 @@ impl Sidebar {
         let statuses = lifted(&store.chats.chats, &store.chats.statuses);
         let place =
             |this: &Self, id: &'static str, icon: IconName, label: String, route: Option<Route>, cx: &Context<Self>| {
-                let active = route.as_ref().is_some_and(|r| *r == this.route);
+                // Agents stays current while building one (the web's agents/agent/new-agent/builder).
+                let active = route.as_ref().is_some_and(|r| {
+                    *r == this.route || (*r == Route::Agents && matches!(this.route, Route::Builder { .. }))
+                });
                 let row = NavRow::new(id, label)
                     .icon(icon)
                     .rail(folded)
@@ -627,16 +637,22 @@ impl Sidebar {
             Some(Route::Inbox),
             cx,
         )
+        // The web's Count: an accent pill with the number (the folded rail puts it on the item's corner).
         .when(pending > 0, |r| {
             r.trailing(
                 div()
                     .flex()
+                    .flex_none()
                     .items_center()
-                    .gap(px(space::X1_5))
+                    .justify_center()
+                    .h(px(18.))
+                    .min_w(px(18.))
+                    .px(px(space::X1_5))
+                    .rounded_full()
+                    .bg(p.accent)
                     .text_xs()
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(p.warning)
-                    .child(div().size(px(6.)).rounded_full().bg(p.warning))
+                    .text_color(p.on_accent)
                     .child(pending.to_string()),
             )
         });
@@ -1072,19 +1088,46 @@ impl Sidebar {
                 })
             })
             .when(!folded, |c| {
+                // More of the list past an edge fades out over that edge (24px), as the web's fade-top/bottom.
+                let (offset, max) = (self.list_scroll.offset().y, self.list_scroll.max_offset().y);
+                let (above, below) = (offset < px(-0.5), max + offset > px(0.5));
+                let fade = |top: bool| {
+                    div()
+                        .absolute()
+                        .left_0()
+                        .right_0()
+                        .h(px(space::X6))
+                        .map(|d| if top { d.top_0() } else { d.bottom_0() })
+                        .bg(linear_gradient(
+                            if top { 180. } else { 0. },
+                            linear_color_stop(p.bg_sidebar, 0.),
+                            linear_color_stop(motion::fade(p.bg_sidebar, 0.), 1.),
+                        ))
+                };
                 c.child(
                     div()
-                        .id("sidebar-list")
-                        // The same side room as ui/collapse, so the rows' drag grips aren't clipped by the scroll.
-                        .mx(px(-crate::ui::collapse::GUTTER))
-                        .px(px(crate::ui::collapse::GUTTER))
+                        .relative()
                         .flex_1()
                         .min_h_0()
-                        .overflow_y_scroll()
                         .flex()
                         .flex_col()
-                        .gap(px(space::X0_5))
-                        .children(list),
+                        .child(
+                            div()
+                                .id("sidebar-list")
+                                // The same side room as ui/collapse, so the rows' drag grips aren't clipped by the scroll.
+                                .mx(px(-crate::ui::collapse::GUTTER))
+                                .px(px(crate::ui::collapse::GUTTER))
+                                .flex_1()
+                                .min_h_0()
+                                .overflow_y_scroll()
+                                .track_scroll(&self.list_scroll)
+                                .flex()
+                                .flex_col()
+                                .gap(px(space::X0_5))
+                                .children(list),
+                        )
+                        .when(above, |c| c.child(fade(true)))
+                        .when(below, |c| c.child(fade(false))),
                 )
             })
             .when(folded, |c| c.items_center().child(div().flex_1())) // folded: one centred column, the foot at the bottom

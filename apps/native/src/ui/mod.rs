@@ -12,6 +12,7 @@ pub mod markdown;
 pub mod menu;
 pub mod motion;
 pub mod nav;
+pub mod orbit;
 pub mod reorder;
 pub mod segmented;
 pub mod select;

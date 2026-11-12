@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Zorel — início</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="zorel.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.sh{display:flex;align-items:baseline;gap:8px;padding:0 4px 8px 4px}
+.sh b{font-weight:600;font-size:13.5px}
+.brief{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:10px}
+.brief .t{font-size:13px;line-height:19px}
+.brief .m{font-size:12px;line-height:17px;color:var(--muted)}
+</style>
+</helmet>
+<div class="z app">
+  <dc-import name="Sidebar" active="home" hint-size="272px,884px"></dc-import>
+
+  <main class="main">
+    <!-- A quiet echo of the mark behind the top: the only decoration -->
+    <div aria-hidden="true" style="position: absolute; left: 50%; top: 150px; width: 0; height: 0; pointer-events: none">
+      <span style="position: absolute; width: 520px; height: 520px; margin: -260px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(232,238,255,.045)"></span>
+      <span style="position: absolute; width: 860px; height: 860px; margin: -430px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(232,238,255,.03)"></span>
+      <span style="position: absolute; width: 700px; height: 360px; margin: -260px 0 0 -350px; border-radius: 50%; background: radial-gradient(closest-side, rgba(42,106,240,.06), rgba(42,106,240,0))"></span>
+    </div>
+
+    <div style="position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; padding: 52px 40px 24px 40px; overflow: hidden">
+      <!-- 1. Start something -->
+      <div class="rise" style="width: 680px; display: flex; flex-direction: column; gap: 14px">
+        <div style="display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; margin-bottom: 10px">
+          <span class="t-small">Boa tarde, Gustavo · quarta, 11 de novembro</span>
+          <h1 class="t-display">No que vamos trabalhar?</h1>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px">
+          <span class="chip" style="height: 26px; background: none; box-shadow: inset 0 0 0 1px var(--line-2)"><svg class="ic xs" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"></path></svg>zero<svg class="ic xs" viewBox="0 0 24 24" aria-hidden="true" style="color: var(--muted)"><path d="m7 10 5 5 5-5"></path></svg></span>
+          <span class="chip" style="height: 26px; padding-left: 4px; background: none; box-shadow: inset 0 0 0 1px var(--line-2)"><span class="face coral blink" style="width: 18px; height: 18px"><i></i><i></i></span>Atlas responde</span>
+        </div>
+        <div style="border-radius: 16px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--line-2), 0 24px 56px -28px rgba(0,0,0,.9)">
+          <label class="sr" for="ask">Mensagem</label>
+          <textarea id="ask" rows="2" placeholder="Mensagem · # chama um agente" style="display: block; width: 100%; resize: none; border: 0; outline: 0; background: none; color: var(--text); font: 400 15px/22px Inter, sans-serif; padding: 14px 16px 0 16px; height: 56px"></textarea>
+          <div style="display: flex; align-items: center; gap: 4px; padding: 6px">
+            <button class="btn icon ghost" aria-label="Anexar"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13"></path></svg></button>
+            <span class="grow"></span>
+            <button class="btn ghost" style="font-weight: 400; color: var(--muted)">Sonnet 5.5<span class="text-2">Alto</span></button>
+            <button class="btn icon primary round" aria-label="Enviar"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="stroke-width: 2.2"><path d="M12 18.5v-13M6.5 11 12 5.5 17.5 11"></path></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2–4. What needs you, who is working, what came in -->
+      <div style="width: 960px; margin-top: 40px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px">
+        <div style="display: flex; flex-direction: column; gap: 22px">
+          <section class="rise d1">
+            <div class="sh"><b>Precisa de você</b><span class="t-small" style="color: var(--wait)">2</span><span class="grow"></span><a href="#" class="t-small">Ver todas</a></div>
+            <div class="card rows">
+              <div class="row"><span class="face aqua blink" style="width: 28px; height: 28px"><i></i><i></i><span class="waitdot"></span></span><span class="grow">Nova quer rodar <span class="mono text-2">docker push</span><br><span class="t-small">Publicar imagem no GHCR</span></span><button class="btn sm ghost">Recusar</button><button class="btn sm primary">Aprovar</button></div>
+              <div class="hair"></div>
+              <div class="row"><span class="face orchid blink" style="width: 28px; height: 28px"><i></i><i></i><span class="waitdot"></span></span><span class="grow">Rosa pergunta se mantemos o build local<br><span class="t-small">Revisão da spec 017</span></span><button class="btn sm">Responder</button></div>
+            </div>
+          </section>
+
+          <section class="rise d2">
+            <div class="sh"><b>Trabalhando agora</b></div>
+            <div class="card rows">
+              <div class="row"><span class="face coral blink" style="width: 28px; height: 28px"><i></i><i></i><span class="arc"></span><span class="orbhead"></span></span><span class="grow">Ferramentas só de agentes<br><span class="t-small">Atlas · rodando os testes</span></span><span class="bar" style="width: 80px"><span class="sheen" style="width: 62%; background: var(--a-coral)"></span></span><span class="t-small num" style="width: 30px; text-align: right">5/8</span></div>
+              <div class="hair"></div>
+              <div class="row"><span class="face lime blink" style="width: 28px; height: 28px"><i></i><i></i><span class="arc"></span><span class="orbhead"></span></span><span class="grow">Auditoria de dependências<br><span class="t-small">Orion · lendo bun.lock</span></span><span class="t-small num">3 min</span></div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Today: what the routines brought since your day started -->
+        <section class="card rise d3" style="padding: 14px 8px 8px 8px; align-self: start">
+          <div class="sh" style="padding: 0 10px 8px 10px"><b>Hoje</b><span class="t-small">desde 08:30</span></div>
+          <div class="brief"><span class="face aqua" style="width: 20px; height: 20px; margin-top: 1px"><i></i><i></i></span><span class="grow"><span class="t" style="display: block">Release 0.17 publicada</span><span class="m">Release semanal · 10:02</span></span></div>
+          <div class="brief"><span class="face lime" style="width: 20px; height: 20px; margin-top: 1px"><i></i><i></i></span><span class="grow"><span class="t" style="display: block">2 atualizações seguras de dependências</span><span class="m">Dependências · 09:00</span></span></div>
+          <div class="brief"><span class="face orchid" style="width: 20px; height: 20px; margin-top: 1px"><i></i><i></i></span><span class="grow"><span class="t" style="display: block">3 comentários na spec 018</span><span class="m">Revisar specs · ontem 14:00</span></span></div>
+          <p class="t-small" style="padding: 6px 10px 4px 10px">Mais 4 execuções não encontraram nada novo.</p>
+          <div class="hair" style="margin: 6px 10px"></div>
+          <div style="display: flex; align-items: center; gap: 8px; padding: 6px 10px" class="t-small"><svg class="ic xs" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l2.5 1.5"></path></svg><span class="grow">Próxima: Resumo do dia, 18:00</span></div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

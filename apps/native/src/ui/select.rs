@@ -2,12 +2,16 @@
 // choice (its mark and name) and a chevron that turns while open; the list floats on `layout::float` (card radius,
 // inset 6) with 32px rows at the row radius, concentric with it, the chosen one checked. Hover eases in (ui/motion).
 // The kit's Popover places it, animates it in and closes it on Escape or a click outside.
-// ponytail: no search field yet (the web adds one past 8 options); ⌘K finds projects and agents meanwhile.
+// Past SEARCH_AT options a search field sits on top of the list (focused on open) and filters it by name.
 use std::{f32::consts::PI, rc::Rc};
 
 use gpui_kit::{
     assets::IconName,
-    component::{Selectable, popover::Popover},
+    component::{
+        Selectable,
+        input::{Input, InputState},
+        popover::Popover,
+    },
     prelude::FluentBuilder,
     *,
 };
@@ -34,6 +38,18 @@ pub struct SelectOption {
     pub mark: Mark,
 }
 
+/// More options than this and the list gets a search field (the web's SEARCH_AT).
+const SEARCH_AT: usize = 8;
+
+/// The options whose name holds what is typed (ignoring case); all of them with nothing typed.
+pub fn matching<'a>(options: &'a [SelectOption], query: &str) -> Vec<&'a SelectOption> {
+    let q = query.trim().to_lowercase();
+    options
+        .iter()
+        .filter(|o| q.is_empty() || o.label.to_lowercase().contains(&q))
+        .collect()
+}
+
 pub type OnPick = Rc<dyn Fn(&str, &mut Window, &mut App) + 'static>;
 
 #[derive(IntoElement)]
@@ -45,6 +61,8 @@ pub struct Select {
     selected: String,
     /// Shown before the choice in the trigger (the project's folder).
     prefix: Option<IconName>,
+    /// The search field's placeholder (only past SEARCH_AT options).
+    search: Option<SharedString>,
     on_pick: OnPick,
 }
 
@@ -62,12 +80,18 @@ impl Select {
             options,
             selected: selected.into(),
             prefix: None,
+            search: None,
             on_pick,
         }
     }
 
     pub fn prefix(mut self, icon: IconName) -> Self {
         self.prefix = Some(icon);
+        self
+    }
+
+    pub fn search(mut self, placeholder: impl Into<SharedString>) -> Self {
+        self.search = Some(placeholder.into());
         self
     }
 }
@@ -84,6 +108,8 @@ impl RenderOnce for Select {
         };
         let (options, selected, on_pick, key) = (self.options, self.selected, self.on_pick, self.id.to_string());
         let enter_key = SharedString::from(format!("{key}-enter"));
+        let search_key = SharedString::from(format!("{key}-search"));
+        let placeholder = self.search.unwrap_or_else(|| self.name.clone());
         Popover::new(self.id)
             .anchor(Anchor::TopLeft)
             .offset(px(6.))
@@ -91,16 +117,47 @@ impl RenderOnce for Select {
             .trigger(trigger)
             .content(move |_, window, cx| {
                 let popover = cx.entity();
+                // A fresh, focused field each time the list opens (the state lives while the list is shown).
+                let query = (options.len() > SEARCH_AT).then(|| {
+                    let placeholder = placeholder.clone();
+                    window.use_keyed_state(search_key.clone(), cx, move |window, cx| {
+                        let state = InputState::new(window, cx).placeholder(placeholder);
+                        state.focus_handle(cx).focus(window, cx);
+                        state
+                    })
+                });
+                let typed = query
+                    .as_ref()
+                    .map(|q| q.read(cx).value().to_string())
+                    .unwrap_or_default();
+                let shown = matching(&options, &typed);
                 let p = theme::palette(window);
                 let list = layout::panel("options", p)
-                    .min_w(px(160.))
+                    .min_w(px(if query.is_some() { 256. } else { 160. }))
                     .max_w(px(280.))
                     .max_h(px(320.))
                     .flex()
                     .flex_col()
                     .overflow_y_scroll()
                     .role(Role::ListBox)
-                    .children(options.iter().map(|o| {
+                    .when_some(query, |l, q| {
+                        l.child(
+                            div()
+                                .flex()
+                                .flex_none()
+                                .items_center()
+                                .gap(px(space::X2))
+                                .h(px(tokens::CONTROL_H_SM))
+                                .px(px(space::X2_5))
+                                .mb(px(space::X1))
+                                .rounded(px(tokens::RADIUS_CONTROL_SM))
+                                .bg(p.bg_field)
+                                .text_sm()
+                                .child(icon(IconName::Search, icon::SM).text_color(p.text_muted))
+                                .child(div().flex_1().child(Input::new(&q).appearance(false))),
+                        )
+                    })
+                    .children(shown.into_iter().map(|o| {
                         let on_pick = on_pick.clone();
                         let popover = popover.clone();
                         let id = o.id.clone();
@@ -233,5 +290,31 @@ fn mark(key: &str, mark: &Mark) -> Option<AnyElement> {
                 .into_any_element(),
         ),
         Mark::Icon(name) => Some(icon(*name, icon::MD).into_any_element()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Mark, SelectOption, matching};
+
+    #[test]
+    fn the_search_keeps_the_options_whose_name_holds_what_is_typed() {
+        let options: Vec<SelectOption> = ["Atlas", "Zorel web", "Notes"]
+            .iter()
+            .map(|n| SelectOption {
+                id: n.to_lowercase(),
+                label: (*n).into(),
+                mark: Mark::None,
+            })
+            .collect();
+        let names = |q: &str| {
+            matching(&options, q)
+                .iter()
+                .map(|o| o.label.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names("  "), ["Atlas", "Zorel web", "Notes"]);
+        assert_eq!(names("WEB"), ["Zorel web"]);
+        assert!(names("xyz").is_empty());
     }
 }

@@ -36,12 +36,13 @@ use crate::{
         face::{self, AgentFace, FaceState, WorkingRing},
         layout,
         nav::NavRow,
+        orbit::Orbit,
         select::{Mark, OnPick, Select, SelectOption},
     },
 };
 
-/// Home's column: the composer and the feed under it share it (prototype 680).
-const COLUMN: f32 = 680.;
+/// Home's column: the composer and the feed under it share it (the web's max-w-2xl).
+const COLUMN: f32 = 672.;
 
 pub enum HomeEvent {
     Navigate(Route),
@@ -61,6 +62,8 @@ pub struct Home {
     composer: Entity<Composer>,
     /// The model the new chat runs on (in the composer's tools).
     model: Entity<ModelPicker>,
+    /// The backdrop behind the top (its agents circle on their own clock).
+    orbit: Entity<Orbit>,
     today: Option<Today>,
     /// An answer box per open question shown here.
     answers: HashMap<String, Entity<TextareaState>>,
@@ -115,6 +118,7 @@ impl Home {
             draft_chat: None,
             composer,
             model,
+            orbit: cx.new(Orbit::new),
             today: None,
             answers: HashMap::new(),
             _subscriptions: subscriptions,
@@ -339,7 +343,8 @@ impl Home {
             self.project_id.clone().unwrap_or_default(),
             pick,
         )
-        .prefix(IconName::Folder);
+        .prefix(IconName::Folder)
+        .search(t!("home.searchProjects").into_owned());
         let crew = self.crew(store);
         let who: AnyElement = match crew.as_slice() {
             [] if self.single(store).is_none() => div().into_any_element(),
@@ -362,7 +367,9 @@ impl Home {
                     });
                 });
                 let single = self.single(store).map(|a| a.id.clone()).unwrap_or_default();
-                Select::new("who-answers", t!("home.whoAnswers").into_owned(), options, single, pick).into_any_element()
+                Select::new("who-answers", t!("home.whoAnswers").into_owned(), options, single, pick)
+                    .search(t!("home.searchAgents").into_owned())
+                    .into_any_element()
             }
             crew => {
                 let one = crew.len() == 1;
@@ -630,7 +637,18 @@ impl Home {
             .relative()
             .size_full()
             .overflow_y_scroll()
-            .child(orbit(p))
+            // A quiet echo of the mark behind the top only (h-96, 60%; decoration).
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .h(px(384.))
+                    .opacity(0.6)
+                    .overflow_hidden()
+                    .child(self.orbit.clone()),
+            )
             .child(
                 div()
                     .relative()
@@ -638,7 +656,7 @@ impl Home {
                     .flex_col()
                     .items_center()
                     .px(px(space::X7))
-                    .pt(px(space::X12))
+                    .pt(px(space::X14))
                     .pb(px(space::X10))
                     .child(
                         div()
@@ -646,19 +664,19 @@ impl Home {
                             .max_w(px(COLUMN))
                             .flex()
                             .flex_col()
-                            .gap(px(space::X4))
+                            .gap(px(space::X6))
                             .child(
                                 div()
                                     .flex()
                                     .flex_col()
                                     .items_center()
                                     .gap(px(space::X1))
-                                    .mb(px(space::X2_5))
                                     .child(div().text_sm().text_color(p.text_muted).child(greeting))
                                     .child(
                                         div()
-                                            .text_size(px(28.))
-                                            .line_height(px(34.))
+                                            // --text-display (GPUI has no letter-spacing for its -0.03em).
+                                            .text_size(px(26.))
+                                            .line_height(px(32.))
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .child(t!("home.title").into_owned()),
                                     ),
@@ -715,28 +733,4 @@ fn quiet_body(p: &Palette, id: &'static str, title: &str, hint: &str) -> Div {
 
 fn chevron(p: &Palette) -> impl IntoElement {
     icon(IconName::ChevronRight, icon::MD).text_color(p.text_muted)
-}
-
-/// A quiet echo of the mark behind the top: two hairline rings centred under the title (decoration only).
-fn orbit(p: &Palette) -> impl IntoElement {
-    let ring = |size: f32, alpha: f32| {
-        div()
-            .absolute()
-            .left(relative(0.5))
-            .top(px(130. - size / 2.))
-            .ml(px(-size / 2.))
-            .size(px(size))
-            .rounded_full()
-            .border_1()
-            .border_color(Rgba { a: alpha, ..p.text })
-    };
-    div()
-        .absolute()
-        .top_0()
-        .left_0()
-        .right_0()
-        .h(px(420.))
-        .overflow_hidden()
-        .child(ring(520., 0.045))
-        .child(ring(860., 0.03))
 }

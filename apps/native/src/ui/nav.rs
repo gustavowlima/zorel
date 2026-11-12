@@ -213,6 +213,7 @@ impl RenderOnce for NavRow {
                     }
                 })
         });
+        let (trailing, corner) = if self.rail { (None, trailing) } else { (trailing, None) };
         // Screen readers: a button named by its label, the detail as its description, selected when open.
         let label = self.label.clone();
         let description = self.detail.as_ref().map(|(d, _)| d.clone());
@@ -286,6 +287,12 @@ impl RenderOnce for NavRow {
                 )
                 .when_some(trailing, |r, t| {
                     r.child(div().flex_none().flex().items_center().gap(px(space::X0_5)).child(t))
+                })
+            })
+            // On the rail what the row shows on the right (a count) sits on the square's top-right corner.
+            .when(self.rail, |r| {
+                r.when_some(corner, |r, t| {
+                    r.child(div().absolute().top(px(-2.)).right(px(-2.)).child(t))
                 })
             })
             .when(!self.disabled, |r| {
