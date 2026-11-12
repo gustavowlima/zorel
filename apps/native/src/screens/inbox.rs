@@ -3,7 +3,7 @@
 // The list refreshes when a chat's status changes (the Store's StatusChanged), as the web refetches on its key.
 // ponytail: a routine's "uncertain" step (spec 013) and editing an "Ask me" step land with the routines screen (T054).
 use gpui_kit::{
-    base::input::{Textarea, TextareaState},
+    base::input::TextareaState,
     component::{
         Sizable as _,
         tab::{Tab, TabBar},
@@ -14,17 +14,18 @@ use gpui_kit::{
 use rust_i18n::t;
 use serde_json::json;
 
+use std::rc::Rc;
+
+use crate::screens::approval::{self, is_question};
 use crate::{
     i18n::tn,
-    net::types::{Approval, ApprovalKind, MemoriesListSuccess, Memory, MemoryState},
+    net::types::{Approval, MemoriesListSuccess, Memory, MemoryState},
     runtime,
     state::store::{StatusChanged, Store},
-    theme::{self, tokens::Palette},
+    theme::{self},
     ui::{
         button::{Button, Size, Variant},
-        code::code_block,
-        face::{AgentFace, FaceState},
-        layout,
+        face::AgentFace,
     },
 };
 
@@ -34,11 +35,6 @@ enum Filter {
     Approvals,
     Questions,
     Memories,
-}
-
-// A question in words (zorel_ask_user); a routine's "Ask me" step is a yes or no, so it counts as an approval.
-fn is_question(a: &Approval) -> bool {
-    matches!(a.kind, ApprovalKind::Question) && a.run_step_id.is_none()
 }
 
 pub enum InboxEvent {
@@ -152,38 +148,6 @@ impl Inbox {
     }
 }
 
-/// One card: who, where and when, the kind on the right, the body, then "Open the chat" and the actions.
-fn item(p: &Palette, kind: &str, kind_colors: (Rgba, Rgba), face: AnyElement, who: String, context: String) -> Div {
-    layout::card(p).flex().flex_col().gap(px(14.)).p(px(20.)).child(
-        div()
-            .flex()
-            .items_start()
-            .gap(px(12.))
-            .child(face)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .child(div().font_weight(FontWeight::SEMIBOLD).truncate().child(who))
-                    .child(div().text_sm().text_color(p.text_muted).truncate().child(context)),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .rounded_full()
-                    .px(px(8.))
-                    .py(px(2.))
-                    .text_xs()
-                    .font_weight(FontWeight::MEDIUM)
-                    .bg(kind_colors.0)
-                    .text_color(kind_colors.1)
-                    .child(t!(format!("inbox.kind.{kind}")).into_owned()),
-            ),
-    )
-}
-
 impl Render for Inbox {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = theme::palette(window);
@@ -206,128 +170,16 @@ impl Render for Inbox {
             if !show(if question { Filter::Questions } else { Filter::Approvals }, filter) {
                 continue;
             }
-            let store = self.store.read(cx);
-            let (who, tone) = (
-                store.agent_name(a.agent_id.as_deref()),
-                store.tone(a.agent_id.as_deref()),
-            );
-            let context = store.chat(&a.chat_id).map(|c| c.title.clone()).unwrap_or_default();
-            let face = AgentFace::new(SharedString::from(format!("inbox-face-{}", a.id)), tone)
-                .size(32.)
-                .state(FaceState::Waiting)
-                .into_any_element();
-            let kind = if question { "question" } else { "approval" };
-            let colors = if question {
-                (p.accent_soft, p.accent_text)
-            } else {
-                (p.wait_soft, p.warning)
-            };
-            let mut card = item(p, kind, colors, face, who, context);
-            let open = a.chat_id.clone();
-            let open_button = Button::new(
-                SharedString::from(format!("open-{}", a.id)),
-                t!("inbox.openChat").into_owned(),
-            )
-            .variant(Variant::Ghost)
-            .size(Size::Sm)
-            .on_click(cx.listener(move |_, _, _, cx| cx.emit(InboxEvent::OpenChat(open.clone()))));
-            if question {
-                let answer = self.answer_box(&a.id, window, cx);
-                let (send_id, skip_id) = (a.id.clone(), a.id.clone());
-                let send_box = answer.clone();
-                card = card
-                    .child(div().text_lg().child(a.summary.clone()))
-                    .child(
-                        layout::card(p)
-                            .bg(p.bg_field)
-                            .px(px(10.))
-                            .py(px(6.))
-                            .child(Textarea::new(&answer)),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .child(open_button)
-                            .child(div().flex_1())
-                            .child(
-                                Button::new(
-                                    SharedString::from(format!("skip-{}", a.id)),
-                                    t!("question.skip").into_owned(),
-                                )
-                                .variant(Variant::Ghost)
-                                .size(Size::Sm)
-                                .on_click(
-                                    cx.listener(move |this, _, _, cx| this.decide(skip_id.clone(), "denied", None, cx)),
-                                ),
-                            )
-                            .child(
-                                Button::new(
-                                    SharedString::from(format!("send-{}", a.id)),
-                                    t!("question.send").into_owned(),
-                                )
-                                .variant(Variant::Primary)
-                                .size(Size::Sm)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    let text = send_box.read(cx).value().to_string();
-                                    this.decide(send_id.clone(), "approved", Some(text), cx)
-                                })),
-                            ),
-                    );
-            } else {
-                let body = match a.kind {
-                    ApprovalKind::Command => code_block(p, a.summary.chars().take(2000).collect::<String>()),
-                    _ => div().child(a.summary.clone()).child(
-                        div()
-                            .mt(px(6.))
-                            .text_sm()
-                            .text_color(p.text_muted)
-                            .child(a.tool.clone()),
-                    ),
-                };
-                let (always, deny, allow) = (a.id.clone(), a.id.clone(), a.id.clone());
-                card = card.child(body).child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .child(open_button)
-                        .child(div().flex_1())
-                        .when(a.always_key.is_some(), |row| {
-                            row.child(
-                                Button::new(
-                                    SharedString::from(format!("always-{}", a.id)),
-                                    t!("approval.allowAlways").into_owned(),
-                                )
-                                .variant(Variant::Ghost)
-                                .size(Size::Sm)
-                                .on_click(
-                                    cx.listener(move |this, _, _, cx| this.decide(always.clone(), "always", None, cx)),
-                                ),
-                            )
-                        })
-                        .child(
-                            Button::new(
-                                SharedString::from(format!("deny-{}", a.id)),
-                                t!("approval.deny").into_owned(),
-                            )
-                            .size(Size::Sm)
-                            .on_click(cx.listener(move |this, _, _, cx| this.decide(deny.clone(), "denied", None, cx))),
-                        )
-                        .child(
-                            Button::new(
-                                SharedString::from(format!("allow-{}", a.id)),
-                                t!("approval.allow").into_owned(),
-                            )
-                            .variant(Variant::Primary)
-                            .size(Size::Sm)
-                            .on_click(
-                                cx.listener(move |this, _, _, cx| this.decide(allow.clone(), "approved", None, cx)),
-                            ),
-                        ),
-                );
-            }
+            let answer = question.then(|| self.answer_box(&a.id, window, cx));
+            let view = cx.entity().downgrade();
+            let decide: approval::Decide = Rc::new(move |id, outcome, reason, _, cx| {
+                let _ = view.update(cx, |this, cx| this.decide(id, outcome, reason, cx));
+            });
+            let view = cx.entity().downgrade();
+            let open: approval::OpenChat = Rc::new(move |chat_id, _, cx| {
+                let _ = view.update(cx, |_, cx| cx.emit(InboxEvent::OpenChat(chat_id)));
+            });
+            let card = approval::card(&a, self.store.read(cx), answer.as_ref(), decide, open, window);
             items.push((a.created_at, card.into_any_element()));
         }
         if show(Filter::Memories, filter) {
@@ -345,7 +197,7 @@ impl Render for Inbox {
                     .size(32.)
                     .into_any_element();
                 let (discard, keep) = (m.id.clone(), m.id.clone());
-                let card = item(
+                let card = approval::item(
                     p,
                     "memory",
                     (p.bg_control, p.text_secondary),

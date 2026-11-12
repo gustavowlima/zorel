@@ -1,3 +1,4 @@
+pub mod approval;
 pub mod chat;
 pub mod inbox;
 pub mod palette;
