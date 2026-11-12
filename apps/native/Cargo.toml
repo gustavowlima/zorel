@@ -17,6 +17,8 @@ regress = "0.12" # the patterns typify generates checks for (src/net/types.rs)
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "process", "io-util"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 getrandom = "0.4" # the per-launch session secret
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 
 [build-dependencies]
 # Wire types generated from packages/contracts/schema/wire.json (build.rs).
@@ -32,4 +34,4 @@ path = "src/main.rs"
 
 [package.metadata.cargo-machete]
 # Used only by the generated wire types (OUT_DIR/wire.rs), which cargo-machete doesn't read.
-ignored = ["regress", "serde_json"]
+ignored = ["regress"]
