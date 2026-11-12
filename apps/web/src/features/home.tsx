@@ -13,7 +13,7 @@ import { go } from "../state.ts"
 import { agentOptions, callable, lastUsedAgent, projectCrew, teamsIn, toJoin } from "./agent-options.ts"
 import { Composer, type ComposerOption, type ComposerSources, SendError } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
-import { agentTint, agentTone, chatTitle, modelLabel, statusLabel } from "../labels.ts"
+import { agentTint, agentTone, chatTitle, modelLabel, needsYou, statusLabel } from "../labels.ts"
 import { AgentAvatar, AlarmClock, Button, cn, Folder, ListRow, OrbitBackdrop, Rows, Section, Select, Users } from "@/ui"
 
 const DEFAULT_MODEL: ModelChoice = { model: "claude-cli/sonnet", accountId: null, effort: null }
@@ -174,7 +174,7 @@ function greeting() {
 
 // The first two approvals and questions, decided right here; all of them in Needs you. Absent when nothing waits.
 function NeedsYouNow() {
-  const approvals = useList(approvalsAtom)
+  const approvals = needsYou(useList(approvalsAtom), useList(agentsAtom))
   if (!approvals.length) return null
   return (
     <Section

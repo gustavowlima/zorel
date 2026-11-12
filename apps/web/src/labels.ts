@@ -202,3 +202,9 @@ export function approvalTitle(a: Approval, by: string): string {
 export const receiptTitle = (a: Approval) => (a.proposal && PROPOSAL_SHORT[a.tool]?.(proposalNames(a.proposal))) || a.summary || a.tool
 // A step's title: a team proposal's from its names (detail); any other step, the title the engine gave it.
 export const stepTitle = (tool: string | null, title: string, detail: string) => (tool && detail && PROPOSAL_SHORT[tool]?.(detail)) || title
+
+// What waits in Needs you (and its counts): every approval and question, except the Builder's own proposals — those
+// are decided in the Builder's conversation, on their card, and mean nothing out of it (spec 018). A teammate
+// proposing a colleague in an ordinary chat, or the Installer's commands, still wait there.
+export const needsYou = (approvals: ReadonlyArray<Approval>, agents: ReadonlyArray<Pick<Agent, "id" | "builtin">>) =>
+  approvals.filter((a) => !(a.tool === "zorel_create_agent" && agents.find((x) => x.id === a.agentId)?.builtin === "builder"))

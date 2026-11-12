@@ -5,7 +5,7 @@ import type { Approval } from "@zorel/contracts/events"
 import { formatAge, t } from "@zorel/i18n"
 import { type ReactNode, useState } from "react"
 import { agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, routinesAtom, uncertainStepsAtom, useList, useMutation } from "../client.ts"
-import { agentName, approvalTitle, chatTitle, scopeLabel } from "../labels.ts"
+import { needsYou, agentName, approvalTitle, chatTitle, scopeLabel } from "../labels.ts"
 import { go } from "../state.ts"
 import { openMemory } from "./knowledge.tsx"
 import { AuthorAvatar } from "./people.tsx"
@@ -16,7 +16,7 @@ type Filter = "all" | "approvals" | "memories"
 
 export function InboxView() {
   // A routine's write that may have gone out (spec 013) waits here like an approval.
-  const approvals = useList(approvalsAtom)
+  const approvals = needsYou(useList(approvalsAtom), useList(agentsAtom))
   const uncertain = useList(uncertainStepsAtom)
   const memories = useList(memoriesAtom).filter((m) => m.state === "pending")
   const [filter, setFilter] = useState<Filter>("all")
@@ -109,14 +109,14 @@ export function ApprovalItem({ approval: a }: { approval: Approval }) {
   // An "Ask me" step of a routine (spec 013) is a yes or no, not a question to answer in words.
   if (a.kind === "question" && !a.runStepId)
     return (
-      <Item avatar={<AuthorAvatar agent={agent} model={chat?.model ?? null} />} who={agentName(a.agentId, agents)} context={<InChat chat={chat} />} at={a.createdAt} actions={null}>
+      <Item avatar={<AuthorAvatar agent={agent} model={chat?.model ?? null} state="waiting" />} who={agentName(a.agentId, agents)} context={<InChat chat={chat} />} at={a.createdAt} actions={null}>
         <p className="font-medium">{a.summary}</p>
         <QuestionAnswer approval={a} />
       </Item>
     )
   return (
     <Item
-      avatar={<AuthorAvatar agent={agent} model={chat?.model ?? null} />}
+      avatar={<AuthorAvatar agent={agent} model={chat?.model ?? null} state="waiting" />}
       who={agentName(a.agentId, agents)}
       context={<InChat chat={chat} />}
       at={a.createdAt}

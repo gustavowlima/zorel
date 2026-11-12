@@ -1,6 +1,6 @@
-import { expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import type { Approval } from "@zorel/contracts/events"
-import { approvalTitle, modelName, paceOf, receiptTitle, stepTitle, windowMinutes } from "./labels.ts"
+import { approvalTitle, modelName, needsYou, paceOf, receiptTitle, stepTitle, windowMinutes } from "./labels.ts"
 
 const H = 3_600_000
 const now = 1_000 * H
@@ -37,4 +37,16 @@ test("a proposal's title is worded from its data, not the server's English summa
   expect(approvalTitle({ ...base, tool: "x", summary: "Run tests" }, "Rex")).toBe("Run tests")
   expect(stepTitle("zorel_update_agent", "Builder proposes changes to Rex", "Rex")).toBe("Changes to Rex")
   expect(stepTitle("bash", "Run tests", "bun test")).toBe("Run tests")
+})
+
+describe("needsYou", () => {
+  const agents = [{ id: "b", builtin: "builder" as const }, { id: "a", builtin: null }]
+  const approval = (agentId: string, tool: string) => ({ agentId, tool }) as unknown as Approval
+  test("the Builder's agent proposals stay in the Builder", () => {
+    expect(needsYou([approval("b", "zorel_create_agent")], agents)).toEqual([])
+  })
+  test("a teammate's proposal and other approvals still wait for the person", () => {
+    const kept = [approval("a", "zorel_create_agent"), approval("b", "zorel_run")]
+    expect(needsYou(kept, agents)).toEqual(kept)
+  })
 })

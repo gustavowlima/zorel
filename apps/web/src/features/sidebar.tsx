@@ -11,7 +11,7 @@ import type { ChatStatus } from "@zorel/contracts/events"
 import { formatAge, formatPercent, formatTime, t } from "@zorel/i18n"
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useInvalidate, useList, useMutation, useStatuses } from "../client.ts"
-import { agentTone, chatTitle, modelName, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
+import { agentTone, chatTitle, modelName, needsYou as needsYouOf, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
 import { RenameDialog } from "./chat.tsx"
 import { openPalette } from "./palette.tsx"
 import { NewProjectButton } from "./project.tsx"
@@ -44,7 +44,7 @@ type Place = { key: string; icon: ReactNode; label: string; active?: boolean; go
 // one has the open chat's wash.
 function Places({ route, folded }: { route: Route; folded: boolean }) {
   const memories = useList(memoriesAtom)
-  const approvals = useList(approvalsAtom)
+  const approvals = needsYouOf(useList(approvalsAtom), useList(agentsAtom))
   const needsYou = approvals.length + memories.filter((m) => m.state === "pending").length
   const places: Place[] = [
     { key: "home", icon: <House />, label: t("nav.homeScreen"), active: route.view === "home" && !route.projectId, go: () => go({ view: "home" }) },
@@ -78,7 +78,7 @@ function Places({ route, folded }: { route: Route; folded: boolean }) {
           active={!!p.active}
           onPress={p.go}
           aria-label={p.count ? `${p.label} (${p.count})` : p.label}
-          className={cn("h-9", p.active && "border-transparent bg-control-hover")}
+          className={cn("h-control", p.active && "border-transparent bg-control-hover")}
           trailing={p.count ? <Count n={p.count} /> : undefined}
         >
           {p.label}
