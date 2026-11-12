@@ -213,7 +213,10 @@ pub struct Person {
 }
 
 /// Where a mention's face sits: room no line breaks inside, ahead of the name.
-const FACE_ROOM: &str = "\u{2007}\u{2007}\u{202F}";
+/// A chip's inner padding (start and end) and the face's room (two figure spaces) with a gap before the name:
+/// all non-breaking, so the chip stays on one line.
+const CHIP_PAD: &str = "\u{202F}";
+const FACE_ROOM: &str = "\u{2007}\u{2007}\u{202F}\u{202F}";
 const MENTION_FACE: f32 = 16.;
 
 pub type OpenMention = Rc<dyn Fn(String, &mut Window, &mut App) + 'static>;
@@ -308,6 +311,7 @@ fn inline(id: SharedString, text: &Inline, p: &tokens::Palette, mentions: Option
     // opens it. The "@handle" is replaced in the text, so the other marks move with it.
     let mut shown = text.text.clone();
     let mut faces: Vec<(usize, AnyElement)> = Vec::new();
+    let mut chips: Vec<(Range<usize>, Hsla)> = Vec::new();
     if let Some(m) = mentions {
         let in_code = |r: &Range<usize>| {
             text.marks
@@ -323,7 +327,7 @@ fn inline(id: SharedString, text: &Inline, p: &tokens::Palette, mentions: Option
             // Old offset → new: shifted by the mentions before it; inside one, to its end.
             let swaps: Vec<(Range<usize>, usize)> = found
                 .iter()
-                .map(|(r, person)| (r.clone(), FACE_ROOM.len() + person.name.len()))
+                .map(|(r, person)| (r.clone(), 2 * CHIP_PAD.len() + FACE_ROOM.len() + person.name.len()))
                 .collect();
             let map = |o: usize| -> usize {
                 let mut delta: isize = 0;
@@ -352,9 +356,13 @@ fn inline(id: SharedString, text: &Inline, p: &tokens::Palette, mentions: Option
             for (r, person) in &found {
                 out.push_str(&text.text[at..r.start]);
                 let start = out.len();
+                out.push_str(CHIP_PAD);
+                let face_at = out.len();
                 out.push_str(FACE_ROOM);
                 let name_at = out.len();
                 out.push_str(&person.name);
+                out.push_str(CHIP_PAD);
+                chips.push((start..out.len(), crate::ui::motion::fade(person.hue, 0.14).into()));
                 highlights.push((
                     name_at..out.len(),
                     HighlightStyle {
@@ -369,7 +377,7 @@ fn inline(id: SharedString, text: &Inline, p: &tokens::Palette, mentions: Option
                     Rc::new(move |window, cx| open(agent.clone(), window, cx)),
                 ));
                 faces.push((
-                    start,
+                    face_at,
                     crate::ui::face::AgentFace::new(SharedString::from(format!("{id}-m{start}")), person.tone)
                         .size(MENTION_FACE)
                         .into_any_element(),
@@ -385,6 +393,7 @@ fn inline(id: SharedString, text: &Inline, p: &tokens::Palette, mentions: Option
     crate::ui::selectable::Selectable::new(id, shown, highlights, crate::ui::motion::fade(p.accent, 0.35))
         .links(links)
         .inline(faces)
+        .chips(chips)
         .into_any_element()
 }
 

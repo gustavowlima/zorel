@@ -16,6 +16,8 @@ pub struct Selectable {
     links: Rc<Vec<(Range<usize>, Action)>>,
     /// Elements drawn in the text's flow, each at the start of the room left for it (a mention's face).
     inline: Vec<(usize, AnyElement)>,
+    /// Rounded washes under ranges of the text (a mention's chip).
+    chips: Vec<(Range<usize>, Hsla)>,
 }
 
 /// What clicking a range does (open a URL, open an agent).
@@ -37,12 +39,19 @@ impl Selectable {
             color: color.into(),
             links: Rc::new(Vec::new()),
             inline: Vec::new(),
+            chips: Vec::new(),
         }
     }
 
     /// Elements to draw at byte offsets of the text (the text leaves room for them), vertically centred on the line.
     pub fn inline(mut self, items: Vec<(usize, AnyElement)>) -> Self {
         self.inline = items;
+        self
+    }
+
+    /// Rounded washes to paint under these ranges (behind the text and its selection).
+    pub fn chips(mut self, chips: Vec<(Range<usize>, Hsla)>) -> Self {
+        self.chips = chips;
         self
     }
 
@@ -127,6 +136,13 @@ impl Element for Selectable {
         let layout = self.styled.layout().clone();
         let key = self.id.to_string();
         text_select::register(&key, self.text.clone(), layout.clone());
+        for (range, color) in &self.chips {
+            for b in line_rects(&layout, range.clone()) {
+                // A pill a little shorter than the line, so stacked lines don't touch.
+                let b = Bounds::from_corners(point(b.left(), b.top() + px(2.)), point(b.right(), b.bottom() - px(2.)));
+                window.paint_quad(fill(b, *color).corner_radii(b.size.height / 2.));
+            }
+        }
         if let Some(range) = text_select::range_of(&key) {
             paint_selection(&layout, range, self.color, window);
         }
@@ -210,11 +226,18 @@ impl Element for Selectable {
 }
 
 fn paint_selection(layout: &TextLayout, range: Range<usize>, color: Hsla, window: &mut Window) {
+    for b in line_rects(layout, range) {
+        window.paint_quad(fill(b, color));
+    }
+}
+
+/// One box per visual line a range covers, full line height.
+fn line_rects(layout: &TextLayout, range: Range<usize>) -> Vec<Bounds<Pixels>> {
     let (Some(start), Some(end)) = (
         layout.position_for_index(range.start),
         layout.position_for_index(range.end),
     ) else {
-        return;
+        return Vec::new();
     };
     let (bounds, line) = (layout.bounds(), layout.line_height());
     let mut quads = Vec::new();
@@ -233,7 +256,5 @@ fn paint_selection(layout: &TextLayout, range: Range<usize>, color: Hsla, window
             point(end.x, end.y + line),
         ));
     }
-    for b in quads {
-        window.paint_quad(fill(b, color));
-    }
+    quads
 }
