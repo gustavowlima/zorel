@@ -310,7 +310,7 @@ export const part3 = {
       text: "Texto",
       default: "Se não souber responder, seguir por",
       ask: "O que perguntar a você",
-      askHint: "Fica esperando em Pendências, e no Telegram quando estiver pareado.",
+      askHint: "Fica esperando em Notificações, e no Telegram quando estiver pareado.",
       expires: "Esperar no máximo",
       minutes: { one: "1 minuto", other: "{count} minutos" },
       test: "Testar esta etapa",
@@ -381,7 +381,7 @@ export const part3 = {
       noSteps: "Esta execução usou a instrução única da rotina: a resposta está na conversa.",
       notYet: "Nenhuma etapa começou ainda.",
       tries: { one: "1 tentativa", other: "{count} tentativas" },
-      waiting: "Esperando seu OK em Pendências",
+      waiting: "Esperando seu OK em Notificações",
       showAll: "Mostrar tudo",
       output: "Saída completa",
       resume: "Se o Zorel parar agora, esta execução continua a partir da etapa {n}. Uma etapa que escreve nunca é executada duas vezes: depois de uma parada, ela espera por você."

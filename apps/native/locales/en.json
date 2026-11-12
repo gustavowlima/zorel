@@ -37,7 +37,7 @@
     "back": "Back",
     "forward": "Forward",
     "newChat": "New chat",
-    "needsYou": "Pending",
+    "needsYou": "Notifications",
     "knowledge": "Knowledge",
     "memory": "Memory",
     "pages": "Pages",
@@ -367,7 +367,7 @@
     "reviewChange": "Review the change",
     "betterSkill": "a better version of a skill",
     "updatesMemory": "updates a memory",
-    "title": "Pending",
+    "title": "Notifications",
     "subtitle": "Agents wait here instead of guessing",
     "all": "All",
     "approvals": "Approvals",
@@ -2063,7 +2063,7 @@
       "text": "Text",
       "default": "If it can't answer, go",
       "ask": "What to ask you",
-      "askHint": "Waits in Pending, and on Telegram when paired.",
+      "askHint": "Waits in Notifications, and on Telegram when paired.",
       "expires": "Wait at most",
       "minutes": {
         "one": "1 minute",
@@ -2150,7 +2150,7 @@
         "one": "1 try",
         "other": "%{count} tries"
       },
-      "waiting": "Waiting for your OK in Pending",
+      "waiting": "Waiting for your OK in Notifications",
       "showAll": "Show all",
       "output": "The whole output",
       "resume": "If Zorel stops now, this run picks up at step %{n}. A step that writes never runs twice: after a stop it waits for you."

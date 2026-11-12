@@ -27,11 +27,14 @@ use crate::{
     theme::{self, tokens},
     ui::{
         face::{AgentFace, FaceState, WorkingRing},
-        nav::{DragRow, NavRow, OnReorder, moved_before},
+        nav::{DragRow, NavRow, Reorder},
+        reorder::{Flip, OnDrop, OnOver, Preview},
     },
 };
 
 const OPEN_WIDTH: f32 = 268.;
+/// The sidebar's places, in their default order.
+const PLACES: [&str; 5] = ["nav-home", "nav-inbox", "nav-agents", "nav-routines", "nav-memory"];
 const RAIL_WIDTH: f32 = 56.; // RAIL_ITEM + 2 × space::X2_5
 /// Every item on the folded rail is this square (fold, search, places, foot), centred: 10px each side.
 const RAIL_ITEM: f32 = tokens::CONTROL_H_LG;
@@ -51,6 +54,12 @@ pub struct Sidebar {
     prefs: Prefs,
     /// Heights of what opens and closes (sections, projects), for their animation.
     collapse: crate::ui::collapse::Measured,
+    /// The order a drag shows right now.
+    preview: Option<Preview>,
+    /// An order just dropped, shown until the engine's lists catch up (a few seconds at most).
+    held: HashMap<String, (Vec<String>, std::time::Instant)>,
+    /// Where each row was laid out, so reordered rows slide.
+    flip: Flip,
     /// Groups showing every chat ("chats" or a project id); in memory only, as the web.
     show_all: HashSet<String>,
     pub route: Route,
@@ -65,6 +74,9 @@ impl Sidebar {
             store,
             prefs: Prefs::load(),
             collapse: Default::default(),
+            preview: None,
+            held: HashMap::new(),
+            flip: Flip::default(),
             show_all: HashSet::new(),
             route: Route::default(),
             pending: 0,
@@ -110,6 +122,11 @@ fn rank(status: Option<&ChatStatus>) -> u8 {
         Some(ChatStatusState::Running) => 1,
         _ => 2,
     }
+}
+
+/// The same ids, in any order (a held order still fits the list).
+fn same_set(a: &[String], b: &[String]) -> bool {
+    a.len() == b.len() && a.iter().all(|id| b.contains(id))
 }
 
 fn last_activity(chat: &Chat, status: Option<&ChatStatus>) -> f64 {
@@ -162,22 +179,110 @@ pub fn face_state(status: Option<&ChatStatus>) -> FaceState {
 
 impl Sidebar {
     // PUT the group's new order after a drop: a project's chats, or the loose ones (projectId null).
-    fn chat_reorder(&self, key: &str, order: Vec<String>) -> OnReorder {
-        let store = self.store.downgrade();
-        let project = (key != LOOSE).then(|| key.to_string());
-        Rc::new(move |dragged: &DragRow, target: &DragRow, _, cx: &mut App| {
-            let ids = moved_before(&order, &dragged.id, &target.id);
-            let body = serde_json::json!({ "projectId": project, "ids": ids });
-            Self::put_order(&store, "/api/chats/order", body, cx);
-        })
+    /// The order `group` shows now: what was just dropped (until the engine has it), then the live drag.
+    fn display(&self, group: &str, natural: Vec<String>) -> Vec<String> {
+        let base = match self.held.get(group) {
+            Some((held, at)) if at.elapsed() < std::time::Duration::from_secs(4) && same_set(held, &natural) => {
+                held.clone()
+            }
+            _ => natural,
+        };
+        match &self.preview {
+            Some(preview) => preview.apply(group, &base),
+            None => base,
+        }
     }
 
-    fn project_reorder(&self, order: Vec<String>) -> OnReorder {
+    /// A row's part in a live reorder: dragging over it moves the dragged row there; dropping keeps that order.
+    fn reorder_of(&self, group: &str, id: &str, label: String, cx: &Context<Self>) -> Reorder {
+        let row = DragRow {
+            group: group.to_string().into(),
+            id: id.to_string().into(),
+            label: label.into(),
+        };
+        let (over, dropped) = (cx.entity().downgrade(), cx.entity().downgrade());
+        let on_over: OnOver = Rc::new(move |dragged, target, after, _, cx| {
+            let preview = Preview {
+                group: dragged.group.to_string(),
+                dragged: dragged.id.to_string(),
+                target: target.id.to_string(),
+                after,
+            };
+            let _ = over.update(cx, |this, cx| {
+                if this.preview.as_ref() != Some(&preview) {
+                    this.preview = Some(preview);
+                    cx.notify();
+                }
+            });
+        });
+        let on_drop: OnDrop = Rc::new(move |_, _, cx| {
+            let _ = dropped.update(cx, |this, cx| this.commit(cx));
+        });
+        (row, on_over, on_drop)
+    }
+
+    /// The drop: the order shown becomes the order (the engine's for projects and chats, the prefs' for places).
+    fn commit(&mut self, cx: &mut Context<Self>) {
+        let Some(preview) = self.preview.take() else { return };
+        let store = self.store.read(cx);
+        let group = preview.group.clone();
+        let natural: Vec<String> = match group.as_str() {
+            "places" => self.place_order(),
+            "projects" => store.projects.iter().map(|p| p.id.clone()).collect(),
+            key => {
+                let statuses = lifted(&store.chats.chats, &store.chats.statuses);
+                let chats: Vec<&Chat> = store
+                    .chats
+                    .chats
+                    .iter()
+                    .filter(|c| c.parent_id.is_none() && c.project_id.as_deref() == (key != LOOSE).then_some(key))
+                    .collect();
+                ordered(chats, &statuses).iter().map(|c| c.id.clone()).collect()
+            }
+        };
+        let base = match self.held.get(&group) {
+            Some((held, _)) if same_set(held, &natural) => held.clone(),
+            _ => natural,
+        };
+        let ids = preview.apply(&group, &base);
+        self.held
+            .insert(group.clone(), (ids.clone(), std::time::Instant::now()));
         let store = self.store.downgrade();
-        Rc::new(move |dragged: &DragRow, target: &DragRow, _, cx: &mut App| {
-            let ids = moved_before(&order, &dragged.id, &target.id);
-            Self::put_order(&store, "/api/projects/order", serde_json::json!({ "ids": ids }), cx);
-        })
+        match group.as_str() {
+            "places" => {
+                self.prefs.places = ids;
+                self.prefs.save();
+            }
+            "projects" => Self::put_order(&store, "/api/projects/order", serde_json::json!({ "ids": ids }), cx),
+            key => {
+                let project = (key != LOOSE).then(|| key.to_string());
+                Self::put_order(
+                    &store,
+                    "/api/chats/order",
+                    serde_json::json!({ "projectId": project, "ids": ids }),
+                    cx,
+                )
+            }
+        }
+        cx.notify();
+    }
+
+    /// The places' ids in the person's order (new places at the end).
+    fn place_order(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self
+            .prefs
+            .places
+            .iter()
+            .filter(|id| PLACES.contains(&id.as_str()))
+            .cloned()
+            .collect();
+        let missing: Vec<String> = PLACES
+            .iter()
+            .map(|p| p.to_string())
+            .filter(|p| !ids.contains(p))
+            .collect();
+        ids.extend(missing);
+        ids
     }
 
     fn put_order(store: &WeakEntity<Store>, path: &'static str, body: serde_json::Value, cx: &mut App) {
@@ -268,15 +373,19 @@ impl Sidebar {
         nested: bool,
         window: &Window,
         cx: &Context<Self>,
-    ) -> Vec<AnyElement> {
+    ) -> Vec<(String, AnyElement)> {
         let (store, statuses) = (lists.store, lists.statuses);
+        // The order shown: dropped or being dragged first.
+        let natural: Vec<String> = chats.iter().map(|c| c.id.clone()).collect();
+        let shown = self.display(key, natural);
+        let mut chats = chats;
+        chats.sort_by_key(|c| shown.iter().position(|id| *id == c.id).unwrap_or(usize::MAX));
         let all = self.show_all.contains(key);
         let open = match &self.route {
             Route::Chat { id } => Some(id.clone()),
             _ => None,
         };
         let total = chats.len();
-        let order: Vec<String> = chats.iter().map(|c| c.id.clone()).collect();
         let visible: Vec<&Chat> = chats
             .into_iter()
             .enumerate()
@@ -284,19 +393,17 @@ impl Sidebar {
             .map(|(_, c)| c)
             .collect();
         let hidden = total - visible.len();
-        // Drag to reorder within this group: the whole group's new order goes to the engine.
-        let reorder = self.chat_reorder(key, order);
-        let mut rows: Vec<AnyElement> = visible
+        // Drag to reorder within this group, live; the group's new order goes to the engine on the drop.
+        let dragging = self.preview.as_ref().map(|p| p.dragged.clone());
+        let mut rows: Vec<(String, AnyElement)> = visible
             .into_iter()
             .map(|c| {
-                let drag = DragRow {
-                    group: key.to_string().into(),
-                    id: c.id.clone().into(),
-                    label: chat_title(c).into(),
-                };
-                self.chat_row(c, statuses.get(&c.id), nested, store, window, cx)
-                    .reorder(drag, reorder.clone())
-                    .into_any_element()
+                let row = self
+                    .chat_row(c, statuses.get(&c.id), nested, store, window, cx)
+                    .reorder(self.reorder_of(key, &c.id, chat_title(c), cx))
+                    .lifted(dragging.as_deref() == Some(c.id.as_str()))
+                    .into_any_element();
+                (c.id.clone(), row)
             })
             .collect();
         if total > VISIBLE {
@@ -307,7 +414,8 @@ impl Sidebar {
             };
             let key = key.to_string();
             let p = theme::palette(window);
-            rows.push(
+            rows.push((
+                "more".to_string(),
                 NavRow::new(SharedString::from(format!("more-{key}")), label)
                     .leading(div().size(px(20.)))
                     .indent(if nested { space::X3 } else { 0. })
@@ -319,7 +427,7 @@ impl Sidebar {
                         cx.notify();
                     }))
                     .into_any_element(),
-            );
+            ));
         }
         rows
     }
@@ -407,6 +515,10 @@ impl Sidebar {
             )
         };
         let (projects_turn, loose_turn) = (turn("projects"), turn(LOOSE));
+        // A drag let go outside any row: everything goes back.
+        if self.preview.is_some() && !cx.has_active_drag() {
+            self.preview = None;
+        }
         // What opens and closes springs its height; a project's chevron turns.
         let mut heights: HashMap<String, Option<(Pixels, f32)>> = HashMap::new();
         let mut project_turns: HashMap<String, Pixels> = HashMap::new();
@@ -480,7 +592,9 @@ impl Sidebar {
                     .child(pending.to_string()),
             )
         });
-        let places = vec![
+        let mut by_id: HashMap<&'static str, NavRow> = HashMap::new();
+        by_id.insert(
+            "nav-home",
             place(
                 self,
                 "nav-home",
@@ -488,9 +602,11 @@ impl Sidebar {
                 t!("nav.homeScreen").into_owned(),
                 Some(Route::Home { project_id: None }),
                 cx,
-            )
-            .into_any_element(),
-            inbox.into_any_element(),
+            ),
+        );
+        by_id.insert("nav-inbox", inbox);
+        by_id.insert(
+            "nav-agents",
             place(
                 self,
                 "nav-agents",
@@ -498,8 +614,10 @@ impl Sidebar {
                 t!("nav.agents").into_owned(),
                 None,
                 cx,
-            )
-            .into_any_element(),
+            ),
+        );
+        by_id.insert(
+            "nav-routines",
             place(
                 self,
                 "nav-routines",
@@ -507,8 +625,10 @@ impl Sidebar {
                 t!("nav.routines").into_owned(),
                 None,
                 cx,
-            )
-            .into_any_element(),
+            ),
+        );
+        by_id.insert(
+            "nav-memory",
             place(
                 self,
                 "nav-memory",
@@ -516,9 +636,23 @@ impl Sidebar {
                 t!("nav.memory").into_owned(),
                 None,
                 cx,
-            )
-            .into_any_element(),
-        ];
+            ),
+        );
+        // In the person's order, each draggable (live), sliding when the order changes.
+        let dragging = self.preview.as_ref().map(|p| p.dragged.clone());
+        let places: Vec<(String, AnyElement)> = self
+            .display("places", self.place_order())
+            .into_iter()
+            .filter_map(|id| {
+                let row = by_id.remove(id.as_str())?;
+                let label = id.clone();
+                let row = row
+                    .reorder(self.reorder_of("places", &id, label, cx))
+                    .lifted(dragging.as_deref() == Some(id.as_str()))
+                    .into_any_element();
+                Some((id, row))
+            })
+            .collect();
 
         let mut list: Vec<AnyElement> = Vec::new();
         if !folded {
@@ -566,8 +700,15 @@ impl Sidebar {
                             .into_any_element(),
                     );
                 }
-                let project_order = self.project_reorder(store.projects.iter().map(|p| p.id.clone()).collect());
-                for project in &store.projects {
+                // Projects in the order shown (dropped or being dragged first); each block (its row and its chats)
+                // slides when the order changes.
+                let shown = self.display("projects", store.projects.iter().map(|p| p.id.clone()).collect());
+                let mut projects: Vec<_> = store.projects.iter().collect();
+                projects.sort_by_key(|pr| shown.iter().position(|id| *id == pr.id).unwrap_or(usize::MAX));
+                let dragging = self.preview.as_ref().map(|p| p.dragged.clone());
+                let mut blocks: Vec<(String, AnyElement)> = Vec::new();
+                for project in projects {
+                    let mut block: Vec<AnyElement> = Vec::new();
                     let chats: Vec<&Chat> = store
                         .chats
                         .chats
@@ -606,18 +747,13 @@ impl Sidebar {
                     };
                     let (toggle, new_in) = (project.id.clone(), project.id.clone());
                     let menu = Self::project_menu(&cx.entity(), project.id.clone(), project.name.clone());
-                    let drag = DragRow {
-                        group: "projects".into(),
-                        id: project.id.clone().into(),
-                        label: project.name.clone().into(),
-                    };
                     let more = more_button(
                         format!("project-more-{}", project.id),
                         project.name.clone(),
                         menu.clone(),
                     );
                     let turn = project_turns.get(&project.id).copied().unwrap_or(px(0.));
-                    list.push(
+                    block.push(
                         NavRow::new(
                             SharedString::from(format!("project-{}", project.id)),
                             project.name.clone(),
@@ -636,7 +772,8 @@ impl Sidebar {
                         )
                         .trailing(trailing)
                         .menu(menu)
-                        .reorder(drag, project_order.clone())
+                        .reorder(self.reorder_of("projects", &project.id, project.name.clone(), cx))
+                        .lifted(dragging.as_deref() == Some(project.id.as_str()))
                         .on_hover_trailing(
                             div()
                                 .flex()
@@ -680,11 +817,37 @@ impl Sidebar {
                         let key = format!("project:{}", project.id);
                         let view = cx.entity().downgrade();
                         let height = heights.get(&key).copied().flatten();
-                        list.push(self.collapse.wrap(&key, height, rows, move |cx| {
-                            let _ = view.update(cx, |_, cx| cx.notify());
-                        }));
+                        let chats_list = self.flip.list(&project.id, rows, space::X0_5, {
+                            let view = view.clone();
+                            move |cx| {
+                                let _ = view.update(cx, |_, cx| cx.notify());
+                            }
+                        });
+                        block.push(
+                            self.collapse
+                                .wrap(&key, height, vec![chats_list.into_any_element()], move |cx| {
+                                    let _ = view.update(cx, |_, cx| cx.notify());
+                                }),
+                        );
                     }
+                    blocks.push((
+                        project.id.clone(),
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(space::X0_5))
+                            .children(block)
+                            .into_any_element(),
+                    ));
                 }
+                let view = cx.entity().downgrade();
+                list.push(
+                    self.flip
+                        .list("projects", blocks, space::X0_5, move |cx| {
+                            let _ = view.update(cx, |_, cx| cx.notify());
+                        })
+                        .into_any_element(),
+                );
             }
             {
                 let view = cx.entity().downgrade();
@@ -741,7 +904,14 @@ impl Sidebar {
                     window,
                     cx,
                 );
-                list.extend(rows);
+                let view = cx.entity().downgrade();
+                list.push(
+                    self.flip
+                        .list(LOOSE, rows, space::X0_5, move |cx| {
+                            let _ = view.update(cx, |_, cx| cx.notify());
+                        })
+                        .into_any_element(),
+                );
             }
             let view = cx.entity().downgrade();
             let height = heights.get(LOOSE).copied().flatten();
@@ -843,7 +1013,12 @@ impl Sidebar {
                     .child(fold),
             )
             .map(|c| if folded { c.child(rail_search) } else { c.child(search) })
-            .child(div().flex().flex_col().gap(px(space::X0_5)).children(places))
+            .child({
+                let view = cx.entity().downgrade();
+                self.flip.list("places", places, space::X0_5, move |cx| {
+                    let _ = view.update(cx, |_, cx| cx.notify());
+                })
+            })
             .when(!folded, |c| {
                 c.child(
                     div()

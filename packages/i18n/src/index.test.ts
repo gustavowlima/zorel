@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { formatAge, formatBytes, formatCompact, formatDuration, formatPercent, t } from "./index.ts"
 
 test("t: plain, placeholders and numbers formatted", () => {
-  expect(t("nav.needsYou")).toBe("Pending")
+  expect(t("nav.needsYou")).toBe("Notifications")
   expect(t("status.running", { agent: "Coder" })).toBe("Coder is working")
   expect(t("chat.tokens", { input: "1.2K", output: "340" })).toBe("1.2K in · 340 out")
 })

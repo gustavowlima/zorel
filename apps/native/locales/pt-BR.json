@@ -37,7 +37,7 @@
     "back": "Voltar",
     "forward": "Avançar",
     "newChat": "Nova conversa",
-    "needsYou": "Pendências",
+    "needsYou": "Notificações",
     "knowledge": "Conhecimento",
     "memory": "Memória",
     "pages": "Páginas",
@@ -367,7 +367,7 @@
     "reviewChange": "Revisar a alteração",
     "betterSkill": "uma versão melhor de uma skill",
     "updatesMemory": "atualiza uma memória",
-    "title": "Pendências",
+    "title": "Notificações",
     "subtitle": "Os agentes esperam aqui em vez de adivinhar",
     "all": "Tudo",
     "approvals": "Aprovações",
@@ -2063,7 +2063,7 @@
       "text": "Texto",
       "default": "Se não souber responder, seguir por",
       "ask": "O que perguntar a você",
-      "askHint": "Fica esperando em Pendências, e no Telegram quando estiver pareado.",
+      "askHint": "Fica esperando em Notificações, e no Telegram quando estiver pareado.",
       "expires": "Esperar no máximo",
       "minutes": {
         "one": "1 minuto",
@@ -2150,7 +2150,7 @@
         "one": "1 tentativa",
         "other": "%{count} tentativas"
       },
-      "waiting": "Esperando seu OK em Pendências",
+      "waiting": "Esperando seu OK em Notificações",
       "showAll": "Mostrar tudo",
       "output": "Saída completa",
       "resume": "Se o Zorel parar agora, esta execução continua a partir da etapa %{n}. Uma etapa que escreve nunca é executada duas vezes: depois de uma parada, ela espera por você."

@@ -12,6 +12,8 @@ pub struct Prefs {
     pub expanded_projects: BTreeSet<String>,
     /// "chats" and/or "projects".
     pub collapsed_sections: BTreeSet<String>,
+    /// The sidebar's places in the person's order (ids like "nav-home"); empty: the default order.
+    pub places: Vec<String>,
 }
 
 fn file() -> Option<PathBuf> {

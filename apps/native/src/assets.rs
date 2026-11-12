@@ -75,7 +75,8 @@ icon_assets!(
         Wrench,
         Sparkles,
         Minimize2,
-        SquarePen
+        SquarePen,
+        GripVertical
     ]
 );
 

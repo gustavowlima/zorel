@@ -2,7 +2,6 @@
 // icon or any element), a label that truncates with an optional detail line under it, a trailing element that a
 // hover-only element (+, ⋯) replaces while hovered; open = the control wash. Rail mode shows only the mark, square.
 // Hover eases in and out (ui/motion), so every list of places moves the same way.
-use std::rc::Rc;
 
 use gpui_kit::{assets::IconName, prelude::FluentBuilder, *};
 
@@ -22,8 +21,8 @@ pub struct DragRow {
     pub label: SharedString,
 }
 
-/// Called on the row a dragged one is dropped on: (dragged, target).
-pub type OnReorder = Rc<dyn Fn(&DragRow, &DragRow, &mut Window, &mut App) + 'static>;
+/// How a row takes part in a live reorder (ui/reorder): its payload, what to do while dragging over it, on a drop.
+pub type Reorder = (DragRow, crate::ui::reorder::OnOver, crate::ui::reorder::OnDrop);
 
 /// A row's actions, built on demand: the right-click menu and its ⋯ button share one builder.
 pub type MenuBuilder = crate::ui::menu::Items;
@@ -45,7 +44,9 @@ pub struct NavRow {
     on_click: Option<OnClick>,
     menu: Option<MenuBuilder>,
     expanded: Option<bool>,
-    reorder: Option<(DragRow, OnReorder)>,
+    reorder: Option<Reorder>,
+    /// Being dragged: lifted in place while the list reorders around it.
+    lifted: bool,
 }
 
 impl NavRow {
@@ -67,6 +68,7 @@ impl NavRow {
             menu: None,
             expanded: None,
             reorder: None,
+            lifted: false,
         }
     }
 
@@ -130,9 +132,15 @@ impl NavRow {
         self
     }
 
-    /// Drag to reorder within the row's group: dropping on a row of the same group moves this one before it.
-    pub fn reorder(mut self, row: DragRow, on_reorder: OnReorder) -> Self {
-        self.reorder = Some((row, on_reorder));
+    /// Drag to reorder within the row's group, live (ui/reorder); a grip shows on hover at the row's start.
+    pub fn reorder(mut self, reorder: Reorder) -> Self {
+        self.reorder = Some(reorder);
+        self
+    }
+
+    /// The row being dragged.
+    pub fn lifted(mut self, lifted: bool) -> Self {
+        self.lifted = lifted;
         self
     }
 
@@ -204,6 +212,25 @@ impl RenderOnce for NavRow {
         let label = self.label.clone();
         let description = self.detail.as_ref().map(|(d, _)| d.clone());
         let key = self.id.clone();
+        // A grip on hover (or while dragged) at the row's start, its middle on the row's edge.
+        let grip = (self.reorder.is_some() && !self.rail).then(|| {
+            let shown = gpui_kit::base::transition(
+                ElementId::from(SharedString::from(format!("{}-grip", self.id))),
+                if hovered || self.lifted { 1. } else { 0. },
+                gpui_kit::base::Transition::new(motion::ms(motion::HOVER_MS)),
+                window,
+                cx,
+            );
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .left(px(-icon::XS / 2.))
+                .flex()
+                .items_center()
+                .opacity(shown)
+                .child(icon(IconName::GripVertical, icon::XS).text_color(p.text_dim))
+        });
         let row = div()
             .id(self.id)
             .role(Role::Button)
@@ -214,9 +241,12 @@ impl RenderOnce for NavRow {
             .flex()
             .flex_none()
             .items_center()
+            .relative()
             .rounded(px(tokens::RADIUS_ROW))
-            .bg(bg)
+            .bg(if self.lifted { p.bg_control_hover.into() } else { bg })
+            .when(self.lifted, |r| r.shadow_md())
             .text_color(fg)
+            .children(grip)
             .when(self.disabled, |r| r.opacity(0.45))
             .when(self.active || self.emphasis, |r| r.font_weight(FontWeight::MEDIUM))
             .map(|r| {
@@ -256,24 +286,21 @@ impl RenderOnce for NavRow {
                 r.when_some(self.on_click, |r, handler| r.on_click(handler))
             });
         let row = match self.reorder {
-            Some((this_row, on_reorder)) => {
-                let (over, drop_on) = (this_row.clone(), this_row.clone());
-                let accent = p.accent;
-                row.on_drag(this_row, |dragged, _, _, cx| {
-                    cx.new(|_| DragPreview(dragged.label.clone()))
-                })
-                .drag_over::<DragRow>(move |style, dragged, _, _| {
-                    if dragged.group == over.group && dragged.id != over.id {
-                        style.border_t_2().border_color(accent)
-                    } else {
-                        style
-                    }
-                })
-                .on_drop(move |dragged: &DragRow, window, cx| {
-                    if dragged.group == drop_on.group && dragged.id != drop_on.id {
-                        on_reorder(dragged, &drop_on, window, cx);
-                    }
-                })
+            Some((this_row, on_over, on_drop)) => {
+                let over_row = this_row.clone();
+                row.on_drag(this_row, |_, _, _, cx| cx.new(|_| crate::ui::reorder::Nothing))
+                    .on_drag_move::<DragRow>(move |event, window, cx| {
+                        if !event.bounds.contains(&event.event.position) {
+                            return;
+                        }
+                        let dragged = event.drag(cx).clone();
+                        if dragged.group != over_row.group || dragged.id == over_row.id {
+                            return;
+                        }
+                        let after = event.event.position.y > event.bounds.center().y;
+                        on_over(&dragged, &over_row, after, window, cx);
+                    })
+                    .on_drop(move |dragged: &DragRow, window, cx| on_drop(dragged, window, cx))
             }
             None => row,
         };
@@ -282,25 +309,6 @@ impl RenderOnce for NavRow {
             Some(items) => crate::ui::menu::on_right_click(&key, row, items, window, cx),
             None => row.into_any_element(),
         }
-    }
-}
-
-/// What follows the pointer while a row is dragged: its label on a raised chip.
-struct DragPreview(SharedString);
-
-impl Render for DragPreview {
-    fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let p = theme::palette(window);
-        div()
-            .px(px(space::X2_5))
-            .py(px(space::X1_5))
-            .rounded(px(tokens::RADIUS_ROW))
-            .bg(p.bg_raised)
-            .border_1()
-            .border_color(p.border_strong)
-            .text_color(p.text)
-            .opacity(0.9)
-            .child(self.0.clone())
     }
 }
 
