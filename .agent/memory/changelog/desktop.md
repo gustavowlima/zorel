@@ -19,3 +19,4 @@
 2026-11-12 | spec 019 planned: native GPUI client proposed to replace Electron, gated by a measured prototype | Electron shell measured at ~530 MB idle and 243 MB of a 571 MB app
 2026-11-12 | D11/D20 rewritten: the desktop client is native (GPUI, apps/native), the engine stays Bun | owner waived the prototype gate after the 73 MB vs ~530 MB idle measurement
 2026-11-12 | native client uses gpui-component too, themed from styles.css | owner: use gpui-kit's components; tokens drive the kit's 99 colour keys
+2026-11-12 | native Home built (composer, Needs you, Working now, Today); crew rules in state/crew.rs | parity with apps/web home.tsx and the prototype
