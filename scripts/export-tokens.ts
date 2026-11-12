@@ -1,7 +1,7 @@
 // The design tokens for the native client (spec 019 FR-008): apps/web/src/styles.css stays the only source (DESIGN.md:
 // `--z-*` are the only colours, sizes, radii and durations). This reads its dark `:root` block and the light override,
-// resolves var() and color-mix(in srgb, …), and writes apps/native/src/theme/tokens.rs: a Palette per theme, sizes in px,
-// fractions, durations in ms. A token whose value it can't read fails the run, so a new kind of value is noticed.
+// resolves var() and color-mix(in srgb, …), and writes apps/native/src/theme/tokens.rs (a Palette per theme, sizes in px,
+// fractions, durations in ms) and apps/native/themes/zorel.json (gpui-component's theme, light and dark). A token whose value it can't read fails the run, so a new kind of value is noticed.
 // Run: bun run tokens (--check to only compare; CI does).
 import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -9,6 +9,7 @@ import { join } from "node:path"
 const ROOT = join(import.meta.dir, "..")
 const CSS = join(ROOT, "apps/web/src/styles.css")
 const OUT = join(ROOT, "apps/native/src/theme/tokens.rs")
+const THEME_OUT = join(ROOT, "apps/native/themes/zorel.json")
 
 type Rgba = [number, number, number, number] // 0..1
 type Value = { kind: "color"; rgba: Rgba } | { kind: "px"; n: number } | { kind: "fraction"; n: number } | { kind: "ms"; n: number } | { kind: "number"; n: number }
@@ -115,6 +116,65 @@ ${scalars
   })
   .join("\n")}
 `
+
+// The same roles as gpui-component's theme (its 99 colour keys), so the kit's ready-made components (tables, menus,
+// dialogs, pickers…) wear Zorel's identity. Keys: gpui-component src/theme/default-theme.json.
+const ROLE: Record<string, string> = {
+  background: "bg-canvas", foreground: "text", border: "border", caret: "accent", ring: "accent", overlay: "overlay",
+  "accent.background": "bg-control-hover", "accent.foreground": "text", "accordion.background": "bg-surface",
+  "group_box.background": "bg-surface", "group_box.foreground": "text", "description_list_label.foreground": "text-secondary",
+  "chart.1": "series-1", "chart.2": "series-2", "chart.3": "series-3", "chart.4": "series-4", "chart.5": "series-5",
+  "chart.bullish": "success", "chart.bearish": "danger", "chart.grid": "border",
+  "danger.background": "danger", "danger.foreground": "on-accent", "drag_border": "accent", "drop_target.background": "accent-soft",
+  "info.background": "accent", "info.foreground": "on-accent", "input.border": "border-strong",
+  "link.foreground": "link", "link.active.foreground": "link-hover", "link.hover.foreground": "link-hover",
+  "list.background": "bg-canvas", "list.active.background": "bg-control-active", "list.active.border": "accent-line",
+  "list.even.background": "bg-canvas", "list.head.background": "bg-surface", "list.hover.background": "bg-hover",
+  "muted.background": "bg-control", "muted.foreground": "text-muted", "popover.background": "bg-raised", "popover.foreground": "text",
+  "primary.background": "accent", "primary.active.background": "accent-hover", "primary.foreground": "on-accent", "primary.hover.background": "accent-hover",
+  "progress_bar.background": "accent", "scrollbar.background": "bg-canvas", "scrollbar.thumb.background": "border-strong",
+  "scrollbar.thumb.hover.background": "text-dim", "secondary.background": "bg-control", "secondary.active.background": "bg-control-active",
+  "secondary.foreground": "text", "secondary.hover.background": "bg-control-hover", "selection.background": "accent-soft",
+  "sidebar.background": "bg-sidebar", "sidebar.accent.background": "bg-control-active", "sidebar.accent.foreground": "text",
+  "sidebar.border": "border", "sidebar.foreground": "text-secondary", "sidebar.primary.background": "accent", "sidebar.primary.foreground": "on-accent",
+  "skeleton.background": "bg-control", "slider.bar.background": "accent", "slider.thumb.background": "on-accent",
+  "success.background": "success", "success.foreground": "on-accent", "switch.background": "bg-control-active",
+  "tab.background": "bg-canvas", "tab.active.background": "bg-control-active", "tab.active.foreground": "text", "tab_bar.background": "bg-canvas",
+  "tab_bar.segmented.background": "bg-control", "tab.foreground": "text-muted", "table.background": "bg-canvas",
+  "table.active.background": "bg-control-active", "table.active.border": "accent-line", "table.even.background": "bg-canvas",
+  "table.head.background": "bg-surface", "table.head.foreground": "text-secondary", "table.hover.background": "bg-hover", "table.row.border": "border",
+  "title_bar.background": "bg-frame", "title_bar.border": "border", "status_bar.background": "bg-frame", "status_bar.border": "border",
+  "warning.background": "warning", "warning.foreground": "on-agent", "window.border": "border-strong",
+  "base.red": "danger", "base.red.light": "danger-soft", "base.green": "success", "base.green.light": "done-soft",
+  "base.blue": "accent", "base.blue.light": "accent-soft", "base.yellow": "warning", "base.yellow.light": "wait-soft",
+  "base.magenta": "agent-5", "base.magenta.light": "agent-3", "base.cyan": "agent-2", "base.cyan.light": "series-1"
+}
+const hex8 = ([r, g, b, a]: Rgba) => `#${[r, g, b, a].map((c) => Math.round(c * 255).toString(16).padStart(2, "0")).join("")}`
+const px = (name: string) => (resolve(name, dark) as { n: number }).n
+const themeOf = (mode: "light" | "dark", vars: Map<string, string>) => ({
+  name: `Zorel ${mode === "dark" ? "Dark" : "Light"}`,
+  mode,
+  "font.size": 13.5, // the web's body size (styles.css body)
+  "mono_font.family": "Menlo",
+  radius: px("--z-radius-control"),
+  "radius.lg": px("--z-radius-card"),
+  colors: Object.fromEntries(Object.entries(ROLE).map(([key, role]) => [key, hex8(color(`var(--z-${role})`, vars, []))]))
+})
+const theme = `${JSON.stringify({ name: "Zorel", author: "Zorel", themes: [themeOf("light", light), themeOf("dark", dark)] }, null, 2)}\n`
+const themeCurrent = (() => {
+  try {
+    return readFileSync(THEME_OUT, "utf8")
+  } catch {
+    return undefined
+  }
+})()
+if (themeCurrent !== theme) {
+  if (process.argv.includes("--check")) {
+    console.error("apps/native/themes/zorel.json is out of date: run bun run tokens")
+    process.exit(1)
+  }
+  writeFileSync(THEME_OUT, theme)
+}
 
 // Formatted the way `cargo fmt` would (.rustfmt.toml), so formatting the crate never makes this file stale.
 const fmt = Bun.spawnSync(["rustfmt", "--edition", "2024", "--emit", "stdout"], { cwd: ROOT, stdin: new TextEncoder().encode(rs) })

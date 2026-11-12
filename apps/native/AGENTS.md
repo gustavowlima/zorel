@@ -37,6 +37,10 @@ samply record cargo run -p zorel-native --release
   notifications, updates). Lower layers never import higher ones.
 - **Units.** `RenderOnce` for stateless components; `Entity<T>` when state outlives a frame (lists, composer, panels).
   Custom `Element` only for measured drawing (frames, terminal grid).
+- **Kit first.** Check gpui-kit before writing a component: `gpui_kit::component` (styled, themed by
+  `themes/zorel.json`: tables, menus, dialogs, sheets, select, combobox, command palette, message scroller, tabs, switch,
+  tooltip, notifications, editor/diff, charts…) and `gpui_kit::base` (behaviour). Docs: https://gpui-kit.com/llms.txt.
+  Our own components only for Zorel's identity (agent face, working ring, scenes, nav row, the motion button).
 - **Reuse.** Screens compose `src/ui/` components (Button, NavRow, AgentFace, card, code_block, markdown…); look there
   first, extend a component for a variant, and extract a shared one the second time a style or behaviour repeats.
   Motion lives in the component (`ui/motion`), so every use moves the same way.
@@ -49,7 +53,8 @@ samply record cargo run -p zorel-native --release
 
 ## Theme and motion
 
-`src/theme/tokens.rs` is generated from the `--z-*` roles in `apps/web/src/styles.css` by `bun run tokens` (never
+`src/theme/tokens.rs` (our components) and `themes/zorel.json` (gpui-component's theme) are generated from the `--z-*`
+roles in `apps/web/src/styles.css` by `bun run tokens` (never
 edit it; change the CSS). A new token kind the script can't read fails the run.
 Motion uses `gpui_base::spring` / transitions with Zorel's motion tokens and always honours reduced motion.
 

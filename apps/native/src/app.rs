@@ -3,7 +3,7 @@
 // the sidebar (every chat, live statuses) and the open chat.
 use std::{collections::HashMap, path::PathBuf};
 
-use gpui_kit::{prelude::FluentBuilder, *};
+use gpui_kit::{component as gpui_component, prelude::FluentBuilder, *};
 use rust_i18n::t;
 
 use crate::{
@@ -53,7 +53,11 @@ impl Root {
             cx.notify();
         })
         .detach();
-        cx.observe_window_appearance(window, |_, _, cx| cx.notify()).detach(); // light/dark follows the system
+        cx.observe_window_appearance(window, |_, window, cx| {
+            theme::follow_system(window, cx); // light/dark follows the system, for the kit's components too
+            cx.notify();
+        })
+        .detach();
         let (clicked, mut clicks) = tokio::sync::mpsc::unbounded_channel::<String>();
         cx.spawn_in(window, async move |this, cx| {
             while let Some(chat_id) = clicks.recv().await {
@@ -353,7 +357,7 @@ fn target() -> Target {
 /// running turns and routines); the Dock (macOS), the tray (Windows, Linux) or a second launch brings it back.
 struct Shell {
     connection: Entity<EngineConnection>,
-    window: Option<WindowHandle<Root>>,
+    window: Option<AnyWindowHandle>, // the kit wraps our Root in its own root view, so this stays untyped
     _tray: Option<gpui_tray::Tray>,
 }
 
@@ -385,9 +389,9 @@ pub fn show_window(cx: &mut App) {
         ..Default::default()
     };
     let opened = gpui_kit::open_window(options, cx, |window, cx| cx.new(|cx| Root::new(connection, window, cx)));
-    match opened.ok().and_then(|(handle, _)| handle.downcast::<Root>()) {
-        Some(handle) => cx.global_mut::<Shell>().window = Some(handle),
-        None => eprintln!("couldn't open the window"),
+    match opened {
+        Ok((handle, _)) => cx.global_mut::<Shell>().window = Some(handle),
+        Err(e) => eprintln!("couldn't open the window: {e}"),
     }
     cx.activate(true);
 }
@@ -398,7 +402,10 @@ pub fn run() {
     let app = gpui_kit::application().with_quit_mode(QuitMode::Explicit);
     app.on_reopen(show_window);
     app.run(move |cx| {
+        // The kit's own component strings (it ships pt-BR) follow the same language as ours.
+        rust_i18n::extend!(gpui_component);
         gpui_kit::init(cx);
+        theme::install(cx);
         crate::shell::menus::install(cx);
         let connection = cx.new(|cx| EngineConnection::new(target, cx));
         let tray = crate::shell::tray::install(cx);
