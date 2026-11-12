@@ -42,7 +42,7 @@ export function TodayView() {
   return (
     <Screen title={t("today.title")} subtitle={today ? t("today.since", { when: formatTime(today.from) }) : t("today.hint")}>
       <Column>
-        {empty && <EmptyState icon={<Sun />} title={t("today.empty")} hint={t("today.hint")} />}
+        {empty && <EmptyState scene="calmDay" icon={<Sun />} title={t("today.empty")} hint={t("today.hint")} />}
         {!!today?.needs.length && (
           <Section title={t("today.needs", { count: today.needs.length })} description={t("today.needsHint")}>
             <Rows>{today.needs.map(row)}</Rows>

@@ -14,7 +14,7 @@ import { agentOptions, callable, lastUsedAgent, projectCrew, teamsIn, toJoin } f
 import { Composer, type ComposerOption, type ComposerSources, SendError } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import { agentTint, agentTone, chatTitle, modelLabel, needsYou, statusLabel } from "../labels.ts"
-import { AgentAvatar, AlarmClock, Button, cn, Folder, ListRow, OrbitBackdrop, QuietCard, Rows, Section, Select, Users } from "@/ui"
+import { AgentAvatar, AlarmClock, Button, cn, Folder, ListRow, OrbitBackdrop, QuietCard, Rows, Section, Select, Users, WorkingRing } from "@/ui"
 
 const DEFAULT_MODEL: ModelChoice = { model: "claude-cli/sonnet", accountId: null, effort: null }
 
@@ -155,13 +155,11 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
           />
         </div>
       </div>
-      {/* The day at a glance, as in the prototype: what needs you and who works on the left, today on the right
-          (stacked on a narrow window). Every section always shows; with nothing in it, it says so kindly. */}
-      <div className="relative mt-12 grid w-full max-w-5xl gap-8 lg:grid-cols-3">
-        <div className="flex min-w-0 flex-col gap-8 lg:col-span-2">
-          <NeedsYouNow />
-          <WorkingNow />
-        </div>
+      {/* The day at a glance, one column on the composer's width so every edge lines up: what needs you, who works,
+          what came in today. Every section always shows; with nothing in it, it says so kindly. */}
+      <div className="relative mt-10 flex w-full max-w-2xl flex-col gap-7">
+        <NeedsYouNow />
+        <WorkingNow />
         <TodayBrief />
       </div>
     </div>
@@ -210,7 +208,11 @@ function WorkingNow() {
   const statuses = useStatuses()
   const chats = useList(chatsAtom)
   const agents = useList(agentsAtom)
-  const live = Object.values(statuses).filter((s) => s.state === "running")
+  // Only chats the person can open: the Builder's own chat (and any other hidden one) is not "work" to follow here.
+  const live = Object.values(statuses).flatMap((s) => {
+    const chat = s.state === "running" && chats.find((c) => c.id === s.chatId)
+    return chat ? [{ s, chat }] : []
+  })
   if (!live.length)
     return (
       <Section title={t("home.workingNow")}>
@@ -220,17 +222,15 @@ function WorkingNow() {
   return (
     <Section title={t("home.workingNow")}>
       <Rows>
-        {live.map((s) => {
-          const chat = chats.find((c) => c.id === s.chatId)
-          const agent = agents.find((a) => a.id === chat?.agentIds[0])
-          const what = statusLabel(s, agents)
+        {live.map(({ s, chat }) => {
+          const agent = agents.find((a) => a.id === chat.agentIds[0])
           return (
             <ListRow
               key={s.chatId}
-              label={chat ? chatTitle(chat) : what}
-              icon={agent ? <AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={28} state="working" /> : undefined}
-              title={chat ? chatTitle(chat) : what}
-              hint={[agent?.name, what].filter(Boolean).join(" · ")}
+              label={chatTitle(chat)}
+              icon={agent ? <AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={28} state="working" /> : <WorkingRing size={20} />}
+              title={chatTitle(chat)}
+              hint={statusLabel(s, agents)}
               onPress={() => go({ view: "chat", id: s.chatId })}
             />
           )
@@ -249,7 +249,7 @@ function TodayBrief() {
   const found: ReadonlyArray<RoutineRun> = today.found
   const next = routines.filter((r) => r.enabled && r.nextRunAt).sort((a, b) => a.nextRunAt! - b.nextRunAt!)[0]
   return (
-    <Section title={t("home.today")} description={t("home.todaySince", { time: formatTime(today.from) })}>
+    <Section title={t("home.today")} action={<span className="text-sm text-dim">{t("home.todaySince", { time: formatTime(today.from) })}</span>}>
       {!found.length && !today.quiet && <QuietCard scene="calmDay" title={t("home.todayQuiet")} hint={t("home.todayQuietHint")} />}
       <Rows className={cn(!found.length && !today.quiet && !next && "hidden")}>
         {found.map((run) => {

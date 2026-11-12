@@ -11,7 +11,7 @@ import { exportAgent, importedAgent } from "./agent.tsx"
 import { TeamsSection } from "./teams.tsx"
 import { agentTone, modelLabel } from "../labels.ts"
 import { go } from "../state.ts"
-import { AgentAvatar, Archive, ArchiveRestore, Bot, Button, ChevronDown, Column, cn, MessageCircle, Settings, ConfirmDialog, Download, EmptyState, Fold, IconButton, Info, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Screen, SearchInput, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
+import { AgentAvatar, Archive, ArchiveRestore, Bot, Button, ChevronDown, Column, cn, MessageCircle, Settings, ConfirmDialog, Download, EmptyState, Fold, IconButton, Info, ListRow, Menu, MenuItem, MenuSeparator, MoreHorizontal, Pencil, pickFiles, Plus, Rows, Scene, Screen, SearchInput, Section, Sparkles, Tag, Trash2, Upload } from "@/ui"
 
 // The agents working now, each with what it's doing (a chat of theirs running or waiting; waiting on you first).
 export function useWorking() {
@@ -208,6 +208,7 @@ export function AgentsView() {
         {team.length > 0 && !q && <TeamsSection />}
         {team.length === 0 ? (
           <EmptyState
+            scene="team"
             icon={<Bot />}
             title={t("agents.empty")}
             hint={t("agents.emptyHint")}
@@ -219,7 +220,10 @@ export function AgentsView() {
             }
           />
         ) : shown.length === 0 ? (
-          <p className="text-muted">{t("agents.noMatch")}</p>
+          <div className="flex flex-col items-center gap-2 py-10 text-muted">
+            <Scene kind="search" />
+            {t("agents.noMatch")}
+          </div>
         ) : (
           shown.map((g) => (
             <Section key={g.id ?? "global"} title={`${g.name} · ${g.list.length}`} description={g.hint} action={g.id ? <NewAgentMenu projectId={g.id} projectName={g.name} compact /> : undefined}>

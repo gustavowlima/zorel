@@ -16,6 +16,13 @@ try {
   }
 } catch {} // storage blocked: defaults apply
 
+// A rebuild while the page is open replaces its lazy chunks: the next one it asks for (a task's panel, a screen) is
+// gone and the press does nothing. Load the new build instead.
+window.addEventListener("vite:preloadError", (e) => {
+  e.preventDefault()
+  location.reload()
+})
+
 // Theme: the saved preference, else the system (dark is the tokens' default).
 applyTheme()
 // Inside the desktop app (?shell=desktop): the sidebar's brand row is the title bar and leaves room for the

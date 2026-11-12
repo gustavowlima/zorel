@@ -26,7 +26,7 @@ export function RunTraceView({ routineId, runId }: { routineId: string; runId: s
   if (!detail || !routine)
     return (
       <Screen title={t("flows.run.title")}>
-        <Column>{detail === undefined ? <Spinner /> : <EmptyState title={t("notFound.title")} />}</Column>
+        <Column>{detail === undefined ? <Spinner /> : <EmptyState scene="lost" title={t("notFound.title")} />}</Column>
       </Screen>
     )
   const { run, steps } = detail

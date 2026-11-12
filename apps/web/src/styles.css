@@ -374,6 +374,8 @@ body {
 /* Expressions (illustrations): happy = two little arcs (^ ^), asleep = two short lines. */
 .z-face[data-eyes="happy"] > .z-eye { height: 11%; width: 22%; background: none; border: 2px solid var(--z-eye); border-bottom: 0; border-radius: 999px 999px 0 0; margin-top: -4%; }
 .z-face[data-eyes="asleep"] > .z-eye { height: 5%; width: 20%; margin-top: 4%; }
+.z-face[data-eyes="aside"] > .z-eye { transform: translateX(55%); }
+.z-face[data-eyes="up"] > .z-eye { transform: translateY(-35%); }
 /* Alive: the eyes glance left, back, right and blink in between, one eye a beat after the other. */
 .z-face[data-alive] > .z-eye { animation: z-eyes 7s cubic-bezier(0.5, 0, 0.3, 1) infinite; }
 .z-face[data-alive] > .z-eye + .z-eye { animation-delay: 60ms; }

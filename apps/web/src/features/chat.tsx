@@ -605,7 +605,7 @@ export function Timeline({ chat, state, agents, onView, onEdit, onStop, at, intr
       <div className="px-8 pt-6 pb-8">
       <div className="mx-auto flex w-full max-w-chat flex-col gap-7">
         {chat.summary && <Summary text={chat.summary} />}
-        {state.ready && items.length === 0 && !lives.length && (intro ?? <EmptyState icon={<MessageCircle />} title={t("chat.empty")} hint={t("chat.emptyHint")} />)}
+        {state.ready && items.length === 0 && !lives.length && (intro ?? <EmptyState scene="chat" icon={<MessageCircle />} title={t("chat.empty")} hint={t("chat.emptyHint")} />)}
         {!state.ready && (
           <div className="flex justify-center py-16 text-muted">
             <Spinner />
@@ -1098,7 +1098,9 @@ function LiveMessage({ live, agents, receipts, bare, onStop, status }: { live: L
   const wanted =
     current?.status === "waiting"
       ? waiter
-        ? t("approval.waitsFor", { agent: waiter })
+        ? current.tool?.endsWith("zorel_ask_user") // a question, not an approval
+          ? t("status.asking", { agent: waiter })
+          : t("approval.waitsFor", { agent: waiter })
         : t("approval.waiting")
       : (current?.title ?? (idle ? t("activity.waitingFor", { provider: providerLabel(splitModel(live.model).provider) }) : t("activity.working")))
   const what = useHeldLabel(wanted, !!current)

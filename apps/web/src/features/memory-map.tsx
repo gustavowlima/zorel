@@ -271,7 +271,7 @@ export function MemoryMap({ scope, toolbar }: { scope: string; toolbar?: React.R
       <>
         {head()}
         <div className="flex flex-1 items-center justify-center">
-          <EmptyState icon={<Brain />} title={t("memory.mapEmpty")} hint={t("memory.mapEmptyHint")} />
+          <EmptyState scene="notebook" icon={<Brain />} title={t("memory.mapEmpty")} hint={t("memory.mapEmptyHint")} />
         </div>
       </>
     )

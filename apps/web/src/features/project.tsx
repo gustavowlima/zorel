@@ -463,7 +463,7 @@ function Agents({ projectId }: { projectId: string }) {
       </Section>
       <Section title={t("project.ownAgents")} description={t("project.ownAgentsHint")} action={mine.length > 0 && <NewAgentMenu projectId={projectId} />}>
         {mine.length === 0 ? (
-          <EmptyState icon={<Bot />} inset title={t("project.noAgents")} hint={t("project.noAgentsHint")} action={<NewAgentMenu projectId={projectId} />} />
+          <EmptyState scene="team" icon={<Bot />} inset title={t("project.noAgents")} hint={t("project.noAgentsHint")} action={<NewAgentMenu projectId={projectId} />} />
         ) : (
           <Rows>
             {mine.map((a) => (

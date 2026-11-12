@@ -104,7 +104,7 @@ export function UsageView({ agentId }: { agentId?: string | undefined }) {
         )}
 
         {turns === 0 ? (
-          <EmptyState icon={<ChartColumn />} title={t("usage.empty")} />
+          <EmptyState scene="meter" icon={<ChartColumn />} title={t("usage.empty")} />
         ) : (
           <>
             <div className="grid gap-10 lg:grid-cols-12">

@@ -2,6 +2,7 @@
 // ring in the hue with one dot travelling round it; waiting for the person = a breathing amber dot; done / failed =
 // a green / red dot. Alive faces (working or waiting) glance and blink. Every motion is transform/opacity and stops
 // under reduced motion (styles.css › Face). People are rounded squares (PersonAvatar), never in an agent hue.
+import { Check, Compass, FileText, Gauge, MessageCircle, Moon, NotebookPen, Plug, Search, Sun, Timer, Unplug, Users } from "lucide-react"
 import type { CSSProperties, ReactNode } from "react"
 import { cn } from "@/lib/utils"
 
@@ -17,17 +18,19 @@ export function AgentFace({
   alive,
   solid = false,
   eyes = "open",
+  color: override,
   className
 }: {
   tone: number
-  eyes?: "open" | "happy" | "asleep" | undefined
+  color?: string | undefined
+  eyes?: "open" | "happy" | "asleep" | "aside" | "up" | undefined
   size?: number | undefined
   state?: FaceState | undefined
   alive?: boolean | undefined
   solid?: boolean | undefined
   className?: string | undefined
 }) {
-  const color = hue(tone)
+  const color = override ?? hue(tone)
   // Faces in lists overlap: the tint is mixed into the raised tone so it stays opaque.
   const style = {
     width: size,
@@ -112,37 +115,48 @@ export function EmptyOrbit({ icon, className }: { icon?: ReactNode; className?: 
   )
 }
 
-// Small friendly scenes (spec 018 illustrations): agent faces whose eyes tell the moment, plus one simple object.
-// Flat, the agents' hues and neutrals, a gentle float; still under reduced motion. Each fits a 56px-high slot.
-export type SceneKind = "allClear" | "resting" | "calmDay"
-export function Scene({ kind, className }: { kind: SceneKind; className?: string | undefined }) {
-  const box = cn("relative inline-flex h-14 w-24 shrink-0 items-end justify-center", className)
-  if (kind === "allClear")
-    return (
-      <span aria-hidden="true" className={box}>
-        <AgentFace tone={1} size={30} eyes="happy" solid className="z-float" />
-        <AgentFace tone={0} size={30} eyes="happy" solid className="z-float -ml-1 ring-2 ring-surface [animation-delay:400ms]" />
-        <span className="absolute top-0 left-1/2 flex size-4.5 -translate-x-1/2 items-center justify-center rounded-full bg-success text-on-agent">
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-3" fill="none" stroke="currentColor" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="m6 12 4 4 8-8" />
-          </svg>
-        </span>
-      </span>
-    )
-  if (kind === "resting")
-    return (
-      <span aria-hidden="true" className={box}>
-        <AgentFace tone={3} size={32} eyes="asleep" solid />
-        <span className="absolute top-1 right-4 text-xs font-semibold text-muted">
-          z<span className="text-[0.6rem]">z</span>
-        </span>
-      </span>
-    )
+// Scenes (spec 018 illustrations): a quiet card holding the moment's icon, a second card behind it, and one agent in
+// the action blue docked on its corner whose eyes tell the mood. Neutrals plus the accent only; the face floats 3px,
+// still under reduced motion. The face's cut-out follows the background via --z-scene-cut (canvas by default).
+export type SceneKind = "allClear" | "resting" | "calmDay" | "clock" | "team" | "notebook" | "pages" | "connect" | "search" | "offline" | "lost" | "meter" | "chat"
+type Eyes = "open" | "happy" | "asleep" | "aside" | "up"
+
+const SCENES: Record<SceneKind, { icon: ReactNode; eyes: Eyes }> = {
+  allClear: { icon: <Check />, eyes: "happy" },
+  resting: { icon: <Moon />, eyes: "asleep" },
+  calmDay: { icon: <Sun />, eyes: "happy" },
+  clock: { icon: <Timer />, eyes: "asleep" },
+  team: { icon: <Users />, eyes: "open" },
+  notebook: { icon: <NotebookPen />, eyes: "up" },
+  pages: { icon: <FileText />, eyes: "aside" },
+  connect: { icon: <Plug />, eyes: "open" },
+  search: { icon: <Search />, eyes: "aside" },
+  offline: { icon: <Unplug />, eyes: "asleep" },
+  lost: { icon: <Compass />, eyes: "up" },
+  meter: { icon: <Gauge />, eyes: "happy" },
+  chat: { icon: <MessageCircle />, eyes: "open" }
+}
+
+const SIZE = {
+  sm: { box: "size-12", back: "rounded-control-sm", card: "rounded-row [&_svg]:size-4.5", face: 16 },
+  lg: { box: "size-20", back: "rounded-row", card: "rounded-card [&_svg]:size-7", face: 24 }
+} as const
+
+export function Scene({ kind, large = false, className }: { kind: SceneKind; large?: boolean; className?: string | undefined }) {
+  const { icon, eyes } = SCENES[kind]
+  const z = SIZE[large ? "lg" : "sm"]
   return (
-    <span aria-hidden="true" className={cn(box, "overflow-hidden")}>
-      <span className="absolute bottom-[-1.5rem] left-1/2 size-16 -translate-x-1/2 rounded-full ring-2 ring-warning/60 ring-inset" />
-      <AgentFace tone={5} size={30} eyes="happy" solid className="z-float relative mb-0.5" />
-      <span className="absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-control-active" />
+    <span aria-hidden="true" className={cn("relative inline-block shrink-0", z.box, className)}>
+      <span className={cn("absolute inset-x-[18%] top-0 h-1/2 bg-surface ring-1 ring-subtle ring-inset", z.back)} />
+      <span className={cn("absolute inset-x-0 top-[14%] bottom-0 flex items-center justify-center bg-raised text-secondary ring-1 ring-strong ring-inset", z.card)}>{icon}</span>
+      <AgentFace
+        tone={0}
+        color="var(--z-accent)"
+        size={z.face}
+        eyes={eyes}
+        solid
+        className="z-float absolute! -right-1.5 -bottom-1.5 ring-[3px] ring-[var(--z-scene-cut,var(--z-bg-canvas))]"
+      />
     </span>
   )
 }

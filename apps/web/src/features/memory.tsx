@@ -181,6 +181,7 @@ export function MemoryView({ tab = "all", review = false }: { tab?: string | und
               ))}
               {!reading.loading && shown.length === 0 && (
                 <EmptyState
+            scene="notebook"
                   inset
                   icon={<Brain />}
                   title={tab === "forgotten" ? t("memory.noneForgotten") : facts.length ? t("memory.noneHere") : t("memory.empty")}

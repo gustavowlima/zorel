@@ -373,7 +373,7 @@ function ChangesTab({
   if (!turns.length)
     return (
       <div className="flex min-h-full items-center justify-center">
-        <EmptyState icon={<File />} title={t("workspace.noChanges")} hint={t("workspace.noChangesHint")} action={others} />
+        <EmptyState scene="allClear" icon={<File />} title={t("workspace.noChanges")} hint={t("workspace.noChangesHint")} action={others} />
       </div>
     )
   const current = focus ?? { turnId: turns[0]!.turnId!, path: null }

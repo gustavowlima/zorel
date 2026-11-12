@@ -64,6 +64,7 @@ export function BuilderView({ projectId }: { projectId: string | null }) {
       ) : error ? (
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
+            scene="offline"
             icon={<Sparkles />}
             title={t(error === "noModel" ? "builder.noModelTitle" : "builder.failedTitle")}
             hint={t(error === "noModel" ? "builder.noModel" : "builder.failed")}

@@ -42,7 +42,7 @@ export function FlowEditorView({ routineId }: { routineId: string }) {
   if (!routine || !agent || !loaded)
     return (
       <Screen title={t("flows.title")}>
-        <Column>{loaded === undefined ? <Spinner /> : <EmptyState title={t("notFound.title")} />}</Column>
+        <Column>{loaded === undefined ? <Spinner /> : <EmptyState scene="lost" title={t("notFound.title")} />}</Column>
       </Screen>
     )
   return <Editor key={`${routineId}:${loaded.version ?? 0}`} routineId={routineId} name={routine.name} agent={agent} initial={loaded.graph} version={loaded.version} />

@@ -185,6 +185,13 @@ Normative for everything below; where an older section disagrees, this one wins 
   (control radius). Page and dialog titles use the title step (17), first-run and sign-in headings the display step (26).
 - **Composer**: one raised card, the text on top and, inside it below, attach · the message's controls (model, access,
   context) · Stop · the round Send.
+- **Illustrations** (`Scene` in ui/face.tsx): restrained, never cartoonish. A raised card holding the moment's
+  icon (neutral, stroke 1.6), a second card peeking behind, and one agent face in the action blue docked on the
+  corner whose eyes tell the mood (open, happy, asleep, aside, up); a 3px float, still under reduced motion. Only
+  neutrals + the accent: no agent hues, no pastel fills, no extra characters or props. Kinds: allClear, resting,
+  calmDay, clock, team, notebook, pages, connect, search, offline, lost, meter, chat (a lookup table of icon + eyes).
+  `EmptyState scene=…` (large on a whole screen, small in an inset card) and `QuietCard`; a parent on a non-canvas
+  background sets `--z-scene-cut` so the face's cut-out matches. The orbit (`EmptyOrbit`) stays for brand moments.
 - **Personal accent**: Settings › Appearance › Action colour (per browser, `zorel.accent`), refused with the reason when
   white can't be read on it (`theme.ts`). Blue stays the default and the only action colour.
 - **Links** are the text tone (secondary, brighter on hover), never blue; check:ui rule `blue-link`.
@@ -194,7 +201,7 @@ Normative for everything below; where an older section disagrees, this one wins 
   a flat ring with a travelling dot; waiting = a breathing amber dot; done/failed = green/red dot; alive faces glance and
   blink; reduced motion stills it all. People are rounded squares (`PersonAvatar`). Loading uses the same ring
   (`Spinner`). Waiting is amber everywhere (never blue).
-- **Screens**: Home first in the sidebar (start · needs you · working now · today); search is a field under the head
+- **Screens**: Home first in the sidebar (start · needs you · working now · today, in one column on the composer's width (672px), every edge aligned; a section's side note such as Today's "since …" sits right of its title, never as a second line); search is a field under the head
   (no New chat button: + on Chats/Projects, ⌘N); Builder proposals are cards in its chat (Create / Edit first /
   Discard); Routines' week has no side panel (counts in one line, faces on runs, fill by outcome); the first agent
   made from the first run gets a "ready" step.

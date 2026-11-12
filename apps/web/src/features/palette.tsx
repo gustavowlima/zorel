@@ -6,7 +6,7 @@ import { useEffect, useState } from "react"
 import { agentsAtom, chatsAtom, projectsAtom, useList } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
-import { AlarmClock, BookOpen, Bot, Brain, ChartColumn, type CommandItem, Layers, CommandPalette, Folder, Inbox, MessageCircle, Plus, Search, Settings, SquarePen } from "@/ui"
+import { AlarmClock, BookOpen, Bot, Brain, ChartColumn, type CommandItem, Layers, CommandPalette, Folder, Inbox, MessageCircle, Plus, Scene, Search, Settings, SquarePen } from "@/ui"
 
 const has = (text: string, q: string) => text.toLowerCase().includes(q.toLowerCase())
 
@@ -91,7 +91,13 @@ export function Palette({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       onQuery={setQuery}
       label={t("palette.label")}
       placeholder={t("palette.placeholder")}
-      empty={t("palette.empty")}
+      empty={
+        // Nothing found: the agent with a magnifier, eyes to the side (spec 018 illustrations).
+        <span className="flex flex-col items-center gap-2">
+          <Scene kind="search" />
+          {t("palette.empty")}
+        </span>
+      }
       sections={[
         { id: "chats", title: t("nav.chats"), items: chatItems },
         { id: "messages", title: t("palette.messages"), items: messageItems },

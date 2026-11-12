@@ -101,7 +101,7 @@ export function RoutinesView() {
         </div>
       ) : (
         <Column className={SETTLE}>
-          {withRoutines.length === 0 ? <EmptyState icon={<AlarmClock />} title={t("routines.emptyTitle")} hint={t("routines.emptyHint")} action={newButton("default")} /> : <RoutineAgenda />}
+          {withRoutines.length === 0 ? <EmptyState scene="clock" icon={<AlarmClock />} title={t("routines.emptyTitle")} hint={t("routines.emptyHint")} action={newButton("default")} /> : <RoutineAgenda />}
         </Column>
       )}
       <Dialog

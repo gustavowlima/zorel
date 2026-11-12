@@ -101,7 +101,7 @@ export function PagesView({ selected }: { selected?: string | undefined }) {
             <PageView page={page} />
           </div>
         ) : (
-          <EmptyState icon={<BookOpen />} title={pages.length ? t("pages.select") : t("pages.empty")} {...(!pages.length && { hint: t("pages.emptyHint") })} />
+          <EmptyState scene="pages" icon={<BookOpen />} title={pages.length ? t("pages.select") : t("pages.empty")} {...(!pages.length && { hint: t("pages.emptyHint") })} />
         )}
       </div>
     </Screen>

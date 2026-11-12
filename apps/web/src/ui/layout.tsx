@@ -142,11 +142,11 @@ export function Notice({ tone = "warning", icon, title, children, action, classN
 }
 
 // inset: an empty list inside a section, a card the size of a row, not a page's centred block.
-export function EmptyState({ icon, title, hint, action, inset }: { icon?: ReactNode; title: ReactNode; hint?: ReactNode; action?: ReactNode; inset?: boolean }) {
+export function EmptyState({ icon, scene, title, hint, action, inset }: { icon?: ReactNode; scene?: SceneKind; title: ReactNode; hint?: ReactNode; action?: ReactNode; inset?: boolean }) {
   if (inset)
     return (
       <div className="flex flex-wrap items-center gap-x-3 gap-y-3 rounded-card border border-dashed border-subtle px-4 py-3.5">
-        {icon && <IconTile className="text-muted">{icon}</IconTile>}
+        {scene ? <Scene kind={scene} /> : icon && <IconTile className="text-muted">{icon}</IconTile>}
         <div className="flex min-w-0 flex-1 basis-60 flex-col">
           <p className="font-medium text-fg">{title}</p>
           {hint && <p className="text-pretty text-sm text-muted">{hint}</p>}
@@ -156,8 +156,9 @@ export function EmptyState({ icon, title, hint, action, inset }: { icon?: ReactN
     )
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-      {/* A whole screen with nothing yet shows Zorel's signature: the screen's icon in the core, agents in orbit. */}
-      <EmptyOrbit icon={icon} className="mb-5" />
+      {/* A whole screen with nothing yet: the moment's friendly scene (spec 018 illustrations); without one, Zorel's
+          signature — the screen's icon in the core, agents in orbit — for brand moments. */}
+      {scene ? <Scene kind={scene} large className="mb-4" /> : <EmptyOrbit icon={icon} className="mb-5" />}
       <p className="font-medium text-fg">{title}</p>
       {hint && <p className="max-w-sm text-pretty text-muted">{hint}</p>}
       {action && <div className="mt-2">{action}</div>}
@@ -237,7 +238,7 @@ export function ListRow({
 // "all clear" reads as good news, not as a hole.
 export function QuietCard({ scene, title, hint }: { scene: SceneKind; title: ReactNode; hint?: ReactNode }) {
   return (
-    <div className="flex items-center gap-4 rounded-card border border-subtle bg-surface px-4 py-3">
+    <div className="flex items-center gap-4 rounded-card border border-subtle bg-surface px-4 py-3 [--z-scene-cut:var(--z-bg-surface)]">
       <Scene kind={scene} />
       <div className="flex min-w-0 flex-col">
         <p className="font-medium text-fg">{title}</p>

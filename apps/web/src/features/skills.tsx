@@ -116,7 +116,7 @@ export function SkillsBody({ selected, file }: { selected?: string | undefined; 
           {group(t("skills.available"), shownFiles.filter((s) => !s.enabled).sort(byName).map(fileRow))}
           {group(t("skills.archived"), shown.filter((m) => m.state === "forgotten").map(zorelRow))}
           {q && !shown.length && !shownFiles.length && <p className="px-2 py-6 text-center text-muted">{t("skills.noMatch")}</p>}
-          {nothing && <EmptyState inset icon={<Layers />} title={t("skills.noneYet")} hint={t("skills.noneYetHint")} />}
+          {nothing && <EmptyState inset scene="notebook" icon={<Layers />} title={t("skills.noneYet")} hint={t("skills.noneYetHint")} />}
           <NativeSkills />
         </div>
       </nav>

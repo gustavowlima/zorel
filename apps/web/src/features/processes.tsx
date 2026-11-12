@@ -214,7 +214,7 @@ export function ProcessesSection() {
         </div>
       )}
       {rows.length === 0 ? (
-        <EmptyState inset icon={<Activity />} title={t("processes.empty")} hint={t("processes.emptyHint")} />
+        <EmptyState inset scene="resting" icon={<Activity />} title={t("processes.empty")} hint={t("processes.emptyHint")} />
       ) : (
         <div className="flex flex-col">
           <Columns />

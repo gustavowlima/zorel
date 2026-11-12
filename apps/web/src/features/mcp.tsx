@@ -44,6 +44,7 @@ export function McpSection({ projectId }: { projectId: string | null }) {
         <ReadingState loading={reading.loading} failed={reading.failed} onRetry={() => invalidate(["servers"])} />
         {!reading.loading && !reading.failed && servers.length === 0 && (
           <EmptyState
+            scene="connect"
             inset
             icon={<Plug />}
             title={t("mcp.empty")}
