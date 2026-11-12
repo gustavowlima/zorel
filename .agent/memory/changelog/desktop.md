@@ -28,3 +28,4 @@
 2026-11-12 | notifications only inside an app bundle on macOS; model picker | "Choose Application: where is use_default?" kept popping up
 2026-11-12 | chat screen rebuilt (timeline, live turn reveal, folds, tray, queue, stop, shared composer); page transitions | owner: 'bem interativa fluida e animada' and 'mudança de telas está crua'
 2026-11-12 | composer # @ $ / menus with inline-token chips; mentioned agents join before send | parity/chat.md B
+2026-11-12 | live drag reorder with grip; Pending renamed Notifications | owner: drag looked like a copy-paste; rename asked
