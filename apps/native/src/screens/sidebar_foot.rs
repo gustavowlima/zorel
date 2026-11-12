@@ -5,6 +5,7 @@
 use gpui_kit::{assets::IconName, component::popover::Popover, prelude::FluentBuilder, *};
 use rust_i18n::t;
 
+use crate::ui::space;
 use crate::ui::{
     button::{Button, Size},
     layout,
@@ -83,7 +84,7 @@ impl Sidebar {
         let list: Vec<AnyElement> = if rows.is_empty() {
             vec![
                 div()
-                    .py(px(8.))
+                    .py(px(space::X2))
                     .text_sm()
                     .text_color(p.text_muted)
                     .child(t!("nav.usageNone").into_owned())
@@ -124,7 +125,7 @@ impl Sidebar {
                                 div()
                                     .flex()
                                     .justify_between()
-                                    .gap(px(12.))
+                                    .gap(px(space::X3))
                                     .text_xs()
                                     .child(div().truncate().text_color(p.text_secondary).child(window_label(id)))
                                     .child(
@@ -145,8 +146,8 @@ impl Sidebar {
                     div()
                         .flex()
                         .flex_col()
-                        .gap(px(8.))
-                        .py(px(12.))
+                        .gap(px(space::X2))
+                        .py(px(space::X3))
                         .border_t_1()
                         .border_color(p.border)
                         .child(
@@ -220,7 +221,7 @@ impl Sidebar {
             .flex()
             .flex_none()
             .items_center()
-            .gap(px(4.))
+            .gap(px(space::X1))
             .when(folded, |f| f.flex_col())
             .child(usage)
             .when(!folded, |f| f.child(div().flex_1()))

@@ -3,6 +3,7 @@
 use gpui_kit::*;
 
 use crate::theme::{tokens, tokens::Palette};
+use crate::ui::space;
 
 pub fn card(p: &Palette) -> Div {
     div()
@@ -17,10 +18,10 @@ pub fn row() -> Div {
     div()
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(px(space::X2))
         .rounded(px(tokens::RADIUS_ROW))
-        .px(px(8.))
-        .py(px(6.))
+        .px(px(space::X2))
+        .py(px(space::X1_5))
 }
 
 /// What floats over the page (menus, selects, popovers; web `rounded-card border-strong bg-float p-inset`): the card

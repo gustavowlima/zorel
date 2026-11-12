@@ -9,6 +9,7 @@ use std::ops::Range;
 use gpui_kit::*;
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
+use crate::ui::space;
 use crate::{
     theme::{self, tokens},
     ui::code::code_block,
@@ -170,7 +171,7 @@ pub fn safe_link(url: &str) -> bool {
 /// Draws parsed blocks; `id` keeps each block's element id stable across renders.
 pub fn render(id: &str, blocks: &[Block], window: &Window) -> Div {
     let p = theme::palette(window);
-    let mut column = div().flex().flex_col().gap(px(8.)).text_color(p.text);
+    let mut column = div().flex().flex_col().gap(px(space::X2)).text_color(p.text);
     for (i, block) in blocks.iter().enumerate() {
         let key = SharedString::from(format!("{id}-{i}"));
         column = column.child(match block {
@@ -185,7 +186,7 @@ pub fn render(id: &str, blocks: &[Block], window: &Window) -> Div {
                 .child(inline(key, text, p)),
             Block::Item { depth, ordered, text } => div()
                 .flex()
-                .gap(px(6.))
+                .gap(px(space::X1_5))
                 .pl(px(*depth as f32 * 16.))
                 .child(div().flex_none().text_color(p.text_muted).child(match ordered {
                     Some(n) => format!("{n}."),
@@ -195,7 +196,7 @@ pub fn render(id: &str, blocks: &[Block], window: &Window) -> Div {
             Block::Quote(text) => div()
                 .border_l_2()
                 .border_color(p.border_strong)
-                .pl(px(10.))
+                .pl(px(space::X2_5))
                 .text_color(p.text_secondary)
                 .child(inline(key, text, p)),
             Block::Code { text, .. } => code_block(p, text.clone()),

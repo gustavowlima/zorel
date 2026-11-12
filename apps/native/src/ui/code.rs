@@ -3,6 +3,7 @@
 use gpui_kit::*;
 
 use crate::theme::{tokens, tokens::Palette};
+use crate::ui::space;
 
 /// The monospace face used for code.
 pub const MONO: &str = "Menlo";
@@ -13,7 +14,7 @@ pub fn code_block(p: &Palette, text: impl Into<SharedString>) -> Div {
         .bg(p.bg_code)
         .border_1()
         .border_color(p.border)
-        .p(px(10.))
+        .p(px(space::X2_5))
         .font_family(MONO)
         .text_size(px(12.5))
         .child(text.into())

@@ -10,6 +10,7 @@ use gpui_kit::{
 };
 use rust_i18n::t;
 
+use crate::ui::space;
 use crate::{
     net::types::{Approval, ApprovalKind},
     state::store::Store,
@@ -34,34 +35,39 @@ pub fn is_question(a: &Approval) -> bool {
 
 /// One card: who, where and when, the kind on the right, then the body and actions the caller adds.
 pub fn item(p: &Palette, kind: &str, kind_colors: (Rgba, Rgba), face: AnyElement, who: String, context: String) -> Div {
-    layout::card(p).flex().flex_col().gap(px(14.)).p(px(20.)).child(
-        div()
-            .flex()
-            .items_start()
-            .gap(px(12.))
-            .child(face)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .child(div().font_weight(FontWeight::SEMIBOLD).truncate().child(who))
-                    .child(div().text_sm().text_color(p.text_muted).truncate().child(context)),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .rounded_full()
-                    .px(px(8.))
-                    .py(px(2.))
-                    .text_xs()
-                    .font_weight(FontWeight::MEDIUM)
-                    .bg(kind_colors.0)
-                    .text_color(kind_colors.1)
-                    .child(t!(format!("inbox.kind.{kind}")).into_owned()),
-            ),
-    )
+    layout::card(p)
+        .flex()
+        .flex_col()
+        .gap(px(space::X4))
+        .p(px(space::X5))
+        .child(
+            div()
+                .flex()
+                .items_start()
+                .gap(px(space::X3))
+                .child(face)
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .child(div().font_weight(FontWeight::SEMIBOLD).truncate().child(who))
+                        .child(div().text_sm().text_color(p.text_muted).truncate().child(context)),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .rounded_full()
+                        .px(px(space::X2))
+                        .py(px(space::X0_5))
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .bg(kind_colors.0)
+                        .text_color(kind_colors.1)
+                        .child(t!(format!("inbox.kind.{kind}")).into_owned()),
+                ),
+        )
 }
 
 /// The card for one approval; `answer` is the question's answer box (a question only).
@@ -118,15 +124,15 @@ pub fn card(
             .child(
                 layout::card(p)
                     .bg(p.bg_field)
-                    .px(px(10.))
-                    .py(px(6.))
+                    .px(px(space::X2_5))
+                    .py(px(space::X1_5))
                     .child(Textarea::new(answer)),
             )
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(px(space::X2))
                     .child(open_button)
                     .child(div().flex_1())
                     .child(action(
@@ -149,7 +155,7 @@ pub fn card(
                 ApprovalKind::Command => code_block(p, a.summary.chars().take(2000).collect::<String>()),
                 _ => div().child(a.summary.clone()).child(
                     div()
-                        .mt(px(6.))
+                        .mt(px(space::X1_5))
                         .text_sm()
                         .text_color(p.text_muted)
                         .child(a.tool.clone()),
@@ -159,7 +165,7 @@ pub fn card(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(px(space::X2))
                     .child(open_button)
                     .child(div().flex_1())
                     .when(a.always_key.is_some(), |row| {

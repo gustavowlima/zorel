@@ -1,5 +1,5 @@
 // Zorel's menu (apps/web/src/ui/menu.tsx): one list of actions, opened by a right-click where the pointer is or by a
-// ⋯ button under it. It floats on `layout::float` (card radius, inset 6) with 26px rows at the row radius, concentric;
+// ⋯ button under it. It floats on `layout::float` (card radius, inset 6) with 32px rows at the row radius, concentric;
 // a focused row speaks its own voice (accent wash, or danger for a destructive one). It enters in 140ms (fade and a
 // 4px rise, Zeron's MENU_IN), and closes on a pick, a click outside or Escape.
 use std::{rc::Rc, time::Duration};
@@ -11,6 +11,7 @@ use gpui_kit::{
     *,
 };
 
+use crate::ui::space;
 use crate::{
     theme::{self, tokens},
     ui::{
@@ -150,7 +151,12 @@ pub fn dropdown<T: Selectable + IntoElement + 'static>(key: impl Into<ElementId>
 fn surface(key: &ElementId, entries: Vec<Entry>, close: Action, window: &mut Window, cx: &mut App) -> Stateful<Div> {
     let p = theme::palette(window);
     let rows = entries.into_iter().enumerate().map(|(i, entry)| match entry {
-        Entry::Separator => div().my(px(4.)).mx(px(2.)).h(px(1.)).bg(p.border).into_any_element(),
+        Entry::Separator => div()
+            .my(px(space::X1_5))
+            .mx(px(space::X2_5))
+            .h(px(1.))
+            .bg(p.border)
+            .into_any_element(),
         Entry::Item {
             label,
             icon: mark,
@@ -178,9 +184,9 @@ fn surface(key: &ElementId, entries: Vec<Entry>, close: Action, window: &mut Win
                 .aria_label(label.clone())
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .h(px(tokens::CONTROL_H_SM))
-                .px(px(8.))
+                .gap(px(space::X2))
+                .h(px(tokens::CONTROL_H)) // a comfortable row: the sidebar's height
+                .px(px(space::X2_5))
                 .rounded(px(tokens::RADIUS_ROW))
                 .bg(bg)
                 .text_color(fg)
@@ -211,7 +217,7 @@ fn enter(surface: Stateful<Div>, key: &ElementId) -> AnyElement {
         .with_animation(
             ElementId::from(SharedString::from(format!("{key}-enter"))),
             Animation::new(Duration::from_millis(140)).with_easing(ease_out_quint()),
-            |el, t| el.opacity(t).mt(px(4. * (1. - t))),
+            |el, t| el.opacity(t).mt(px(space::X1 * (1. - t))),
         )
         .into_any_element()
 }

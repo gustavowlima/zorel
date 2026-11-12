@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use gpui_kit::{component as gpui_component, prelude::FluentBuilder, *};
 use rust_i18n::t;
 
+use crate::ui::space;
 use crate::{
     engine::Launch,
     i18n,
@@ -295,7 +296,7 @@ impl Render for Root {
             .child(
                 div()
                     .flex_1()
-                    .m(px(8.))
+                    .m(px(space::X2))
                     .ml(px(0.))
                     .rounded(px(theme::tokens::RADIUS_CARD))
                     .overflow_hidden()
@@ -305,7 +306,7 @@ impl Render for Root {
                     .flex()
                     .flex_col()
                     .when_some(status, |c, s| {
-                        c.child(div().p(px(8.)).text_color(p.text_muted).child(s))
+                        c.child(div().p(px(space::X2)).text_color(p.text_muted).child(s))
                     })
                     .when_some(main, |c, screen| c.child(screen)),
             )

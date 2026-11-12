@@ -15,6 +15,7 @@ use rust_i18n::t;
 
 use crate::ui::button::{Button, Size, Variant};
 use crate::ui::icon::{self, icon};
+use crate::ui::space;
 
 use crate::theme::{self, tokens};
 
@@ -150,10 +151,10 @@ impl Render for Composer {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(px(space::X1_5))
                     .h(px(26.))
-                    .pl(px(10.))
-                    .pr(px(4.))
+                    .pl(px(space::X2_5))
+                    .pr(px(space::X1))
                     .rounded_full()
                     .bg(p.bg_control)
                     .text_size(px(12.5))
@@ -180,7 +181,7 @@ impl Render for Composer {
         div()
             .flex()
             .flex_col()
-            .gap(px(6.))
+            .gap(px(space::X1_5))
             .child(
                 div()
                     .rounded(px(tokens::RADIUS_CARD))
@@ -195,9 +196,9 @@ impl Render for Composer {
                             div()
                                 .flex()
                                 .flex_wrap()
-                                .gap(px(6.))
-                                .px(px(12.))
-                                .pt(px(10.))
+                                .gap(px(space::X1_5))
+                                .px(px(space::X3))
+                                .pt(px(space::X2_5))
                                 .children(chips),
                         )
                     })
@@ -213,8 +214,8 @@ impl Render for Composer {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(4.))
-                            .p(px(6.))
+                            .gap(px(space::X1))
+                            .p(px(space::X1_5))
                             .child(
                                 Button::icon_only("attach", IconName::Plus, t!("composer.attach").into_owned())
                                     .on_click(cx.listener(|this, _, _, cx| this.attach(cx))),
@@ -231,7 +232,7 @@ impl Render for Composer {
                     ),
             )
             .when_some(self.error.clone(), |c, e| {
-                c.child(div().px(px(4.)).text_sm().text_color(p.danger).child(e))
+                c.child(div().px(px(space::X1)).text_sm().text_color(p.danger).child(e))
             })
     }
 }

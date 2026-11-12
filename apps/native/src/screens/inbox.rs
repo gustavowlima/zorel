@@ -9,6 +9,7 @@ use serde_json::json;
 use std::rc::Rc;
 
 use crate::screens::approval::{self, is_question};
+use crate::ui::space;
 use crate::{
     i18n::tn,
     net::types::{MemoriesListSuccess, Memory, MemoryState},
@@ -183,7 +184,7 @@ impl Render for Inbox {
                     div()
                         .flex()
                         .justify_end()
-                        .gap(px(8.))
+                        .gap(px(space::X2))
                         .child(
                             Button::new(
                                 SharedString::from(format!("discard-{}", m.id)),
@@ -246,11 +247,11 @@ impl Render for Inbox {
             div()
                 .max_w(px(720.))
                 .mx_auto()
-                .px(px(24.))
-                .py(px(32.))
+                .px(px(space::X6))
+                .py(px(space::X8))
                 .flex()
                 .flex_col()
-                .gap(px(20.))
+                .gap(px(space::X5))
                 .child(
                     div()
                         .flex()
@@ -271,11 +272,11 @@ impl Render for Inbox {
                 .when(empty, |c| {
                     c.child(
                         div()
-                            .py(px(48.))
+                            .py(px(space::X12))
                             .flex()
                             .flex_col()
                             .items_center()
-                            .gap(px(6.))
+                            .gap(px(space::X1_5))
                             .child(AgentFace::new("inbox-empty", 0).size(28.))
                             .child(
                                 div()
@@ -288,7 +289,7 @@ impl Render for Inbox {
                 .when(!empty, |c| {
                     c.children(items.into_iter().map(|(_, e)| e)).child(
                         div()
-                            .mt(px(12.))
+                            .mt(px(space::X3))
                             .text_center()
                             .text_sm()
                             .text_color(p.text_muted)

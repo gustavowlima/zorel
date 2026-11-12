@@ -9,6 +9,7 @@ use rust_i18n::t;
 
 use crate::ui::button::{Button, Size, Variant};
 use crate::ui::icon::{self, icon};
+use crate::ui::space;
 use serde_json::json;
 
 use crate::{
@@ -359,10 +360,10 @@ impl Home {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(px(space::X1_5))
                     .h(px(tokens::CONTROL_H_SM))
-                    .px(px(4.))
-                    .pr(px(10.))
+                    .px(px(space::X1))
+                    .pr(px(space::X2_5))
                     .rounded_full()
                     .border_1()
                     .text_sm()
@@ -384,7 +385,7 @@ impl Home {
                     .into_any_element()
             }
         };
-        div().flex().items_center().gap(px(4.)).child(project).child(who)
+        div().flex().items_center().gap(px(space::X1)).child(project).child(who)
     }
 
     // The first two approvals and questions, decided here; all of them in Needs you.
@@ -429,7 +430,7 @@ impl Home {
             p,
             format!("{} · {}", t!("home.needsYou"), approvals.len()),
             see_all,
-            div().flex().flex_col().gap(px(12.)).children(cards),
+            div().flex().flex_col().gap(px(space::X3)).children(cards),
         )
     }
 
@@ -550,15 +551,15 @@ impl Home {
             layout::card(p)
                 .flex()
                 .flex_col()
-                .gap(px(4.))
+                .gap(px(space::X1))
                 .child(
                     div()
                         .flex()
                         .items_baseline()
                         .justify_between()
-                        .px(px(10.))
-                        .pt(px(6.))
-                        .pb(px(6.))
+                        .px(px(space::X2_5))
+                        .pt(px(space::X1_5))
+                        .pb(px(space::X1_5))
                         .child(
                             div()
                                 .font_weight(FontWeight::SEMIBOLD)
@@ -604,7 +605,7 @@ impl Render for Home {
             let tools = tools.clone();
             c.set_tools(Rc::new(move |window, _| {
                 div()
-                    .px(px(8.))
+                    .px(px(space::X2))
                     .text_sm()
                     .text_color(theme::palette(window).text_muted)
                     .child(tools.clone())
@@ -629,23 +630,23 @@ impl Render for Home {
                     .flex()
                     .flex_col()
                     .items_center()
-                    .px(px(28.))
-                    .pt(px(52.))
-                    .pb(px(40.))
+                    .px(px(space::X7))
+                    .pt(px(space::X14))
+                    .pb(px(space::X10))
                     .child(
                         div()
                             .w_full()
                             .max_w(px(680.))
                             .flex()
                             .flex_col()
-                            .gap(px(14.))
+                            .gap(px(space::X4))
                             .child(
                                 div()
                                     .flex()
                                     .flex_col()
                                     .items_center()
-                                    .gap(px(4.))
-                                    .mb(px(10.))
+                                    .gap(px(space::X1))
+                                    .mb(px(space::X2_5))
                                     .child(div().text_sm().text_color(p.text_muted).child(greeting))
                                     .child(
                                         div()
@@ -659,7 +660,7 @@ impl Render for Home {
                                 div()
                                     .flex()
                                     .flex_col()
-                                    .gap(px(6.))
+                                    .gap(px(space::X1_5))
                                     .child(scope)
                                     .child(self.composer.clone()),
                             ),
@@ -669,11 +670,11 @@ impl Render for Home {
                         div()
                             .w_full()
                             .max_w(px(if wide { 960. } else { 680. }))
-                            .mt(px(40.))
+                            .mt(px(space::X10))
                             .flex()
                             .when(!wide, |c| c.flex_col())
                             .items_start()
-                            .gap(px(24.))
+                            .gap(px(space::X6))
                             .child(
                                 div()
                                     .flex_1()
@@ -681,7 +682,7 @@ impl Render for Home {
                                     .w_full()
                                     .flex()
                                     .flex_col()
-                                    .gap(px(22.))
+                                    .gap(px(space::X6))
                                     .child(needs_you)
                                     .child(working),
                             )
@@ -703,7 +704,7 @@ fn section(p: &Palette, title: String, action: Option<AnyElement>, body: impl In
     div()
         .flex()
         .flex_col()
-        .gap(px(10.))
+        .gap(px(space::X2_5))
         .child(
             div()
                 .flex()
@@ -718,7 +719,7 @@ fn section(p: &Palette, title: String, action: Option<AnyElement>, body: impl In
 
 /// A card that holds rows (Working now).
 fn rows_card(p: &Palette) -> Div {
-    layout::card(p).flex().flex_col().gap(px(2.))
+    layout::card(p).flex().flex_col().gap(px(space::X0_5))
 }
 
 /// A section with nothing in it says so kindly: a resting face, the line and its hint.
@@ -730,9 +731,9 @@ fn quiet_body(p: &Palette, id: &'static str, title: &str, hint: &str) -> Div {
     div()
         .flex()
         .items_center()
-        .gap(px(14.))
-        .px(px(10.))
-        .py(px(8.))
+        .gap(px(space::X4))
+        .px(px(space::X2_5))
+        .py(px(space::X2))
         .child(AgentFace::new(id, 0).size(28.))
         .child(
             div()

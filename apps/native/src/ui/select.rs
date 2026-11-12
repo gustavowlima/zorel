@@ -1,6 +1,6 @@
 // A select (apps/web/src/ui/select.tsx, ghost variant): the trigger is a 26px control-radius button that shows the
 // choice (its mark and name) and a chevron that turns while open; the list floats on `layout::float` (card radius,
-// inset 6) with 26px rows at the row radius, concentric with it, the chosen one checked. Hover eases in (ui/motion).
+// inset 6) with 32px rows at the row radius, concentric with it, the chosen one checked. Hover eases in (ui/motion).
 // The kit's Popover places it, animates it in and closes it on Escape or a click outside.
 // ponytail: no search field yet (the web adds one past 8 options); ⌘K finds projects and agents meanwhile.
 use std::{f32::consts::PI, rc::Rc};
@@ -13,6 +13,7 @@ use gpui_kit::{
 };
 
 use crate::ui::icon::{self, icon};
+use crate::ui::space;
 use crate::{
     theme::{self, tokens},
     ui::{face::AgentFace, layout, motion},
@@ -162,9 +163,9 @@ impl RenderOnce for Trigger {
             .flex()
             .flex_none()
             .items_center()
-            .gap(px(6.))
+            .gap(px(space::X1_5))
             .h(px(tokens::CONTROL_H_SM))
-            .px(px(10.))
+            .px(px(space::X2_5))
             .max_w(px(256.))
             .rounded(px(tokens::RADIUS_CONTROL))
             .bg(bg)
@@ -208,13 +209,11 @@ fn option_row(key: &str, o: &SelectOption, selected: bool, window: &mut Window, 
         .flex()
         .flex_none()
         .items_center()
-        .gap(px(8.))
-        .h(px(tokens::CONTROL_H_SM))
-        .pl(px(8.))
-        .pr(px(8.))
+        .gap(px(space::X2))
+        .h(px(tokens::CONTROL_H)) // a comfortable row: the sidebar's height
+        .px(px(space::X2_5))
         .rounded(px(tokens::RADIUS_ROW))
         .bg(bg)
-        .text_sm()
         .text_color(fg)
         .children(mark(&format!("{id}-mark"), &o.mark))
         .child(div().flex_1().min_w_0().truncate().child(o.label.clone()))

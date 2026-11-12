@@ -11,6 +11,7 @@ use gpui_kit::{
 use rust_i18n::t;
 use serde_json::json;
 
+use crate::ui::space;
 use crate::{
     net::{
         rpc::Rpc,
@@ -168,8 +169,8 @@ impl ChatScreen {
                             .max_w(px(560.))
                             .rounded(px(tokens::RADIUS_CARD))
                             .bg(p.bg_control)
-                            .px(px(12.))
-                            .py(px(8.))
+                            .px(px(space::X3))
+                            .py(px(space::X2))
                             .child(text),
                     ),
                     _ => self.agent_row(
@@ -204,8 +205,8 @@ impl ChatScreen {
                 layout::card(p)
                     .flex()
                     .flex_col()
-                    .gap(px(10.))
-                    .p(px(14.))
+                    .gap(px(space::X2_5))
+                    .p(px(space::X4))
                     .child(
                         div()
                             .text_color(p.warning)
@@ -216,7 +217,7 @@ impl ChatScreen {
                     .child(
                         div()
                             .flex()
-                            .gap(px(8.))
+                            .gap(px(space::X2))
                             .justify_end()
                             .child(
                                 Button::new(
@@ -241,8 +242,8 @@ impl ChatScreen {
             }
         };
         div()
-            .px(px(24.))
-            .py(px(8.))
+            .px(px(space::X6))
+            .py(px(space::X2))
             .max_w(px(760.))
             .w_full()
             .mx_auto()
@@ -253,9 +254,9 @@ impl ChatScreen {
     fn agent_row(&self, tone: usize, state: FaceState, body: Div, key: &str) -> Div {
         div()
             .flex()
-            .gap(px(10.))
+            .gap(px(space::X2_5))
             .child(
-                div().pt(px(2.)).child(
+                div().pt(px(space::X0_5)).child(
                     AgentFace::new(SharedString::from(format!("face-{key}")), tone)
                         .size(20.)
                         .state(state),
@@ -283,16 +284,16 @@ impl Render for ChatScreen {
             )
             .child(
                 div()
-                    .px(px(24.))
-                    .pb(px(16.))
-                    .pt(px(8.))
+                    .px(px(space::X6))
+                    .pb(px(space::X4))
+                    .pt(px(space::X2))
                     .max_w(px(760.))
                     .w_full()
                     .mx_auto()
                     .child(
                         layout::card(p)
-                            .px(px(12.))
-                            .py(px(8.))
+                            .px(px(space::X3))
+                            .py(px(space::X2))
                             .text_color(p.text)
                             .child(Textarea::new(&self.composer)),
                     ),

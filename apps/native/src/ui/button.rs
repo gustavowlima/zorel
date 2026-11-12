@@ -13,6 +13,7 @@ use gpui_kit::{
 };
 
 use crate::ui::icon::{self, icon};
+use crate::ui::space;
 use crate::{
     theme::{self, tokens},
     ui::motion,
@@ -186,7 +187,7 @@ impl RenderOnce for Button {
             .flex_none()
             .items_center()
             .justify_center()
-            .gap(px(6.))
+            .gap(px(space::X1_5))
             .h(px(height))
             .map(|b| if icon_only { b.w(px(height)) } else { b.px(px(pad)) })
             .rounded(px(if self.round { height / 2. } else { radius }))

@@ -15,6 +15,7 @@ use gpui_kit::{
 use rust_i18n::t;
 
 use crate::ui::button::{Button, Variant};
+use crate::ui::space;
 use serde_json::json;
 
 use crate::{
@@ -86,7 +87,7 @@ impl Sidebar {
                     div()
                         .flex()
                         .justify_end()
-                        .gap(px(8.))
+                        .gap(px(space::X2))
                         .child(
                             Button::new("cancel", t!("common.cancel").into_owned())
                                 .on_click(|_, window, cx| window.close_dialog(cx)),
@@ -133,7 +134,7 @@ impl Sidebar {
                     div()
                         .flex()
                         .justify_end()
-                        .gap(px(8.))
+                        .gap(px(space::X2))
                         .child(
                             Button::new("cancel", t!("common.cancel").into_owned())
                                 .on_click(|_, window, cx| window.close_dialog(cx)),
@@ -165,7 +166,7 @@ impl Sidebar {
                     div()
                         .flex()
                         .justify_end()
-                        .gap(px(8.))
+                        .gap(px(space::X2))
                         .child(
                             Button::new("cancel", t!("common.cancel").into_owned())
                                 .on_click(|_, window, cx| window.close_dialog(cx)),
@@ -205,7 +206,7 @@ impl Sidebar {
                     div()
                         .flex()
                         .justify_end()
-                        .gap(px(8.))
+                        .gap(px(space::X2))
                         .child(
                             Button::new("cancel", t!("common.cancel").into_owned())
                                 .on_click(|_, window, cx| window.close_dialog(cx)),

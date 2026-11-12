@@ -9,6 +9,7 @@ use gpui_kit::{
     *,
 };
 
+use crate::ui::space;
 use crate::{
     theme::{self, tokens},
     ui::motion,
@@ -92,7 +93,7 @@ impl RenderOnce for Segmented {
                 .flex_none()
                 .items_center()
                 .h(px(OPTION_H))
-                .px(px(10.))
+                .px(px(space::X2_5))
                 .rounded(px(tokens::RADIUS_SEG))
                 .when(on && !measured, |o| o.bg(p.bg_control_active))
                 .text_size(px(12.5))
@@ -123,7 +124,7 @@ impl RenderOnce for Segmented {
             .flex()
             .flex_none()
             .items_center()
-            .gap(px(2.))
+            .gap(px(space::X0_5))
             .p(px(TRACK))
             .rounded(px(tokens::RADIUS_CONTROL))
             .bg(p.bg_control)

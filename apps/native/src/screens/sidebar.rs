@@ -21,6 +21,7 @@ use rust_i18n::t;
 
 use crate::ui::button::{Button, Size};
 use crate::ui::icon::{self, icon};
+use crate::ui::space;
 
 use crate::{
     format,
@@ -37,6 +38,8 @@ use crate::{
 };
 
 const OPEN_WIDTH: f32 = 268.;
+/// The macOS window buttons sit over the sidebar's top.
+const TRAFFIC_LIGHTS: f32 = 36.;
 const RAIL_WIDTH: f32 = 56.;
 /// What sits on the folded rail: a 40px column (the rail less its 8px sides).
 const RAIL_ITEM: f32 = RAIL_WIDTH - 16.;
@@ -334,11 +337,11 @@ impl Sidebar {
             .id(SharedString::from(format!("section-{key}")))
             .flex()
             .items_center()
-            .gap(px(2.))
+            .gap(px(space::X0_5))
             .h(px(tokens::CONTROL_H))
-            .pl(px(10.))
-            .pr(px(4.))
-            .mt(px(8.))
+            .pl(px(space::X2_5))
+            .pr(px(space::X1))
+            .mt(px(space::X2))
             .text_size(px(11.5))
             .font_weight(FontWeight::MEDIUM)
             .text_color(p.text_muted)
@@ -348,7 +351,7 @@ impl Sidebar {
             .when(closed && waiting > 0, |r| {
                 r.child(
                     div()
-                        .mr(px(4.))
+                        .mr(px(space::X1))
                         .text_color(p.warning)
                         .child(tn("nav.waitingIn", waiting as i64)),
                 )
@@ -425,7 +428,7 @@ impl Render for Sidebar {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(px(space::X1_5))
                     .text_xs()
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(p.warning)
@@ -509,8 +512,8 @@ impl Render for Sidebar {
                 if store.projects.is_empty() {
                     list.push(
                         div()
-                            .px(px(10.))
-                            .py(px(6.))
+                            .px(px(space::X2_5))
+                            .py(px(space::X1_5))
                             .text_sm()
                             .text_color(p.text_muted)
                             .child(t!("nav.emptyProjects").into_owned())
@@ -675,8 +678,8 @@ impl Render for Sidebar {
                 if loose.is_empty() {
                     list.push(
                         div()
-                            .px(px(10.))
-                            .py(px(6.))
+                            .px(px(space::X2_5))
+                            .py(px(space::X1_5))
                             .text_sm()
                             .text_color(p.text_muted)
                             .child(t!("nav.noChats").into_owned())
@@ -719,14 +722,14 @@ impl Render for Sidebar {
             .on_click(cx.listener(|_, _, _, cx| cx.emit(SidebarEvent::Palette)))
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(px(space::X2))
             .h(px(tokens::CONTROL_H))
             // Folded, the search is a square on the rail's column, its glass centred like the places' marks.
             .map(|s| {
                 if folded {
                     s.w(px(RAIL_ITEM)).justify_center()
                 } else {
-                    s.px(px(10.))
+                    s.px(px(space::X2_5))
                 }
             })
             .rounded(px(tokens::RADIUS_CONTROL))
@@ -737,7 +740,7 @@ impl Render for Sidebar {
                 s.child(div().flex_1().truncate().child(t!("nav.searchOrGo").into_owned()))
                     .child(
                         div()
-                            .px(px(5.))
+                            .px(px(space::X1))
                             .h(px(18.))
                             .flex()
                             .items_center()
@@ -755,20 +758,20 @@ impl Render for Sidebar {
             .h_full()
             .flex()
             .flex_col()
-            .gap(px(16.))
-            .py(px(8.))
+            .gap(px(space::X4))
+            .py(px(space::X2))
             .px(px(if folded { 8. } else { 12. }))
-            .pt(px(36.)) // the window's traffic lights
+            .pt(px(TRAFFIC_LIGHTS)) // clears the window's traffic lights (macOS chrome, not spacing)
             .bg(p.bg_sidebar)
             .text_color(p.text_secondary)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(10.))
+                    .gap(px(space::X2_5))
                     .h(px(36.))
                     .when(folded, |h| h.justify_center())
-                    .when(!folded, |h| h.pl(px(12.)))
+                    .when(!folded, |h| h.pl(px(space::X3)))
                     .when(!folded, |h| {
                         h.child(svg().path(crate::assets::LOGO).size(px(20.)).text_color(p.text))
                             .child(
@@ -783,7 +786,7 @@ impl Render for Sidebar {
                     .child(fold),
             )
             .child(search)
-            .child(div().flex().flex_col().gap(px(1.)).children(places))
+            .child(div().flex().flex_col().gap(px(space::X0_5)).children(places))
             .when(!folded, |c| {
                 c.child(
                     div()
@@ -793,7 +796,7 @@ impl Render for Sidebar {
                         .overflow_y_scroll()
                         .flex()
                         .flex_col()
-                        .gap(px(2.))
+                        .gap(px(space::X0_5))
                         .children(list),
                 )
             })

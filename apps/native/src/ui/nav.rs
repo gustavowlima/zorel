@@ -7,6 +7,7 @@ use std::rc::Rc;
 use gpui_kit::{assets::IconName, prelude::FluentBuilder, *};
 
 use crate::ui::icon::{self, icon};
+use crate::ui::space;
 use crate::{
     theme::{self, tokens},
     ui::motion,
@@ -200,10 +201,10 @@ impl RenderOnce for NavRow {
                 if self.rail {
                     r.size(px(40.)).justify_center()
                 } else {
-                    r.gap(px(10.))
+                    r.gap(px(space::X2_5))
                         .h(px(if tall { 52. } else { 32. }))
-                        .pl(px(10. + self.indent))
-                        .pr(px(8.))
+                        .pl(px(space::X2_5 + self.indent))
+                        .pr(px(space::X2))
                 }
             })
             .when_some(mark, |r, m| r.child(m))
@@ -226,7 +227,7 @@ impl RenderOnce for NavRow {
                         }),
                 )
                 .when_some(trailing, |r, t| {
-                    r.child(div().flex_none().flex().items_center().gap(px(2.)).child(t))
+                    r.child(div().flex_none().flex().items_center().gap(px(space::X0_5)).child(t))
                 })
             })
             .when(!self.disabled, |r| {
@@ -269,8 +270,8 @@ impl Render for DragPreview {
     fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let p = theme::palette(window);
         div()
-            .px(px(10.))
-            .py(px(6.))
+            .px(px(space::X2_5))
+            .py(px(space::X1_5))
             .rounded(px(tokens::RADIUS_ROW))
             .bg(p.bg_raised)
             .border_1()
