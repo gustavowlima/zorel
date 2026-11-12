@@ -375,7 +375,15 @@ impl Root {
             .when_some(status, |c, s| {
                 c.child(div().p(px(space::X2)).text_color(p.text_muted).child(s))
             })
-            .when_some(main, |c, screen| c.child(screen))
+            // A new screen fades in and rises a little (keyed by the route, so each navigation plays it once).
+            .when_some(main, |c, screen| {
+                c.child(crate::ui::motion::enter(
+                    div().flex_1().min_h_0().flex().flex_col().child(screen),
+                    SharedString::from(format!("page-{:?}", self.route)),
+                    crate::ui::motion::PAGE_MS,
+                    6.,
+                ))
+            })
     }
 }
 

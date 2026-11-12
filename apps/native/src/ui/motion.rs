@@ -22,6 +22,26 @@ pub const SETTLE_MS: u64 = 200;
 pub const SLIDE_MS: u64 = 260;
 /// A menu or select list entering.
 pub const MENU_IN_MS: u64 = 140;
+/// A screen (page) coming in when you go somewhere: a fade and a short rise.
+pub const PAGE_MS: u64 = 180;
+/// A new row joining a list (a message arriving).
+pub const ENTER_MS: u64 = 220;
+
+/// Fades `element` in while it rises `rise` px, once per `key` (a new key plays it again).
+pub fn enter<E: IntoElement + Styled + 'static>(
+    element: E,
+    key: impl Into<ElementId>,
+    ms_: u64,
+    rise: f32,
+) -> AnyElement {
+    element
+        .with_animation(
+            key,
+            Animation::new(ms(ms_)).with_easing(ease_out_quint),
+            move |el, t| el.opacity(t).relative().top(px(rise * (1. - t))),
+        )
+        .into_any_element()
+}
 
 /// A catalog duration, scaled by `ZOREL_MOTION_SCALE` (development) when set.
 pub fn ms(ms: u64) -> Duration {
