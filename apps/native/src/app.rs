@@ -174,7 +174,7 @@ impl Root {
 
     // A chat that starts waiting, fails or finishes while you look elsewhere.
     fn notify_status(&mut self, status: &ChatStatus, window: &Window) {
-        let Some(moment) = self.notifier.moment(&status.chat_id, status.state.clone()) else {
+        let Some(moment) = self.notifier.moment(&status.chat_id, status.state) else {
             return;
         };
         if self.looking_at(&status.chat_id, window) {
