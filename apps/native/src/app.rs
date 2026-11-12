@@ -1,7 +1,7 @@
-// The app (spec 019): one window on gpui-base. Starts this computer's engine (development: the server in this
-// checkout, run by bun), or attaches to a running one with `--engine <url> --token <secret>`. Once the engine is up:
-// the sidebar (every chat, live statuses) and the open chat.
-use std::{collections::HashMap, path::PathBuf};
+// The app (spec 019): one window on gpui-kit. Starts this computer's engine (development: the server in this
+// checkout, run by bun), or attaches to a running one with `--engine <url> --token <secret>`. Once the engine is up,
+// the Store loads what every screen reads; the sidebar and the main area follow a Route, as the web's.
+use std::path::PathBuf;
 
 use gpui_kit::{component as gpui_component, prelude::FluentBuilder, *};
 use rust_i18n::t;
@@ -9,17 +9,17 @@ use rust_i18n::t;
 use crate::{
     engine::Launch,
     i18n,
-    net::types::{AgentsListSuccess, ChatStatus, ChatsListSuccess, Notice, RoutinesListSuccess},
-    runtime,
+    net::types::{ChatStatus, Notice},
+    route::Route,
     screens::{
         chat::ChatScreen,
-        inbox::{Directory, Inbox, InboxEvent},
+        inbox::{Inbox, InboxEvent},
         sidebar,
     },
     shell::notify::{self, Moment, Notifier},
     state::{
-        chats::ChatList,
         connection::{ConnectionState, EngineConnection, Target},
+        store::{StatusChanged, Store},
     },
     theme,
     ui::nav::NavRow,
@@ -27,28 +27,23 @@ use crate::{
 
 struct Root {
     connection: Entity<EngineConnection>,
-    loaded: bool,
-    chats: ChatList,
-    /// Each agent's hue index, in the agents' order.
-    tones: HashMap<String, usize>,
-    agent_names: HashMap<String, String>,
-    open: Option<(String, Entity<ChatScreen>)>,
-    /// Needs you; shown instead of a chat when `inbox_open`.
+    store: Option<Entity<Store>>,
+    route: Route,
+    /// The open chat's screen (kept while its chat is open; a new chat builds a new one).
+    chat: Option<(String, Entity<ChatScreen>)>,
     inbox: Option<Entity<Inbox>>,
-    inbox_open: bool,
     notifier: Notifier,
     /// A clicked notification sends its chat id here.
     clicked: tokio::sync::mpsc::UnboundedSender<String>,
-    /// `--open <chat id>`: the chat to open once loaded (the prototype's measurements).
+    /// `--open <chat id>`: the chat to open once loaded (measurements, deep links).
     open_first: Option<String>,
 }
 
 impl Root {
     fn new(connection: Entity<EngineConnection>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        cx.observe_in(&connection, window, |this, _, window, cx| {
-            if !this.loaded && matches!(this.connection.read(cx).state, ConnectionState::Ready) {
-                this.loaded = true;
-                this.load(window, cx);
+        cx.observe_in(&connection, window, |this, connection, window, cx| {
+            if this.store.is_none() && matches!(connection.read(cx).state, ConnectionState::Ready) {
+                this.start(window, cx);
             }
             cx.notify();
         })
@@ -64,34 +59,52 @@ impl Root {
                 let _ = this.update_in(cx, |this, window, cx| {
                     cx.activate(true);
                     window.activate_window();
-                    this.open_chat(chat_id, window, cx);
+                    this.navigate(Route::Chat { id: chat_id }, window, cx);
                 });
             }
         })
         .detach();
+        let open_first = flag("--open");
+        let route = open_first.clone().map(|id| Route::Chat { id }).unwrap_or_default();
         Self {
             connection,
-            loaded: false,
-            chats: ChatList::default(),
-            tones: HashMap::new(),
-            agent_names: HashMap::new(),
-            open: None,
+            store: None,
+            route,
+            chat: None,
             inbox: None,
-            inbox_open: false,
             notifier: Notifier::default(),
             clicked,
-            open_first: flag("--open"),
+            open_first,
         }
     }
 
-    // The agents and chats over REST, then every chat's status as it changes.
-    fn load(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    // The engine is up: the shared Store, Needs you, notifications.
+    fn start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let connection = self.connection.read(cx);
         let (Some(http), Some(rpc)) = (connection.http.clone(), connection.rpc.clone()) else {
             return;
         };
-        let mut statuses = rpc.stream::<ChatStatus>("subscribeStatus", None);
         let mut notices = rpc.stream::<Notice>("notices", None);
+        let store = cx.new(|cx| Store::new(http, rpc, cx));
+        cx.observe_in(&store, window, |this, store, window, cx| {
+            if store.read(cx).loaded
+                && let Some(id) = this.open_first.take()
+            {
+                this.navigate(Route::Chat { id }, window, cx);
+            }
+            cx.notify();
+        })
+        .detach();
+        cx.subscribe_in(&store, window, |this, _, StatusChanged(status), window, cx| {
+            this.notify_status(status, window, cx)
+        })
+        .detach();
+        let inbox = cx.new(|cx| Inbox::new(store.clone(), cx));
+        cx.subscribe_in(&inbox, window, |this, _, event: &InboxEvent, window, cx| match event {
+            InboxEvent::OpenChat(id) => this.navigate(Route::Chat { id: id.clone() }, window, cx),
+        })
+        .detach();
+        cx.observe(&inbox, |_, _, cx| cx.notify()).detach(); // its count shows in the sidebar
         cx.spawn_in(window, async move |this, cx| {
             while let Some(notice) = notices.recv().await {
                 let _ = this.update_in(cx, |this, window, _| {
@@ -107,97 +120,61 @@ impl Root {
             }
         })
         .detach();
-        let inbox = cx.new(|cx| Inbox::new(http.clone(), rpc.clone(), cx));
-        cx.subscribe_in(&inbox, window, |this, _, event: &InboxEvent, window, cx| match event {
-            InboxEvent::OpenChat(id) => this.open_chat(id.clone(), window, cx),
-        })
-        .detach();
-        cx.observe(&inbox, |_, _, cx| cx.notify()).detach(); // its count shows in the sidebar
+        self.store = Some(store);
         self.inbox = Some(inbox);
-        cx.spawn_in(window, async move |this, cx| {
-            let fetch = http.clone();
-            let lists = runtime::spawn(async move {
-                let agents: AgentsListSuccess = fetch.get("/api/agents").await?;
-                let chats: ChatsListSuccess = fetch.get("/api/chats").await?;
-                let routines: RoutinesListSuccess = fetch.get("/api/routines").await?;
-                Ok::<_, crate::net::http::HttpError>((agents, chats, routines))
-            })
-            .await;
-            match lists {
-                Ok(Ok((agents, chats, routines))) => {
-                    let _ = this.update_in(cx, |this, window, cx| {
-                        this.tones = agents.iter().enumerate().map(|(i, a)| (a.id.clone(), i)).collect();
-                        this.agent_names = agents.iter().map(|a| (a.id.clone(), a.name.clone())).collect();
-                        this.chats.chats = chats.0;
-                        this.notifier.routine_chats = routines.iter().map(|r| r.chat_id.clone()).collect();
-                        this.share_directory(cx);
-                        if let Some(id) = this.open_first.take() {
-                            this.open_chat(id, window, cx);
-                        }
-                        cx.notify();
-                    });
-                }
-                Ok(Err(e)) => eprintln!("load: {e}"),
-                Err(e) => eprintln!("load: {e}"),
-            }
-            while let Some(status) = statuses.recv().await {
-                let unknown = this.update_in(cx, |this, window, cx| {
-                    this.notify_status(&status, window);
-                    let unknown = this.chats.apply_status(status);
-                    if let Some(inbox) = &this.inbox {
-                        inbox.update(cx, |inbox, cx| inbox.refresh(cx)); // approvals come and go with statuses
-                    }
-                    cx.notify();
-                    unknown
-                });
-                match unknown {
-                    Err(_) => return,
-                    // A chat created elsewhere: refetch the list.
-                    Ok(true) => {
-                        let fetch = http.clone();
-                        if let Ok(Ok(chats)) =
-                            runtime::spawn(async move { fetch.get::<ChatsListSuccess>("/api/chats").await }).await
-                        {
-                            let _ = this.update(cx, |this, cx| {
-                                this.chats.chats = chats.0;
-                                this.share_directory(cx);
-                                cx.notify();
-                            });
-                        }
-                    }
-                    Ok(false) => {}
+        if let Route::Chat { id } = self.route.clone() {
+            self.navigate(Route::Chat { id }, window, cx);
+        }
+    }
+
+    fn navigate(&mut self, route: Route, window: &mut Window, cx: &mut Context<Self>) {
+        match &route {
+            Route::Chat { id } => self.open_chat(id.clone(), window, cx),
+            Route::Inbox => {
+                if let Some(inbox) = &self.inbox {
+                    inbox.update(cx, |inbox, cx| inbox.refresh(cx));
                 }
             }
-        })
-        .detach();
+            Route::Home { .. } => {}
+        }
+        self.route = route;
+        cx.notify();
+    }
+
+    fn open_chat(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        if self.chat.as_ref().is_some_and(|(open, _)| *open == id) {
+            return;
+        }
+        let Some(store) = self.store.clone() else { return };
+        let screen = cx.new(|cx| ChatScreen::new(id.clone(), store, window, cx));
+        self.chat = Some((id, screen));
     }
 
     // Whether the person is looking at this chat right now (no notification then).
     fn looking_at(&self, chat_id: &str, window: &Window) -> bool {
-        window.is_window_active() && !self.inbox_open && self.open.as_ref().is_some_and(|(id, _)| id == chat_id)
+        window.is_window_active()
+            && self.route
+                == (Route::Chat {
+                    id: chat_id.to_string(),
+                })
     }
 
-    // A chat that starts waiting, fails or finishes while you look elsewhere.
-    fn notify_status(&mut self, status: &ChatStatus, window: &Window) {
+    // A chat that starts waiting, fails or finishes while you look elsewhere (not a routine's chat: its notices tell).
+    fn notify_status(&mut self, status: &ChatStatus, window: &Window, cx: &mut Context<Self>) {
+        let Some(store) = self.store.clone() else { return };
+        let store = store.read(cx);
+        self.notifier.routine_chats = store.routines.iter().map(|r| r.chat_id.clone()).collect();
         let Some(moment) = self.notifier.moment(&status.chat_id, status.state) else {
             return;
         };
         if self.looking_at(&status.chat_id, window) {
             return;
         }
-        let title = self
-            .chats
-            .chats
-            .iter()
-            .find(|c| c.id == status.chat_id)
+        let title = store
+            .chat(&status.chat_id)
             .map(|c| c.title.clone())
             .filter(|t| !t.is_empty());
-        let agent = status
-            .agent_id
-            .as_ref()
-            .and_then(|a| self.agent_names.get(a))
-            .cloned()
-            .unwrap_or_else(|| t!("app.name").into_owned());
+        let agent = store.agent_name(status.agent_id.as_deref());
         let body = match moment {
             Moment::Done => t!("notify.done").into_owned(),
             Moment::Failed => t!("status.failed").into_owned(),
@@ -211,55 +188,6 @@ impl Root {
             self.clicked.clone(),
         );
     }
-
-    // Chat titles and agent names for the screens that show other chats' items (Needs you).
-    fn share_directory(&mut self, cx: &mut Context<Self>) {
-        let Some(inbox) = &self.inbox else { return };
-        let directory = Directory {
-            chat_titles: self
-                .chats
-                .chats
-                .iter()
-                .map(|c| (c.id.clone(), c.title.clone()))
-                .collect(),
-            agents: self
-                .agent_names
-                .iter()
-                .map(|(id, name)| (id.clone(), (name.clone(), self.tones.get(id).copied().unwrap_or(0))))
-                .collect(),
-        };
-        inbox.update(cx, |inbox, cx| {
-            inbox.directory = directory;
-            cx.notify();
-        });
-    }
-
-    fn open_inbox(&mut self, cx: &mut Context<Self>) {
-        self.inbox_open = true;
-        if let Some(inbox) = &self.inbox {
-            inbox.update(cx, |inbox, cx| inbox.refresh(cx));
-        }
-        cx.notify();
-    }
-
-    fn open_chat(&mut self, chat_id: String, window: &mut Window, cx: &mut Context<Self>) {
-        self.inbox_open = false;
-        if self.open.as_ref().is_some_and(|(id, _)| *id == chat_id) {
-            cx.notify();
-            return;
-        }
-        let Some(rpc) = self.connection.read(cx).rpc.clone() else {
-            return;
-        };
-        let tones = self.tones.clone();
-        let screen = cx.new(|cx| ChatScreen::new(chat_id.clone(), rpc, tones, window, cx));
-        self.open = Some((chat_id, screen));
-        cx.notify();
-    }
-
-    fn tone_of(&self, agent_ids: &[String]) -> usize {
-        agent_ids.first().and_then(|a| self.tones.get(a)).copied().unwrap_or(0)
-    }
 }
 
 impl Render for Root {
@@ -271,33 +199,46 @@ impl Render for Root {
             ConnectionState::Reconnecting => Some(t!("app.offline").into_owned()),
             ConnectionState::Down(reason) => Some(t!("app.stopped", reason = reason).into_owned()),
         };
-        // ponytail: every row is built each render (fine for hundreds of chats); a uniform_list when it isn't.
-        let rows: Vec<AnyElement> = sidebar::ordered(&self.chats)
-            .into_iter()
-            .map(|chat| {
-                let active = !self.inbox_open && self.open.as_ref().is_some_and(|(id, _)| *id == chat.id);
+        let mut rows: Vec<AnyElement> = Vec::new();
+        if let Some(store) = &self.store {
+            let store = store.read(cx);
+            let pending = self.inbox.as_ref().map(|i| i.read(cx).count()).unwrap_or(0);
+            rows.push(
+                NavRow::new("nav-inbox", t!("inbox.title").into_owned())
+                    .active(self.route == Route::Inbox)
+                    .when(pending > 0, |r| {
+                        r.trailing(div().text_color(p.warning).child(pending.to_string()))
+                    })
+                    .on_click(cx.listener(|this, _, window, cx| this.navigate(Route::Inbox, window, cx)))
+                    .into_any_element(),
+            );
+            for chat in sidebar::ordered(&store.chats) {
                 let id = chat.id.clone();
-                sidebar::row(
-                    chat,
-                    self.chats.statuses.get(&chat.id),
-                    self.tone_of(&chat.agent_ids),
-                    active,
-                )
-                .on_click(cx.listener(move |this, _, window, cx| this.open_chat(id.clone(), window, cx)))
-                .into_any_element()
-            })
-            .collect();
-        let pending = self.inbox.as_ref().map(|i| i.read(cx).count()).unwrap_or(0);
-        let inbox_row = NavRow::new("nav-inbox", t!("inbox.title").into_owned())
-            .active(self.inbox_open)
-            .when(pending > 0, |r| {
-                r.trailing(div().text_color(p.warning).child(pending.to_string()))
-            })
-            .on_click(cx.listener(|this, _, _, cx| this.open_inbox(cx)));
-        let main: Option<AnyElement> = if self.inbox_open {
-            self.inbox.clone().map(|i| i.into_any_element())
-        } else {
-            self.open.as_ref().map(|(_, s)| s.clone().into_any_element())
+                let active = self.route == (Route::Chat { id: id.clone() });
+                rows.push(
+                    sidebar::row(
+                        chat,
+                        store.status(&chat.id),
+                        store.tone(chat.agent_ids.first().map(String::as_str)),
+                        active,
+                    )
+                    .on_click(
+                        cx.listener(move |this, _, window, cx| {
+                            this.navigate(Route::Chat { id: id.clone() }, window, cx)
+                        }),
+                    )
+                    .into_any_element(),
+                );
+            }
+        }
+        let main: Option<AnyElement> = match &self.route {
+            Route::Inbox => self.inbox.clone().map(|i| i.into_any_element()),
+            Route::Chat { id } => self
+                .chat
+                .as_ref()
+                .filter(|(open, _)| open == id)
+                .map(|(_, s)| s.clone().into_any_element()),
+            Route::Home { .. } => None,
         };
         div()
             .size_full()
@@ -314,7 +255,6 @@ impl Render for Root {
                     .gap(px(1.))
                     .p(px(8.))
                     .pt(px(40.))
-                    .child(inbox_row)
                     .children(rows),
             )
             .child(

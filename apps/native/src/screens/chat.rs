@@ -16,7 +16,7 @@ use crate::{
         rpc::Rpc,
         types::{MessageRole, SubscribeChatItem},
     },
-    state::chat::ChatLog,
+    state::{chat::ChatLog, store::Store},
     theme::{self, tokens},
     ui::{
         button::{Button, Size, Variant},
@@ -36,9 +36,8 @@ enum Row {
 
 pub struct ChatScreen {
     chat_id: String,
+    store: Entity<Store>,
     rpc: Rpc,
-    /// The agents' order, for each agent's hue (`AgentFace` tone).
-    tones: HashMap<String, usize>,
     log: ChatLog,
     rows: Vec<Row>,
     /// The kit's message scroller: follows the tail, keeps the reader's place when scrolled up, offers a jump back.
@@ -50,13 +49,9 @@ pub struct ChatScreen {
 }
 
 impl ChatScreen {
-    pub fn new(
-        chat_id: String,
-        rpc: Rpc,
-        tones: HashMap<String, usize>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn new(chat_id: String, store: Entity<Store>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let rpc = store.read(cx).rpc.clone();
+        cx.observe(&store, |_, _, cx| cx.notify()).detach(); // agent names and hues
         let scroller = cx.new(|cx| MessageScrollerState::new(0, cx));
         cx.observe(&scroller, |_, _, cx| cx.notify()).detach();
         let composer = cx.new(|cx| {
@@ -80,8 +75,8 @@ impl ChatScreen {
         .detach();
         Self {
             chat_id,
+            store,
             rpc,
-            tones,
             log: ChatLog::default(),
             rows: Vec::new(),
             scroller,
@@ -177,7 +172,12 @@ impl ChatScreen {
                             .py(px(8.))
                             .child(text),
                     ),
-                    _ => self.agent_row(m.agent_id.as_deref(), FaceState::Idle, text, &m.id),
+                    _ => self.agent_row(
+                        self.store.read(cx).tone(m.agent_id.as_deref()),
+                        FaceState::Idle,
+                        text,
+                        &m.id,
+                    ),
                 }
             }
             Row::Partial(turn_id) => {
@@ -190,7 +190,12 @@ impl ChatScreen {
                 let text = self.log.partial.get(&turn_id).map(String::as_str).unwrap_or_default();
                 let blocks = markdown::parse(text);
                 let body = markdown::render(&turn_id, &blocks, window);
-                self.agent_row(agent.as_deref(), FaceState::Working, body, &turn_id)
+                self.agent_row(
+                    self.store.read(cx).tone(agent.as_deref()),
+                    FaceState::Working,
+                    body,
+                    &turn_id,
+                )
             }
             Row::Approval(i) => {
                 let a = &self.log.approvals[i];
@@ -245,8 +250,7 @@ impl ChatScreen {
             .into_any_element()
     }
 
-    fn agent_row(&self, agent_id: Option<&str>, state: FaceState, body: Div, key: &str) -> Div {
-        let tone = agent_id.and_then(|a| self.tones.get(a)).copied().unwrap_or(0);
+    fn agent_row(&self, tone: usize, state: FaceState, body: Div, key: &str) -> Div {
         div()
             .flex()
             .gap(px(10.))

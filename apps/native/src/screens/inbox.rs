@@ -1,6 +1,6 @@
 // Needs you (spec 019 T034, apps/web/src/features/inbox.tsx): every open approval and question across chats and every
 // memory a summary proposed, newest first, filtered by kind. Deciding here is the same as deciding in the chat.
-// The list refreshes when a chat's status changes (Root calls `refresh`), as the web refetches on the approvals key.
+// The list refreshes when a chat's status changes (the Store's StatusChanged), as the web refetches on its key.
 // ponytail: a routine's "uncertain" step (spec 013) and editing an "Ask me" step land with the routines screen (T054).
 use gpui_kit::{
     base::input::{Textarea, TextareaState},
@@ -16,12 +16,9 @@ use serde_json::json;
 
 use crate::{
     i18n::tn,
-    net::{
-        http::Http,
-        rpc::Rpc,
-        types::{Approval, ApprovalKind, MemoriesListSuccess, Memory, MemoryState},
-    },
+    net::types::{Approval, ApprovalKind, MemoriesListSuccess, Memory, MemoryState},
     runtime,
+    state::store::{StatusChanged, Store},
     theme::{self, tokens::Palette},
     ui::{
         button::{Button, Size, Variant},
@@ -51,26 +48,26 @@ pub enum InboxEvent {
 impl EventEmitter<InboxEvent> for Inbox {}
 
 pub struct Inbox {
-    http: Http,
-    rpc: Rpc,
+    store: Entity<Store>,
     filter: Filter,
     approvals: Vec<Approval>,
     memories: Vec<Memory>,
     /// An answer box per open question.
     answers: std::collections::HashMap<String, Entity<TextareaState>>,
-    pub directory: Directory,
 }
 
 impl Inbox {
-    pub fn new(http: Http, rpc: Rpc, cx: &mut Context<Self>) -> Self {
+    pub fn new(store: Entity<Store>, cx: &mut Context<Self>) -> Self {
+        // Approvals come and go with chat statuses: refresh on each change, as the web refetches on its key.
+        cx.subscribe(&store, |this, _, _: &StatusChanged, cx| this.refresh(cx))
+            .detach();
+        cx.observe(&store, |_, _, cx| cx.notify()).detach(); // names and titles
         let mut inbox = Self {
-            http,
-            rpc,
+            store,
             filter: Filter::All,
             approvals: Vec::new(),
             memories: Vec::new(),
             answers: Default::default(),
-            directory: Directory::default(),
         };
         inbox.refresh(cx);
         inbox
@@ -81,7 +78,8 @@ impl Inbox {
     }
 
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
-        let (http, rpc) = (self.http.clone(), self.rpc.clone());
+        let store = self.store.read(cx);
+        let (http, rpc) = (store.http.clone(), store.rpc.clone());
         cx.spawn(async move |this, cx| {
             let got = runtime::spawn(async move {
                 let approvals = rpc
@@ -112,7 +110,7 @@ impl Inbox {
     }
 
     fn decide(&mut self, id: String, outcome: &'static str, reason: Option<String>, cx: &mut Context<Self>) {
-        let rpc = self.rpc.clone();
+        let rpc = self.store.read(cx).rpc.clone();
         self.approvals.retain(|a| a.id != id); // the refresh confirms; decided elsewhere, it's gone either way
         cx.notify();
         let mut payload = json!({ "approvalId": id, "outcome": outcome });
@@ -127,7 +125,7 @@ impl Inbox {
     }
 
     fn set_memory(&mut self, id: String, state: &'static str, cx: &mut Context<Self>) {
-        let http = self.http.clone();
+        let http = self.store.read(cx).http.clone();
         self.memories.retain(|m| m.id != id);
         cx.notify();
         runtime::spawn(async move {
@@ -186,21 +184,6 @@ fn item(p: &Palette, kind: &str, kind_colors: (Rgba, Rgba), face: AnyElement, wh
     )
 }
 
-/// Names for the cards, kept in step by Root: chat titles, and each agent's name and hue.
-#[derive(Default, Clone)]
-pub struct Directory {
-    pub chat_titles: std::collections::HashMap<String, String>,
-    pub agents: std::collections::HashMap<String, (String, usize)>,
-}
-
-impl Directory {
-    fn agent(&self, id: Option<&str>) -> (String, usize) {
-        id.and_then(|id| self.agents.get(id))
-            .cloned()
-            .unwrap_or_else(|| (t!("app.name").into_owned(), 0))
-    }
-}
-
 impl Render for Inbox {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = theme::palette(window);
@@ -223,8 +206,12 @@ impl Render for Inbox {
             if !show(if question { Filter::Questions } else { Filter::Approvals }, filter) {
                 continue;
             }
-            let (who, tone) = self.directory.agent(a.agent_id.as_deref());
-            let context = self.directory.chat_titles.get(&a.chat_id).cloned().unwrap_or_default();
+            let store = self.store.read(cx);
+            let (who, tone) = (
+                store.agent_name(a.agent_id.as_deref()),
+                store.tone(a.agent_id.as_deref()),
+            );
+            let context = store.chat(&a.chat_id).map(|c| c.title.clone()).unwrap_or_default();
             let face = AgentFace::new(SharedString::from(format!("inbox-face-{}", a.id)), tone)
                 .size(32.)
                 .state(FaceState::Waiting)
@@ -347,7 +334,10 @@ impl Render for Inbox {
             for m in self.memories.clone() {
                 let agent_scope = m.scope.strip_prefix("agent:");
                 let (who, tone) = match agent_scope {
-                    Some(agent) => self.directory.agent(Some(agent)),
+                    Some(agent) => {
+                        let store = self.store.read(cx);
+                        (store.agent_name(Some(agent)), store.tone(Some(agent)))
+                    }
                     None if m.scope == "user" => (t!("inbox.aboutYou").into_owned(), 0),
                     None => (m.scope.clone(), 0),
                 };

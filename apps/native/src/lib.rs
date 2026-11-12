@@ -5,6 +5,7 @@ pub mod app;
 pub mod engine;
 pub mod i18n;
 pub mod net;
+pub mod route;
 pub mod runtime;
 pub mod screens;
 pub mod shell;
