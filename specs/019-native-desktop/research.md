@@ -1,0 +1,176 @@
+# Research: Native Desktop Client (spec 019)
+
+Checked 2026-11-12. Versions from the crates.io API; "unverified" marks what no primary source confirmed. Every item is
+re-checked by the prototype before migration starts.
+
+## Measurements that motivate this (2026-11-12, macOS arm64, idle)
+
+| Process / artifact | Size |
+|---|---|
+| Electron main + GPU + utility + renderer | 74 + 184 + 11 + 263 ≈ **530 MB** (`footprint`) |
+| Bun server | 177 MB |
+| Each `claude` agent | 294–551 MB (out of scope) |
+| `Zorel.app` | 571 MB: Electron frameworks 243, Playwright Chromium 202, server binary 91, web 24 |
+| `.dmg` | 249 MB |
+
+D11 recorded ~215 MB for Electron on 2026-11-04; the shell has grown with the app since.
+
+## R1 — UI toolkit
+
+**Decision**: GPUI through **gpui-kit with `default-features = false`** (only `gpui-base`, the unstyled layer), pinned
+exactly; Zorel's own components on top. Upgrade on our schedule, not weekly.
+
+**Facts**:
+- gpui-kit 0.9.0 depends on `gpui-pre =0.3.11` (+ `gpui-pre-macos/-platform/-web`); main pins `=0.3.12`, aliased as
+  `gpui`. `gpui-pre` is a weekly Apache-2.0 snapshot of Zed (0.3.12 = zed@d2a4fb6, 2026-11-09) published by one
+  Longbridge maintainer. Official `gpui` on crates.io stopped at 0.2.2 (2025-10-22).
+  (crates.io/api/v1/crates/gpui-kit/0.9.0/dependencies, crates.io/api/v1/crates/gpui-pre)
+- `gpui-base` stands alone: unstyled Button, Checkbox, Switch, Input, Textarea, Editor, focus traps, virtual lists,
+  theme tokens, `motion::transition` with reduced motion, AccessKit wiring. (github.com/longbridge/gpui-kit/blob/main/crates/base/README.md)
+- Zeron (MIT) does the same shape: own GPUI fork (zeronsh/zui, patches for blur, edge fades, Wayland) + only `gpui-base`
+  from its fork of gpui-component; markdown with pulldown-cmark, terminal with alacritty_terminal + portable-pty.
+  (github.com/zeronsh/zeron Cargo.toml)
+- Discord: CTO confirmed (2026-11-04) the desktop client moves to GPUI; an early Windows build showed ~290 MB with two
+  accounts. Whether they fork or contribute upstream: unverified. (invenglobal.com/articles/28182, tech-insider.org)
+- Upstream GPUI today: AccessKit integrated (`accesskit ^0.24`) but with open bugs (zed#66690, #66691); `Animation` /
+  `with_animation` with easing and no springs — but **`gpui-base` adds keyed, reduced-motion-aware, frame-rate-independent springs and transitions** (`gpui_base::spring`, `Spring::new`; CSS-aligned timing/keyframes, presence, sequencing; docs/STYLING-AND-MOTION.md in the gpui-kit repo); Linux renderer is wgpu (Wayland + X11); Windows DirectX 11; window-level
+  blur only (NSVisualEffectView, Mica, KDE blur); no public custom-shader hook (unverified on current main).
+
+**Alternatives considered**:
+- **gpui-ce** (Apache-2.0, 1.6k★, crate `gpui-ce` 0.3.0): element-level `backdrop_blur`, `rounded_smoothing`; but crate
+  names differ and its API "is changing" → incompatible with gpui-base. Rejected as base; its blur patches are a
+  reference if we fork.
+- **gpui-component styled layer**: fastest, but its look is a stock kit (violates SC-008). Allowed only for heavy pieces
+  restyled through tokens (code editor, markdown/HTML view, data table) if the prototype shows they save weeks.
+- **GPUIX** (React/Solid → GPUI over napi, Bun): keeps TS/React, but pre-1.0, no springs/layout transitions, no nested
+  scroll, no terminal/webview, styles are not CSS (full JSX restyle anyway), no production users. Rejected for now;
+  revisit if it matures.
+- **GPUI Fast** (Longbridge fork, retained rendering, 73–88% less main-thread CPU per its README, "experimental"): off;
+  it is a feature flag of gpui-kit, measured later.
+- **Own fork of the pinned zed commit** (as Zeron/gpui-fast): only if element blur or shaders become a must; changes
+  kept small and isolated, published under the `gpui-pre` names so `gpui-base` still resolves (unverified, test in
+  prototype).
+- **Electron, optimised** (virtualised lists, incremental markdown): fixes fluidity, not the ~530 MB floor. Kept as the
+  fallback if the gates fail.
+
+## R2 — Engine boundary and contracts
+
+**Decision**: the native client is a pure client of the existing engine API (constitution: `packages/contracts` is the
+only source of wire types). Generate JSON Schema from contracts, then Rust types; CI fails on drift.
+
+**Facts** (local code):
+- REST: `HttpApi "zorel"` with 147 endpoints in 9 groups (`packages/contracts/src/index.ts:842-1055`).
+- Live: `effect/rpc` over WebSocket `/rpc`, JSON serialization (`apps/web/src/client.ts:18-25`): `send`, `steer`,
+  `interrupt`, `retry`, `decide`, streams `subscribeChat` (snapshot first), `subscribeStatus`, `notices`, query
+  `approvals` (`packages/contracts/src/events.ts:224-241`). The envelope (`Request`, `Chunk`, `Exit`, `Ack`, `Ping`,
+  `Eof`) is Effect's own (`effect/dist/rpc/RpcMessage.d.ts`): the Rust client implements it by hand, with tests against
+  a live server.
+- Outside the contract today: browser socket `/api/browser` (`PanelFrame` in `apps/server/src/browser.ts:836`, JSON up,
+  JPEG frames down), terminals socket `/api/terminals`, attachment upload (raw body + `x-file-name`), `/api/search`,
+  `/api/workspace/import`, `/api/setup`, `/api/invite/:id`. **These move into `packages/contracts` first** (also good for
+  the web app).
+
+**Pipeline**: `OpenApi.fromApi(Api)` + `Schema.toJsonSchemaDocument` (Effect 4.1.2) → checked-in `schema/*.json` →
+`typify` (oxidecomputer) in `build.rs` → serde types. Prefer tagged unions (map to serde enums). typify caveats: weak
+`anyOf/allOf`, `$defs` may need flattening (unverified). CI: regenerate + `git diff --exit-code`; round-trip tests decode
+real server responses.
+
+**Alternatives**: quicktype (weaker tagged unions, unverified); hand-written Rust types (drift); ts-rs (wrong direction).
+
+## R3 — Shell libraries
+
+| Need | Pick | Why / caveat |
+|---|---|---|
+| Async + net | tokio, reqwest 0.13, tokio-tungstenite 0.30, Zed's `gpui_tokio` (git, pinned) | one runtime; secret as a default header. `reqwest-eventsource` is incompatible with reqwest 0.13 (not needed: we use WS) |
+| Tray | gpui-tray 0.3 (Apache-2.0) | runs on GPUI's loop, native per OS, no GTK; young → pin, ksni fallback on Linux |
+| App menus | GPUI `cx.set_menus` | native on macOS; Windows/Linux in-window as today |
+| Notifications | notify-rust 4.19 | one API on 3 OSes; macOS click-through tested in a signed bundle, objc2 UNUserNotificationCenter shim if needed. `user-notify` is LGPL → avoided |
+| Updates + packaging | Velopack 1.2 (MIT) | installers on 3 OSes + delta updates + Rust SDK; ships the sidecar dir. Rollback + notarisation flow: unverified → prototype. Fallback: gpui-updater-core 0.4 (minisign/Ed25519, Authenticode check) |
+| Keychain | keyring 4 / keyring-core + per-OS stores | no `cli` feature |
+| Dialogs | rfd 0.18 | prefer xdg-portal on Linux |
+| Links | GPUI `cx.open_url` / `open` 5.4 | same http(s)-only rule as today |
+| Keep-awake | keepawake 0.6 | IOPM / SetThreadExecutionState / logind |
+| Power source | starship-battery 0.12, polled 30–60 s | no event crate found |
+| Terminal | own element on alacritty_terminal 0.26; PTY stays in the engine (`/api/terminals`) | Zed's `terminal` is GPL → reference only |
+| Markdown | pulldown-cmark 0.13 (as Zeron; gpui-kit's own view uses the `markdown` crate), parsed off the UI thread, only the streaming tail re-parsed; raw HTML ignored. Prototype compares with gpui-component's markdown view restyled by tokens | |
+| Syntax | tree-sitter 0.27 (colours painted after layout) | Zed/Zeron/gpui-kit use it |
+| Browser panel | `image` 0.25 (jpeg only) → `RenderImage`, decode off-thread, drop late frames | no web engine embedded; per-frame upload cost unverified → prototype gate |
+| i18n | **rust-i18n 4.2, the gpui-kit convention** (website/docs/i18n.md). `packages/i18n` stays the only source: `scripts/export-i18n.ts` writes `apps/native/locales/ui.yml` (`_version: 2`, key → `{en, pt-BR}`), converting `{name}` → `%{name}` and plural entries to `.one` / `.other` subkeys picked by a small helper over icu_plurals 2.4 (rust-i18n and `set_locale` do not do plurals). App keys stay outside the `gpui_component` namespace; `rust_i18n::extend!(gpui_component)` before `gpui_kit::init` so the kit's own component strings (it ships `pt-BR`) follow the same locale. Locale switch: `set_locale` + `cx.refresh_windows()`. Missing keys: rust-i18n returns the key at runtime, so `check:i18n` also scans `t!("…")` calls in `apps/native` against the catalog (D13: missing key fails CI) | one source, kit-native API |
+| Tokens | move `--z-*` values (252 in `apps/web/src/styles.css`) to one tokens file; generate the CSS block **and a gpui-kit `ThemeSet` JSON (`.theme-schema.json`, light + dark)** plus a Rust module for Zorel-only tokens (agent hues, scene cut, motion tiers). Motion follows the kit's `MotionTokens` shape (4 duration tiers, enter/exit/move easing, control/movement springs, travel distances) with Zorel's values | FR-008 |
+
+## R4 — Security
+
+Trust boundaries kept from today (`apps/desktop/src/main.ts`, `apps/server/src/main.ts`):
+1. Per-launch 32-byte secret, created by the shell, handed to the server over **stdin** (`ZOREL_SESSION_STDIN=1`), never
+   in env (`/proc/<pid>/environ`, `ps eww`); in the native client it lives only in process memory and goes as the
+   `x-zorel-token` header. No page exists that could read it.
+2. Server: loopback bind, Host must be loopback (DNS rebinding), Origin = Host when present, secret on `/api` and `/rpc`
+   (`apps/server/src/main.ts:1343-1363`). Unchanged.
+3. Children: spawn the server with a cleared env except what it needs; close-on-exec handles; `ZOREL_PARENT_PID`
+   watchdog stays.
+4. Team servers: each origin its own credential (keychain entry per origin), never the local secret; forgetting a server
+   deletes it. Version mismatch → open in system browser.
+5. Content: markdown rendered into native elements, raw HTML ignored, no script engine at all; links re-checked as
+   http(s), same-origin rules as today; attachments opened via the OS with the same passive-type rule.
+6. Updates: Ed25519-signed manifest and artifacts, public key embedded, verify before swap, refuse downgrade, previous
+   version kept until the new one starts. Replaces the unsigned `curl … | sh` path in `apps/desktop/src/main.ts:362-365`.
+7. Platform signing: macOS Developer ID + hardened runtime + notarisation + staple, minimal entitlements (no JIT needed,
+   unlike Electron); sidecar signed inside-out with its own entitlements (Bun JIT needs `allow-jit`). Windows
+   Authenticode (Azure Trusted Signing or EV). Linux AppImage with detached minisign signature.
+8. Supply chain: `cargo-deny` (advisories, licences allow-list Apache/MIT/BSD/ISC/Zlib/Unicode/MPL-2.0, GPL/AGPL/LGPL
+   denied, Zed's `ui`/`theme`/`editor`/`terminal`/`markdown`/`auto_update` banned by name; `unknown-git = deny`,
+   allow-git only the pinned Zed repo), `cargo-vet` importing Mozilla/Google audits, `Cargo.lock` committed and
+   `--locked`, pinned `rust-toolchain.toml`, git deps by `rev`, CycloneDX SBOM per release, third-party licences file
+   generated as today.
+9. Removed attack surface vs Electron: no Chromium in the shell, no remote-debugging port question, no preload/IPC
+   bridge, no `nodeIntegration`/fuses to get right.
+
+## R5 — Strategy
+
+**Decision**: strangler, not big bang. Prototype → gates → native app grows screen by screen while Electron stays the
+shipped app → switch when parity is 100% → Electron removed one release later.
+
+**Rationale**: the engine already is a separate process with a typed API (same shape as Zeron's engine/UI split), so the
+shell can be swapped without touching turns, agents or data. Web app stays for browser/remote access.
+
+**Accepted cost**: two UIs (React web + GPUI desktop) over one contract and one token/i18n source. Mitigated by putting
+view logic that is not drawing (sorting, grouping, status labels) next to the contract where both can use it, or
+duplicating only trivially.
+
+**Rejected**: Rust engine rewrite (Zeron-style) — D20 still holds for the engine: turn time belongs to the model and
+the CLIs, the agent ecosystem is TS-first.
+
+## R6 — Size plan
+
+| Piece | Today | Target |
+|---|---|---|
+| Shell | 243 MB Electron | ~20–40 MB native binary (unverified until built) |
+| Agents' browser | 202 MB shipped | fetched on first use (FR-021) |
+| Server binary | 91 MB | unchanged |
+| Web assets | 24 MB | not needed in the desktop bundle unless browser access from the desktop host is on (then served from the server binary) |
+
+## R7 — Practices and organisation adopted from gpui-kit
+
+Source: github.com/longbridge/gpui-kit (AGENTS.md, skills/, docs/, .agents/COMPONENT_TEST_RULES.md), cloned 2026-11-12.
+
+- **Agent skills vendored**: `skills/gpui-kit` (setup, component conventions, GPUI mechanics: actions, async, contexts,
+  elements, entities, events, focus, globals, layout, `ElementId`, tests, and the normative **Coding Guides**) and
+  `skills/gpui-kit-design-guides` (Design Guides) copied into `.claude/skills/` pinned to the gpui-kit version we use,
+  refreshed on each bump. Code under Apache-2.0; guide prose CC BY 4.0 → credited in `NOTICE` ("Adapted from GPUI Kit …,
+  CC BY 4.0"). **Precedence**: Zorel's `apps/web/DESIGN.md` + `PRODUCT.md` win on identity (colour, faces, scenes,
+  copy tone); the kit's Design Guides apply to desktop conventions (keyboard, overlays dismiss on Escape and return
+  focus, visible states, `Button` vs `Link`, tokens before values, object + verb copy).
+- **`apps/native/AGENTS.md`** in the kit's shape: Coding Guides first; overview; commands; architecture constraints
+  (crate layering, `RenderOnce` vs `Entity<T>`, state ownership, stable `ElementId`, behaviour in base vs presentation
+  in Zorel `ui/`); theme; i18n; dependencies; release; platform support; testing. Linked from the root AGENTS.md.
+- **Commands / CI**: `cargo clippy -- --deny warnings`, `cargo fmt --check`, `typos`, `cargo machete` (unused deps),
+  `cargo deny check`, `cargo test --all` on macOS/Windows/Linux.
+- **Profiling**: `MTL_HUD_ENABLED=1` (FPS on macOS), `samply record` — used by the prototype gates.
+- **Tests** (COMPONENT_TEST_RULES): test behaviour, state transitions and data flow, not pixel sizes; one builder test
+  per Zorel component; `#[gpui_kit::test]` + `TestAppContext`; UI integration tests assert state, focus, layout and
+  accessibility (docs/ACCESSIBILITY-UI-TESTING.md).
+- **Release discipline**: bump the whole `gpui-pre-*` family together with exact pins, refresh `Cargo.lock`, build
+  default + `gpui-fast` configs before tagging.
+- **Accessibility names may stay English** is the kit's rule for its own crates; **Zorel does not adopt it**: our
+  accessible names come from the catalog like visible text (D13).
+

@@ -16,3 +16,4 @@
 2026-11-11 | no bundled Chromium: Chrome/Edge first, else one download into the data folder; idle browser closes after 15 min | smaller app, less memory
 2026-11-11 | desktop connects to team servers (own window and partition each); local server starts only when needed | user request
 2026-11-11 | spec 017 P1: server picker, window swap in place, on-demand check | user request
+2026-11-12 | spec 019 planned: native GPUI client proposed to replace Electron, gated by a measured prototype | Electron shell measured at ~530 MB idle and 243 MB of a 571 MB app

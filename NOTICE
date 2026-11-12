@@ -24,6 +24,11 @@ Parts of this project derive from:
   Used: components generated with the shadcn CLI and adapted (apps/web/src/ui/button.tsx,
   dialog.tsx, select.tsx, date-range.tsx).
 
+- GPUI Kit (https://github.com/longbridge/gpui-kit), Apache License 2.0, Copyright Longbridge.
+  Used: the agent skills in .claude/skills/gpui-kit and .claude/skills/gpui-kit-design-guides,
+  copied unchanged. Their guide prose is adapted from GPUI Kit (https://gpui-kit.com/docs/) under
+  CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+
 Bundled with the app under their own terms:
 
 - Inter (https://github.com/rsms/inter), SIL Open Font License 1.1, Copyright 2016 The Inter
