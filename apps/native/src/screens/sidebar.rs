@@ -13,7 +13,6 @@ use std::{
 use gpui_kit::{
     assets::IconName,
     base::{Spring, spring},
-    component::{Sizable as _, spinner::Spinner},
     prelude::FluentBuilder,
     *,
 };
@@ -32,7 +31,7 @@ use crate::{
     state::{prefs::Prefs, store::Store},
     theme::{self, tokens},
     ui::{
-        face::{AgentFace, FaceState},
+        face::{AgentFace, FaceState, WorkingRing},
         nav::{DragRow, NavRow, OnReorder, moved_before},
     },
 };
@@ -549,7 +548,9 @@ impl Render for Sidebar {
                             .text_color(p.warning)
                             .child(w.to_string())
                             .into_any_element(),
-                        (_, r) if r > 0 => Spinner::new().xsmall().into_any_element(),
+                        (_, r) if r > 0 => WorkingRing::new(SharedString::from(format!("project-ring-{}", project.id)))
+                            .size(icon::XS)
+                            .into_any_element(),
                         _ => div()
                             .text_xs()
                             .text_color(p.text_dim)

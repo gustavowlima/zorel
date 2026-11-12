@@ -15,7 +15,7 @@ use gpui_kit::{
 use rust_i18n::t;
 
 use crate::ui::button::{Button, Variant};
-use crate::ui::space;
+use crate::ui::dialog::{Sheet, Width, field, sheet};
 use serde_json::json;
 
 use crate::{
@@ -80,113 +80,116 @@ impl Sidebar {
                 input.focus_handle(cx).focus(window, cx);
             }
             let (save_input, view, id) = (input.clone(), view.clone(), id.clone());
-            dialog
-                .title(t!("chat.renameTitle").into_owned())
-                .child(Input::new(&input))
-                .footer(
-                    div()
-                        .flex()
-                        .justify_end()
-                        .gap(px(space::X2))
-                        .child(
-                            Button::new("cancel", t!("common.cancel").into_owned())
-                                .on_click(|_, window, cx| window.close_dialog(cx)),
-                        )
-                        .child(
-                            Button::new("save", t!("common.save").into_owned())
-                                .variant(Variant::Primary)
-                                .on_click(move |_, window, cx| {
-                                    let title: String =
-                                        save_input.read(cx).value().trim().chars().take(TITLE_MAX).collect();
-                                    if title.is_empty() {
-                                        return;
-                                    }
-                                    window.close_dialog(cx);
-                                    let (store, path) = (view.read(cx).store.clone(), format!("/api/chats/{id}"));
-                                    let http = store.read(cx).http.clone();
-                                    let reload = store.downgrade();
-                                    cx.spawn(async move |cx| {
-                                        let done = runtime::spawn(async move {
-                                            http.patch::<_, serde_json::Value>(&path, &json!({ "title": title }))
-                                                .await
-                                        })
-                                        .await;
-                                        if let Ok(Err(e)) = &done {
-                                            eprintln!("rename: {e}");
-                                        }
-                                        let _ = reload.update(cx, |store, cx| store.reload_chats(cx));
+            sheet(
+                dialog,
+                window,
+                Width::Sm,
+                Sheet {
+                    title: t!("chat.renameTitle").into_owned(),
+                    description: None,
+                    body: Some(field(window, Input::new(&input).appearance(false)).into_any_element()),
+                    actions: vec![
+                        Button::new("cancel", t!("common.cancel").into_owned())
+                            .on_click(|_, window, cx| window.close_dialog(cx))
+                            .into_any_element(),
+                        Button::new("save", t!("common.save").into_owned())
+                            .variant(Variant::Primary)
+                            .on_click(move |_, window, cx| {
+                                let title: String =
+                                    save_input.read(cx).value().trim().chars().take(TITLE_MAX).collect();
+                                if title.is_empty() {
+                                    return;
+                                }
+                                window.close_dialog(cx);
+                                let (store, path) = (view.read(cx).store.clone(), format!("/api/chats/{id}"));
+                                let http = store.read(cx).http.clone();
+                                let reload = store.downgrade();
+                                cx.spawn(async move |cx| {
+                                    let done = runtime::spawn(async move {
+                                        http.patch::<_, serde_json::Value>(&path, &json!({ "title": title }))
+                                            .await
                                     })
-                                    .detach();
-                                }),
-                        ),
-                )
+                                    .await;
+                                    if let Ok(Err(e)) = &done {
+                                        eprintln!("rename: {e}");
+                                    }
+                                    let _ = reload.update(cx, |store, cx| store.reload_chats(cx));
+                                })
+                                .detach();
+                            })
+                            .into_any_element(),
+                    ],
+                },
+            )
         });
     }
 
     fn delete_chat(view: &Entity<Self>, id: String, window: &mut Window, cx: &mut App) {
         let view = view.clone();
-        window.open_dialog(cx, move |dialog, _, _| {
+        window.open_dialog(cx, move |dialog, window, _| {
             let (view, id) = (view.clone(), id.clone());
-            dialog
-                .title(t!("chat.deleteTitle").into_owned())
-                .child(t!("chat.deleteBody").into_owned())
-                .footer(
-                    div()
-                        .flex()
-                        .justify_end()
-                        .gap(px(space::X2))
-                        .child(
-                            Button::new("cancel", t!("common.cancel").into_owned())
-                                .on_click(|_, window, cx| window.close_dialog(cx)),
-                        )
-                        .child(
-                            Button::new("delete", t!("common.delete").into_owned())
-                                .variant(Variant::Destructive)
-                                .on_click(move |_, window, cx| {
-                                    window.close_dialog(cx);
-                                    let open = view.read(cx).route == (Route::Chat { id: id.clone() });
-                                    if open {
-                                        view.update(cx, |_, cx| cx.emit(SidebarEvent::Navigate(Route::default())));
-                                    }
-                                    Self::engine_then_reload(&view, format!("/api/chats/{id}"), cx);
-                                }),
-                        ),
-                )
+            sheet(
+                dialog,
+                window,
+                Width::Sm,
+                Sheet {
+                    title: t!("chat.deleteTitle").into_owned(),
+                    description: Some(t!("chat.deleteBody").into_owned()),
+                    body: None,
+                    actions: vec![
+                        Button::new("cancel", t!("common.cancel").into_owned())
+                            .on_click(|_, window, cx| window.close_dialog(cx))
+                            .into_any_element(),
+                        Button::new("delete", t!("common.delete").into_owned())
+                            .variant(Variant::Destructive)
+                            .on_click(move |_, window, cx| {
+                                window.close_dialog(cx);
+                                let open = view.read(cx).route == (Route::Chat { id: id.clone() });
+                                if open {
+                                    view.update(cx, |_, cx| cx.emit(SidebarEvent::Navigate(Route::default())));
+                                }
+                                Self::engine_then_reload(&view, format!("/api/chats/{id}"), cx);
+                            })
+                            .into_any_element(),
+                    ],
+                },
+            )
         });
     }
 
     fn delete_project(view: &Entity<Self>, id: String, name: String, window: &mut Window, cx: &mut App) {
         let view = view.clone();
-        window.open_dialog(cx, move |dialog, _, _| {
+        window.open_dialog(cx, move |dialog, window, _| {
             let (view, id) = (view.clone(), id.clone());
-            dialog
-                .title(t!("project.deleteTitle", name = name).into_owned())
-                .child(t!("project.deleteBody").into_owned())
-                .footer(
-                    div()
-                        .flex()
-                        .justify_end()
-                        .gap(px(space::X2))
-                        .child(
-                            Button::new("cancel", t!("common.cancel").into_owned())
-                                .on_click(|_, window, cx| window.close_dialog(cx)),
-                        )
-                        .child(
-                            Button::new("delete", t!("project.deleteAction").into_owned())
-                                .variant(Variant::Destructive)
-                                .on_click(move |_, window, cx| {
-                                    window.close_dialog(cx);
-                                    let inside = view.read(cx).route
-                                        == (Route::Home {
-                                            project_id: Some(id.clone()),
-                                        });
-                                    if inside {
-                                        view.update(cx, |_, cx| cx.emit(SidebarEvent::Navigate(Route::default())));
-                                    }
-                                    Self::engine_then_reload(&view, format!("/api/projects/{id}"), cx);
-                                }),
-                        ),
-                )
+            sheet(
+                dialog,
+                window,
+                Width::Sm,
+                Sheet {
+                    title: t!("project.deleteTitle", name = name).into_owned(),
+                    description: Some(t!("project.deleteBody").into_owned()),
+                    body: None,
+                    actions: vec![
+                        Button::new("cancel", t!("common.cancel").into_owned())
+                            .on_click(|_, window, cx| window.close_dialog(cx))
+                            .into_any_element(),
+                        Button::new("delete", t!("project.deleteAction").into_owned())
+                            .variant(Variant::Destructive)
+                            .on_click(move |_, window, cx| {
+                                window.close_dialog(cx);
+                                let inside = view.read(cx).route
+                                    == (Route::Home {
+                                        project_id: Some(id.clone()),
+                                    });
+                                if inside {
+                                    view.update(cx, |_, cx| cx.emit(SidebarEvent::Navigate(Route::default())));
+                                }
+                                Self::engine_then_reload(&view, format!("/api/projects/{id}"), cx);
+                            })
+                            .into_any_element(),
+                    ],
+                },
+            )
         });
     }
 
@@ -199,55 +202,56 @@ impl Sidebar {
                 input.focus_handle(cx).focus(window, cx);
             }
             let (name_input, view) = (input.clone(), view.clone());
-            dialog
-                .title(t!("project.addTitle").into_owned())
-                .child(Input::new(&input))
-                .footer(
-                    div()
-                        .flex()
-                        .justify_end()
-                        .gap(px(space::X2))
-                        .child(
-                            Button::new("cancel", t!("common.cancel").into_owned())
-                                .on_click(|_, window, cx| window.close_dialog(cx)),
-                        )
-                        .child(
-                            Button::new("add", t!("project.add").into_owned())
-                                .variant(Variant::Primary)
-                                .on_click(move |_, window, cx| {
-                                    let name = name_input.read(cx).value().trim().to_string();
-                                    if name.is_empty() {
-                                        return;
-                                    }
-                                    window.close_dialog(cx);
-                                    let store = view.read(cx).store.clone();
-                                    let http = store.read(cx).http.clone();
-                                    let (reload, nav) = (store.downgrade(), view.downgrade());
-                                    cx.spawn(async move |cx| {
-                                        let made = runtime::spawn(async move {
-                                            http.post::<_, serde_json::Value>(
-                                                "/api/projects",
-                                                &json!({ "name": name, "brief": "", "path": null }),
-                                            )
-                                            .await
-                                        })
-                                        .await;
-                                        let _ = reload.update(cx, |store, cx| store.load(cx));
-                                        match made {
-                                            Ok(Ok(project)) => {
-                                                let id = project["id"].as_str().map(str::to_string);
-                                                let _ = nav.update(cx, |_, cx| {
-                                                    cx.emit(SidebarEvent::Navigate(Route::Home { project_id: id }))
-                                                });
-                                            }
-                                            Ok(Err(e)) => eprintln!("new project: {e}"),
-                                            Err(e) => eprintln!("new project: {e}"),
-                                        }
+            sheet(
+                dialog,
+                window,
+                Width::Sm,
+                Sheet {
+                    title: t!("project.addTitle").into_owned(),
+                    description: None,
+                    body: Some(field(window, Input::new(&input).appearance(false)).into_any_element()),
+                    actions: vec![
+                        Button::new("cancel", t!("common.cancel").into_owned())
+                            .on_click(|_, window, cx| window.close_dialog(cx))
+                            .into_any_element(),
+                        Button::new("add", t!("project.add").into_owned())
+                            .variant(Variant::Primary)
+                            .on_click(move |_, window, cx| {
+                                let name = name_input.read(cx).value().trim().to_string();
+                                if name.is_empty() {
+                                    return;
+                                }
+                                window.close_dialog(cx);
+                                let store = view.read(cx).store.clone();
+                                let http = store.read(cx).http.clone();
+                                let (reload, nav) = (store.downgrade(), view.downgrade());
+                                cx.spawn(async move |cx| {
+                                    let made = runtime::spawn(async move {
+                                        http.post::<_, serde_json::Value>(
+                                            "/api/projects",
+                                            &json!({ "name": name, "brief": "", "path": null }),
+                                        )
+                                        .await
                                     })
-                                    .detach();
-                                }),
-                        ),
-                )
+                                    .await;
+                                    let _ = reload.update(cx, |store, cx| store.load(cx));
+                                    match made {
+                                        Ok(Ok(project)) => {
+                                            let id = project["id"].as_str().map(str::to_string);
+                                            let _ = nav.update(cx, |_, cx| {
+                                                cx.emit(SidebarEvent::Navigate(Route::Home { project_id: id }))
+                                            });
+                                        }
+                                        Ok(Err(e)) => eprintln!("new project: {e}"),
+                                        Err(e) => eprintln!("new project: {e}"),
+                                    }
+                                })
+                                .detach();
+                            })
+                            .into_any_element(),
+                    ],
+                },
+            )
         });
     }
 
