@@ -92,7 +92,7 @@ function InChat({ chat }: { chat: Chat | undefined }) {
   )
 }
 
-function ApprovalItem({ approval: a }: { approval: Approval }) {
+export function ApprovalItem({ approval: a }: { approval: Approval }) {
   const agents = useList(agentsAtom)
   const chats = useList(chatsAtom)
   const decide = useMutation(mutations.decide)

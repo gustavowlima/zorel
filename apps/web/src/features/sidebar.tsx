@@ -11,14 +11,14 @@ import type { ChatStatus } from "@zorel/contracts/events"
 import { formatAge, formatPercent, formatTime, t } from "@zorel/i18n"
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { accountsAtom, agentsAtom, approvalsAtom, chatsAtom, memoriesAtom, mutations, projectsAtom, useInvalidate, useList, useMutation, useStatuses } from "../client.ts"
-import { chatTitle, modelName, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
+import { agentTone, chatTitle, modelName, statusLabel, type Pace, paceOf, windowLabel, windowMinutes } from "../labels.ts"
 import { RenameDialog } from "./chat.tsx"
 import { openPalette } from "./palette.tsx"
 import { NewProjectButton } from "./project.tsx"
 import { byTurn, ordered, type Statuses, visibleChats } from "./sidebar-order.ts"
 import { go, readSet, type Route, writeSet } from "../state.ts"
 import {
-  ChevronRight, Fold, Marker, Menu, MoreHorizontal, NavItem, Popover, Search, Pause, Play, PanelLeftClose, PanelLeftOpen, AlarmClock, Bot, Brain, Button, ConfirmDialog, ContextMenu, ChartColumn, cn, Download, Folder, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, Meter, RefreshCw, Settings, Spinner, SquarePen, Tooltip, Trash2, useNavReorder, Width
+  AgentAvatar, ChevronRight, Fold, Marker, Menu, MoreHorizontal, NavItem, Popover, Search, Pause, Play, PanelLeftClose, PanelLeftOpen, AlarmClock, Bot, Brain, Button, ConfirmDialog, ContextMenu, ChartColumn, cn, Download, Folder, House, IconButton, Inbox, Logo, MenuItem, MenuSeparator, MessageCircle, NavLabel, Pencil, NavTree, NavTreeItem, type NavKey, Plus, ProviderIcon, Meter, RefreshCw, Settings, Spinner, Tooltip, Trash2, useNavReorder, Width
 } from "@/ui"
 
 // Open and folded widths (App animates between them; the desktop title bar lines up with the open one).
@@ -38,14 +38,16 @@ const idOf = (key: NavKey) => String(key).slice(2)
 
 type Place = { key: string; icon: ReactNode; label: string; active?: boolean; go: () => void; count?: number }
 
-// The app's places, named: Needs you (with what waits for you), Agents, Routines and Memory (Pages is a view of
-// Memory); Skills live in Settings. New chat and Search are icons in the head. Folded, all are icons in a column,
-// New chat and Search first. The current one has the open chat's wash.
+// The app's places, named (spec 018): Home first, Needs you (with what waits for you), Agents, Routines and Memory
+// (Pages is a view of Memory); Skills live in Settings. Search is a field under the head; a new chat starts from
+// Home or the + of the Chats and Projects sections (⌘N). Folded, all are icons in a column, Search first. The current
+// one has the open chat's wash.
 function Places({ route, folded }: { route: Route; folded: boolean }) {
   const memories = useList(memoriesAtom)
   const approvals = useList(approvalsAtom)
   const needsYou = approvals.length + memories.filter((m) => m.state === "pending").length
   const places: Place[] = [
+    { key: "home", icon: <House />, label: t("nav.homeScreen"), active: route.view === "home" && !route.projectId, go: () => go({ view: "home" }) },
     { key: "inbox", icon: <Inbox />, label: t("nav.needsYou"), active: route.view === "inbox", go: () => go({ view: "inbox" }), count: needsYou },
     { key: "agents", icon: <Bot />, label: t("nav.agents"), active: ["agents", "agent", "new-agent", "builder"].includes(route.view), go: () => go({ view: "agents" }) },
     { key: "routines", icon: <AlarmClock />, label: t("nav.routines"), active: route.view === "routines" || route.view === "routine-flow" || route.view === "routine-run", go: () => go({ view: "routines" }) },
@@ -53,10 +55,7 @@ function Places({ route, folded }: { route: Route; folded: boolean }) {
     { key: "memory", icon: <Brain />, label: t("nav.memory"), active: route.view === "memory" || route.view === "pages", go: () => go({ view: "memory" }) }
   ]
   if (folded) {
-    const start: Place[] = [
-      { key: "new", icon: <SquarePen />, label: t("nav.newChat"), active: route.view === "home" && !route.projectId, go: () => go({ view: "home" }) },
-      { key: "search", icon: <Search />, label: t("common.search"), go: openPalette }
-    ]
+    const start: Place[] = [{ key: "search", icon: <Search />, label: t("common.search"), go: openPalette }]
     const rail = (p: Place) => (
       <RailItem key={p.key} label={p.label} active={!!p.active} onPress={p.go} count={p.count}>
         {p.icon}
@@ -89,9 +88,9 @@ function Places({ route, folded }: { route: Route; folded: boolean }) {
   )
 }
 
-// The top: the brand, New chat and Search (⌘K) as icons, and the fold (⌘B). Folded, only the button that opens it
-// again (New chat and Search then sit at the top of the icon column).
-function Head({ route, folded, onToggle }: { route: Route; folded: boolean; onToggle: () => void }) {
+// The top: the brand and the fold (⌘B). Folded, only the button that opens it again (Search then sits at the top of
+// the icon column).
+function Head({ folded, onToggle }: { folded: boolean; onToggle: () => void }) {
   const label = folded ? t("nav.showSidebar") : t("nav.hideSidebar")
   const button = (
     <Tooltip content={label} placement={folded ? "right" : "bottom"}>
@@ -101,23 +100,25 @@ function Head({ route, folded, onToggle }: { route: Route; folded: boolean; onTo
     </Tooltip>
   )
   if (folded) return <div className="flex h-13 shrink-0 items-center pl-2">{button}</div>
-  const newChat = route.view === "home" && !route.projectId
   return (
     <div className="flex h-13 shrink-0 items-center gap-1 pr-2.5 pl-4.5">
       <Logo className="mr-1.5 size-5 shrink-0" />
       {/* With team servers (desktop): where this window is, and the way to the others (spec 017). */}
       <ServerPicker fallback={<span className="min-w-0 flex-1 truncate font-semibold">{t("app.name")}</span>} />
-      <Tooltip content={t("nav.newChat")} placement="bottom">
-        <IconButton label={t("nav.newChat")} onPress={() => go({ view: "home" })} className={cn("text-muted", newChat && "bg-control-hover text-fg")}>
-          <SquarePen />
-        </IconButton>
-      </Tooltip>
-      <Tooltip content={`${t("common.search")} (${MAC ? "⌘K" : "Ctrl K"})`} placement="bottom">
-        <IconButton label={t("common.search")} onPress={openPalette} className="text-muted">
-          <Search />
-        </IconButton>
-      </Tooltip>
       {button}
+    </div>
+  )
+}
+
+// Search or go to anything (the command palette, ⌘K), as a field under the head: the one way in that is always there.
+function SearchBar() {
+  return (
+    <div className="shrink-0 px-2.5 pb-3">
+      <Button variant="secondary" onPress={openPalette} className="w-full justify-start bg-control/60 font-normal text-muted">
+        <Search />
+        <span className="flex-1 truncate text-left">{t("nav.searchOrGo")}</span>
+        <kbd className="rounded-control-sm px-1.5 text-xs text-dim ring-1 ring-strong">{MAC ? "⌘K" : "Ctrl K"}</kbd>
+      </Button>
     </div>
   )
 }
@@ -399,8 +400,9 @@ export function Sidebar({
 
   return (
     <nav aria-label={t("nav.label")} className={cn("flex shrink-0 flex-col overflow-hidden pb-3", folded ? "w-14" : "w-67")}>
-      <Head route={route} folded={folded} onToggle={onToggle} />
+      <Head folded={folded} onToggle={onToggle} />
       {!folded && <ServerLine />}
+      {!folded && <SearchBar />}
       <Places route={route} folded={folded} />
 
       {/* Chats (without a project) first, then Projects; each section folds, and the list scrolls under the places.
@@ -528,7 +530,7 @@ const Count = ({ n }: { n: number }) => (
 function Pending({ count }: { count: number }) {
   if (!count) return null
   return (
-    <span role="img" aria-label={t("nav.waitingIn", { count })} className="shrink-0 px-1 text-sm font-medium text-accent-text tabular-nums">
+    <span role="img" aria-label={t("nav.waitingIn", { count })} className="shrink-0 px-1 text-sm font-medium text-warning tabular-nums">
       {count}
     </span>
   )
@@ -643,7 +645,9 @@ function ChatItem({
   const model = modelName(chat.model)
   const who = members.length > 1 ? `${members[0]!.name} +${members.length - 1}` : members[0]?.name
   const detail = who ? t("nav.withModel", { agent: who, model }) : model
-  const line = live?.state === "running" ? undefined : said // working is the spinner's to say
+  // Spec 018: a live chat says who and what on its second line (working too); waiting reads amber, failed red.
+  const line = live?.state === "running" ? (said && who ? `${who} · ${said}` : said) : said
+  const lead = members[0]
   return (
     <NavTreeItem
       id={chatKey(chat.id)}
@@ -655,13 +659,17 @@ function ChatItem({
       {...(!nested && {
         leading: (
           <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center text-muted [&_svg]:size-4">
-            <MessageCircle />
+            {live && lead ? (
+              <AgentAvatar id={lead.id} name={lead.name} tone={agentTone(lead, agents)} size={20} state={live.state === "running" ? "working" : live.state} />
+            ) : (
+              <MessageCircle />
+            )}
           </span>
         )
       })}
-      trailing={live?.state === "running" ? <Spinner size={11} className="text-muted" label={said ?? ""} /> : formatAge(at)}
+      trailing={live?.state === "running" && !(lead && !nested) ? <Spinner size={11} className="text-muted" label={said ?? ""} /> : formatAge(at)}
       actions={<RowMenu name={chatTitle(chat)}>{menu}</RowMenu>}
-      {...(line && { detail: <span className={cn("truncate", live?.state === "waiting" ? "text-accent-text" : live?.state === "failed" ? "text-danger" : undefined)}>{line}</span> })}
+      {...(line && { detail: <span className={cn("truncate", live?.state === "waiting" ? "text-warning" : live?.state === "failed" ? "text-danger" : "text-muted")}>{line}</span> })}
       nested={nested}
       last={last}
       dragLabel={t("nav.reorder", { name: chatTitle(chat) })}
