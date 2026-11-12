@@ -84,7 +84,19 @@ pub fn parse(source: &str) -> Vec<Block> {
             Event::SoftBreak => inline.text.push(' '),
             Event::HardBreak => inline.text.push('\n'),
             Event::TaskListMarker(done) => inline.text.push_str(if done { "☑ " } else { "☐ " }),
-            Event::Start(Tag::List(start)) => lists.push(start),
+            Event::Start(Tag::List(start)) => {
+                // A nested list starts inside an item: that item's own text is complete, so it becomes its row first.
+                if !lists.is_empty() && !inline.text.is_empty() {
+                    let depth = lists.len() - 1;
+                    let ordered = lists.last().copied().flatten();
+                    blocks.push(Block::Item {
+                        depth,
+                        ordered,
+                        text: flush(&mut inline),
+                    });
+                }
+                lists.push(start);
+            }
             Event::End(TagEnd::List(_)) => {
                 lists.pop();
             }
@@ -260,6 +272,19 @@ mod tests {
         assert!(p.marks.contains(&(5..9, Mark::Strong)));
         assert!(matches!(&blocks[2], Block::Item { depth: 0, ordered: None, text } if text.text == "one"));
         assert!(matches!(&blocks[4], Block::Code { lang, text } if lang == "rust" && text == "fn main() {}"));
+    }
+
+    #[test]
+    fn a_nested_list_keeps_its_parent_item() {
+        let blocks = parse("- one\n- two\n  - nested\n- three\n");
+        let items: Vec<(usize, &str)> = blocks
+            .iter()
+            .filter_map(|b| match b {
+                Block::Item { depth, text, .. } => Some((*depth, text.text.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(items, [(0, "one"), (0, "two"), (1, "nested"), (0, "three")]);
     }
 
     #[test]

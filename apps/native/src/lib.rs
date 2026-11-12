@@ -6,6 +6,7 @@ pub mod assets;
 pub mod engine;
 pub mod format;
 pub mod i18n;
+pub mod labels;
 pub mod net;
 pub mod route;
 pub mod runtime;
