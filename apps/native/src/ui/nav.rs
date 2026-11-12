@@ -196,12 +196,14 @@ impl RenderOnce for NavRow {
         );
         let (rest, on_hover) = (self.trailing, self.on_hover);
         let has_rest = rest.is_some();
+        // The detail only gives way when something takes its place on hover.
+        let rest_shown = if on_hover.is_some() { 1. - shown } else { 1. };
         let trailing = (rest.is_some() || on_hover.is_some()).then(|| {
             div()
                 .relative()
                 .flex()
                 .items_center()
-                .when_some(rest, |s, t| s.child(div().opacity(1. - shown).child(t)))
+                .when_some(rest, |s, t| s.child(div().opacity(rest_shown).child(t)))
                 .when_some(on_hover, |s, h| {
                     let h = div().flex().items_center().opacity(shown).child(h);
                     if has_rest {
