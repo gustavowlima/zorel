@@ -30,13 +30,16 @@ pub struct Draft {
 
 pub type OnSubmit = Rc<dyn Fn(Draft, &mut Window, &mut App) + 'static>;
 
+/// Renders the tools slot (the model picker) each frame.
+pub type Tools = Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>;
+
 pub struct Composer {
     text: Entity<TextareaState>,
     files: Vec<PathBuf>,
     error: Option<String>,
     on_submit: OnSubmit,
     /// Beside the send button (the model picker).
-    tools: Option<Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>>,
+    tools: Option<Tools>,
     large: bool,
     _subscription: Subscription,
 }
@@ -70,7 +73,7 @@ impl Composer {
         }
     }
 
-    pub fn set_tools(&mut self, tools: Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>) {
+    pub fn set_tools(&mut self, tools: Tools) {
         self.tools = Some(tools);
     }
 
