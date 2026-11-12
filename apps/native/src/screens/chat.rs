@@ -62,6 +62,12 @@ const CONTINUES_MS: f64 = 5. * 60. * 1000.;
 /// Frames a revealed delta takes to show (the web's ~6).
 const REVEAL_FRAMES: usize = 6;
 
+pub enum ChatEvent {
+    Navigate(crate::route::Route),
+}
+
+impl EventEmitter<ChatEvent> for ChatScreen {}
+
 /// What a list row shows.
 #[derive(Clone, PartialEq)]
 enum Row {
@@ -119,7 +125,27 @@ impl ChatScreen {
         composer.update(cx, |c, _| {
             c.set_tools(Rc::new(move |_, _| tools.clone().into_any_element()))
         });
+        // The engine's own slash commands for this chat (Claude Code's built-in, the user's, the project's).
+        let commands: Rc<std::cell::RefCell<Vec<crate::net::types::EngineCommand>>> = Default::default();
+        let sources = Self::sources(&chat_id, &store, commands.clone(), cx.entity().downgrade());
+        composer.update(cx, |c, _| c.set_sources(sources));
         composer.update(cx, |c, cx| c.focus(window, cx));
+        {
+            let (http, path, commands) = (
+                store.read(cx).http.clone(),
+                format!("/api/chats/{chat_id}/commands"),
+                commands.clone(),
+            );
+            cx.spawn(async move |_, _| {
+                if let Ok(Ok(list)) =
+                    runtime::spawn(async move { http.get::<crate::net::types::ChatsCommandsSuccess>(&path).await })
+                        .await
+                {
+                    *commands.borrow_mut() = list.0;
+                }
+            })
+            .detach();
+        }
         let subscriptions = vec![
             cx.observe(&store, |_, _, cx| cx.notify()), // names, hues, the chat's model
             cx.observe(&scroller, |_, _, cx| cx.notify()),
@@ -153,6 +179,103 @@ impl ChatScreen {
             answers: HashMap::new(),
             _subscriptions: subscriptions,
         }
+    }
+
+    /// What the composer's menus offer here: the chat's people and teams, the skills in its reach, the commands.
+    fn sources(
+        chat_id: &str,
+        store: &Entity<Store>,
+        commands: Rc<std::cell::RefCell<Vec<crate::net::types::EngineCommand>>>,
+        view: WeakEntity<Self>,
+    ) -> crate::screens::composer::Sources {
+        use crate::screens::composer::{Mark, MenuOption, Trigger};
+        let (chat_id, store) = (chat_id.to_string(), store.clone());
+        Rc::new(move |trigger, cx| {
+            let s = store.read(cx);
+            let Some(chat) = s.chat(&chat_id) else {
+                return Vec::new();
+            };
+            match trigger {
+                Trigger::Lead | Trigger::Mention => {
+                    crate::screens::mentions::people(s, chat.project_id.as_deref(), Some(&chat.agent_ids))
+                }
+                Trigger::Skill => {
+                    let mut scopes = vec!["user".to_string()];
+                    scopes.extend(chat.project_id.as_ref().map(|p| format!("project:{p}")));
+                    scopes.extend(chat.agent_ids.iter().map(|a| format!("agent:{a}")));
+                    crate::screens::mentions::skills(s, &scopes)
+                }
+                Trigger::Command => {
+                    let project = chat.project_id.clone();
+                    let (compact, fresh) = (view.clone(), view.clone());
+                    let mut out = vec![
+                        MenuOption {
+                            id: "compact".into(),
+                            label: t!("composer.command.compact").into_owned(),
+                            hint: Some(t!("composer.command.compactHint").into_owned()),
+                            mark: Mark::Icon(IconName::Minimize2),
+                            run: Some(Rc::new(move |_, cx| {
+                                let _ = compact.update(cx, |this, cx| this.compact(cx));
+                            })),
+                        },
+                        MenuOption {
+                            id: "new".into(),
+                            label: t!("composer.command.newChat").into_owned(),
+                            hint: Some(t!("composer.command.newChatHint").into_owned()),
+                            mark: Mark::Icon(IconName::SquarePen),
+                            run: Some(Rc::new(move |_, cx| {
+                                let project_id = project.clone();
+                                let _ = fresh.update(cx, |_, cx| {
+                                    cx.emit(ChatEvent::Navigate(crate::route::Route::Home { project_id }))
+                                });
+                            })),
+                        },
+                    ];
+                    out.extend(commands.borrow().iter().map(|c| MenuOption {
+                        id: c.name.clone(),
+                        label: match &c.argument_hint {
+                            Some(h) => format!("/{} {h}", c.name),
+                            None => format!("/{}", c.name),
+                        },
+                        hint: Some(c.description.clone()),
+                        mark: Mark::Icon(IconName::SquareTerminal),
+                        run: None,
+                    }));
+                    out
+                }
+            }
+        })
+    }
+
+    /// Folds the older messages into the chat's summary (the /compact command).
+    fn compact(&mut self, cx: &mut Context<Self>) {
+        let store = self.store.read(cx);
+        let (http, path) = (store.http.clone(), format!("/api/chats/{}/consolidate", self.chat_id));
+        let reload = self.store.downgrade();
+        cx.spawn(async move |_, cx| {
+            if let Ok(Err(e)) =
+                runtime::spawn(async move { http.post::<_, serde_json::Value>(&path, &json!({})).await }).await
+            {
+                eprintln!("compact: {e}");
+            }
+            let _ = reload.update(cx, |s, cx| s.reload_chats(cx));
+        })
+        .detach();
+    }
+
+    /// Who the text names that isn't in the chat yet: they join it before the message goes (a chat holds 8).
+    fn joining(&self, text: &str, cx: &App) -> Option<Vec<String>> {
+        let store = self.store.read(cx);
+        let chat = store.chat(&self.chat_id)?;
+        let callable = crate::state::crew::callable(&store.agents, chat.project_id.as_deref());
+        let pairs: Vec<(&str, &str)> = callable.iter().map(|a| (a.id.as_str(), a.name.as_str())).collect();
+        let teams: Vec<(&str, &[String])> = crate::state::crew::teams_in(&store.teams, chat.project_id.as_deref())
+            .into_iter()
+            .map(|t| (t.name.as_str(), t.agent_ids.as_slice()))
+            .collect();
+        let mut named = crate::state::crew::to_join(text, &chat.agent_ids, &pairs, &teams);
+        named.truncate(crate::state::crew::CHAT_MEMBERS_MAX.saturating_sub(chat.agent_ids.len()));
+        (!named.is_empty()).then(|| chat.agent_ids.iter().cloned().chain(named).collect())
     }
 
     fn apply(&mut self, event: SubscribeChatItem, cx: &mut Context<Self>) {
@@ -279,18 +402,25 @@ impl ChatScreen {
         let (http, rpc, chat_id) = (store.http.clone(), self.rpc.clone(), self.chat_id.clone());
         let Draft { text, files } = draft;
         let sent = text.clone();
-        let task = runtime::spawn(async move { crate::net::send::deliver(&http, &rpc, &chat_id, &text, files).await });
+        let join = self.joining(&text, cx);
+        let task = runtime::spawn(async move {
+            if let Some(agent_ids) = join {
+                http.patch::<_, serde_json::Value>(&format!("/api/chats/{chat_id}"), &json!({ "agentIds": agent_ids }))
+                    .await
+                    .map_err(|_| t!("chat.addFailed").into_owned())?;
+            }
+            crate::net::send::deliver(&http, &rpc, &chat_id, &text, files).await
+        });
         cx.spawn_in(window, async move |this, cx| {
             let failed = match task.await {
                 Ok(Ok(())) => None,
                 Ok(Err(msg)) => Some(msg),
                 Err(_) => Some(t!("chat.sendFailed").into_owned()),
             };
-            if let Some(msg) = failed {
-                let _ = this.update_in(cx, |this, window, cx| {
-                    this.composer.update(cx, |c, cx| c.restore(sent, msg, window, cx));
-                });
-            }
+            let _ = this.update_in(cx, |this, window, cx| match failed {
+                Some(msg) => this.composer.update(cx, |c, cx| c.restore(sent, msg, window, cx)),
+                None => this.store.update(cx, |s, cx| s.reload_chats(cx)), // someone may have joined
+            });
         })
         .detach();
     }

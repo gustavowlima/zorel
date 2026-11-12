@@ -72,7 +72,10 @@ icon_assets!(
         Close,
         Box,
         Pencil,
-        Wrench
+        Wrench,
+        Sparkles,
+        Minimize2,
+        SquarePen
     ]
 );
 

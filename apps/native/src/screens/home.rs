@@ -90,6 +90,19 @@ impl Home {
         composer.update(cx, |c, _| {
             c.set_tools(Rc::new(move |_, _| tools.clone().into_any_element()))
         });
+        // # and @ call the agents and teams of the chosen project (all of them join the new chat when named).
+        let (home, sources_store) = (cx.entity().downgrade(), store.clone());
+        let sources: crate::screens::composer::Sources = Rc::new(move |trigger, cx| {
+            use crate::screens::composer::Trigger;
+            let project = home.upgrade().and_then(|h| h.read(cx).project_id.clone());
+            match trigger {
+                Trigger::Lead | Trigger::Mention => {
+                    crate::screens::mentions::people(sources_store.read(cx), project.as_deref(), None)
+                }
+                _ => Vec::new(),
+            }
+        });
+        composer.update(cx, |c, _| c.set_sources(sources));
         composer.update(cx, |c, cx| c.focus(window, cx));
         let mut home = Self {
             store,

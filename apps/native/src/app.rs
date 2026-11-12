@@ -17,7 +17,7 @@ use crate::{
     net::types::{ChatStatus, Notice},
     route::Route,
     screens::{
-        chat::ChatScreen,
+        chat::{ChatEvent, ChatScreen},
         home::{Home, HomeEvent},
         inbox::{Inbox, InboxEvent},
         palette,
@@ -226,6 +226,10 @@ impl Root {
         }
         let Some(store) = self.store.clone() else { return };
         let screen = cx.new(|cx| ChatScreen::new(id.clone(), store, window, cx));
+        cx.subscribe_in(&screen, window, |this, _, event: &ChatEvent, window, cx| match event {
+            ChatEvent::Navigate(route) => this.navigate(route.clone(), window, cx),
+        })
+        .detach();
         self.chat = Some((id, screen));
     }
 

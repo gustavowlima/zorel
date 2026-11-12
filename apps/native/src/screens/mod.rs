@@ -3,6 +3,7 @@ pub mod chat;
 pub mod composer;
 pub mod home;
 pub mod inbox;
+pub mod mentions;
 pub mod model_picker;
 pub mod palette;
 pub mod sidebar;

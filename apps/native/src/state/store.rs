@@ -10,8 +10,8 @@ use crate::{
         rpc::Rpc,
         types::{
             AccountsListSuccess, Agent, AgentBuiltin, AgentTeam, AgentsListSuccess, AgentsTeamsSuccess, Approval, Chat,
-            ChatStatus, ChatsListSuccess, ModelInfo, Preferences, Project, ProjectsListSuccess, ProviderAccount,
-            Routine, RoutinesListSuccess, SettingsModelsSuccess,
+            ChatStatus, ChatsListSuccess, MemoriesListSuccess, Memory, ModelInfo, Preferences, Project,
+            ProjectsListSuccess, ProviderAccount, Routine, RoutinesListSuccess, SettingsModelsSuccess,
         },
     },
     runtime,
@@ -35,6 +35,8 @@ pub struct Store {
     pub teams: Vec<AgentTeam>,
     /// What every engine offers (the model picker, model names).
     pub models: Vec<ModelInfo>,
+    /// Memories (skills for the composer's $ menu).
+    pub memories: Vec<Memory>,
     /// Every open approval and question (Needs you, Home), refreshed when any chat's status changes.
     pub approvals: Vec<Approval>,
     /// All agents paused (Settings › General, the sidebar's Pause).
@@ -54,6 +56,7 @@ impl Store {
             accounts: Vec::new(),
             teams: Vec::new(),
             models: Vec::new(),
+            memories: Vec::new(),
             approvals: Vec::new(),
             paused: false,
         };
@@ -76,11 +79,22 @@ impl Store {
                 let preferences: Preferences = http.get("/api/preferences").await?;
                 let teams: AgentsTeamsSuccess = http.get("/api/teams").await?;
                 let models: SettingsModelsSuccess = http.get("/api/models").await?;
-                Ok::<_, HttpError>((agents, projects, chats, routines, accounts, preferences, teams, models))
+                let memories: MemoriesListSuccess = http.get("/api/memories").await?;
+                Ok::<_, HttpError>((
+                    agents,
+                    projects,
+                    chats,
+                    routines,
+                    accounts,
+                    preferences,
+                    teams,
+                    models,
+                    memories,
+                ))
             })
             .await;
             match got {
-                Ok(Ok((agents, projects, chats, routines, accounts, preferences, teams, models))) => {
+                Ok(Ok((agents, projects, chats, routines, accounts, preferences, teams, models, memories))) => {
                     let _ = this.update(cx, |this, cx| {
                         this.agents = agents.0;
                         this.projects = projects.0;
@@ -90,6 +104,7 @@ impl Store {
                         this.paused = preferences.paused;
                         this.teams = teams.0;
                         this.models = models.0;
+                        this.memories = memories.0;
                         this.loaded = true;
                         cx.notify();
                     });
