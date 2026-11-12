@@ -13,6 +13,7 @@ use crate::{
     route::Route,
     screens::{
         chat::ChatScreen,
+        home::{Home, HomeEvent},
         inbox::{Inbox, InboxEvent},
         palette,
         sidebar::{Sidebar, SidebarEvent},
@@ -35,6 +36,7 @@ struct Root {
     /// The open chat's screen (kept while its chat is open; a new chat builds a new one).
     chat: Option<(String, Entity<ChatScreen>)>,
     inbox: Option<Entity<Inbox>>,
+    home: Option<Entity<Home>>,
     sidebar: Option<Entity<Sidebar>>,
     notifier: Notifier,
     /// A clicked notification sends its chat id here.
@@ -80,6 +82,7 @@ impl Root {
             route,
             chat: None,
             inbox: None,
+            home: None,
             sidebar: None,
             notifier: Notifier::default(),
             clicked,
@@ -112,6 +115,11 @@ impl Root {
         let inbox = cx.new(|cx| Inbox::new(store.clone(), cx));
         cx.subscribe_in(&inbox, window, |this, _, event: &InboxEvent, window, cx| match event {
             InboxEvent::OpenChat(id) => this.navigate(Route::Chat { id: id.clone() }, window, cx),
+        })
+        .detach();
+        let home = cx.new(|cx| Home::new(store.clone(), window, cx));
+        cx.subscribe_in(&home, window, |this, _, event: &HomeEvent, window, cx| match event {
+            HomeEvent::Navigate(route) => this.navigate(route.clone(), window, cx),
         })
         .detach();
         let sidebar = cx.new(|cx| Sidebar::new(store.clone(), cx));
@@ -152,6 +160,7 @@ impl Root {
         .detach();
         self.store = Some(store);
         self.inbox = Some(inbox);
+        self.home = Some(home);
         self.sidebar = Some(sidebar);
         if let Route::Chat { id } = self.route.clone() {
             self.navigate(Route::Chat { id }, window, cx);
@@ -185,7 +194,15 @@ impl Root {
                     inbox.update(cx, |inbox, cx| inbox.refresh(cx));
                 }
             }
-            Route::Home { .. } => {}
+            Route::Home { project_id } => {
+                if let Some(home) = &self.home {
+                    let project_id = project_id.clone();
+                    home.update(cx, |home, cx| {
+                        home.set_project(project_id, window, cx);
+                        home.refresh(cx);
+                    });
+                }
+            }
         }
         if let Some(sidebar) = &self.sidebar {
             let route = route.clone();
@@ -263,7 +280,7 @@ impl Render for Root {
                 .as_ref()
                 .filter(|(open, _)| open == id)
                 .map(|(_, s)| s.clone().into_any_element()),
-            Route::Home { .. } => None,
+            Route::Home { .. } => self.home.clone().map(|h| h.into_any_element()),
         };
         div()
             .size_full()

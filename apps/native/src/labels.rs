@@ -3,7 +3,7 @@ use rust_i18n::t;
 
 use crate::{
     format,
-    net::types::{AgentWait, Chat, ChatStatus, ChatStatusState},
+    net::types::{AgentWait, Chat, ChatStatus, ChatStatusState, ModelInfo},
     state::store::Store,
 };
 
@@ -137,9 +137,74 @@ pub fn tone_of(pace: &Pace) -> Tone {
     }
 }
 
+/// "claude-cli/opus" → ("claude-cli", "opus").
+pub fn split_model(id: &str) -> (&str, &str) {
+    id.split_once('/').unwrap_or((id, ""))
+}
+
+/// "Claude Code", "OpenRouter"; an unknown provider keeps its id.
+pub fn provider_label(provider: &str) -> String {
+    const KNOWN: [&str; 10] = [
+        "claude-cli",
+        "codex-cli",
+        "gemini-cli",
+        "opencode",
+        "antigravity",
+        "anthropic",
+        "openai",
+        "openrouter",
+        "ollama",
+        "lmstudio",
+    ];
+    if KNOWN.contains(&provider) {
+        t!(format!("model.providers.{provider}")).into_owned()
+    } else {
+        provider.to_string()
+    }
+}
+
+/// A model's name: what the engine calls it today ("Opus 5.5"), else read from the id ("claude-sonnet-5-5" →
+/// "Sonnet 5.5", "claude-cli/opus" → "Opus", "…/default" → "CLI default"); API models keep their id.
+pub fn model_name(id: &str, models: &[ModelInfo]) -> String {
+    if let Some(name) = models.iter().find(|m| m.id == id).and_then(|m| m.name.clone()) {
+        return name;
+    }
+    let (provider, model) = split_model(id);
+    if model == "default" {
+        return t!("model.cliDefault").into_owned();
+    }
+    let parts: Vec<&str> = model.split('-').collect();
+    if let ["claude", family @ ("opus" | "sonnet" | "haiku"), major, minor, ..] = parts.as_slice()
+        && major.chars().all(|c| c.is_ascii_digit())
+        && minor.chars().take_while(|c| c.is_ascii_digit()).count() > 0
+    {
+        let minor: String = minor.chars().take_while(|c| c.is_ascii_digit()).collect();
+        return format!("{} {major}.{minor}", capitalize(family));
+    }
+    if matches!(provider, "claude-cli" | "codex-cli") {
+        return capitalize(model);
+    }
+    model.to_string()
+}
+
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().chain(c).collect())
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Tone, pace_of, tone_of, window_minutes};
+    use super::{Tone, model_name, pace_of, split_model, tone_of, window_minutes};
+
+    #[test]
+    fn model_names_read_from_ids() {
+        assert_eq!(split_model("openrouter/x/y"), ("openrouter", "x/y"));
+        assert_eq!(model_name("anthropic/claude-sonnet-5-5-20261001", &[]), "Sonnet 5.5");
+        assert_eq!(model_name("claude-cli/opus", &[]), "Opus");
+        assert_eq!(model_name("openai/gpt-x", &[]), "gpt-x");
+    }
 
     #[test]
     fn windows_and_pace() {

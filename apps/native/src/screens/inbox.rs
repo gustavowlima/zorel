@@ -69,7 +69,7 @@ impl Inbox {
 
     /// Open approvals (from the Store) and proposed memories.
     pub fn count(&self, cx: &App) -> usize {
-        self.store.read(cx).approvals.len() + self.memories.len()
+        self.store.read(cx).needs_you().len() + self.memories.len()
     }
 
     /// Re-reads the proposed memories (approvals live in the Store, refreshed with every status change).
@@ -129,7 +129,7 @@ impl Inbox {
 impl Render for Inbox {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = theme::palette(window);
-        let approvals = self.store.read(cx).approvals.clone();
+        let approvals = self.store.read(cx).needs_you();
         let questions = approvals.iter().filter(|a| is_question(a)).count();
         let asks = approvals.len() - questions;
         let total = self.count(cx);

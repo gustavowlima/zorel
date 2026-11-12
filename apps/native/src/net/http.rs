@@ -5,6 +5,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::engine::Engine;
 
 pub const SESSION_HEADER: &str = "x-zorel-token"; // packages/contracts session.ts
+const ATTACHMENT_NAME_HEADER: &str = "x-file-name"; // packages/contracts routes.ts
 
 #[derive(Clone)]
 pub struct Http {
@@ -69,6 +70,26 @@ impl Http {
         Self::read(self.client.put(format!("{}{path}", self.base)).json(body).send().await).await
     }
 
+    /// A file's raw bytes (an attachment): its name travels URI-encoded in `x-file-name`, as the web sends it.
+    pub async fn upload<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        name: &str,
+        mime: &str,
+        bytes: Vec<u8>,
+    ) -> Result<T, HttpError> {
+        Self::read(
+            self.client
+                .post(format!("{}{path}", self.base))
+                .header("content-type", mime)
+                .header(ATTACHMENT_NAME_HEADER, uri_encode(name))
+                .body(bytes)
+                .send()
+                .await,
+        )
+        .await
+    }
+
     /// DELETE; the engine answers 204 or a small JSON body, neither read.
     pub async fn delete(&self, path: &str) -> Result<(), HttpError> {
         let response = self
@@ -90,5 +111,30 @@ impl Http {
             return Err(HttpError::Status(status, response.text().await.unwrap_or_default()));
         }
         response.json().await.map_err(HttpError::Network)
+    }
+}
+
+/// JavaScript's encodeURIComponent: what the engine decodes the file name with.
+fn uri_encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::uri_encode;
+
+    #[test]
+    fn names_are_encoded_like_encode_uri_component() {
+        assert_eq!(
+            uri_encode("relatório final (v2).pdf"),
+            "relat%C3%B3rio%20final%20(v2).pdf"
+        );
     }
 }

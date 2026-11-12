@@ -9,8 +9,9 @@ use crate::{
         http::{Http, HttpError},
         rpc::Rpc,
         types::{
-            AccountsListSuccess, Agent, AgentTeam, AgentsListSuccess, AgentsTeamsSuccess, Approval, Chat, ChatStatus,
-            ChatsListSuccess, Preferences, Project, ProjectsListSuccess, ProviderAccount, Routine, RoutinesListSuccess,
+            AccountsListSuccess, Agent, AgentBuiltin, AgentTeam, AgentsListSuccess, AgentsTeamsSuccess, Approval, Chat,
+            ChatStatus, ChatsListSuccess, ModelInfo, Preferences, Project, ProjectsListSuccess, ProviderAccount,
+            Routine, RoutinesListSuccess, SettingsModelsSuccess,
         },
     },
     runtime,
@@ -32,6 +33,8 @@ pub struct Store {
     pub routines: Vec<Routine>,
     pub accounts: Vec<ProviderAccount>,
     pub teams: Vec<AgentTeam>,
+    /// What every engine offers (the model picker, model names).
+    pub models: Vec<ModelInfo>,
     /// Every open approval and question (Needs you, Home), refreshed when any chat's status changes.
     pub approvals: Vec<Approval>,
     /// All agents paused (Settings › General, the sidebar's Pause).
@@ -50,6 +53,7 @@ impl Store {
             routines: Vec::new(),
             accounts: Vec::new(),
             teams: Vec::new(),
+            models: Vec::new(),
             approvals: Vec::new(),
             paused: false,
         };
@@ -71,11 +75,12 @@ impl Store {
                 let accounts: AccountsListSuccess = http.get("/api/accounts").await?;
                 let preferences: Preferences = http.get("/api/preferences").await?;
                 let teams: AgentsTeamsSuccess = http.get("/api/teams").await?;
-                Ok::<_, HttpError>((agents, projects, chats, routines, accounts, preferences, teams))
+                let models: SettingsModelsSuccess = http.get("/api/models").await?;
+                Ok::<_, HttpError>((agents, projects, chats, routines, accounts, preferences, teams, models))
             })
             .await;
             match got {
-                Ok(Ok((agents, projects, chats, routines, accounts, preferences, teams))) => {
+                Ok(Ok((agents, projects, chats, routines, accounts, preferences, teams, models))) => {
                     let _ = this.update(cx, |this, cx| {
                         this.agents = agents.0;
                         this.projects = projects.0;
@@ -84,6 +89,7 @@ impl Store {
                         this.accounts = accounts.0;
                         this.paused = preferences.paused;
                         this.teams = teams.0;
+                        this.models = models.0;
                         this.loaded = true;
                         cx.notify();
                     });
@@ -227,6 +233,22 @@ impl Store {
         id.and_then(|id| self.agent(id))
             .map(|a| a.name.clone())
             .unwrap_or_else(|| rust_i18n::t!("app.name").into_owned())
+    }
+
+    /// The approvals the person decides: not the Builder's agent creation (its own screen asks for that).
+    pub fn needs_you(&self) -> Vec<Approval> {
+        self.approvals
+            .iter()
+            .filter(|a| {
+                let builder = a
+                    .agent_id
+                    .as_deref()
+                    .and_then(|id| self.agent(id))
+                    .is_some_and(|x| matches!(x.builtin, Some(AgentBuiltin::Builder)));
+                !(a.tool == "zorel_create_agent" && builder)
+            })
+            .cloned()
+            .collect()
     }
 
     pub fn chat(&self, id: &str) -> Option<&Chat> {
