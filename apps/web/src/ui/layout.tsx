@@ -4,7 +4,7 @@
 // One page rhythm (DESIGN.md › Layout): every header is HEADER (56px, the title 28px from the card's edge, the
 // actions 16px from the window's); a page's body is a Column (centered, 28px around, reading or wide); its sections
 // sit 40px apart, a page's tabs 32px above what they show, and a section's title 12px above its card.
-import { EmptyOrbit } from "./face"
+import { EmptyOrbit, Scene, type SceneKind } from "./face"
 import { type CSSProperties, type ReactNode, useLayoutEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { Button as AriaButton } from "react-aria-components"
@@ -229,6 +229,20 @@ export function ListRow({
       {aside && <span className="pointer-events-none relative max-w-[45%] min-w-0 shrink-0 truncate text-sm text-muted tabular-nums">{aside}</span>}
       {trailing && <span className="relative flex shrink-0 items-center gap-2">{trailing}</span>}
       <ChevronRight className="pointer-events-none relative size-4 shrink-0 text-muted" />
+    </div>
+  )
+}
+
+// A section with nothing to show yet, said kindly (spec 018): the same card as its rows, a small scene and one line —
+// "all clear" reads as good news, not as a hole.
+export function QuietCard({ scene, title, hint }: { scene: SceneKind; title: ReactNode; hint?: ReactNode }) {
+  return (
+    <div className="flex items-center gap-4 rounded-card border border-subtle bg-surface px-4 py-3">
+      <Scene kind={scene} />
+      <div className="flex min-w-0 flex-col">
+        <p className="font-medium text-fg">{title}</p>
+        {hint && <p className="text-pretty text-sm text-muted">{hint}</p>}
+      </div>
     </div>
   )
 }

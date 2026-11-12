@@ -100,6 +100,12 @@ export const en = {
     openTask: "Open the task"
   },
   home: {
+    allClear: "All clear here",
+    allClearHint: "No agent is waiting for you.",
+    nobodyWorking: "Nobody working right now",
+    nobodyWorkingHint: "Ask for something above and follow it here.",
+    todayQuiet: "A calm day so far",
+    todayQuietHint: "Nothing came in from your routines.",
     morning: "Good morning",
     afternoon: "Good afternoon",
     evening: "Good evening",

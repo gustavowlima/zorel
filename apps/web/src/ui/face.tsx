@@ -16,9 +16,11 @@ export function AgentFace({
   state = "idle",
   alive,
   solid = false,
+  eyes = "open",
   className
 }: {
   tone: number
+  eyes?: "open" | "happy" | "asleep" | undefined
   size?: number | undefined
   state?: FaceState | undefined
   alive?: boolean | undefined
@@ -35,7 +37,7 @@ export function AgentFace({
   } as CSSProperties
   const moving = alive ?? (state === "working" || state === "waiting")
   return (
-    <span aria-hidden="true" className={cn("z-face", className)} data-alive={moving || undefined} style={style}>
+    <span aria-hidden="true" className={cn("z-face", className)} data-alive={moving || undefined} data-eyes={eyes === "open" ? undefined : eyes} style={style}>
       <i className="z-eye" />
       <i className="z-eye" />
       {state === "working" && <Ring size={size} />}
@@ -106,6 +108,41 @@ export function EmptyOrbit({ icon, className }: { icon?: ReactNode; className?: 
           </span>
         ))}
       </span>
+    </span>
+  )
+}
+
+// Small friendly scenes (spec 018 illustrations): agent faces whose eyes tell the moment, plus one simple object.
+// Flat, the agents' hues and neutrals, a gentle float; still under reduced motion. Each fits a 56px-high slot.
+export type SceneKind = "allClear" | "resting" | "calmDay"
+export function Scene({ kind, className }: { kind: SceneKind; className?: string | undefined }) {
+  const box = cn("relative inline-flex h-14 w-24 shrink-0 items-end justify-center", className)
+  if (kind === "allClear")
+    return (
+      <span aria-hidden="true" className={box}>
+        <AgentFace tone={1} size={30} eyes="happy" solid className="z-float" />
+        <AgentFace tone={0} size={30} eyes="happy" solid className="z-float -ml-1 ring-2 ring-surface [animation-delay:400ms]" />
+        <span className="absolute top-0 left-1/2 flex size-4.5 -translate-x-1/2 items-center justify-center rounded-full bg-success text-on-agent">
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-3" fill="none" stroke="currentColor" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="m6 12 4 4 8-8" />
+          </svg>
+        </span>
+      </span>
+    )
+  if (kind === "resting")
+    return (
+      <span aria-hidden="true" className={box}>
+        <AgentFace tone={3} size={32} eyes="asleep" solid />
+        <span className="absolute top-1 right-4 text-xs font-semibold text-muted">
+          z<span className="text-[0.6rem]">z</span>
+        </span>
+      </span>
+    )
+  return (
+    <span aria-hidden="true" className={cn(box, "overflow-hidden")}>
+      <span className="absolute bottom-[-1.5rem] left-1/2 size-16 -translate-x-1/2 rounded-full ring-2 ring-warning/60 ring-inset" />
+      <AgentFace tone={5} size={30} eyes="happy" solid className="z-float relative mb-0.5" />
+      <span className="absolute inset-x-1 bottom-0 h-0.5 rounded-full bg-control-active" />
     </span>
   )
 }

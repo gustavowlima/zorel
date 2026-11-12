@@ -99,6 +99,12 @@ export const part1 = {
     openTask: "Abrir a tarefa"
   },
   home: {
+    allClear: "Tudo certo por aqui",
+    allClearHint: "Nenhum agente espera por você.",
+    nobodyWorking: "Ninguém trabalhando agora",
+    nobodyWorkingHint: "Peça algo acima e acompanhe por aqui.",
+    todayQuiet: "Dia tranquilo até agora",
+    todayQuietHint: "Nada chegou das suas rotinas.",
     morning: "Bom dia",
     afternoon: "Boa tarde",
     evening: "Boa noite",

@@ -14,7 +14,7 @@ import { agentOptions, callable, lastUsedAgent, projectCrew, teamsIn, toJoin } f
 import { Composer, type ComposerOption, type ComposerSources, SendError } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
 import { agentTint, agentTone, chatTitle, modelLabel, needsYou, statusLabel } from "../labels.ts"
-import { AgentAvatar, AlarmClock, Button, cn, Folder, ListRow, OrbitBackdrop, Rows, Section, Select, Users } from "@/ui"
+import { AgentAvatar, AlarmClock, Button, cn, Folder, ListRow, OrbitBackdrop, QuietCard, Rows, Section, Select, Users } from "@/ui"
 
 const DEFAULT_MODEL: ModelChoice = { model: "claude-cli/sonnet", accountId: null, effort: null }
 
@@ -155,9 +155,13 @@ export function HomeView({ projectId: initialProject }: { projectId?: string | u
           />
         </div>
       </div>
-      <div className="relative mt-12 flex w-full max-w-2xl flex-col gap-10">
-        <NeedsYouNow />
-        <WorkingNow />
+      {/* The day at a glance, as in the prototype: what needs you and who works on the left, today on the right
+          (stacked on a narrow window). Every section always shows; with nothing in it, it says so kindly. */}
+      <div className="relative mt-12 grid w-full max-w-5xl gap-8 lg:grid-cols-3">
+        <div className="flex min-w-0 flex-col gap-8 lg:col-span-2">
+          <NeedsYouNow />
+          <WorkingNow />
+        </div>
         <TodayBrief />
       </div>
     </div>
@@ -175,7 +179,12 @@ function greeting() {
 // The first two approvals and questions, decided right here; all of them in Needs you. Absent when nothing waits.
 function NeedsYouNow() {
   const approvals = needsYou(useList(approvalsAtom), useList(agentsAtom))
-  if (!approvals.length) return null
+  if (!approvals.length)
+    return (
+      <Section title={t("home.needsYou")}>
+        <QuietCard scene="allClear" title={t("home.allClear")} hint={t("home.allClearHint")} />
+      </Section>
+    )
   return (
     <Section
       title={`${t("home.needsYou")} · ${approvals.length}`}
@@ -202,7 +211,12 @@ function WorkingNow() {
   const chats = useList(chatsAtom)
   const agents = useList(agentsAtom)
   const live = Object.values(statuses).filter((s) => s.state === "running")
-  if (!live.length) return null
+  if (!live.length)
+    return (
+      <Section title={t("home.workingNow")}>
+        <QuietCard scene="resting" title={t("home.nobodyWorking")} hint={t("home.nobodyWorkingHint")} />
+      </Section>
+    )
   return (
     <Section title={t("home.workingNow")}>
       <Rows>
@@ -234,10 +248,10 @@ function TodayBrief() {
   if (!today) return null
   const found: ReadonlyArray<RoutineRun> = today.found
   const next = routines.filter((r) => r.enabled && r.nextRunAt).sort((a, b) => a.nextRunAt! - b.nextRunAt!)[0]
-  if (!found.length && !today.quiet && !next) return null
   return (
     <Section title={t("home.today")} description={t("home.todaySince", { time: formatTime(today.from) })}>
-      <Rows>
+      {!found.length && !today.quiet && <QuietCard scene="calmDay" title={t("home.todayQuiet")} hint={t("home.todayQuietHint")} />}
+      <Rows className={cn(!found.length && !today.quiet && !next && "hidden")}>
         {found.map((run) => {
           const r = routines.find((x) => x.id === run.routineId)
           const agent = agents.find((a) => a.id === r?.agentId)

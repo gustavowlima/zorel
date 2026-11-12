@@ -371,6 +371,9 @@ body {
 /* Face (ui/face.tsx): the agent's circle, two white pill eyes a touch above centre, and its state marks. */
 .z-face { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: var(--z-eye-gap); border-radius: 9999px; flex-shrink: 0; user-select: none; }
 .z-face > .z-eye { display: block; width: var(--z-eye-w); height: var(--z-eye-h); border-radius: 9999px; background: var(--z-eye); margin-top: calc(var(--z-eye-lift) * -1); }
+/* Expressions (illustrations): happy = two little arcs (^ ^), asleep = two short lines. */
+.z-face[data-eyes="happy"] > .z-eye { height: 11%; width: 22%; background: none; border: 2px solid var(--z-eye); border-bottom: 0; border-radius: 999px 999px 0 0; margin-top: -4%; }
+.z-face[data-eyes="asleep"] > .z-eye { height: 5%; width: 20%; margin-top: 4%; }
 /* Alive: the eyes glance left, back, right and blink in between, one eye a beat after the other. */
 .z-face[data-alive] > .z-eye { animation: z-eyes 7s cubic-bezier(0.5, 0, 0.3, 1) infinite; }
 .z-face[data-alive] > .z-eye + .z-eye { animation-delay: 60ms; }
@@ -391,6 +394,9 @@ body {
 .z-orb { position: relative; display: inline-block; flex-shrink: 0; border-radius: 9999px; }
 .z-orb .z-ring > i::after { width: 4px; height: 4px; margin: -1.25px 0 0 -2px; }
 @keyframes z-turn { to { transform: rotate(360deg); } }
+/* A scene's characters float gently. */
+.z-float { animation: z-float 3.2s ease-in-out infinite; }
+@keyframes z-float { 50% { transform: translateY(-3px); } }
 /* EmptyOrbit: the faces ride the ring once a minute; each seat turns back so its face stays upright. */
 .z-orbit-ride { animation: z-turn 60s linear infinite; }
 .z-orbit-seat { animation: z-turn 60s linear infinite reverse; }
@@ -401,7 +407,7 @@ body {
 .z-mark-failed { right: -2px; bottom: -2px; background: var(--z-danger); }
 @keyframes z-breathe { 50% { transform: scale(0.72); opacity: 0.55; } }
 @media (prefers-reduced-motion: reduce) {
-  .z-face[data-alive] > .z-eye, .z-ring > i, .z-mark-wait, .z-orbit-ride, .z-orbit-seat { animation: none; }
+  .z-face[data-alive] > .z-eye, .z-ring > i, .z-mark-wait, .z-orbit-ride, .z-orbit-seat, .z-float { animation: none; }
 }
 
 /* One icon stroke everywhere (spec 018): CSS wins over lucide's presentation attribute. */
