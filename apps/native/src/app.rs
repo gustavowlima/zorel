@@ -384,6 +384,8 @@ pub fn run() {
         rust_i18n::extend!(gpui_component);
         gpui_kit::init(cx);
         theme::install(cx);
+        #[cfg(feature = "hotreload")]
+        crate::hot::install(cx);
         crate::shell::menus::install(cx);
         let connection = cx.new(|cx| EngineConnection::new(target, cx));
         let tray = crate::shell::tray::install(cx);

@@ -6,7 +6,13 @@ publish = false
 edition.workspace = true
 license.workspace = true
 
+[features]
+# Development only: hot-patch function bodies with `dx serve --hot-patch --features hotreload` (Subsecond).
+hotreload = ["dep:subsecond", "dep:dioxus-devtools"]
+
 [dependencies]
+subsecond = { version = "=0.7.10", optional = true }
+dioxus-devtools = { version = "=0.7.10", optional = true }
 # Only gpui-base (unstyled behaviour): Zorel draws its own components. Pinned exactly; bump the whole gpui-pre family
 # together (apps/native/AGENTS.md › Release).
 gpui-kit = { version = "=0.9.1", default-features = false, features = ["component", "assets"] }

@@ -587,6 +587,12 @@ impl Home {
 
 impl Render for Home {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::hot::call(|| self.view(window, cx))
+    }
+}
+
+impl Home {
+    fn view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
         let p = theme::palette(window);
         let now = format::now_ms();
         let part = match format::hour(now) {

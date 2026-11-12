@@ -15,3 +15,5 @@ pub mod shell;
 pub mod state;
 pub mod theme;
 pub mod ui;
+
+pub mod hot;
