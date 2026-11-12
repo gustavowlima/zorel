@@ -59,11 +59,14 @@ struct Slot {
 
 impl Flip {
     /// Draws `rows` (keyed) as a column whose rows slide from their last place to their new one. `changed` redraws.
+    /// Only while `reordering` (a drag on, or just dropped): any other layout change (the sidebar opening, a section
+    /// appearing) moves rows instantly, so nothing looks reordered when it wasn't.
     pub fn list(
         &self,
         group: &str,
         rows: Vec<(String, AnyElement)>,
         gap: f32,
+        reordering: bool,
         changed: impl Fn(&mut App) + 'static,
     ) -> Div {
         let keys: Vec<String> = rows.iter().map(|(k, _)| format!("{group}/{k}")).collect();
@@ -101,6 +104,7 @@ impl Flip {
                 for (key, b) in measure.iter().zip(&bounds) {
                     let y = f32::from(b.origin.y) - top;
                     match slots.get_mut(key) {
+                        Some(slot) if !reordering => slot.y = y,
                         Some(slot) if (slot.y - y).abs() > 0.5 => {
                             *slot = Slot {
                                 y,

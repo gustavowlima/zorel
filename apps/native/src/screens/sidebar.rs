@@ -595,6 +595,12 @@ impl Sidebar {
                 );
             }
         }
+        // Rows slide only while reordering: a drag on, or an order just dropped.
+        let reordering = self.preview.is_some()
+            || self
+                .held
+                .values()
+                .any(|(_, at)| at.elapsed() < std::time::Duration::from_millis(motion::REORDER_MS + 200));
         let cx: &Context<Self> = cx; // from here on only listeners and reads
         let store_entity = self.store.clone();
         let store = store_entity.read(cx);
@@ -864,7 +870,7 @@ impl Sidebar {
                         let key = format!("project:{}", project.id);
                         let view = cx.entity().downgrade();
                         let height = heights.get(&key).copied().flatten();
-                        let chats_list = self.flip.list(&project.id, rows, space::X0_5, {
+                        let chats_list = self.flip.list(&project.id, rows, space::X0_5, reordering, {
                             let view = view.clone();
                             move |cx| {
                                 let _ = view.update(cx, |_, cx| cx.notify());
@@ -890,7 +896,7 @@ impl Sidebar {
                 let view = cx.entity().downgrade();
                 list.push(
                     self.flip
-                        .list("projects", blocks, space::X0_5, move |cx| {
+                        .list("projects", blocks, space::X0_5, reordering, move |cx| {
                             let _ = view.update(cx, |_, cx| cx.notify());
                         })
                         .into_any_element(),
@@ -953,7 +959,7 @@ impl Sidebar {
                 let view = cx.entity().downgrade();
                 list.push(
                     self.flip
-                        .list(LOOSE, rows, space::X0_5, move |cx| {
+                        .list(LOOSE, rows, space::X0_5, reordering, move |cx| {
                             let _ = view.update(cx, |_, cx| cx.notify());
                         })
                         .into_any_element(),
@@ -1061,7 +1067,7 @@ impl Sidebar {
             .map(|c| if folded { c.child(rail_search) } else { c.child(search) })
             .child({
                 let view = cx.entity().downgrade();
-                self.flip.list("places", places, space::X0_5, move |cx| {
+                self.flip.list("places", places, space::X0_5, reordering, move |cx| {
                     let _ = view.update(cx, |_, cx| cx.notify());
                 })
             })
