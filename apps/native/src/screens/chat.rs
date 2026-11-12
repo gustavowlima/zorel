@@ -64,6 +64,8 @@ const REVEAL_FRAMES: usize = 6;
 
 pub enum ChatEvent {
     Navigate(crate::route::Route),
+    /// Start a chat with an agent (the Builder's "made" list).
+    ChatWith(String),
 }
 
 impl EventEmitter<ChatEvent> for ChatScreen {}
@@ -74,6 +76,22 @@ enum Row {
     Message(usize),
     Live(String),
     Empty,
+    /// The Builder's chat: its intro before the first message, its proposal, the agents it made.
+    Intro,
+    Proposal,
+    Creating,
+    Created,
+}
+
+/// A chat with the Builder (spec 018): what was edited on its proposal before Create, and whether Create is on its way.
+#[derive(Default)]
+struct BuilderMode {
+    edits: Vec<crate::screens::proposal::Edit>,
+    editing: Option<usize>,
+    pickers: HashMap<usize, Entity<ModelPicker>>,
+    busy: bool,
+    /// The proposal these edits belong to (a new one starts from what the Builder proposed).
+    approval: Option<String>,
 }
 
 pub struct ChatScreen {
@@ -100,10 +118,186 @@ pub struct ChatScreen {
     /// Messages written while a reply runs: sent one at a time when the chat is idle.
     queue: Vec<Draft>,
     answers: HashMap<String, Entity<TextareaState>>,
+    /// Set when this is a conversation with the Builder.
+    builder: Option<BuilderMode>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl ChatScreen {
+    /// A conversation with the Builder: its intro, its proposal as a card, and what you write while a proposal is out
+    /// asks for a change (it declines the proposal with your words).
+    pub fn builder(mut self) -> Self {
+        self.builder = Some(BuilderMode::default());
+        self
+    }
+
+    /// The Builder's open proposal (an agent or a team to create).
+    fn proposal(&self) -> Option<&crate::net::types::Approval> {
+        self.builder.as_ref()?;
+        self.log.approvals.iter().rev().find(|a| a.tool == "zorel_create_agent")
+    }
+
+    fn drafts(&self) -> Vec<crate::net::types::ProposedAgent> {
+        match self.proposal().and_then(|a| a.proposal.clone()) {
+            Some(crate::net::types::ProposalOf::Create { agents }) => agents,
+            _ => Vec::new(),
+        }
+    }
+
+    /// Agents this conversation made (the server's clock on both sides).
+    fn made(&self, cx: &App) -> Vec<(crate::net::types::Agent, usize)> {
+        let store = self.store.read(cx);
+        let since = store.chat(&self.chat_id).map_or(f64::MAX, |c| c.created_at);
+        store
+            .agents
+            .iter()
+            .filter(|a| a.builtin.is_none() && a.archived_at.is_none() && a.created_at >= since)
+            .map(|a| (a.clone(), store.tone(Some(&a.id))))
+            .collect()
+    }
+
+    /// Create (approved, with what was edited) or Discard (denied).
+    fn decide_proposal(&mut self, approve: bool, cx: &mut Context<Self>) {
+        let Some(approval) = self.proposal().map(|a| a.id.clone()) else {
+            return;
+        };
+        let count = self.drafts().len();
+        let Some(mode) = &mut self.builder else { return };
+        mode.busy = true;
+        mode.editing = None;
+        let overrides: Vec<serde_json::Value> = (0..count)
+            .map(|i| {
+                let e = mode.edits.get(i).cloned().unwrap_or_default();
+                let mut o = json!({});
+                if let Some(m) = e.model {
+                    o["model"] = json!(m.model);
+                    o["accountId"] = json!(m.account_id);
+                    o["effort"] = json!(m.effort);
+                }
+                if let Some(a) = e.access {
+                    o["access"] = serde_json::to_value(a).unwrap_or_default();
+                }
+                o
+            })
+            .collect();
+        let mut payload = json!({ "approvalId": approval, "outcome": if approve { "approved" } else { "denied" } });
+        if approve {
+            payload["overrides"] = json!(overrides);
+        }
+        let (rpc, store) = (self.rpc.clone(), self.store.downgrade());
+        cx.spawn(async move |this, cx| {
+            let done =
+                runtime::spawn(async move { rpc.call::<serde_json::Value>("decide", Some(payload)).await }).await;
+            if !matches!(done, Ok(Ok(_))) {
+                let _ = this.update(cx, |this, cx| {
+                    if let Some(m) = &mut this.builder {
+                        m.busy = false;
+                    }
+                    cx.notify();
+                });
+            }
+            let _ = store.update(cx, |s, cx| s.load(cx)); // the new agents
+        })
+        .detach();
+        self.relayout(cx);
+        cx.notify();
+    }
+
+    fn proposal_row(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let drafts = self.drafts();
+        let approval = self.proposal().map(|a| a.id.clone());
+        let store = self.store.clone();
+        let Some(mode) = &mut self.builder else {
+            return div().into_any_element();
+        };
+        // A new proposal starts from what the Builder proposed.
+        if mode.approval != approval {
+            *mode = BuilderMode {
+                approval,
+                ..BuilderMode::default()
+            };
+        }
+        mode.edits.resize(drafts.len(), Default::default());
+        let editing = mode.editing;
+        let mut pickers: Vec<Option<AnyElement>> = Vec::new();
+        for (i, d) in drafts.iter().enumerate() {
+            if editing != Some(i) {
+                pickers.push(None);
+                continue;
+            }
+            let view = cx.entity().downgrade();
+            let picker = mode
+                .pickers
+                .entry(i)
+                .or_insert_with(|| {
+                    let on_change: crate::screens::model_picker::OnChange = Rc::new(move |choice, _, cx| {
+                        let _ = view.update(cx, |this, cx| {
+                            if let Some(m) = &mut this.builder
+                                && let Some(e) = m.edits.get_mut(i)
+                            {
+                                e.model = Some(choice);
+                            }
+                            cx.notify();
+                        });
+                    });
+                    cx.new(|cx| ModelPicker::new(store.clone(), false, on_change, window, cx))
+                })
+                .clone();
+            let value = mode.edits[i].model.clone().unwrap_or(ModelChoice {
+                model: d.model.clone(),
+                account_id: None,
+                effort: None,
+            });
+            picker.update(cx, |p, cx| p.set_value(value, cx));
+            pickers.push(Some(picker.into_any_element()));
+        }
+        let edits = mode.edits.clone();
+        let busy = mode.busy;
+        let first_tone = self.store.read(cx).agents.len();
+        let models = self.store.read(cx).models.clone();
+        let (create, discard, edit, access) = (
+            cx.entity().downgrade(),
+            cx.entity().downgrade(),
+            cx.entity().downgrade(),
+            cx.entity().downgrade(),
+        );
+        crate::screens::proposal::card(
+            crate::screens::proposal::Card {
+                drafts: &drafts,
+                edits: &edits,
+                editing,
+                pickers,
+                first_tone,
+                busy,
+                models: &models,
+                on_create: Rc::new(move |_, cx| {
+                    let _ = create.update(cx, |this, cx| this.decide_proposal(true, cx));
+                }),
+                on_discard: Rc::new(move |_, cx| {
+                    let _ = discard.update(cx, |this, cx| this.decide_proposal(false, cx));
+                }),
+                on_edit: Rc::new(move |i, _, cx| {
+                    let _ = edit.update(cx, |this, cx| {
+                        if let Some(m) = &mut this.builder {
+                            m.editing = if m.editing == Some(i) { None } else { Some(i) };
+                        }
+                        this.relayout_all(cx);
+                    });
+                }),
+                on_access: Rc::new(move |i, a, _, cx| {
+                    let _ = access.update(cx, |this, cx| {
+                        if let Some(m) = &mut this.builder
+                            && let Some(e) = m.edits.get_mut(i)
+                        {
+                            e.access = Some(a);
+                        }
+                        cx.notify();
+                    });
+                }),
+            },
+            window,
+        )
+    }
     pub fn new(chat_id: String, store: Entity<Store>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let rpc = store.read(cx).rpc.clone();
         let scroller = cx.new(|cx| MessageScrollerState::new(0, cx));
@@ -177,6 +371,7 @@ impl ChatScreen {
             model,
             queue: Vec::new(),
             answers: HashMap::new(),
+            builder: None,
             _subscriptions: subscriptions,
         }
     }
@@ -332,7 +527,20 @@ impl ChatScreen {
     fn rows(&self) -> Vec<Row> {
         let messages = (0..self.log.messages.len()).map(Row::Message);
         let live = self.log.turns.iter().map(|t| Row::Live(t.id.clone()));
-        let rows: Vec<Row> = messages.chain(live).collect();
+        let mut rows: Vec<Row> = messages.chain(live).collect();
+        if let Some(mode) = &self.builder {
+            if rows.is_empty() {
+                return vec![Row::Intro];
+            }
+            if self.proposal().is_some() {
+                rows.push(Row::Proposal);
+            } else if mode.busy {
+                rows.push(Row::Creating);
+            } else {
+                rows.push(Row::Created);
+            }
+            return rows;
+        }
         if rows.is_empty() { vec![Row::Empty] } else { rows }
     }
 
@@ -389,6 +597,13 @@ impl ChatScreen {
     }
 
     fn submit(&mut self, draft: Draft, window: &mut Window, cx: &mut Context<Self>) {
+        // With the Builder's proposal out, what you write asks for a change: the proposal is declined with your words
+        // (its turn waits on that decision; a plain message would queue behind it, unread).
+        if let Some(id) = self.proposal().map(|a| a.id.clone()) {
+            self.store
+                .update(cx, |s, cx| s.decide(id, "denied", Some(draft.text), cx));
+            return;
+        }
         if self.busy() || !self.queue.is_empty() {
             self.queue.push(draft); // sent when the chat is free
             cx.notify();
@@ -518,6 +733,49 @@ impl ChatScreen {
         };
         let (key, body) = match row {
             Row::Empty => ("empty".to_string(), self.empty(window)),
+            Row::Intro => {
+                let store = self.store.read(cx);
+                let builder = store
+                    .chat(&self.chat_id)
+                    .and_then(|c| c.agent_ids.first())
+                    .and_then(|id| store.agent(id))
+                    .cloned();
+                let tone = store.tone(builder.as_ref().map(|b| b.id.as_str()));
+                let view = cx.entity().downgrade();
+                let pick: crate::screens::proposal::Pick = Rc::new(move |text, window, cx| {
+                    let _ = view.update(cx, |this, cx| {
+                        this.submit(
+                            Draft {
+                                text,
+                                files: Vec::new(),
+                            },
+                            window,
+                            cx,
+                        )
+                    });
+                });
+                (
+                    "intro".to_string(),
+                    crate::screens::proposal::intro(builder.as_ref(), tone, pick, window),
+                )
+            }
+            Row::Proposal => ("proposal".to_string(), self.proposal_row(window, cx)),
+            Row::Creating => ("creating".to_string(), crate::screens::proposal::creating(window)),
+            Row::Created => {
+                let made = self.made(cx);
+                if made.is_empty() {
+                    ("created".to_string(), div().into_any_element())
+                } else {
+                    let view = cx.entity().downgrade();
+                    let open: crate::screens::proposal::Pick = Rc::new(move |id, _, cx| {
+                        let _ = view.update(cx, |_, cx| cx.emit(ChatEvent::ChatWith(id)));
+                    });
+                    (
+                        "created".to_string(),
+                        crate::screens::proposal::created(&made, open, window),
+                    )
+                }
+            }
             Row::Message(i) => {
                 let m = self.log.messages[i].clone();
                 let body = match m.role {
@@ -1054,7 +1312,14 @@ impl ChatScreen {
     /// What waits above the box: approvals and questions of this chat, the queue, and Stop while a reply runs.
     fn bottom(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let p = theme::palette(window);
-        let approvals = self.log.approvals.clone();
+        // The Builder's proposal is its card in the timeline, not a second card here.
+        let approvals: Vec<_> = self
+            .log
+            .approvals
+            .iter()
+            .filter(|a| self.builder.is_none() || a.tool != "zorel_create_agent")
+            .cloned()
+            .collect();
         let mut cards: Vec<AnyElement> = Vec::new();
         for a in &approvals {
             let answer = approval::is_question(a).then(|| {
@@ -1121,7 +1386,7 @@ impl ChatScreen {
                         )
                 }))
         });
-        let stop = self.busy().then(|| {
+        let stop = (self.busy() && self.proposal().is_none()).then(|| {
             motion::enter(
                 div().flex().justify_center().child(
                     Button::new("chat-stop", t!("composer.stop").into_owned())

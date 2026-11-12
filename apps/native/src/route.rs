@@ -10,6 +10,12 @@ pub enum Route {
     Chat {
         id: String,
     },
+    /// The agents: every one, by project.
+    Agents,
+    /// Build with AI: a conversation with the Builder, for a project or for every project.
+    Builder {
+        project_id: Option<String>,
+    },
 }
 
 impl Default for Route {

@@ -17,6 +17,8 @@ use crate::{
     net::types::{ChatStatus, Notice},
     route::Route,
     screens::{
+        agents::{Agents, AgentsEvent},
+        builder::Builder,
         chat::{ChatEvent, ChatScreen},
         home::{Home, HomeEvent},
         inbox::{Inbox, InboxEvent},
@@ -42,6 +44,9 @@ struct Root {
     chat: Option<(String, Entity<ChatScreen>)>,
     inbox: Option<Entity<Inbox>>,
     home: Option<Entity<Home>>,
+    agents: Option<Entity<Agents>>,
+    /// Build with AI: a fresh conversation with the Builder per visit.
+    builder: Option<Entity<Builder>>,
     sidebar: Option<Entity<Sidebar>>,
     notifier: Notifier,
     /// A clicked notification sends its chat id here.
@@ -88,6 +93,8 @@ impl Root {
             chat: None,
             inbox: None,
             home: None,
+            agents: None,
+            builder: None,
             sidebar: None,
             notifier: Notifier::default(),
             clicked,
@@ -163,9 +170,20 @@ impl Root {
             }
         })
         .detach();
-        self.store = Some(store);
+        self.store = Some(store.clone());
         self.inbox = Some(inbox);
         self.home = Some(home);
+        let agents = cx.new(|cx| Agents::new(store.clone(), cx));
+        cx.subscribe_in(
+            &agents,
+            window,
+            |this, _, event: &AgentsEvent, window, cx| match event {
+                AgentsEvent::Navigate(route) => this.navigate(route.clone(), window, cx),
+                AgentsEvent::ChatWith(id) => this.chat_with(id.clone(), window, cx),
+            },
+        )
+        .detach();
+        self.agents = Some(agents);
         self.sidebar = Some(sidebar);
         if let Route::Chat { id } = self.route.clone() {
             self.navigate(Route::Chat { id }, window, cx);
@@ -208,6 +226,20 @@ impl Root {
                     });
                 }
             }
+            Route::Agents => {}
+            // Each visit starts a fresh conversation with the Builder.
+            Route::Builder { project_id } => {
+                if let Some(store) = self.store.clone() {
+                    let project_id = project_id.clone();
+                    let builder = cx.new(|cx| Builder::new(store, project_id, window, cx));
+                    cx.subscribe_in(&builder, window, |this, _, event: &ChatEvent, window, cx| match event {
+                        ChatEvent::Navigate(route) => this.navigate(route.clone(), window, cx),
+                        ChatEvent::ChatWith(agent) => this.chat_with(agent.clone(), window, cx),
+                    })
+                    .detach();
+                    self.builder = Some(builder);
+                }
+            }
         }
         if let Some(sidebar) = &self.sidebar {
             let route = route.clone();
@@ -220,6 +252,18 @@ impl Root {
         cx.notify();
     }
 
+    /// A new chat with an agent: Home, in its project, with it answering.
+    fn chat_with(&mut self, agent: String, window: &mut Window, cx: &mut Context<Self>) {
+        let project_id = self
+            .store
+            .as_ref()
+            .and_then(|s| s.read(cx).agent(&agent).and_then(|a| a.project_id.clone()));
+        self.navigate(Route::Home { project_id }, window, cx);
+        if let Some(home) = &self.home {
+            home.update(cx, |home, cx| home.choose(agent, cx));
+        }
+    }
+
     fn open_chat(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
         if self.chat.as_ref().is_some_and(|(open, _)| *open == id) {
             return;
@@ -228,6 +272,7 @@ impl Root {
         let screen = cx.new(|cx| ChatScreen::new(id.clone(), store, window, cx));
         cx.subscribe_in(&screen, window, |this, _, event: &ChatEvent, window, cx| match event {
             ChatEvent::Navigate(route) => this.navigate(route.clone(), window, cx),
+            ChatEvent::ChatWith(agent) => this.chat_with(agent.clone(), window, cx),
         })
         .detach();
         self.chat = Some((id, screen));
@@ -297,6 +342,8 @@ impl Root {
                 .filter(|(open, _)| open == id)
                 .map(|(_, s)| s.clone().into_any_element()),
             Route::Home { .. } => self.home.clone().map(|h| h.into_any_element()),
+            Route::Agents => self.agents.clone().map(|a| a.into_any_element()),
+            Route::Builder { .. } => self.builder.clone().map(|b| b.into_any_element()),
         };
         // Folded, the rail is narrower than the traffic lights: the title starts after them.
         let folded = self.sidebar.as_ref().is_some_and(|s| s.read(cx).folded());
@@ -336,6 +383,10 @@ impl Root {
         match &self.route {
             Route::Home { .. } => Header::new(t!("nav.homeScreen").into_owned()),
             Route::Inbox => Header::new(t!("inbox.title").into_owned()),
+            Route::Agents => Header::new(t!("agents.title").into_owned()),
+            Route::Builder { .. } => {
+                Header::new(t!("builder.title").into_owned()).context(t!("builder.subtitle").into_owned())
+            }
             Route::Chat { id } => {
                 let chat = store.chat(id);
                 let project = chat

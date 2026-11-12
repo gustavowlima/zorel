@@ -660,7 +660,7 @@ impl Sidebar {
                 "nav-agents",
                 IconName::Bot,
                 t!("nav.agents").into_owned(),
-                None,
+                Some(Route::Agents),
                 cx,
             ),
         );

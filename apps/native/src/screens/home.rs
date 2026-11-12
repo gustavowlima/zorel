@@ -124,6 +124,15 @@ impl Home {
     }
 
     /// The route's project: picking another one forgets who was chosen and the model.
+    /// Start a chat with this agent: its project, it answers.
+    pub fn choose(&mut self, agent_id: String, cx: &mut Context<Self>) {
+        let project = self.store.read(cx).agent(&agent_id).and_then(|a| a.project_id.clone());
+        self.set_project(project, cx);
+        self.chosen = Some(agent_id);
+        self.picked = None;
+        cx.notify();
+    }
+
     pub fn set_project(&mut self, project_id: Option<String>, cx: &mut Context<Self>) {
         if self.project_id == project_id {
             return;
@@ -399,9 +408,10 @@ impl Home {
     fn needs_you(&mut self, p: &Palette, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let approvals = self.store.read(cx).needs_you();
         if approvals.is_empty() {
-            return section(
+            return layout::section(
                 p,
                 t!("home.needsYou").into_owned(),
+                None,
                 None,
                 quiet(p, "needs-quiet", "home.allClear", "home.allClearHint"),
             );
@@ -433,9 +443,10 @@ impl Home {
                 window,
             ));
         }
-        section(
+        layout::section(
             p,
             format!("{} · {}", t!("home.needsYou"), approvals.len()),
+            None,
             see_all,
             div().flex().flex_col().gap(px(space::X3)).children(cards),
         )
@@ -457,9 +468,10 @@ impl Home {
                 .total_cmp(&a.1.last_at.unwrap_or(a.1.created_at))
         });
         if live.is_empty() {
-            return section(
+            return layout::section(
                 p,
                 t!("home.workingNow").into_owned(),
+                None,
                 None,
                 quiet(p, "working-quiet", "home.nobodyWorking", "home.nobodyWorkingHint"),
             );
@@ -493,7 +505,13 @@ impl Home {
                 .into_any_element()
             })
             .collect();
-        section(p, t!("home.workingNow").into_owned(), None, rows_card(p).children(rows))
+        layout::section(
+            p,
+            t!("home.workingNow").into_owned(),
+            None,
+            None,
+            layout::rows(p).children(rows),
+        )
     }
 
     // What the routines brought since the day started, the quiet runs counted, and the next run.
@@ -563,7 +581,7 @@ impl Home {
         let body = if calm && rows.is_empty() {
             quiet(p, "today-quiet-face", "home.todayQuiet", "home.todayQuietHint")
         } else {
-            rows_card(p)
+            layout::rows(p)
                 .when(calm, |c| {
                     c.child(quiet_body(
                         p,
@@ -574,7 +592,13 @@ impl Home {
                 })
                 .children(rows)
         };
-        Some(section(p, t!("home.today").into_owned(), Some(since), body))
+        Some(layout::section(
+            p,
+            t!("home.today").into_owned(),
+            None,
+            Some(since),
+            body,
+        ))
     }
 }
 
@@ -664,29 +688,6 @@ impl Home {
                     ),
             )
     }
-}
-
-/// A titled block: the title (and an action on the right) above its body.
-fn section(p: &Palette, title: String, action: Option<AnyElement>, body: impl IntoElement) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(space::X2_5))
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .h(px(24.))
-                .child(div().font_weight(FontWeight::SEMIBOLD).text_color(p.text).child(title))
-                .children(action),
-        )
-        .child(body)
-}
-
-/// A card that holds rows (Working now).
-fn rows_card(p: &Palette) -> Div {
-    layout::card(p).flex().flex_col().gap(px(space::X0_5))
 }
 
 /// A section with nothing in it says so kindly: a resting face, the line and its hint.

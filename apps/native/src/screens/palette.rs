@@ -146,6 +146,12 @@ impl Palette {
                 Target::Go(Route::Home { project_id: None }),
             ),
             place("nav.needsYou", IconName::Inbox, Target::Go(Route::Inbox)),
+            place("nav.agents", IconName::Bot, Target::Go(Route::Agents)),
+            place(
+                "agents.withAi",
+                IconName::Sparkles,
+                Target::Go(Route::Builder { project_id: None }),
+            ),
             place(
                 "nav.newChat",
                 IconName::Plus,
