@@ -83,6 +83,10 @@ const f = (n: number) => {
   const r = Math.round(n * 10000) / 10000
   return Number.isInteger(r) ? `${r}.0` : String(r)
 }
+// What floats (menus, selects, popovers) is translucent on the web only because the browser blurs what is behind it.
+// GPUI has no backdrop blur, so the native client gets these opaque: text behind a menu must never show through.
+const OPAQUE = new Set(["--z-bg-float"])
+const solid = (n: string, [r, g, b, a]: Rgba): Rgba => (OPAQUE.has(n) ? [r, g, b, 1] : [r, g, b, a])
 const rgbaRs = ([r, g, b, a]: Rgba) => `Rgba { r: ${f(r)}, g: ${f(g)}, b: ${f(b)}, a: ${f(a)} }`
 
 const colours = names.filter((n) => resolve(n, dark).kind === "color")
@@ -101,11 +105,11 @@ ${colours.map((n) => `    pub ${field(n)}: Rgba,`).join("\n")}
 }
 
 pub const DARK: Palette = Palette {
-${colours.map((n) => `    ${field(n)}: ${rgbaRs((resolve(n, dark) as { rgba: Rgba }).rgba)},`).join("\n")}
+${colours.map((n) => `    ${field(n)}: ${rgbaRs(solid(n, (resolve(n, dark) as { rgba: Rgba }).rgba))},`).join("\n")}
 };
 
 pub const LIGHT: Palette = Palette {
-${colours.map((n) => `    ${field(n)}: ${rgbaRs((resolve(n, light) as { rgba: Rgba }).rgba)},`).join("\n")}
+${colours.map((n) => `    ${field(n)}: ${rgbaRs(solid(n, (resolve(n, light) as { rgba: Rgba }).rgba))},`).join("\n")}
 };
 
 ${scalars
@@ -130,7 +134,7 @@ const ROLE: Record<string, string> = {
   "link.foreground": "link", "link.active.foreground": "link-hover", "link.hover.foreground": "link-hover",
   "list.background": "bg-canvas", "list.active.background": "bg-control-active", "list.active.border": "accent-line",
   "list.even.background": "bg-canvas", "list.head.background": "bg-surface", "list.hover.background": "bg-hover",
-  "muted.background": "bg-control", "muted.foreground": "text-muted", "popover.background": "bg-raised", "popover.foreground": "text",
+  "muted.background": "bg-control", "muted.foreground": "text-muted", "popover.background": "bg-float", "popover.foreground": "text",
   "primary.background": "accent", "primary.active.background": "accent-hover", "primary.foreground": "on-accent", "primary.hover.background": "accent-hover",
   "progress_bar.background": "accent", "scrollbar.background": "bg-canvas", "scrollbar.thumb.background": "border-strong",
   "scrollbar.thumb.hover.background": "text-dim", "secondary.background": "bg-control", "secondary.active.background": "bg-control-active",
@@ -158,7 +162,7 @@ const themeOf = (mode: "light" | "dark", vars: Map<string, string>) => ({
   "mono_font.family": "Menlo",
   radius: px("--z-radius-control"),
   "radius.lg": px("--z-radius-card"),
-  colors: Object.fromEntries(Object.entries(ROLE).map(([key, role]) => [key, hex8(color(`var(--z-${role})`, vars, []))]))
+  colors: Object.fromEntries(Object.entries(ROLE).map(([key, role]) => [key, hex8(solid(`--z-${role}`, color(`var(--z-${role})`, vars, [])))]))
 })
 const theme = `${JSON.stringify({ name: "Zorel", author: "Zorel", themes: [themeOf("light", light), themeOf("dark", dark)] }, null, 2)}\n`
 const themeCurrent = (() => {

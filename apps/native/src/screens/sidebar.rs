@@ -13,15 +13,13 @@ use std::{
 use gpui_kit::{
     assets::IconName,
     base::{Spring, spring},
-    component::{
-        Icon, Sizable as _,
-        button::{Button, ButtonVariants as _},
-        spinner::Spinner,
-    },
+    component::{Icon, Sizable as _, spinner::Spinner},
     prelude::FluentBuilder,
     *,
 };
 use rust_i18n::t;
+
+use crate::ui::button::{Button, Size};
 
 use crate::{
     format,
@@ -322,9 +320,9 @@ impl Sidebar {
     fn section(
         &self,
         key: &'static str,
-        label: String,
-        waiting: usize,
+        (label, waiting): (String, usize),
         add: Option<AnyElement>,
+        turn: Pixels,
         window: &Window,
         cx: &Context<Self>,
     ) -> AnyElement {
@@ -333,12 +331,11 @@ impl Sidebar {
         div()
             .id(SharedString::from(format!("section-{key}")))
             .flex()
-            .items_end()
-            .gap(px(6.))
-            .h(px(28.))
+            .items_center()
+            .gap(px(2.))
+            .h(px(tokens::CONTROL_H))
             .pl(px(10.))
-            .pr(px(6.))
-            .pb(px(6.))
+            .pr(px(4.))
             .mt(px(8.))
             .text_size(px(11.5))
             .font_weight(FontWeight::MEDIUM)
@@ -347,16 +344,26 @@ impl Sidebar {
             .on_click(cx.listener(move |this, _, _, cx| this.toggle_section(key, cx)))
             .child(div().flex_1().child(label))
             .when(closed && waiting > 0, |r| {
-                r.child(div().text_color(p.warning).child(tn("nav.waitingIn", waiting as i64)))
+                r.child(
+                    div()
+                        .mr(px(4.))
+                        .text_color(p.warning)
+                        .child(tn("nav.waitingIn", waiting as i64)),
+                )
             })
             .child(
-                Icon::new(if closed {
-                    IconName::ChevronRight
-                } else {
-                    IconName::ChevronDown
-                })
-                .xsmall()
-                .text_color(p.text_dim),
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .size(px(tokens::CONTROL_H_XS))
+                    .child(
+                        Icon::new(IconName::ChevronDown)
+                            .size(px(14.))
+                            .text_color(p.text_dim)
+                            .rotate(radians(f32::from(turn).to_radians())),
+                    ),
             )
             .when_some(add, |r, a| r.child(a))
             .into_any_element()
@@ -374,6 +381,18 @@ impl Render for Sidebar {
             window,
             cx,
         );
+        // Each section's chevron turns on a spring (down = open).
+        let mut turn = |key: &'static str| {
+            let closed = self.prefs.collapsed_sections.contains(key);
+            spring(
+                SharedString::from(format!("section-turn-{key}")),
+                px(if closed { -90. } else { 0. }),
+                Spring::new(std::time::Duration::from_millis(200)).with_damping(1.),
+                window,
+                cx,
+            )
+        };
+        let (projects_turn, loose_turn) = (turn("projects"), turn(LOOSE));
         let cx: &Context<Self> = cx; // from here on only listeners and reads
         let store_entity = self.store.clone();
         let store = store_entity.read(cx);
@@ -473,18 +492,15 @@ impl Render for Sidebar {
                 })
                 .sum();
             let view = cx.entity();
-            let add_project = Button::new("new-project")
-                .ghost()
-                .xsmall()
-                .icon(IconName::Plus)
-                .tooltip(t!("nav.newProject").into_owned())
+            let add_project = Button::icon_only("new-project", IconName::Plus, t!("nav.newProject").into_owned())
+                .size(Size::Xs)
                 .on_click(move |_, window, cx| Self::new_project(&view, window, cx))
                 .into_any_element();
             list.push(self.section(
                 "projects",
-                t!("nav.projects").into_owned(),
-                projects_waiting,
+                (t!("nav.projects").into_owned(), projects_waiting),
                 Some(add_project),
+                projects_turn,
                 window,
                 cx,
             ));
@@ -573,19 +589,22 @@ impl Render for Sidebar {
                                 .flex()
                                 .items_center()
                                 .child(
-                                    Button::new(SharedString::from(format!("new-in-{}", project.id)))
-                                        .ghost()
-                                        .xsmall()
-                                        .icon(IconName::Plus)
-                                        .tooltip(t!("nav.newChatIn", name = project.name).into_owned())
-                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                    Button::icon_only(
+                                        SharedString::from(format!("new-in-{}", project.id)),
+                                        IconName::Plus,
+                                        t!("nav.newChatIn", name = project.name).into_owned(),
+                                    )
+                                    .size(Size::Xs)
+                                    .on_click(cx.listener(
+                                        move |this, _, _, cx| {
                                             this.go(
                                                 Route::Home {
                                                     project_id: Some(new_in.clone()),
                                                 },
                                                 cx,
                                             )
-                                        })),
+                                        },
+                                    )),
                                 )
                                 .child(more),
                         )
@@ -639,18 +658,15 @@ impl Render for Sidebar {
                 .iter()
                 .filter(|c| statuses.get(&c.id).is_some_and(|s| s.state == ChatStatusState::Waiting))
                 .count();
-            let add = Button::new("new-chat")
-                .ghost()
-                .xsmall()
-                .icon(IconName::Plus)
-                .tooltip(t!("nav.newChat").into_owned())
+            let add = Button::icon_only("new-chat", IconName::Plus, t!("nav.newChat").into_owned())
+                .size(Size::Xs)
                 .on_click(cx.listener(|this, _, _, cx| this.go(Route::Home { project_id: None }, cx)))
                 .into_any_element();
             list.push(self.section(
                 LOOSE,
-                t!("nav.chats").into_owned(),
-                loose_waiting,
+                (t!("nav.chats").into_owned(), loose_waiting),
                 Some(add),
+                loose_turn,
                 window,
                 cx,
             ));
@@ -681,20 +697,21 @@ impl Render for Sidebar {
             }
         }
 
-        let fold = Button::new("fold")
-            .ghost()
-            .small()
-            .icon(if folded {
+        let fold = Button::icon_only(
+            "fold",
+            if folded {
                 IconName::PanelLeftOpen
             } else {
                 IconName::PanelLeftClose
-            })
-            .tooltip(if folded {
+            },
+            if folded {
                 t!("nav.showSidebar").into_owned()
             } else {
                 t!("nav.hideSidebar").into_owned()
-            })
-            .on_click(cx.listener(|this, _, _, cx| this.toggle_folded(cx)));
+            },
+        )
+        .size(Size::Sm)
+        .on_click(cx.listener(|this, _, _, cx| this.toggle_folded(cx)));
         let search = div()
             .id("search")
             .cursor_pointer()
@@ -827,10 +844,12 @@ mod tests {
 
 /// The ⋯ button that opens a row's menu (same items as its right-click).
 fn more_button(id: String, name: String, menu: crate::ui::nav::MenuBuilder) -> impl IntoElement {
-    use gpui_kit::component::menu::DropdownMenu as _;
-    Button::new(SharedString::from(id))
+    // The kit's dropdown needs its own Button as the trigger: sized here to the scale (24, radius 8) like ours.
+    use gpui_kit::component::{Sizable as _, button::ButtonVariants as _, menu::DropdownMenu as _};
+    gpui_kit::component::button::Button::new(SharedString::from(id))
         .ghost()
-        .xsmall()
+        .with_size(px(tokens::CONTROL_H_XS))
+        .rounded(px(tokens::RADIUS_CONTROL_SM))
         .icon(IconName::Ellipsis)
         .tooltip(t!("nav.moreFor", name = name).into_owned())
         .dropdown_menu(move |m, window, cx| menu(m, window, cx))

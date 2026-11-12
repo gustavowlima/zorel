@@ -198,7 +198,7 @@ impl Root {
                 if let Some(home) = &self.home {
                     let project_id = project_id.clone();
                     home.update(cx, |home, cx| {
-                        home.set_project(project_id, window, cx);
+                        home.set_project(project_id, cx);
                         home.refresh(cx);
                     });
                 }

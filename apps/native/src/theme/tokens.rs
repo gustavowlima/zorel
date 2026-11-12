@@ -329,7 +329,7 @@ pub const DARK: Palette = Palette {
         r: 0.1255,
         g: 0.1333,
         b: 0.1608,
-        a: 0.86,
+        a: 1.0,
     },
     overlay: Rgba {
         r: 0.0,
@@ -650,7 +650,7 @@ pub const LIGHT: Palette = Palette {
         r: 1.0,
         g: 1.0,
         b: 1.0,
-        a: 0.86,
+        a: 1.0,
     },
     overlay: Rgba {
         r: 0.0,

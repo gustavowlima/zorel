@@ -5,3 +5,4 @@ pub mod layout;
 pub mod markdown;
 pub mod motion;
 pub mod nav;
+pub mod select;

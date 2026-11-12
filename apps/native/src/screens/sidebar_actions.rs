@@ -8,13 +8,14 @@ use std::rc::Rc;
 use gpui_kit::{
     component::{
         WindowExt as _,
-        button::{Button, ButtonVariants as _},
         input::{Input, InputState},
         menu::{PopupMenu, PopupMenuItem},
     },
     *,
 };
 use rust_i18n::t;
+
+use crate::ui::button::{Button, Variant};
 use serde_json::json;
 
 use crate::{
@@ -92,14 +93,12 @@ impl Sidebar {
                         .justify_end()
                         .gap(px(8.))
                         .child(
-                            Button::new("cancel")
-                                .label(t!("common.cancel").into_owned())
+                            Button::new("cancel", t!("common.cancel").into_owned())
                                 .on_click(|_, window, cx| window.close_dialog(cx)),
                         )
                         .child(
-                            Button::new("save")
-                                .primary()
-                                .label(t!("common.save").into_owned())
+                            Button::new("save", t!("common.save").into_owned())
+                                .variant(Variant::Primary)
                                 .on_click(move |_, window, cx| {
                                     let title: String =
                                         save_input.read(cx).value().trim().chars().take(TITLE_MAX).collect();
@@ -141,14 +140,12 @@ impl Sidebar {
                         .justify_end()
                         .gap(px(8.))
                         .child(
-                            Button::new("cancel")
-                                .label(t!("common.cancel").into_owned())
+                            Button::new("cancel", t!("common.cancel").into_owned())
                                 .on_click(|_, window, cx| window.close_dialog(cx)),
                         )
                         .child(
-                            Button::new("delete")
-                                .danger()
-                                .label(t!("common.delete").into_owned())
+                            Button::new("delete", t!("common.delete").into_owned())
+                                .variant(Variant::Destructive)
                                 .on_click(move |_, window, cx| {
                                     window.close_dialog(cx);
                                     let open = view.read(cx).route == (Route::Chat { id: id.clone() });
@@ -175,14 +172,12 @@ impl Sidebar {
                         .justify_end()
                         .gap(px(8.))
                         .child(
-                            Button::new("cancel")
-                                .label(t!("common.cancel").into_owned())
+                            Button::new("cancel", t!("common.cancel").into_owned())
                                 .on_click(|_, window, cx| window.close_dialog(cx)),
                         )
                         .child(
-                            Button::new("delete")
-                                .danger()
-                                .label(t!("project.deleteAction").into_owned())
+                            Button::new("delete", t!("project.deleteAction").into_owned())
+                                .variant(Variant::Destructive)
                                 .on_click(move |_, window, cx| {
                                     window.close_dialog(cx);
                                     let inside = view.read(cx).route
@@ -217,14 +212,12 @@ impl Sidebar {
                         .justify_end()
                         .gap(px(8.))
                         .child(
-                            Button::new("cancel")
-                                .label(t!("common.cancel").into_owned())
+                            Button::new("cancel", t!("common.cancel").into_owned())
                                 .on_click(|_, window, cx| window.close_dialog(cx)),
                         )
                         .child(
-                            Button::new("add")
-                                .primary()
-                                .label(t!("project.add").into_owned())
+                            Button::new("add", t!("project.add").into_owned())
+                                .variant(Variant::Primary)
                                 .on_click(move |_, window, cx| {
                                     let name = name_input.read(cx).value().trim().to_string();
                                     if name.is_empty() {

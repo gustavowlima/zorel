@@ -8,14 +8,13 @@ use std::{path::PathBuf, rc::Rc};
 use gpui_kit::{
     assets::IconName,
     base::input::{InputEvent, Textarea, TextareaState},
-    component::{
-        Disableable as _, Icon, Sizable as _,
-        button::{Button, ButtonRounded, ButtonVariants as _},
-    },
+    component::{Icon, Sizable as _},
     prelude::FluentBuilder,
     *,
 };
 use rust_i18n::t;
+
+use crate::ui::button::{Button, Size, Variant};
 
 use crate::theme::{self, tokens};
 
@@ -162,15 +161,16 @@ impl Render for Composer {
                     .child(Icon::new(IconName::File).xsmall())
                     .child(div().max_w(px(180.)).truncate().child(name.clone()))
                     .child(
-                        Button::new(SharedString::from(format!("remove-file-{i}")))
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::Close)
-                            .tooltip(t!("composer.removeFile", name = name).into_owned())
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.files.remove(i);
-                                cx.notify();
-                            })),
+                        Button::icon_only(
+                            SharedString::from(format!("remove-file-{i}")),
+                            IconName::Close,
+                            t!("composer.removeFile", name = name).into_owned(),
+                        )
+                        .size(Size::Xs)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.files.remove(i);
+                            cx.notify();
+                        })),
                     )
                     .into_any_element()
             })
@@ -216,20 +216,15 @@ impl Render for Composer {
                             .gap(px(4.))
                             .p(px(6.))
                             .child(
-                                Button::new("attach")
-                                    .ghost()
-                                    .icon(IconName::Plus)
-                                    .tooltip(t!("composer.attach").into_owned())
+                                Button::icon_only("attach", IconName::Plus, t!("composer.attach").into_owned())
                                     .on_click(cx.listener(|this, _, _, cx| this.attach(cx))),
                             )
                             .child(div().flex_1())
                             .when_some(tools, |r, t| r.child(t))
                             .child(
-                                Button::new("send")
-                                    .primary()
-                                    .icon(IconName::ArrowUp)
-                                    .rounded(ButtonRounded::Size(px(999.))) // Send is round: the action that gives life (prototype)
-                                    .tooltip(t!("composer.send").into_owned())
+                                Button::icon_only("send", IconName::ArrowUp, t!("composer.send").into_owned())
+                                    .variant(Variant::Primary)
+                                    .round()
                                     .disabled(!can_send)
                                     .on_click(cx.listener(|this, _, window, cx| this.submit(window, cx))),
                             ),

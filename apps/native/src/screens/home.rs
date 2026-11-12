@@ -7,16 +7,13 @@ use std::{collections::HashMap, path::Path, rc::Rc};
 use gpui_kit::{
     assets::IconName,
     base::input::TextareaState,
-    component::{
-        Icon, Sizable as _,
-        button::{Button, ButtonVariants as _},
-        searchable_list::{SearchableListItem, SearchableVec},
-        select::{Select, SelectEvent, SelectState},
-    },
+    component::{Icon, Sizable as _},
     prelude::FluentBuilder,
     *,
 };
 use rust_i18n::t;
+
+use crate::ui::button::{Button, Size, Variant};
 use serde_json::json;
 
 use crate::{
@@ -35,11 +32,15 @@ use crate::{
         crew::{self, CHAT_MEMBERS_MAX},
         store::{StatusChanged, Store},
     },
-    theme::{self, tokens::Palette},
+    theme::{
+        self,
+        tokens::{self, Palette},
+    },
     ui::{
         face::{self, AgentFace, FaceState, WorkingRing},
         layout,
         nav::NavRow,
+        select::{Mark, OnPick, Select, SelectOption},
     },
 };
 
@@ -48,63 +49,6 @@ pub enum HomeEvent {
 }
 
 impl EventEmitter<HomeEvent> for Home {}
-
-/// An option of the project and "who answers" selects: an id, its name, a face when it is an agent.
-#[derive(Clone, PartialEq)]
-struct Choice {
-    id: String,
-    title: SharedString,
-    tone: Option<usize>,
-    /// The project select's trigger shows the folder before the name.
-    folder: bool,
-}
-
-impl Choice {
-    fn row(&self, key: &str) -> Div {
-        div()
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .min_w_0()
-            .when_some(self.tone, |d, tone| {
-                d.child(AgentFace::new(SharedString::from(format!("{key}-{}", self.id)), tone).size(16.))
-            })
-            .child(div().truncate().child(self.title.clone()))
-    }
-}
-
-impl SearchableListItem for Choice {
-    type Value = String;
-
-    fn title(&self) -> SharedString {
-        self.title.clone()
-    }
-
-    fn display_title(&self) -> Option<AnyElement> {
-        let row = self.row("pick-face");
-        Some(if self.folder {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .child(Icon::new(IconName::Folder).small())
-                .child(row)
-                .into_any_element()
-        } else {
-            row.into_any_element()
-        })
-    }
-
-    fn render(&self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        self.row("option-face")
-    }
-
-    fn value(&self) -> &String {
-        &self.id
-    }
-}
-
-type Picker = Entity<SelectState<SearchableVec<Choice>>>;
 
 pub struct Home {
     store: Entity<Store>,
@@ -116,11 +60,6 @@ pub struct Home {
     /// The chat a draft created when sending failed after it: the next try reuses it.
     draft_chat: Option<String>,
     composer: Entity<Composer>,
-    /// The project select (rebuilt when the projects change: it searches past 8).
-    projects: Option<(Picker, Subscription)>,
-    project_choices: Vec<Choice>,
-    agents: Option<(Picker, Subscription)>,
-    agent_choices: Vec<Choice>,
     today: Option<Today>,
     /// An answer box per open question shown here.
     answers: HashMap<String, Entity<TextareaState>>,
@@ -137,7 +76,7 @@ impl Home {
             Composer::new(t!("home.placeholder").into_owned(), true, on_submit, window, cx)
         });
         let subscriptions = vec![
-            cx.observe_in(&store, window, |this, _, window, cx| this.sync_pickers(window, cx)),
+            cx.observe(&store, |_, _, cx| cx.notify()),
             // Who is working comes and goes with statuses; a run that finishes may bring something for Today.
             cx.subscribe(&store, |this, _, _: &StatusChanged, cx| this.refresh(cx)),
         ];
@@ -149,21 +88,16 @@ impl Home {
             picked: None,
             draft_chat: None,
             composer,
-            projects: None,
-            project_choices: Vec::new(),
-            agents: None,
-            agent_choices: Vec::new(),
             today: None,
             answers: HashMap::new(),
             _subscriptions: subscriptions,
         };
-        home.sync_pickers(window, cx);
         home.refresh(cx);
         home
     }
 
     /// The route's project: picking another one forgets who was chosen and the model.
-    pub fn set_project(&mut self, project_id: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn set_project(&mut self, project_id: Option<String>, cx: &mut Context<Self>) {
         if self.project_id == project_id {
             return;
         }
@@ -171,7 +105,6 @@ impl Home {
         self.chosen = None;
         self.picked = None;
         self.draft_chat = None;
-        self.sync_pickers(window, cx);
         cx.notify();
     }
 
@@ -191,60 +124,6 @@ impl Home {
             }
         })
         .detach();
-    }
-
-    // The selects follow the Store (projects and agents come and go) and the project (who can be called here).
-    fn sync_pickers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let store = self.store.read(cx);
-        let projects: Vec<Choice> = std::iter::once(Choice {
-            id: String::new(),
-            title: t!("home.noProject").into_owned().into(),
-            tone: None,
-            folder: true,
-        })
-        .chain(store.projects.iter().map(|p| Choice {
-            id: p.id.clone(),
-            title: p.name.clone().into(),
-            tone: None,
-            folder: true,
-        }))
-        .collect();
-        let agents: Vec<Choice> = crew::callable(&store.agents, self.project_id.as_deref())
-            .into_iter()
-            .map(|a| Choice {
-                id: a.id.clone(),
-                title: a.name.clone().into(),
-                tone: Some(store.tone(Some(&a.id))),
-                folder: false,
-            })
-            .collect();
-        let single = self.single(store).map(|a| a.id.clone()).unwrap_or_default();
-        let project = self.project_id.clone().unwrap_or_default();
-        if projects != self.project_choices || self.projects.is_none() {
-            let state = picker(projects.clone(), window, cx);
-            let sub = cx.subscribe_in(&state, window, |this, _, SelectEvent::Confirm(v), window, cx| {
-                let id = v.clone().filter(|id| !id.is_empty());
-                this.set_project(id, window, cx);
-            });
-            self.projects = Some((state, sub));
-            self.project_choices = projects;
-        }
-        if agents != self.agent_choices || self.agents.is_none() {
-            let state = picker(agents.clone(), window, cx);
-            let sub = cx.subscribe_in(&state, window, |this, _, SelectEvent::Confirm(v), _, cx| {
-                this.chosen = v.clone();
-                this.picked = None;
-                cx.notify();
-            });
-            self.agents = Some((state, sub));
-            self.agent_choices = agents;
-        }
-        for (state, value) in [(&self.projects, project), (&self.agents, single)] {
-            if let Some((state, _)) = state {
-                state.update(cx, |s, cx| s.set_selected_value(&value, window, cx));
-            }
-        }
-        cx.notify();
     }
 
     /// The agents that can be called here.
@@ -425,20 +304,54 @@ impl Home {
     // Where the chat lives and who answers: the project select, then the crew's faces or the "who answers" select.
     fn scope_row(&self, p: &Palette, cx: &mut Context<Self>) -> Div {
         let store = self.store.read(cx);
+        let projects = std::iter::once(SelectOption {
+            id: String::new(),
+            label: t!("home.noProject").into_owned().into(),
+            mark: Mark::None,
+        })
+        .chain(store.projects.iter().map(|p| SelectOption {
+            id: p.id.clone(),
+            label: p.name.clone().into(),
+            mark: Mark::None,
+        }))
+        .collect();
+        let view = cx.entity().downgrade();
+        let pick: OnPick = Rc::new(move |id, _, cx| {
+            let id = (!id.is_empty()).then(|| id.to_string());
+            let _ = view.update(cx, |this, cx| this.set_project(id, cx));
+        });
+        let project = Select::new(
+            "project",
+            t!("home.project").into_owned(),
+            projects,
+            self.project_id.clone().unwrap_or_default(),
+            pick,
+        )
+        .prefix(IconName::Folder);
         let crew = self.crew(store);
         let who: AnyElement = match crew.as_slice() {
             [] if self.single(store).is_none() => div().into_any_element(),
-            [] => fit(
-                self.single(store).map(|a| a.name.as_str()).unwrap_or_default(),
-                24.,
-                Select::new(&self.agents.as_ref().expect("built in new").0)
-                    .appearance(false)
-                    .small()
-                    .menu_width(px(240.))
-                    .accessibility_label(t!("home.whoAnswers").into_owned())
-                    .search_placeholder(t!("home.searchAgents").into_owned()),
-            )
-            .into_any_element(),
+            [] => {
+                let options = self
+                    .callable(store)
+                    .iter()
+                    .map(|a| SelectOption {
+                        id: a.id.clone(),
+                        label: a.name.clone().into(),
+                        mark: Mark::Face(store.tone(Some(&a.id))),
+                    })
+                    .collect();
+                let view = cx.entity().downgrade();
+                let pick: OnPick = Rc::new(move |id, _, cx| {
+                    let _ = view.update(cx, |this, cx| {
+                        this.chosen = Some(id.to_string());
+                        this.picked = None;
+                        cx.notify();
+                    });
+                });
+                let single = self.single(store).map(|a| a.id.clone()).unwrap_or_default();
+                Select::new("who-answers", t!("home.whoAnswers").into_owned(), options, single, pick).into_any_element()
+            }
             crew => {
                 let one = crew.len() == 1;
                 let tone = store.tone(Some(&crew[0].id));
@@ -452,7 +365,7 @@ impl Home {
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .h(px(26.))
+                    .h(px(tokens::CONTROL_H_SM))
                     .px(px(4.))
                     .pr(px(10.))
                     .rounded_full()
@@ -476,26 +389,7 @@ impl Home {
                     .into_any_element()
             }
         };
-        div()
-            .flex()
-            .items_center()
-            .gap(px(4.))
-            .child(fit(
-                &self
-                    .project_choices
-                    .iter()
-                    .find(|c| c.id == self.project_id.clone().unwrap_or_default())
-                    .map(|c| c.title.to_string())
-                    .unwrap_or_default(),
-                22.,
-                Select::new(&self.projects.as_ref().expect("built in new").0)
-                    .appearance(false)
-                    .small()
-                    .menu_width(px(240.))
-                    .accessibility_label(t!("home.project").into_owned())
-                    .search_placeholder(t!("home.searchProjects").into_owned()),
-            ))
-            .child(who)
+        div().flex().items_center().gap(px(4.)).child(project).child(who)
     }
 
     // The first two approvals and questions, decided here; all of them in Needs you.
@@ -510,10 +404,9 @@ impl Home {
             );
         }
         let see_all = (approvals.len() > 2).then(|| {
-            Button::new("see-all")
-                .ghost()
-                .small()
-                .label(t!("home.seeAll").into_owned())
+            Button::new("see-all", t!("home.seeAll").into_owned())
+                .variant(Variant::Ghost)
+                .size(Size::Sm)
                 .on_click(cx.listener(|this, _, _, cx| this.go(Route::Inbox, cx)))
                 .into_any_element()
         });
@@ -810,13 +703,6 @@ impl Render for Home {
     }
 }
 
-/// The kit's select fills its parent: a ghost one sits in a box about as wide as what it shows (up to 256).
-// ponytail: the width is estimated from the characters; measure with the text system if names look clipped.
-fn fit(title: &str, lead: f32, select: impl IntoElement) -> Div {
-    let width = (title.chars().count() as f32 * 7.6 + lead + 40.).min(256.);
-    div().flex_none().w(px(width)).child(select)
-}
-
 /// A titled block: the title (and an action on the right) above its body.
 fn section(p: &Palette, title: String, action: Option<AnyElement>, body: impl IntoElement) -> Div {
     div()
@@ -838,12 +724,6 @@ fn section(p: &Palette, title: String, action: Option<AnyElement>, body: impl In
 /// A card that holds rows (Working now).
 fn rows_card(p: &Palette) -> Div {
     layout::card(p).flex().flex_col().gap(px(2.))
-}
-
-/// A select's state over these options; it searches when there are more than 8.
-fn picker(items: Vec<Choice>, window: &mut Window, cx: &mut App) -> Picker {
-    let searchable = items.len() > 8;
-    cx.new(|cx| SelectState::new(SearchableVec::new(items), None, window, cx).searchable(searchable))
 }
 
 /// A section with nothing in it says so kindly: a resting face, the line and its hint.

@@ -2,17 +2,13 @@
 // account most at risk marked on the icon), Pause / Resume all agents, Settings. Folded, the same in a column.
 // ponytail: Settings and Usage's "See all" open their screens once those exist; until then Settings is disabled and
 // "See all" isn't offered.
-use gpui_kit::{
-    assets::IconName,
-    component::{
-        Disableable as _, Sizable as _,
-        button::{Button, ButtonVariants as _},
-        popover::Popover,
-    },
-    prelude::FluentBuilder,
-    *,
-};
+use gpui_kit::{assets::IconName, component::popover::Popover, prelude::FluentBuilder, *};
 use rust_i18n::t;
+
+use crate::ui::{
+    button::{Button, Size},
+    layout,
+};
 
 use crate::{
     format,
@@ -167,13 +163,10 @@ impl Sidebar {
         };
         let store_entity = self.store.clone();
         let usage = Popover::new("usage")
+            .map(|pop| layout::float(pop, p))
             .anchor(Anchor::BottomLeft) // opens above the foot, folded or not
             .trigger(
-                Button::new("usage-trigger")
-                    .ghost()
-                    .small()
-                    .icon(IconName::ChartColumn)
-                    .tooltip(t!("nav.usage").into_owned()),
+                Button::icon_only("usage-trigger", IconName::ChartColumn, t!("nav.usage").into_owned()).size(Size::Sm),
             )
             .w(px(320.))
             .child(
@@ -188,11 +181,8 @@ impl Sidebar {
                             .child(t!("nav.usage").into_owned()),
                     )
                     .child(
-                        Button::new("usage-refresh")
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::RefreshCw)
-                            .tooltip(t!("usage.refresh").into_owned())
+                        Button::icon_only("usage-refresh", IconName::RefreshCw, t!("usage.refresh").into_owned())
+                            .size(Size::Xs)
                             .disabled(rows.is_empty())
                             .on_click(move |_, _, cx| store_entity.update(cx, |s, cx| s.refresh_limits(cx))),
                     ),
@@ -212,21 +202,19 @@ impl Sidebar {
             )
         });
         let store_entity = self.store.clone();
-        let pause = Button::new("pause")
-            .ghost()
-            .small()
-            .icon(if paused { IconName::Play } else { IconName::Pause })
-            .tooltip(if paused {
+        let pause = Button::icon_only(
+            "pause",
+            if paused { IconName::Play } else { IconName::Pause },
+            if paused {
                 t!("pause.resume").into_owned()
             } else {
                 t!("pause.all").into_owned()
-            })
-            .on_click(move |_, _, cx| store_entity.update(cx, |s, cx| s.set_paused(!paused, cx)));
-        let settings = Button::new("settings")
-            .ghost()
-            .small()
-            .icon(IconName::Settings)
-            .tooltip(t!("nav.settings").into_owned())
+            },
+        )
+        .size(Size::Sm)
+        .on_click(move |_, _, cx| store_entity.update(cx, |s, cx| s.set_paused(!paused, cx)));
+        let settings = Button::icon_only("settings", IconName::Settings, t!("nav.settings").into_owned())
+            .size(Size::Sm)
             .disabled(true);
         div()
             .flex()
