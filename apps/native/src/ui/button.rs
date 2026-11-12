@@ -3,7 +3,10 @@
 // action), Secondary (a control wash, the default), Ghost (quiet: text only until hovered), Destructive.
 use gpui_kit::{base::Button as BaseButton, prelude::FluentBuilder, *};
 
-use crate::theme::{self, tokens};
+use crate::{
+    theme::{self, tokens},
+    ui::motion,
+};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum Variant {
@@ -67,7 +70,7 @@ impl Button {
 }
 
 impl RenderOnce for Button {
-    fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let p = theme::palette(window);
         // (background, text, hovered background, hovered text) per variant.
         let (bg, fg, hover_bg, hover_fg) = match self.variant {
@@ -80,9 +83,23 @@ impl RenderOnce for Button {
             Size::Sm => (tokens::CONTROL_H_SM, 10., tokens::RADIUS_CONTROL_SM),
             Size::Md => (tokens::CONTROL_H, 12., tokens::RADIUS_CONTROL),
         };
-        BaseButton::new(self.id)
+        // Hover and press ease the colours; a press sinks the button a pixel on a spring.
+        let pointer = motion::pointer(&self.id, window, cx);
+        let state = *pointer.read(cx);
+        let live = !self.disabled;
+        let (bg_target, fg_target) = if live && state.hovered {
+            (hover_bg, hover_fg)
+        } else {
+            (bg, fg)
+        };
+        let bg_now = motion::color(&self.id, "bg", bg_target, window, cx);
+        let fg_now = motion::color(&self.id, "fg", fg_target, window, cx);
+        let sink = motion::sink(&self.id, live && state.pressed, window, cx);
+        let button = BaseButton::new(self.id)
             .disabled(self.disabled)
             .accessibility_label(self.label.clone())
+            .relative()
+            .top(sink)
             .flex()
             .flex_none()
             .items_center()
@@ -90,14 +107,11 @@ impl RenderOnce for Button {
             .h(px(height))
             .px(px(pad))
             .rounded(px(radius))
-            .bg(bg)
-            .text_color(fg)
+            .bg(bg_now)
+            .text_color(fg_now)
             .font_weight(FontWeight::MEDIUM)
-            .when(!self.disabled, |b| {
-                b.hover(move |s| s.bg(hover_bg).text_color(hover_fg))
-            })
             .when(self.disabled, |b| b.opacity(0.5))
-            .when_some(self.on_click, |b, handler| b.on_click(handler))
-            .child(self.label)
+            .when_some(self.on_click, |b, handler| b.on_click(handler));
+        motion::track(button, &pointer).child(self.label)
     }
 }
