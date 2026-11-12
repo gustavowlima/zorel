@@ -167,7 +167,7 @@ impl Sidebar {
         };
         let store_entity = self.store.clone();
         let usage = Popover::new("usage")
-            .anchor(if folded { Anchor::BottomLeft } else { Anchor::BottomLeft })
+            .anchor(Anchor::BottomLeft) // opens above the foot, folded or not
             .trigger(
                 Button::new("usage-trigger")
                     .ghost()
