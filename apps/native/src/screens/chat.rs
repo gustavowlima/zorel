@@ -337,9 +337,30 @@ impl ChatScreen {
             let _ = &id;
         });
         let model = cx.new(|cx| ModelPicker::new(store.clone(), true, on_change, window, cx));
-        let tools = model.clone();
+        // Beside Send: the model, and Stop while a reply runs (the web's composer).
+        let (tools, chat) = (model.clone(), cx.entity().downgrade());
         composer.update(cx, |c, _| {
-            c.set_tools(Rc::new(move |_, _| tools.clone().into_any_element()))
+            c.set_tools(Rc::new(move |_, cx| {
+                let busy = chat
+                    .upgrade()
+                    .is_some_and(|v| v.read(cx).busy() && v.read(cx).proposal().is_none());
+                let chat = chat.clone();
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(space::X1))
+                    .child(tools.clone())
+                    .when(busy, |r| {
+                        r.child(
+                            Button::stop("composer-stop", t!("composer.stop").into_owned())
+                                .variant(Variant::Secondary)
+                                .on_click(move |_, _, cx| {
+                                    let _ = chat.update(cx, |this, cx| this.stop(cx));
+                                }),
+                        )
+                    })
+                    .into_any_element()
+            }))
         });
         // The engine's own slash commands for this chat (Claude Code's built-in, the user's, the project's).
         let commands: Rc<std::cell::RefCell<Vec<crate::net::types::EngineCommand>>> = Default::default();
@@ -1213,7 +1234,9 @@ impl ChatScreen {
             .into_any_element()
     }
 
-    /// A turn in progress: its steps as they come, the text revealed smoothly, and a status line.
+    /// A turn in progress, laid out as it happens (the web's LiveMessage): what it has written so far, cut where steps
+    /// began, each run of steps a group (its summary, open while it works) on the tree; at the end what it does now
+    /// (a light sweeps across it; plainly while it waits), the time only after 5 s, and Stop beside it.
     fn live_row(&mut self, turn_id: &str, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = theme::palette(window);
         let turn = self.log.turns.iter().find(|t| t.id == turn_id).cloned();
@@ -1236,120 +1259,34 @@ impl ChatScreen {
             .collect();
         let thought = self.log.thought.get(turn_id).cloned().unwrap_or_default();
         let mut column: Vec<AnyElement> = Vec::new();
-        // Its thinking: once over, a line saying how long (as a finished reply shows it); while on, its last words.
+        // Its thinking, once over: how long (a finished reply keeps it in its steps).
         if !thought.now && thought.took >= 1000. {
             column.push(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(space::X2))
-                    .min_h(px(tokens::CONTROL_H_SM))
-                    .text_sm()
-                    .text_color(p.text_muted)
-                    .child(
-                        div()
-                            .flex_none()
-                            .w(px(icon::MD))
-                            .flex()
-                            .justify_center()
-                            .child(icon(IconName::Sparkles, icon::XS).text_color(p.text_muted)),
+                step_line(
+                    &format!("{turn_id}-thought"),
+                    IconName::Brain,
+                    p.text_muted,
+                    t!(
+                        "activity.thought",
+                        time = format::duration(thought.took, format::lang())
                     )
-                    .child(
-                        t!(
-                            "activity.thought",
-                            time = format::duration(thought.took, format::lang())
-                        )
-                        .into_owned(),
-                    )
-                    .into_any_element(),
+                    .into_owned(),
+                    None,
+                    p,
+                )
+                .into_any_element(),
             );
         }
-        if !live_steps.is_empty() {
-            column.push(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(space::X0_5))
-                    .children(live_steps.iter().map(|s| {
-                        let running = matches!(s.status, WorkStepStatus::Running | WorkStepStatus::Waiting);
-                        let color = match s.status {
-                            WorkStepStatus::Error => p.danger,
-                            WorkStepStatus::Refused => p.warning,
-                            _ => p.text_secondary,
-                        };
-                        let mark: AnyElement = if running {
-                            Loader::new(SharedString::from(format!("live-step-{}", s.id)))
-                                .size(icon::XS)
-                                .into_any_element()
-                        } else {
-                            icon(glyph_of(&kind_key(s)), icon::XS)
-                                .text_color(color)
-                                .into_any_element()
-                        };
-                        motion::enter(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(space::X2))
-                                .min_h(px(tokens::CONTROL_H_SM))
-                                .text_sm()
-                                .text_color(color)
-                                .child(div().flex_none().w(px(icon::MD)).flex().justify_center().child(mark))
-                                .child(div().truncate().child(s.title.clone())),
-                            SharedString::from(format!("live-step-in-{}", s.id)),
-                            motion::ENTER_MS,
-                            4.,
-                        )
-                    }))
-                    .into_any_element(),
-            );
-        }
-        if !text.is_empty() {
-            let blocks = markdown::parse(&text);
-            column.push(markdown::render(turn_id, &blocks, window).into_any_element());
-        }
-        // What it does now, breathing; how long once past 5s.
-        let waiting = self.log.approvals.iter().any(|a| a.turn_id.as_deref() == Some(turn_id));
-        let label = match live_steps
-            .iter()
-            .rev()
-            .find(|s| matches!(s.status, WorkStepStatus::Running))
-        {
-            Some(step) => step.title.clone(),
-            None if waiting => t!("activity.waiting").into_owned(),
-            None if thought.now => t!("activity.thinking").into_owned(),
-            None => t!("activity.working").into_owned(),
-        };
-        let started = turn.as_ref().and_then(|t| t.started_at);
-        let elapsed = started
-            .map(|at| format::now_ms() - at)
-            .filter(|ms| *ms >= 5000. && !waiting)
-            .map(|ms| format::duration(ms, format::lang()));
-        // What it does now: Zorel's mark turning, a light passing over the words, how long once past 5s.
-        if !proposal_out {
-            let tone_of_text = if waiting { p.warning } else { p.text_muted };
-            column.push(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(space::X2))
-                    .text_sm()
-                    .child(
-                        Loader::new(SharedString::from(format!("live-mark-{turn_id}")))
-                            .size(icon::SM)
-                            .color(tone_of_text),
-                    )
-                    .child(div().min_w_0().child(shimmer(
-                        SharedString::from(format!("live-shimmer-{turn_id}")),
-                        label,
-                        tone_of_text,
-                        if waiting { p.warning } else { p.text },
-                    )))
-                    .when_some(elapsed, |r, e| {
-                        r.child(div().flex_none().text_color(p.text_dim).child(format!("· {e}")))
-                    })
-                    .into_any_element(),
-            );
+        let at = self.log.step_at.clone();
+        let pieces = steps::interleave(&text, &live_steps, |s| at.get(&s.id).copied());
+        for (n, piece) in pieces.into_iter().enumerate() {
+            match piece {
+                Piece::Text(text) => {
+                    let blocks = markdown::parse(&text);
+                    column.push(markdown::render(&format!("{turn_id}-t{n}"), &blocks, window).into_any_element());
+                }
+                Piece::Steps(group) => column.push(self.live_group(&format!("{turn_id}-g{n}"), &group, window, cx)),
+            }
         }
         // While it thinks: the last of its words, quiet, two lines at most (engines that show them).
         if thought.now && !proposal_out {
@@ -1357,7 +1294,6 @@ impl ChatScreen {
             if !words.is_empty() {
                 column.push(
                     div()
-                        .pl(px(icon::SM + space::X2))
                         .text_sm()
                         .text_color(p.text_dim)
                         .line_clamp(2)
@@ -1367,13 +1303,97 @@ impl ChatScreen {
             }
         }
         let store = self.store.read(cx);
-        let tone = store.tone(agent.as_deref());
         let name = store.agent_name(agent.as_deref());
-        let bare = false;
+        let tone = store.tone(agent.as_deref());
+        // What it does now. Waiting for you (an approval, a question): say so, not the step's title again.
+        let current = live_steps
+            .iter()
+            .rev()
+            .find(|s| matches!(s.status, WorkStepStatus::Running | WorkStepStatus::Waiting));
+        let asks = self.log.approvals.iter().any(|a| a.turn_id.as_deref() == Some(turn_id));
+        let waiting = asks || current.is_some_and(|s| matches!(s.status, WorkStepStatus::Waiting));
+        let idle = text.is_empty() && live_steps.is_empty();
+        let label = match current {
+            _ if waiting => {
+                let question = current
+                    .and_then(|s| s.tool.as_deref())
+                    .is_some_and(|t| t.ends_with("zorel_ask_user"));
+                t!(
+                    if question { "status.asking" } else { "approval.waitsFor" },
+                    agent = name
+                )
+                .into_owned()
+            }
+            Some(step) => step.title.clone(),
+            None if thought.now => t!("activity.thinking").into_owned(),
+            None if idle => {
+                let model = turn.as_ref().map(|t| t.model.clone()).unwrap_or_default();
+                let (provider, _) = crate::labels::split_model(&model);
+                t!(
+                    "activity.waitingFor",
+                    provider = crate::labels::provider_label(provider)
+                )
+                .into_owned()
+            }
+            None => t!("activity.working").into_owned(),
+        };
+        let started = turn.as_ref().and_then(|t| t.started_at);
+        let elapsed = started
+            .map(|at| format::now_ms() - at)
+            .filter(|ms| *ms >= 5000. && !waiting)
+            .map(|ms| format::duration(ms, format::lang()));
+        if !proposal_out {
+            let mark: AnyElement = if waiting {
+                icon(IconName::Clock, icon::SM).text_color(p.warning).into_any_element()
+            } else {
+                Loader::new(SharedString::from(format!("live-mark-{turn_id}")))
+                    .size(icon::SM)
+                    .color(p.text_muted)
+                    .into_any_element()
+            };
+            // Plain while it waits (on you, or on the provider before anything came back); a light sweeps otherwise.
+            let words: AnyElement = if waiting || idle {
+                div()
+                    .truncate()
+                    .text_color(if waiting { p.warning } else { p.text_muted })
+                    .child(label)
+                    .into_any_element()
+            } else {
+                shimmer(
+                    SharedString::from(format!("live-shimmer-{turn_id}")),
+                    label,
+                    p.text_muted,
+                    p.text,
+                )
+                .into_any_element()
+            };
+            column.push(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(space::X2))
+                    .h(px(tokens::CONTROL_H_SM))
+                    .text_sm()
+                    .child(div().flex_none().w(px(icon::MD)).flex().justify_center().child(mark))
+                    .child(div().min_w_0().child(words))
+                    .when_some(elapsed, |r, e| {
+                        r.child(div().flex_none().text_color(p.text_dim).child(format!("· {e}")))
+                    })
+                    .child(
+                        Button::stop(
+                            SharedString::from(format!("live-stop-{turn_id}")),
+                            t!("composer.stop").into_owned(),
+                        )
+                        .size(Size::Xs)
+                        .on_click(cx.listener(|this, _, _, cx| this.stop(cx))),
+                    )
+                    .into_any_element(),
+            );
+        }
         reply_frame(
             turn_id,
-            (!bare).then_some((tone, name, face::hue(p, tone), None)),
-            bare,
+            Some((tone, name, face::hue(p, tone), None)),
+            false,
             // A question or a proposal waits on you: the face says so, not "working".
             if waiting || proposal_out {
                 FaceState::Waiting
@@ -1385,7 +1405,116 @@ impl ChatScreen {
         )
     }
 
-    /// What waits above the box: approvals and questions of this chat, the queue, and Stop while a reply runs.
+    /// One run of a live turn's steps: its summary (a turning mark while one runs, the clock while one waits for
+    /// you) and, open by default, its steps on the tree as they come.
+    fn live_group(&mut self, key: &str, group: &[WorkStep], window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let p = theme::palette(window);
+        let kinds: Vec<String> = group.iter().map(kind_key).collect();
+        let summed: Vec<Summed> = group
+            .iter()
+            .zip(&kinds)
+            .map(|(s, kind)| Summed {
+                kind,
+                status: match s.status {
+                    WorkStepStatus::Error => "error",
+                    WorkStepStatus::Refused => "refused",
+                    _ => "ok",
+                },
+                detail: if s.detail.is_empty() { &s.title } else { &s.detail },
+                files: s.files.iter().map(String::as_str).collect(),
+            })
+            .collect();
+        let summary = steps::summarize(&summed);
+        // Open unless closed here (the key marks a closed live group).
+        let closed_key = format!("{key}-closed");
+        let open = !self.open.contains(&closed_key);
+        let working = group
+            .iter()
+            .find(|s| matches!(s.status, WorkStepStatus::Running | WorkStepStatus::Waiting));
+        let lead: Option<AnyElement> = working.map(|s| {
+            if matches!(s.status, WorkStepStatus::Waiting) {
+                icon(IconName::Clock, icon::XS).text_color(p.warning).into_any_element()
+            } else {
+                Loader::new(SharedString::from(format!("live-group-{key}")))
+                    .size(icon::XS)
+                    .into_any_element()
+            }
+        });
+        let mut head = fold_head(key, open, window, cx)
+            .on_click(cx.listener(move |this, _, _, cx| this.toggle(closed_key.clone(), cx)))
+            .children(lead)
+            .child(div().truncate().child(steps::sentence(&summary)));
+        if summary.failed > 0 {
+            head = head.child(
+                div()
+                    .flex_none()
+                    .text_color(p.danger)
+                    .child(format!("· {}", tn("activity.errors", summary.failed as i64))),
+            );
+        }
+        if summary.refused > 0 {
+            head = head.child(
+                div()
+                    .flex_none()
+                    .text_color(p.warning)
+                    .child(format!("· {}", tn("activity.refused", summary.refused as i64))),
+            );
+        }
+        let list = open.then(|| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(space::X0_5))
+                .pl(px(space::X1))
+                .border_l_1()
+                .border_color(p.border)
+                .ml(px(space::X1_5))
+                .children(group.iter().map(|s| {
+                    let (color, fact) = match s.status {
+                        WorkStepStatus::Waiting => (p.warning, Some(t!("activity.waiting").into_owned())),
+                        WorkStepStatus::Error => (p.danger, Some(t!("activity.failedStep").into_owned())),
+                        WorkStepStatus::Refused => (p.warning, Some(t!("activity.refusedStep").into_owned())),
+                        _ => (
+                            p.text_secondary,
+                            s.duration_ms
+                                .filter(|ms| *ms >= 1000.)
+                                .map(|ms| format::duration(ms, format::lang())),
+                        ),
+                    };
+                    let mark: AnyElement = match s.status {
+                        WorkStepStatus::Running => Loader::new(SharedString::from(format!("live-step-{}", s.id)))
+                            .size(icon::XS)
+                            .into_any_element(),
+                        WorkStepStatus::Waiting => icon(IconName::Clock, icon::XS).into_any_element(),
+                        _ => icon(glyph_of(&kind_key(s)), icon::XS).into_any_element(),
+                    };
+                    motion::enter(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(space::X2))
+                            .min_h(px(tokens::CONTROL_H_SM))
+                            .text_sm()
+                            .text_color(color)
+                            .child(div().flex_none().w(px(icon::MD)).flex().justify_center().child(mark))
+                            .child(div().flex_1().min_w_0().truncate().child(s.title.clone()))
+                            .when_some(fact, |r, f| r.child(div().flex_none().text_color(p.text_dim).child(f))),
+                        SharedString::from(format!("live-step-in-{}", s.id)),
+                        motion::ENTER_MS,
+                        4.,
+                    )
+                }))
+        });
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(space::X1))
+            .child(head)
+            .children(list)
+            .into_any_element()
+    }
+
+    /// What waits above the box: approvals and questions of this chat and the queue (Stop is in the reply and the box).
     fn bottom(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let p = theme::palette(window);
         // The Builder's proposal is its card in the timeline, not a second card here.
@@ -1462,21 +1591,6 @@ impl ChatScreen {
                         )
                 }))
         });
-        let stop = (self.busy() && self.proposal().is_none()).then(|| {
-            motion::enter(
-                div().flex().justify_center().child(
-                    Button::new("chat-stop", t!("composer.stop").into_owned())
-                        .icon(IconName::Pause)
-                        .variant(Variant::Secondary)
-                        .size(Size::Sm)
-                        .round()
-                        .on_click(cx.listener(|this, _, _, cx| this.stop(cx))),
-                ),
-                "chat-stop-in",
-                motion::ENTER_MS,
-                6.,
-            )
-        });
         div()
             .flex()
             .flex_col()
@@ -1488,7 +1602,6 @@ impl ChatScreen {
             .pb(px(space::X4))
             .children(cards)
             .children(queue)
-            .children(stop)
             .child(self.composer.clone())
     }
 }

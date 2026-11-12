@@ -16,6 +16,8 @@ pub struct ChatLog {
     /// What each turn in progress is thinking (its words, when the engine shows them), and whether it is thinking
     /// now: from a reasoning sign until its next text or step.
     pub thought: HashMap<String, Thought>,
+    /// Where each live step began in its turn's text (characters written before it), to cut the text there.
+    pub step_at: HashMap<String, usize>,
     pub turns: Vec<Turn>,
     pub status: Option<ChatStatus>,
     /// Moves on every change the screen draws.
@@ -49,6 +51,8 @@ impl ChatLog {
             }
             Event::StepStarted { step } | Event::StepFinished { step } => {
                 self.stop_thinking(&step.turn_id);
+                let written = self.partial.get(&step.turn_id).map_or(0, |t| t.chars().count());
+                self.step_at.entry(step.id.clone()).or_insert(written);
                 match self.steps.iter_mut().find(|s| s.id == step.id) {
                     Some(known) => *known = step,
                     None => self.steps.push(step),
@@ -91,6 +95,15 @@ impl ChatLog {
     fn end_turn(&mut self, turn: Turn, message: Option<Message>) {
         self.partial.remove(&turn.id);
         self.thought.remove(&turn.id);
+        let ended: Vec<String> = self
+            .steps
+            .iter()
+            .filter(|s| s.turn_id == turn.id)
+            .map(|s| s.id.clone())
+            .collect();
+        for id in ended {
+            self.step_at.remove(&id);
+        }
         self.steps.retain(|s| s.turn_id != turn.id);
         self.turns.retain(|t| t.id != turn.id);
         if let Some(message) = message {

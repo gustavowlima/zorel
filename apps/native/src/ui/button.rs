@@ -58,6 +58,8 @@ pub struct Button {
     icon: Option<IconName>,
     /// Any mark before the label (a provider's logo), instead of an icon.
     leading: Option<AnyElement>,
+    /// Draws the stop glyph (a filled square in the text colour) instead of an icon.
+    stop: bool,
     /// What the button is called when it shows only an icon (also its tooltip).
     name: Option<SharedString>,
     tooltip: Option<SharedString>,
@@ -85,12 +87,25 @@ impl Button {
         b
     }
 
+    /// Stop: a filled square, round, icon-only (a reply's Stop, the composer's while a reply runs).
+    pub fn stop(id: impl Into<ElementId>, name: impl Into<SharedString>) -> Self {
+        let name = name.into();
+        let mut b = Self::bare(id);
+        b.stop = true;
+        b.round = true;
+        b.tooltip = Some(name.clone());
+        b.name = Some(name);
+        b.variant = Variant::Ghost;
+        b
+    }
+
     fn bare(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
             label: None,
             icon: None,
             leading: None,
+            stop: false,
             name: None,
             tooltip: None,
             variant: Variant::default(),
@@ -212,6 +227,9 @@ impl RenderOnce for Button {
             .when(self.disabled, |b| b.opacity(0.5))
             .when_some(self.on_click, |b, handler| b.on_click(handler))
             .when_some(self.icon, |b, name| b.child(icon(name, icon_size).text_color(fg_now)))
+            .when(self.stop, |b| {
+                b.child(div().size(px(icon_size * 0.7)).rounded(px(2.)).bg(fg_now))
+            })
             .children(self.leading)
             .when_some(self.label, |b, label| b.child(div().min_w_0().truncate().child(label)));
         let button = motion::track(button, &pointer);

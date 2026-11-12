@@ -54,6 +54,7 @@ icon_assets!(
     [
         House,
         AlarmClock,
+        Clock,
         Brain,
         MessageCircle,
         PanelLeftClose,
