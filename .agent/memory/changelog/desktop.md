@@ -26,3 +26,4 @@
 2026-11-12 | hot reload via Subsecond (native:hot); ui/header top bar; uniform rail squares | owner asked for hot reload, the prototype's top bar and a standard folded sidebar
 2026-11-12 | title moved from a bar inside the card to a strip of the frame above it | owner: it is a recessed space of the container, not a continuous bar
 2026-11-12 | notifications only inside an app bundle on macOS; model picker | "Choose Application: where is use_default?" kept popping up
+2026-11-12 | chat screen rebuilt (timeline, live turn reveal, folds, tray, queue, stop, shared composer); page transitions | owner: 'bem interativa fluida e animada' and 'mudança de telas está crua'
