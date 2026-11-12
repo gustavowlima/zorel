@@ -7,11 +7,12 @@ use std::{f32::consts::PI, rc::Rc};
 
 use gpui_kit::{
     assets::IconName,
-    component::{Icon, Selectable, popover::Popover},
+    component::{Selectable, popover::Popover},
     prelude::FluentBuilder,
     *,
 };
 
+use crate::ui::icon::{self, icon};
 use crate::{
     theme::{self, tokens},
     ui::{face::AgentFace, layout, motion},
@@ -169,14 +170,13 @@ impl RenderOnce for Trigger {
             .bg(bg)
             .text_sm()
             .text_color(fg)
-            .when_some(self.prefix, |r, icon| r.child(Icon::new(icon).size(px(16.))))
+            .when_some(self.prefix, |r, icon_name| r.child(icon(icon_name, icon::MD)))
             .when_some(self.chosen.as_ref().map(|c| c.mark.clone()), |r, m| {
                 r.children(mark(&format!("{}-mark", self.id), &m))
             })
             .child(div().min_w_0().truncate().child(label))
             .child(
-                Icon::new(IconName::ChevronDown)
-                    .size(px(14.))
+                icon(IconName::ChevronDown, icon::XS)
                     .text_color(Rgba { a: 0.7, ..fg.into() })
                     .rotate(radians(if self.open { PI } else { 0. })),
             );
@@ -219,7 +219,7 @@ fn option_row(key: &str, o: &SelectOption, selected: bool, window: &mut Window, 
         .children(mark(&format!("{id}-mark"), &o.mark))
         .child(div().flex_1().min_w_0().truncate().child(o.label.clone()))
         .when(selected, |r| {
-            r.child(Icon::new(IconName::Check).size(px(16.)).text_color(p.accent_text))
+            r.child(icon(IconName::Check, icon::MD).text_color(p.accent_text))
         });
     motion::track(row, &pointer)
 }
@@ -232,6 +232,6 @@ fn mark(key: &str, mark: &Mark) -> Option<AnyElement> {
                 .size(16.)
                 .into_any_element(),
         ),
-        Mark::Icon(icon) => Some(Icon::new(*icon).size(px(16.)).into_any_element()),
+        Mark::Icon(name) => Some(icon(*name, icon::MD).into_any_element()),
     }
 }

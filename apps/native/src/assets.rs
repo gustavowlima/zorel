@@ -30,6 +30,16 @@ icon_assets!(
     ]
 );
 
+/// Lucide draws at stroke 2; Zorel's icons are one stroke, 1.6 (prototype `.ic`, --z-icon-stroke), whoever ships them.
+fn thin(svg: Cow<'static, [u8]>) -> Cow<'static, [u8]> {
+    match std::str::from_utf8(&svg) {
+        Ok(text) if text.contains(STROKE_2) => Cow::Owned(text.replace(STROKE_2, STROKE).into_bytes()),
+        _ => svg,
+    }
+}
+const STROKE_2: &str = "stroke-width=\"2\"";
+const STROKE: &str = "stroke-width=\"1.6\"";
+
 pub struct Assets;
 
 impl AssetSource for Assets {
@@ -37,15 +47,28 @@ impl AssetSource for Assets {
         if path == LOGO {
             return Ok(Some(Cow::Borrowed(include_bytes!("../assets/logo.svg"))));
         }
-        match ZorelIcons.load(path)? {
-            Some(bytes) => Ok(Some(bytes)),
-            None => gpui_kit::assets::Assets.load(path),
-        }
+        let bytes = match ZorelIcons.load(path)? {
+            Some(bytes) => Some(bytes),
+            None => gpui_kit::assets::Assets.load(path)?,
+        };
+        Ok(bytes.map(|b| if path.starts_with("icons/") { thin(b) } else { b }))
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
         let mut all = ZorelIcons.list(path)?;
         all.extend(gpui_kit::assets::Assets.list(path)?);
         Ok(all)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui_kit::AssetSource as _;
+
+    #[test]
+    fn icons_are_drawn_at_zorels_stroke() {
+        let svg = super::Assets.load("icons/plus.svg").unwrap().unwrap();
+        let text = std::str::from_utf8(&svg).unwrap();
+        assert!(text.contains("stroke-width=\"1.6\"") && !text.contains("stroke-width=\"2\""));
     }
 }

@@ -1,8 +1,11 @@
 pub mod button;
 pub mod code;
 pub mod face;
+pub mod icon;
 pub mod layout;
 pub mod markdown;
+pub mod menu;
 pub mod motion;
 pub mod nav;
+pub mod segmented;
 pub mod select;

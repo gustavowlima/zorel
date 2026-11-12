@@ -4,15 +4,9 @@
 // Hover eases in and out (ui/motion), so every list of places moves the same way.
 use std::rc::Rc;
 
-use gpui_kit::component::menu::ContextMenuExt as _;
+use gpui_kit::{assets::IconName, prelude::FluentBuilder, *};
 
-use gpui_kit::{
-    assets::IconName,
-    component::{Icon, Sizable as _, menu::PopupMenu},
-    prelude::FluentBuilder,
-    *,
-};
-
+use crate::ui::icon::{self, icon};
 use crate::{
     theme::{self, tokens},
     ui::motion,
@@ -31,7 +25,7 @@ pub struct DragRow {
 pub type OnReorder = Rc<dyn Fn(&DragRow, &DragRow, &mut Window, &mut App) + 'static>;
 
 /// A row's actions, built on demand: the right-click menu and its ⋯ button share one builder.
-pub type MenuBuilder = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static>;
+pub type MenuBuilder = crate::ui::menu::Items;
 
 #[derive(IntoElement)]
 pub struct NavRow {
@@ -141,7 +135,7 @@ impl NavRow {
         self
     }
 
-    /// The row's actions on right-click (Menu key and Shift+F10 included).
+    /// The row's actions on right-click (ui/menu).
     pub fn menu(mut self, menu: MenuBuilder) -> Self {
         self.menu = Some(menu);
         self
@@ -175,7 +169,7 @@ impl RenderOnce for NavRow {
         let mark_color = if lit { p.text } else { p.text_muted };
         let mark: Option<AnyElement> = self.leading.or_else(|| {
             self.icon
-                .map(|i| Icon::new(i).small().text_color(mark_color).into_any_element())
+                .map(|i| icon(i, icon::MD).text_color(mark_color).into_any_element())
         });
         let tall = self.detail.is_some();
         let trailing = if hovered {
@@ -186,6 +180,7 @@ impl RenderOnce for NavRow {
         // Screen readers: a button named by its label, the detail as its description, selected when open.
         let label = self.label.clone();
         let description = self.detail.as_ref().map(|(d, _)| d.clone());
+        let key = self.id.clone();
         let row = div()
             .id(self.id)
             .role(Role::Button)
@@ -261,9 +256,7 @@ impl RenderOnce for NavRow {
         };
         let row = motion::track(row, &pointer);
         match self.menu {
-            Some(menu) => row
-                .context_menu(move |m, window, cx| menu(m, window, cx))
-                .into_any_element(),
+            Some(items) => crate::ui::menu::on_right_click(&key, row, items, window, cx),
             None => row.into_any_element(),
         }
     }

@@ -8,13 +8,13 @@ use std::{path::PathBuf, rc::Rc};
 use gpui_kit::{
     assets::IconName,
     base::input::{InputEvent, Textarea, TextareaState},
-    component::{Icon, Sizable as _},
     prelude::FluentBuilder,
     *,
 };
 use rust_i18n::t;
 
 use crate::ui::button::{Button, Size, Variant};
+use crate::ui::icon::{self, icon};
 
 use crate::theme::{self, tokens};
 
@@ -158,7 +158,7 @@ impl Render for Composer {
                     .bg(p.bg_control)
                     .text_size(px(12.5))
                     .text_color(p.text_secondary)
-                    .child(Icon::new(IconName::File).xsmall())
+                    .child(icon(IconName::File, icon::XS))
                     .child(div().max_w(px(180.)).truncate().child(name.clone()))
                     .child(
                         Button::icon_only(

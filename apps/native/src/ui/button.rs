@@ -7,11 +7,12 @@
 use gpui_kit::{
     assets::IconName,
     base::Button as BaseButton,
-    component::{Icon, Selectable, tooltip::Tooltip},
+    component::{Selectable, tooltip::Tooltip},
     prelude::FluentBuilder,
     *,
 };
 
+use crate::ui::icon::{self, icon};
 use crate::{
     theme::{self, tokens},
     ui::motion,
@@ -39,10 +40,10 @@ impl Size {
     /// (height, horizontal padding, radius, icon size).
     fn metrics(self) -> (f32, f32, f32, f32) {
         match self {
-            Size::Xs => (tokens::CONTROL_H_XS, 8., tokens::RADIUS_CONTROL_SM, 14.),
-            Size::Sm => (tokens::CONTROL_H_SM, 10., tokens::RADIUS_CONTROL_SM, 16.),
-            Size::Md => (tokens::CONTROL_H, 12., tokens::RADIUS_CONTROL, 16.),
-            Size::Lg => (tokens::CONTROL_H_LG, 16., tokens::RADIUS_CONTROL, 18.),
+            Size::Xs => (tokens::CONTROL_H_XS, 8., tokens::RADIUS_CONTROL_SM, icon::SM),
+            Size::Sm => (tokens::CONTROL_H_SM, 10., tokens::RADIUS_CONTROL_SM, icon::MD),
+            Size::Md => (tokens::CONTROL_H, 12., tokens::RADIUS_CONTROL, icon::MD),
+            Size::Lg => (tokens::CONTROL_H_LG, 16., tokens::RADIUS_CONTROL, icon::MD),
         }
     }
 }
@@ -195,9 +196,7 @@ impl RenderOnce for Button {
             .font_weight(FontWeight::MEDIUM)
             .when(self.disabled, |b| b.opacity(0.5))
             .when_some(self.on_click, |b, handler| b.on_click(handler))
-            .when_some(self.icon, |b, icon| {
-                b.child(Icon::new(icon).size(px(icon_size)).text_color(fg_now))
-            })
+            .when_some(self.icon, |b, name| b.child(icon(name, icon_size).text_color(fg_now)))
             .when_some(self.label, |b, label| b.child(label));
         let button = motion::track(button, &pointer);
         match self.tooltip {

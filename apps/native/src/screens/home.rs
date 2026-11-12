@@ -4,16 +4,11 @@
 // top, then Needs you and Working now beside Today (one column when narrow).
 use std::{collections::HashMap, path::Path, rc::Rc};
 
-use gpui_kit::{
-    assets::IconName,
-    base::input::TextareaState,
-    component::{Icon, Sizable as _},
-    prelude::FluentBuilder,
-    *,
-};
+use gpui_kit::{assets::IconName, base::input::TextareaState, prelude::FluentBuilder, *};
 use rust_i18n::t;
 
 use crate::ui::button::{Button, Size, Variant};
+use crate::ui::icon::{self, icon};
 use serde_json::json;
 
 use crate::{
@@ -750,7 +745,7 @@ fn quiet_body(p: &Palette, id: &'static str, title: &str, hint: &str) -> Div {
 }
 
 fn chevron(p: &Palette) -> impl IntoElement {
-    Icon::new(IconName::ChevronRight).small().text_color(p.text_muted)
+    icon(IconName::ChevronRight, icon::MD).text_color(p.text_muted)
 }
 
 /// A quiet echo of the mark behind the top: two hairline rings centred under the title (decoration only).

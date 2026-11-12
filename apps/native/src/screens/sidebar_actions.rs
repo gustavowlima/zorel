@@ -9,7 +9,6 @@ use gpui_kit::{
     component::{
         WindowExt as _,
         input::{Input, InputState},
-        menu::{PopupMenu, PopupMenuItem},
     },
     *,
 };
@@ -22,7 +21,7 @@ use crate::{
     route::Route,
     runtime,
     screens::sidebar::{Sidebar, SidebarEvent},
-    ui::nav::MenuBuilder,
+    ui::{menu::Menu, nav::MenuBuilder},
 };
 
 const TITLE_MAX: usize = 80;
@@ -30,48 +29,44 @@ const TITLE_MAX: usize = 80;
 impl Sidebar {
     pub(super) fn chat_menu(view: &Entity<Self>, id: String, title: String) -> MenuBuilder {
         let view = view.clone();
-        Rc::new(move |menu: PopupMenu, _, _| {
+        Rc::new(move || {
             let (open, rename, delete) = (view.clone(), view.clone(), view.clone());
             let (id1, id2, id3, title) = (id.clone(), id.clone(), id.clone(), title.clone());
-            menu.item(
-                PopupMenuItem::new(t!("common.open").into_owned()).on_click(move |_, _, cx| {
+            Menu::default()
+                .item(t!("common.open").into_owned(), move |_, cx| {
                     open.update(cx, |_, cx| {
                         cx.emit(SidebarEvent::Navigate(Route::Chat { id: id1.clone() }))
                     })
-                }),
-            )
-            .item(
-                PopupMenuItem::new(t!("common.rename").into_owned())
-                    .on_click(move |_, window, cx| Self::rename_chat(&rename, id2.clone(), title.clone(), window, cx)),
-            )
-            .separator()
-            .item(
-                PopupMenuItem::new(t!("common.delete").into_owned())
-                    .on_click(move |_, window, cx| Self::delete_chat(&delete, id3.clone(), window, cx)),
-            )
+                })
+                .item(t!("common.rename").into_owned(), move |window, cx| {
+                    Self::rename_chat(&rename, id2.clone(), title.clone(), window, cx)
+                })
+                .separator()
+                .danger(t!("common.delete").into_owned(), move |window, cx| {
+                    Self::delete_chat(&delete, id3.clone(), window, cx)
+                })
+                .build()
         })
     }
 
     pub(super) fn project_menu(view: &Entity<Self>, id: String, name: String) -> MenuBuilder {
         let view = view.clone();
-        Rc::new(move |menu: PopupMenu, _, _| {
+        Rc::new(move || {
             let (open, delete) = (view.clone(), view.clone());
             let (id1, id2, name1, name2) = (id.clone(), id.clone(), name.clone(), name.clone());
-            menu.item(
-                PopupMenuItem::new(t!("nav.newChatIn", name = name1).into_owned()).on_click(move |_, _, cx| {
+            Menu::default()
+                .item(t!("nav.newChatIn", name = name1).into_owned(), move |_, cx| {
                     open.update(cx, |_, cx| {
                         cx.emit(SidebarEvent::Navigate(Route::Home {
                             project_id: Some(id1.clone()),
                         }))
                     })
-                }),
-            )
-            .separator()
-            .item(
-                PopupMenuItem::new(t!("project.deleteAction").into_owned()).on_click(move |_, window, cx| {
+                })
+                .separator()
+                .danger(t!("project.deleteAction").into_owned(), move |window, cx| {
                     Self::delete_project(&delete, id2.clone(), name2.clone(), window, cx)
-                }),
-            )
+                })
+                .build()
         })
     }
 

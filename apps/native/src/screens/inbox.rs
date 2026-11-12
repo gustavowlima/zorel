@@ -2,15 +2,7 @@
 // memory a summary proposed, newest first, filtered by kind. Deciding here is the same as deciding in the chat.
 // The list refreshes when a chat's status changes (the Store's StatusChanged), as the web refetches on its key.
 // ponytail: a routine's "uncertain" step (spec 013) and editing an "Ask me" step land with the routines screen (T054).
-use gpui_kit::{
-    base::input::TextareaState,
-    component::{
-        Sizable as _,
-        tab::{Tab, TabBar},
-    },
-    prelude::FluentBuilder,
-    *,
-};
+use gpui_kit::{base::input::TextareaState, prelude::FluentBuilder, *};
 use rust_i18n::t;
 use serde_json::json;
 
@@ -26,6 +18,7 @@ use crate::{
     ui::{
         button::{Button, Size, Variant},
         face::AgentFace,
+        segmented::{self, Segmented},
     },
 };
 
@@ -222,25 +215,27 @@ impl Render for Inbox {
         }
         items.sort_by(|a, b| b.0.total_cmp(&a.0));
 
-        // The kit's segmented tabs (themed from styles.css), as the web's Tabs.
+        // The prototype's segmented choice (ui/segmented): its marker slides to the filter picked.
         let selected = tabs.iter().position(|(f, _, _)| *f == filter).unwrap_or(0);
         let order: Vec<Filter> = tabs.iter().map(|(f, _, _)| *f).collect();
-        let tab_row = TabBar::new("inbox-filter")
-            .segmented()
-            .small()
-            .selected_index(selected)
-            .on_click(cx.listener(move |this, ix: &usize, _, cx| {
-                this.filter = order[*ix];
-                cx.notify();
-            }))
-            .children(tabs.into_iter().map(|(_, key, count)| {
-                let label = if count > 0 {
-                    format!("{} {count}", t!(key))
+        let labels = tabs
+            .into_iter()
+            .map(|(_, key, count)| {
+                if count > 0 {
+                    format!("{} {count}", t!(key)).into()
                 } else {
-                    t!(key).into_owned()
-                };
-                Tab::new().label(label)
-            }));
+                    t!(key).into_owned().into()
+                }
+            })
+            .collect();
+        let view = cx.entity().downgrade();
+        let pick: segmented::OnPick = Rc::new(move |ix, _, cx| {
+            let _ = view.update(cx, |this, cx| {
+                this.filter = order[ix];
+                cx.notify();
+            });
+        });
+        let tab_row = Segmented::new("inbox-filter", t!("inbox.title").into_owned(), labels, selected, pick);
         let subtitle = if total > 0 {
             tn("inbox.waiting", total as i64)
         } else {

@@ -13,13 +13,14 @@ use std::{
 use gpui_kit::{
     assets::IconName,
     base::{Spring, spring},
-    component::{Icon, Sizable as _, spinner::Spinner},
+    component::{Sizable as _, spinner::Spinner},
     prelude::FluentBuilder,
     *,
 };
 use rust_i18n::t;
 
 use crate::ui::button::{Button, Size};
+use crate::ui::icon::{self, icon};
 
 use crate::{
     format,
@@ -37,6 +38,8 @@ use crate::{
 
 const OPEN_WIDTH: f32 = 268.;
 const RAIL_WIDTH: f32 = 56.;
+/// What sits on the folded rail: a 40px column (the rail less its 8px sides).
+const RAIL_ITEM: f32 = RAIL_WIDTH - 16.;
 const VISIBLE: usize = 5;
 const LOOSE: &str = "chats";
 
@@ -219,8 +222,7 @@ impl Sidebar {
         } else if nested {
             div().size(px(20.)).into_any_element()
         } else {
-            Icon::new(IconName::MessageCircle)
-                .small()
+            icon(IconName::MessageCircle, icon::MD)
                 .text_color(p.text_muted)
                 .into_any_element()
         };
@@ -359,8 +361,7 @@ impl Sidebar {
                     .justify_center()
                     .size(px(tokens::CONTROL_H_XS))
                     .child(
-                        Icon::new(IconName::ChevronDown)
-                            .size(px(14.))
+                        icon(IconName::ChevronDown, icon::XS)
                             .text_color(p.text_dim)
                             .rotate(radians(f32::from(turn).to_radians())),
                     ),
@@ -719,12 +720,19 @@ impl Render for Sidebar {
             .flex()
             .items_center()
             .gap(px(8.))
-            .h(px(32.))
-            .px(px(10.))
+            .h(px(tokens::CONTROL_H))
+            // Folded, the search is a square on the rail's column, its glass centred like the places' marks.
+            .map(|s| {
+                if folded {
+                    s.w(px(RAIL_ITEM)).justify_center()
+                } else {
+                    s.px(px(10.))
+                }
+            })
             .rounded(px(tokens::RADIUS_CONTROL))
             .bg(p.bg_control)
             .text_color(p.text_muted)
-            .child(Icon::new(IconName::Search).small())
+            .child(icon(IconName::Search, icon::MD))
             .when(!folded, |s| {
                 s.child(div().flex_1().truncate().child(t!("nav.searchOrGo").into_owned()))
                     .child(
@@ -759,6 +767,7 @@ impl Render for Sidebar {
                     .items_center()
                     .gap(px(10.))
                     .h(px(36.))
+                    .when(folded, |h| h.justify_center())
                     .when(!folded, |h| h.pl(px(12.)))
                     .when(!folded, |h| {
                         h.child(svg().path(crate::assets::LOGO).size(px(20.)).text_color(p.text))
@@ -788,7 +797,7 @@ impl Render for Sidebar {
                         .children(list),
                 )
             })
-            .when(folded, |c| c.child(div().flex_1())) // folded: the foot sits at the bottom
+            .when(folded, |c| c.items_center().child(div().flex_1())) // folded: one centred column, the foot at the bottom
             .child(self.foot(folded, window, cx))
     }
 }
@@ -844,13 +853,11 @@ mod tests {
 
 /// The ⋯ button that opens a row's menu (same items as its right-click).
 fn more_button(id: String, name: String, menu: crate::ui::nav::MenuBuilder) -> impl IntoElement {
-    // The kit's dropdown needs its own Button as the trigger: sized here to the scale (24, radius 8) like ours.
-    use gpui_kit::component::{Sizable as _, button::ButtonVariants as _, menu::DropdownMenu as _};
-    gpui_kit::component::button::Button::new(SharedString::from(id))
-        .ghost()
-        .with_size(px(tokens::CONTROL_H_XS))
-        .rounded(px(tokens::RADIUS_CONTROL_SM))
-        .icon(IconName::Ellipsis)
-        .tooltip(t!("nav.moreFor", name = name).into_owned())
-        .dropdown_menu(move |m, window, cx| menu(m, window, cx))
+    let trigger = Button::icon_only(
+        SharedString::from(format!("{id}-trigger")),
+        IconName::Ellipsis,
+        t!("nav.moreFor", name = name).into_owned(),
+    )
+    .size(Size::Xs);
+    crate::ui::menu::dropdown(SharedString::from(id), trigger, menu)
 }
