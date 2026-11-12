@@ -54,6 +54,17 @@ impl Http {
         Self::read(self.client.post(format!("{}{path}", self.base)).json(body).send().await).await
     }
 
+    pub async fn patch<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T, HttpError> {
+        Self::read(
+            self.client
+                .patch(format!("{}{path}", self.base))
+                .json(body)
+                .send()
+                .await,
+        )
+        .await
+    }
+
     async fn read<T: DeserializeOwned>(sent: reqwest::Result<reqwest::Response>) -> Result<T, HttpError> {
         let response = sent.map_err(HttpError::Network)?;
         let status = response.status();
