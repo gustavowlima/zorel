@@ -7,7 +7,10 @@ use std::{f32::consts::TAU, time::Duration};
 
 use gpui_kit::{prelude::FluentBuilder, *};
 
-use crate::theme::{self, tokens};
+use crate::{
+    theme::{self, tokens},
+    ui::motion,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FaceState {
@@ -74,18 +77,106 @@ pub fn mix(a: Rgba, share: f32, b: Rgba) -> Rgba {
 
 const TINT: f32 = 0.26;
 
+/// Where the pointer is and where every face was drawn: faces look toward a pointer that comes near.
+#[derive(Default)]
+pub struct Gaze {
+    pointer: Option<Point<Pixels>>,
+    faces: std::collections::HashMap<ElementId, Bounds<Pixels>>,
+}
+
+impl Global for Gaze {}
+
+/// How near the pointer must come for a face to look at it.
+const REACH: f32 = 220.;
+
+/// The window's pointer moved (Root calls this): faces near it redraw to follow it.
+pub fn follow(position: Point<Pixels>, window: &mut Window, cx: &mut App) {
+    let gaze = cx.default_global::<Gaze>();
+    let near = |p: Point<Pixels>| gaze.faces.values().any(|b| distance(b.center(), p) < REACH * 1.2);
+    let wake = near(position) || gaze.pointer.is_some_and(near);
+    gaze.pointer = Some(position);
+    if wake {
+        window.refresh();
+    }
+}
+
+fn distance(a: Point<Pixels>, b: Point<Pixels>) -> f32 {
+    let (dx, dy) = (f32::from(a.x - b.x), f32::from(a.y - b.y));
+    (dx * dx + dy * dy).sqrt()
+}
+
+/// Where the eyes look: toward the pointer, up to `max` px, more the nearer it is; centred when it's far.
+fn look(center: Point<Pixels>, pointer: Option<Point<Pixels>>, max: f32) -> (f32, f32) {
+    let Some(p) = pointer else { return (0., 0.) };
+    let (dx, dy) = (f32::from(p.x - center.x), f32::from(p.y - center.y));
+    let d = (dx * dx + dy * dy).sqrt();
+    if d < 1. || d > REACH {
+        return (0., 0.);
+    }
+    let pull = max * (1. - d / REACH).clamp(0.35, 1.);
+    (dx / d * pull, dy / d * pull)
+}
+
+/// A blink: the eyes close to a line and open again.
+fn blink(t: f32) -> f32 {
+    1. - 0.88 * (t * std::f32::consts::PI).sin()
+}
+
 impl RenderOnce for AgentFace {
-    fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let p = theme::palette(window);
         let hue = hue(p, self.tone);
         let s = self.size;
-        let eye = || {
-            div()
+        // It looks toward the pointer when it comes near (springing), and blinks when the pointer lands on it.
+        let bounds = cx.default_global::<Gaze>().faces.get(&self.id).copied();
+        let pointer = cx.default_global::<Gaze>().pointer;
+        let (lx, ly) = bounds.map_or((0., 0.), |b| look(b.center(), pointer, s * 0.08));
+        let key = self.id.to_string();
+        let ox = gpui_kit::base::spring(
+            SharedString::from(format!("{key}-look-x")),
+            px(lx),
+            motion::settle(motion::SETTLE_MS),
+            window,
+            cx,
+        );
+        let oy = gpui_kit::base::spring(
+            SharedString::from(format!("{key}-look-y")),
+            px(ly),
+            motion::settle(motion::SETTLE_MS),
+            window,
+            cx,
+        );
+        let hover = motion::pointer(&self.id, window, cx);
+        let hovered = hover.read(cx).hovered;
+        let blinks = window.use_keyed_state(
+            ElementId::from(SharedString::from(format!("{key}-blinks"))),
+            cx,
+            |_, _| (false, 0u32),
+        );
+        let (was, mut count) = *blinks.read(cx);
+        if hovered && !was {
+            count += 1;
+        }
+        if hovered != was {
+            blinks.update(cx, |b, _| *b = (hovered, count));
+        }
+        let eye_h = s * tokens::EYE_H;
+        let eye = |n: usize| {
+            let e = div()
                 .w(px(s * tokens::EYE_W))
-                .h(px(s * tokens::EYE_H))
+                .h(px(eye_h))
                 .mt(px(-s * tokens::EYE_LIFT))
                 .rounded_full()
-                .bg(p.eye)
+                .bg(p.eye);
+            if count == 0 {
+                return e.into_any_element();
+            }
+            e.with_animation(
+                SharedString::from(format!("{key}-blink-{count}-{n}")),
+                Animation::new(motion::ms(220)),
+                move |el, t| el.h(px(eye_h * blink(t))),
+            )
+            .into_any_element()
         };
         let mark = |color: Rgba, top: bool| {
             let d = (s * 0.28).round().max(6.);
@@ -100,25 +191,44 @@ impl RenderOnce for AgentFace {
                 .border_2()
                 .border_color(p.bg_canvas)
         };
-        div()
+        let id = self.id.clone();
+        let face = div()
             .id(self.id)
             .relative()
             .flex()
             .flex_none()
             .items_center()
             .justify_center()
-            .gap(px(s * tokens::EYE_GAP))
             .size(px(s))
             .rounded_full()
             .bg(mix(hue, TINT, p.bg_raised))
-            .child(eye())
-            .child(eye())
+            .child(
+                div()
+                    .relative()
+                    .left(ox)
+                    .top(oy)
+                    .flex()
+                    .items_center()
+                    .gap(px(s * tokens::EYE_GAP))
+                    .child(eye(0))
+                    .child(eye(1)),
+            )
             .when(self.state == FaceState::Working, |f| {
                 f.child(ring(hue, s, if s <= 20. { 3. } else { 4. }, 5.))
             })
             .when(self.state == FaceState::Waiting, |f| f.child(mark(p.warning, true)))
             .when(self.state == FaceState::Done, |f| f.child(mark(p.success, false)))
-            .when(self.state == FaceState::Failed, |f| f.child(mark(p.danger, false)))
+            .when(self.state == FaceState::Failed, |f| f.child(mark(p.danger, false)));
+        let face = motion::track(face, &hover);
+        // Where it was drawn, so it knows where to look next frame.
+        div()
+            .flex_none()
+            .on_children_prepainted(move |b, _, cx| {
+                if let Some(b) = b.first() {
+                    cx.default_global::<Gaze>().faces.insert(id.clone(), *b);
+                }
+            })
+            .child(face)
     }
 }
 
@@ -187,4 +297,20 @@ fn ring(color: Rgba, size: f32, gap: f32, dot: f32) -> impl IntoElement {
                     .top(px(y - dot / 2. - tokens::RING_W))
             },
         ))
+}
+
+#[cfg(test)]
+mod gaze_tests {
+    use gpui_kit::{point, px};
+
+    use super::{REACH, look};
+
+    #[test]
+    fn eyes_look_toward_a_near_pointer_and_rest_when_it_is_far() {
+        let center = point(px(100.), px(100.));
+        let (x, y) = look(center, Some(point(px(140.), px(100.))), 2.);
+        assert!(x > 0. && x <= 2. && y.abs() < 1e-5);
+        assert_eq!(look(center, Some(point(px(100. + REACH + 1.), px(100.))), 2.), (0., 0.));
+        assert_eq!(look(center, None, 2.), (0., 0.));
+    }
 }

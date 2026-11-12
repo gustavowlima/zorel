@@ -310,6 +310,8 @@ impl Root {
             .text_color(p.text)
             .text_size(px(13.5))
             .track_focus(&self.focus)
+            // Faces look toward the pointer when it comes near (ui/face).
+            .on_mouse_move(|event: &MouseMoveEvent, window, cx| crate::ui::face::follow(event.position, window, cx))
             .on_action(cx.listener(|this, _: &OpenPalette, window, cx| this.open_palette(window, cx)))
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
             .when_some(self.sidebar.clone(), |c, sidebar| c.child(sidebar))

@@ -1023,6 +1023,9 @@ impl Sidebar {
                 c.child(
                     div()
                         .id("sidebar-list")
+                        // The same side room as ui/collapse, so the rows' drag grips aren't clipped by the scroll.
+                        .mx(px(-crate::ui::collapse::GUTTER))
+                        .px(px(crate::ui::collapse::GUTTER))
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()

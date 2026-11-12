@@ -10,6 +10,9 @@ use gpui_kit::{base::spring, prelude::FluentBuilder, *};
 
 use crate::ui::{motion, space};
 
+/// Side room inside the clip for what pokes out of a row (the drag grip sits on the row's edge).
+pub const GUTTER: f32 = space::X2;
+
 /// Content heights by key, as last laid out.
 #[derive(Clone, Default)]
 pub struct Measured(Rc<RefCell<HashMap<String, f32>>>);
@@ -48,6 +51,9 @@ impl Measured {
         div()
             .flex()
             .flex_col()
+            // Room on the sides so what pokes out of a row (a drag grip) isn't clipped; the layout doesn't move.
+            .mx(px(-GUTTER))
+            .px(px(GUTTER))
             .on_children_prepainted(move |bounds, _, cx| {
                 let Some(content) = bounds.first() else { return };
                 let h = f32::from(content.size.height);
