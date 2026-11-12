@@ -70,7 +70,9 @@ icon_assets!(
         Settings,
         File,
         Close,
-        Box
+        Box,
+        Pencil,
+        Wrench
     ]
 );
 

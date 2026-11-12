@@ -2,7 +2,7 @@
 // above the box, the model in it; the chat is created on send, then the screen moves to it), what needs you (the
 // first two, decided in place), who is working now and what the routines brought today. Prototype layout: the box on
 // top, then Needs you and Working now beside Today (one column when narrow).
-use std::{collections::HashMap, path::Path, rc::Rc};
+use std::{collections::HashMap, rc::Rc};
 
 use gpui_kit::{assets::IconName, base::input::TextareaState, prelude::FluentBuilder, *};
 use rust_i18n::t;
@@ -16,7 +16,7 @@ use crate::{
     format,
     i18n::tn,
     labels,
-    net::types::{Agent, Attachment, Chat, ChatStatusState, RoutinesTodaySuccess, Today},
+    net::types::{Agent, Chat, ChatStatusState, RoutinesTodaySuccess, Today},
     route::Route,
     runtime,
     screens::{
@@ -246,33 +246,9 @@ impl Home {
                         .id
                 }
             };
-            let failed = |msg: String| (Some(chat_id.clone()), msg);
-            let mut attachment_ids = Vec::new();
-            for path in files {
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                let upload_failed = || failed(t!("composer.uploadFailed", name = name).into_owned());
-                let bytes = std::fs::read(&path).map_err(|_| upload_failed())?;
-                let attachment: Attachment = http
-                    .upload(
-                        &format!("/api/chats/{chat_id}/attachments"),
-                        &name,
-                        mime_of(&path),
-                        bytes,
-                    )
-                    .await
-                    .map_err(|_| upload_failed())?;
-                attachment_ids.push(attachment.id);
-            }
-            let mut payload = json!({ "chatId": chat_id, "clientId": format!("native-{}", client_id()), "text": text });
-            if !attachment_ids.is_empty() {
-                payload["attachmentIds"] = json!(attachment_ids);
-            }
-            rpc.call::<serde_json::Value>("send", Some(payload))
+            crate::net::send::deliver(&http, &rpc, &chat_id, &text, files)
                 .await
-                .map_err(|_| failed(t!("chat.sendFailed").into_owned()))?;
+                .map_err(|msg| (Some(chat_id.clone()), msg))?;
             Ok::<_, (Option<String>, String)>(chat_id)
         });
         cx.spawn_in(window, async move |this, cx| {
@@ -778,37 +754,4 @@ fn orbit(p: &Palette) -> impl IntoElement {
         .overflow_hidden()
         .child(ring(520., 0.045))
         .child(ring(860., 0.03))
-}
-
-/// A file's media type by its extension (the engine stores it with the attachment).
-fn mime_of(path: &Path) -> &'static str {
-    const TYPES: [(&str, &str); 12] = [
-        ("png", "image/png"),
-        ("jpg", "image/jpeg"),
-        ("jpeg", "image/jpeg"),
-        ("gif", "image/gif"),
-        ("webp", "image/webp"),
-        ("svg", "image/svg+xml"),
-        ("pdf", "application/pdf"),
-        ("txt", "text/plain"),
-        ("md", "text/markdown"),
-        ("csv", "text/csv"),
-        ("json", "application/json"),
-        ("html", "text/html"),
-    ];
-    let ext = path
-        .extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    TYPES
-        .iter()
-        .find(|(e, _)| *e == ext)
-        .map_or("application/octet-stream", |(_, m)| m)
-}
-
-/// A client id for `send` (idempotency): 16 random bytes as hex.
-fn client_id() -> String {
-    let mut bytes = [0u8; 16];
-    getrandom::fill(&mut bytes).expect("the system's random source");
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }

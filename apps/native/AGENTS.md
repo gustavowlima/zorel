@@ -22,7 +22,8 @@ regresses.
 
 ```bash
 bun run native            # cargo run -p zorel-native
-bun run native:dev -- --engine http://127.0.0.1:4319 --token <t>   # rebuild + relaunch on save (watchexec; no Rust hot reload in GPUI)
+bun run native:hot        # hot-patch function bodies (~2.6s) with dx serve; `r` rebuilds
+bun run native:dev -- --engine http://127.0.0.1:4319 --token <t>   # rebuild + relaunch on save (watchexec)
 bun run native:check      # fmt, clippy -D warnings, typos, cargo machete, cargo deny
 cargo test -p zorel-native
 MTL_HUD_ENABLED=1 bun run native   # FPS on macOS
@@ -38,10 +39,15 @@ samply record cargo run -p zorel-native --release
   notifications, updates). Lower layers never import higher ones.
 - **Units.** `RenderOnce` for stateless components; `Entity<T>` when state outlives a frame (lists, composer, panels).
   Custom `Element` only for measured drawing (frames, terminal grid).
-- **Kit first.** Check gpui-kit before writing a component: `gpui_kit::component` (styled, themed by
-  `themes/zorel.json`: tables, menus, dialogs, sheets, select, combobox, command palette, message scroller, tabs, switch,
-  tooltip, notifications, editor/diff, charts…) and `gpui_kit::base` (behaviour). Docs: https://gpui-kit.com/llms.txt.
-  Our own components only for Zorel's identity (agent face, working ring, scenes, nav row, the motion button).
+- **Own components on gpui-base.** The look is Zorel's: build on `gpui_kit::base` behaviour (Button, Popover and
+  positioner, Input/Textarea, focus, a11y, spring/transition) and draw with our `src/ui` components. gpui-component
+  stays only where it solves something heavy and invisible (MessageScroller, the input editor, the dialog host,
+  tooltips) until we own it; never for buttons, selects, menus, tabs or surfaces (its one radius, stroke-2 icons and
+  20/24/32 heights miss the prototype). Docs: https://gpui-kit.com/llms.txt.
+- **Scales.** Sizes and radii from `theme/tokens.rs`, spacing from `ui/space` (the web's 4px grid), icons through
+  `ui/icon` (16/15/13, stroke 1.6), durations from the `ui/motion` catalog. No literal px for spacing.
+- **Hot reload.** `bun run native:hot` (Subsecond). Every `impl Render` delegates to `fn view(..) -> impl IntoElement +
+  use<>` through `crate::hot::call`, or it won't hot-patch.
 - **Reuse.** Screens compose `src/ui/` components (Button, NavRow, AgentFace, card, code_block, markdown…); look there
   first, extend a component for a variant, and extract a shared one the second time a style or behaviour repeats.
   Motion lives in the component (`ui/motion`), so every use moves the same way.
