@@ -33,7 +33,7 @@ export function TodayView() {
         icon={agent ? <AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={28} /> : undefined}
         title={run.summary || t("routines.runs.outcome.something")}
         hint={[agent?.name, r?.name, formatTime(run.createdAt)].filter(Boolean).join(" · ")}
-        aside={run.readAt ? undefined : <Dot tone={run.outcome === "needs" ? "warning" : "accent"} />}
+        aside={run.readAt ? undefined : <Dot tone={run.outcome === "needs" ? "warning" : "muted"} />}
         onPress={() => open(run)}
       />
     )

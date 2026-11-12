@@ -701,7 +701,7 @@ function UserMessage({ message: m, onEdit }: { message: Message; onEdit?: (() =>
           )}
         </div>
       )}
-      <div className="rounded-sheet border border-subtle bg-raised px-4 py-2.5 text-chat whitespace-pre-wrap">
+      <div className="rounded-card rounded-br-control-sm border border-subtle bg-raised px-4 py-2.5 text-chat whitespace-pre-wrap">
         <MentionText text={m.text} />
       </div>
       <MessageActions text={m.text} at={m.at} align="end" onEdit={onEdit} />

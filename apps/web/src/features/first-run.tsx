@@ -73,7 +73,7 @@ function FirstAgent({ back, later, onBuilder }: { back: StepAction; later: StepA
   return (
     <StepColumn back={back} later={later}>
       <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-balance">{t("firstRun.agentTitle")}</h1>
+        <h1 className="text-display font-semibold text-balance">{t("firstRun.agentTitle")}</h1>
         <p className="max-w-prose text-muted">{t("firstRun.agentLede")}</p>
       </div>
       {/* What happens next, in three steps. */}

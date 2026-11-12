@@ -17,7 +17,7 @@ export function RailButton({ selected, label, badge, dimmed, onPress, children }
       aria-pressed={selected}
       className={cn(
         focus,
-        "relative flex size-10 shrink-0 cursor-default items-center justify-center rounded-card border transition-colors duration-120 ease-out motion-reduce:transition-none",
+        "relative flex size-10 shrink-0 cursor-default items-center justify-center rounded-row border transition-colors duration-120 ease-out motion-reduce:transition-none",
         selected ? "border-strong bg-surface" : "border-transparent data-hovered:bg-control-hover",
         dimmed && !selected && "opacity-50"
       )}
@@ -40,7 +40,7 @@ export function OptionButton({ selected, title, note, trailing, onPress }: { sel
       aria-pressed={selected}
       className={cn(
         focus,
-        "flex min-h-11 w-full cursor-default items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left transition-colors duration-120 ease-out data-hovered:bg-control-hover motion-reduce:transition-none",
+        "flex min-h-11 w-full cursor-default items-center gap-2.5 rounded-row px-2.5 py-1.5 text-left transition-colors duration-120 ease-out data-hovered:bg-control-hover motion-reduce:transition-none",
         selected && "bg-surface"
       )}
     >

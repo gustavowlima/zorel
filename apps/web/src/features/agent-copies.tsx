@@ -44,7 +44,6 @@ function Copy({ chatId, agentId, name, branch }: { chatId: string; agentId: stri
         <ConfirmButton
           size="sm"
           variant="ghost"
-          shape="pill"
           isDisabled={busy}
           title={t("copies.discardTitle", { agent: name })}
           description={t("copies.discardBody")}
@@ -53,7 +52,7 @@ function Copy({ chatId, agentId, name, branch }: { chatId: string; agentId: stri
         >
           {t("copies.discard")}
         </ConfirmButton>
-        <Button size="sm" variant="default" shape="pill" isPending={busy} isDisabled={busy} onPress={() => run(() => merge({ params, reactivityKeys: ["chats", "workspace"] }))}>
+        <Button size="sm" variant="default" isPending={busy} isDisabled={busy} onPress={() => run(() => merge({ params, reactivityKeys: ["chats", "workspace"] }))}>
           {t("copies.merge")}
         </Button>
       </div>

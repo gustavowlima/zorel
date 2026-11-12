@@ -84,3 +84,12 @@ test("the six agent hues share one OKLCH lightness and chroma", () => {
 test("agent hues read on the dark canvas", () => {
   for (const n of [1, 2, 3, 4, 5, 6]) expect(contrast(hex(dark, `--z-agent-${n}`), hex(dark, "--z-bg-canvas"))).toBeGreaterThanOrEqual(7)
 })
+
+// Nested shapes are concentric: the inner radius is the outer one minus the gap between them (spec 018, FR-009).
+const px = (name: string) => Number.parseFloat(dark[name]!)
+test("a card's rows sit concentric in it (card − inset = row)", () => {
+  expect(px("--z-radius-card") - px("--z-inset-card")).toBe(px("--z-radius-row"))
+})
+test("a segmented item sits concentric in its track (control − 3px = item)", () => {
+  expect(px("--z-radius-control") - 3).toBe(px("--z-radius-seg"))
+})

@@ -10,7 +10,7 @@ export function Menu({ trigger, children, label }: { trigger: ReactNode; childre
       <Popover
         placement="bottom end"
         offset={6}
-        className="z-50 min-w-48 rounded-card border border-strong bg-float shadow-float backdrop-blur-xl backdrop-saturate-150 p-1 outline-none data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.98] data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none"
+        className="z-50 min-w-48 rounded-card border border-strong bg-float shadow-float backdrop-blur-xl backdrop-saturate-150 p-inset outline-none data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.98] data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none"
       >
         <MenuPrimitive aria-label={label} className="outline-none">
           {children}
@@ -26,7 +26,7 @@ export function MenuItem({ children, onAction, tone = "default", icon, isDisable
       onAction={onAction}
       isDisabled={isDisabled ?? false}
       className={cn(
-        "flex h-control-sm cursor-default items-center gap-2 rounded-md px-2 text-base outline-none data-disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+        "flex h-control-sm cursor-default items-center gap-2 rounded-row px-2 text-base outline-none data-disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
         // Focus speaks the item's own voice: blue for an ordinary item, red for a destructive one (never blue on red).
         tone === "danger" ? "text-danger data-focused:bg-danger-soft" : "text-secondary data-focused:bg-accent-soft data-focused:text-fg data-focused:[&_svg]:text-accent-text"
       )}

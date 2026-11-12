@@ -339,7 +339,7 @@ function Overview({ project }: { project: Project }) {
               </Button>
             ))}
             {team.length > TEAM_SHOWN && (
-              <Button size="sm" variant="ghost" shape="pill" onPress={() => go({ view: "project", id: project.id, tab: "agents" })}>
+              <Button size="sm" variant="ghost" onPress={() => go({ view: "project", id: project.id, tab: "agents" })}>
                 {t("project.moreAgents", { count: team.length - TEAM_SHOWN })}
               </Button>
             )}

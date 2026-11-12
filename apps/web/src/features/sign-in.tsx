@@ -40,7 +40,7 @@ export function ServerGate({ children }: { children: ReactNode }) {
 function NeedsLink() {
   return (
     <div className="flex flex-col gap-2">
-      <h1 className="text-xl font-semibold">{t("server.needsOwner")}</h1>
+      <h1 className="text-display font-semibold">{t("server.needsOwner")}</h1>
       <p className="text-muted">{t("server.needsOwnerHint")}</p>
     </div>
   )
@@ -72,7 +72,7 @@ function Setup({ token, onDone }: { token: string; onDone: () => void }) {
       }}
     >
       <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">{t("server.setupTitle")}</h1>
+        <h1 className="text-display font-semibold">{t("server.setupTitle")}</h1>
         <p className="text-muted">{t("server.setupHint")}</p>
       </div>
       <Field label={t("server.name")}>
@@ -116,7 +116,7 @@ function Join({ id, onDone }: { id: string; onDone: () => void }) {
   if (invite === null)
     return (
       <div className="flex flex-col gap-2">
-        <h1 className="text-xl font-semibold">{t("server.inviteGone")}</h1>
+        <h1 className="text-display font-semibold">{t("server.inviteGone")}</h1>
         <p className="text-muted">{t("server.inviteGoneHint")}</p>
       </div>
     )
@@ -130,7 +130,7 @@ function Join({ id, onDone }: { id: string; onDone: () => void }) {
       }}
     >
       <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">{t("server.joinTitle")}</h1>
+        <h1 className="text-display font-semibold">{t("server.joinTitle")}</h1>
         <p className="text-muted">{t("server.joinHint", { email: invite.email, role: t(`people.roles.${invite.role}` as "people.roles.member") })}</p>
       </div>
       <Field label={t("server.name")}>
@@ -158,7 +158,7 @@ function AddPasskey({ onDone }: { onDone: () => void }) {
   }
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">{t("server.passkeyTitle")}</h1>
+      <h1 className="text-display font-semibold">{t("server.passkeyTitle")}</h1>
       <p className="text-muted">{t("server.passkeyHint")}</p>
       <div className="flex gap-2">
         <Button isPending={busy} onPress={() => void add()}>
@@ -207,7 +207,7 @@ function SignIn({ onDone }: { onDone: () => void }) {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">{t("server.signInTitle")}</h1>
+        <h1 className="text-display font-semibold">{t("server.signInTitle")}</h1>
         <p className="text-muted">{t("server.signInHint")}</p>
       </div>
       <Button isPending={busy && !form.password} onPress={() => void withPasskey()}>

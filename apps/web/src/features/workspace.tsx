@@ -1153,7 +1153,7 @@ export function RunControl({ chatId, onOpen }: { chatId: string; onOpen: (url: s
       <Menu
         label={t("workspace.run")}
         trigger={
-          <Button size="sm" variant="ghost" shape="pill" isPending={busy}>
+          <Button size="sm" variant="ghost" isPending={busy}>
             <Play />
             {busy ? t("workspace.starting") : t("workspace.run")}
           </Button>

@@ -42,7 +42,7 @@ export function Reader({ memory: m }: { memory: Memory }) {
   return (
     <article className={cn(column(), "gap-5")}>
       <div className="flex flex-col gap-1.5">
-        <span className="text-xs font-semibold tracking-wide text-accent-text uppercase">{skill ? t("knowledge.skill") : t("knowledge.fact")}</span>
+        <span className="text-xs font-medium text-muted">{skill ? t("knowledge.skill") : t("knowledge.fact")}</span>
         {skill && !editing && <h2 className="text-lg font-semibold">{m.title}</h2>}
         {limitable && !editing && (
           <div>
@@ -64,7 +64,7 @@ export function Reader({ memory: m }: { memory: Memory }) {
           {m.essential && (
             <>
               <span>·</span>
-              <span className="text-accent-text">{t("knowledge.essential")}</span>
+              <span className="text-secondary">{t("knowledge.essential")}</span>
             </>
           )}
         </p>

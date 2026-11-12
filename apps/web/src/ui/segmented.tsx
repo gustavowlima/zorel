@@ -26,9 +26,9 @@ export function Segmented<K extends string>({ label, options, value, onChange, c
           key={o.id}
           id={o.id}
           // 22px drawn (the 28px control row), 24px to press: the ::after reaches a pixel past each edge.
-          className={cn("relative isolate flex h-5.5 cursor-default items-center rounded-md px-2.5 after:absolute after:inset-x-0 after:-inset-y-px after:content-[''] text-sm text-muted outline-none transition-colors duration-150 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:text-fg data-selected:text-fg motion-reduce:transition-none", fill && "flex-1 justify-center")}
+          className={cn("relative isolate flex h-5.5 cursor-default items-center rounded-seg px-2.5 after:absolute after:inset-x-0 after:-inset-y-px after:content-[''] text-sm text-muted outline-none transition-colors duration-150 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:text-fg data-selected:text-fg motion-reduce:transition-none", fill && "flex-1 justify-center")}
         >
-          {o.id === value && <Marker id={group} className="absolute inset-0 -z-10 rounded-md bg-control-active" />}
+          {o.id === value && <Marker id={group} className="absolute inset-0 -z-10 rounded-seg bg-control-active" />}
           {o.label}
         </ToggleButton>
       ))}
@@ -52,7 +52,7 @@ export function MultiSegmented<K extends string>({ label, options, value, onChan
           key={o.id}
           id={o.id}
           {...(o.title && { "aria-label": o.title })}
-          className="relative flex h-5.5 min-w-8 cursor-default items-center justify-center rounded-md px-2 after:absolute after:inset-x-0 after:-inset-y-px after:content-[''] text-sm text-muted outline-none transition-colors duration-150 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:text-fg data-selected:bg-control-active data-selected:text-fg motion-reduce:transition-none"
+          className="relative flex h-5.5 min-w-8 cursor-default items-center justify-center rounded-seg px-2 after:absolute after:inset-x-0 after:-inset-y-px after:content-[''] text-sm text-muted outline-none transition-colors duration-150 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:text-fg data-selected:bg-control-active data-selected:text-fg motion-reduce:transition-none"
         >
           {o.label}
         </ToggleButton>

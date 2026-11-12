@@ -10,7 +10,7 @@ import { useEffect, useState } from "react"
 import { agentRunsAtom, chatsAtom, mutations, projectsAtom, useInvalidate, useList, useMutation, useReading, useStatuses } from "../client.ts"
 import { chatTitle } from "../labels.ts"
 import { go } from "../state.ts"
-import { Button, ChevronRight, CircleCheck, CircleX, Dot, ListRow, MessageCircle, Rows, Section, Square, Tag } from "@/ui"
+import { Button, ChevronRight, CircleCheck, CircleX, Dot, ListRow, MessageCircle, Rows, Section, Spinner, Square, Tag } from "@/ui"
 
 const ACTIVE = new Set<ChatStatus["state"]>(["running", "waiting"])
 const toneOf = (s: ChatStatus["state"]) => (s === "waiting" ? "warning" : s === "failed" ? "danger" : "accent")
@@ -115,7 +115,7 @@ function RunRow({ run: r, agent, chat, project }: { run: AgentRun; agent: Agent;
     r.inputTokens + r.outputTokens > 0 && t("agent.tokens", { n: formatCompact(r.inputTokens + r.outputTokens) })
   ].filter(Boolean)
   const icon =
-    r.state === "running" ? <Dot tone="accent" /> : failed ? <CircleX className="size-4 text-danger" /> : stopped ? <Square className="size-3.5 text-warning" /> : <CircleCheck className="size-4 text-success" />
+    r.state === "running" ? <Spinner size={12} className="text-secondary" /> : failed ? <CircleX className="size-4 text-danger" /> : stopped ? <Square className="size-3.5 text-warning" /> : <CircleCheck className="size-4 text-success" />
   const name = chat ? chatTitle(chat) : t("agent.work.deletedChat")
   return (
     <ListRow

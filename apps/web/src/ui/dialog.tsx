@@ -17,7 +17,7 @@ function Content({ title, children }: { title: string; children: Body }) {
     <DialogPrimitive className="flex min-h-0 flex-1 flex-col gap-4 outline-none">
       {({ close }) => (
         <>
-          <Heading slot="title" className="text-lg font-semibold">
+          <Heading slot="title" className="text-title font-semibold">
             {title}
           </Heading>
           {/* A long body scrolls inside the sheet; the title stays. */}

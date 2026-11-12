@@ -178,7 +178,7 @@ function BuilderIntro({ builder, tone, onPick }: { builder: Agent | undefined; t
     <div className="flex flex-col items-center gap-5 pt-16 text-center">
       {builder && <AgentAvatar id={builder.id} name={builder.name} tone={tone} size={64} live />}
       <div className="flex max-w-md flex-col gap-1.5">
-        <h2 className="text-xl font-semibold tracking-tight">{builder?.name ?? t("builder.title")}</h2>
+        <h2 className="text-title font-semibold">{builder?.name ?? t("builder.title")}</h2>
         <p className="text-balance text-muted">{t("builder.introBody")}</p>
       </div>
       <div className="flex flex-wrap justify-center gap-1.5">
@@ -393,10 +393,10 @@ function ProposalPanel({
       ),
       footer: (
         <>
-          <Button size="sm" variant="ghost" shape="pill" isDisabled={busy} onPress={onDecline}>
+          <Button size="sm" variant="ghost" isDisabled={busy} onPress={onDecline}>
             {t("builder.notNow")}
           </Button>
-          <Button size="sm" variant="default" shape="pill" isPending={busy} isDisabled={busy} onPress={onCreate}>
+          <Button size="sm" variant="default" isPending={busy} isDisabled={busy} onPress={onCreate}>
             {t("builder.createAll", { count: drafts.length })}
           </Button>
         </>
@@ -407,7 +407,7 @@ function ProposalPanel({
         title: "", // the profile shows the name itself, large
         body: <AgentProfile draft={drafts[i]!} tone={i} choice={choiceOf(i)} onChoice={(v) => onModel(i, v)} powers={powersOf(i)} onPowers={() => push({ at: "powers", index: i })} />,
         footer: (
-          <Button size="sm" variant="default" shape="pill" onPress={() => push({ at: "powers", index: i })}>
+          <Button size="sm" variant="default" onPress={() => push({ at: "powers", index: i })}>
             {t("builder.next")}
           </Button>
         )
@@ -426,11 +426,11 @@ function ProposalPanel({
         ),
         // A member of a team goes back to the list; one agent is created from here.
         footer: team ? (
-          <Button size="sm" variant="default" shape="pill" onPress={() => onStack(stack.slice(0, 1))}>
+          <Button size="sm" variant="default" onPress={() => onStack(stack.slice(0, 1))}>
             {t("builder.done")}
           </Button>
         ) : (
-          <Button size="sm" variant="default" shape="pill" isPending={busy} isDisabled={busy} onPress={onCreate}>
+          <Button size="sm" variant="default" isPending={busy} isDisabled={busy} onPress={onCreate}>
             {t("builder.createNamed", { name: draft.name })}
           </Button>
         )
@@ -480,8 +480,8 @@ function MemberCard({ draft, tone, model, powers, onOpen, onPowers }: { draft: D
   const f = draft
   const runs = [model && modelName(model), t(`access.${powers.access}`), t("builder.powerCount", { count: summarizePowers(powers.permissions).count })].filter(Boolean)
   return (
-    <li className="relative flex flex-col gap-3 rounded-sheet bg-surface p-4">
-      <RowHit label={`${t("builder.open")}: ${draft.name}`} onPress={onOpen} className="inset-0 rounded-sheet" />
+    <li className="relative flex flex-col gap-3 rounded-card bg-surface p-4">
+      <RowHit label={`${t("builder.open")}: ${draft.name}`} onPress={onOpen} className="inset-0 rounded-card" />
       <div className="pointer-events-none relative flex items-center gap-3">
         <AgentAvatar id={draft.name} name={draft.name} tone={tone} size={40} />
         <span className="flex min-w-0 flex-col">
@@ -514,7 +514,7 @@ function AgentProfile({ draft, tone, choice, onChoice, powers, onPowers }: { dra
       <div className="flex items-center gap-4">
         <AgentAvatar id={draft.name} name={draft.name} tone={tone} size={64} live />
         <div className="flex min-w-0 flex-col gap-0.5">
-          <h3 className="truncate text-2xl font-semibold tracking-tight">{draft.name}</h3>
+          <h3 className="truncate text-display font-semibold">{draft.name}</h3>
           {f.title && <p className="truncate text-muted">{f.title}</p>}
         </div>
       </div>
@@ -537,7 +537,7 @@ function AgentProfile({ draft, tone, choice, onChoice, powers, onPowers }: { dra
       )}
       {/* How it runs, as two settings rows (what, then its control on the right), parted by a hairline: its AI, and
           its permissions in one line (what it may do on its own · what it reaches) with "Change". */}
-      <Rows className="rounded-sheet border-transparent">
+      <Rows className="rounded-card border-transparent">
         <SettingRow icon={<Cpu />} title={t("builder.model")}>
           <ModelPicker className="max-w-56 text-fg" value={choice} onChange={onChoice} />
         </SettingRow>

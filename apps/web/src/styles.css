@@ -52,6 +52,7 @@
   --z-radius-control: 10px;
   --z-radius-control-sm: 8px;
   --z-radius-row: 10px;
+  --z-radius-seg: 7px; /* a segmented item: control radius 10 − its 3px track (1 border + 2 padding) */
   --z-radius-card: 16px;
   --z-inset-card: 6px; /* card radius − inset = row radius: concentric */
   --z-radius-sheet: 20px;
@@ -265,6 +266,7 @@
   --radius-control: var(--z-radius-control);
   --radius-control-sm: var(--z-radius-control-sm);
   --radius-row: var(--z-radius-row);
+  --radius-seg: var(--z-radius-seg);
   /* The open chat in the sidebar: a raised chip (hairline ring + a soft drop). */
   --shadow-float: var(--z-shadow-float);
   --shadow-chip: inset 0 0 0 1px var(--z-border-strong), 0 6px 16px -8px rgba(0, 0, 0, 0.6);

@@ -78,7 +78,7 @@ export function Connect({ back, later, onNext }: { back: StepAction; later: Step
   return (
     <StepColumn back={back} later={later}>
       <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-balance">{t("firstRun.connectTitle")}</h1>
+        <h1 className="text-display font-semibold text-balance">{t("firstRun.connectTitle")}</h1>
         <p className="max-w-prose text-muted">{t("firstRun.connectLede")}</p>
       </div>
       <div className="flex flex-col divide-y divide-subtle overflow-hidden rounded-card border border-subtle bg-surface shadow-lg">

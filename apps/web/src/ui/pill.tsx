@@ -21,10 +21,11 @@ export function DisclosurePill({ expanded, onToggle, leading, children, controls
 }
 
 // The small state dot that leads a finished pill.
-export const Dot = ({ tone }: { tone: "success" | "warning" | "danger" | "accent" }) => (
+// "muted" marks something new that isn't a state (an unread result); blue stays for actions and selection.
+export const Dot = ({ tone }: { tone: "success" | "warning" | "danger" | "accent" | "muted" }) => (
   <span
     aria-hidden="true"
-    className={cn("size-1.5 shrink-0 rounded-full", tone === "success" && "bg-success", tone === "warning" && "bg-warning", tone === "danger" && "bg-danger", tone === "accent" && "bg-accent-text")}
+    className={cn("size-1.5 shrink-0 rounded-full", tone === "success" && "bg-success", tone === "warning" && "bg-warning", tone === "danger" && "bg-danger", tone === "accent" && "bg-accent-text", tone === "muted" && "bg-secondary")}
   />
 )
 

@@ -29,7 +29,7 @@ export function GitControl({ chat, open, onOpen }: { chat: Chat; open: boolean; 
       {chat.worktree ? <FolderOpen /> : <GitBranch />}
       <span className="truncate">{s.branch ?? t("git.detached")}</span>
       {s.files.length > 0 && <span className="font-mono text-sm text-warning tabular-nums">{s.files.length}</span>}
-      {s.ahead > 0 && <span className="font-mono text-sm text-accent-text tabular-nums">{`↑${s.ahead}`}</span>}
+      {s.ahead > 0 && <span className="font-mono text-sm text-secondary tabular-nums">{`↑${s.ahead}`}</span>}
     </Button>
   )
 }
@@ -173,7 +173,7 @@ export function GitPanel({ chatId, worktree }: { chatId: string; worktree: strin
                   rel="noopener"
                   className="group flex items-center gap-2.5 self-start rounded-control px-2 py-1 -ml-2 text-sm text-muted transition-colors duration-120 hover:bg-hover hover:text-fg motion-reduce:transition-none"
                 >
-                  <GitPullRequest className={cn("size-4 shrink-0", s.pr.state === "open" ? "text-success" : s.pr.state === "merged" ? "text-accent-text" : "text-muted")} />
+                  <GitPullRequest className={cn("size-4 shrink-0", s.pr.state === "open" ? "text-success" : s.pr.state === "merged" ? "text-secondary" : "text-muted")} />
                   {t("git.openOnGithub")}
                   <ArrowUpRight className="size-3.5 shrink-0" />
                 </a>

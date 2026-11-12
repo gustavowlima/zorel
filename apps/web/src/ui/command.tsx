@@ -31,7 +31,7 @@ export function CommandPalette({
   const shown = sections.filter((s) => s.items.length)
   return (
     <ModalOverlay isDismissable isOpen={isOpen} onOpenChange={onOpenChange} className="fixed inset-0 z-50 flex items-start justify-center bg-overlay p-4 pt-[12vh] data-entering:animate-in data-entering:fade-in-0 data-exiting:animate-out data-exiting:fade-out-0 data-exiting:duration-100 motion-reduce:animate-none">
-      <Modal className="w-full max-w-xl overflow-hidden rounded-sheet border border-strong bg-float shadow-float backdrop-blur-xl backdrop-saturate-150 text-fg outline-none data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.97] data-exiting:animate-out data-exiting:fade-out-0 data-exiting:zoom-out-[0.98] data-exiting:duration-100 motion-reduce:animate-none">
+      <Modal className="w-full max-w-xl overflow-hidden rounded-card border border-strong bg-float shadow-float backdrop-blur-xl backdrop-saturate-150 text-fg outline-none data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.97] data-exiting:animate-out data-exiting:fade-out-0 data-exiting:zoom-out-[0.98] data-exiting:duration-100 motion-reduce:animate-none">
         <Dialog aria-label={label} className="flex max-h-[60vh] flex-col outline-none">
           {({ close }) => (
             <Autocomplete inputValue={query} onInputChange={onQuery}>
@@ -42,7 +42,7 @@ export function CommandPalette({
               {shown.length ? (
                 <Menu
                   aria-label={label}
-                  className="min-h-0 flex-1 overflow-y-auto p-1.5 outline-none"
+                  className="min-h-0 flex-1 overflow-y-auto p-inset outline-none"
                   onAction={(key) => {
                     const item = shown.flatMap((s) => s.items).find((i) => i.id === key)
                     if (!item) return
@@ -59,7 +59,7 @@ export function CommandPalette({
                           id={i.id}
                           textValue={i.text}
                           className={cn(
-                            "flex cursor-default items-center gap-2.5 rounded-control px-2.5 py-2 text-secondary outline-none data-focused:bg-accent-soft data-focused:text-fg [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted data-focused:[&_svg]:text-accent-text"
+                            "flex cursor-default items-center gap-2.5 rounded-row px-2.5 py-2 text-secondary outline-none data-focused:bg-accent-soft data-focused:text-fg [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted data-focused:[&_svg]:text-accent-text"
                           )}
                         >
                           {i.icon}

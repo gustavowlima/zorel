@@ -176,6 +176,15 @@ Normative for everything below; where an older section disagrees, this one wins 
   Screens read roles and component tokens only. A theme overrides base or role tokens; `tokens.test.ts` holds the
   contrast floors (text 16, secondary 10, muted 5.5, link 7 on the canvas; white on the accent 4.5) and one OKLCH
   lightness/chroma for the six agent hues.
+- **Concentric shapes**: an inner radius is the outer radius minus the gap. Cards and every floating list (menu,
+  select, context menu, option list, palette) are 16 with a 6px inset (`p-inset`) and rows 10 (`rounded-row`); a row's
+  hover in a card reaches 6px from the edge; the model picker (20) holds options and rail tiles at 10 inside 10px;
+  a segmented track (10, 3px) holds items at 7 (`rounded-seg`). `tokens.test.ts` checks the pairs.
+- **Shape vocabulary**: circles only for what is alive (agent faces, the mark, Send, state dots); pills only for
+  chips (suggestions, mentions, an agent's chip, quick replies) and tabs; every action button is a rounded rectangle
+  (control radius). Page and dialog titles use the title step (17), first-run and sign-in headings the display step (26).
+- **Composer**: one raised card, the text on top and, inside it below, attach · the message's controls (model, access,
+  context) · Stop · the round Send.
 - **Personal accent**: Settings › Appearance › Action colour (per browser, `zorel.accent`), refused with the reason when
   white can't be read on it (`theme.ts`). Blue stays the default and the only action colour.
 - **Links** are the text tone (secondary, brighter on hover), never blue; check:ui rule `blue-link`.

@@ -54,7 +54,7 @@ export function Select({
       {(o) => (
         <ListBoxItem
           textValue={o.label}
-          className={cn("relative flex h-control-sm cursor-default items-center gap-2 rounded-md pr-8 pl-2 text-secondary outline-none select-none data-focused:bg-accent-soft data-focused:text-fg data-disabled:opacity-50", size === "sm" ? "text-sm" : "text-base")}
+          className={cn("relative flex h-control-sm cursor-default items-center gap-2 rounded-row pr-8 pl-2 text-secondary outline-none select-none data-focused:bg-accent-soft data-focused:text-fg data-disabled:opacity-50", size === "sm" ? "text-sm" : "text-base")}
         >
           {({ isSelected }) => (
             <>
@@ -87,7 +87,7 @@ export function Select({
         <SelectValue className="flex-1 truncate text-left data-placeholder:text-dim">{({ selectedText, defaultChildren }) => selectedText || defaultChildren}</SelectValue>
         <ChevronDownIcon className={cn("size-4 shrink-0 transition-transform duration-120 ease-out in-popup-open:rotate-180 motion-reduce:transition-none", variant === "ghost" ? "size-3.5 opacity-70" : "text-muted")} />
       </Button>
-      <Popover offset={6} className={cn("z-50 w-(--trigger-width) overflow-hidden rounded-card border border-strong bg-float shadow-float backdrop-blur-xl backdrop-saturate-150 p-1 text-fg data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.98] data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none", searchable ? "min-w-64" : "min-w-40")}>
+      <Popover offset={6} className={cn("z-50 w-(--trigger-width) overflow-hidden rounded-card border border-strong bg-float shadow-float backdrop-blur-xl backdrop-saturate-150 p-inset text-fg data-entering:animate-in data-entering:fade-in-0 data-entering:zoom-in-[0.98] data-exiting:animate-out data-exiting:fade-out-0 motion-reduce:animate-none", searchable ? "min-w-64" : "min-w-40")}>
         {searchable ? (
           <Autocomplete filter={contains}>
             <SearchField aria-label={searchLabel ?? ariaLabel ?? ""} autoFocus className="mb-1">

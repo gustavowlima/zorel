@@ -3,7 +3,8 @@
 import type { Agent, Chat } from "@zorel/contracts"
 import { isTeammate } from "@zorel/contracts"
 import { t } from "@zorel/i18n"
-import { agentsAtom, mutations, teamsAtom, useList, useMutation } from "../client.ts"
+import { agentsAtom, mutations, teamsAtom, useList, useMutation, useStatuses } from "../client.ts"
+import type { FaceState } from "@/ui"
 import { callable, teamsIn, withTeam } from "./agent-options.ts"
 import { agentTint, agentTone, handleOf, modelLabel, splitModel } from "../labels.ts"
 import { useState } from "react"
@@ -11,9 +12,9 @@ import { AgentAvatar, Button, IconButton, ModelAvatar, Plus, Popover, SearchInpu
 
 type Size = 16 | 20 | 28 | 32
 
-export function AuthorAvatar({ agent, model, size = 32 }: { agent: Agent | undefined; model: string | null; size?: Size }) {
+export function AuthorAvatar({ agent, model, size = 32, state }: { agent: Agent | undefined; model: string | null; size?: Size; state?: FaceState }) {
   const agents = useList(agentsAtom)
-  if (agent) return <AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={size} />
+  if (agent) return <AgentAvatar id={agent.id} name={agent.name} tone={agentTone(agent, agents)} size={size} state={state} />
   return <ModelAvatar provider={splitModel(model ?? "").provider} size={size} />
 }
 
@@ -21,6 +22,9 @@ export function AuthorAvatar({ agent, model, size = 32 }: { agent: Agent | undef
 // to add, remove or pick the lead. Who answers a message is picked in the text with @.
 export function TeamPicker({ chat }: { chat: Chat }) {
   const agents = useList(agentsAtom)
+  // The lead's face carries the chat's state (spec 018): working, waiting for you, failed.
+  const live = useStatuses()[chat.id]
+  const leadState: FaceState | undefined = !live || live.state === "idle" ? undefined : live.state === "running" ? "working" : live.state
   const update = useMutation(mutations.updateChat)
   // Teams (spec 010): one press adds the members who aren't here yet, in the team's order.
   const reach = callable(agents, chat.projectId)
@@ -49,7 +53,7 @@ export function TeamPicker({ chat }: { chat: Chat }) {
           {team.length ? (
             <span className="flex">
               {team.map((a, i) => (
-                <AgentAvatar key={a.id} id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} className={i ? "-ml-1.5 ring-2 ring-canvas" : "ring-2 ring-canvas"} />
+                <AgentAvatar key={a.id} id={a.id} name={a.name} tone={agentTone(a, agents)} size={20} state={i ? undefined : leadState} className={i ? "-ml-1.5 ring-2 ring-canvas" : "ring-2 ring-canvas"} />
               ))}
             </span>
           ) : (

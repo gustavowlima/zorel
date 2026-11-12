@@ -54,7 +54,7 @@ export function SkillsBody({ selected, file }: { selected?: string | undefined; 
   const group = (title: string, items: ReadonlyArray<ReactNode>, tone?: "accent") =>
     items.length > 0 && (
       <div className="flex flex-col gap-1">
-        <h3 className={cn("px-3 text-sm font-medium", tone === "accent" ? "text-accent-text" : "text-muted")}>{title}</h3>
+        <h3 className={cn("px-3 text-sm font-medium", tone === "accent" ? "text-secondary" : "text-muted")}>{title}</h3>
         <ul className="flex flex-col gap-0.5">{items}</ul>
       </div>
     )
@@ -165,7 +165,7 @@ function FileSkillView({ skill: s }: { skill: FileSkill }) {
   return (
     <article className={cn(column(), "gap-5")}>
       <div className="flex flex-col gap-1.5">
-        <span className="text-xs font-semibold tracking-wide text-accent-text uppercase">{sourceOf(s)}</span>
+        <span className="text-xs font-medium text-muted">{sourceOf(s)}</span>
         <h2 className="text-lg font-semibold">{s.name}</h2>
         {s.enabled && (
           <div>

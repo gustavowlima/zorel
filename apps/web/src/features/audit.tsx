@@ -198,7 +198,7 @@ function AuditRow({ entry: e, by }: { entry: AuditEntry; by: string }) {
         {e.reason && <span className="text-sm text-muted">{e.reason}</span>}
         <span className="flex items-center gap-2 text-sm text-muted">
           {e.actor.type === "user" ? t("audit.byYou") : t("audit.by", { name: by })}
-          <Button size="sm" variant="ghost" shape="pill" className="-my-1 font-normal text-muted" aria-expanded={open} aria-controls={id} onPress={() => setOpen(!open)}>
+          <Button size="sm" variant="ghost" className="-my-1 font-normal text-muted" aria-expanded={open} aria-controls={id} onPress={() => setOpen(!open)}>
             {t("audit.details")}
             <ChevronDown className={cn("size-3.5 transition-transform duration-150 ease-out motion-reduce:transition-none", open && "rotate-180")} />
           </Button>

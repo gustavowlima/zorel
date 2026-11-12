@@ -404,7 +404,7 @@ function AccountRow({ account: a, started }: { account: ProviderAccount; started
                 }}
               >
                 <Input className="min-w-0 flex-1" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t("accounts.codePlaceholder")} aria-label={t("accounts.codePlaceholder")} autoComplete="off" spellCheck={false} />
-                <Button type="submit" size="sm" variant="default" shape="pill" isPending={sending} isDisabled={!code.trim() || sending}>
+                <Button type="submit" size="sm" variant="default" isPending={sending} isDisabled={!code.trim() || sending}>
                   {t("accounts.connect")}
                 </Button>
               </form>

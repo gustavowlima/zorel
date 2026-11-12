@@ -25,7 +25,7 @@ export function Screen({ title, subtitle, actions, children, bodyClassName }: { 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader className={HEADER}>
-        <h1 className="truncate text-lg font-semibold">{title}</h1>
+        <h1 className="truncate text-title font-semibold">{title}</h1>
         {/* A phone keeps the title and the actions: the subtitle steps aside, and the actions wrap instead of being cut. */}
         {subtitle && <span className="hidden min-w-0 flex-1 truncate text-muted sm:block">{subtitle}</span>}
         <span className={cn("flex-1", subtitle && "sm:hidden")} />
@@ -192,7 +192,7 @@ export const RowHit = ({ label, onPress, className, expanded }: { label: string;
     aria-label={label}
     {...(expanded !== undefined && { "aria-expanded": expanded })}
     onPress={onPress}
-    className={cn("absolute -inset-x-2.5 inset-y-1 cursor-default rounded-control outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:bg-control data-pressed:bg-control-hover motion-reduce:transition-none", className)}
+    className={cn("absolute -inset-x-2.5 inset-y-1.5 cursor-default rounded-row outline-none transition-colors duration-120 ease-out data-focus-visible:ring-2 data-focus-visible:ring-accent data-hovered:bg-control data-pressed:bg-control-hover motion-reduce:transition-none", className)}
   />
 )
 

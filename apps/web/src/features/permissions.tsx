@@ -58,7 +58,7 @@ export function PermissionsEditor({
     <div className="@container flex flex-col gap-8">
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-medium text-muted">{t("agent.perm.accessTitle")}</h2>
-      <Rows className="rounded-sheet border-transparent">
+      <Rows className="border-transparent">
         <Power
           icon={<SquareTerminal />}
           title={t("agent.perm.files")}
@@ -111,7 +111,7 @@ export function PermissionsEditor({
           {servers.length === 0 ? (
             <p className="text-sm text-muted">{t("agent.perm.noConnectors")}</p>
           ) : (
-            <Rows className="rounded-sheet border-transparent">
+            <Rows className="border-transparent">
         {servers.map((s) => (
           <Power
             key={s.id}

@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 
 export function OptionList({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
   return (
-    <div role="listbox" aria-label={label} className={cn("flex flex-col gap-px overflow-y-auto p-1", className)}>
+    <div role="listbox" aria-label={label} className={cn("flex flex-col gap-px overflow-y-auto p-inset", className)}>
       {children}
     </div>
   )
@@ -42,7 +42,7 @@ export function OptionRow({
         onPick()
       }}
       onDoubleClick={onOpen}
-      className={cn("group flex shrink-0 cursor-default items-center gap-2.5 rounded-md px-2.5", selected ? "bg-accent-soft text-fg" : "text-secondary hover:bg-control-hover", className)}
+      className={cn("group flex shrink-0 cursor-default items-center gap-2.5 rounded-row px-2.5", selected ? "bg-accent-soft text-fg" : "text-secondary hover:bg-control-hover", className)}
     >
       {icon && <span className={cn("flex size-5 shrink-0 items-center justify-center [&_svg]:size-4", selected ? "text-accent-text" : "text-muted")}>{icon}</span>}
       {children}

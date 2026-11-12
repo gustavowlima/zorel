@@ -214,7 +214,7 @@ export function Composer({
         attach(e.dataTransfer.files)
       }}
       className={cn(
-        "relative flex flex-col gap-1.5 rounded-card border bg-canvas p-1.5 pl-2 transition-colors duration-150 ease-out motion-reduce:transition-none",
+        "relative flex flex-col gap-1.5 rounded-card border bg-raised p-1.5 transition-colors duration-150 ease-out motion-reduce:transition-none",
         dragging ? "border-accent-line bg-accent-faint" : "border-strong"
       )}
     >
@@ -231,11 +231,14 @@ export function Composer({
           )}
         </div>
       )}
-      <div className="flex items-end gap-1">
+      {/* Spec 018: the text on top; under it, in the same box, attach, the message's controls (model, access,
+          context), then Stop and the round Send. */}
+      <EditorContent editor={editor} className="min-w-0 px-1 pt-1" />
+      <div className="flex items-center gap-1">
         <IconButton label={t("composer.attach")} className="size-control" isDisabled={files.length >= MAX_ATTACHMENTS} onPress={() => void pickFiles().then(attach)}>
           <Plus />
         </IconButton>
-        <EditorContent editor={editor} className="min-w-0 flex-1 self-center" />
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">{tools}</div>
         {busy && onStop && (
           <Tooltip content={t("composer.stop")}>
             <IconButton label={t("composer.stop")} variant="secondary" shape="pill" size="md" onPress={onStop}>
@@ -255,9 +258,7 @@ export function Composer({
         </p>
       )}
     </form>
-    {/* Under the box, outside it: the message's controls (model, access, context). The box keeps attach, the text,
-        Stop and Send. */}
-    {tools && <div className="flex min-w-0 flex-wrap items-center gap-0.5 px-1">{tools}</div>}
+
     </div>
   )
 }

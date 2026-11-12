@@ -238,7 +238,7 @@ export function RoutineWeek({ onCreate, onOpen }: { onCreate?: (slot: Slot) => v
                       <span className="w-full truncate opacity-80">{b.meta}</span>
                     </>
                   )
-                  const box = "absolute flex h-auto min-w-0 flex-col items-start justify-start gap-0 overflow-hidden rounded-md px-1.5 py-1 text-left text-xs shadow-sm"
+                  const box = "absolute flex h-auto min-w-0 flex-col items-start justify-start gap-0 overflow-hidden rounded-md px-1.5 py-1 text-left text-xs"
                   const movable = !!b.routine?.cron && !!moveCron(b.routine.cron, 0, 0)
                   if (movable) {
                     const dragging = drag?.key === b.key && drag.moved ? drag : undefined

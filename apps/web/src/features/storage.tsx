@@ -195,7 +195,7 @@ function Move() {
           </Button>
         </SettingRow>
         <SettingRow title={t("storage.move.import")} hint={
-              <span className={state.error ? "text-sm text-danger" : state.pending ? "text-sm text-accent-text" : "text-sm text-muted"}>
+              <span className={state.error ? "text-sm text-danger" : state.pending ? "text-sm text-secondary" : "text-sm text-muted"}>
                 {state.error
                   ? t("storage.move.notAnExport")
                   : state.pending
