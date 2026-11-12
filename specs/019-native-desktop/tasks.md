@@ -70,7 +70,7 @@ component tests per research R7). No pixel-size tests.
 - [X] T022 [P] [US1] Status + chat list entities in `apps/native/src/state/chats.rs` fed by `subscribeStatus` and the chats endpoint — pure `ChatList` (status per chat; an unknown chat asks for a refetch); sidebar order ported from apps/web sidebar-order.ts with the screen (T031)
 - [X] T023 [P] [US1] Chat view state in `apps/native/src/state/chat.rs`: rows with stable ids, streaming tail kept apart, approvals, drafts per chat — pure `ChatLog` reducer (snapshot, messages, turns, streaming tail per turn, steps, approvals, status) with a test; the screen owns it
 - [X] T024 [P] [US1] i18n in `apps/native/src/i18n.rs`: `rust_i18n::i18n!("locales", fallback = "en")` in `lib.rs`, system language (pt → pt-BR), `tn(key, count)` over icu_plurals; test for en and pt-BR. `extend!(gpui_component)` not needed: only gpui-base is used
-- [ ] T025 [P] [US1] Theme load in `apps/native/src/theme/mod.rs`: `tokens.rs` (`Palette` by appearance), follows system light/dark, exposes reduced-motion
+- [X] T025 [P] [US1] Theme in `apps/native/src/theme/mod.rs`: `palette(window)` picks `tokens::DARK`/`LIGHT` by the window's appearance, re-rendered on change; reduced motion comes from `gpui_kit::init` (gpui-base reads the system setting on macOS, Windows, Linux) into `cx.reduce_motion()`. In-app light/dark override waits for the settings screen
 
 ### Zorel components (on gpui-base, research R7 tests)
 

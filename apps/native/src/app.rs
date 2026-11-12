@@ -9,7 +9,7 @@ use crate::{
     engine::Launch,
     i18n,
     state::connection::{ConnectionState, EngineConnection, Target},
-    theme::tokens,
+    theme,
 };
 
 struct Root {
@@ -17,7 +17,8 @@ struct Root {
 }
 
 impl Render for Root {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = theme::palette(window);
         let status = match &self.connection.read(cx).state {
             ConnectionState::Starting => t!("app.starting").into_owned(),
             ConnectionState::Ready => t!("app.name").into_owned(),
@@ -29,8 +30,8 @@ impl Render for Root {
             .flex()
             .items_center()
             .justify_center()
-            .bg(tokens::DARK.bg_canvas)
-            .text_color(tokens::DARK.text)
+            .bg(palette.bg_canvas)
+            .text_color(palette.text)
             .child(status)
     }
 }
@@ -56,9 +57,10 @@ pub fn run() {
     gpui_kit::application().run(move |cx| {
         gpui_kit::init(cx);
         let connection = cx.new(|cx| EngineConnection::new(target, cx));
-        gpui_kit::open_window(WindowOptions::default(), cx, |_, cx| {
+        gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
             cx.new(|cx| {
                 cx.observe(&connection, |_, _, cx| cx.notify()).detach();
+                cx.observe_window_appearance(window, |_, _, cx| cx.notify()).detach(); // light/dark follows the system
                 Root { connection }
             })
         })
