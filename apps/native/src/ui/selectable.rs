@@ -1,13 +1,12 @@
-// Text you can select and copy (drag, double-click a word, ⌘C), with its styling: gpui-base's window selection
-// (`TextSelection`, drawn by the `TextSelectionLayer` the root renders), joined by a run that keeps its highlights
-// (bold, code, links), which gpui-base's own `SelectableText` (plain text only) drops. A link opens on a click that
-// didn't drag.
+// Text you can select and copy (drag across texts, double-click a word, triple-click the text, ⌘C), with its
+// styling (bold, code, links) and elements in its flow (a mention's face). It joins ui/text_select's per-frame
+// registry, paints its slice of the selection under its glyphs, and listens at the window so a drag started here
+// follows the pointer anywhere. A link or mention acts on a click that didn't drag. The I-beam over it.
 use std::{cell::Cell, ops::Range, rc::Rc};
 
-use gpui_kit::{
-    base::{TextSelectionHandle, TextSelectionRegistration, TextSelectionRun},
-    *,
-};
+use gpui_kit::*;
+
+use crate::ui::text_select;
 
 pub struct Selectable {
     id: ElementId,
@@ -63,7 +62,7 @@ impl IntoElement for Selectable {
 }
 
 impl Element for Selectable {
-    type RequestLayoutState = TextSelectionHandle;
+    type RequestLayoutState = ();
     type PrepaintState = (Hitbox, Vec<AnyElement>);
 
     fn id(&self) -> Option<ElementId> {
@@ -80,17 +79,8 @@ impl Element for Selectable {
         inspector_id: Option<&InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
-    ) -> (LayoutId, Self::RequestLayoutState) {
-        let text = self.text.clone();
-        let handle = window.with_element_state(
-            global_id.expect("Selectable has an id"),
-            |kept: Option<TextSelectionHandle>, _| {
-                let handle = kept.unwrap_or_else(|| TextSelectionHandle::new(text, cx));
-                (handle.clone(), handle)
-            },
-        );
-        let (layout_id, ()) = self.styled.request_layout(global_id, inspector_id, window, cx);
-        (layout_id, handle)
+    ) -> (LayoutId, ()) {
+        self.styled.request_layout(global_id, inspector_id, window, cx)
     }
 
     fn prepaint(
@@ -98,17 +88,13 @@ impl Element for Selectable {
         global_id: Option<&GlobalElementId>,
         inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
-        handle: &mut Self::RequestLayoutState,
+        _: &mut (),
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
         self.styled
             .prepaint(global_id, inspector_id, bounds, &mut (), window, cx);
         let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
-        let registration = TextSelectionRegistration::new(hitbox.clone(), bounds)
-            .with_text_bounds(vec![bounds])
-            .with_rendered_element(handle, window, cx);
-        handle.register(registration, window, cx);
         // The inline elements, placed where their room starts on its line.
         let layout = self.styled.layout().clone();
         let line = layout.line_height();
@@ -133,55 +119,81 @@ impl Element for Selectable {
         global_id: Option<&GlobalElementId>,
         inspector_id: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
-        handle: &mut Self::RequestLayoutState,
+        _: &mut (),
         (hitbox, placed): &mut Self::PrepaintState,
         window: &mut Window,
         cx: &mut App,
     ) {
         let layout = self.styled.layout().clone();
-        let projection = handle.update_runs(&[TextSelectionRun::new(self.text.clone(), layout.clone(), bounds)], cx);
-        // Redraw as the selection moves under a drag, not only when the mouse is let go.
-        let ranges: Vec<Range<usize>> = projection.ranges().iter().flatten().cloned().collect();
-        let changed = window.with_element_state(
-            global_id.expect("Selectable has an id"),
-            |last: Option<Vec<Range<usize>>>, _| (last.as_ref() != Some(&ranges), ranges.clone()),
-        );
-        if changed {
-            window.refresh();
+        let key = self.id.to_string();
+        text_select::register(&key, self.text.clone(), layout.clone());
+        if let Some(range) = text_select::range_of(&key) {
+            paint_selection(&layout, range, self.color, window);
         }
-        // Text reads as text: the I-beam over it (a hand over a link, below).
+        let over_link = |at: Point<Pixels>, layout: &TextLayout, links: &[(Range<usize>, Action)]| {
+            layout
+                .index_for_position(at)
+                .ok()
+                .and_then(|ix| links.iter().position(|(r, _)| r.contains(&ix)))
+        };
         if hitbox.is_hovered(window) {
-            window.set_cursor_style(CursorStyle::IBeam, hitbox);
+            let hand = over_link(window.mouse_position(), &layout, &self.links).is_some();
+            window.set_cursor_style(
+                if hand {
+                    CursorStyle::PointingHand
+                } else {
+                    CursorStyle::IBeam
+                },
+                hitbox,
+            );
         }
-        for range in projection.ranges().iter().flatten() {
-            paint_selection(&layout, range.clone(), self.color, window);
-        }
-        if !self.links.is_empty() {
-            let over_link = |at: Point<Pixels>, layout: &TextLayout, links: &[(Range<usize>, Action)]| {
-                layout
-                    .index_for_position(at)
-                    .ok()
-                    .and_then(|ix| links.iter().position(|(r, _)| r.contains(&ix)))
-            };
-            if hitbox.is_hovered(window)
-                && let Some(at) = Some(window.mouse_position())
-                && over_link(at, &layout, &self.links).is_some()
-            {
-                window.set_cursor_style(CursorStyle::PointingHand, hitbox);
-            }
-            let pressed: Rc<Cell<Option<Point<Pixels>>>> = Rc::default();
-            let (down, hb) = (pressed.clone(), hitbox.clone());
-            window.on_mouse_event(move |e: &MouseDownEvent, phase, window, _| {
-                if phase.bubble() && e.button == MouseButton::Left && hb.is_hovered(window) {
+        let pressed: Rc<Cell<Option<Point<Pixels>>>> = Rc::default();
+        {
+            let (down, hb, key, text, layout) = (
+                pressed.clone(),
+                hitbox.clone(),
+                key.clone(),
+                self.text.clone(),
+                layout.clone(),
+            );
+            window.on_mouse_event(move |e: &MouseDownEvent, phase, window, cx| {
+                if phase != DispatchPhase::Bubble || e.button != MouseButton::Left {
+                    return;
+                }
+                if hb.is_hovered(window) {
+                    let ix = match layout.index_for_position(e.position) {
+                        Ok(ix) | Err(ix) => ix,
+                    };
+                    text_select::begin(&key, &text, ix, e.click_count);
                     down.set(Some(e.position));
+                    // Out of the message box, so ⌘C copies this selection, not the box's.
+                    window.blur(cx);
+                    window.refresh();
                 }
             });
-            let (links, hb) = (self.links.clone(), hitbox.clone());
+        }
+        {
+            let key = key.clone();
+            window.on_mouse_event(move |e: &MouseMoveEvent, phase, window, _| {
+                if phase == DispatchPhase::Bubble
+                    && e.dragging()
+                    && text_select::drags(&key)
+                    && text_select::drag_to(e.position)
+                {
+                    window.refresh();
+                }
+            });
+        }
+        {
+            let (links, hb, layout, key) = (self.links.clone(), hitbox.clone(), layout.clone(), key.clone());
             window.on_mouse_event(move |e: &MouseUpEvent, phase, window, cx| {
+                if phase != DispatchPhase::Bubble || !text_select::drags(&key) {
+                    return;
+                }
+                text_select::end();
                 let Some(start) = pressed.take() else { return };
                 // A click, not the end of a drag that selected text.
-                if phase.bubble()
-                    && hb.is_hovered(window)
+                if hb.is_hovered(window)
                     && (e.position - start).magnitude() < 3.
                     && let Some(i) = over_link(e.position, &layout, &links)
                 {

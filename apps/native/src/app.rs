@@ -364,6 +364,19 @@ impl Root {
             .on_mouse_move(|event: &MouseMoveEvent, window, cx| crate::ui::face::follow(event.position, window, cx))
             .on_action(cx.listener(|this, _: &OpenPalette, window, cx| this.open_palette(window, cx)))
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
+            .on_action(|_: &gpui_kit::base::input::Copy, _, cx| {
+                if let Some(text) = crate::ui::text_select::selected_text() {
+                    cx.write_to_clipboard(ClipboardItem::new_string(text));
+                }
+            })
+            // A press anywhere drops the selection first; a press on text starts a new one after (ui/selectable).
+            .capture_any_mouse_down(|_, window, _| {
+                if crate::ui::text_select::clear() {
+                    window.refresh();
+                }
+            })
+            // Each frame's selectable texts register in paint order after this (ui/text_select).
+            .child(crate::ui::text_select::reset())
             .when_some(self.sidebar.clone(), |c, sidebar| c.child(sidebar))
             .child(
                 div()
@@ -376,8 +389,6 @@ impl Root {
                     .child(strip)
                     .child(self.card(main, status, p)),
             )
-            // Draws text selection (ui/selectable) over the window and handles its copy.
-            .child(gpui_kit::base::TextSelectionLayer)
     }
 
     /// The title strip in the frame above the card: what the open screen is (and, for a chat, its project and lead).
