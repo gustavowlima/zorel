@@ -3,7 +3,9 @@
 export const en = {
   app: {
     name: "Zorel",
-    offline: "Can't reach the Zorel server. Retrying…"
+    offline: "Can't reach the Zorel server. Retrying…",
+    starting: "Starting Zorel…",
+    stopped: "The Zorel server stopped: {reason}"
   },
   time: {
     now: "now"

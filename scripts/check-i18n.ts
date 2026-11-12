@@ -48,6 +48,7 @@ for await (const abs of new Glob("src/**/*.rs").scan({ cwd: NATIVE, absolute: tr
   const file = relative(NATIVE, abs)
   const lines = (await Bun.file(abs).text()).split("\n")
   lines.forEach((text, i) => {
+    if (text.trimStart().startsWith("//")) return // a comment may name the macros
     for (const m of text.matchAll(/\b(t!|tn)\(\s*"([\w.]+)"/g)) {
       const node = at(m[2]!)
       const ok = m[1] === "t!" ? isText(node) : isText(node?.one as Record<string, unknown>) && isText(node?.other as Record<string, unknown>)

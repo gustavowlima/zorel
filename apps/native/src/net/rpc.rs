@@ -13,7 +13,7 @@ use std::{collections::HashMap, time::Duration};
 use futures_util::{SinkExt, StreamExt};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest, http::HeaderValue};
 
 use crate::{engine::Engine, net::http::SESSION_HEADER};
@@ -61,15 +61,22 @@ enum Command {
 #[derive(Clone)]
 pub struct Rpc {
     commands: mpsc::UnboundedSender<Command>,
+    connected: watch::Receiver<bool>,
 }
 
 impl Rpc {
     /// Starts the connection task on the current tokio runtime.
     pub fn connect(engine: &Engine) -> Self {
         let (commands, rx) = mpsc::unbounded_channel();
+        let (up, connected) = watch::channel(false);
         let url = format!("{}/rpc", engine.url.replacen("http", "ws", 1));
-        tokio::spawn(run(url, engine.token.clone(), rx));
-        Self { commands }
+        tokio::spawn(run(url, engine.token.clone(), rx, up));
+        Self { commands, connected }
+    }
+
+    /// Whether the socket is up now; changes as it drops and reconnects.
+    pub fn connected(&self) -> watch::Receiver<bool> {
+        self.connected.clone()
     }
 
     /// A request with one answer.
@@ -119,7 +126,7 @@ struct Live {
 }
 
 // The connection task: (re)connects, sends requests, routes answers, acks chunks.
-async fn run(url: String, token: String, mut commands: mpsc::UnboundedReceiver<Command>) {
+async fn run(url: String, token: String, mut commands: mpsc::UnboundedReceiver<Command>, up: watch::Sender<bool>) {
     let mut next_id: u64 = 0;
     let mut streams: HashMap<String, Live> = HashMap::new();
     let mut calls: HashMap<String, oneshot::Sender<Result<Value, RpcError>>> = HashMap::new();
@@ -131,6 +138,7 @@ async fn run(url: String, token: String, mut commands: mpsc::UnboundedReceiver<C
             continue;
         };
         backoff = BACKOFF_FIRST;
+        up.send_replace(true);
         let (mut tx, mut rx) = socket.split();
         // Streams from before a reconnect are asked for again under new ids.
         for live in std::mem::take(&mut streams).into_values() {
@@ -190,6 +198,7 @@ async fn run(url: String, token: String, mut commands: mpsc::UnboundedReceiver<C
                     .await;
             }
         }
+        up.send_replace(false);
         for (_, reply) in calls.drain() {
             let _ = reply.send(Err(RpcError::Disconnected));
         }

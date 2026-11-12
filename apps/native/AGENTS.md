@@ -41,7 +41,7 @@ samply record cargo run -p zorel-native --release
 - **Behaviour vs presentation.** Focus, selection, overlays, virtualisation, springs come from `gpui-base`;
   colours, sizes and motion values come from the theme (`src/theme/tokens.rs`, generated from `apps/web/src/styles.css`). No raw
   hex or pixel literals outside the theme.
-- **Async.** Network on the tokio runtime (`gpui_tokio`); results reach views through entity updates; never block
+- **Async.** Network on the tokio runtime (`src/runtime.rs`); results reach views through entity updates; never block
   the UI thread (markdown parsing and image decoding run off-thread).
 
 ## Theme and motion

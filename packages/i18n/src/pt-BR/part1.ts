@@ -2,7 +2,9 @@
 export const part1 = {
   app: {
     name: "Zorel",
-    offline: "Sem conexão com o servidor do Zorel. Tentando de novo…"
+    offline: "Sem conexão com o servidor do Zorel. Tentando de novo…",
+    starting: "Iniciando o Zorel…",
+    stopped: "O servidor do Zorel parou: {reason}"
   },
   time: {
     now: "agora"

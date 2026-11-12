@@ -81,7 +81,7 @@ real server responses.
 
 | Need | Pick | Why / caveat |
 |---|---|---|
-| Async + net | tokio, reqwest 0.13, tokio-tungstenite 0.30, Zed's `gpui_tokio` (git, pinned) | one runtime; secret as a default header. `reqwest-eventsource` is incompatible with reqwest 0.13 (not needed: we use WS) |
+| Async + net | tokio, reqwest 0.13, tokio-tungstenite 0.30, an own tokio↔GPUI bridge (`src/runtime.rs`: Zed's `gpui_tokio` targets in-tree gpui, not gpui-pre) | one runtime; secret as a default header. `reqwest-eventsource` is incompatible with reqwest 0.13 (not needed: we use WS) |
 | Tray | gpui-tray 0.3 (Apache-2.0) | runs on GPUI's loop, native per OS, no GTK; young → pin, ksni fallback on Linux |
 | App menus | GPUI `cx.set_menus` | native on macOS; Windows/Linux in-window as today |
 | Notifications | notify-rust 4.19 | one API on 3 OSes; macOS click-through tested in a signed bundle, objc2 UNUserNotificationCenter shim if needed. `user-notify` is LGPL → avoided |

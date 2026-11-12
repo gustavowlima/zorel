@@ -63,13 +63,13 @@ component tests per research R7). No pixel-size tests.
 - [X] T018 [US1] HTTP client in `apps/native/src/net/http.rs`: reqwest with `x-zorel-token` default header, base URL from the connection, typed calls for the endpoints the prototype uses
 - [X] T019 [US1] effect/rpc client in `apps/native/src/net/rpc.rs`: WebSocket `/rpc`, JSON envelope `Request`/`Chunk`/`Exit`/`Ack`/`Ping`/`Eof`, streams as async iterators, reconnect with backoff 0.5→10 s and resubscribe (snapshot first) — Void payloads go as `null`; each chunk is acked (the engine waits for it); unknown items are skipped and logged
 - [X] T020 [P] [US1] Contract test `apps/native/tests/rpc_live.rs`: on a fresh engine, an agent and a chat created over REST; `subscribeChat` starts with a snapshot; `send` returns a turn id and the stream carries turn-started through turn-failed (no provider account); `decide` on an unknown id fails with `ApprovalNotFound`; `approvals` (Void payload) answers; `subscribeStatus` opens
-- [ ] T021 [US1] Bridge tokio into GPUI with `gpui_tokio` in `apps/native/src/main.rs`; `EngineConnection` entity (data-model.md states) in `apps/native/src/state/connection.rs`
+- [X] T021 [US1] Bridge tokio into GPUI in `apps/native/src/runtime.rs` (own: Zed's `gpui_tokio` targets in-tree gpui); `EngineConnection` entity (data-model.md states) in `apps/native/src/state/connection.rs` — `src/state/connection.rs`, window in `src/app.rs` (lib, so `t!` resolves); verified: connect, drop, reconnect; 40 MB footprint (debug)
 
 ### State and text
 
 - [ ] T022 [P] [US1] Status + chat list entities in `apps/native/src/state/chats.rs` fed by `subscribeStatus` and the chats endpoint
 - [ ] T023 [P] [US1] Chat view state in `apps/native/src/state/chat.rs`: rows with stable ids, streaming tail kept apart, approvals, drafts per chat
-- [ ] T024 [P] [US1] i18n in `apps/native/src/i18n.rs`: `rust_i18n::i18n!("locales", fallback = "en")`, `extend!(gpui_component)` before `gpui_kit::init`, `plural(key, count)` over icu_plurals; unit test for en and pt-BR plurals in the same file
+- [X] T024 [P] [US1] i18n in `apps/native/src/i18n.rs`: `rust_i18n::i18n!("locales", fallback = "en")` in `lib.rs`, system language (pt → pt-BR), `tn(key, count)` over icu_plurals; test for en and pt-BR. `extend!(gpui_component)` not needed: only gpui-base is used
 - [ ] T025 [P] [US1] Theme load in `apps/native/src/theme/mod.rs`: `tokens.rs` (`Palette` by appearance), follows system light/dark, exposes reduced-motion
 
 ### Zorel components (on gpui-base, research R7 tests)

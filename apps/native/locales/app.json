@@ -8,6 +8,14 @@
     "offline": {
       "en": "Can't reach the Zorel server. Retrying…",
       "pt-BR": "Sem conexão com o servidor do Zorel. Tentando de novo…"
+    },
+    "starting": {
+      "en": "Starting Zorel…",
+      "pt-BR": "Iniciando o Zorel…"
+    },
+    "stopped": {
+      "en": "The Zorel server stopped: %{reason}",
+      "pt-BR": "O servidor do Zorel parou: %{reason}"
     }
   },
   "time": {

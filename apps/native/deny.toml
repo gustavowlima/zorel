@@ -40,5 +40,4 @@ multiple-versions = "allow"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# Only Zed's repository, always pinned by rev in Cargo.toml (gpui_tokio).
-allow-git = ["https://github.com/zed-industries/zed"]
+# No git dependencies: everything comes from crates.io (gpui through the gpui-pre snapshots).

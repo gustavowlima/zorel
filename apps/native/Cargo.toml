@@ -19,6 +19,11 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 getrandom = "0.4" # the per-launch session secret
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+# Text from packages/i18n (locales/app.json), gpui-kit's i18n convention; plural rules from ICU; the system language.
+rust-i18n = "4.2"
+icu_plurals = "2"
+icu_locale_core = "2"
+sys-locale = "0.3"
 
 [build-dependencies]
 # Wire types generated from packages/contracts/schema/wire.json (build.rs).
