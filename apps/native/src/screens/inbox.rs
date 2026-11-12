@@ -19,7 +19,7 @@ use std::rc::Rc;
 use crate::screens::approval::{self, is_question};
 use crate::{
     i18n::tn,
-    net::types::{Approval, MemoriesListSuccess, Memory, MemoryState},
+    net::types::{MemoriesListSuccess, Memory, MemoryState},
     runtime,
     state::store::{StatusChanged, Store},
     theme::{self},
@@ -46,7 +46,6 @@ impl EventEmitter<InboxEvent> for Inbox {}
 pub struct Inbox {
     store: Entity<Store>,
     filter: Filter,
-    approvals: Vec<Approval>,
     memories: Vec<Memory>,
     /// An answer box per open question.
     answers: std::collections::HashMap<String, Entity<TextareaState>>,
@@ -61,7 +60,6 @@ impl Inbox {
         let mut inbox = Self {
             store,
             filter: Filter::All,
-            approvals: Vec::new(),
             memories: Vec::new(),
             answers: Default::default(),
         };
@@ -69,27 +67,18 @@ impl Inbox {
         inbox
     }
 
-    pub fn count(&self) -> usize {
-        self.approvals.len() + self.memories.len()
+    /// Open approvals (from the Store) and proposed memories.
+    pub fn count(&self, cx: &App) -> usize {
+        self.store.read(cx).approvals.len() + self.memories.len()
     }
 
+    /// Re-reads the proposed memories (approvals live in the Store, refreshed with every status change).
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
-        let store = self.store.read(cx);
-        let (http, rpc) = (store.http.clone(), store.rpc.clone());
+        let http = self.store.read(cx).http.clone();
         cx.spawn(async move |this, cx| {
-            let got = runtime::spawn(async move {
-                let approvals = rpc
-                    .call::<Vec<Approval>>("approvals", None)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let memories: MemoriesListSuccess = http.get("/api/memories").await.map_err(|e| e.to_string())?;
-                Ok::<_, String>((approvals, memories))
-            })
-            .await;
-            match got {
-                Ok(Ok((approvals, memories))) => {
+            match runtime::spawn(async move { http.get::<MemoriesListSuccess>("/api/memories").await }).await {
+                Ok(Ok(memories)) => {
                     let _ = this.update(cx, |this, cx| {
-                        this.approvals = approvals;
                         this.memories = memories
                             .0
                             .into_iter()
@@ -106,18 +95,7 @@ impl Inbox {
     }
 
     fn decide(&mut self, id: String, outcome: &'static str, reason: Option<String>, cx: &mut Context<Self>) {
-        let rpc = self.store.read(cx).rpc.clone();
-        self.approvals.retain(|a| a.id != id); // the refresh confirms; decided elsewhere, it's gone either way
-        cx.notify();
-        let mut payload = json!({ "approvalId": id, "outcome": outcome });
-        if let Some(reason) = reason.filter(|r| !r.trim().is_empty()) {
-            payload["reason"] = json!(reason.trim().chars().take(2000).collect::<String>());
-        }
-        runtime::spawn(async move {
-            if let Err(e) = rpc.call::<serde_json::Value>("decide", Some(payload)).await {
-                eprintln!("decide: {e}");
-            }
-        });
+        self.store.update(cx, |store, cx| store.decide(id, outcome, reason, cx));
     }
 
     fn set_memory(&mut self, id: String, state: &'static str, cx: &mut Context<Self>) {
@@ -151,9 +129,10 @@ impl Inbox {
 impl Render for Inbox {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = theme::palette(window);
-        let questions = self.approvals.iter().filter(|a| is_question(a)).count();
-        let asks = self.approvals.len() - questions;
-        let total = self.count();
+        let approvals = self.store.read(cx).approvals.clone();
+        let questions = approvals.iter().filter(|a| is_question(a)).count();
+        let asks = approvals.len() - questions;
+        let total = self.count(cx);
         let tabs = [
             (Filter::All, "inbox.all", total),
             (Filter::Approvals, "inbox.approvals", asks),
@@ -165,7 +144,7 @@ impl Render for Inbox {
 
         // (at, element), newest first.
         let mut items: Vec<(f64, AnyElement)> = Vec::new();
-        for a in self.approvals.clone() {
+        for a in approvals {
             let question = is_question(&a);
             if !show(if question { Filter::Questions } else { Filter::Approvals }, filter) {
                 continue;

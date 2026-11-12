@@ -24,7 +24,9 @@ icon_assets!(
         ArrowUp,
         ChartColumn,
         RefreshCw,
-        Settings
+        Settings,
+        File,
+        Close
     ]
 );
 

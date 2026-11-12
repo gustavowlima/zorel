@@ -9,8 +9,8 @@ use crate::{
         http::{Http, HttpError},
         rpc::Rpc,
         types::{
-            AccountsListSuccess, Agent, AgentsListSuccess, Chat, ChatStatus, ChatsListSuccess, Preferences, Project,
-            ProjectsListSuccess, ProviderAccount, Routine, RoutinesListSuccess,
+            AccountsListSuccess, Agent, AgentTeam, AgentsListSuccess, AgentsTeamsSuccess, Approval, Chat, ChatStatus,
+            ChatsListSuccess, Preferences, Project, ProjectsListSuccess, ProviderAccount, Routine, RoutinesListSuccess,
         },
     },
     runtime,
@@ -31,6 +31,9 @@ pub struct Store {
     pub chats: ChatList,
     pub routines: Vec<Routine>,
     pub accounts: Vec<ProviderAccount>,
+    pub teams: Vec<AgentTeam>,
+    /// Every open approval and question (Needs you, Home), refreshed when any chat's status changes.
+    pub approvals: Vec<Approval>,
     /// All agents paused (Settings › General, the sidebar's Pause).
     pub paused: bool,
 }
@@ -46,9 +49,12 @@ impl Store {
             chats: ChatList::default(),
             routines: Vec::new(),
             accounts: Vec::new(),
+            teams: Vec::new(),
+            approvals: Vec::new(),
             paused: false,
         };
         store.load(cx);
+        store.refresh_approvals(cx);
         store.follow_statuses(cx);
         store
     }
@@ -64,11 +70,12 @@ impl Store {
                 let routines: RoutinesListSuccess = http.get("/api/routines").await?;
                 let accounts: AccountsListSuccess = http.get("/api/accounts").await?;
                 let preferences: Preferences = http.get("/api/preferences").await?;
-                Ok::<_, HttpError>((agents, projects, chats, routines, accounts, preferences))
+                let teams: AgentsTeamsSuccess = http.get("/api/teams").await?;
+                Ok::<_, HttpError>((agents, projects, chats, routines, accounts, preferences, teams))
             })
             .await;
             match got {
-                Ok(Ok((agents, projects, chats, routines, accounts, preferences))) => {
+                Ok(Ok((agents, projects, chats, routines, accounts, preferences, teams))) => {
                     let _ = this.update(cx, |this, cx| {
                         this.agents = agents.0;
                         this.projects = projects.0;
@@ -76,6 +83,7 @@ impl Store {
                         this.routines = routines.0;
                         this.accounts = accounts.0;
                         this.paused = preferences.paused;
+                        this.teams = teams.0;
                         this.loaded = true;
                         cx.notify();
                     });
@@ -100,6 +108,38 @@ impl Store {
             }
         })
         .detach();
+    }
+
+    /// Re-reads the open approvals (RPC `approvals`).
+    pub fn refresh_approvals(&self, cx: &mut Context<Self>) {
+        let rpc = self.rpc.clone();
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(approvals)) =
+                runtime::spawn(async move { rpc.call::<Vec<Approval>>("approvals", None).await }).await
+            {
+                let _ = this.update(cx, |this, cx| {
+                    this.approvals = approvals;
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// Decides an approval (or answers a question); it leaves the list at once, the refresh confirms.
+    pub fn decide(&mut self, id: String, outcome: &'static str, reason: Option<String>, cx: &mut Context<Self>) {
+        self.approvals.retain(|a| a.id != id);
+        cx.notify();
+        let mut payload = serde_json::json!({ "approvalId": id, "outcome": outcome });
+        if let Some(reason) = reason.filter(|r| !r.trim().is_empty()) {
+            payload["reason"] = serde_json::json!(reason.trim().chars().take(2000).collect::<String>());
+        }
+        let rpc = self.rpc.clone();
+        runtime::spawn(async move {
+            if let Err(e) = rpc.call::<serde_json::Value>("decide", Some(payload)).await {
+                eprintln!("decide: {e}");
+            }
+        });
     }
 
     /// Pauses or resumes every agent (running work stops; new messages and routines wait).
@@ -161,6 +201,7 @@ impl Store {
                     if this.chats.apply_status(status) {
                         this.reload_chats(cx);
                     }
+                    this.refresh_approvals(cx); // approvals come and go with statuses
                     cx.notify();
                 });
                 if alive.is_err() {

@@ -126,7 +126,7 @@ impl Root {
         .detach();
         // Needs you's count shows in the sidebar.
         cx.observe(&inbox, |this, inbox, cx| {
-            let pending = inbox.read(cx).count();
+            let pending = inbox.read(cx).count(cx);
             if let Some(sidebar) = &this.sidebar {
                 sidebar.update(cx, |s, cx| {
                     s.pending = pending;
