@@ -26,6 +26,9 @@ pub enum Target {
 
 pub type OnPick = Rc<dyn Fn(Target, &mut Window, &mut App) + 'static>;
 
+/// A row: its label, icon and what it does.
+type Entry = (String, IconName, Target);
+
 /// Opens the palette over the window.
 pub fn open(store: &Entity<Store>, on_pick: OnPick, window: &mut Window, cx: &mut App) {
     let state = cx.new(|cx| CommandState::new(window, cx));
@@ -53,7 +56,7 @@ pub fn open(store: &Entity<Store>, on_pick: OnPick, window: &mut Window, cx: &mu
             Target::ToggleSidebar,
         ),
     ];
-    let projects: Vec<(String, IconName, Target)> = s
+    let projects: Vec<Entry> = s
         .projects
         .iter()
         .map(|p| {
@@ -66,7 +69,7 @@ pub fn open(store: &Entity<Store>, on_pick: OnPick, window: &mut Window, cx: &mu
             )
         })
         .collect();
-    let chats: Vec<(String, IconName, Target)> = s
+    let chats: Vec<Entry> = s
         .chats
         .chats
         .iter()
@@ -79,7 +82,7 @@ pub fn open(store: &Entity<Store>, on_pick: OnPick, window: &mut Window, cx: &mu
             )
         })
         .collect();
-    let groups: Vec<(String, Vec<(String, IconName, Target)>)> = vec![
+    let groups: Vec<(String, Vec<Entry>)> = vec![
         (t!("palette.go").into_owned(), go),
         (t!("nav.projects").into_owned(), projects),
         (t!("nav.chats").into_owned(), chats),
