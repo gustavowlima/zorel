@@ -108,7 +108,7 @@ component tests per research R7). No pixel-size tests.
 
 ### Shell (plan Phase C)
 
-- [ ] T041 [P] [US2] Tray with gpui-tray in `apps/native/src/shell/tray.rs` (open, new chat, quit; ksni fallback on Linux if needed)
+- [X] T041 [P] [US2] Tray in `apps/native/src/shell/tray.rs` (gpui-tray, `gpui-kit` backend): Windows and Linux only, as Electron (macOS: the Dock); "Open Zorel" and a click bring the window back, Quit quits. The app now runs with `QuitMode::Explicit`: closing the window never quits (the engine keeps working); the Dock reopen, the tray and `show_window` reopen it. Servers in the menu with T047. Not exercised live on Windows/Linux
 - [X] T042 [P] [US2] App menus in `apps/native/src/shell/menus.rs`: macOS app menu (Services, hide, hide others, show all, quit), Edit on gpui-base's input actions, Window (minimize, zoom); ⌘Q ⌘H ⌥⌘H ⌘M; labels from `desktop.menu.*` in packages/i18n; no menu bar on Windows/Linux, as Electron. (Servers submenu with T047)
 - [X] T043 [P] [US2] Notifications in `apps/native/src/shell/notify.rs` (notify-rust): the web's rules — a chat that starts waiting, fails or finishes while you look elsewhere (not routine chats), and each routine notice; a click brings Zorel forward and opens the chat (`wait_for_action` on a thread per notification). Tested rules. `ponytail:` no in-app switch/chime yet (T056); macOS shows them only for a signed bundle (T048) — not yet seen live
 - [ ] T044 [P] [US2] Keep-awake on AC power (keepawake + starship-battery polled 60 s) in `apps/native/src/shell/awake.rs`, pref in `prefs.json`

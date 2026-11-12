@@ -2240,6 +2240,9 @@ export const en = {
   },
   // The desktop app's own dialogs.
   desktop: {
+    tray: {
+      open: "Open Zorel"
+    },
     menu: {
       services: "Services",
       hide: "Hide Zorel",

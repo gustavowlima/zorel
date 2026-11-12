@@ -758,6 +758,9 @@ export const part3 = {
     connect: "Conectar uma IA"
   },
   desktop: {
+    tray: {
+      open: "Abrir o Zorel"
+    },
     menu: {
       services: "Serviços",
       hide: "Ocultar o Zorel",

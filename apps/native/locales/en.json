@@ -2625,6 +2625,9 @@
     "connect": "Connect an AI"
   },
   "desktop": {
+    "tray": {
+      "open": "Open Zorel"
+    },
     "menu": {
       "services": "Services",
       "hide": "Hide Zorel",

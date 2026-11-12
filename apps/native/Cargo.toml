@@ -24,6 +24,8 @@ rust-i18n = "4.2"
 icu_plurals = "2"
 icu_locale_core = "2"
 sys-locale = "0.3"
+gpui-tray = { version = "0.3", default-features = false, features = ["gpui-kit"] } # tray / menu-bar icon on GPUI's own loop (no GTK)
+image = { version = "0.25", default-features = false, features = ["png"] } # the tray icon (jpeg joins for the browser panel)
 notify-rust = "4" # system notifications for approvals, questions and routine notices
 pulldown-cmark = { version = "0.13", default-features = false } # replies are markdown; raw HTML is never rendered
 

@@ -349,27 +349,65 @@ fn target() -> Target {
     }
 }
 
+/// What outlives any window: the engine connection and the tray. Closing the window never quits (the engine keeps
+/// running turns and routines); the Dock (macOS), the tray (Windows, Linux) or a second launch brings it back.
+struct Shell {
+    connection: Entity<EngineConnection>,
+    window: Option<WindowHandle<Root>>,
+    _tray: Option<gpui_tray::Tray>,
+}
+
+impl Global for Shell {}
+
+/// Brings the main window forward, opening it again if it was closed.
+pub fn show_window(cx: &mut App) {
+    let (existing, connection) = {
+        let shell = cx.global::<Shell>();
+        (shell.window, shell.connection.clone())
+    };
+    if let Some(handle) = existing
+        && handle.update(cx, |_, window, _| window.activate_window()).is_ok()
+    {
+        cx.activate(true);
+        return;
+    }
+    let options = WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+            None,
+            size(px(1200.), px(800.)),
+            cx,
+        ))),
+        titlebar: Some(TitlebarOptions {
+            title: Some("Zorel".into()),
+            appears_transparent: true,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let opened = gpui_kit::open_window(options, cx, |window, cx| cx.new(|cx| Root::new(connection, window, cx)));
+    match opened.ok().and_then(|(handle, _)| handle.downcast::<Root>()) {
+        Some(handle) => cx.global_mut::<Shell>().window = Some(handle),
+        None => eprintln!("couldn't open the window"),
+    }
+    cx.activate(true);
+}
+
 pub fn run() {
     i18n::init();
     let target = target();
-    gpui_kit::application().run(move |cx| {
+    let app = gpui_kit::application().with_quit_mode(QuitMode::Explicit);
+    app.on_reopen(show_window);
+    app.run(move |cx| {
         gpui_kit::init(cx);
         crate::shell::menus::install(cx);
         let connection = cx.new(|cx| EngineConnection::new(target, cx));
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                None,
-                size(px(1200.), px(800.)),
-                cx,
-            ))),
-            titlebar: Some(TitlebarOptions {
-                title: Some("Zorel".into()),
-                appears_transparent: true,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        gpui_kit::open_window(options, cx, |window, cx| cx.new(|cx| Root::new(connection, window, cx)))
-            .expect("open the window");
+        let tray = crate::shell::tray::install(cx);
+        cx.set_global(Shell {
+            connection,
+            window: None,
+            _tray: tray,
+        });
+        cx.on_action(|_: &crate::shell::tray::OpenZorel, cx| show_window(cx));
+        show_window(cx);
     });
 }
