@@ -7,7 +7,7 @@ use gpui_kit::{prelude::FluentBuilder, *};
 use crate::{theme, ui::space};
 
 /// The strip's height: the traffic lights' row.
-pub const HEIGHT: f32 = 40.;
+pub const HEIGHT: f32 = 52.; // the prototype's top (52px): room to breathe, and for the tools' tabs
 
 #[derive(IntoElement)]
 pub struct Header {
