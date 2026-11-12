@@ -6,7 +6,7 @@
 // if a profile shows it. Syntax colours for code blocks (tree-sitter) come later.
 use std::{ops::Range, rc::Rc};
 
-use gpui_kit::*;
+use gpui_kit::{prelude::FluentBuilder, *};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 use crate::ui::space;
@@ -45,8 +45,16 @@ pub enum Block {
         lang: String,
         text: String,
     },
+    /// A table: its header cells, then each row's cells.
+    Table {
+        header: Vec<Inline>,
+        rows: Vec<Vec<Inline>>,
+    },
     Rule,
 }
+
+/// A table while it's read: header cells, rows, the row being read.
+type TableDraft = (Vec<Inline>, Vec<Vec<Inline>>, Vec<Inline>);
 
 /// Parses markdown into blocks.
 pub fn parse(source: &str) -> Vec<Block> {
@@ -56,6 +64,8 @@ pub fn parse(source: &str) -> Vec<Block> {
     let mut lists: Vec<Option<u64>> = Vec::new();
     let mut quote = 0usize;
     let mut code: Option<(String, String)> = None;
+    // The table being read: header cells, rows, the row being read.
+    let mut table: Option<TableDraft> = None;
     let flush = |inline: &mut Inline| std::mem::take(inline);
     let options = Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS;
     for event in Parser::new_ext(source, options) {
@@ -144,10 +154,27 @@ pub fn parse(source: &str) -> Vec<Block> {
                     blocks.push(Block::Paragraph(text));
                 }
             }
-            // Table cells read as text separated by a tab; rows end the line (a table view comes later).
-            Event::End(TagEnd::TableCell) => inline.text.push('\t'),
-            Event::End(TagEnd::TableRow | TagEnd::TableHead) => inline.text.push('\n'),
-            Event::End(TagEnd::Table) => blocks.push(Block::Paragraph(flush(&mut inline))),
+            Event::Start(Tag::Table(_)) => table = Some(Default::default()),
+            Event::End(TagEnd::TableCell) => {
+                if let Some((_, _, row)) = &mut table {
+                    row.push(flush(&mut inline));
+                }
+            }
+            Event::End(TagEnd::TableHead) => {
+                if let Some((header, _, row)) = &mut table {
+                    *header = std::mem::take(row);
+                }
+            }
+            Event::End(TagEnd::TableRow) => {
+                if let Some((_, rows, row)) = &mut table {
+                    rows.push(std::mem::take(row));
+                }
+            }
+            Event::End(TagEnd::Table) => {
+                if let Some((header, rows, _)) = table.take() {
+                    blocks.push(Block::Table { header, rows });
+                }
+            }
             Event::Rule => blocks.push(Block::Rule),
             _ => {}
         }
@@ -216,6 +243,7 @@ pub fn render_with(id: &str, blocks: &[Block], mentions: Option<&Mentions>, wind
                 .text_color(p.text_secondary)
                 .child(inline(key, text, p)),
             Block::Code { text, .. } => code_block(p, text.clone()),
+            Block::Table { header, rows } => table(&key, header, rows, p, &inline),
             Block::Rule => div().h(px(1.)).bg(p.border),
         });
     }
@@ -302,6 +330,64 @@ fn inline(id: SharedString, text: &Inline, p: &tokens::Palette, mentions: Option
     .into_any_element()
 }
 
+/// A table, frameless: hairlines under the header and between rows, bold header, 12px cells; each column's share
+/// of the width follows its longest cell (a short column stays narrow, prose takes the rest), never below a floor;
+/// past the floors it scrolls sideways.
+fn table(
+    key: &SharedString,
+    header: &[Inline],
+    rows: &[Vec<Inline>],
+    p: &tokens::Palette,
+    inline: &dyn Fn(SharedString, &Inline, &tokens::Palette) -> AnyElement,
+) -> Div {
+    const PAD: f32 = 12.;
+    const MIN_COL: f32 = 96.;
+    let all: Vec<&[Inline]> = std::iter::once(header)
+        .filter(|h| !h.is_empty())
+        .chain(rows.iter().map(|r| r.as_slice()))
+        .collect();
+    let cols = all.iter().map(|r| r.len()).max().unwrap_or(0);
+    let share: Vec<f32> = (0..cols)
+        .map(|c| {
+            all.iter()
+                .filter_map(|r| r.get(c))
+                .map(|cell| cell.text.chars().count())
+                .max()
+                .unwrap_or(0)
+                .clamp(4, 80) as f32
+        })
+        .collect();
+    let has_header = !header.is_empty();
+    let mut body = div().flex().flex_col().w_full().min_w(px(MIN_COL * cols as f32));
+    for (r, row) in all.iter().enumerate() {
+        if r > 0 {
+            body = body.child(div().flex_none().h(px(1.)).w_full().bg(p.border));
+        }
+        body = body.child(div().flex().children((0..cols).map(|c| {
+            div()
+                .flex_grow(share[c])
+                .flex_shrink(share[c])
+                .flex_basis(px(0.))
+                .min_w(px(MIN_COL))
+                .overflow_hidden()
+                .px(px(PAD))
+                .py(px(PAD * 0.66))
+                .when(has_header && r == 0, |d| d.font_weight(FontWeight::SEMIBOLD))
+                .children(
+                    row.get(c)
+                        .map(|cell| inline(SharedString::from(format!("{key}-{r}-{c}")), cell, p)),
+                )
+        })));
+    }
+    div().w_full().child(
+        div()
+            .id(SharedString::from(format!("{key}-table")))
+            .w_full()
+            .overflow_x_scroll()
+            .child(body),
+    )
+}
+
 /// Every `@handle` in a text (at a word's start): its byte range and the handle, lowercase.
 pub fn mention_ranges(text: &str) -> Vec<(Range<usize>, String)> {
     let mut out = Vec::new();
@@ -348,6 +434,16 @@ mod tests {
         assert!(p.marks.contains(&(5..9, Mark::Strong)));
         assert!(matches!(&blocks[2], Block::Item { depth: 0, ordered: None, text } if text.text == "one"));
         assert!(matches!(&blocks[4], Block::Code { lang, text } if lang == "rust" && text == "fn main() {}"));
+    }
+
+    #[test]
+    fn a_table_keeps_its_cells() {
+        let blocks = parse("| A | B |\n|---|---|\n| one | **two** |\n");
+        let Block::Table { header, rows } = &blocks[0] else {
+            panic!("{blocks:?}")
+        };
+        assert_eq!(header.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(), ["A", "B"]);
+        assert_eq!(rows[0][1].text, "two");
     }
 
     #[test]

@@ -115,6 +115,19 @@ impl Element for Selectable {
     ) {
         let layout = self.styled.layout().clone();
         let projection = handle.update_runs(&[TextSelectionRun::new(self.text.clone(), layout.clone(), bounds)], cx);
+        // Redraw as the selection moves under a drag, not only when the mouse is let go.
+        let ranges: Vec<Range<usize>> = projection.ranges().iter().flatten().cloned().collect();
+        let changed = window.with_element_state(
+            global_id.expect("Selectable has an id"),
+            |last: Option<Vec<Range<usize>>>, _| (last.as_ref() != Some(&ranges), ranges.clone()),
+        );
+        if changed {
+            window.refresh();
+        }
+        // Text reads as text: the I-beam over it (a hand over a link, below).
+        if hitbox.is_hovered(window) {
+            window.set_cursor_style(CursorStyle::IBeam, hitbox);
+        }
         for range in projection.ranges().iter().flatten() {
             paint_selection(&layout, range.clone(), self.color, window);
         }
