@@ -33,6 +33,19 @@ impl Preview {
     }
 }
 
+/// Whether hovering `target` should move the dragged row: only once the pointer is past the target's middle in the
+/// direction of travel (below it when the target is below, above it when above). Without this the rows swap back
+/// and forth while the pointer rests on a middle that is itself sliding.
+pub fn crosses(order: &[String], dragged: &str, target: &str, after: bool) -> bool {
+    let (Some(d), Some(t)) = (
+        order.iter().position(|id| id == dragged),
+        order.iter().position(|id| id == target),
+    ) else {
+        return true;
+    };
+    if t > d { after } else { !after }
+}
+
 /// Where each row of a list was last laid out (relative to the list), and the slide it is playing.
 #[derive(Clone, Default)]
 pub struct Flip(Rc<RefCell<HashMap<String, Slot>>>);
@@ -176,6 +189,17 @@ pub enum DragMark {
 #[cfg(test)]
 mod tests {
     use super::Preview;
+
+    #[test]
+    fn rows_swap_only_past_the_middle_in_the_direction_of_travel() {
+        let order: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
+        // Dragging a down over b: only its lower half moves it.
+        assert!(!super::crosses(&order, "a", "b", false));
+        assert!(super::crosses(&order, "a", "b", true));
+        // Dragging c up over b: only its upper half.
+        assert!(super::crosses(&order, "c", "b", false));
+        assert!(!super::crosses(&order, "c", "b", true));
+    }
 
     #[test]
     fn the_preview_moves_the_dragged_row() {

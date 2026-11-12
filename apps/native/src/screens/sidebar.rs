@@ -60,6 +60,8 @@ pub struct Sidebar {
     held: HashMap<String, (Vec<String>, std::time::Instant)>,
     /// Where each row was laid out, so reordered rows slide.
     flip: Flip,
+    /// Each group's order as last drawn (where a dragged row is now, for the direction of travel).
+    shown: std::cell::RefCell<HashMap<String, Vec<String>>>,
     /// Groups showing every chat ("chats" or a project id); in memory only, as the web.
     show_all: HashSet<String>,
     pub route: Route,
@@ -77,6 +79,7 @@ impl Sidebar {
             preview: None,
             held: HashMap::new(),
             flip: Flip::default(),
+            shown: Default::default(),
             show_all: HashSet::new(),
             route: Route::default(),
             pending: 0,
@@ -213,10 +216,12 @@ impl Sidebar {
             }
             _ => natural,
         };
-        match &self.preview {
+        let order = match &self.preview {
             Some(preview) => preview.apply(group, &base),
             None => base,
-        }
+        };
+        self.shown.borrow_mut().insert(group.to_string(), order.clone());
+        order
     }
 
     /// A row's part in a live reorder: dragging over it moves the dragged row there; dropping keeps that order.
@@ -239,6 +244,15 @@ impl Sidebar {
                 after,
             };
             let _ = over.update(cx, |this, cx| {
+                let order = this
+                    .shown
+                    .borrow()
+                    .get(dragged.group.as_ref())
+                    .cloned()
+                    .unwrap_or_default();
+                if !crate::ui::reorder::crosses(&order, &dragged.id, &target.id, after) {
+                    return;
+                }
                 if this.preview.as_ref() != Some(&preview) {
                     this.preview = Some(preview);
                     cx.notify();
