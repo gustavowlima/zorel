@@ -19,7 +19,6 @@ use crate::{
     ui::{
         button::{Button, Size, Variant},
         face::AgentFace,
-        header::Header,
         segmented::{self, Segmented},
     },
 };
@@ -251,7 +250,7 @@ impl Inbox {
             t!("inbox.subtitle").into_owned()
         };
         let empty = items.is_empty();
-        // The title and the filter sit in the screen's top bar; the page starts with how many wait.
+        // The title sits in the window's strip (app.rs); the page starts with how many wait and the filter.
         let page = div().id("inbox").flex_1().min_h_0().overflow_y_scroll().child(
             div()
                 .max_w(px(720.))
@@ -261,7 +260,14 @@ impl Inbox {
                 .flex()
                 .flex_col()
                 .gap(px(space::X5))
-                .child(div().text_color(p.text_muted).child(subtitle))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(div().text_color(p.text_muted).child(subtitle))
+                        .child(tab_row),
+                )
                 .when(empty, |c| {
                     c.child(
                         div()
@@ -290,11 +296,6 @@ impl Inbox {
                     )
                 }),
         );
-        div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .child(Header::new(t!("inbox.title").into_owned()).trailing(tab_row))
-            .child(page)
+        div().flex().flex_col().size_full().child(page)
     }
 }

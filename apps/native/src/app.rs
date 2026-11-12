@@ -6,7 +6,11 @@ use std::path::PathBuf;
 use gpui_kit::{component as gpui_component, prelude::FluentBuilder, *};
 use rust_i18n::t;
 
-use crate::ui::space;
+use crate::ui::{
+    face::{AgentFace, FaceState},
+    header::Header,
+    space,
+};
 use crate::{
     engine::Launch,
     i18n,
@@ -290,6 +294,11 @@ impl Root {
                 .map(|(_, s)| s.clone().into_any_element()),
             Route::Home { .. } => self.home.clone().map(|h| h.into_any_element()),
         };
+        // Folded, the rail is narrower than the traffic lights: the title starts after them.
+        let folded = self.sidebar.as_ref().is_some_and(|s| s.read(cx).folded());
+        let strip = self
+            .strip(cx)
+            .inset(if folded { TRAFFIC_LIGHTS_W - RAIL_W } else { 0. });
         div()
             .size_full()
             .flex()
@@ -303,22 +312,76 @@ impl Root {
             .child(
                 div()
                     .flex_1()
-                    .m(px(space::X2))
-                    .ml(px(0.))
-                    .rounded(px(theme::tokens::RADIUS_CARD))
-                    .overflow_hidden()
-                    .bg(p.bg_canvas)
-                    .border_1()
-                    .border_color(p.border)
+                    .min_w_0()
                     .flex()
                     .flex_col()
-                    .when_some(status, |c, s| {
-                        c.child(div().p(px(space::X2)).text_color(p.text_muted).child(s))
-                    })
-                    .when_some(main, |c, screen| c.child(screen)),
+                    .pr(px(space::X2))
+                    .pb(px(space::X2))
+                    .child(strip)
+                    .child(self.card(main, status, p)),
             )
     }
+
+    /// The title strip in the frame above the card: what the open screen is (and, for a chat, its project and lead).
+    fn strip(&self, cx: &App) -> Header {
+        let Some(store) = self.store.as_ref().map(|s| s.read(cx)) else {
+            return Header::new("");
+        };
+        match &self.route {
+            Route::Home { .. } => Header::new(t!("nav.homeScreen").into_owned()),
+            Route::Inbox => Header::new(t!("inbox.title").into_owned()),
+            Route::Chat { id } => {
+                let chat = store.chat(id);
+                let project = chat
+                    .and_then(|c| c.project_id.as_deref())
+                    .and_then(|pid| store.projects.iter().find(|p| p.id == pid))
+                    .map(|p| p.name.clone());
+                let lead = chat.and_then(|c| c.agent_ids.first().cloned());
+                let running = store
+                    .status(id)
+                    .is_some_and(|s| matches!(s.state, crate::net::types::ChatStatusState::Running));
+                Header::new(chat.map(crate::labels::chat_title).unwrap_or_default())
+                    .when_some(project, |h, p| h.context(p))
+                    .when_some(lead, |h, agent| {
+                        h.trailing(
+                            AgentFace::new(
+                                SharedString::from(format!("strip-face-{agent}")),
+                                store.tone(Some(&agent)),
+                            )
+                            .size(24.)
+                            .state(if running {
+                                FaceState::Working
+                            } else {
+                                FaceState::Idle
+                            }),
+                        )
+                    })
+            }
+        }
+    }
+
+    /// The canvas card the screen lives on.
+    fn card(&self, main: Option<AnyElement>, status: Option<String>, p: &theme::tokens::Palette) -> Div {
+        div()
+            .flex_1()
+            .min_h_0()
+            .rounded(px(theme::tokens::RADIUS_CARD))
+            .overflow_hidden()
+            .bg(p.bg_canvas)
+            .border_1()
+            .border_color(p.border)
+            .flex()
+            .flex_col()
+            .when_some(status, |c, s| {
+                c.child(div().p(px(space::X2)).text_color(p.text_muted).child(s))
+            })
+            .when_some(main, |c, screen| c.child(screen))
+    }
 }
+
+/// How far the macOS window buttons reach from the left, and the folded rail's width.
+const TRAFFIC_LIGHTS_W: f32 = 80.;
+const RAIL_W: f32 = 56.;
 
 fn flag(name: &str) -> Option<String> {
     let args: Vec<String> = std::env::args().collect();

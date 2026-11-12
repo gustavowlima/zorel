@@ -34,7 +34,6 @@ use crate::{
     },
     ui::{
         face::{self, AgentFace, FaceState, WorkingRing},
-        header::Header,
         layout,
         nav::NavRow,
         select::{Mark, OnPick, Select, SelectOption},
@@ -588,15 +587,7 @@ impl Home {
 
 impl Render for Home {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // The top bar every screen has (the title now, the open tools' tabs later), then the page.
-        crate::hot::call(|| {
-            div()
-                .flex()
-                .flex_col()
-                .size_full()
-                .child(Header::new(t!("nav.homeScreen").into_owned()))
-                .child(div().flex_1().min_h_0().child(self.view(window, cx)))
-        })
+        crate::hot::call(|| self.view(window, cx))
     }
 }
 
@@ -646,7 +637,7 @@ impl Home {
                     .flex_col()
                     .items_center()
                     .px(px(space::X7))
-                    .pt(px(space::X8)) // under the top bar
+                    .pt(px(space::X12))
                     .pb(px(space::X10))
                     .child(
                         div()
@@ -770,7 +761,7 @@ fn orbit(p: &Palette) -> impl IntoElement {
         div()
             .absolute()
             .left(relative(0.5))
-            .top(px(110. - size / 2.))
+            .top(px(130. - size / 2.))
             .ml(px(-size / 2.))
             .size(px(size))
             .rounded_full()

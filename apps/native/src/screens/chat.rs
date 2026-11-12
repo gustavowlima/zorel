@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use gpui_kit::{
     base::input::{InputEvent, Textarea, TextareaState},
     component::message_scroller::{MessageScroller, MessageScrollerState},
-    prelude::FluentBuilder,
     *,
 };
 use rust_i18n::t;
@@ -23,7 +22,6 @@ use crate::{
     ui::{
         button::{Button, Size, Variant},
         face::{AgentFace, FaceState},
-        header::Header,
         layout,
         markdown::{self, Block},
     },
@@ -278,35 +276,11 @@ impl ChatScreen {
     // The render body, behind Subsecond's reload point (crate::hot).
     fn view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let p = theme::palette(window);
-        // The top bar: the chat's title, its project, and who leads it (working while a turn runs).
-        let header = {
-            let store = self.store.read(cx);
-            let chat = store.chat(&self.chat_id);
-            let title = chat.map(crate::labels::chat_title).unwrap_or_default();
-            let project = chat
-                .and_then(|c| c.project_id.as_deref())
-                .and_then(|id| store.projects.iter().find(|p| p.id == id))
-                .map(|p| p.name.clone());
-            let lead = chat.and_then(|c| c.agent_ids.first().cloned());
-            let running = store
-                .status(&self.chat_id)
-                .is_some_and(|s| matches!(s.state, crate::net::types::ChatStatusState::Running));
-            Header::new(title)
-                .when_some(project, |h, p| h.context(p))
-                .when_some(lead, |h, id| {
-                    h.trailing(
-                        AgentFace::new(SharedString::from(format!("header-face-{id}")), store.tone(Some(&id)))
-                            .size(24.)
-                            .state(if running { FaceState::Working } else { FaceState::Idle }),
-                    )
-                })
-        };
         div()
             .flex()
             .flex_col()
             .size_full()
             .bg(p.bg_canvas)
-            .child(header)
             .child(
                 MessageScroller::new(
                     SharedString::from(format!("chat-{}", self.chat_id)),

@@ -1,15 +1,18 @@
-// A screen's top bar (prototype Chat: `header`, 52px): the title at 14px semibold, a small context line beside it
-// (project, branch), then whatever the screen puts on the right (faces, actions, and soon the tabs of what the
-// chat has open: terminal, files, browser). A hairline under it; the bar also drags the window, as a title bar does.
+// The screen's title strip: part of the window's frame, above the canvas card and set back from it (not a bar inside
+// the card), level with the traffic lights. The title at 14px semibold, a small context beside it (project, branch),
+// then whatever the screen puts on the right (faces, and soon the tabs of what the chat has open: terminal, files,
+// browser). It drags the window, as a title bar does.
 use gpui_kit::{prelude::FluentBuilder, *};
 
 use crate::{theme, ui::space};
 
-/// The bar's height (prototype: 52px).
-pub const HEIGHT: f32 = 52.;
+/// The strip's height: the traffic lights' row.
+pub const HEIGHT: f32 = 40.;
 
 #[derive(IntoElement)]
 pub struct Header {
+    /// Extra room on the left (the folded sidebar leaves the traffic lights over the strip).
+    inset: f32,
     title: SharedString,
     context: Option<SharedString>,
     trailing: Vec<AnyElement>,
@@ -18,10 +21,16 @@ pub struct Header {
 impl Header {
     pub fn new(title: impl Into<SharedString>) -> Self {
         Self {
+            inset: 0.,
             title: title.into(),
             context: None,
             trailing: Vec::new(),
         }
+    }
+
+    pub fn inset(mut self, px: f32) -> Self {
+        self.inset = px;
+        self
     }
 
     /// The small line beside the title (project · branch).
@@ -47,10 +56,8 @@ impl RenderOnce for Header {
             .items_center()
             .gap(px(space::X2_5))
             .h(px(HEIGHT))
-            .pl(px(space::X5))
-            .pr(px(space::X3))
-            .border_b_1()
-            .border_color(p.border)
+            .px(px(space::X3)) // set back from the card's edge
+            .pl(px(space::X3 + self.inset))
             .child(
                 div()
                     .flex_none()

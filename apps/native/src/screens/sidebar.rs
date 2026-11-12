@@ -70,6 +70,11 @@ impl Sidebar {
         }
     }
 
+    /// Whether it is the narrow rail (the window's title strip then clears the traffic lights itself).
+    pub fn folded(&self) -> bool {
+        self.prefs.sidebar_folded
+    }
+
     pub fn toggle_folded(&mut self, cx: &mut Context<Self>) {
         self.prefs.sidebar_folded = !self.prefs.sidebar_folded;
         self.prefs.save();
