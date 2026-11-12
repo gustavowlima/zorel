@@ -1,5 +1,5 @@
 // The screen's title strip: part of the window's frame, above the canvas card and set back from it (not a bar inside
-// the card), on the sidebar's head row (logo and name). The title at 14px semibold, a small context beside it (project, branch),
+// the card), ending where the sidebar's logo and name begin (the card's top edge lines up with them). The title at 14px semibold, a small context beside it (project, branch),
 // then whatever the screen puts on the right (faces, and soon the tabs of what the chat has open: terminal, files,
 // browser). It drags the window, as a title bar does.
 use gpui_kit::{prelude::FluentBuilder, *};
@@ -7,7 +7,10 @@ use gpui_kit::{prelude::FluentBuilder, *};
 use crate::{theme, ui::space};
 
 /// The strip's height: the traffic lights' row.
-pub const HEIGHT: f32 = TOP + ROW;
+/// The strip ends where the sidebar's logo and name begin, so the card's top edge lines up with them.
+pub const HEIGHT: f32 = TOP + (ROW - LOGO) / 2.;
+/// The sidebar's logo mark (and the name's line beside it).
+pub const LOGO: f32 = 20.;
 /// Room for the macOS traffic lights above the head row (the sidebar's too).
 pub const TOP: f32 = 36.;
 /// The head row: the sidebar's logo and name, and level with them the screen's title.
@@ -60,7 +63,6 @@ impl RenderOnce for Header {
             .items_center()
             .gap(px(space::X2_5))
             .h(px(HEIGHT))
-            .pt(px(TOP)) // the title sits on the same row as the sidebar's logo
             .px(px(space::X3)) // set back from the card's edge
             .pl(px(space::X3 + self.inset))
             .child(

@@ -782,15 +782,20 @@ impl Sidebar {
                     .when(folded, |h| h.justify_center())
                     .when(!folded, |h| h.pl(px(space::X3)))
                     .when(!folded, |h| {
-                        h.child(svg().path(crate::assets::LOGO).size(px(20.)).text_color(p.text))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .text_size(px(15.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(p.text)
-                                    .child(t!("app.name").into_owned()),
-                            )
+                        h.child(
+                            svg()
+                                .path(crate::assets::LOGO)
+                                .size(px(crate::ui::header::LOGO))
+                                .text_color(p.text),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_size(px(15.))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(p.text)
+                                .child(t!("app.name").into_owned()),
+                        )
                     })
                     .child(fold),
             )
