@@ -102,6 +102,13 @@ impl Sidebar {
                                 }
                                 window.close_dialog(cx);
                                 let (store, path) = (view.read(cx).store.clone(), format!("/api/chats/{id}"));
+                                // The new title shows at once; the reload after the engine answers corrects it.
+                                store.update(cx, |s, cx| {
+                                    if let Some(c) = s.chats.chats.iter_mut().find(|c| c.id == id) {
+                                        c.title = title.clone();
+                                    }
+                                    cx.notify();
+                                });
                                 let http = store.read(cx).http.clone();
                                 let reload = store.downgrade();
                                 cx.spawn(async move |cx| {
@@ -192,6 +199,14 @@ impl Sidebar {
                                 if inside {
                                     view.update(cx, |_, cx| cx.emit(SidebarEvent::Navigate(Route::default())));
                                 }
+                                // Gone at once with its chats and agents; the reload brings it back if the delete failed.
+                                let store = view.read(cx).store.clone();
+                                store.update(cx, |s, cx| {
+                                    s.projects.retain(|p| p.id != id);
+                                    s.chats.chats.retain(|c| c.project_id.as_deref() != Some(&id));
+                                    s.agents.retain(|a| a.project_id.as_deref() != Some(&id));
+                                    cx.notify();
+                                });
                                 Self::engine_then_reload(&view, format!("/api/projects/{id}"), cx);
                             })
                             .into_any_element(),

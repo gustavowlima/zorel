@@ -733,6 +733,14 @@ impl ChatScreen {
     }
 
     fn set_model(&mut self, choice: ModelChoice, cx: &mut Context<Self>) {
+        let id = self.chat_id.clone();
+        self.store.update(cx, |s, cx| {
+            if let Some(c) = s.chats.chats.iter_mut().find(|c| c.id == id) {
+                c.model = choice.model.clone();
+                c.account_id = choice.account_id.clone();
+            }
+            cx.notify();
+        });
         let store = self.store.read(cx);
         let (http, path) = (store.http.clone(), format!("/api/chats/{}", self.chat_id));
         let reload = self.store.downgrade();

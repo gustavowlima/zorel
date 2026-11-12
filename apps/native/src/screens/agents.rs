@@ -49,6 +49,13 @@ impl Agents {
 
     /// Archives or restores an agent (it keeps its history; archived, it answers no one and runs no routine).
     fn archive(store: &Entity<Store>, id: String, archived: bool, cx: &mut App) {
+        // Moves at once; the reload after the engine answers corrects it.
+        store.update(cx, |s, cx| {
+            if let Some(a) = s.agents.iter_mut().find(|a| a.id == id) {
+                a.archived_at = archived.then(crate::format::now_ms);
+            }
+            cx.notify();
+        });
         let http = store.read(cx).http.clone();
         let reload = store.downgrade();
         cx.spawn(async move |cx| {
@@ -85,6 +92,10 @@ impl Agents {
                             .variant(Variant::Destructive)
                             .on_click(move |_, window, cx| {
                                 window.close_dialog(cx);
+                                store.update(cx, |s, cx| {
+                                    s.agents.retain(|a| a.id != id);
+                                    cx.notify();
+                                });
                                 let http = store.read(cx).http.clone();
                                 let (path, reload) = (format!("/api/agents/{id}"), store.downgrade());
                                 cx.spawn(async move |cx| {
