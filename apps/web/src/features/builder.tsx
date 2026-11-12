@@ -10,7 +10,7 @@ import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult } from "effect/reactivity"
 import { agentsAtom, modelsAtom, mutations, projectsAtom, serversAtom, uploadAttachment, useChat, useList, useMutation } from "../client.ts"
 import { agentTone, modelLabel, modelName } from "../labels.ts"
-import { go } from "../state.ts"
+import { go, READY_KEY, store, stored } from "../state.ts"
 import { PendingTray, Timeline } from "./chat.tsx"
 import { Composer } from "./composer.tsx"
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx"
@@ -236,7 +236,11 @@ function Wizard({ chat }: { chat: Chat }) {
   useEffect(() => {
     if (!made) return
     setOpening(undefined)
-    go({ view: "agent", id: made.id })
+    // Made from the first run: its "ready" step (App shows it), else the agent's page.
+    if (stored(READY_KEY) === "pending") {
+      store(READY_KEY, made.id)
+      go({ view: "home" })
+    } else go({ view: "agent", id: made.id })
   }, [made])
 
   const powersOf = (i: number): Powers => powers[i] ?? { access: drafts[i]!.access, permissions: drafts[i]!.permissions }
@@ -260,6 +264,7 @@ function Wizard({ chat }: { chat: Chat }) {
         setStack(single ? [{ at: "profile", index: 0 }] : [{ at: "team" }, ...(index === undefined ? [] : [{ at: "profile" as const, index }])])
         setPanel(true)
       }}
+      onCreate={() => choose("approved")}
       onDecline={() => choose("denied")}
     />
   ) : busy || opening ? (
@@ -306,34 +311,44 @@ function Wizard({ chat }: { chat: Chat }) {
   )
 }
 
-// The proposal in the conversation, as the Builder's answer (a reply, not a form): no frame around it, so nothing
-// sits in a hole. One agent: one calm card (face, name, role, what it does). A team: a line, then a card per member
-// on the canvas, lifted as every card is (opens its setup). Then the actions, where a reply's go: on the left.
-function ProposalCard({ drafts, busy, onOpen, onDecline }: { drafts: Draft[]; busy: boolean; onOpen: (index?: number) => void; onDecline: () => void }) {
+// The proposal in the conversation, as the Builder's answer (spec 018): a card under its message — face, name, role
+// and "proposed by the Builder", what it does (three lines), one line of facts (model, access, powers), then
+// Create (as proposed), Edit first (the setup panel) and Discard. A team: one card per member, the same actions for all.
+function ProposalCard({ drafts, busy, onOpen, onCreate, onDecline }: { drafts: Draft[]; busy: boolean; onOpen: (index?: number) => void; onCreate: () => void; onDecline: () => void }) {
+  const team = drafts.length > 1
   return (
     <article aria-label={t("builder.proposal")} className="flex flex-col gap-3">
-      {drafts.length > 1 && <p className="text-muted">{t("builder.teamHint")}</p>}
-      <ul className={cn("grid gap-2.5", drafts.length > 1 && "sm:grid-cols-2 lg:grid-cols-3")}>
-        {drafts.map((d, i) => (
-          <li key={d.name} className="relative flex flex-col gap-3 rounded-sheet bg-surface p-4">
-            <RowHit label={`${t("builder.open")}: ${d.name}`} onPress={() => onOpen(i)} className="inset-0 rounded-sheet" />
-            <div className="pointer-events-none relative flex items-center gap-3">
-              <AgentAvatar id={d.name} name={d.name} tone={i} size={drafts.length > 1 ? 32 : 40} live />
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate font-medium">{d.name}</span>
-                {d.title && <span className="truncate text-sm text-muted">{d.title}</span>}
-              </span>
-            </div>
-            {d.description && <p className={cn("pointer-events-none relative text-sm text-muted", drafts.length > 1 ? "line-clamp-2" : "line-clamp-3")}>{d.description}</p>}
-          </li>
-        ))}
+      {team && <p className="text-muted">{t("builder.teamHint")}</p>}
+      <ul className={cn("grid gap-2.5", team && "sm:grid-cols-2")}>
+        {drafts.map((d, i) => {
+          const powers = summarizePowers(d.permissions)
+          const facts = [modelName(d.model), t(`access.${d.access}`), powers.count ? t("builder.powerCount", { count: powers.count }) : null].filter(Boolean)
+          return (
+            <li key={d.name} className="relative flex flex-col gap-3 rounded-card bg-surface p-4 ring-1 ring-strong">
+              <RowHit label={`${t("builder.open")}: ${d.name}`} onPress={() => onOpen(i)} className="inset-0 rounded-card" />
+              <div className="pointer-events-none relative flex items-center gap-3">
+                <AgentAvatar id={d.name} name={d.name} tone={i} size={team ? 32 : 40} live />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-lg font-semibold">{d.name}</span>
+                  {d.title && <span className="truncate text-sm text-muted">{d.title}</span>}
+                </span>
+                {!team && <span className="shrink-0 rounded-full bg-control px-2 py-0.5 text-xs text-secondary">{t("builder.proposedBy")}</span>}
+              </div>
+              {d.description && <p className={cn("pointer-events-none relative text-secondary", team ? "line-clamp-2 text-sm" : "line-clamp-3")}>{d.description}</p>}
+              <p className="pointer-events-none relative truncate text-sm text-muted">{facts.join(" · ")}</p>
+            </li>
+          )
+        })}
       </ul>
       <div className="flex items-center gap-1.5 pt-1">
-        <Button size="sm" variant="default" shape="pill" isDisabled={busy} onPress={() => onOpen()}>
-          {t("builder.review")}
+        <Button variant="default" isDisabled={busy} onPress={onCreate}>
+          {team ? t("builder.createAll", { count: drafts.length }) : t("builder.createNamed", { name: drafts[0]!.name })}
         </Button>
-        <Button size="sm" variant="ghost" shape="pill" isDisabled={busy} onPress={onDecline}>
-          {t("builder.notNow")}
+        <Button variant="secondary" isDisabled={busy} onPress={() => onOpen()}>
+          {t("builder.editFirst")}
+        </Button>
+        <Button variant="ghost" isDisabled={busy} onPress={onDecline}>
+          {t("builder.discard")}
         </Button>
       </div>
     </article>
