@@ -33,27 +33,39 @@ pub fn is_question(a: &Approval) -> bool {
     matches!(a.kind, ApprovalKind::Question) && a.run_step_id.is_none()
 }
 
-/// One card: who, where and when, the kind on the right, then the body and actions the caller adds.
-pub fn item(p: &Palette, kind: &str, kind_colors: (Rgba, Rgba), face: AnyElement, who: String, context: String) -> Div {
+/// One card: the face and who asks (where, outside its chat), the kind as a quiet pill on the right, then the body
+/// and actions the caller adds. Soft and roomy: the surface tone, a hairline, comfortable padding.
+pub fn item(
+    p: &Palette,
+    kind: &str,
+    kind_colors: (Rgba, Rgba),
+    face: AnyElement,
+    who: String,
+    context: Option<String>,
+) -> Div {
     layout::card(p)
         .flex()
         .flex_col()
-        .gap(px(space::X4))
-        .p(px(space::X5))
+        .gap(px(space::X3))
+        .px(px(space::X4))
+        .py(px(space::X3))
         .child(
             div()
                 .flex()
-                .items_start()
-                .gap(px(space::X3))
+                .items_center()
+                .gap(px(space::X2_5))
                 .child(face)
                 .child(
                     div()
                         .flex()
-                        .flex_col()
+                        .items_baseline()
+                        .gap(px(space::X2))
                         .flex_1()
                         .min_w_0()
-                        .child(div().font_weight(FontWeight::SEMIBOLD).truncate().child(who))
-                        .child(div().text_sm().text_color(p.text_muted).truncate().child(context)),
+                        .child(div().flex_none().text_sm().font_weight(FontWeight::MEDIUM).child(who))
+                        .when_some(context, |d, c| {
+                            d.child(div().min_w_0().truncate().text_sm().text_color(p.text_muted).child(c))
+                        }),
                 )
                 .child(
                     div()
@@ -70,27 +82,45 @@ pub fn item(p: &Palette, kind: &str, kind_colors: (Rgba, Rgba), face: AnyElement
         )
 }
 
-/// The card for one approval; `answer` is the question's answer box (a question only).
+/// The ready answers a question offers (its args' `options`), if any.
+fn options_of(a: &Approval) -> Vec<String> {
+    serde_json::from_str::<serde_json::Value>(&a.args)
+        .ok()
+        .and_then(|v| v["options"].as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|o| o.as_str().map(str::to_string))
+        .filter(|o| !o.trim().is_empty())
+        .collect()
+}
+
+/// The card for one approval; `answer` is the question's answer box (a question only). `open` (outside the chat)
+/// adds the chat's name and "Open the chat"; inside it, neither is needed.
 pub fn card(
     a: &Approval,
     store: &Store,
     answer: Option<&Entity<TextareaState>>,
     decide: Decide,
-    open: OpenChat,
+    open: Option<OpenChat>,
     window: &Window,
 ) -> Div {
     let p = theme::palette(window);
     let question = is_question(a);
-    let (who, tone) = (
-        store.agent_name(a.agent_id.as_deref()),
-        store.tone(a.agent_id.as_deref()),
-    );
-    let context = store
-        .chat(&a.chat_id)
-        .map(crate::labels::chat_title)
-        .unwrap_or_default();
+    let name = store.agent_name(a.agent_id.as_deref());
+    let tone = store.tone(a.agent_id.as_deref());
+    let who = if question {
+        t!("question.label", agent = name).into_owned()
+    } else {
+        name
+    };
+    let context = open.as_ref().map(|_| {
+        store
+            .chat(&a.chat_id)
+            .map(crate::labels::chat_title)
+            .unwrap_or_default()
+    });
     let face = AgentFace::new(SharedString::from(format!("approval-face-{}", a.id)), tone)
-        .size(32.)
+        .size(24.)
         .state(FaceState::Waiting)
         .into_any_element();
     let (kind, colors) = if question {
@@ -99,14 +129,16 @@ pub fn card(
         ("approval", (p.wait_soft, p.warning))
     };
     let card = item(p, kind, colors, face, who, context);
-    let chat_id = a.chat_id.clone();
-    let open_button = Button::new(
-        SharedString::from(format!("open-{}", a.id)),
-        t!("inbox.openChat").into_owned(),
-    )
-    .variant(Variant::Ghost)
-    .size(Size::Sm)
-    .on_click(move |_, window, cx| open(chat_id.clone(), window, cx));
+    let open_button = open.map(|open| {
+        let chat_id = a.chat_id.clone();
+        Button::new(
+            SharedString::from(format!("open-{}", a.id)),
+            t!("inbox.openChat").into_owned(),
+        )
+        .variant(Variant::Ghost)
+        .size(Size::Sm)
+        .on_click(move |_, window, cx| open(chat_id.clone(), window, cx))
+    });
     let action =
         |key: &str, label: String, variant: Variant, outcome: &'static str, reason: Option<Entity<TextareaState>>| {
             let (id, decide) = (a.id.clone(), decide.clone());
@@ -114,27 +146,53 @@ pub fn card(
                 .variant(variant)
                 .size(Size::Sm)
                 .on_click(move |_, window, cx| {
-                    let text = reason.as_ref().map(|r| r.read(cx).value().to_string());
+                    let text = reason.as_ref().map(|r| r.read(cx).value().trim().to_string());
+                    // An empty answer isn't an answer.
+                    if outcome == "approved" && text.as_deref() == Some("") {
+                        return;
+                    }
                     decide(id.clone(), outcome, text, window, cx)
                 })
         };
     match (question, answer) {
-        (true, Some(answer)) => card
-            .child(div().text_lg().child(a.summary.clone()))
-            .child(
-                layout::card(p)
-                    .bg(p.bg_field)
-                    .px(px(space::X2_5))
-                    .py(px(space::X1_5))
-                    .child(Textarea::new(answer)),
+        (true, Some(answer)) => {
+            let options = options_of(a);
+            let pills = options.iter().enumerate().map(|(n, o)| {
+                let (id, decide, o) = (a.id.clone(), decide.clone(), o.clone());
+                Button::new(SharedString::from(format!("option-{}-{n}", a.id)), o.clone())
+                    .variant(Variant::Secondary)
+                    .size(Size::Sm)
+                    .round()
+                    .on_click(move |_, window, cx| decide(id.clone(), "approved", Some(o.clone()), window, cx))
+            });
+            card.child(
+                div()
+                    .text_size(px(15.))
+                    .line_height(px(22.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(a.summary.clone()),
             )
+            .when(!options.is_empty(), |c| {
+                c.child(div().flex().flex_wrap().gap(px(space::X1_5)).children(pills))
+            })
+            // The answer on one line with its actions; it grows as you write.
             .child(
                 div()
                     .flex()
-                    .items_center()
+                    .items_end()
                     .gap(px(space::X2))
-                    .child(open_button)
-                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .px(px(space::X3))
+                            .py(px(space::X1_5))
+                            .rounded(px(crate::theme::tokens::RADIUS_CONTROL))
+                            .bg(p.bg_field)
+                            .border_1()
+                            .border_color(p.border)
+                            .child(Textarea::new(answer)),
+                    )
                     .child(action(
                         "skip",
                         t!("question.skip").into_owned(),
@@ -149,24 +207,25 @@ pub fn card(
                         "approved",
                         Some(answer.clone()),
                     )),
-            ),
+            )
+            .children(open_button.map(|b| div().flex().child(b)))
+        }
         _ => {
             let body = match a.kind {
                 ApprovalKind::Command => code_block(p, a.summary.chars().take(2000).collect::<String>()),
-                _ => div().child(a.summary.clone()).child(
-                    div()
-                        .mt(px(space::X1_5))
-                        .text_sm()
-                        .text_color(p.text_muted)
-                        .child(a.tool.clone()),
-                ),
+                _ => div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(space::X1))
+                    .child(div().font_weight(FontWeight::MEDIUM).child(a.summary.clone()))
+                    .child(div().text_sm().text_color(p.text_muted).child(a.tool.clone())),
             };
             card.child(body).child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(space::X2))
-                    .child(open_button)
+                    .children(open_button)
                     .child(div().flex_1())
                     .when(a.always_key.is_some(), |row| {
                         row.child(action(

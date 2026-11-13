@@ -159,7 +159,7 @@ impl Inbox {
             let open: approval::OpenChat = Rc::new(move |chat_id, _, cx| {
                 let _ = view.update(cx, |_, cx| cx.emit(InboxEvent::OpenChat(chat_id)));
             });
-            let card = approval::card(&a, self.store.read(cx), answer.as_ref(), decide, open, window);
+            let card = approval::card(&a, self.store.read(cx), answer.as_ref(), decide, Some(open), window);
             items.push((a.created_at, card.into_any_element()));
         }
         if show(Filter::Memories, filter) {
@@ -174,7 +174,7 @@ impl Inbox {
                     None => (m.scope.clone(), 0),
                 };
                 let face = AgentFace::new(SharedString::from(format!("mem-face-{}", m.id)), tone)
-                    .size(32.)
+                    .size(24.)
                     .into_any_element();
                 let (discard, keep) = (m.id.clone(), m.id.clone());
                 let card = approval::item(
@@ -183,7 +183,7 @@ impl Inbox {
                     (p.bg_control, p.text_secondary),
                     face,
                     who,
-                    t!("inbox.proposed").into_owned(),
+                    Some(t!("inbox.proposed").into_owned()),
                 )
                 .child(div().font_weight(FontWeight::MEDIUM).child(m.title.clone()))
                 .child(div().text_color(p.text_secondary).child(m.text.clone()))

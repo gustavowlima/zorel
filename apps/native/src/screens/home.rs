@@ -446,7 +446,7 @@ impl Home {
                 self.store.read(cx),
                 answer.as_ref(),
                 decide,
-                open,
+                Some(open),
                 window,
             ));
         }

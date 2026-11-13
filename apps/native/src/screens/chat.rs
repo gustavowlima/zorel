@@ -1880,6 +1880,8 @@ impl ChatScreen {
                             SharedString::from(format!("live-stop-{turn_id}")),
                             t!("composer.stop").into_owned(),
                         )
+                        // A soft round button, so the square reads as Stop, not a stray mark.
+                        .variant(Variant::Secondary)
                         .size(Size::Xs)
                         .on_click(cx.listener(|this, _, _, cx| this.stop(cx))),
                     )
@@ -2056,7 +2058,7 @@ impl ChatScreen {
                         cx.new(|cx| {
                             let mut state =
                                 TextareaState::new(window, cx).placeholder(t!("question.placeholder").into_owned());
-                            state.set_auto_grow(2, 6, cx);
+                            state.set_auto_grow(1, 6, cx);
                             state
                         })
                     })
@@ -2066,9 +2068,9 @@ impl ChatScreen {
             let decide: approval::Decide = Rc::new(move |id, outcome, reason, _, cx| {
                 store.update(cx, |s, cx| s.decide(id, outcome, reason, cx));
             });
-            let open: approval::OpenChat = Rc::new(|_, _, _| {});
+            // Inside its chat: no chat name, no "Open the chat".
             cards.push(motion::enter(
-                approval::card(a, self.store.read(cx), answer.as_ref(), decide, open, window),
+                approval::card(a, self.store.read(cx), answer.as_ref(), decide, None, window),
                 SharedString::from(format!("tray-{}", a.id)),
                 motion::ENTER_MS,
                 8.,
