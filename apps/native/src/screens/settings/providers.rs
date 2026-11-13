@@ -582,7 +582,8 @@ impl Settings {
             .flex()
             .flex_col()
             .gap(px(space::X6))
-            .child(div().child(back))
+            // Left-aligned, its words in line with the page's (the ghost button's own padding pulled back).
+            .child(div().flex().ml(px(-space::X2_5)).child(back))
             .child(head)
             .when_some(self.providers.error.clone(), |d, e| {
                 d.child(div().text_sm().text_color(p.danger).child(e))
