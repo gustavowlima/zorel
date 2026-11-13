@@ -480,33 +480,46 @@ impl Settings {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(space::X2))
+                    .gap(px(space::X3))
                     .px(px(14.))
                     .py(px(space::X3))
                     .rounded(px(12.))
                     .border_1()
                     .border_color(p.border)
                     .child(
+                        div().flex().items_center().gap(px(space::X3)).child(mark(c)).child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .min_w_0()
+                                .child(div().font_weight(FontWeight::MEDIUM).child(c.name))
+                                .child(
+                                    div()
+                                        .truncate()
+                                        .text_xs()
+                                        .text_color(p.text_muted)
+                                        .child(t!(format!("connectors.about.{}", c.id)).into_owned()),
+                                ),
+                        ),
+                    )
+                    // The same footer as a connected card's (every card one height): not connected, and Connect.
+                    .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(space::X3))
-                            .child(mark(c))
+                            .gap(px(space::X2))
+                            .pt(px(space::X2_5))
+                            .border_t_1()
+                            .border_color(super::divider(p))
+                            .text_xs()
+                            .child(div().size(px(6.)).rounded_full().bg(p.text_dim))
                             .child(
                                 div()
-                                    .flex()
-                                    .flex_col()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .child(div().font_weight(FontWeight::MEDIUM).child(c.name))
-                                    .child(
-                                        div()
-                                            .truncate()
-                                            .text_xs()
-                                            .text_color(p.text_muted)
-                                            .child(t!(format!("connectors.about.{}", c.id)).into_owned()),
-                                    ),
+                                    .text_color(p.text_muted)
+                                    .child(t!("providers.notConnected").into_owned()),
                             )
+                            .child(div().flex_1())
                             .when(!asking, |d| {
                                 d.child(
                                     Button::new(
