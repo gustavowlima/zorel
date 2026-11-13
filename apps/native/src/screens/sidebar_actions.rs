@@ -20,7 +20,6 @@ use serde_json::json;
 
 use crate::{
     route::Route,
-    runtime,
     screens::{
         chat_actions,
         sidebar::{Sidebar, SidebarEvent},
@@ -154,28 +153,17 @@ impl Sidebar {
                                     return;
                                 }
                                 window.close_dialog(cx);
-                                let store = view.read(cx).store.clone();
-                                let http = store.read(cx).http.clone();
-                                let (reload, nav) = (store.downgrade(), view.downgrade());
+                                let made = view.read(cx).store.clone().update(cx, |s, cx| {
+                                    let body = json!({ "name": name, "brief": "", "path": null });
+                                    s.write(crate::state::store::Method::Post, "/api/projects", body, cx)
+                                });
+                                let nav = view.downgrade();
                                 cx.spawn(async move |cx| {
-                                    let made = runtime::spawn(async move {
-                                        http.post::<_, serde_json::Value>(
-                                            "/api/projects",
-                                            &json!({ "name": name, "brief": "", "path": null }),
-                                        )
-                                        .await
-                                    })
-                                    .await;
-                                    let _ = reload.update(cx, |store, cx| store.load(cx));
-                                    match made {
-                                        Ok(Ok(project)) => {
-                                            let id = project["id"].as_str().map(str::to_string);
-                                            let _ = nav.update(cx, |_, cx| {
-                                                cx.emit(SidebarEvent::Navigate(Route::Home { project_id: id }))
-                                            });
-                                        }
-                                        Ok(Err(e)) => eprintln!("new project: {e}"),
-                                        Err(e) => eprintln!("new project: {e}"),
+                                    if let Some(project) = made.await {
+                                        let id = project["id"].as_str().map(str::to_string);
+                                        let _ = nav.update(cx, |_, cx| {
+                                            cx.emit(SidebarEvent::Navigate(Route::Home { project_id: id }))
+                                        });
                                     }
                                 })
                                 .detach();
@@ -189,15 +177,9 @@ impl Sidebar {
 
     // A DELETE to the engine, then the Store reloads everything (a project takes its chats, agents and memories).
     fn engine_then_reload(view: &Entity<Self>, path: String, cx: &mut App) {
-        let store = view.read(cx).store.clone();
-        let http = store.read(cx).http.clone();
-        let reload = store.downgrade();
-        cx.spawn(async move |cx| {
-            if let Ok(Err(e)) = runtime::spawn(async move { http.delete(&path).await }).await {
-                eprintln!("delete: {e}");
-            }
-            let _ = reload.update(cx, |store, cx| store.load(cx));
-        })
-        .detach();
+        view.read(cx).store.clone().update(cx, |s, cx| {
+            s.write(crate::state::store::Method::Delete, path, serde_json::Value::Null, cx)
+                .detach()
+        });
     }
 }

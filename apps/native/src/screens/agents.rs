@@ -12,7 +12,6 @@ use crate::{
     labels::{model_name, provider_label, split_model},
     net::types::{Agent, ChatStatusState},
     route::Route,
-    runtime,
     state::store::Store,
     theme,
     ui::{
@@ -56,19 +55,16 @@ impl Agents {
             }
             cx.notify();
         });
-        let http = store.read(cx).http.clone();
-        let reload = store.downgrade();
-        cx.spawn(async move |cx| {
-            let path = format!("/api/agents/{id}");
+        store.update(cx, |s, cx| {
             let body = serde_json::json!({ "archived": archived });
-            if let Ok(Err(e)) =
-                runtime::spawn(async move { http.patch::<_, serde_json::Value>(&path, &body).await }).await
-            {
-                eprintln!("archive: {e}");
-            }
-            let _ = reload.update(cx, |s, cx| s.load(cx));
-        })
-        .detach();
+            s.write(
+                crate::state::store::Method::Patch,
+                format!("/api/agents/{id}"),
+                body,
+                cx,
+            )
+            .detach()
+        });
     }
 
     pub(crate) fn delete(store: &Entity<Store>, agent: &Agent, window: &mut Window, cx: &mut App) {
@@ -96,15 +92,11 @@ impl Agents {
                                     s.agents.retain(|a| a.id != id);
                                     cx.notify();
                                 });
-                                let http = store.read(cx).http.clone();
-                                let (path, reload) = (format!("/api/agents/{id}"), store.downgrade());
-                                cx.spawn(async move |cx| {
-                                    if let Ok(Err(e)) = runtime::spawn(async move { http.delete(&path).await }).await {
-                                        eprintln!("delete agent: {e}");
-                                    }
-                                    let _ = reload.update(cx, |s, cx| s.load(cx));
-                                })
-                                .detach();
+                                store.update(cx, |s, cx| {
+                                    let path = format!("/api/agents/{id}");
+                                    s.write(crate::state::store::Method::Delete, path, serde_json::Value::Null, cx)
+                                        .detach()
+                                });
                             })
                             .into_any_element(),
                     ],

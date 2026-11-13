@@ -325,19 +325,9 @@ impl Sidebar {
     }
 
     fn put_order(store: &WeakEntity<Store>, path: &'static str, body: serde_json::Value, cx: &mut App) {
-        let Some(http) = store.upgrade().map(|s| s.read(cx).http.clone()) else {
-            return;
-        };
-        let store = store.clone();
-        cx.spawn(async move |cx| {
-            if let Ok(Err(e)) =
-                crate::runtime::spawn(async move { http.put::<_, serde_json::Value>(path, &body).await }).await
-            {
-                eprintln!("reorder: {e}");
-            }
-            let _ = store.update(cx, |store, cx| store.load(cx));
-        })
-        .detach();
+        let _ = store.update(cx, |s, cx| {
+            s.write(crate::state::store::Method::Put, path, body, cx).detach()
+        });
     }
 }
 

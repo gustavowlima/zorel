@@ -103,15 +103,15 @@ pub fn delete(store: Entity<Store>, id: String, after: AfterDelete, window: &mut
                                 s.chats.statuses.remove(&id);
                                 cx.notify();
                             });
-                            let http = store.read(cx).http.clone();
-                            let (reload, path) = (store.downgrade(), format!("/api/chats/{id}"));
-                            cx.spawn(async move |cx| {
-                                if let Ok(Err(e)) = runtime::spawn(async move { http.delete(&path).await }).await {
-                                    eprintln!("delete: {e}");
-                                }
-                                let _ = reload.update(cx, |store, cx| store.load(cx));
-                            })
-                            .detach();
+                            store.update(cx, |s, cx| {
+                                s.write(
+                                    crate::state::store::Method::Delete,
+                                    format!("/api/chats/{id}"),
+                                    serde_json::Value::Null,
+                                    cx,
+                                )
+                                .detach()
+                            });
                         })
                         .into_any_element(),
                 ],

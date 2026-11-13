@@ -3,6 +3,7 @@
 // Screens hold an `Entity<Store>` and observe it; mutations go through its `http`/`rpc` and the stream brings the
 // result back. Mirrors the web's shared atoms (apps/web/src/client.ts).
 use gpui_kit::*;
+use serde_json::Value;
 
 use crate::{
     net::{
@@ -17,6 +18,23 @@ use crate::{
     runtime,
     state::chats::ChatList,
 };
+
+/// How `Store::write` changes something on the engine.
+#[derive(Clone, Copy)]
+pub enum Method {
+    Post,
+    Patch,
+    Put,
+    Delete,
+}
+
+/// A list fetched by `load`: kept when it came, else the failure is logged and the last one stays.
+fn set<T>(field: &mut T, got: Result<T, HttpError>) {
+    match got {
+        Ok(v) => *field = v,
+        Err(e) => eprintln!("store: {e}"),
+    }
+}
 
 /// A chat's status changed (for notifications and screens that react to it).
 pub struct StatusChanged(pub ChatStatus);
@@ -41,11 +59,13 @@ pub struct Store {
     pub approvals: Vec<Approval>,
     /// All agents paused (Settings › General, the sidebar's Pause).
     pub paused: bool,
+    /// Approvals are being re-read; `Some(true)` when statuses moved meanwhile (read once more after).
+    approvals_reading: Option<bool>,
 }
 
 impl Store {
     pub fn new(http: Http, rpc: Rpc, cx: &mut Context<Self>) -> Self {
-        let store = Self {
+        let mut store = Self {
             http,
             rpc,
             loaded: false,
@@ -59,6 +79,7 @@ impl Store {
             memories: Vec::new(),
             approvals: Vec::new(),
             paused: false,
+            approvals_reading: None,
         };
         store.load(cx);
         store.refresh_approvals(cx);
@@ -66,54 +87,79 @@ impl Store {
         store
     }
 
-    /// Reloads everything from REST.
+    /// Reloads everything from REST, every list at once; one that fails keeps what it had.
     pub fn load(&self, cx: &mut Context<Self>) {
         let http = self.http.clone();
         cx.spawn(async move |this, cx| {
             let got = runtime::spawn(async move {
-                let agents: AgentsListSuccess = http.get("/api/agents").await?;
-                let projects: ProjectsListSuccess = http.get("/api/projects").await?;
-                let chats: ChatsListSuccess = http.get("/api/chats").await?;
-                let routines: RoutinesListSuccess = http.get("/api/routines").await?;
-                let accounts: AccountsListSuccess = http.get("/api/accounts").await?;
-                let preferences: Preferences = http.get("/api/preferences").await?;
-                let teams: AgentsTeamsSuccess = http.get("/api/teams").await?;
-                let models: SettingsModelsSuccess = http.get("/api/models").await?;
-                let memories: MemoriesListSuccess = http.get("/api/memories").await?;
-                Ok::<_, HttpError>((
-                    agents,
-                    projects,
-                    chats,
-                    routines,
-                    accounts,
-                    preferences,
-                    teams,
-                    models,
-                    memories,
-                ))
+                tokio::join!(
+                    http.get::<AgentsListSuccess>("/api/agents"),
+                    http.get::<ProjectsListSuccess>("/api/projects"),
+                    http.get::<ChatsListSuccess>("/api/chats"),
+                    http.get::<RoutinesListSuccess>("/api/routines"),
+                    http.get::<AccountsListSuccess>("/api/accounts"),
+                    http.get::<Preferences>("/api/preferences"),
+                    http.get::<AgentsTeamsSuccess>("/api/teams"),
+                    http.get::<SettingsModelsSuccess>("/api/models"),
+                    http.get::<MemoriesListSuccess>("/api/memories"),
+                )
             })
             .await;
-            match got {
-                Ok(Ok((agents, projects, chats, routines, accounts, preferences, teams, models, memories))) => {
-                    let _ = this.update(cx, |this, cx| {
-                        this.agents = agents.0;
-                        this.projects = projects.0;
-                        this.chats.chats = chats.0;
-                        this.routines = routines.0;
-                        this.accounts = accounts.0;
-                        this.paused = preferences.paused;
-                        this.teams = teams.0;
-                        this.models = models.0;
-                        this.memories = memories.0;
-                        this.loaded = true;
-                        cx.notify();
-                    });
-                }
-                Ok(Err(e)) => eprintln!("store: {e}"),
-                Err(e) => eprintln!("store: {e}"),
-            }
+            let Ok((agents, projects, chats, routines, accounts, preferences, teams, models, memories)) = got else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| {
+                set(&mut this.agents, agents.map(|l| l.0));
+                set(&mut this.projects, projects.map(|l| l.0));
+                set(&mut this.chats.chats, chats.map(|l| l.0));
+                set(&mut this.routines, routines.map(|l| l.0));
+                set(&mut this.accounts, accounts.map(|l| l.0));
+                set(&mut this.paused, preferences.map(|p| p.paused));
+                set(&mut this.teams, teams.map(|l| l.0));
+                set(&mut this.models, models.map(|l| l.0));
+                set(&mut this.memories, memories.map(|l| l.0));
+                this.loaded = true;
+                cx.notify();
+            });
         })
         .detach();
+    }
+
+    /// Writes to the engine, then reloads everything (the engine's answer corrects any change shown ahead of it).
+    /// Resolves to the engine's answer; a failure is logged and resolves to None.
+    pub fn write(
+        &self,
+        method: Method,
+        path: impl Into<String>,
+        body: Value,
+        cx: &mut Context<Self>,
+    ) -> Task<Option<Value>> {
+        let (http, path) = (self.http.clone(), path.into());
+        cx.spawn(async move |this, cx| {
+            let sent = runtime::spawn(async move {
+                let answer = match method {
+                    Method::Post => http.post(&path, &body).await,
+                    Method::Patch => http.patch(&path, &body).await,
+                    Method::Put => http.put(&path, &body).await,
+                    Method::Delete => http.delete(&path).await.map(|()| Value::Null),
+                };
+                answer.map_err(|e| format!("{path}: {e}"))
+            })
+            .await;
+            let answer = match sent {
+                Ok(Ok(v)) => Some(v),
+                Ok(Err(e)) => {
+                    eprintln!("write {e}");
+                    None
+                }
+                Err(e) => {
+                    eprintln!("write: {e}");
+                    None
+                }
+            };
+            let _ = this.update(cx, |s, cx| s.load(cx));
+            answer
+        })
     }
 
     /// Refetches the chat list (a chat created, renamed or removed elsewhere).
@@ -131,18 +177,26 @@ impl Store {
         .detach();
     }
 
-    /// Re-reads the open approvals (RPC `approvals`).
-    pub fn refresh_approvals(&self, cx: &mut Context<Self>) {
+    /// Re-reads the open approvals (RPC `approvals`): one read at a time, and one more if asked meanwhile, so a burst
+    /// of statuses costs two reads, not one each.
+    fn refresh_approvals(&mut self, cx: &mut Context<Self>) {
+        if let Some(again) = &mut self.approvals_reading {
+            *again = true;
+            return;
+        }
+        self.approvals_reading = Some(false);
         let rpc = self.rpc.clone();
         cx.spawn(async move |this, cx| {
-            if let Ok(Ok(approvals)) =
-                runtime::spawn(async move { rpc.call::<Vec<Approval>>("approvals", None).await }).await
-            {
-                let _ = this.update(cx, |this, cx| {
+            let got = runtime::spawn(async move { rpc.call::<Vec<Approval>>("approvals", None).await }).await;
+            let _ = this.update(cx, |this, cx| {
+                if let Ok(Ok(approvals)) = got {
                     this.approvals = approvals;
                     cx.notify();
-                });
-            }
+                }
+                if this.approvals_reading.take() == Some(true) {
+                    this.refresh_approvals(cx);
+                }
+            });
         })
         .detach();
     }
@@ -219,7 +273,8 @@ impl Store {
             while let Some(status) = statuses.recv().await {
                 let alive = this.update(cx, |this, cx| {
                     cx.emit(StatusChanged(status.clone()));
-                    if this.chats.apply_status(status) {
+                    // A chat it doesn't know: the list is refetched (before the first load, that load brings it).
+                    if this.chats.apply_status(status) && this.loaded {
                         this.reload_chats(cx);
                     }
                     this.refresh_approvals(cx); // approvals come and go with statuses

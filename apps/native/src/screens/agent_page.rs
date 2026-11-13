@@ -248,16 +248,15 @@ impl AgentPage {
     }
 
     fn patch(&self, body: Value, cx: &mut Context<Self>) -> Task<bool> {
-        let http = self.store.read(cx).http.clone();
-        let (path, reload) = (format!("/api/agents/{}", self.id), self.store.downgrade());
-        cx.spawn(async move |_, cx| {
-            let ok = matches!(
-                runtime::spawn(async move { http.patch::<_, Value>(&path, &body).await }).await,
-                Ok(Ok(_))
-            );
-            let _ = reload.update(cx, |s, cx| s.load(cx));
-            ok
-        })
+        let written = self.store.update(cx, |s, cx| {
+            s.write(
+                crate::state::store::Method::Patch,
+                format!("/api/agents/{}", self.id),
+                body,
+                cx,
+            )
+        });
+        cx.spawn(async move |_, _| written.await.is_some())
     }
 
     fn save(&mut self, cx: &mut Context<Self>) {
@@ -526,17 +525,10 @@ impl AgentPage {
         let (store, id) = (self.store.clone(), a.id.clone());
         let pick: select::OnPick = Rc::new(move |v, _, cx| {
             let value: Value = v.parse::<i64>().map(Value::from).unwrap_or(Value::Null);
-            let (http, path, reload) = (
-                store.read(cx).http.clone(),
-                format!("/api/agents/{id}"),
-                store.downgrade(),
-            );
-            let body = json!({ field: value });
-            cx.spawn(async move |cx| {
-                let _ = runtime::spawn(async move { http.patch::<_, Value>(&path, &body).await }).await;
-                let _ = reload.update(cx, |s, cx| s.load(cx));
-            })
-            .detach();
+            let (path, body) = (format!("/api/agents/{id}"), json!({ field: value }));
+            store.update(cx, |s, cx| {
+                s.write(crate::state::store::Method::Patch, path, body, cx).detach()
+            });
         });
         Select::new(
             SharedString::from(format!("agent-{field}")),
@@ -906,19 +898,10 @@ impl AgentPage {
                             s.memories.retain(|x| x.id != id);
                             cx.notify();
                         });
-                        let (http, path, reload) = (
-                            store.read(cx).http.clone(),
-                            format!("/api/memories/{id}"),
-                            store.downgrade(),
-                        );
-                        cx.spawn(async move |cx| {
-                            let _ = runtime::spawn(async move {
-                                http.patch::<_, Value>(&path, &json!({ "state": "forgotten" })).await
-                            })
-                            .await;
-                            let _ = reload.update(cx, |s, cx| s.load(cx));
-                        })
-                        .detach();
+                        let (path, body) = (format!("/api/memories/{id}"), json!({ "state": "forgotten" }));
+                        store.update(cx, |s, cx| {
+                            s.write(crate::state::store::Method::Patch, path, body, cx).detach()
+                        });
                     }),
                 )
                 .into_any_element()
@@ -1060,16 +1043,12 @@ impl AgentPage {
                             .on_click(move |_, window, cx| {
                                 window.close_dialog(cx);
                                 let _ = view.update(cx, |this, cx| {
-                                    let http = this.store.read(cx).http.clone();
                                     let path = format!("/api/agents/{}/versions/{n}/restore", this.id);
-                                    let reload = this.store.downgrade();
+                                    let restored = this.store.update(cx, |s, cx| {
+                                        s.write(crate::state::store::Method::Post, path, json!({}), cx)
+                                    });
                                     cx.spawn_in(window, async move |this, cx| {
-                                        let _ =
-                                            runtime::spawn(
-                                                async move { http.post::<_, Value>(&path, &json!({})).await },
-                                            )
-                                            .await;
-                                        let _ = reload.update(cx, |s, cx| s.load(cx));
+                                        restored.await;
                                         let _ = this.update_in(cx, |this, window, cx| {
                                             this.versions = None;
                                             this.load(cx);

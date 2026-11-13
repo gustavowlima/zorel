@@ -45,14 +45,16 @@ impl Settings {
             }
             cx.notify();
         });
-        let (http, reload) = (self.store.read(cx).http.clone(), self.store.downgrade());
-        cx.spawn(async move |_, cx| {
-            let path = format!("/api/memories/{id}");
-            let _ =
-                runtime::spawn(async move { http.patch::<_, Value>(&path, &json!({ "state": state })).await }).await;
-            let _ = reload.update(cx, |s, cx| s.load(cx));
-        })
-        .detach();
+        self.store.update(cx, |s, cx| {
+            let body = json!({ "state": state });
+            s.write(
+                crate::state::store::Method::Patch,
+                format!("/api/memories/{id}"),
+                body,
+                cx,
+            )
+            .detach()
+        });
     }
 
     fn pick_file_skill(&mut self, path: String, enabled: bool, cx: &mut Context<Self>) {
