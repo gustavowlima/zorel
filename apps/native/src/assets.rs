@@ -81,6 +81,8 @@ icon_assets!(
         Trash,
         CornerDownRight,
         Shield,
+        GitBranch,
+        GitPullRequest,
         ShieldAlert,
         X,
         X

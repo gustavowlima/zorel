@@ -96,7 +96,7 @@ pub fn matching(nodes: &[Node], q: &str) -> Vec<Node> {
 /// The Files tab's state.
 #[derive(Default)]
 pub struct Files {
-    list: Option<Rc<Vec<Node>>>,
+    pub(super) list: Option<Rc<Vec<Node>>>,
     loading: bool,
     /// Open folders (None: not chosen yet, so the top folders with changes open).
     expanded: Option<HashSet<String>>,

@@ -31,6 +31,7 @@ mod attachments;
 mod context;
 mod crew;
 mod files;
+mod git;
 pub mod side;
 
 use crate::{
@@ -145,6 +146,7 @@ pub struct ChatScreen {
     /// The side panel (screens/chat/side.rs) while open, the turns' diffs fetched so far, its width and a drag of it.
     side: Option<side::Side>,
     files: files::Files,
+    git: git::Git,
     diffs: HashMap<String, Option<Rc<side::TurnDiff>>>,
     side_width: f32,
     resizing: Option<(f32, f32)>,
@@ -466,6 +468,7 @@ impl ChatScreen {
             viewing: None,
             side: None,
             files: files::Files::default(),
+            git: git::Git::default(),
             diffs: HashMap::new(),
             side_width: Self::initial_side_width(),
             resizing: None,

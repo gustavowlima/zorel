@@ -3,7 +3,7 @@
 // (360 to 70% of the window, kept in the preferences), and the open tab's body. Changes lists the turns that
 // changed files, newest first: a turn opens to its files (status, path, +/−) and their diffs (ui/diff), fetched once
 // per turn; a file narrows the diffs to it. "View" on a reply's changes opens the panel on that turn.
-// Files: screens/chat/files.rs. ponytail: Pull request, Browser and Terminal come next (parity/chat.md › C); the +
+// Files: screens/chat/files.rs; Pull request: screens/chat/git.rs. ponytail: Browser and Terminal come next (parity/chat.md › C); the +
 // menu lists what exists (folder-only tabs only with a folder).
 use super::*;
 
@@ -19,15 +19,17 @@ const DEFAULT_WIDTH: f32 = 560.;
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Tab {
     Changes,
+    Git,
     Files,
 }
 
 impl Tab {
-    const ALL: [Tab; 2] = [Tab::Changes, Tab::Files];
+    const ALL: [Tab; 3] = [Tab::Changes, Tab::Git, Tab::Files];
 
     fn label(self) -> String {
         match self {
             Tab::Changes => t!("workspace.changes").into_owned(),
+            Tab::Git => t!("git.pullRequest").into_owned(),
             Tab::Files => t!("workspace.files").into_owned(),
         }
     }
@@ -35,13 +37,14 @@ impl Tab {
     fn icon(self) -> IconName {
         match self {
             Tab::Changes => IconName::PanelRight,
+            Tab::Git => IconName::GitPullRequest,
             Tab::Files => IconName::Folder,
         }
     }
 
     /// Needs the project's folder.
     fn folder_only(self) -> bool {
-        matches!(self, Tab::Files)
+        matches!(self, Tab::Files | Tab::Git)
     }
 }
 
@@ -137,6 +140,10 @@ impl ChatScreen {
     }
 
     fn open_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
+        // Git is read fresh each time it's shown (a shell or an agent may have committed meanwhile).
+        if tab == Tab::Git {
+            self.load_git(cx);
+        }
         if let Some(side) = &mut self.side {
             if !side.tabs.contains(&tab) {
                 side.tabs.push(tab);
@@ -314,6 +321,7 @@ impl ChatScreen {
         let body = match current {
             Tab::Changes => self.changes_tab(window, cx),
             Tab::Files => self.files_tab(window, cx),
+            Tab::Git => self.git_tab(window, cx),
         };
         // The left edge: a hairline that lights on hover, a wider grip to drag.
         let edge = div()
