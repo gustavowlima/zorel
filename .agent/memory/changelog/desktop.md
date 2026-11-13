@@ -32,3 +32,4 @@
 2026-11-12 | live thinking: server publishes reasoning words (Claude thinking deltas) as 'reasoning'; native shows 'Pensando' + last words, then 'Pensou por Xs'; face Waiting when a turn waits on you | user asked for thinking steps and the Builder looked busy while asking
 2026-11-12 | native mutations update the Store before the engine answers | deleting a chat took seconds to disappear
 2026-11-12 | native side panel tabs, terminal (alacritty_terminal), browser stream, agent page | chat parity (parity/chat.md › C) and T052
+2026-11-13 | Prefs global, Store::write, concurrent load, Remote<T>, one send path, chat/sidebar/agent page split under 1k lines | structural review found a prefs lost-update bug, lost queued messages, stuck spinners and 1k+ files
