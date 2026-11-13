@@ -1,3 +1,4 @@
+pub mod agent_page;
 pub mod agents;
 pub mod approval;
 pub mod browser;

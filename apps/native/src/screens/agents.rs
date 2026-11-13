@@ -48,7 +48,7 @@ impl Agents {
     }
 
     /// Archives or restores an agent (it keeps its history; archived, it answers no one and runs no routine).
-    fn archive(store: &Entity<Store>, id: String, archived: bool, cx: &mut App) {
+    pub(crate) fn archive(store: &Entity<Store>, id: String, archived: bool, cx: &mut App) {
         // Moves at once; the reload after the engine answers corrects it.
         store.update(cx, |s, cx| {
             if let Some(a) = s.agents.iter_mut().find(|a| a.id == id) {
@@ -71,7 +71,7 @@ impl Agents {
         .detach();
     }
 
-    fn delete(store: &Entity<Store>, agent: &Agent, window: &mut Window, cx: &mut App) {
+    pub(crate) fn delete(store: &Entity<Store>, agent: &Agent, window: &mut Window, cx: &mut App) {
         use gpui_kit::component::WindowExt as _;
         let (store, id, name) = (store.clone(), agent.id.clone(), agent.name.clone());
         window.open_dialog(cx, move |dialog, window, _| {
@@ -188,7 +188,8 @@ impl Agents {
         .emphasis(true)
         .when(!last, |r| r.menu(items).on_hover_trailing(more))
         .trailing(div().text_sm().text_color(p.text_muted).child(model))
-        .on_click(cx.listener(move |_, _, _, cx| cx.emit(AgentsEvent::ChatWith(id.clone()))))
+        // The row opens its page (Work: what it does, Talk with it).
+        .on_click(cx.listener(move |_, _, _, cx| cx.emit(AgentsEvent::Navigate(Route::Agent { id: id.clone() }))))
         .into_any_element()
     }
 }

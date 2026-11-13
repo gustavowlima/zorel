@@ -44,6 +44,8 @@ struct Root {
     inbox: Option<Entity<Inbox>>,
     home: Option<Entity<Home>>,
     agents: Option<Entity<Agents>>,
+    /// The agent page open now (made per visit).
+    agent_page: Option<Entity<crate::screens::agent_page::AgentPage>>,
     /// Build with AI: a fresh conversation with the Builder per visit.
     builder: Option<Entity<Builder>>,
     sidebar: Option<Entity<Sidebar>>,
@@ -93,6 +95,7 @@ impl Root {
             inbox: None,
             home: None,
             agents: None,
+            agent_page: None,
             builder: None,
             sidebar: None,
             notifier: Notifier::default(),
@@ -226,6 +229,22 @@ impl Root {
                 }
             }
             Route::Agents => {}
+            Route::Agent { id } => {
+                if let Some(store) = self.store.clone() {
+                    use crate::screens::agent_page::{AgentPage, AgentPageEvent, Tab};
+                    let page = cx.new(|cx| AgentPage::new(store, id.clone(), Tab::Work, window, cx));
+                    cx.subscribe_in(
+                        &page,
+                        window,
+                        |this, _, event: &AgentPageEvent, window, cx| match event {
+                            AgentPageEvent::Navigate(route) => this.navigate(route.clone(), window, cx),
+                            AgentPageEvent::ChatWith(agent) => this.chat_with(agent.clone(), window, cx),
+                        },
+                    )
+                    .detach();
+                    self.agent_page = Some(page);
+                }
+            }
             // Each visit starts a fresh conversation with the Builder.
             Route::Builder { project_id } => {
                 if let Some(store) = self.store.clone() {
@@ -342,6 +361,7 @@ impl Root {
                 .map(|(_, s)| s.clone().into_any_element()),
             Route::Home { .. } => self.home.clone().map(|h| h.into_any_element()),
             Route::Agents => self.agents.clone().map(|a| a.into_any_element()),
+            Route::Agent { .. } => self.agent_page.clone().map(|a| a.into_any_element()),
             Route::Builder { .. } => self.builder.clone().map(|b| b.into_any_element()),
         };
         // Folded, the rail is narrower than the traffic lights: the title starts after them.
@@ -408,6 +428,7 @@ impl Root {
             Route::Home { .. } => Header::new(t!("nav.homeScreen").into_owned()),
             Route::Inbox => Header::new(t!("inbox.title").into_owned()),
             Route::Agents => unreachable!("drawn above"),
+            Route::Agent { id } => Header::new(t!("agents.title").into_owned()).context(store.agent_name(Some(id))),
             Route::Builder { .. } => {
                 Header::new(t!("builder.title").into_owned()).context(t!("builder.subtitle").into_owned())
             }

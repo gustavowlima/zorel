@@ -12,6 +12,10 @@ pub enum Route {
     },
     /// The agents: every one, by project.
     Agents,
+    /// An agent's page, on one of its tabs.
+    Agent {
+        id: String,
+    },
     /// Build with AI: a conversation with the Builder, for a project or for every project.
     Builder {
         project_id: Option<String>,

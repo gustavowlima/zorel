@@ -57,6 +57,7 @@ icon_assets!(
         Clock,
         Brain,
         MessageCircle,
+        Plug,
         PanelLeftClose,
         PanelLeftOpen,
         Bot,

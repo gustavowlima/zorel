@@ -616,7 +616,8 @@ impl Sidebar {
             |this: &Self, id: &'static str, icon: IconName, label: String, route: Option<Route>, cx: &Context<Self>| {
                 // Agents stays current while building one (the web's agents/agent/new-agent/builder).
                 let active = route.as_ref().is_some_and(|r| {
-                    *r == this.route || (*r == Route::Agents && matches!(this.route, Route::Builder { .. }))
+                    *r == this.route
+                        || (*r == Route::Agents && matches!(this.route, Route::Builder { .. } | Route::Agent { .. }))
                 });
                 let row = NavRow::new(id, label)
                     .icon(icon)
