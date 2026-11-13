@@ -1,6 +1,6 @@
 // Who is in a chat (apps/web/src/features/people.tsx › TeamPicker), as reusable pieces: the header's faces (the
 // members overlapping, the lead's carrying the chat's state: working, waiting, failed; or "+ Add an agent"), which
-// open the chat's crew drawer (screens/chat/crew.rs), and what that drawer offers to join: the agents in reach not
+// open a list (Picker): the members, a name opening that agent's session drawer (screens/chat/crew.rs), and who can join: the agents in reach not
 // here yet (a search past 8) and the teams (one press adds the members not here yet, up to 8 in all; what didn't fit
 // is said).
 use std::rc::Rc;
@@ -68,6 +68,8 @@ pub fn candidates<'a>(store: &'a Store, chat_id: &str) -> Vec<&'a Agent> {
 }
 
 pub type OnOpen = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
+/// An agent of the chat picked in the list: open its session.
+pub type OnSession = Rc<dyn Fn(String, &mut Window, &mut App) + 'static>;
 
 /// The header's pill: the members' faces overlapping, or "+ Add an agent". It opens the crew drawer.
 #[derive(IntoElement)]
@@ -75,7 +77,18 @@ pub struct Faces {
     store: Entity<Store>,
     chat_id: String,
     open: bool,
-    on_open: OnOpen,
+    on_open: Option<OnOpen>,
+}
+
+impl gpui_kit::component::Selectable for Faces {
+    fn selected(mut self, selected: bool) -> Self {
+        self.open = selected;
+        self
+    }
+
+    fn is_selected(&self) -> bool {
+        self.open
+    }
 }
 
 impl Faces {
@@ -84,7 +97,17 @@ impl Faces {
             store,
             chat_id: chat_id.into(),
             open,
-            on_open,
+            on_open: Some(on_open),
+        }
+    }
+
+    /// As a popover's trigger: the popover opens on the press.
+    fn trigger(store: Entity<Store>, chat_id: impl Into<String>) -> Self {
+        Self {
+            store,
+            chat_id: chat_id.into(),
+            open: false,
+            on_open: None,
         }
     }
 }
@@ -160,9 +183,224 @@ impl RenderOnce for Faces {
                         )
                 })))
             })
-            .on_click(move |_, window, cx| on_open(window, cx));
+            .when_some(on_open, |r, open| r.on_click(move |_, window, cx| open(window, cx)));
         motion::track(row, &pointer).into_any_element()
     }
+}
+
+/// Who answers (the web's TeamPicker): the faces open a list of the members (the lead badged, Make lead and × on the
+/// others; a member's name opens its session in this chat), then who can join (agents, teams) and the @ hint.
+#[derive(IntoElement)]
+pub struct Picker {
+    store: Entity<Store>,
+    chat_id: String,
+    on_session: OnSession,
+}
+
+impl Picker {
+    pub fn new(store: Entity<Store>, chat_id: impl Into<String>, on_session: OnSession) -> Self {
+        Self {
+            store,
+            chat_id: chat_id.into(),
+            on_session,
+        }
+    }
+}
+
+impl RenderOnce for Picker {
+    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
+        let (store, chat_id, on_session) = (self.store, self.chat_id, self.on_session);
+        gpui_kit::component::popover::Popover::new(SharedString::from(format!("team-picker-{chat_id}")))
+            .anchor(Anchor::TopRight)
+            .offset(px(6.))
+            .appearance(false)
+            .trigger(Faces::trigger(store.clone(), chat_id.clone()))
+            .content(move |_, window, cx| {
+                let popover = cx.entity();
+                let dismiss: OnOpen = Rc::new(move |window, cx| popover.update(cx, |s, cx| s.dismiss(window, cx)));
+                list(&store, &chat_id, on_session.clone(), dismiss, window, cx)
+            })
+    }
+}
+
+/// The picker's list.
+fn list(
+    store: &Entity<Store>,
+    chat_id: &str,
+    on_session: OnSession,
+    dismiss: OnOpen,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
+    let p = theme::palette(window);
+    let (ids, members) = {
+        let s = store.read(cx);
+        let Some(chat) = s.chat(chat_id) else {
+            return div().into_any_element();
+        };
+        let members: Vec<(Agent, usize, String)> = chat
+            .agent_ids
+            .iter()
+            .filter_map(|id| s.agent(id))
+            .enumerate()
+            .map(|(i, a)| {
+                let hint = if i == 0 {
+                    t!("team.leadHint").into_owned()
+                } else {
+                    format!(
+                        "@{} · {}",
+                        crew::handle_of(&a.name),
+                        crate::labels::model_name(&a.model, &s.models)
+                    )
+                };
+                (a.clone(), s.tone(Some(&a.id)), hint)
+            })
+            .collect();
+        (chat.agent_ids.clone(), members)
+    };
+    let heading = |text: String, rule: bool| {
+        div()
+            .px(px(space::X2))
+            .pt(px(if rule { space::X2_5 } else { space::X1 }))
+            .pb(px(space::X1_5))
+            .when(rule, |d| d.mt(px(space::X1)).border_t_1().border_color(p.border))
+            .text_sm()
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(p.text_muted)
+            .child(text)
+            .into_any_element()
+    };
+    let many = members.len() > 1;
+    let mut rows: Vec<AnyElement> = Vec::new();
+    for (i, (a, tone, hint)) in members.iter().enumerate() {
+        let action: AnyElement = if i == 0 {
+            let hue = crate::ui::face::hue(p, *tone);
+            div()
+                .flex_none()
+                .flex()
+                .items_center()
+                .h(px(20.))
+                .px(px(space::X2))
+                .rounded_full()
+                .border_1()
+                .border_color(crate::ui::face::mix(hue, 0.35, p.bg_surface))
+                .bg(crate::ui::face::mix(hue, 0.12, p.bg_surface))
+                .text_xs()
+                .font_weight(FontWeight::MEDIUM)
+                .child(t!("team.lead").into_owned())
+                .into_any_element()
+        } else {
+            // The lead's model drives the chat, so it follows the new lead.
+            let order: Vec<String> = std::iter::once(a.id.clone())
+                .chain(ids.iter().filter(|x| **x != a.id).cloned())
+                .collect();
+            let (store, chat_id, model) = (store.clone(), chat_id.to_string(), a.model.clone());
+            crate::ui::button::Button::new(
+                SharedString::from(format!("picker-lead-{}", a.id)),
+                t!("team.makeLead").into_owned(),
+            )
+            .variant(crate::ui::button::Variant::Ghost)
+            .size(crate::ui::button::Size::Sm)
+            .on_click(move |_, _, cx| chat_actions::set_team(&store, &chat_id, order.clone(), Some(model.clone()), cx))
+            .into_any_element()
+        };
+        // A chat always keeps one agent: the last one can't be removed, only swapped for another.
+        let remove = many.then(|| {
+            let rest: Vec<String> = ids.iter().filter(|x| **x != a.id).cloned().collect();
+            let (store, chat_id) = (store.clone(), chat_id.to_string());
+            crate::ui::button::Button::icon_only(
+                SharedString::from(format!("picker-remove-{}", a.id)),
+                IconName::X,
+                t!("team.removeMember", name = a.name).into_owned(),
+            )
+            .size(crate::ui::button::Size::Xs)
+            .on_click(move |_, _, cx| chat_actions::set_team(&store, &chat_id, rest.clone(), None, cx))
+        });
+        // The face and name open the agent's session (the buttons beside them keep their own presses).
+        let id = ElementId::from(SharedString::from(format!("picker-open-{}", a.id)));
+        let pointer = motion::pointer(&id, window, cx);
+        let bg = motion::color(
+            &id,
+            "bg",
+            if pointer.read(cx).hovered {
+                p.bg_control
+            } else {
+                motion::fade(p.bg_control, 0.)
+            },
+            window,
+            cx,
+        );
+        let (open, dismiss, agent) = (on_session.clone(), dismiss.clone(), a.id.clone());
+        let who = div()
+            .id(id)
+            .role(Role::Button)
+            .aria_label(SharedString::from(t!("team.session").into_owned() + " · " + &a.name))
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .items_center()
+            .gap(px(space::X2_5))
+            .px(px(space::X2))
+            .py(px(space::X1_5))
+            .rounded(px(tokens::RADIUS_ROW))
+            .bg(bg)
+            .child(AgentFace::new(SharedString::from(format!("picker-face-{}", a.id)), *tone).size(20.))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .child(div().truncate().font_weight(FontWeight::MEDIUM).child(a.name.clone()))
+                    .child(div().truncate().text_sm().text_color(p.text_muted).child(hint.clone())),
+            )
+            .on_click(move |_, window, cx| {
+                dismiss(window, cx);
+                open(agent.clone(), window, cx);
+            });
+        rows.push(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(space::X1))
+                .pr(px(space::X1))
+                .child(motion::track(who, &pointer))
+                .child(action)
+                .children(remove)
+                .into_any_element(),
+        );
+    }
+    let agents = agents_to_add(store, chat_id, window, cx);
+    if !agents.is_empty() {
+        rows.push(heading(t!("team.add").into_owned(), !members.is_empty()));
+        rows.extend(agents);
+    }
+    let teams = teams_to_add(store, chat_id, window, cx);
+    if !teams.is_empty() {
+        rows.push(heading(t!("teams.addTeam").into_owned(), true));
+        rows.extend(teams);
+    }
+    if many {
+        rows.push(
+            div()
+                .px(px(space::X2))
+                .pt(px(space::X2))
+                .pb(px(space::X1))
+                .text_sm()
+                .text_color(p.text_dim)
+                .child(t!("team.mentionHint").into_owned())
+                .into_any_element(),
+        );
+    }
+    crate::ui::layout::panel(SharedString::from(format!("team-list-{chat_id}")), p)
+        .w(px(320.))
+        .max_h(px(480.))
+        .overflow_y_scroll()
+        .flex()
+        .flex_col()
+        .gap(px(space::X0_5))
+        .children(rows)
+        .into_any_element()
 }
 
 /// The agents that could join, each a row with a +; a search field on top past 8.

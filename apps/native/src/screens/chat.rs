@@ -129,8 +129,7 @@ pub struct ChatScreen {
     /// Set when this is a conversation with the Builder.
     builder: Option<BuilderMode>,
     /// The crew drawer (who is in the chat and what each does), and the agents whose card is open in it.
-    crew_open: bool,
-    crew_expanded: HashSet<String>,
+    crew_agent: Option<String>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -432,8 +431,7 @@ impl ChatScreen {
             queue: Vec::new(),
             answers: HashMap::new(),
             builder: None,
-            crew_open: false,
-            crew_expanded: HashSet::new(),
+            crew_agent: None,
             _subscriptions: subscriptions,
         }
     }

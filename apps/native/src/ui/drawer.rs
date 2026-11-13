@@ -44,9 +44,10 @@ impl Drawer {
             .h_full()
             .flex()
             .flex_col()
-            .rounded(px(tokens::RADIUS_SHEET))
+            // Full height, against the card's right edge (which rounds its outer corners).
+            .rounded_l(px(tokens::RADIUS_SHEET))
             .bg(p.bg_surface)
-            .border_1()
+            .border_l_1()
             .border_color(p.border_strong)
             .shadow_lg()
             .overflow_hidden()
@@ -121,7 +122,6 @@ impl Drawer {
             .inset_0()
             .flex()
             .justify_end()
-            .p(px(space::X2))
             .child(
                 // The dimmed screen: a click closes.
                 div()

@@ -488,16 +488,10 @@ impl Root {
                 Header::new(title)
                     .context_element(project_button)
                     .when_some(self.chat.as_ref().map(|(_, screen)| screen.clone()), |h, screen| {
-                        // The faces open the chat's crew drawer (what each agent does, who can join).
-                        let open = screen.read(cx).crew_is_open();
-                        let on_open: crate::screens::members::OnOpen =
-                            std::rc::Rc::new(move |_, cx| screen.update(cx, |s, cx| s.open_crew(cx)));
-                        h.trailing(crate::screens::members::Faces::new(
-                            store_entity,
-                            chat_id,
-                            open,
-                            on_open,
-                        ))
+                        // The faces open who answers (a list); a member's name opens its session in the drawer.
+                        let on_session: crate::screens::members::OnSession =
+                            std::rc::Rc::new(move |agent, _, cx| screen.update(cx, |s, cx| s.open_session(agent, cx)));
+                        h.trailing(crate::screens::members::Picker::new(store_entity, chat_id, on_session))
                     })
                     .trailing(crate::ui::menu::dropdown(
                         "chat-more",
