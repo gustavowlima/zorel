@@ -211,6 +211,14 @@ impl Composer {
     }
 
     /// Sending failed: the text comes back and the reason shows under the box.
+    /// Puts text in the box (a rewound message) and focuses it.
+    pub fn set_text(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.text.update(cx, |t, cx| t.set_value(text, window, cx));
+        self.error = None;
+        self.focus(window, cx);
+        cx.notify();
+    }
+
     pub fn restore(&mut self, text: String, error: String, window: &mut Window, cx: &mut Context<Self>) {
         self.text.update(cx, |t, cx| t.set_value(text, window, cx));
         self.error = Some(error);

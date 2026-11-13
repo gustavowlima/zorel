@@ -1471,6 +1471,7 @@ export const en = {
     undoTitle: "Undo this turn's changes?",
     undoBody: "The files go back to how they were before this turn. Changes made after it are kept.",
     undoConflict: "Can't undo: these files changed afterwards: {files}",
+    undoFailed: "Couldn't undo. Try again.",
     noChanges: "No changes in this chat yet",
     noChangesHint: "When an agent edits files in the project folder, each turn's diff shows here.",
     noFolder: "This project has no folder",

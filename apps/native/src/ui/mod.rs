@@ -20,4 +20,5 @@ pub mod selectable;
 pub mod shimmer;
 pub mod space;
 pub mod step_tree;
+pub mod switch;
 pub mod text_select;

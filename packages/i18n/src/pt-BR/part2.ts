@@ -775,6 +775,7 @@ export const part2 = {
     undoTitle: "Desfazer as alterações deste turno?",
     undoBody: "Os arquivos voltam ao estado de antes deste turno. As alterações feitas depois são mantidas.",
     undoConflict: "Não é possível desfazer: estes arquivos mudaram depois: {files}",
+    undoFailed: "Não foi possível desfazer. Tente de novo.",
     noChanges: "Nenhuma alteração nesta conversa ainda",
     noChangesHint: "Quando um agente edita arquivos na pasta do projeto, o diff de cada turno aparece aqui.",
     noFolder: "Este projeto não tem pasta",
