@@ -21,16 +21,18 @@ pub enum Tab {
     Changes,
     Git,
     Files,
+    Terminal,
 }
 
 impl Tab {
-    const ALL: [Tab; 3] = [Tab::Changes, Tab::Git, Tab::Files];
+    const ALL: [Tab; 4] = [Tab::Changes, Tab::Git, Tab::Files, Tab::Terminal];
 
     fn label(self) -> String {
         match self {
             Tab::Changes => t!("workspace.changes").into_owned(),
             Tab::Git => t!("git.pullRequest").into_owned(),
             Tab::Files => t!("workspace.files").into_owned(),
+            Tab::Terminal => t!("workspace.terminal").into_owned(),
         }
     }
 
@@ -39,12 +41,13 @@ impl Tab {
             Tab::Changes => IconName::PanelRight,
             Tab::Git => IconName::GitPullRequest,
             Tab::Files => IconName::Folder,
+            Tab::Terminal => IconName::SquareTerminal,
         }
     }
 
     /// Needs the project's folder.
     fn folder_only(self) -> bool {
-        matches!(self, Tab::Files | Tab::Git)
+        matches!(self, Tab::Files | Tab::Git | Tab::Terminal)
     }
 }
 
@@ -139,7 +142,7 @@ impl ChatScreen {
         cx.notify();
     }
 
-    fn open_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
+    pub(super) fn open_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
         // Git is read fresh each time it's shown (a shell or an agent may have committed meanwhile).
         if tab == Tab::Git {
             self.load_git(cx);
@@ -322,6 +325,7 @@ impl ChatScreen {
             Tab::Changes => self.changes_tab(window, cx),
             Tab::Files => self.files_tab(window, cx),
             Tab::Git => self.git_tab(window, cx),
+            Tab::Terminal => self.terminal_tab(window, cx),
         };
         // The left edge: a hairline that lights on hover, a wider grip to drag.
         let edge = div()
@@ -353,7 +357,7 @@ impl ChatScreen {
                 .child(head)
                 .child(match current {
                     // Files scrolls its own tree and file.
-                    Tab::Files => div().id("side-body").flex_1().min_h_0().child(body),
+                    Tab::Files | Tab::Terminal => div().id("side-body").flex_1().min_h_0().child(body),
                     _ => div().id("side-body").flex_1().min_h_0().overflow_y_scroll().child(body),
                 })
                 .into_any_element(),
@@ -574,6 +578,109 @@ impl ChatScreen {
             .pb(px(space::X3))
             .child(div().flex().flex_col().children(rows))
             .children(shown)
+            .into_any_element()
+    }
+}
+
+impl ChatScreen {
+    /// A new shell in the chat's folder, shown.
+    fn new_shell(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let http = self.store.read(cx).http.clone();
+        let view = cx.entity().downgrade();
+        let add: crate::screens::terminal::OnText = Rc::new(move |text, _, cx| {
+            let _ = view.update(cx, |this, cx| this.add_to_chat(text, cx));
+        });
+        let chat = self.chat_id.clone();
+        let shell = cx.new(|cx| crate::screens::terminal::Shell::new(http, chat, None, Some(add), cx));
+        shell.update(cx, |s, cx| s.focus(window, cx));
+        self.shells.push(shell);
+        self.shell_at = self.shells.len() - 1;
+        cx.notify();
+    }
+
+    /// Ends a shell and closes its tab.
+    fn close_shell(&mut self, at: usize, cx: &mut Context<Self>) {
+        if at < self.shells.len() {
+            self.shells.remove(at).read(cx).kill();
+            self.shell_at = self.shell_at.min(self.shells.len().saturating_sub(1));
+        }
+        cx.notify();
+    }
+
+    /// The Terminal tab: its shells as tabs (+ opens one, × ends one), the shown one below. Shells stay alive while
+    /// another tab shows.
+    fn terminal_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let p = theme::palette(window);
+        if self.shells.is_empty() {
+            self.new_shell(window, cx);
+        }
+        let strip = self.shells.iter().enumerate().map(|(i, s)| {
+            let n = s.read(cx).n;
+            let name = t!("workspace.shell", n = if n > 0 { n } else { i as u32 + 1 }).into_owned();
+            let selected = i == self.shell_at;
+            div()
+                .id(SharedString::from(format!("shell-tab-{i}")))
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(space::X1))
+                .pl(px(space::X2_5))
+                .pr(px(space::X1))
+                .h(px(tokens::CONTROL_H_SM))
+                .rounded(px(tokens::RADIUS_CONTROL_SM))
+                .text_sm()
+                .map(|d| {
+                    if selected {
+                        d.bg(p.bg_control).text_color(p.text)
+                    } else {
+                        d.text_color(p.text_muted)
+                    }
+                })
+                .hover(|s| s.bg(p.bg_control))
+                .child(icon(IconName::SquareTerminal, icon::XS))
+                .child(name.clone())
+                .child(
+                    Button::icon_only(
+                        SharedString::from(format!("shell-close-{i}")),
+                        IconName::X,
+                        t!("workspace.closeShellNamed", name = name).into_owned(),
+                    )
+                    .size(Size::Xs)
+                    .on_click(cx.listener(move |this, _, _, cx| this.close_shell(i, cx))),
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.shell_at = i;
+                    if let Some(s) = this.shells.get(i) {
+                        s.update(cx, |s, cx| s.focus(window, cx));
+                    }
+                    cx.notify();
+                }))
+        });
+        let shown = self.shells.get(self.shell_at).cloned();
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .child(
+                div()
+                    .id("shell-strip")
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(space::X1))
+                    .px(px(space::X3))
+                    .py(px(space::X1_5))
+                    .overflow_x_scroll()
+                    .border_b_1()
+                    .border_color(p.border)
+                    .children(strip)
+                    .child(
+                        Button::icon_only("shell-new", IconName::Plus, t!("workspace.newShell").into_owned())
+                            .size(Size::Xs)
+                            .on_click(cx.listener(|this, _, window, cx| this.new_shell(window, cx))),
+                    ),
+            )
+            .child(div().flex_1().min_h_0().children(shown))
             .into_any_element()
     }
 }

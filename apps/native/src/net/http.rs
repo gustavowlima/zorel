@@ -11,6 +11,8 @@ const ATTACHMENT_NAME_HEADER: &str = "x-file-name"; // packages/contracts routes
 pub struct Http {
     base: String,
     client: reqwest::Client,
+    /// The session secret, for sockets (a terminal) that can't share the client's headers.
+    token: String,
 }
 
 #[derive(Debug)]
@@ -44,7 +46,19 @@ impl Http {
         Self {
             base: engine.url.clone(),
             client,
+            token: engine.token.clone(),
         }
+    }
+
+    /// A WebSocket request to the engine's `path` (with its query), carrying the session secret.
+    pub fn socket(&self, path: &str) -> Result<tokio_tungstenite::tungstenite::handshake::client::Request, String> {
+        use tokio_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue};
+        let url = format!("{}{path}", self.base.replacen("http", "ws", 1));
+        let mut req = url.into_client_request().map_err(|e| e.to_string())?;
+        let mut secret = HeaderValue::from_str(&self.token).map_err(|e| e.to_string())?;
+        secret.set_sensitive(true);
+        req.headers_mut().insert(SESSION_HEADER, secret);
+        Ok(req)
     }
 
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, HttpError> {

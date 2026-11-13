@@ -14,3 +14,4 @@ pub mod proposal;
 pub mod sidebar;
 mod sidebar_actions;
 mod sidebar_foot;
+pub mod terminal;
