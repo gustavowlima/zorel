@@ -153,6 +153,8 @@ pub struct Composer {
     menu: Option<Menu>,
     large: bool,
     _subscription: Subscription,
+    /// Enter while the menu is open picks (screens/composer.rs › new).
+    _enter: Subscription,
 }
 
 impl Composer {
@@ -183,6 +185,24 @@ impl Composer {
             }
             _ => {}
         });
+        // Enter with the menu open picks. It's taken before any key binding sees it: the box binds Enter to "send"
+        // and bindings run before key listeners, so a listener on the box never gets it.
+        let me = cx.entity().downgrade();
+        let enter = cx.intercept_keystrokes(move |event, window, cx| {
+            let k = &event.keystroke;
+            if k.key != "enter" || k.modifiers.shift || k.modifiers.platform || k.modifiers.control {
+                return;
+            }
+            let Some(me) = me.upgrade() else { return };
+            let open = {
+                let c = me.read(cx);
+                c.menu.is_some() && c.text.read(cx).focus_handle(cx).is_focused(window)
+            };
+            if open {
+                me.update(cx, |this, cx| this.pick(None, window, cx));
+                cx.stop_propagation();
+            }
+        });
         Self {
             text,
             files: Vec::new(),
@@ -193,6 +213,7 @@ impl Composer {
             menu: None,
             large,
             _subscription: sub,
+            _enter: enter,
         }
     }
 
@@ -516,7 +537,7 @@ impl Composer {
             .flex()
             .flex_col()
             .gap(px(space::X1_5))
-            // With a menu open, the arrows, Enter, Tab and Esc are the menu's.
+            // With a menu open, the arrows, Tab and Esc are the menu's (Enter: see `new`).
             .capture_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| {
                 if !open {
                     return;
@@ -525,8 +546,6 @@ impl Composer {
                     "down" => this.step(1, cx),
                     "up" => this.step(-1, cx),
                     "tab" => this.pick(None, window, cx),
-                    // Enter picks too, before the box can take it as "send".
-                    "enter" if !event.keystroke.modifiers.shift => this.pick(None, window, cx),
                     "escape" => {
                         this.menu = None;
                         cx.notify();
