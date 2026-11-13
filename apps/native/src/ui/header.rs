@@ -22,6 +22,8 @@ pub struct Header {
     inset: f32,
     title: SharedString,
     context: Option<SharedString>,
+    /// Instead of the context line: a control (the chat's project, a ghost button).
+    context_element: Option<AnyElement>,
     trailing: Vec<AnyElement>,
 }
 
@@ -31,6 +33,7 @@ impl Header {
             inset: 0.,
             title: title.into(),
             context: None,
+            context_element: None,
             trailing: Vec::new(),
         }
     }
@@ -43,6 +46,12 @@ impl Header {
     /// The small line beside the title (project · branch).
     pub fn context(mut self, context: impl Into<SharedString>) -> Self {
         self.context = Some(context.into());
+        self
+    }
+
+    /// A control right after the title (the chat's project), in place of the context line.
+    pub fn context_element(mut self, element: impl IntoElement) -> Self {
+        self.context_element = Some(element.into_any_element());
         self
     }
 
@@ -84,6 +93,9 @@ impl RenderOnce for Header {
                         .text_color(p.text_muted)
                         .child(c),
                 )
+            })
+            .when_some(self.context_element, |h, e| {
+                h.child(div().flex_none().ml(px(-space::X1_5)).child(e))
             })
             .child(div().flex_1())
             .children(self.trailing)

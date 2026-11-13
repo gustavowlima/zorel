@@ -21,11 +21,12 @@ use serde_json::json;
 use crate::{
     route::Route,
     runtime,
-    screens::sidebar::{Sidebar, SidebarEvent},
+    screens::{
+        chat_actions,
+        sidebar::{Sidebar, SidebarEvent},
+    },
     ui::{menu::Menu, nav::MenuBuilder},
 };
-
-const TITLE_MAX: usize = 80;
 
 impl Sidebar {
     pub(super) fn chat_menu(view: &Entity<Self>, id: String, title: String) -> MenuBuilder {
@@ -40,11 +41,20 @@ impl Sidebar {
                     })
                 })
                 .item(t!("common.rename").into_owned(), move |window, cx| {
-                    Self::rename_chat(&rename, id2.clone(), title.clone(), window, cx)
+                    let store = rename.read(cx).store.clone();
+                    chat_actions::rename(store, id2.clone(), title.clone(), window, cx)
                 })
                 .separator()
                 .danger(t!("common.delete").into_owned(), move |window, cx| {
-                    Self::delete_chat(&delete, id3.clone(), window, cx)
+                    // Deleting the open chat goes home.
+                    let (store, view, id) = (delete.read(cx).store.clone(), delete.clone(), id3.clone());
+                    let gone = id.clone();
+                    let after: chat_actions::AfterDelete = Rc::new(move |_, cx| {
+                        if view.read(cx).route == (Route::Chat { id: gone.clone() }) {
+                            view.update(cx, |_, cx| cx.emit(SidebarEvent::Navigate(Route::default())));
+                        }
+                    });
+                    chat_actions::delete(store, id, after, window, cx)
                 })
                 .build()
         })
@@ -69,107 +79,6 @@ impl Sidebar {
                 })
                 .build()
         })
-    }
-
-    fn rename_chat(view: &Entity<Self>, id: String, title: String, window: &mut Window, cx: &mut App) {
-        let input = cx.new(|cx| InputState::new(window, cx).default_value(title));
-        let focus = std::cell::Cell::new(true);
-        let view = view.clone();
-        window.open_dialog(cx, move |dialog, window, cx| {
-            if focus.replace(false) {
-                input.focus_handle(cx).focus(window, cx);
-            }
-            let (save_input, view, id) = (input.clone(), view.clone(), id.clone());
-            sheet(
-                dialog,
-                window,
-                Width::Sm,
-                Sheet {
-                    title: t!("chat.renameTitle").into_owned(),
-                    description: None,
-                    body: Some(field(window, Input::new(&input).appearance(false)).into_any_element()),
-                    actions: vec![
-                        Button::new("cancel", t!("common.cancel").into_owned())
-                            .on_click(|_, window, cx| window.close_dialog(cx))
-                            .into_any_element(),
-                        Button::new("save", t!("common.save").into_owned())
-                            .variant(Variant::Primary)
-                            .on_click(move |_, window, cx| {
-                                let title: String =
-                                    save_input.read(cx).value().trim().chars().take(TITLE_MAX).collect();
-                                if title.is_empty() {
-                                    return;
-                                }
-                                window.close_dialog(cx);
-                                let (store, path) = (view.read(cx).store.clone(), format!("/api/chats/{id}"));
-                                // The new title shows at once; the reload after the engine answers corrects it.
-                                store.update(cx, |s, cx| {
-                                    if let Some(c) = s.chats.chats.iter_mut().find(|c| c.id == id) {
-                                        c.title = title.clone();
-                                    }
-                                    cx.notify();
-                                });
-                                let http = store.read(cx).http.clone();
-                                let reload = store.downgrade();
-                                cx.spawn(async move |cx| {
-                                    let done = runtime::spawn(async move {
-                                        http.patch::<_, serde_json::Value>(&path, &json!({ "title": title }))
-                                            .await
-                                    })
-                                    .await;
-                                    if let Ok(Err(e)) = &done {
-                                        eprintln!("rename: {e}");
-                                    }
-                                    let _ = reload.update(cx, |store, cx| store.reload_chats(cx));
-                                })
-                                .detach();
-                            })
-                            .into_any_element(),
-                    ],
-                },
-            )
-        });
-    }
-
-    fn delete_chat(view: &Entity<Self>, id: String, window: &mut Window, cx: &mut App) {
-        let view = view.clone();
-        window.open_dialog(cx, move |dialog, window, _| {
-            let (view, id) = (view.clone(), id.clone());
-            sheet(
-                dialog,
-                window,
-                Width::Sm,
-                Sheet {
-                    title: t!("chat.deleteTitle").into_owned(),
-                    description: Some(t!("chat.deleteBody").into_owned()),
-                    body: None,
-                    actions: vec![
-                        Button::new("cancel", t!("common.cancel").into_owned())
-                            .on_click(|_, window, cx| window.close_dialog(cx))
-                            .into_any_element(),
-                        Button::new("delete", t!("common.delete").into_owned())
-                            .variant(Variant::Destructive)
-                            .on_click(move |_, window, cx| {
-                                window.close_dialog(cx);
-                                let open = view.read(cx).route == (Route::Chat { id: id.clone() });
-                                if open {
-                                    view.update(cx, |_, cx| cx.emit(SidebarEvent::Navigate(Route::default())));
-                                }
-                                // Gone from the list at once; the engine's delete (it also clears the chat's files)
-                                // and the reload follow, and bring it back only if the delete failed.
-                                let store = view.read(cx).store.clone();
-                                store.update(cx, |s, cx| {
-                                    s.chats.chats.retain(|c| c.id != id);
-                                    s.chats.statuses.remove(&id);
-                                    cx.notify();
-                                });
-                                Self::engine_then_reload(&view, format!("/api/chats/{id}"), cx);
-                            })
-                            .into_any_element(),
-                    ],
-                },
-            )
-        });
     }
 
     fn delete_project(view: &Entity<Self>, id: String, name: String, window: &mut Window, cx: &mut App) {

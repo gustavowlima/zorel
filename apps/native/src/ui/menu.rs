@@ -62,6 +62,14 @@ impl Menu {
         self
     }
 
+    /// The icon before the last item's label.
+    pub fn icon(mut self, name: IconName) -> Self {
+        if let Some(Entry::Item { icon, .. }) = self.0.last_mut() {
+            *icon = Some(name);
+        }
+        self
+    }
+
     pub fn separator(mut self) -> Self {
         self.0.push(Entry::Separator);
         self

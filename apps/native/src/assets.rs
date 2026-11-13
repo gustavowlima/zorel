@@ -77,7 +77,9 @@ icon_assets!(
         Sparkles,
         Minimize2,
         SquarePen,
-        GripVertical
+        GripVertical,
+        Trash,
+        X
     ]
 );
 

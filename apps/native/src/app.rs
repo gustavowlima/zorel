@@ -9,11 +9,7 @@ use gpui_kit::assets::IconName;
 use gpui_kit::{component as gpui_component, prelude::FluentBuilder, *};
 use rust_i18n::t;
 
-use crate::ui::{
-    face::{AgentFace, FaceState},
-    header::Header,
-    space,
-};
+use crate::ui::{header::Header, space};
 use crate::{
     engine::Launch,
     i18n,
@@ -416,31 +412,89 @@ impl Root {
                 Header::new(t!("builder.title").into_owned()).context(t!("builder.subtitle").into_owned())
             }
             Route::Chat { id } => {
-                let chat = store.chat(id);
+                let Some(chat) = store.chat(id) else {
+                    return Header::new("");
+                };
                 let project = chat
-                    .and_then(|c| c.project_id.as_deref())
-                    .and_then(|pid| store.projects.iter().find(|p| p.id == pid))
-                    .map(|p| p.name.clone());
-                let lead = chat.and_then(|c| c.agent_ids.first().cloned());
-                let running = store
-                    .status(id)
-                    .is_some_and(|s| matches!(s.state, crate::net::types::ChatStatusState::Running));
-                Header::new(chat.map(crate::labels::chat_title).unwrap_or_default())
-                    .when_some(project, |h, p| h.context(p))
-                    .when_some(lead, |h, agent| {
-                        h.trailing(
-                            AgentFace::new(
-                                SharedString::from(format!("strip-face-{agent}")),
-                                store.tone(Some(&agent)),
-                            )
-                            .size(24.)
-                            .state(if running {
-                                FaceState::Working
-                            } else {
-                                FaceState::Idle
-                            }),
-                        )
+                    .project_id
+                    .as_deref()
+                    .and_then(|pid| store.projects.iter().find(|p| p.id == pid));
+                let store_entity = self.store.clone().expect("read above");
+                let root = cx.entity().downgrade();
+                // The project (or General): to the project's Home.
+                // ponytail: the web opens the project's overview; native has no project screen yet.
+                let project_id = chat.project_id.clone();
+                let to_project = {
+                    let root = root.clone();
+                    let project_id = project_id.clone();
+                    move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                        let route = Route::Home {
+                            project_id: project_id.clone(),
+                        };
+                        let _ = root.update(cx, |this, cx| this.navigate(route, window, cx));
+                    }
+                };
+                let project_button = Button::new(
+                    "chat-project",
+                    project.map_or_else(|| t!("common.general").into_owned(), |p| p.name.clone()),
+                )
+                .variant(Variant::Ghost)
+                .size(btn::Size::Sm)
+                .on_click(to_project);
+                let (title, chat_id) = (crate::labels::chat_title(chat), chat.id.clone());
+                let more: crate::ui::menu::Items = {
+                    let (store, root, title, chat_id) =
+                        (store_entity.clone(), root.clone(), title.clone(), chat_id.clone());
+                    std::rc::Rc::new(move || {
+                        let (rename_store, delete_store) = (store.clone(), store.clone());
+                        let (rename_id, delete_id, title) = (chat_id.clone(), chat_id.clone(), title.clone());
+                        let (root, project_id) = (root.clone(), project_id.clone());
+                        crate::ui::menu::Menu::default()
+                            .item(t!("common.rename").into_owned(), move |window, cx| {
+                                crate::screens::chat_actions::rename(
+                                    rename_store.clone(),
+                                    rename_id.clone(),
+                                    title.clone(),
+                                    window,
+                                    cx,
+                                )
+                            })
+                            .icon(IconName::Pencil)
+                            .separator()
+                            .danger(t!("common.delete").into_owned(), move |window, cx| {
+                                // Gone: back to Home, in the chat's project (the project stays).
+                                let (root, project_id) = (root.clone(), project_id.clone());
+                                let after: crate::screens::chat_actions::AfterDelete =
+                                    std::rc::Rc::new(move |window, cx| {
+                                        let route = Route::Home {
+                                            project_id: project_id.clone(),
+                                        };
+                                        let _ = root.update(cx, |this, cx| this.navigate(route, window, cx));
+                                    });
+                                crate::screens::chat_actions::delete(
+                                    delete_store.clone(),
+                                    delete_id.clone(),
+                                    after,
+                                    window,
+                                    cx,
+                                )
+                            })
+                            .icon(IconName::Trash)
+                            .build()
                     })
+                };
+                // ponytail: Fallbacks… (failover), the side panel's toggle, pinned tabs, Run and the chat's processes
+                // come with the side panel (parity/chat.md › C).
+                Header::new(title)
+                    .context_element(project_button)
+                    .trailing(crate::screens::team_picker::TeamPicker::new(store_entity, chat_id))
+                    .trailing(crate::ui::menu::dropdown(
+                        "chat-more",
+                        Button::icon_only("chat-more-trigger", IconName::Ellipsis, t!("common.more").into_owned())
+                            .variant(Variant::Ghost)
+                            .size(btn::Size::Sm),
+                        more,
+                    ))
             }
         }
     }
