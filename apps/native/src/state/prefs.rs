@@ -1,16 +1,12 @@
 // The person's interface preferences on this computer (the web keeps them in localStorage): the sidebar folded or
 // not, which projects are open, which sidebar sections are closed. A small JSON file in the system's config folder;
-// missing or unreadable means the defaults, and a failed write only logs (it never stops the app).
+// missing or unreadable means the defaults, and a failed write only logs (it never stops the app). One copy for the
+// whole app (a GPUI global): read with `Prefs::get`, changed only with `Prefs::update`, which saves, so no screen can
+// write back a stale copy over another's change.
 use std::{collections::BTreeSet, path::PathBuf};
 
+use gpui_kit::{App, BorrowAppContext, Global};
 use serde::{Deserialize, Serialize};
-
-/// Live steps start folded (Settings › Live steps off), read on every frame without touching the disk.
-pub static STEPS_FOLDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-pub fn steps_folded() -> bool {
-    STEPS_FOLDED.load(std::sync::atomic::Ordering::Relaxed)
-}
 
 #[derive(Default, Serialize, Deserialize, Clone, PartialEq, Debug)]
 #[serde(default, rename_all = "camelCase")]
@@ -37,17 +33,30 @@ fn file() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("Zorel").join("native-prefs.json"))
 }
 
+impl Global for Prefs {}
+
 impl Prefs {
+    /// From disk: once at start (`run` installs it as the global).
     pub fn load() -> Self {
-        let prefs: Self = file()
+        file()
             .and_then(|f| std::fs::read_to_string(f).ok())
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
-        STEPS_FOLDED.store(prefs.live_steps_folded, std::sync::atomic::Ordering::Relaxed);
-        prefs
+            .unwrap_or_default()
     }
 
-    pub fn save(&self) {
+    pub fn get(cx: &App) -> &Self {
+        cx.global()
+    }
+
+    /// Changes the app's preferences and saves them.
+    pub fn update(cx: &mut App, change: impl FnOnce(&mut Self)) {
+        cx.update_global(|prefs: &mut Self, _| {
+            change(prefs);
+            prefs.save();
+        });
+    }
+
+    fn save(&self) {
         let Some(path) = file() else { return };
         let written = path
             .parent()

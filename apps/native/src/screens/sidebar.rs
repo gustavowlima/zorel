@@ -54,7 +54,6 @@ impl EventEmitter<SidebarEvent> for Sidebar {}
 
 pub struct Sidebar {
     pub(super) store: Entity<Store>,
-    prefs: Prefs,
     /// Heights of what opens and closes (sections, projects), for their animation.
     collapse: crate::ui::collapse::Measured,
     /// The order a drag shows right now.
@@ -79,7 +78,6 @@ impl Sidebar {
         cx.observe(&store, |_, _, cx| cx.notify()).detach();
         Self {
             store,
-            prefs: Prefs::load(),
             collapse: Default::default(),
             preview: None,
             held: HashMap::new(),
@@ -93,29 +91,22 @@ impl Sidebar {
     }
 
     /// Whether it is the narrow rail (the window's title strip then clears the traffic lights itself).
-    pub fn folded(&self) -> bool {
-        self.prefs.sidebar_folded
+    pub fn folded(&self, cx: &App) -> bool {
+        Prefs::get(cx).sidebar_folded
     }
 
     pub fn toggle_folded(&mut self, cx: &mut Context<Self>) {
-        self.prefs.sidebar_folded = !self.prefs.sidebar_folded;
-        self.prefs.save();
+        Prefs::update(cx, |p| p.sidebar_folded = !p.sidebar_folded);
         cx.notify();
     }
 
     fn toggle_section(&mut self, section: &str, cx: &mut Context<Self>) {
-        if !self.prefs.collapsed_sections.remove(section) {
-            self.prefs.collapsed_sections.insert(section.to_string());
-        }
-        self.prefs.save();
+        Prefs::update(cx, |p| flip(&mut p.collapsed_sections, section));
         cx.notify();
     }
 
     fn toggle_project(&mut self, id: &str, cx: &mut Context<Self>) {
-        if !self.prefs.expanded_projects.remove(id) {
-            self.prefs.expanded_projects.insert(id.to_string());
-        }
-        self.prefs.save();
+        Prefs::update(cx, |p| flip(&mut p.expanded_projects, id));
         cx.notify();
     }
 
@@ -232,7 +223,7 @@ impl Sidebar {
 
     /// A row's part in a live reorder: dragging over it moves the dragged row there; dropping keeps that order.
     fn reorder_of(&self, group: &str, id: &str, label: String, mark: DragMark, cx: &Context<Self>) -> Reorder {
-        let folded = self.prefs.sidebar_folded;
+        let folded = Prefs::get(cx).sidebar_folded;
         let row = DragRow {
             group: group.to_string().into(),
             id: id.to_string().into(),
@@ -277,7 +268,7 @@ impl Sidebar {
         let store = self.store.read(cx);
         let group = preview.group.clone();
         let natural: Vec<String> = match group.as_str() {
-            "places" => self.place_order(),
+            "places" => self.place_order(cx),
             "projects" => store.projects.iter().map(|p| p.id.clone()).collect(),
             key => {
                 let statuses = lifted(&store.chats.chats, &store.chats.statuses);
@@ -300,8 +291,7 @@ impl Sidebar {
         let store = self.store.downgrade();
         match group.as_str() {
             "places" => {
-                self.prefs.places = ids;
-                self.prefs.save();
+                Prefs::update(cx, |p| p.places = ids);
             }
             "projects" => Self::put_order(&store, "/api/projects/order", serde_json::json!({ "ids": ids }), cx),
             key => {
@@ -318,9 +308,8 @@ impl Sidebar {
     }
 
     /// The places' ids in the person's order (new places at the end).
-    fn place_order(&self) -> Vec<String> {
-        let mut ids: Vec<String> = self
-            .prefs
+    fn place_order(&self, cx: &App) -> Vec<String> {
+        let mut ids: Vec<String> = Prefs::get(cx)
             .places
             .iter()
             .filter(|id| PLACES.contains(&id.as_str()))
@@ -491,7 +480,7 @@ impl Sidebar {
         cx: &Context<Self>,
     ) -> AnyElement {
         let p = theme::palette(window);
-        let closed = self.prefs.collapsed_sections.contains(key);
+        let closed = Prefs::get(cx).collapsed_sections.contains(key);
         div()
             .id(SharedString::from(format!("section-{key}")))
             .flex()
@@ -544,7 +533,7 @@ impl Sidebar {
     fn view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let p = theme::palette(window);
         // A narrow window keeps the rail (the web folds below 900px), whatever was chosen.
-        let folded = self.prefs.sidebar_folded || window.viewport_size().width < px(NARROW);
+        let folded = Prefs::get(cx).sidebar_folded || window.viewport_size().width < px(NARROW);
         let width = spring(
             "sidebar-width",
             px(if folded { RAIL_WIDTH } else { OPEN_WIDTH }),
@@ -554,7 +543,7 @@ impl Sidebar {
         );
         // Each section's chevron turns on a spring (down = open).
         let mut turn = |key: &'static str| {
-            let closed = self.prefs.collapsed_sections.contains(key);
+            let closed = Prefs::get(cx).collapsed_sections.contains(key);
             spring(
                 SharedString::from(format!("section-turn-{key}")),
                 px(if closed { -90. } else { 0. }),
@@ -572,7 +561,7 @@ impl Sidebar {
         let mut heights: HashMap<String, Option<(Pixels, f32)>> = HashMap::new();
         let mut project_turns: HashMap<String, Pixels> = HashMap::new();
         for key in ["projects", LOOSE] {
-            let open = !self.prefs.collapsed_sections.contains(key);
+            let open = !Prefs::get(cx).collapsed_sections.contains(key);
             heights.insert(key.to_string(), self.collapse.height(key, open, window, cx));
         }
         {
@@ -584,7 +573,7 @@ impl Sidebar {
                 .map(|pr| {
                     let here = matches!(&route, Route::Chat { id } if store.chat(id).and_then(|c| c.project_id.as_deref()) == Some(pr.id.as_str()))
                         || route == (Route::Home { project_id: Some(pr.id.clone()) });
-                    (pr.id.clone(), here || self.prefs.expanded_projects.contains(&pr.id))
+                    (pr.id.clone(), here || Prefs::get(cx).expanded_projects.contains(&pr.id))
                 })
                 .collect();
             for (id, open) in projects {
@@ -706,7 +695,7 @@ impl Sidebar {
         // In the person's order, each draggable (live), sliding when the order changes.
         let dragging = self.preview.as_ref().map(|p| p.dragged.clone());
         let places: Vec<(String, AnyElement)> = self
-            .display("places", self.place_order())
+            .display("places", self.place_order(cx))
             .into_iter()
             .filter_map(|id| {
                 let row = by_id.remove(id.as_str())?;
@@ -793,7 +782,7 @@ impl Sidebar {
                             == (Route::Home {
                                 project_id: Some(project.id.clone()),
                             });
-                    let expanded = open_here || self.prefs.expanded_projects.contains(&project.id);
+                    let expanded = open_here || Prefs::get(cx).expanded_projects.contains(&project.id);
                     let trailing: AnyElement = match (waiting, running) {
                         (w, _) if w > 0 => div()
                             .text_xs()
@@ -1193,5 +1182,12 @@ mod tests {
         let chats = [chat("parent", 1., None, None), chat("task", 2., None, Some("parent"))];
         let statuses = HashMap::from([("task".to_string(), status("task", "waiting"))]);
         assert_eq!(lifted(&chats, &statuses)["parent"].state, ChatStatusState::Waiting);
+    }
+}
+
+/// Removes `key` from the set, or adds it when it wasn't there.
+fn flip(set: &mut std::collections::BTreeSet<String>, key: &str) {
+    if !set.remove(key) {
+        set.insert(key.to_string());
     }
 }

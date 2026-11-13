@@ -387,7 +387,7 @@ impl Root {
             Route::Builder { .. } => self.builder.clone().map(|b| b.into_any_element()),
         };
         // Folded, the rail is narrower than the traffic lights: the title starts after them.
-        let folded = self.sidebar.as_ref().is_some_and(|s| s.read(cx).folded());
+        let folded = self.sidebar.as_ref().is_some_and(|s| s.read(cx).folded(cx));
         let strip = self
             .strip(cx)
             .inset(if folded { TRAFFIC_LIGHTS_W - RAIL_W } else { 0. });
@@ -678,6 +678,7 @@ pub fn run() {
         // The kit's own component strings (it ships pt-BR) follow the same language as ours.
         rust_i18n::extend!(gpui_component);
         gpui_kit::init(cx);
+        cx.set_global(crate::state::prefs::Prefs::load());
         theme::install(cx);
         #[cfg(feature = "hotreload")]
         crate::hot::install(cx);

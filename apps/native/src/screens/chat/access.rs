@@ -81,9 +81,7 @@ impl ChatScreen {
                             .variant(Variant::Destructive)
                             .on_click(move |_, window, cx| {
                                 window.close_dialog(cx);
-                                let mut prefs = Prefs::load();
-                                prefs.full_access_confirmed = true;
-                                prefs.save();
+                                Prefs::update(cx, |p| p.full_access_confirmed = true);
                                 let _ = view.update(cx, |this, cx| this.set_access(Some(ChatAccess::Full), cx));
                             })
                             .into_any_element(),
@@ -116,7 +114,7 @@ pub(super) fn chip(chat: WeakEntity<ChatScreen>, level: Option<ChatAccess>) -> A
                 popover.update(cx, |s, cx| s.dismiss(window, cx));
                 let next = LEVELS[ix];
                 let _ = chat.update(cx, |this, cx| {
-                    if next == Some(ChatAccess::Full) && !Prefs::load().full_access_confirmed {
+                    if next == Some(ChatAccess::Full) && !Prefs::get(cx).full_access_confirmed {
                         this.confirm_full(window, cx);
                     } else {
                         this.set_access(next, cx);

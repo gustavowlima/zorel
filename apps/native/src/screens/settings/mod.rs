@@ -149,7 +149,7 @@ impl Settings {
 
     fn appearance(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = theme::palette(window);
-        let local = Prefs::load();
+        let local = Prefs::get(cx).clone();
         let theme_at = match local.theme.as_str() {
             "dark" => 1,
             "light" => 2,
@@ -165,9 +165,7 @@ impl Settings {
                 .collect(),
             theme_at,
             Rc::new(move |i, window, cx| {
-                let mut prefs = Prefs::load();
-                prefs.theme = themes[i].to_string();
-                prefs.save();
+                Prefs::update(cx, |p| p.theme = themes[i].to_string());
                 theme::set_choice(themes[i], Some(window), cx);
             }),
         );
@@ -198,9 +196,7 @@ impl Settings {
                 local.language.clone()
             },
             Rc::new(|v, _, cx| {
-                let mut prefs = Prefs::load();
-                prefs.language = v.to_string();
-                prefs.save();
+                Prefs::update(cx, |p| p.language = v.to_string());
                 crate::i18n::set(v);
                 cx.refresh_windows();
             }),
@@ -210,9 +206,7 @@ impl Settings {
             String::new(),
             !local.live_steps_folded,
             Rc::new(|on, window, cx| {
-                let mut prefs = Prefs::load();
-                prefs.live_steps_folded = !on;
-                prefs.save();
+                Prefs::update(cx, |p| p.live_steps_folded = !on);
                 window.refresh();
                 cx.refresh_windows();
             }),

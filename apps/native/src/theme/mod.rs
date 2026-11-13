@@ -68,7 +68,8 @@ pub fn install(cx: &mut App) {
         theme.light_theme = light;
         theme.dark_theme = dark;
     });
-    set_choice(&crate::state::prefs::Prefs::load().theme, None, cx);
+    let choice = crate::state::prefs::Prefs::get(cx).theme.clone();
+    set_choice(&choice, None, cx);
 }
 
 /// Re-reads the system's light/dark into the kit's theme (call when the window's appearance changes).

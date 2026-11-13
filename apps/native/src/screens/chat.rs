@@ -477,7 +477,7 @@ impl ChatScreen {
             browser: None,
             local_browser: None,
             diffs: HashMap::new(),
-            side_width: Self::initial_side_width(),
+            side_width: Self::initial_side_width(cx),
             resizing: None,
             context: None,
             _subscriptions: subscriptions,
@@ -2172,7 +2172,7 @@ impl ChatScreen {
         // Open unless closed here (the key marks a closed live group).
         // Open by default (or folded, per Settings); pressing the head flips it.
         let closed_key = format!("{key}-toggled");
-        let open = crate::state::prefs::steps_folded() == self.open.contains(&closed_key);
+        let open = crate::state::prefs::Prefs::get(cx).live_steps_folded == self.open.contains(&closed_key);
         let working = group
             .iter()
             .find(|s| matches!(s.status, WorkStepStatus::Running | WorkStepStatus::Waiting));
@@ -2484,8 +2484,8 @@ impl ChatScreen {
                     this.resize_to(f32::from(e.position.x), window, cx);
                 }
             }))
-            .on_mouse_up(MouseButton::Left, cx.listener(|this, _, _, _| this.end_resize()))
-            .on_mouse_up_out(MouseButton::Left, cx.listener(|this, _, _, _| this.end_resize()))
+            .on_mouse_up(MouseButton::Left, cx.listener(|this, _, _, cx| this.end_resize(cx)))
+            .on_mouse_up_out(MouseButton::Left, cx.listener(|this, _, _, cx| this.end_resize(cx)))
             .child(
                 div()
                     .flex()

@@ -236,16 +236,15 @@ impl ChatScreen {
         cx.notify();
     }
 
-    pub(super) fn end_resize(&mut self) {
+    pub(super) fn end_resize(&mut self, cx: &mut App) {
         if self.resizing.take().is_some() {
-            let mut prefs = Prefs::load();
-            prefs.side_width = self.side_width;
-            prefs.save();
+            let width = self.side_width;
+            Prefs::update(cx, |p| p.side_width = width);
         }
     }
 
-    pub(super) fn initial_side_width() -> f32 {
-        let w = Prefs::load().side_width;
+    pub(super) fn initial_side_width(cx: &App) -> f32 {
+        let w = Prefs::get(cx).side_width;
         if w >= MIN_WIDTH { w } else { DEFAULT_WIDTH }
     }
 
