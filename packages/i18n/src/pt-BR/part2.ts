@@ -409,7 +409,16 @@ export const part2 = {
       ofMemory: "de {total} neste computador",
       cores: { one: "100% equivale ao seu único núcleo", other: "100% equivale a um dos seus {count} núcleos" },
       live: "Ao vivo",
-      parts: { app: "Janela do app e navegador dos agentes", server: "Servidor", agents: "Sessões de agentes", terminals: "Terminais", connections: "Conexões", other: "Outros processos" }
+      parts: { app: "Janela do app e navegador dos agentes", server: "Servidor", agents: "Sessões de agentes", terminals: "Terminais", connections: "Conexões", other: "Outros processos" },
+      mood: { calm: "Tranquilo", working: "Trabalhando", busy: "Puxando bastante" },
+      moodHint: "O Zorel e tudo o que ele iniciou estão usando {memory} e {cpu} de um núcleo.",
+      day: "Últimas 24 horas",
+      dayEmpty: "Coletando: o gráfico enche ao longo do dia, uma leitura a cada 5 minutos.",
+      ago: "24 h atrás",
+      half: "12 h",
+      now: "agora",
+      peak: "pico de {value}",
+      split: "Para onde vai"
     }
   },
   computer: {

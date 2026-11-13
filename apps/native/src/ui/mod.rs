@@ -1,5 +1,6 @@
 pub mod brand;
 pub mod button;
+pub mod chart;
 pub mod code;
 pub mod collapse;
 pub mod dialog;

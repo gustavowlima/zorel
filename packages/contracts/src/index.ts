@@ -455,6 +455,9 @@ export const ProcessList = Schema.Struct({
   usage: Schema.Struct({ ...Use, cores: Schema.Number, totalMemory: Schema.Number, parts: Schema.Array(Schema.Struct({ id: UsagePart, ...Use })) })
 }).annotate({ identifier: "ProcessList" })
 export type ProcessList = typeof ProcessList.Type
+// Zorel's use at one moment, kept for the last 24 hours (a sample every 5 minutes) for Settings › Processes' chart.
+export const UsageSample = Schema.Struct({ at: Schema.Number, ...Use, parts: Schema.Array(Schema.Struct({ id: UsagePart, ...Use })) }).annotate({ identifier: "UsageSample" })
+export type UsageSample = typeof UsageSample.Type
 export type LocalServer = typeof LocalServer.Type
 // A file to open in the computer's default app, from a path printed in the terminal (relative to the chat's folder).
 const OpenFile = Schema.Struct({ path: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1000)) })
@@ -1008,6 +1011,7 @@ export const Api = HttpApi.make("zorel")
       .add(HttpApiEndpoint.get("audit", "/api/audit", { query: AuditQuery, success: AuditPage })) // one page, newest first
       .add(HttpApiEndpoint.get("storage", "/api/storage", { success: StorageReport }))
       .add(HttpApiEndpoint.get("processes", "/api/processes", { success: ProcessList }))
+      .add(HttpApiEndpoint.get("processHistory", "/api/processes/history", { success: Schema.Array(UsageSample) }))
       .add(HttpApiEndpoint.delete("stopProcess", "/api/processes/servers/:pid", { params: Schema.Struct({ pid: Schema.NumberFromString }), error: HttpApiError.NotFound }))
       .add(HttpApiEndpoint.delete("closeSession", "/api/processes/sessions/:key", { params: Schema.Struct({ key: Schema.String.check(Schema.isMaxLength(200)) }) }))
       .add(HttpApiEndpoint.delete("closeConnection", "/api/processes/connections/:id", { params: idParam }))

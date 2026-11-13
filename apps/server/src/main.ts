@@ -2,16 +2,16 @@ import { discovered, pickedEntries, serializePicks } from "./file-skills.ts"
 import { listFolders } from "./folders.ts"
 import { finishSignIn, isSignedIn, startSignIn } from "./oauth.ts"
 import { BunHttpServer, BunRuntime } from "@effect/platform-bun"
-import { Api, ChatNeedsAgentError, CliInstallFailed, LastAgent, CronInvalid, FlowConflict, FlowInvalid, type FlowGraph, type RoutineDelivery, type RoutineSchedule, synthesizeFlow, validateFlow, RoutineInvalid, RoutineQueueFull, TeamHandleTaken, TeamInvalid, DesktopInstallFailed, GitFailed, isTeammate, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, WorkspaceInvalid } from "@zorel/contracts"
+import { Api, ChatNeedsAgentError, CliInstallFailed, LastAgent, CronInvalid, FlowConflict, FlowInvalid, type FlowGraph, type RoutineDelivery, type RoutineSchedule, synthesizeFlow, validateFlow, RoutineInvalid, RoutineQueueFull, TeamHandleTaken, TeamInvalid, DesktopInstallFailed, GitFailed, isTeammate, MAX_ATTACHMENT_BYTES, PreviewFailed, type ToolInfo, UndoConflict, USAGE_DAYS, type UsageSample, WorkspaceInvalid } from "@zorel/contracts"
 import { ApprovalNotFound, ChatNotFound, ZorelRpc } from "@zorel/contracts/events"
 import { ATTACHMENT_NAME_HEADER, type WorkspaceImport as WorkspaceImportState } from "@zorel/contracts/routes"
 import { LOGIN_PATH, SESSION_BYTES, SESSION_COOKIE, SESSION_ENV, SESSION_HEADER, SESSION_STDIN_ENV } from "@zorel/contracts/session"
-import { Effect, Layer, Schema, Semaphore, Stream } from "effect"
+import { Effect, Layer, Schedule, Schema, Semaphore, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
 import { HttpApiBuilder, HttpApiError } from "effect/http-api"
 import { randomBytes, timingSafeEqual } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, normalize, resolve, sep } from "node:path"
 import { ask, consolidate, DataDir, DbPath, prepare } from "./chat.ts"
@@ -1023,6 +1023,26 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       }
     })
     const dataDir = yield* DataDir
+    // The last 24 hours of Zorel's use (Settings › Processes' chart): a sample every 5 minutes, kept in
+    // usage-history.json so a restart doesn't lose the day.
+    const historyFile = join(dataDir, "usage-history.json")
+    let history: ReadonlyArray<UsageSample> = (() => {
+      try {
+        const saved: unknown = JSON.parse(readFileSync(historyFile, "utf8"))
+        return Array.isArray(saved) ? saved.filter((s): s is UsageSample => typeof s?.at === "number" && typeof s?.memory === "number") : []
+      } catch {
+        return [] // none yet, or unreadable: the day starts now
+      }
+    })()
+    const sampleUse = processes.pipe(
+      Effect.map(({ usage }) => {
+        const at = Date.now()
+        history = [...history.filter((s) => at - s.at < 24 * 60 * 60 * 1000), { at, cpu: usage.cpu, memory: usage.memory, parts: usage.parts }]
+        writeFileSync(historyFile, JSON.stringify(history))
+      }),
+      Effect.catchCause((c) => Effect.logWarning("usage sample failed", String(c)))
+    )
+    yield* Effect.forkDetach(Effect.repeat(sampleUse, Schedule.spaced("5 minutes")))
     const storageReport = Effect.gen(function* () {
       const [projects, chats, messages] = yield* Effect.all([store.projects(), store.chats(), store.messageCounts()])
       return yield* Effect.promise(() => measure(dataDir, { projects, chats, messages }))
@@ -1031,6 +1051,7 @@ const Settings = HttpApiBuilder.group(Api, "settings", (h) =>
       .handle("audit", ({ query }) => audit.list(query))
       .handle("storage", () => storageReport)
       .handle("processes", () => processes)
+      .handle("processHistory", () => Effect.succeed(history))
       // Only a pid found listening inside a chat's folder can be stopped (never an arbitrary process).
       .handle("stopProcess", ({ params }) =>
         Effect.flatMap(processes, (p) => (p.servers.some((s) => s.pid === params.pid) ? Effect.sync(() => void process.kill(params.pid, "SIGTERM")) : notFound()))

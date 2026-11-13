@@ -1258,7 +1258,20 @@
         "terminals": "Terminais",
         "connections": "Conexões",
         "other": "Outros processos"
-      }
+      },
+      "mood": {
+        "calm": "Tranquilo",
+        "working": "Trabalhando",
+        "busy": "Puxando bastante"
+      },
+      "moodHint": "O Zorel e tudo o que ele iniciou estão usando %{memory} e %{cpu} de um núcleo.",
+      "day": "Últimas 24 horas",
+      "dayEmpty": "Coletando: o gráfico enche ao longo do dia, uma leitura a cada 5 minutos.",
+      "ago": "24 h atrás",
+      "half": "12 h",
+      "now": "agora",
+      "peak": "pico de %{value}",
+      "split": "Para onde vai"
     }
   },
   "computer": {

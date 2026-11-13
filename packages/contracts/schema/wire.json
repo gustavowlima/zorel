@@ -10698,6 +10698,124 @@
     "SettingsProcessesSuccess": {
       "$ref": "#/$defs/ProcessList"
     },
+    "UsageSample": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "Infinity",
+                "-Infinity",
+                "NaN"
+              ]
+            }
+          ]
+        },
+        "cpu": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "Infinity",
+                "-Infinity",
+                "NaN"
+              ]
+            }
+          ]
+        },
+        "memory": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "Infinity",
+                "-Infinity",
+                "NaN"
+              ]
+            }
+          ]
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "app",
+                  "server",
+                  "agents",
+                  "terminals",
+                  "connections",
+                  "other"
+                ]
+              },
+              "cpu": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "Infinity",
+                      "-Infinity",
+                      "NaN"
+                    ]
+                  }
+                ]
+              },
+              "memory": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "Infinity",
+                      "-Infinity",
+                      "NaN"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "cpu",
+              "memory"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "at",
+        "cpu",
+        "memory",
+        "parts"
+      ],
+      "additionalProperties": true
+    },
+    "SettingsProcessHistorySuccess": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/UsageSample"
+      }
+    },
     "SettingsCleanStorageSuccess": {
       "$ref": "#/$defs/StorageReport"
     },

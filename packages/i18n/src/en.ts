@@ -1106,7 +1106,16 @@ export const en = {
       ofMemory: "of {total} on this computer",
       cores: { one: "100% is its 1 core", other: "100% is one of its {count} cores" },
       live: "Live",
-      parts: { app: "App window and agent browser", server: "Server", agents: "Agent sessions", terminals: "Terminals", connections: "Connections", other: "Other processes" }
+      parts: { app: "App window and agent browser", server: "Server", agents: "Agent sessions", terminals: "Terminals", connections: "Connections", other: "Other processes" },
+      mood: { calm: "Taking it easy", working: "Working away", busy: "Working hard" },
+      moodHint: "Zorel and everything it started are using {memory} and {cpu} of one core.",
+      day: "Last 24 hours",
+      dayEmpty: "Collecting: the chart fills in through the day, a reading every 5 minutes.",
+      ago: "24 h ago",
+      half: "12 h",
+      now: "now",
+      peak: "peak {value}",
+      split: "Where it goes"
     }
   },
   computer: {

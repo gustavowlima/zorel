@@ -418,7 +418,9 @@ impl Settings {
                     cx,
                 ))
             })
-            .when(!rows.is_empty(), |d| d.child(super::list(String::new(), rows, space::X3, p)))
+            .when(!rows.is_empty(), |d| {
+                d.child(super::list(String::new(), rows, space::X3, p))
+            })
             .children(form)
             .when(!self.connectors.adding, |d| {
                 d.child(
