@@ -64,10 +64,12 @@ impl Tab {
     }
 }
 
-/// The panel while open: its tabs, the shown one, and which turn (and file) Changes shows.
+/// The panel while open: its tabs, the shown one (none open: what can open, in its middle), and which turn (and
+/// file) Changes shows.
+#[derive(Default)]
 pub struct Side {
     tabs: Vec<Tab>,
-    current: Tab,
+    current: Option<Tab>,
     pub(super) focus: Option<(String, Option<String>)>,
 }
 
@@ -127,31 +129,23 @@ impl ChatScreen {
         self.side.is_some()
     }
 
-    /// The header's toggle: opens on Changes, or closes.
+    /// The header's toggle: opens empty (what can open, in its middle), or closes.
     pub fn toggle_side(&mut self, cx: &mut Context<Self>) {
         self.hide_native(cx);
         self.side = match self.side.take() {
             Some(_) => None,
-            None => Some(Side {
-                tabs: vec![Tab::Changes],
-                current: Tab::Changes,
-                focus: None,
-            }),
+            None => Some(Side::default()),
         };
         cx.notify();
     }
 
     /// "View" on a reply's changes: the panel on that turn.
     pub(super) fn view_turn(&mut self, turn: String, cx: &mut Context<Self>) {
-        let side = self.side.get_or_insert_with(|| Side {
-            tabs: vec![Tab::Changes],
-            current: Tab::Changes,
-            focus: None,
-        });
+        let side = self.side.get_or_insert_with(Side::default);
         if !side.tabs.contains(&Tab::Changes) {
             side.tabs.push(Tab::Changes);
         }
-        side.current = Tab::Changes;
+        side.current = Some(Tab::Changes);
         side.focus = Some((turn, None));
         cx.notify();
     }
@@ -165,7 +159,7 @@ impl ChatScreen {
             if !side.tabs.contains(&tab) {
                 side.tabs.push(tab);
             }
-            side.current = tab;
+            side.current = Some(tab);
         }
         cx.notify();
     }
@@ -174,10 +168,8 @@ impl ChatScreen {
         if let Some(side) = &mut self.side {
             let at = side.tabs.iter().position(|t| *t == tab).unwrap_or(0);
             side.tabs.retain(|t| *t != tab);
-            match side.tabs.get(at.saturating_sub(1)).or(side.tabs.first()) {
-                Some(next) => side.current = *next,
-                None => self.side = None,
-            }
+            // The last one closed leaves the panel open on what can open.
+            side.current = side.tabs.get(at.saturating_sub(1)).or(side.tabs.first()).copied();
         }
         cx.notify();
     }
@@ -262,7 +254,7 @@ impl ChatScreen {
         let width = self.side_width(window);
         let (added, removed) = self.delta();
         let pills = tabs.iter().map(|&tab| {
-            let selected = tab == current;
+            let selected = Some(tab) == current;
             div()
                 .id(SharedString::from(format!("side-tab-{tab:?}")))
                 .flex()
@@ -324,12 +316,15 @@ impl ChatScreen {
                     .overflow_hidden()
                     .children(pills),
             )
-            .child(crate::ui::menu::dropdown(
-                "side-add",
-                Button::icon_only("side-add-trigger", IconName::Plus, t!("workspace.openTab").into_owned())
-                    .size(Size::Xs),
-                items,
-            ))
+            // + only beside open tabs; with none, the panel's middle lists them.
+            .when(!tabs.is_empty(), |d| {
+                d.child(crate::ui::menu::dropdown(
+                    "side-add",
+                    Button::icon_only("side-add-trigger", IconName::Plus, t!("workspace.openTab").into_owned())
+                        .size(Size::Xs),
+                    items,
+                ))
+            })
             .child(
                 Button::icon_only("side-close", IconName::X, t!("workspace.closePanel").into_owned())
                     .size(Size::Xs)
@@ -340,15 +335,16 @@ impl ChatScreen {
                     })),
             );
         let body = match current {
-            Tab::Changes => self.changes_tab(window, cx),
-            Tab::Files => self.files_tab(window, cx),
-            Tab::Git => self.git_tab(window, cx),
-            Tab::Terminal => self.terminal_tab(window, cx),
-            Tab::Browser => self.browser_tab(window, cx),
-            Tab::Yours => self.yours_tab(window, cx),
+            None => self.launcher(folder, window, cx),
+            Some(Tab::Changes) => self.changes_tab(window, cx),
+            Some(Tab::Files) => self.files_tab(window, cx),
+            Some(Tab::Git) => self.git_tab(window, cx),
+            Some(Tab::Terminal) => self.terminal_tab(window, cx),
+            Some(Tab::Browser) => self.browser_tab(window, cx),
+            Some(Tab::Yours) => self.yours_tab(window, cx),
         };
         // The native page shows only while its tab is on screen and nothing covers the chat.
-        if current != Tab::Yours {
+        if current != Some(Tab::Yours) {
             self.hide_native(cx);
         } else if let Some(b) = &self.local_browser {
             let covered = self.crew_agent.is_some()
@@ -386,13 +382,59 @@ impl ChatScreen {
                 .child(head)
                 .child(match current {
                     // Files scrolls its own tree and file.
-                    Tab::Files | Tab::Terminal | Tab::Browser | Tab::Yours => {
+                    Some(Tab::Files | Tab::Terminal | Tab::Browser | Tab::Yours) => {
                         div().id("side-body").flex_1().min_h_0().child(body)
                     }
                     _ => div().id("side-body").flex_1().min_h_0().overflow_y_scroll().child(body),
                 })
                 .into_any_element(),
         )
+    }
+
+    /// No tab open: what can open (folder-only ones only with a folder), in the panel's middle.
+    fn launcher(&self, folder: bool, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let p = theme::palette(window);
+        let options = Tab::ALL.into_iter().filter(|t| folder || !t.folder_only()).map(|tab| {
+            div()
+                .id(SharedString::from(format!("side-open-{tab:?}")))
+                .flex()
+                .items_center()
+                .gap(px(space::X2_5))
+                .h(px(tokens::CONTROL_H))
+                .px(px(space::X3))
+                .rounded(px(tokens::RADIUS_ROW))
+                .text_sm()
+                .text_color(p.text_secondary)
+                .cursor_pointer()
+                .hover(|s| s.bg(p.bg_control).text_color(p.text))
+                .child(icon(tab.icon(), icon::SM).text_color(p.text_muted))
+                .child(tab.label())
+                .on_click(cx.listener(move |this, _, _, cx| this.open_tab(tab, cx)))
+        });
+        div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .h_full()
+            .px(px(space::X6))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(space::X0_5))
+                    .w(px(240.))
+                    .child(
+                        div()
+                            .px(px(space::X3))
+                            .pb(px(space::X2))
+                            .text_xs()
+                            .text_color(p.text_muted)
+                            .child(t!("workspace.openTab").into_owned()),
+                    )
+                    .children(options),
+            )
+            .into_any_element()
     }
 
     fn changes_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
