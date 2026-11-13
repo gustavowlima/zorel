@@ -82,6 +82,7 @@ icon_assets!(
         CornerDownRight,
         Shield,
         GitBranch,
+        LayoutGrid,
         GitPullRequest,
         ShieldAlert,
         X,

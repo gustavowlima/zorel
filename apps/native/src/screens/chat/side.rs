@@ -21,17 +21,19 @@ pub enum Tab {
     Changes,
     Git,
     Files,
+    Browser,
     Terminal,
 }
 
 impl Tab {
-    const ALL: [Tab; 4] = [Tab::Changes, Tab::Git, Tab::Files, Tab::Terminal];
+    const ALL: [Tab; 5] = [Tab::Changes, Tab::Git, Tab::Files, Tab::Browser, Tab::Terminal];
 
     fn label(self) -> String {
         match self {
             Tab::Changes => t!("workspace.changes").into_owned(),
             Tab::Git => t!("git.pullRequest").into_owned(),
             Tab::Files => t!("workspace.files").into_owned(),
+            Tab::Browser => t!("browser.title").into_owned(),
             Tab::Terminal => t!("workspace.terminal").into_owned(),
         }
     }
@@ -41,6 +43,7 @@ impl Tab {
             Tab::Changes => IconName::PanelRight,
             Tab::Git => IconName::GitPullRequest,
             Tab::Files => IconName::Folder,
+            Tab::Browser => IconName::Globe,
             Tab::Terminal => IconName::SquareTerminal,
         }
     }
@@ -326,6 +329,7 @@ impl ChatScreen {
             Tab::Files => self.files_tab(window, cx),
             Tab::Git => self.git_tab(window, cx),
             Tab::Terminal => self.terminal_tab(window, cx),
+            Tab::Browser => self.browser_tab(window, cx),
         };
         // The left edge: a hairline that lights on hover, a wider grip to drag.
         let edge = div()
@@ -357,7 +361,7 @@ impl ChatScreen {
                 .child(head)
                 .child(match current {
                     // Files scrolls its own tree and file.
-                    Tab::Files | Tab::Terminal => div().id("side-body").flex_1().min_h_0().child(body),
+                    Tab::Files | Tab::Terminal | Tab::Browser => div().id("side-body").flex_1().min_h_0().child(body),
                     _ => div().id("side-body").flex_1().min_h_0().overflow_y_scroll().child(body),
                 })
                 .into_any_element(),
@@ -682,5 +686,20 @@ impl ChatScreen {
             )
             .child(div().flex_1().min_h_0().children(shown))
             .into_any_element()
+    }
+}
+
+impl ChatScreen {
+    /// The Browser tab: the chat's browser view, made once and kept while the chat is open.
+    fn browser_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        if self.browser.is_none() {
+            let (http, store, chat) = (
+                self.store.read(cx).http.clone(),
+                self.store.clone(),
+                self.chat_id.clone(),
+            );
+            self.browser = Some(cx.new(|cx| crate::screens::browser::Browser::new(http, store, chat, window, cx)));
+        }
+        div().size_full().children(self.browser.clone()).into_any_element()
     }
 }

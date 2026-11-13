@@ -150,6 +150,7 @@ pub struct ChatScreen {
     /// The Terminal tab's shells (alive while the chat is open) and the one shown.
     shells: Vec<Entity<crate::screens::terminal::Shell>>,
     shell_at: usize,
+    browser: Option<Entity<crate::screens::browser::Browser>>,
     diffs: HashMap<String, Option<Rc<side::TurnDiff>>>,
     side_width: f32,
     resizing: Option<(f32, f32)>,
@@ -474,6 +475,7 @@ impl ChatScreen {
             git: git::Git::default(),
             shells: Vec::new(),
             shell_at: 0,
+            browser: None,
             diffs: HashMap::new(),
             side_width: Self::initial_side_width(),
             resizing: None,

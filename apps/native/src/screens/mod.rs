@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod approval;
+pub mod browser;
 pub mod builder;
 pub mod chat;
 pub mod chat_actions;

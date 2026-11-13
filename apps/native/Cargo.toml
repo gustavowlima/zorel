@@ -37,6 +37,7 @@ image = { version = "0.25", default-features = false, features = ["png"] } # the
 notify-rust = "4" # system notifications for approvals, questions and routine notices
 pulldown-cmark = { version = "0.13", default-features = false } # replies are markdown; raw HTML is never rendered
 alacritty_terminal = "0.26.0" # the Terminal tab's emulator (grid, escapes, selection), Apache-2.0 (spec 019 T058)
+base64 = "0.22" # the browser cards' previews come as base64 JPEG (already in the tree via reqwest)
 
 [build-dependencies]
 # Wire types generated from packages/contracts/schema/wire.json (build.rs).
