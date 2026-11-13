@@ -313,7 +313,12 @@
     "add": "Adicionar agente",
     "noAgents": "Nenhum agente ainda",
     "noAgentsHint": "Crie um no projeto ou na barra lateral.",
-    "mentionHint": "Use @ para escolher quem responde; os agentes passam a vez mencionando uns aos outros."
+    "mentionHint": "Use @ para escolher quem responde; os agentes passam a vez mencionando uns aos outros.",
+    "idle": "Livre",
+    "lastReply": "Última resposta %{age}",
+    "noReplies": "Ainda não respondeu",
+    "session": "Neste chat",
+    "sessionEmpty": "Nada neste chat ainda"
   },
   "model": {
     "agentCli": "CLI de agente (ACP)",

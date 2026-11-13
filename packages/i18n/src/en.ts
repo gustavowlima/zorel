@@ -270,7 +270,12 @@ export const en = {
     add: "Add an agent",
     noAgents: "No agents yet",
     noAgentsHint: "Create one in the project or in the sidebar.",
-    mentionHint: "Mention with @ to pick who answers; agents pass the turn by mentioning each other."
+    mentionHint: "Mention with @ to pick who answers; agents pass the turn by mentioning each other.",
+    idle: "Free",
+    lastReply: "Last reply {age}",
+    noReplies: "Hasn't replied yet",
+    session: "In this chat",
+    sessionEmpty: "Nothing in this chat yet"
   },
   model: {
     agentCli: "Agent CLI (ACP)",

@@ -487,7 +487,18 @@ impl Root {
                 // come with the side panel (parity/chat.md › C).
                 Header::new(title)
                     .context_element(project_button)
-                    .trailing(crate::screens::team_picker::TeamPicker::new(store_entity, chat_id))
+                    .when_some(self.chat.as_ref().map(|(_, screen)| screen.clone()), |h, screen| {
+                        // The faces open the chat's crew drawer (what each agent does, who can join).
+                        let open = screen.read(cx).crew_is_open();
+                        let on_open: crate::screens::members::OnOpen =
+                            std::rc::Rc::new(move |_, cx| screen.update(cx, |s, cx| s.open_crew(cx)));
+                        h.trailing(crate::screens::members::Faces::new(
+                            store_entity,
+                            chat_id,
+                            open,
+                            on_open,
+                        ))
+                    })
                     .trailing(crate::ui::menu::dropdown(
                         "chat-more",
                         Button::icon_only("chat-more-trigger", IconName::Ellipsis, t!("common.more").into_owned())

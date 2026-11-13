@@ -26,6 +26,8 @@ use gpui_kit::{
 use rust_i18n::t;
 use serde_json::json;
 
+mod crew;
+
 use crate::{
     format,
     i18n::tn,
@@ -124,6 +126,9 @@ pub struct ChatScreen {
     answers: HashMap<String, Entity<TextareaState>>,
     /// Set when this is a conversation with the Builder.
     builder: Option<BuilderMode>,
+    /// The crew drawer (who is in the chat and what each does), and the agents whose card is open in it.
+    crew_open: bool,
+    crew_expanded: HashSet<String>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -424,6 +429,8 @@ impl ChatScreen {
             queue: Vec::new(),
             answers: HashMap::new(),
             builder: None,
+            crew_open: false,
+            crew_expanded: HashSet::new(),
             _subscriptions: subscriptions,
         }
     }
@@ -1831,6 +1838,7 @@ impl ChatScreen {
         }
         let bottom = self.bottom(window, cx);
         let editor = self.editor(window, cx);
+        let crew = self.crew_drawer(window, cx);
         div()
             .relative()
             .flex()
@@ -1847,6 +1855,7 @@ impl ChatScreen {
             )
             .child(bottom)
             .children(editor)
+            .children(crew)
     }
 }
 
