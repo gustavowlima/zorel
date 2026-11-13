@@ -2,6 +2,7 @@ pub mod button;
 pub mod code;
 pub mod collapse;
 pub mod dialog;
+pub mod diff;
 pub mod drawer;
 pub mod face;
 pub mod header;

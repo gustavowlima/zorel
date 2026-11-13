@@ -16,6 +16,8 @@ pub struct Prefs {
     pub places: Vec<String>,
     /// Full access was explained and confirmed once (it isn't asked again).
     pub full_access_confirmed: bool,
+    /// The chat's side panel width (px); 0: the default.
+    pub side_width: f32,
 }
 
 fn file() -> Option<PathBuf> {

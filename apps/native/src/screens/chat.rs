@@ -30,6 +30,7 @@ mod access;
 mod attachments;
 mod context;
 mod crew;
+pub mod side;
 
 use crate::{
     format,
@@ -140,6 +141,11 @@ pub struct ChatScreen {
     /// Attachments' pictures by id (None while one comes), and the one open in the viewer.
     images: HashMap<String, Option<std::sync::Arc<Image>>>,
     viewing: Option<crate::net::types::Attachment>,
+    /// The side panel (screens/chat/side.rs) while open, the turns' diffs fetched so far, its width and a drag of it.
+    side: Option<side::Side>,
+    diffs: HashMap<String, Option<Rc<side::TurnDiff>>>,
+    side_width: f32,
+    resizing: Option<(f32, f32)>,
     /// How full the next turn's context is (screens/chat/context.rs), read on open and after each turn.
     context: Option<crate::net::types::ContextUsage>,
     _subscriptions: Vec<Subscription>,
@@ -456,6 +462,10 @@ impl ChatScreen {
             crew_agent: None,
             images: HashMap::new(),
             viewing: None,
+            side: None,
+            diffs: HashMap::new(),
+            side_width: Self::initial_side_width(),
+            resizing: None,
             context: None,
             _subscriptions: subscriptions,
         }
@@ -1251,8 +1261,17 @@ impl ChatScreen {
                             .child(format!("· {}", t!("workspace.undone"))),
                     )
                 } else {
-                    let turn = turn.clone();
+                    let (turn, view) = (turn.clone(), turn.clone());
                     r.child(
+                        Button::new(
+                            SharedString::from(format!("view-{turn}")),
+                            t!("workspace.viewDiff").into_owned(),
+                        )
+                        .variant(Variant::Ghost)
+                        .size(Size::Xs)
+                        .on_click(cx.listener(move |this, _, _, cx| this.view_turn(view.clone(), cx))),
+                    )
+                    .child(
                         Button::new(
                             SharedString::from(format!("undo-{turn}")),
                             t!("workspace.undo").into_owned(),
@@ -2443,21 +2462,38 @@ impl ChatScreen {
         let editor = self.editor(window, cx);
         let crew = self.crew_drawer(window, cx);
         let viewer = self.viewer(window, cx);
+        let side = self.side_panel(window, cx);
+        // The conversation, and the side panel beside it when open (its left edge drags the width).
         div()
             .relative()
             .flex()
-            .flex_col()
             .size_full()
             .bg(p.bg_canvas)
+            .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
+                if e.dragging() {
+                    this.resize_to(f32::from(e.position.x), window, cx);
+                }
+            }))
+            .on_mouse_up(MouseButton::Left, cx.listener(|this, _, _, _| this.end_resize()))
+            .on_mouse_up_out(MouseButton::Left, cx.listener(|this, _, _, _| this.end_resize()))
             .child(
-                MessageScroller::new(
-                    SharedString::from(format!("chat-{}", self.chat_id)),
-                    self.scroller.clone(),
-                    cx.processor(|this, ix, window, cx| this.render_row(ix, window, cx)),
-                )
-                .flex_1(),
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .child(
+                        MessageScroller::new(
+                            SharedString::from(format!("chat-{}", self.chat_id)),
+                            self.scroller.clone(),
+                            cx.processor(|this, ix, window, cx| this.render_row(ix, window, cx)),
+                        )
+                        .flex_1(),
+                    )
+                    .child(bottom),
             )
-            .child(bottom)
+            .children(side)
             .children(editor)
             .children(crew)
             .children(viewer)

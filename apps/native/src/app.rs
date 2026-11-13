@@ -483,8 +483,12 @@ impl Root {
                             .build()
                     })
                 };
-                // ponytail: Fallbacks… (failover), the side panel's toggle, pinned tabs, Run and the chat's processes
-                // come with the side panel (parity/chat.md › C).
+                // ponytail: Fallbacks… (failover), pinned tabs, Run and the chat's processes come with the side
+                // panel's other tabs (parity/chat.md › C).
+                let side = self.chat.as_ref().map(|(_, screen)| {
+                    let s = screen.read(cx);
+                    (screen.clone(), s.side_open(), s.delta())
+                });
                 Header::new(title)
                     .context_element(project_button)
                     .when_some(self.chat.as_ref().map(|(_, screen)| screen.clone()), |h, screen| {
@@ -492,6 +496,25 @@ impl Root {
                         let on_session: crate::screens::members::OnSession =
                             std::rc::Rc::new(move |agent, _, cx| screen.update(cx, |s, cx| s.open_session(agent, cx)));
                         h.trailing(crate::screens::members::Picker::new(store_entity, chat_id, on_session))
+                    })
+                    // The side panel's toggle, with what the chat's turns changed (+/−).
+                    .when_some(side, |h, (screen, open, (added, removed))| {
+                        let label = (added + removed > 0.).then(|| format!("+{added:.0} −{removed:.0}"));
+                        let button = match label {
+                            Some(l) => Button::new("side-toggle", l).icon(IconName::PanelRight),
+                            None => Button::icon_only(
+                                "side-toggle",
+                                IconName::PanelRight,
+                                t!("workspace.openPanel").into_owned(),
+                            ),
+                        };
+                        h.trailing(
+                            button
+                                .variant(if open { Variant::Secondary } else { Variant::Ghost })
+                                .size(btn::Size::Sm)
+                                .name(t!("workspace.openPanel").into_owned())
+                                .on_click(move |_, _, cx| screen.update(cx, |s, cx| s.toggle_side(cx))),
+                        )
                     })
                     .trailing(crate::ui::menu::dropdown(
                         "chat-more",
