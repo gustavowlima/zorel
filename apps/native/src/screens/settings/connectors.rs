@@ -252,107 +252,104 @@ impl Settings {
             .iter()
             .filter_map(|s| catalog_of(s).map(|c| (c, s.clone())))
             .collect();
-        let rows: Vec<AnyElement> = connected
+        // A connected one: a taller card in the same grid, its state below (connected, finish setup, waiting) with
+        // what it may do, and a gear whose menu holds the permission, a test, reconnect and disconnect.
+        let connected_cards: Vec<AnyElement> = connected
             .iter()
             .map(|(c, s)| {
-                // Refused (expired or denied): sign in again; an OAuth one never signed in: finish signing in.
+                let c: &'static Connector = c;
+                // Refused (expired or denied): sign in again; an OAuth one never signed in: finish setting it up.
                 let refused = self.connectors.refused.contains(&s.id);
                 let unsigned = matches!(s.auth, McpServerAuth::Oauth) && !self.connectors.signed_in.contains(&s.id);
                 let attention = refused || unsigned;
                 let waiting = self.connectors.waiting.as_deref() == Some(s.id.as_str());
-                let open = self.connectors.managing.as_deref() == Some(s.id.as_str());
                 let mode_at = servers::MODES.iter().position(|(m, _)| *m == s.mode).unwrap_or(1);
-                let (mode_id, manage_id) = (s.id.clone(), s.id.clone());
-                let view = cx.entity().downgrade();
-                let mode = Select::new(
-                    SharedString::from(format!("conn-mode-{}", s.id)),
-                    t!("mcp.mode").into_owned(),
-                    servers::MODES
-                        .iter()
-                        .map(|(_, k)| SelectOption {
-                            id: k.to_string(),
-                            label: t!(format!("mcp.modes.{k}")).into_owned().into(),
-                            mark: select::Mark::None,
-                        })
-                        .collect(),
-                    servers::MODES[mode_at].1,
-                    Rc::new(move |v, _, cx| {
-                        let (id, v) = (mode_id.clone(), v.to_string());
-                        let _ = view.update(cx, |this, cx| this.patch_connector(id, json!({ "mode": v }), cx));
-                    }),
-                )
-                .filled();
-                let status = if waiting {
-                    (t!("connectors.waiting").into_owned(), p.text_muted)
+                let mode_key = servers::MODES[mode_at].1;
+                let (dot, state) = if waiting {
+                    (p.text_dim, t!("connectors.waiting").into_owned())
                 } else if refused {
-                    (t!("connectors.attention").into_owned(), p.warning)
+                    (p.warning, t!("connectors.attention").into_owned())
                 } else if unsigned {
-                    (t!("connectors.notSignedIn").into_owned(), p.warning)
+                    (p.warning, t!("connectors.notSignedIn").into_owned())
                 } else {
-                    (
-                        format!(
-                            "{} · {}",
-                            t!(format!("connectors.about.{}", c.id)),
-                            t!("connectors.connected")
-                        ),
-                        p.text_muted,
-                    )
+                    (p.success, t!("connectors.connected").into_owned())
                 };
                 let tested = self.connectors.tested.get(&s.id).cloned();
-                let (test_id, rm_id) = (s.id.clone(), s.id.clone());
-                let manage = open.then(|| {
-                    let c: &'static Connector = c;
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap(px(space::X2))
-                        .pl(px(38.))
-                        .child(
-                            Button::new(
-                                SharedString::from(format!("conn-test-{}", s.id)),
-                                t!("connectors.test").into_owned(),
-                            )
-                            .variant(Variant::Ghost)
-                            .size(Size::Sm)
-                            .on_click(cx.listener(move |this, _, _, cx| this.test_connector(test_id.clone(), cx))),
-                        )
-                        .when(c.auth != Auth::None, |d| {
-                            d.child(
-                                Button::new(
-                                    SharedString::from(format!("conn-again-{}", s.id)),
-                                    t!("connectors.reconnect").into_owned(),
-                                )
-                                .variant(Variant::Ghost)
-                                .size(Size::Sm)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    if c.auth == Auth::Token {
-                                        this.connectors.token_for = Some(c.id);
-                                        cx.notify();
-                                    } else {
-                                        this.connect(c, None, cx);
-                                    }
-                                })),
-                            )
+                let view = cx.entity().downgrade();
+                let id = s.id.clone();
+                let items: crate::ui::menu::Items = Rc::new(move || {
+                    let mut m = crate::ui::menu::Menu::default();
+                    for (i, (_, k)) in servers::MODES.iter().enumerate() {
+                        let (view, id) = (view.clone(), id.clone());
+                        m = m.item(t!(format!("mcp.modes.{k}")).into_owned(), move |_, cx| {
+                            let _ = view.update(cx, |this, cx| {
+                                this.patch_connector(id.clone(), json!({ "mode": servers::MODES[i].1 }), cx)
+                            });
+                        });
+                        if i == mode_at {
+                            m = m.icon(IconName::Check);
+                        }
+                    }
+                    let (v1, i1) = (view.clone(), id.clone());
+                    m = m.separator().item(t!("connectors.test").into_owned(), move |_, cx| {
+                        let _ = v1.update(cx, |this, cx| this.test_connector(i1.clone(), cx));
+                    });
+                    if c.auth != Auth::None {
+                        let v2 = view.clone();
+                        m = m.item(t!("connectors.reconnect").into_owned(), move |_, cx| {
+                            let _ = v2.update(cx, |this, cx| {
+                                if c.auth == Auth::Token {
+                                    this.connectors.token_for = Some(c.id);
+                                    cx.notify();
+                                } else {
+                                    this.connect(c, None, cx);
+                                }
+                            });
+                        });
+                    }
+                    let (v3, i3) = (view.clone(), id.clone());
+                    m.separator()
+                        .danger(t!("connectors.disconnect").into_owned(), move |_, cx| {
+                            let _ = v3.update(cx, |this, cx| this.remove_connector(i3.clone(), cx));
                         })
-                        .child(
-                            Button::new(
-                                SharedString::from(format!("conn-rm-{}", s.id)),
-                                t!("connectors.disconnect").into_owned(),
-                            )
-                            .variant(Variant::Ghost)
-                            .size(Size::Sm)
-                            .on_click(cx.listener(move |this, _, _, cx| this.remove_connector(rm_id.clone(), cx))),
-                        )
-                        .when_some(tested, |d, line| {
-                            d.child(div().w_full().text_sm().text_color(p.text_secondary).child(line))
-                        })
+                        .build()
+                });
+                let gear = crate::ui::menu::dropdown(
+                    SharedString::from(format!("conn-gear-{}", s.id)),
+                    Button::icon_only(
+                        SharedString::from(format!("conn-gear-btn-{}", s.id)),
+                        IconName::Settings,
+                        t!("settings.manage").into_owned(),
+                    )
+                    .size(Size::Xs),
+                    items,
+                );
+                let finish = (attention && !waiting).then(|| {
+                    let id = s.id.clone();
+                    Button::new(
+                        SharedString::from(format!("conn-finish-{}", s.id)),
+                        t!("connectors.signIn").into_owned(),
+                    )
+                    .variant(Variant::Primary)
+                    .size(Size::Xs)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        // The provider's page opens; the card waits until the sign-in lands.
+                        this.sign_in_connector(id.clone(), cx);
+                        this.connectors.waiting = Some(id.clone());
+                        this.watch_sign_in(cx);
+                        cx.notify();
+                    }))
                 });
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(space::X2))
-                    .py(px(space::X2_5))
-                    .px(px(space::X3))
+                    .gap(px(space::X3))
+                    .px(px(14.))
+                    .py(px(space::X3))
+                    .rounded(px(12.))
+                    .bg(p.bg_surface)
+                    .border_1()
+                    .border_color(p.border)
                     .child(
                         div()
                             .flex()
@@ -366,48 +363,42 @@ impl Settings {
                                     .flex_1()
                                     .min_w_0()
                                     .child(div().font_weight(FontWeight::MEDIUM).child(c.name))
-                                    .child(div().truncate().text_sm().text_color(status.1).child(status.0)),
+                                    .child(
+                                        div()
+                                            .truncate()
+                                            .text_xs()
+                                            .text_color(p.text_muted)
+                                            .child(t!(format!("connectors.about.{}", c.id)).into_owned()),
+                                    ),
                             )
-                            .when(attention && !waiting, |d| {
-                                let id = s.id.clone();
-                                d.child(
-                                    Button::new(
-                                        SharedString::from(format!("conn-sign-in-{}", s.id)),
-                                        t!("connectors.signIn").into_owned(),
-                                    )
-                                    .variant(Variant::Primary)
-                                    .size(Size::Sm)
-                                    .on_click(cx.listener(
-                                        move |this, _, _, cx| {
-                                            // The provider's page opens; the row waits until the sign-in lands.
-                                            this.sign_in_connector(id.clone(), cx);
-                                            this.connectors.waiting = Some(id.clone());
-                                            this.watch_sign_in(cx);
-                                            cx.notify();
-                                        },
-                                    )),
-                                )
-                            })
-                            .child(mode)
-                            .child(
-                                Button::new(
-                                    SharedString::from(format!("conn-manage-{}", s.id)),
-                                    t!("settings.manage").into_owned(),
-                                )
-                                .variant(Variant::Ghost)
-                                .size(Size::Sm)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.connectors.managing =
-                                        if this.connectors.managing.as_deref() == Some(manage_id.as_str()) {
-                                            None
-                                        } else {
-                                            Some(manage_id.clone())
-                                        };
-                                    cx.notify();
-                                })),
-                            ),
+                            .child(gear),
                     )
-                    .children(manage)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(space::X2))
+                            .pt(px(space::X2_5))
+                            .border_t_1()
+                            .border_color(super::divider(p))
+                            .text_xs()
+                            .child(div().size(px(6.)).rounded_full().bg(dot))
+                            .child(
+                                div()
+                                    .text_color(if attention { p.warning } else { p.text_secondary })
+                                    .child(state),
+                            )
+                            .child(div().flex_1())
+                            .child(
+                                div()
+                                    .text_color(p.text_muted)
+                                    .child(t!(format!("mcp.modes.{mode_key}")).into_owned()),
+                            )
+                            .children(finish),
+                    )
+                    .when_some(tested, |d, line| {
+                        d.child(div().text_xs().text_color(p.text_secondary).child(line))
+                    })
                     .into_any_element()
             })
             .collect();
@@ -540,26 +531,15 @@ impl Settings {
             .when_some(self.connectors.error.clone(), |d, e| {
                 d.child(div().text_sm().text_color(p.danger).child(e))
             })
-            .when(!rows.is_empty(), |d| {
-                d.child(list(
-                    t!("settings.connected").into_owned(),
-                    rows,
-                    space::X3 + 24. + space::X3,
-                    p,
-                ))
-            })
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(space::X2_5))
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(p.text_muted)
-                            .child(t!("settings.availableConnectors").into_owned()),
-                    )
-                    .child(div().grid().grid_cols(2).gap(px(space::X2_5)).children(cards)),
+                div().flex().flex_col().gap(px(space::X2_5)).child(
+                    div()
+                        .grid()
+                        .grid_cols(2)
+                        .gap(px(space::X2_5))
+                        .children(connected_cards)
+                        .children(cards),
+                ),
             )
             .child(self.custom_connectors(window, cx))
             .into_any_element()

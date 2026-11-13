@@ -51,6 +51,9 @@ updated: 2026-11-13
 
 - native settings design (2026-11-13): every Settings group is one card (`settings::list`/`group`: rows in a bg_surface card, inset hairlines), so a row's button reads with its row. Skills: native-skills switch on top, New skill (POST /api/memories kind skill), a page per skill (Zorel's steps, or the SKILL.md read from disk without front matter). Processes: mood + live memory/CPU, 24h chart (ui/chart.rs area) from GET /api/processes/history (engine samples every 5 min into <data>/usage-history.json), split by part. Zorel's own use includes the native app only when the app started the engine (ZOREL_PARENT_PID).
 
+- native dev disk (2026-11-13): `bun run native:hot` (dx fat builds) leaves a ~1 GB target/aarch64-apple-darwin/desktop-dev/libdeps-*.a per full rebuild and never deletes them (58 = 65 GB filled the SSD; hot reload then failed with 'Failed to write archive'). Keep the newest two: `ls -t libdeps-*.a | tail -n +3 | xargs rm -f`.
+- native connectors (2026-11-13): one grid of cards; a connected one is a taller card with its state below (Connected / Finish setup / Sign in again / waiting) and the mode, and a gear menu (modes with a check, Test, Reconnect, Disconnect); custom MCP servers at the end (no separate MCP section).
+
 ## avoid
 
 - Playwright newPage/newContext in Electron: Target.createTarget not supported; tabs are created by main

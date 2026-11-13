@@ -25,7 +25,6 @@ pub struct Connectors {
     pub(super) signed_in: Vec<String>,
     pub(super) refused: Vec<String>,
     pub(super) waiting: Option<String>,
-    pub(super) managing: Option<String>,
     pub(super) token_for: Option<&'static str>,
     pub(super) asked_signed_in: bool,
 }
