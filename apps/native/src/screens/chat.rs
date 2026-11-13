@@ -26,6 +26,7 @@ use gpui_kit::{
 use rust_i18n::t;
 use serde_json::json;
 
+mod context;
 mod crew;
 
 use crate::{
@@ -125,11 +126,15 @@ pub struct ChatScreen {
     model: Entity<ModelPicker>,
     /// Messages written while a reply runs: sent one at a time when the chat is idle.
     queue: Vec<Draft>,
+    /// What "Send now" did (an i18n key), shown for a few seconds.
+    sent: Option<&'static str>,
     answers: HashMap<String, Entity<TextareaState>>,
     /// Set when this is a conversation with the Builder.
     builder: Option<BuilderMode>,
     /// The crew drawer (who is in the chat and what each does), and the agents whose card is open in it.
     crew_agent: Option<String>,
+    /// How full the next turn's context is (screens/chat/context.rs), read on open and after each turn.
+    context: Option<crate::net::types::ContextUsage>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -348,15 +353,18 @@ impl ChatScreen {
         // Beside Send: the model, and Stop while a reply runs (the web's composer).
         let (tools, chat) = (model.clone(), cx.entity().downgrade());
         composer.update(cx, |c, _| {
-            c.set_tools(Rc::new(move |_, cx| {
+            c.set_tools(Rc::new(move |window, cx| {
                 let busy = chat
                     .upgrade()
                     .is_some_and(|v| v.read(cx).busy() && v.read(cx).proposal().is_none());
+                let usage = chat.upgrade().and_then(|v| v.read(cx).context.clone());
+                let meter = context::meter(chat.clone(), usage, window);
                 let chat = chat.clone();
                 div()
                     .flex()
                     .items_center()
                     .gap(px(space::X1))
+                    .child(meter)
                     .child(tools.clone())
                     .when(busy, |r| {
                         r.child(
@@ -429,9 +437,11 @@ impl ChatScreen {
             undo_errors: HashMap::new(),
             model,
             queue: Vec::new(),
+            sent: None,
             answers: HashMap::new(),
             builder: None,
             crew_agent: None,
+            context: None,
             _subscriptions: subscriptions,
         }
     }
@@ -504,6 +514,7 @@ impl ChatScreen {
 
     /// Folds the older messages into the chat's summary (the /compact command).
     fn compact(&mut self, cx: &mut Context<Self>) {
+        let view = cx.entity().downgrade();
         let store = self.store.read(cx);
         let (http, path) = (store.http.clone(), format!("/api/chats/{}/consolidate", self.chat_id));
         let reload = self.store.downgrade();
@@ -514,6 +525,7 @@ impl ChatScreen {
                 eprintln!("compact: {e}");
             }
             let _ = reload.update(cx, |s, cx| s.reload_chats(cx));
+            let _ = view.update(cx, |this, cx| this.load_context(cx));
         })
         .detach();
     }
@@ -535,8 +547,19 @@ impl ChatScreen {
 
     fn apply(&mut self, event: SubscribeChatItem, cx: &mut Context<Self>) {
         let snapshot = matches!(event, SubscribeChatItem::Snapshot { .. });
+        // The context changes with each turn: read it when we arrive and when a turn ends.
+        let ended = matches!(
+            event,
+            SubscribeChatItem::Snapshot { .. }
+                | SubscribeChatItem::TurnCompleted { .. }
+                | SubscribeChatItem::TurnFailed { .. }
+                | SubscribeChatItem::Interrupted { .. }
+        );
         let known: HashSet<String> = self.log.messages.iter().map(|m| m.id.clone()).collect();
         self.log.apply(event);
+        if ended {
+            self.load_context(cx);
+        }
         // A decision made: "Creating" lasts until the Builder's turn ends, not for good.
         if let Some(mode) = &mut self.builder
             && mode.busy
@@ -725,6 +748,59 @@ impl ChatScreen {
                 eprintln!("queue: {e}");
             }
         });
+    }
+
+    /// "Send now": the queued message leaves the queue and joins the reply in progress (Claude, Codex, no files) or
+    /// stops it and goes as a turn of its own; a short note says which. Refused, it goes back to the queue's front.
+    fn send_now(&mut self, n: usize, cx: &mut Context<Self>) {
+        if n >= self.queue.len() {
+            return;
+        }
+        let draft = self.queue.remove(n);
+        cx.notify();
+        let store = self.store.read(cx);
+        let (http, rpc, chat_id) = (store.http.clone(), self.rpc.clone(), self.chat_id.clone());
+        let (text, files) = (draft.text.clone(), draft.files.clone());
+        let task = runtime::spawn(async move { crate::net::send::steer(&http, &rpc, &chat_id, &text, files).await });
+        cx.spawn(async move |this, cx| {
+            let done = task.await;
+            let _ = this.update(cx, |this, cx| {
+                match done {
+                    Ok(Ok(joined)) => {
+                        this.sent = Some(if joined {
+                            "queue.sentJoined"
+                        } else {
+                            "queue.sentStopped"
+                        });
+                        // The note says what happened for a few seconds.
+                        cx.spawn(async move |this, cx| {
+                            cx.background_executor().timer(Duration::from_secs(6)).await;
+                            let _ = this.update(cx, |this, cx| {
+                                this.sent = None;
+                                cx.notify();
+                            });
+                        })
+                        .detach();
+                    }
+                    _ => this.queue.insert(0, draft),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Whether "Send now" joins the running reply (its engine takes messages mid-reply, and nothing is attached).
+    fn joins_turn(&self, draft: &Draft, cx: &App) -> bool {
+        let model = self
+            .log
+            .turns
+            .first()
+            .map(|t| t.model.clone())
+            .or_else(|| self.store.read(cx).chat(&self.chat_id).map(|c| c.model.clone()))
+            .unwrap_or_default();
+        let (provider, _) = crate::labels::split_model(&model);
+        draft.files.is_empty() && ["claude-cli", "codex-cli"].contains(&provider)
     }
 
     fn stop(&mut self, cx: &mut Context<Self>) {
@@ -1998,44 +2074,114 @@ impl ChatScreen {
                 8.,
             ));
         }
-        let queue = (!self.queue.is_empty()).then(|| {
+        // The queue (the web's QueuePanel): how many replies are ahead, then each message with Send now (while a
+        // reply runs), Edit (back to the box) and Remove.
+        let busy = self.busy();
+        let ahead = self.log.turns.len();
+        let rows: Vec<AnyElement> = self
+            .queue
+            .iter()
+            .enumerate()
+            .map(|(n, d)| {
+                let joins = self.joins_turn(d, cx);
+                let text = d.text.clone();
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(space::X2))
+                    .min_h(px(tokens::CONTROL_H))
+                    .py(px(space::X1))
+                    .when(n > 0, |r| r.border_t_1().border_color(p.border))
+                    .child(icon(IconName::CornerDownRight, icon::MD).text_color(p.text_muted))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_color(p.text_secondary)
+                            .child(d.text.clone()),
+                    )
+                    .when(busy, |r| {
+                        r.child(
+                            Button::new(
+                                SharedString::from(format!("queue-now-{n}")),
+                                t!("queue.sendNow").into_owned(),
+                            )
+                            .icon(IconName::CornerDownRight)
+                            .variant(Variant::Ghost)
+                            .size(Size::Sm)
+                            .tooltip(
+                                if joins {
+                                    t!("queue.sendNowJoin")
+                                } else {
+                                    t!("queue.sendNowStop")
+                                }
+                                .into_owned(),
+                            )
+                            .on_click(cx.listener(move |this, _, _, cx| this.send_now(n, cx))),
+                        )
+                    })
+                    .child(
+                        Button::icon_only(
+                            SharedString::from(format!("queue-edit-{n}")),
+                            IconName::Pencil,
+                            t!("queue.edit").into_owned(),
+                        )
+                        .size(Size::Xs)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            if n < this.queue.len() {
+                                this.queue.remove(n);
+                                let text = text.clone();
+                                this.composer.update(cx, |c, cx| c.set_text(text, window, cx));
+                                cx.notify();
+                            }
+                        })),
+                    )
+                    .child(
+                        Button::icon_only(
+                            SharedString::from(format!("queue-remove-{n}")),
+                            IconName::Trash,
+                            t!("queue.remove").into_owned(),
+                        )
+                        .size(Size::Xs)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if n < this.queue.len() {
+                                this.queue.remove(n);
+                                cx.notify();
+                            }
+                        })),
+                    )
+                    .into_any_element()
+            })
+            .collect();
+        let queue = (!rows.is_empty()).then(|| {
             div()
                 .flex()
                 .flex_col()
-                .gap(px(space::X1))
                 .px(px(space::X3))
-                .py(px(space::X2))
                 .rounded(px(tokens::RADIUS_CARD))
                 .border_1()
                 .border_color(p.border)
                 .bg(p.bg_surface)
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(p.text_muted)
-                        .child(t!("queue.label").into_owned()),
-                )
-                .children(self.queue.iter().enumerate().map(|(n, d)| {
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(space::X2))
-                        .child(div().flex_1().truncate().child(d.text.clone()))
-                        .child(
-                            Button::icon_only(
-                                SharedString::from(format!("queue-remove-{n}")),
-                                IconName::Close,
-                                t!("queue.remove").into_owned(),
-                            )
-                            .size(Size::Xs)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                if n < this.queue.len() {
-                                    this.queue.remove(n);
-                                    cx.notify();
-                                }
-                            })),
-                        )
-                }))
+                .when(busy && ahead > 0, |c| {
+                    c.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .min_h(px(tokens::CONTROL_H_SM))
+                            .text_xs()
+                            .text_color(p.text_dim)
+                            .child(tn("queue.ahead", ahead as i64)),
+                    )
+                })
+                .children(rows)
+        });
+        let sent = self.sent.map(|key| {
+            div()
+                .px(px(space::X3))
+                .text_xs()
+                .text_color(p.text_dim)
+                .child(t!(key).into_owned())
         });
         div()
             .flex()
@@ -2047,6 +2193,7 @@ impl ChatScreen {
             .px(px(space::X6))
             .pb(px(space::X4))
             .children(cards)
+            .children(sent)
             .children(queue)
             .child(self.composer.clone())
     }

@@ -87,6 +87,17 @@ impl Button {
         b
     }
 
+    /// An icon-only button whose mark is any element (a ring, a face): square at its height, named for readers.
+    pub fn mark(id: impl Into<ElementId>, mark: impl IntoElement, name: impl Into<SharedString>) -> Self {
+        let name = name.into();
+        let mut b = Self::bare(id);
+        b.leading = Some(mark.into_any_element());
+        b.tooltip = Some(name.clone());
+        b.name = Some(name);
+        b.variant = Variant::Ghost;
+        b
+    }
+
     /// Stop: a filled square, round, icon-only (a reply's Stop, the composer's while a reply runs).
     pub fn stop(id: impl Into<ElementId>, name: impl Into<SharedString>) -> Self {
         let name = name.into();

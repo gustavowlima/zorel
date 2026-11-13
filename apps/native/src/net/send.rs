@@ -9,6 +9,33 @@ use serde_json::json;
 use crate::net::{http::Http, rpc::Rpc, types::Attachment};
 
 pub async fn deliver(http: &Http, rpc: &Rpc, chat_id: &str, text: &str, files: Vec<PathBuf>) -> Result<(), String> {
+    let attachment_ids = upload_all(http, chat_id, files).await?;
+    let mut payload = json!({ "chatId": chat_id, "clientId": format!("native-{}", client_id()), "text": text });
+    if !attachment_ids.is_empty() {
+        payload["attachmentIds"] = json!(attachment_ids);
+    }
+    rpc.call::<serde_json::Value>("send", Some(payload))
+        .await
+        .map(|_| ())
+        .map_err(|_| t!("chat.sendFailed").into_owned())
+}
+
+/// "Send now" from the queue: into the reply in progress when its engine takes it (true), else that reply stops and
+/// this is a turn of its own (false).
+pub async fn steer(http: &Http, rpc: &Rpc, chat_id: &str, text: &str, files: Vec<PathBuf>) -> Result<bool, String> {
+    let attachment_ids = upload_all(http, chat_id, files).await?;
+    let mut payload = json!({ "chatId": chat_id, "text": text });
+    if !attachment_ids.is_empty() {
+        payload["attachmentIds"] = json!(attachment_ids);
+    }
+    rpc.call::<serde_json::Value>("steer", Some(payload))
+        .await
+        .map(|v| v["joined"].as_bool().unwrap_or(false))
+        .map_err(|_| t!("chat.sendFailed").into_owned())
+}
+
+/// Uploads the files a message carries; their attachment ids.
+async fn upload_all(http: &Http, chat_id: &str, files: Vec<PathBuf>) -> Result<Vec<String>, String> {
     let mut attachment_ids = Vec::new();
     for path in files {
         let name = path
@@ -28,14 +55,7 @@ pub async fn deliver(http: &Http, rpc: &Rpc, chat_id: &str, text: &str, files: V
             .map_err(|_| failed())?;
         attachment_ids.push(attachment.id);
     }
-    let mut payload = json!({ "chatId": chat_id, "clientId": format!("native-{}", client_id()), "text": text });
-    if !attachment_ids.is_empty() {
-        payload["attachmentIds"] = json!(attachment_ids);
-    }
-    rpc.call::<serde_json::Value>("send", Some(payload))
-        .await
-        .map(|_| ())
-        .map_err(|_| t!("chat.sendFailed").into_owned())
+    Ok(attachment_ids)
 }
 
 /// A file's media type by its extension (the engine stores it with the attachment).

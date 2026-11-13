@@ -79,6 +79,8 @@ icon_assets!(
         SquarePen,
         GripVertical,
         Trash,
+        CornerDownRight,
+        X,
         X
     ]
 );
