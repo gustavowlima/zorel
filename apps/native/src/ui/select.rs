@@ -245,7 +245,7 @@ impl RenderOnce for Trigger {
 
 fn option_row(key: &str, o: &SelectOption, selected: bool, window: &mut Window, cx: &mut App) -> Stateful<Div> {
     let p = theme::palette(window);
-    let id = ElementId::from(SharedString::from(format!("{key}-option-{}", o.id)));
+    let id = ElementId::from(format!("{key}-option-{}", o.id));
     let pointer = motion::pointer(&id, window, cx);
     let hovered = pointer.read(cx).hovered;
     let bg = motion::color(

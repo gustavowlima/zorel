@@ -4,9 +4,10 @@
 use chrono::{DateTime, Datelike, Local, TimeZone, Timelike};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+/// Also the row in the month and weekday tables (`l as usize`).
 pub enum Lang {
-    En,
-    PtBr,
+    En = 0,
+    PtBr = 1,
 }
 
 pub fn lang() -> Lang {
@@ -76,13 +77,6 @@ const WEEKDAYS: [[&str; 7]; 2] = [
     ],
 ];
 
-fn ix(l: Lang) -> usize {
-    match l {
-        Lang::En => 0,
-        Lang::PtBr => 1,
-    }
-}
-
 fn local(ms: f64) -> DateTime<Local> {
     Local
         .timestamp_millis_opt(ms as i64)
@@ -131,7 +125,7 @@ pub fn age(at: f64, now: f64, l: Lang) -> String {
 
 fn day_month(at: f64, l: Lang) -> String {
     let d = local(at);
-    let month = MONTHS_SHORT[ix(l)][d.month0() as usize];
+    let month = MONTHS_SHORT[l as usize][d.month0() as usize];
     match l {
         Lang::En => format!("{month} {}", d.day()),
         Lang::PtBr => format!("{} de {month}", d.day()),
@@ -173,8 +167,8 @@ pub fn time(at: f64, now: f64, l: Lang) -> String {
 pub fn weekday_date(at: f64, l: Lang) -> String {
     let d = local(at);
     let (weekday, month) = (
-        WEEKDAYS[ix(l)][d.weekday().num_days_from_monday() as usize],
-        MONTHS_LONG[ix(l)][d.month0() as usize],
+        WEEKDAYS[l as usize][d.weekday().num_days_from_monday() as usize],
+        MONTHS_LONG[l as usize][d.month0() as usize],
     );
     match l {
         Lang::En => format!("{weekday}, {month} {}", d.day()),

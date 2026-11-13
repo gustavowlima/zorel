@@ -366,10 +366,8 @@ impl ChatScreen {
             Composer::new(t!("composer.placeholder").into_owned(), false, on_submit, window, cx)
         });
         let view = cx.entity().downgrade();
-        let id = chat_id.clone();
         let on_change: crate::screens::model_picker::OnChange = Rc::new(move |choice, _, cx| {
             let _ = view.update(cx, |this, cx| this.set_model(choice, cx));
-            let _ = &id;
         });
         let model = cx.new(|cx| ModelPicker::new(store.clone(), true, on_change, window, cx));
         // Beside Send: the model, and Stop while a reply runs (the web's composer).
@@ -669,7 +667,7 @@ impl ChatScreen {
             .map(|(i, m)| (m.at, Row::Message(i)))
             .chain(self.log.notes.iter().enumerate().map(|(i, n)| (n.at(), Row::Note(i))))
             .collect();
-        timed.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        timed.sort_by(|a, b| a.0.total_cmp(&b.0));
         let live = self.log.turns.iter().map(|t| Row::Live(t.id.clone()));
         let mut rows: Vec<Row> = timed.into_iter().map(|(_, r)| r).chain(live).collect();
         if let Some(mode) = &self.builder {
@@ -1577,7 +1575,7 @@ impl ChatScreen {
     fn reply_row(&mut self, i: usize, m: &Message, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = theme::palette(window);
         let mentions = self.mentions(window, cx);
-        let (bare, continued) = self.voice(i, m, cx);
+        let continued = self.continues(i, m);
         let last = i + 1 == self.log.messages.len() && !self.busy();
         let mut column: Vec<AnyElement> = Vec::new();
 
@@ -1760,8 +1758,7 @@ impl ChatScreen {
             .children(switches)
             .child(reply_frame(
                 &m.id,
-                (!bare && !continued).then_some((tone, name, hue, model)),
-                bare,
+                (!continued).then_some((tone, name, hue, model)),
                 FaceState::Idle,
                 column,
                 p,
@@ -1771,16 +1768,14 @@ impl ChatScreen {
 
     /// Every reply shows who answers (face and name, as the prototype); it continues the previous one (no face again)
     /// when the same agent answers within 5 minutes.
-    fn voice(&self, i: usize, m: &Message, _: &App) -> (bool, bool) {
-        let bare = false;
-        let continued = i > 0 && {
+    fn continues(&self, i: usize, m: &Message) -> bool {
+        i > 0 && {
             let prev = &self.log.messages[i - 1];
             matches!(prev.role, MessageRole::Assistant)
                 && prev.agent_id == m.agent_id
                 && m.at - prev.at < CONTINUES_MS
                 && m.switches.is_empty()
-        };
-        (bare, continued)
+        }
     }
 
     /// One folded line of work ("Read 2 files and ran 3 commands · 1 failed · 12s") that opens to its steps.
@@ -2143,7 +2138,6 @@ impl ChatScreen {
         reply_frame(
             turn_id,
             Some((tone, name, face::hue(p, tone), None)),
-            false,
             // A question or a proposal waits on you: the face says so, not "working".
             if waiting || proposal_out {
                 FaceState::Waiting
@@ -2159,7 +2153,7 @@ impl ChatScreen {
     /// you) and, open by default, its steps on the tree as they come.
     fn live_group(&mut self, key: &str, group: &[WorkStep], window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = theme::palette(window);
-        let kinds: Vec<String> = group.iter().map(kind_key).collect();
+        let kinds: Vec<String> = group.iter().map(|s| s.kind.to_string()).collect();
         let summed: Vec<Summed> = group
             .iter()
             .zip(&kinds)
@@ -2258,7 +2252,7 @@ impl ChatScreen {
                                 .size(icon::XS)
                                 .into_any_element(),
                             WorkStepStatus::Waiting => icon(IconName::Clock, icon::XS).into_any_element(),
-                            _ => icon(glyph_of(&kind_key(s)), icon::XS).into_any_element(),
+                            _ => icon(glyph_of(&s.kind.to_string()), icon::XS).into_any_element(),
                         };
                         motion::enter(
                             div().child(
@@ -2534,7 +2528,6 @@ fn last_words(text: &str, max: usize) -> String {
 fn reply_frame(
     key: &str,
     who: Option<(usize, String, Rgba, Option<String>)>,
-    bare: bool,
     state: FaceState,
     column: Vec<AnyElement>,
     p: &Palette,
@@ -2547,7 +2540,7 @@ fn reply_frame(
     div()
         .flex()
         .gap(px(space::X3))
-        .when(!bare, |r| r.child(div().flex_none().w(px(28.)).children(face)))
+        .child(div().flex_none().w(px(28.)).children(face))
         .child(
             div()
                 .flex()
@@ -2623,13 +2616,6 @@ fn glyph_of(tool: &str) -> IconName {
         Some(steps::Kind::Delegate) => IconName::Users,
         _ => IconName::Wrench,
     }
-}
-
-fn kind_key(s: &WorkStep) -> String {
-    serde_json::to_value(s.kind)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_string))
-        .unwrap_or_else(|| "tool".into())
 }
 
 fn status_of(s: &StepStatus) -> &'static str {

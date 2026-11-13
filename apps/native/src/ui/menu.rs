@@ -91,14 +91,10 @@ pub fn on_right_click<E>(key: &ElementId, element: E, items: Items, window: &mut
 where
     E: InteractiveElement + ParentElement + IntoElement + FluentBuilder + 'static,
 {
-    let state = window.use_keyed_state(
-        ElementId::from(SharedString::from(format!("{key}-menu"))),
-        cx,
-        |_, cx| Open {
-            at: None,
-            focus: cx.focus_handle(),
-        },
-    );
+    let state = window.use_keyed_state(ElementId::from(format!("{key}-menu")), cx, |_, cx| Open {
+        at: None,
+        focus: cx.focus_handle(),
+    });
     let (at, focus) = {
         let s = state.read(cx);
         (s.at, s.focus.clone())
@@ -171,7 +167,7 @@ fn surface(key: &ElementId, entries: Vec<Entry>, close: Action, window: &mut Win
             danger,
             action,
         } => {
-            let id = ElementId::from(SharedString::from(format!("{key}-item-{i}")));
+            let id = ElementId::from(format!("{key}-item-{i}"));
             let pointer = motion::pointer(&id, window, cx);
             let hovered = pointer.read(cx).hovered;
             let (wash, fg) = match danger {
@@ -209,7 +205,7 @@ fn surface(key: &ElementId, entries: Vec<Entry>, close: Action, window: &mut Win
             motion::track(row, &pointer).into_any_element()
         }
     });
-    let id = ElementId::from(SharedString::from(format!("{key}-surface")));
+    let id = ElementId::from(format!("{key}-surface"));
     layout::panel(id, p)
         .role(Role::Menu)
         .min_w(px(192.))
@@ -222,7 +218,7 @@ fn surface(key: &ElementId, entries: Vec<Entry>, close: Action, window: &mut Win
 fn enter(surface: Stateful<Div>, key: &ElementId) -> AnyElement {
     surface
         .with_animation(
-            ElementId::from(SharedString::from(format!("{key}-enter"))),
+            ElementId::from(format!("{key}-enter")),
             Animation::new(motion::ms(motion::MENU_IN_MS)).with_easing(motion::ease_out_quint),
             |el, t| el.opacity(t).mt(px(space::X1 * (1. - t))),
         )

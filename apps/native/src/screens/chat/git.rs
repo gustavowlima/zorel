@@ -280,11 +280,7 @@ impl ChatScreen {
                     .flex_col()
                     .max_h(px(288.))
                     .children(s.files.iter().map(|f| {
-                        let cut = f.path.rfind('/');
-                        let (dir, name) = match cut {
-                            Some(i) => (&f.path[..i], &f.path[i + 1..]),
-                            None => ("", f.path.as_str()),
-                        };
+                        let (dir, name) = f.path.rsplit_once('/').unwrap_or(("", &f.path));
                         div()
                             .flex()
                             .items_center()

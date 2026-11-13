@@ -115,7 +115,7 @@ impl Faces {
 impl RenderOnce for Faces {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let p = theme::palette(window);
-        let id = ElementId::from(SharedString::from(format!("faces-{}", self.chat_id)));
+        let id = ElementId::from(format!("faces-{}", self.chat_id));
         let (faces, names, lead) = {
             let store = self.store.read(cx);
             let Some(chat) = store.chat(&self.chat_id) else {
@@ -317,7 +317,7 @@ fn list(
             .on_click(move |_, _, cx| chat_actions::set_team(&store, &chat_id, rest.clone(), None, cx))
         });
         // The face and name open the agent's session (the buttons beside them keep their own presses).
-        let id = ElementId::from(SharedString::from(format!("picker-open-{}", a.id)));
+        let id = ElementId::from(format!("picker-open-{}", a.id));
         let pointer = motion::pointer(&id, window, cx);
         let bg = motion::color(
             &id,

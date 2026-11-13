@@ -336,7 +336,7 @@ impl ModelPicker {
             .map(|(i, e)| {
                 let selected = !searching && i == rail_ix;
                 let key = e.key.clone();
-                let id = ElementId::from(SharedString::from(format!("model-rail-{}", e.key)));
+                let id = ElementId::from(format!("model-rail-{}", e.key));
                 let pointer = motion::pointer(&id, window, cx);
                 let lit = selected || pointer.read(cx).hovered;
                 let bg = motion::color(
@@ -765,7 +765,7 @@ fn option_row(
     cx: &mut App,
 ) -> Stateful<Div> {
     let p = theme::palette(window);
-    let id = ElementId::from(SharedString::from(key.to_string()));
+    let id = ElementId::from(key.to_string());
     let pointer = motion::pointer(&id, window, cx);
     let hovered = pointer.read(cx).hovered;
     let bg = motion::color(

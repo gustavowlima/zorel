@@ -40,20 +40,11 @@ pub fn install(cx: &mut App) {
         KeyBinding::new("cmd-m", Minimize, None),
     ]);
     // Copy outside a text field copies the selected conversation text (ui/text_select); a field binds its own.
-    cx.bind_keys([KeyBinding::new(
-        if cfg!(target_os = "macos") { "cmd-c" } else { "ctrl-c" },
-        Copy,
-        None,
-    )]);
-    // The palette and the sidebar, as the web: ⌘K / Ctrl K and ⌘B / Ctrl B.
-    let (palette, sidebar) = if cfg!(target_os = "macos") {
-        ("cmd-k", "cmd-b")
-    } else {
-        ("ctrl-k", "ctrl-b")
-    };
+    // The palette and the sidebar, as the web: ⌘K / Ctrl K and ⌘B / Ctrl B ("secondary" is ⌘ on macOS, Ctrl elsewhere).
     cx.bind_keys([
-        KeyBinding::new(palette, OpenPalette, None),
-        KeyBinding::new(sidebar, ToggleSidebar, None),
+        KeyBinding::new("secondary-c", Copy, None),
+        KeyBinding::new("secondary-k", OpenPalette, None),
+        KeyBinding::new("secondary-b", ToggleSidebar, None),
     ]);
     if cfg!(target_os = "macos") {
         cx.set_menus(vec![

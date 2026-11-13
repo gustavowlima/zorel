@@ -48,15 +48,7 @@ pub fn url_of(typed: &str) -> String {
     if host.contains('.') && !t.contains(' ') {
         return format!("https://{t}");
     }
-    let q: String = t
-        .bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
-            b' ' => "+".to_string(),
-            _ => format!("%{b:02X}"),
-        })
-        .collect();
-    format!("https://duckduckgo.com/?q={q}")
+    reqwest::Url::parse_with_params("https://duckduckgo.com/", [("q", t)]).map_or_else(|_| t.to_string(), String::from)
 }
 
 /// The script "Pick an element" runs: outline what the pointer is over, and on a click post what it is (its tag, a

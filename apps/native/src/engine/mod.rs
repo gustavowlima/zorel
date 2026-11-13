@@ -42,7 +42,8 @@ impl Launch {
 pub struct Engine {
     pub url: String,
     pub token: String,
-    child: Option<Child>,
+    /// Held only so dropping the Engine kills the server (kill_on_drop).
+    _child: Option<Child>,
 }
 
 #[derive(Debug)]
@@ -68,7 +69,7 @@ impl Engine {
         Self {
             url,
             token,
-            child: None,
+            _child: None,
         }
     }
 
@@ -100,7 +101,7 @@ impl Engine {
         let engine = Self {
             url: format!("http://127.0.0.1:{port}"),
             token,
-            child: Some(child),
+            _child: Some(child),
         };
         engine.wait_ready().await?;
         Ok(engine)
@@ -118,11 +119,6 @@ impl Engine {
             tokio::time::sleep(READY_EVERY).await;
         }
         Err(EngineError::NotReady)
-    }
-
-    /// Whether this app started the server (and so stops it).
-    pub fn owned(&self) -> bool {
-        self.child.is_some()
     }
 }
 

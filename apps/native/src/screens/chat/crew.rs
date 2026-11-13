@@ -9,9 +9,8 @@ use crate::{screens::chat_actions, ui::drawer};
 /// What an agent is doing in this chat right now.
 #[derive(Debug, PartialEq)]
 pub(super) enum Activity {
-    /// A turn of its own runs: its id, what it does now (the running step), since when.
+    /// A turn of its own runs: what it does now (the running step), since when.
     Working {
-        turn_id: String,
         doing: Option<String>,
         since: Option<f64>,
     },
@@ -19,11 +18,8 @@ pub(super) enum Activity {
     NeedsYou,
     /// It waits for other agents (their ids).
     WaitsFor(Vec<String>),
-    /// Its last reply: where it is in the messages, and when.
-    Replied {
-        index: usize,
-        at: f64,
-    },
+    /// When its last reply came.
+    Replied(f64),
     Never,
 }
 
@@ -46,7 +42,6 @@ pub(super) fn activity(agent_id: &str, log: &ChatLog) -> Activity {
             .find(|s| s.turn_id == turn.id && matches!(s.status, WorkStepStatus::Running))
             .map(|s| s.title.clone());
         return Activity::Working {
-            turn_id: turn.id.clone(),
             doing,
             since: turn.started_at,
         };
@@ -58,17 +53,10 @@ pub(super) fn activity(agent_id: &str, log: &ChatLog) -> Activity {
     {
         return Activity::WaitsFor(wait.on.clone());
     }
-    match log
-        .messages
+    log.messages
         .iter()
-        .rposition(|m| matches!(m.role, MessageRole::Assistant) && mine(&m.agent_id))
-    {
-        Some(index) => Activity::Replied {
-            index,
-            at: log.messages[index].at,
-        },
-        None => Activity::Never,
-    }
+        .rfind(|m| matches!(m.role, MessageRole::Assistant) && mine(&m.agent_id))
+        .map_or(Activity::Never, |m| Activity::Replied(m.at))
 }
 
 impl ChatScreen {
@@ -119,7 +107,7 @@ impl ChatScreen {
                     t!("status.waitsFor", agent = agent.name, other = format::list(&others, l)).into_owned(),
                 )
             }
-            Activity::Replied { at, .. } => (
+            Activity::Replied(at) => (
                 if i == 0 && lead_state == FaceState::Failed {
                     FaceState::Failed
                 } else {
@@ -259,7 +247,7 @@ mod tests {
                 serde_json::json!({ "_tag": "message", "message": message(id, agent, at) }),
             ));
         }
-        assert_eq!(activity("a", &log), Activity::Replied { index: 2, at: 3. });
+        assert_eq!(activity("a", &log), Activity::Replied(3.));
         assert_eq!(activity("z", &log), Activity::Never);
         log.apply(event(serde_json::json!({ "_tag": "turn-started", "turn": {
             "id": "t", "chatId": "c", "state": "running", "model": "anthropic/x", "agentId": "b", "accountId": null,
@@ -268,7 +256,6 @@ mod tests {
         assert_eq!(
             activity("b", &log),
             Activity::Working {
-                turn_id: "t".into(),
                 doing: None,
                 since: Some(10.)
             }

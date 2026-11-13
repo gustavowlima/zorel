@@ -400,12 +400,7 @@ impl AgentPage {
             .filter(|c| c.agent_ids.contains(&a.id))
             .cloned()
             .collect();
-        sessions.sort_by(|x, y| {
-            y.last_at
-                .unwrap_or(0.)
-                .partial_cmp(&x.last_at.unwrap_or(0.))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        sessions.sort_by(|x, y| y.last_at.unwrap_or(0.).total_cmp(&x.last_at.unwrap_or(0.)));
         let (when_now, l) = (format::now_ms(), format::lang());
         let now_row: AnyElement = match now {
             Some(s) => {

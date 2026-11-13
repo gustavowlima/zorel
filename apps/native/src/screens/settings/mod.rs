@@ -250,12 +250,9 @@ impl Settings {
     fn general(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = theme::palette(window);
         let prefs = self.prefs.clone();
-        let approval_now = prefs.as_ref().map_or("review".to_string(), |p| {
-            serde_json::to_value(p.memory_approval)
-                .ok()
-                .and_then(|v| v.as_str().map(str::to_string))
-                .unwrap_or("review".into())
-        });
+        let approval_now = prefs
+            .as_ref()
+            .map_or("review".to_string(), |p| p.memory_approval.to_string());
         let view = cx.entity().downgrade();
         let approval = Select::new(
             "settings-memory-approval",

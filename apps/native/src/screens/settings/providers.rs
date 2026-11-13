@@ -528,11 +528,7 @@ impl Settings {
         let worst = a.usage.as_ref().and_then(|u| {
             u.windows
                 .iter()
-                .max_by(|x, y| {
-                    x.used_percent
-                        .partial_cmp(&y.used_percent)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
+                .max_by(|x, y| x.used_percent.total_cmp(&y.used_percent))
                 .cloned()
         });
         let meter = worst.map(|w| {

@@ -194,7 +194,7 @@ pub fn choices(
         .enumerate()
         .map(|(i, (label, hint))| {
             let on = i == selected;
-            let id = ElementId::from(SharedString::from(format!("{key}-choice-{i}")));
+            let id = ElementId::from(format!("{key}-choice-{i}"));
             let pointer = motion::pointer(&id, window, cx);
             let hovered = pointer.read(cx).hovered;
             let bg = motion::color(

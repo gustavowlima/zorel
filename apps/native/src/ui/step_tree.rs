@@ -48,7 +48,7 @@ pub fn head(h: Head, window: &mut Window, cx: &mut App) -> AnyElement {
         on_toggle,
     } = h;
     let p = theme::palette(window);
-    let id = ElementId::from(SharedString::from(format!("tree-head-{key}")));
+    let id = ElementId::from(format!("tree-head-{key}"));
     let pointer = motion::pointer(&id, window, cx);
     let hovered = pointer.read(cx).hovered;
     let fg = motion::color(
@@ -147,13 +147,13 @@ impl Row {
             Tone::Danger => p.danger,
             Tone::Warning => p.warning,
         };
-        let id = ElementId::from(SharedString::from(format!("tree-row-{}", self.key)));
+        let id = ElementId::from(format!("tree-row-{}", self.key));
         let pointer = motion::pointer(&id, window, cx);
         let hovered = pointer.read(cx).hovered;
         let opens = self.on_toggle.is_some();
         // The hint and the wash ease in with the pointer.
         let lit = gpui_kit::base::transition(
-            ElementId::from(SharedString::from(format!("tree-lit-{}", self.key))),
+            ElementId::from(format!("tree-lit-{}", self.key)),
             if hovered { 1. } else { 0. },
             gpui_kit::base::Transition::new(motion::ms(motion::HOVER_MS)),
             window,

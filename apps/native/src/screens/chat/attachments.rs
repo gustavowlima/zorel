@@ -7,20 +7,6 @@ use super::*;
 
 use crate::net::types::Attachment;
 
-/// The image formats GPUI draws, by media type.
-fn format_of(mime: &str) -> Option<ImageFormat> {
-    match mime {
-        "image/png" => Some(ImageFormat::Png),
-        "image/jpeg" | "image/jpg" => Some(ImageFormat::Jpeg),
-        "image/webp" => Some(ImageFormat::Webp),
-        "image/gif" => Some(ImageFormat::Gif),
-        "image/svg+xml" => Some(ImageFormat::Svg),
-        "image/bmp" => Some(ImageFormat::Bmp),
-        "image/tiff" => Some(ImageFormat::Tiff),
-        _ => None,
-    }
-}
-
 const THUMB_H: f32 = 112.;
 
 impl ChatScreen {
@@ -29,7 +15,7 @@ impl ChatScreen {
         if let Some(known) = self.images.get(&a.id) {
             return known.clone();
         }
-        let format = format_of(&a.mime)?;
+        let format = ImageFormat::from_mime_type(&a.mime)?;
         self.images.insert(a.id.clone(), None);
         let (http, id) = (self.store.read(cx).http.clone(), a.id.clone());
         let path = format!("/api/attachments/{id}");
@@ -77,7 +63,7 @@ impl ChatScreen {
     pub(super) fn attachment(&mut self, a: &Attachment, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = theme::palette(window);
         let id = SharedString::from(format!("attachment-{}", a.id));
-        if format_of(&a.mime).is_some() {
+        if ImageFormat::from_mime_type(&a.mime).is_some() {
             let picture = self.picture(a, cx);
             let shown = a.clone();
             return div()

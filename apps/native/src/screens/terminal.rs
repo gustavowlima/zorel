@@ -251,11 +251,7 @@ fn rgb(c: Rgb) -> Hsla {
 }
 
 fn hex(v: u32) -> Hsla {
-    rgb(Rgb {
-        r: (v >> 16) as u8,
-        g: (v >> 8) as u8,
-        b: v as u8,
-    })
+    gpui_kit::rgb(v).into()
 }
 
 /// A cell colour in the theme: the default foreground and background are Zorel's; the rest the ANSI table, the 6×6×6

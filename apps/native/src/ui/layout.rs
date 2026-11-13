@@ -14,16 +14,6 @@ pub fn card(p: &Palette) -> Div {
         .p(px(tokens::INSET_CARD))
 }
 
-pub fn row() -> Div {
-    div()
-        .flex()
-        .items_center()
-        .gap(px(space::X2))
-        .rounded(px(tokens::RADIUS_ROW))
-        .px(px(space::X2))
-        .py(px(space::X1_5))
-}
-
 /// The one floating panel every menu, select, dropdown and popover draws (the context menu's look): `float` on a
 /// stateful box that takes the pointer. Open it with the kit's Popover at `appearance(false)` (the kit's own ring and
 /// padding would double the border) and let it enter with `motion::enter(.., MENU_IN_MS, ..)`.

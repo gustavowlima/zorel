@@ -22,18 +22,28 @@ pub struct Connector {
     pub id: &'static str,
     pub name: &'static str,
     url: &'static str,
-    command: &'static str,
     auth: Auth,
     token_url: Option<&'static str>,
 }
 
+/// A hosted server that signs in with OAuth.
 const fn hosted(id: &'static str, name: &'static str, url: &'static str) -> Connector {
     Connector {
         id,
         name,
         url,
-        command: "",
         auth: Auth::Oauth,
+        token_url: None,
+    }
+}
+
+/// A server that needs no sign-in.
+const fn open(id: &'static str, name: &'static str, url: &'static str) -> Connector {
+    Connector {
+        id,
+        name,
+        url,
+        auth: Auth::None,
         token_url: None,
     }
 }
@@ -45,7 +55,6 @@ pub const CATALOG: [Connector; 22] = [
         id: "github",
         name: "GitHub",
         url: "https://api.githubcopilot.com/mcp/",
-        command: "",
         auth: Auth::Token,
         token_url: Some("https://github.com/settings/personal-access-tokens/new"),
     },
@@ -67,41 +76,14 @@ pub const CATALOG: [Connector; 22] = [
     hosted("wix", "Wix", "https://mcp.wix.com/mcp"),
     hosted("paypal", "PayPal", "https://mcp.paypal.com/mcp"),
     hosted("square", "Square", "https://mcp.squareup.com/mcp"),
-    Connector {
-        id: "huggingface",
-        name: "Hugging Face",
-        url: "https://huggingface.co/mcp",
-        command: "",
-        auth: Auth::None,
-        token_url: None,
-    },
-    Connector {
-        id: "context7",
-        name: "Context7",
-        url: "https://mcp.context7.com/mcp",
-        command: "",
-        auth: Auth::None,
-        token_url: None,
-    },
-    Connector {
-        id: "figma",
-        name: "Figma",
-        url: "http://127.0.0.1:3845/mcp",
-        command: "",
-        auth: Auth::None,
-        token_url: None,
-    },
+    open("huggingface", "Hugging Face", "https://huggingface.co/mcp"),
+    open("context7", "Context7", "https://mcp.context7.com/mcp"),
+    open("figma", "Figma", "http://127.0.0.1:3845/mcp"),
 ];
 
 /// The catalog entry a server was added from, if any.
 pub fn catalog_of(s: &McpServer) -> Option<&'static Connector> {
-    CATALOG.iter().find(|c| {
-        if c.url.is_empty() {
-            format!("{} {}", s.command, s.args.join(" ")).trim() == c.command
-        } else {
-            s.url == c.url
-        }
-    })
+    CATALOG.iter().find(|c| s.url == c.url)
 }
 
 /// A connector's mark: its initial on a soft square (brand logos aren't bundled).
@@ -134,9 +116,8 @@ impl Settings {
         let env = token
             .map(|t| json!({ "Authorization": format!("Bearer {}", t.trim()) }))
             .unwrap_or(json!({}));
-        let mut parts = c.command.split_whitespace();
         let body = json!({
-            "projectId": null, "name": c.name, "command": parts.next().unwrap_or_default(), "args": parts.collect::<Vec<_>>(),
+            "projectId": null, "name": c.name, "command": "", "args": [],
             "url": c.url, "env": env, "mode": "approve", "auth": if c.auth == Auth::Oauth { "oauth" } else { "none" },
         });
         let auth = c.auth;

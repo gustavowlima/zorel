@@ -102,11 +102,7 @@ pub struct Pointer {
 }
 
 pub fn pointer(id: &ElementId, window: &mut Window, cx: &mut App) -> Entity<Pointer> {
-    window.use_keyed_state(
-        ElementId::from(SharedString::from(format!("{id}-pointer"))),
-        cx,
-        |_, _| Pointer::default(),
-    )
+    window.use_keyed_state(ElementId::from(format!("{id}-pointer")), cx, |_, _| Pointer::default())
 }
 
 /// Wires hover and press tracking onto a stateful element.
@@ -141,7 +137,7 @@ fn set_pressed(p: &mut Pointer, pressed: bool, cx: &mut Context<Pointer>) {
 /// A colour that eases to `target` (HOVER_MS), mixed with premultiplied alpha: a fade from transparent, or between
 /// washes of different tones, never passes through a darker or brighter colour (HSLA mixing does, and it flashes).
 pub fn color(id: &ElementId, channel: &str, target: Rgba, window: &mut Window, cx: &mut App) -> Hsla {
-    let key = ElementId::from(SharedString::from(format!("{id}-{channel}")));
+    let key = ElementId::from(format!("{id}-{channel}"));
     let paint = transition(key, Paint::from(target), Transition::new(ms(HOVER_MS)), window, cx);
     Hsla::from(Rgba::from(paint))
 }
@@ -192,7 +188,7 @@ pub fn fade(color: Rgba, share: f32) -> Rgba {
 
 /// How far the control sinks: 1 px while pressed, back up on a quick, slightly bouncy spring.
 pub fn sink(id: &ElementId, pressed: bool, window: &mut Window, cx: &mut App) -> Pixels {
-    let key = ElementId::from(SharedString::from(format!("{id}-sink")));
+    let key = ElementId::from(format!("{id}-sink"));
     spring(
         key,
         px(if pressed { 1. } else { 0. }),

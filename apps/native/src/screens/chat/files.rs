@@ -451,7 +451,7 @@ impl ChatScreen {
             let folder = n.children.is_some();
             let open = folder && (searching || expanded.contains(&n.path));
             let path = n.path.clone();
-            let id = ElementId::from(SharedString::from(format!("file-row-{}", n.path)));
+            let id = ElementId::from(format!("file-row-{}", n.path));
             let row = div()
                 .id(id.clone())
                 .flex()

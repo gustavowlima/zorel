@@ -87,7 +87,6 @@ icon_assets!(
         LayoutGrid,
         GitPullRequest,
         ShieldAlert,
-        X,
         X
     ]
 );

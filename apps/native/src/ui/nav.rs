@@ -188,7 +188,7 @@ impl RenderOnce for NavRow {
         // The hover-only controls (+, ⋯) stay mounted and fade in and out over the trailing detail: a menu opened
         // from them stays open when the pointer leaves the row.
         let shown = gpui_kit::base::transition(
-            ElementId::from(SharedString::from(format!("{}-reveal", self.id))),
+            ElementId::from(format!("{}-reveal", self.id)),
             if hovered { 1. } else { 0. },
             gpui_kit::base::Transition::new(motion::ms(motion::HOVER_MS)),
             window,
@@ -221,7 +221,7 @@ impl RenderOnce for NavRow {
         // A grip on hover (or while dragged) at the row's start, its middle on the row's edge.
         let grip = (self.reorder.is_some() && !self.rail).then(|| {
             let shown = gpui_kit::base::transition(
-                ElementId::from(SharedString::from(format!("{}-grip", self.id))),
+                ElementId::from(format!("{}-grip", self.id)),
                 if hovered || self.lifted { 1. } else { 0. },
                 gpui_kit::base::Transition::new(motion::ms(motion::HOVER_MS)),
                 window,

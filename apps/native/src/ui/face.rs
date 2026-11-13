@@ -166,11 +166,7 @@ impl RenderOnce for AgentFace {
         );
         let hover = motion::pointer(&self.id, window, cx);
         let hovered = hover.read(cx).hovered;
-        let blinks = window.use_keyed_state(
-            ElementId::from(SharedString::from(format!("{key}-blinks"))),
-            cx,
-            |_, _| (false, 0u32),
-        );
+        let blinks = window.use_keyed_state(ElementId::from(format!("{key}-blinks")), cx, |_, _| (false, 0u32));
         let (was, mut count) = *blinks.read(cx);
         if hovered && !was {
             count += 1;

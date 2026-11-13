@@ -17,11 +17,4 @@ impl ChatList {
         self.statuses.insert(status.chat_id.clone(), status);
         unknown
     }
-
-    /// Top-level chats (tasks live under their parent chat), most recent first.
-    pub fn visible(&self) -> impl Iterator<Item = &Chat> {
-        let mut chats: Vec<&Chat> = self.chats.iter().filter(|c| c.parent_id.is_none()).collect();
-        chats.sort_by(|a, b| b.created_at.total_cmp(&a.created_at));
-        chats.into_iter()
-    }
 }

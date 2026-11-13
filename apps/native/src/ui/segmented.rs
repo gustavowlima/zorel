@@ -52,11 +52,7 @@ impl RenderOnce for Segmented {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let p = theme::palette(window);
         let key = self.id.to_string();
-        let laid = window.use_keyed_state(
-            ElementId::from(SharedString::from(format!("{key}-laid"))),
-            cx,
-            |_, _| Laid::default(),
-        );
+        let laid = window.use_keyed_state(ElementId::from(format!("{key}-laid")), cx, |_, _| Laid::default());
         let target = laid.read(cx).0.get(self.selected).copied();
         // The marker springs to the chosen option; before the first layout it is drawn on the option itself.
         let marker = target.map(|(left, width)| {
@@ -74,7 +70,7 @@ impl RenderOnce for Segmented {
         });
         let measured = marker.is_some();
         let options = self.options.into_iter().enumerate().map(|(i, label)| {
-            let id = ElementId::from(SharedString::from(format!("{key}-option-{i}")));
+            let id = ElementId::from(format!("{key}-option-{i}"));
             let pointer = motion::pointer(&id, window, cx);
             let on = i == self.selected;
             let lit = on || pointer.read(cx).hovered;
