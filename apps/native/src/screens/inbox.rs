@@ -9,9 +9,11 @@ use serde_json::json;
 use std::rc::Rc;
 
 use crate::screens::approval::{self, is_question};
-use crate::ui::space;
+use crate::ui::{
+    scene::{self, Moment},
+    space,
+};
 use crate::{
-    i18n::tn,
     net::types::{MemoriesListSuccess, Memory, MemoryState},
     runtime,
     state::store::{StatusChanged, Store},
@@ -127,19 +129,44 @@ impl Render for Inbox {
 }
 
 impl Inbox {
+    /// The filter, for the window's strip: All, Approvals, Questions, Memories, each with how many wait.
+    pub fn tabs(inbox: &Entity<Self>, cx: &App) -> Segmented {
+        let this = inbox.read(cx);
+        let approvals = this.store.read(cx).needs_you();
+        let questions = approvals.iter().filter(|a| is_question(a)).count();
+        let tabs = [
+            (Filter::All, "inbox.all", this.count(cx)),
+            (Filter::Approvals, "inbox.approvals", approvals.len() - questions),
+            (Filter::Questions, "inbox.questions", questions),
+            (Filter::Memories, "inbox.memories", this.memories.len()),
+        ];
+        // The prototype's segmented choice (ui/segmented): its marker slides to the filter picked.
+        let selected = tabs.iter().position(|(f, _, _)| *f == this.filter).unwrap_or(0);
+        let order: Vec<Filter> = tabs.iter().map(|(f, _, _)| *f).collect();
+        let labels = tabs
+            .into_iter()
+            .map(|(_, key, count)| {
+                if count > 0 {
+                    format!("{} {count}", t!(key)).into()
+                } else {
+                    t!(key).into_owned().into()
+                }
+            })
+            .collect();
+        let view = inbox.downgrade();
+        let pick: segmented::OnPick = Rc::new(move |ix, _, cx| {
+            let _ = view.update(cx, |this, cx| {
+                this.filter = order[ix];
+                cx.notify();
+            });
+        });
+        Segmented::new("inbox-filter", t!("inbox.title").into_owned(), labels, selected, pick)
+    }
+
     // The render body, behind Subsecond's reload point (crate::hot).
     fn view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let p = theme::palette(window);
         let approvals = self.store.read(cx).needs_you();
-        let questions = approvals.iter().filter(|a| is_question(a)).count();
-        let asks = approvals.len() - questions;
-        let total = self.count(cx);
-        let tabs = [
-            (Filter::All, "inbox.all", total),
-            (Filter::Approvals, "inbox.approvals", asks),
-            (Filter::Questions, "inbox.questions", questions),
-            (Filter::Memories, "inbox.memories", self.memories.len()),
-        ];
         let show = |f: Filter, filter: Filter| filter == Filter::All || filter == f;
         let filter = self.filter;
 
@@ -223,34 +250,8 @@ impl Inbox {
         }
         items.sort_by(|a, b| b.0.total_cmp(&a.0));
 
-        // The prototype's segmented choice (ui/segmented): its marker slides to the filter picked.
-        let selected = tabs.iter().position(|(f, _, _)| *f == filter).unwrap_or(0);
-        let order: Vec<Filter> = tabs.iter().map(|(f, _, _)| *f).collect();
-        let labels = tabs
-            .into_iter()
-            .map(|(_, key, count)| {
-                if count > 0 {
-                    format!("{} {count}", t!(key)).into()
-                } else {
-                    t!(key).into_owned().into()
-                }
-            })
-            .collect();
-        let view = cx.entity().downgrade();
-        let pick: segmented::OnPick = Rc::new(move |ix, _, cx| {
-            let _ = view.update(cx, |this, cx| {
-                this.filter = order[ix];
-                cx.notify();
-            });
-        });
-        let tab_row = Segmented::new("inbox-filter", t!("inbox.title").into_owned(), labels, selected, pick);
-        let subtitle = if total > 0 {
-            tn("inbox.waiting", total as i64)
-        } else {
-            t!("inbox.subtitle").into_owned()
-        };
         let empty = items.is_empty();
-        // The title sits in the window's strip (app.rs); the page starts with how many wait and the filter.
+        // The title and the filter sit in the window's strip (app.rs › strip, Inbox::tabs).
         let page = div().id("inbox").flex_1().min_h_0().overflow_y_scroll().child(
             div()
                 .max_w(px(720.))
@@ -260,30 +261,15 @@ impl Inbox {
                 .flex()
                 .flex_col()
                 .gap(px(space::X5))
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .child(div().text_color(p.text_muted).child(subtitle))
-                        .child(tab_row),
-                )
                 .when(empty, |c| {
-                    c.child(
-                        div()
-                            .py(px(space::X12))
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap(px(space::X1_5))
-                            .child(AgentFace::new("inbox-empty", 0).size(28.))
-                            .child(
-                                div()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(t!("inbox.empty").into_owned()),
-                            )
-                            .child(div().text_color(p.text_muted).child(t!("inbox.emptyHint").into_owned())),
-                    )
+                    c.child(scene::empty(
+                        "inbox-empty",
+                        Moment::AllClear,
+                        t!("inbox.empty").into_owned(),
+                        Some(t!("inbox.emptyHint").into_owned().into()),
+                        window,
+                        cx,
+                    ))
                 })
                 .when(!empty, |c| {
                     c.children(items.into_iter().map(|(_, e)| e)).child(

@@ -16,6 +16,7 @@ pub mod nav;
 pub mod orbit;
 pub mod reorder;
 pub mod ring;
+pub mod scene;
 pub mod segmented;
 pub mod select;
 pub mod selectable;

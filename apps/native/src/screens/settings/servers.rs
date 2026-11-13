@@ -412,24 +412,14 @@ impl Settings {
                 d.child(div().text_sm().text_color(p.danger).child(e))
             })
             .when(rows.is_empty() && !self.connectors.adding, |d| {
-                d.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(space::X1))
-                        .py(px(space::X4))
-                        .child(
-                            div()
-                                .font_weight(FontWeight::MEDIUM)
-                                .child(t!("mcp.empty").into_owned()),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(p.text_muted)
-                                .child(t!("mcp.emptyHint").into_owned()),
-                        ),
-                )
+                d.child(crate::ui::scene::inset(
+                    "mcp-empty",
+                    crate::ui::scene::Moment::Connect,
+                    t!("mcp.empty").into_owned(),
+                    Some(t!("mcp.emptyHint").into_owned().into()),
+                    window,
+                    cx,
+                ))
             })
             .children(rows)
             .children(form)

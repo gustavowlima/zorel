@@ -311,24 +311,14 @@ impl Settings {
                             .child(t!("settings.zorelSkills").into_owned()),
                     )
                     .when(rows.is_empty(), |d| {
-                        d.child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap(px(space::X1))
-                                .py(px(space::X3))
-                                .child(
-                                    div()
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .child(t!("skills.noneYet").into_owned()),
-                                )
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(p.text_muted)
-                                        .child(t!("skills.noneYetHint").into_owned()),
-                                ),
-                        )
+                        d.child(crate::ui::scene::inset(
+                            "skills-empty",
+                            crate::ui::scene::Moment::Notebook,
+                            t!("skills.noneYet").into_owned(),
+                            Some(t!("skills.noneYetHint").into_owned().into()),
+                            window,
+                            cx,
+                        ))
                     })
                     .children(rows),
             )

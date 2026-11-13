@@ -390,6 +390,23 @@ impl AgentPage {
     }
 }
 
+impl AgentPage {
+    /// The page's tabs, for the window's strip (Work, Profile, Tools, Memory, Activity).
+    pub fn tabs(page: &Entity<Self>, cx: &App) -> crate::ui::segmented::Segmented {
+        let current = page.read(cx).tab;
+        let selected = Tab::ALL.iter().position(|t| *t == current).unwrap_or(0);
+        let labels = Tab::ALL.iter().map(|t| t.label().into()).collect();
+        let view = page.downgrade();
+        let pick: crate::ui::segmented::OnPick = Rc::new(move |ix, _, cx| {
+            let _ = view.update(cx, |this, cx| {
+                this.tab = Tab::ALL[ix];
+                cx.notify();
+            });
+        });
+        crate::ui::segmented::Segmented::new("agent-tabs", t!("agents.title").into_owned(), labels, selected, pick)
+    }
+}
+
 impl Render for AgentPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::hot::call(|| self.view(window, cx))
@@ -407,33 +424,6 @@ impl AgentPage {
                 .into_any_element();
         };
         let head = self.head(&a, window, cx);
-        let current = self.tab;
-        let tabs: Vec<AnyElement> = Tab::ALL
-            .iter()
-            .map(|&tab| {
-                let selected = tab == current;
-                div()
-                    .id(SharedString::from(format!("agent-tab-{tab:?}")))
-                    .px(px(space::X3))
-                    .py(px(space::X2))
-                    .text_sm()
-                    .border_b_2()
-                    .map(|d| {
-                        if selected {
-                            d.border_color(p.accent).text_color(p.text)
-                        } else {
-                            d.border_color(gpui_kit::transparent_black()).text_color(p.text_muted)
-                        }
-                    })
-                    .hover(|s| s.text_color(p.text))
-                    .child(tab.label())
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.tab = tab;
-                        cx.notify();
-                    }))
-                    .into_any_element()
-            })
-            .collect();
         let body = match self.tab {
             Tab::Work => self.work(&a, window, cx),
             Tab::Profile => self.profile(&a, window, cx),
@@ -476,14 +466,6 @@ impl AgentPage {
                                 ),
                         )
                     })
-                    .child(
-                        div()
-                            .flex()
-                            .gap(px(space::X1))
-                            .border_b_1()
-                            .border_color(p.border)
-                            .children(tabs),
-                    )
                     .child(body),
             )
             .into_any_element()

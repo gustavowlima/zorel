@@ -287,23 +287,14 @@ impl Settings {
             .gap(px(space::X8))
             .child(total)
             .when(groups.is_empty(), |d| {
-                d.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(space::X1))
-                        .child(
-                            div()
-                                .font_weight(FontWeight::MEDIUM)
-                                .child(t!("processes.empty").into_owned()),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(p.text_muted)
-                                .child(t!("processes.emptyHint").into_owned()),
-                        ),
-                )
+                d.child(crate::ui::scene::inset(
+                    "processes-empty",
+                    crate::ui::scene::Moment::Resting,
+                    t!("processes.empty").into_owned(),
+                    Some(t!("processes.emptyHint").into_owned().into()),
+                    window,
+                    cx,
+                ))
             })
             .children(groups)
             .into_any_element()

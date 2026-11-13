@@ -586,38 +586,25 @@ impl ChatScreen {
             .read(cx)
             .chat(&self.chat_id)
             .is_some_and(|c| c.agent_ids.len() > 1);
-        div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(px(space::X1_5))
-            .pt(px(space::X14))
-            .child(AgentFace::new("chat-empty", 0).size(32.))
-            .child(
-                div()
-                    .pt(px(space::X2))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(t!("chat.empty").into_owned()),
-            )
-            .child(
+        crate::ui::scene::empty(
+            "chat-empty",
+            crate::ui::scene::Moment::Chat,
+            t!("chat.empty").into_owned(),
+            Some(t!("chat.emptyHint").into_owned().into()),
+            window,
+            cx,
+        )
+        .when(several, |c| {
+            c.child(
                 div()
                     .max_w(px(360.))
                     .text_center()
                     .text_sm()
-                    .text_color(p.text_muted)
-                    .child(t!("chat.emptyHint").into_owned()),
+                    .text_color(p.text_dim)
+                    .child(t!("team.mentionHint").into_owned()),
             )
-            .when(several, |c| {
-                c.child(
-                    div()
-                        .max_w(px(360.))
-                        .text_center()
-                        .text_sm()
-                        .text_color(p.text_dim)
-                        .child(t!("team.mentionHint").into_owned()),
-                )
-            })
-            .into_any_element()
+        })
+        .into_any_element()
     }
 
     /// What waits above the box: approvals and questions of this chat and the queue (Stop is in the reply and the box).

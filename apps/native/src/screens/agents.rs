@@ -302,27 +302,14 @@ impl Agents {
                 .flex_col()
                 .gap(px(space::X7))
                 .when(empty, |c| {
-                    c.child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap(px(space::X2))
-                            .py(px(space::X12))
-                            .child(AgentFace::new("agents-empty", 0).size(40.))
-                            .child(
-                                div()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(t!("agents.empty").into_owned()),
-                            )
-                            .child(
-                                div()
-                                    .max_w(px(360.))
-                                    .text_center()
-                                    .text_color(p.text_muted)
-                                    .child(t!("agents.emptyHint").into_owned()),
-                            ),
-                    )
+                    c.child(crate::ui::scene::empty(
+                        "agents-empty",
+                        crate::ui::scene::Moment::Team,
+                        t!("agents.empty").into_owned(),
+                        Some(t!("agents.emptyHint").into_owned().into()),
+                        window,
+                        cx,
+                    ))
                 })
                 .children(sections),
         )

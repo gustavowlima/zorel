@@ -158,6 +158,7 @@ impl Root {
                     cx.notify();
                 });
             }
+            cx.notify(); // the strip holds its filter
         })
         .detach();
         cx.spawn_in(window, async move |this, cx| {
@@ -257,6 +258,7 @@ impl Root {
                         },
                     )
                     .detach();
+                    cx.observe(&page, |_, _, cx| cx.notify()).detach(); // the strip holds its tabs
                     self.agent_page = Some(page);
                 }
             }
@@ -442,9 +444,22 @@ impl Root {
         };
         match &self.route {
             Route::Home { .. } => Header::new(t!("nav.homeScreen").into_owned()),
-            Route::Inbox => Header::new(t!("inbox.title").into_owned()),
+            // A page's tabs sit in the strip, beside its title.
+            Route::Inbox => {
+                let header = Header::new(t!("inbox.title").into_owned());
+                match &self.inbox {
+                    Some(inbox) => header.tabs(Inbox::tabs(inbox, cx)),
+                    None => header,
+                }
+            }
             Route::Agents => unreachable!("drawn above"),
-            Route::Agent { id } => Header::new(t!("agents.title").into_owned()).context(store.agent_name(Some(id))),
+            Route::Agent { id } => {
+                let header = Header::new(t!("agents.title").into_owned()).context(store.agent_name(Some(id)));
+                match &self.agent_page {
+                    Some(page) => header.tabs(crate::screens::agent_page::AgentPage::tabs(page, cx)),
+                    None => header,
+                }
+            }
             Route::Settings { .. } => Header::new(t!("settings.title").into_owned()),
             Route::Builder { .. } => {
                 Header::new(t!("builder.title").into_owned()).context(t!("builder.subtitle").into_owned())

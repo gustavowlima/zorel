@@ -423,29 +423,17 @@ impl ChatScreen {
             .cloned()
             .collect();
         if turns.is_empty() {
-            return div()
-                .flex()
-                .flex_col()
-                .items_center()
-                .justify_center()
-                .gap(px(space::X2))
-                .h_full()
-                .min_h(px(240.))
-                .px(px(space::X6))
-                .text_center()
-                .child(icon(IconName::File, icon::MD).text_color(p.text_dim))
-                .child(
-                    div()
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(t!("workspace.noChanges").into_owned()),
-                )
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(p.text_muted)
-                        .child(t!("workspace.noChangesHint").into_owned()),
-                )
-                .into_any_element();
+            return crate::ui::scene::empty(
+                "changes-empty",
+                crate::ui::scene::Moment::AllClear,
+                t!("workspace.noChanges").into_owned(),
+                Some(t!("workspace.noChangesHint").into_owned().into()),
+                window,
+                cx,
+            )
+            .size_full()
+            .justify_center()
+            .into_any_element();
         }
         let focus = self.side.as_ref().and_then(|s| s.focus.clone());
         let current = focus

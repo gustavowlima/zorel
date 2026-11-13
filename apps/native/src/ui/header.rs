@@ -24,6 +24,8 @@ pub struct Header {
     context: Option<SharedString>,
     /// Instead of the context line: a control (the chat's project, a ghost button).
     context_element: Option<AnyElement>,
+    /// The page's tabs: always here, after the title, never inside the page.
+    tabs: Option<AnyElement>,
     trailing: Vec<AnyElement>,
 }
 
@@ -34,6 +36,7 @@ impl Header {
             title: title.into(),
             context: None,
             context_element: None,
+            tabs: None,
             trailing: Vec::new(),
         }
     }
@@ -56,6 +59,12 @@ impl Header {
     }
 
     /// Something on the right, in order.
+    /// The page's tabs, after the title (and its context).
+    pub fn tabs(mut self, tabs: impl IntoElement) -> Self {
+        self.tabs = Some(tabs.into_any_element());
+        self
+    }
+
     pub fn trailing(mut self, element: impl IntoElement) -> Self {
         self.trailing.push(element.into_any_element());
         self
@@ -97,6 +106,7 @@ impl RenderOnce for Header {
             .when_some(self.context_element, |h, e| {
                 h.child(div().flex_none().ml(px(-space::X1_5)).child(e))
             })
+            .when_some(self.tabs, |h, t| h.child(div().flex_none().ml(px(space::X2)).child(t)))
             .child(div().flex_1())
             .children(self.trailing)
     }
