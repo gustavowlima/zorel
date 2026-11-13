@@ -3,7 +3,40 @@
 // Rows keep the engine's ids (message, step, approval), which the list uses as stable element ids.
 use std::collections::HashMap;
 
-use crate::net::types::{Approval, ChatStatus, Message, SubscribeChatItem as Event, Turn, WorkStep};
+use crate::net::types::{
+    Approval, ChatStatus, Message, SubscribeChatItem as Event, SubscribeChatItemVia as Via, Switch, Turn, WorkStep,
+};
+
+/// What happens between messages and isn't stored as one (this session only): who passed the turn to whom, a
+/// failover move in a running turn (the saved reply carries it after), an agent moved to its own copy.
+#[derive(Clone, Debug)]
+pub enum Note {
+    Handoff {
+        at: f64,
+        from: Option<String>,
+        to: Vec<String>,
+        via: Via,
+        reason: Option<String>,
+    },
+    Failover {
+        at: f64,
+        turn_id: String,
+        switch: Switch,
+    },
+    Worktree {
+        at: f64,
+        agent_id: String,
+        branch: String,
+    },
+}
+
+impl Note {
+    pub fn at(&self) -> f64 {
+        match self {
+            Note::Handoff { at, .. } | Note::Failover { at, .. } | Note::Worktree { at, .. } => *at,
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct ChatLog {
@@ -13,6 +46,7 @@ pub struct ChatLog {
     /// Steps of the turns in progress (a finished turn's steps live on its message).
     pub steps: Vec<WorkStep>,
     pub approvals: Vec<Approval>,
+    pub notes: Vec<Note>,
     /// What each turn in progress is thinking (its words, when the engine shows them), and whether it is thinking
     /// now: from a reasoning sign until its next text or step.
     pub thought: HashMap<String, Thought>,
@@ -66,6 +100,30 @@ impl ChatLog {
             Event::TurnCompleted { message, turn } => self.end_turn(turn, Some(message)),
             Event::TurnFailed { message, turn } | Event::Interrupted { message, turn } => self.end_turn(turn, message),
             Event::Status { status } => self.status = Some(status),
+            Event::Handoff {
+                from, to, via, reason, ..
+            } => self.notes.push(Note::Handoff {
+                at: crate::format::now_ms(),
+                from,
+                to,
+                via,
+                reason,
+            }),
+            Event::Failover { turn_id, switch } => {
+                // The turn starts over on the next model: what it had written goes.
+                self.partial.remove(&turn_id);
+                self.steps.retain(|s| s.turn_id != turn_id);
+                self.notes.push(Note::Failover {
+                    at: crate::format::now_ms(),
+                    turn_id,
+                    switch,
+                })
+            }
+            Event::Worktree { agent_id, worktree, .. } => self.notes.push(Note::Worktree {
+                at: crate::format::now_ms(),
+                agent_id,
+                branch: worktree.branch,
+            }),
             // ponytail: handoffs, model switches, learning and worktrees aren't drawn by the prototype yet.
             _ => return,
         }
@@ -95,6 +153,9 @@ impl ChatLog {
     fn end_turn(&mut self, turn: Turn, message: Option<Message>) {
         self.partial.remove(&turn.id);
         self.thought.remove(&turn.id);
+        // A failover now lives on the saved message (its switches).
+        self.notes
+            .retain(|n| !matches!(n, Note::Failover { turn_id, .. } if *turn_id == turn.id));
         let ended: Vec<String> = self
             .steps
             .iter()
@@ -161,6 +222,24 @@ mod tests {
         )); // a replay: no duplicate
         assert_eq!(log.messages.len(), 1);
         assert_eq!(log.revision, 5);
+    }
+
+    #[test]
+    fn notes_come_between_messages_and_a_failover_ends_with_its_turn() {
+        let mut log = ChatLog::default();
+        log.apply(event(json!({ "_tag": "turn-started", "turn": turn("running") })));
+        log.apply(event(
+            json!({ "_tag": "handoff", "turnId": "t", "from": "a", "to": ["b"], "via": "mention" }),
+        ));
+        log.apply(event(json!({ "_tag": "failover", "turnId": "t", "switch": {
+            "fromModel": "claude-cli/opus", "fromAccountId": null, "toModel": "codex-cli/gpt", "toAccountId": null,
+            "reason": "timeout", "until": null, "at": 1 } })));
+        assert_eq!(log.notes.len(), 2);
+        log.apply(event(
+            json!({ "_tag": "turn-completed", "turn": turn("completed"), "message": message("m1", "ok") }),
+        ));
+        // The failover now lives on the saved message; the handoff stays.
+        assert!(matches!(log.notes.as_slice(), [Note::Handoff { .. }]));
     }
 
     #[test]

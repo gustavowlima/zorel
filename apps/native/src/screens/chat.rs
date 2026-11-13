@@ -81,6 +81,8 @@ impl EventEmitter<ChatEvent> for ChatScreen {}
 #[derive(Clone, PartialEq)]
 enum Row {
     Message(usize),
+    /// A note between messages (state/chat.rs › Note), by index.
+    Note(usize),
     Live(String),
     Empty,
     /// The Builder's chat: its intro before the first message, its proposal, the agents it made.
@@ -620,9 +622,18 @@ impl ChatScreen {
     }
 
     fn rows(&self) -> Vec<Row> {
-        let messages = (0..self.log.messages.len()).map(Row::Message);
+        // Messages and notes in time order, then the turns running now.
+        let mut timed: Vec<(f64, Row)> = self
+            .log
+            .messages
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (m.at, Row::Message(i)))
+            .chain(self.log.notes.iter().enumerate().map(|(i, n)| (n.at(), Row::Note(i))))
+            .collect();
+        timed.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         let live = self.log.turns.iter().map(|t| Row::Live(t.id.clone()));
-        let mut rows: Vec<Row> = messages.chain(live).collect();
+        let mut rows: Vec<Row> = timed.into_iter().map(|(_, r)| r).chain(live).collect();
         if let Some(mode) = &self.builder {
             if rows.is_empty() {
                 return vec![Row::Intro];
@@ -941,6 +952,10 @@ impl ChatScreen {
                 (m.id.clone(), body)
             }
             Row::Live(turn) => (turn.clone(), self.live_row(&turn, window, cx)),
+            Row::Note(i) => {
+                let text = self.note_text(i, cx);
+                (format!("note-{i}"), separator(text, window))
+            }
         };
         let row = div()
             .w_full()
@@ -1314,6 +1329,38 @@ impl ChatScreen {
         .detach();
     }
 
+    /// A note in words (the web's TimelineNote).
+    fn note_text(&self, i: usize, cx: &App) -> String {
+        use crate::{net::types::SubscribeChatItemVia as Via, state::chat::Note};
+        let store = self.store.read(cx);
+        match &self.log.notes[i] {
+            Note::Failover { switch, .. } => crate::labels::switch_text(switch, store),
+            Note::Worktree { agent_id, branch, .. } => t!(
+                "chat.ownCopy",
+                agent = store.agent_name(Some(agent_id)),
+                branch = branch
+            )
+            .into_owned(),
+            Note::Handoff {
+                from, to, via, reason, ..
+            } => {
+                let to = to
+                    .iter()
+                    .map(|id| store.agent_name(Some(id)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let from = store.agent_name(from.as_deref());
+                match (via, reason) {
+                    (Via::Limit, _) => t!("chat.chainStopped").into_owned(),
+                    (Via::Reply, _) => t!("chat.handedBack", from = from, to = to).into_owned(),
+                    (Via::Route, Some(r)) => t!("chat.routedWhy", to = to, reason = r).into_owned(),
+                    (Via::Route, None) => t!("chat.routed", to = to).into_owned(),
+                    _ => t!("chat.handoff", from = from, to = to).into_owned(),
+                }
+            }
+        }
+    }
+
     /// The agents a reply may mention, in their colours; a click starts a chat with one.
     fn mentions(&self, window: &Window, cx: &mut Context<Self>) -> markdown::Mentions {
         let p = theme::palette(window);
@@ -1515,8 +1562,18 @@ impl ChatScreen {
             )
             .into_any_element();
         column.push(actions);
+        // Each failover move of this reply first, as a line of its own.
+        let switches: Vec<AnyElement> = m
+            .switches
+            .iter()
+            .map(|sw| separator(crate::labels::switch_text(sw, self.store.read(cx)), window))
+            .collect();
         div()
             .group(group)
+            .flex()
+            .flex_col()
+            .gap(px(space::X4))
+            .children(switches)
             .child(reply_frame(
                 &m.id,
                 (!bare && !continued).then_some((tone, name, hue, model)),
@@ -2383,4 +2440,19 @@ fn mark_reverted(log: &mut ChatLog, turn: &str, at: Option<f64>) {
         m.reverted_at = at;
     }
     log.revision += 1;
+}
+
+/// A centred line in the timeline (handoffs, failover moves, an agent's own copy): hairlines either side.
+fn separator(text: String, window: &Window) -> AnyElement {
+    let p = theme::palette(window);
+    div()
+        .flex()
+        .items_center()
+        .gap(px(space::X3))
+        .text_sm()
+        .text_color(p.text_muted)
+        .child(div().flex_1().h(px(1.)).bg(p.border))
+        .child(div().max_w(px(576.)).text_center().child(text))
+        .child(div().flex_1().h(px(1.)).bg(p.border))
+        .into_any_element()
 }

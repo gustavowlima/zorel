@@ -194,6 +194,68 @@ fn capitalize(s: &str) -> String {
         .unwrap_or_default()
 }
 
+/// A model on its account when the provider has several (the web's routeLabel): "personal · Opus", else "Opus".
+fn route_label(
+    model: &str,
+    account_id: Option<&str>,
+    accounts: &[crate::net::types::ProviderAccount],
+    models: &[ModelInfo],
+) -> String {
+    let provider = match split_model(model).0 {
+        "claude-cli" => Some("claude"),
+        "codex-cli" => Some("codex"),
+        _ => None,
+    };
+    let mine: Vec<_> = provider
+        .map(|p| accounts.iter().filter(|a| a.provider == p).collect())
+        .unwrap_or_default();
+    let account = mine
+        .iter()
+        .find(|a| Some(a.id.as_str()) == account_id)
+        .or_else(|| mine.iter().find(|a| a.is_default));
+    match account {
+        Some(a) if mine.len() > 1 => format!("{} · {}", a.label, model_name(model, models)),
+        _ => model_name(model, models),
+    }
+}
+
+/// A failover move in words: "Opus hit its limit until 14:30, continuing with Codex".
+pub fn switch_text(sw: &crate::net::types::Switch, store: &Store) -> String {
+    use crate::net::types::SwitchReason as R;
+    let why = match sw.reason {
+        R::Limit => t!(
+            "failover.why.limit",
+            time = sw
+                .until
+                .map(|u| crate::format::time(u, crate::format::now_ms(), crate::format::lang()))
+                .unwrap_or_else(|| "?".into())
+        ),
+        R::RateLimit => t!("failover.why.rate_limit"),
+        R::Billing => t!("failover.why.billing"),
+        R::Unavailable => t!("failover.why.unavailable"),
+        R::Auth => t!("failover.why.auth"),
+        R::Network => t!("failover.why.network"),
+        R::Timeout => t!("failover.why.timeout"),
+    };
+    t!(
+        "failover.switched",
+        from = route_label(
+            &sw.from_model,
+            sw.from_account_id.as_deref(),
+            &store.accounts,
+            &store.models
+        ),
+        why = why,
+        to = route_label(
+            &sw.to_model,
+            sw.to_account_id.as_deref(),
+            &store.accounts,
+            &store.models
+        )
+    )
+    .into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Tone, model_name, pace_of, split_model, tone_of, window_minutes};
