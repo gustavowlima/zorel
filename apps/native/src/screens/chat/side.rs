@@ -391,47 +391,44 @@ impl ChatScreen {
         )
     }
 
-    /// No tab open: what can open (folder-only ones only with a folder), in the panel's middle.
+    /// No tab open: what can open (folder-only ones only with a folder), as a centred column of buttons.
     fn launcher(&self, folder: bool, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let p = theme::palette(window);
         let options = Tab::ALL.into_iter().filter(|t| folder || !t.folder_only()).map(|tab| {
             div()
                 .id(SharedString::from(format!("side-open-{tab:?}")))
+                .w_full()
                 .flex()
                 .items_center()
                 .gap(px(space::X2_5))
-                .h(px(tokens::CONTROL_H))
+                .h(px(44.))
                 .px(px(space::X3))
-                .rounded(px(tokens::RADIUS_ROW))
+                .rounded(px(tokens::RADIUS_CONTROL))
+                .border_1()
+                .border_color(p.border)
+                .bg(p.bg_surface)
                 .text_sm()
-                .text_color(p.text_secondary)
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(p.text)
                 .cursor_pointer()
-                .hover(|s| s.bg(p.bg_control).text_color(p.text))
+                .hover(|s| s.bg(p.bg_control).border_color(p.border_strong))
                 .child(icon(tab.icon(), icon::SM).text_color(p.text_muted))
                 .child(tab.label())
                 .on_click(cx.listener(move |this, _, _, cx| this.open_tab(tab, cx)))
         });
         div()
+            .size_full()
             .flex()
-            .flex_col()
             .items_center()
             .justify_center()
-            .h_full()
-            .px(px(space::X6))
+            .p(px(space::X4))
             .child(
                 div()
+                    .w_full()
+                    .max_w(px(280.))
                     .flex()
                     .flex_col()
-                    .gap(px(space::X0_5))
-                    .w(px(240.))
-                    .child(
-                        div()
-                            .px(px(space::X3))
-                            .pb(px(space::X2))
-                            .text_xs()
-                            .text_color(p.text_muted)
-                            .child(t!("workspace.openTab").into_owned()),
-                    )
+                    .gap(px(space::X2))
                     .children(options),
             )
             .into_any_element()

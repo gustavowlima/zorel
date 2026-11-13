@@ -146,6 +146,7 @@ impl ChatScreen {
                         .id("viewer-backdrop")
                         .absolute()
                         .inset_0()
+                        .rounded(px(tokens::RADIUS_CARD))
                         .bg(p.overlay)
                         .on_click(close),
                 )

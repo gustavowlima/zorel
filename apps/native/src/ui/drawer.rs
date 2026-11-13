@@ -44,8 +44,10 @@ impl Drawer {
             .h_full()
             .flex()
             .flex_col()
-            // Full height, against the card's right edge (which rounds its outer corners).
+            // Full height, against the card's right edge: its outer corners round as the card's (GPUI clips children
+            // to a square, so the card doesn't round them).
             .rounded_l(px(tokens::RADIUS_SHEET))
+            .rounded_r(px(tokens::RADIUS_CARD))
             .bg(p.bg_surface)
             .border_l_1()
             .border_color(p.border_strong)
@@ -128,6 +130,7 @@ impl Drawer {
                     .id(SharedString::from(format!("{}-backdrop", self.id)))
                     .absolute()
                     .inset_0()
+                    .rounded(px(tokens::RADIUS_CARD))
                     .bg(p.overlay)
                     .on_click(move |_, window, cx| backdrop_close(window, cx)),
             )

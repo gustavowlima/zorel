@@ -787,7 +787,6 @@ impl Render for ChatScreen {
 impl ChatScreen {
     // The render body, behind Subsecond's reload point (crate::hot).
     fn view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let p = theme::palette(window);
         // The picker shows the chat's own model.
         if let Some(chat) = self.store.read(cx).chat(&self.chat_id) {
             let choice = ModelChoice {
@@ -807,7 +806,8 @@ impl ChatScreen {
             .relative()
             .flex()
             .size_full()
-            .bg(p.bg_canvas)
+            // No background of its own: the canvas card paints it, rounded (GPUI clips children to a square, so a
+            // square fill here would show past the card's corners).
             .on_mouse_move(cx.listener(|this, e: &MouseMoveEvent, window, cx| {
                 if e.dragging() {
                     this.resize_to(f32::from(e.position.x), window, cx);
