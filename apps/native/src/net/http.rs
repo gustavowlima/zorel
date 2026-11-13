@@ -51,6 +51,21 @@ impl Http {
         Self::read(self.client.get(format!("{}{path}", self.base)).send().await).await
     }
 
+    /// A file's bytes as the engine serves it (an attachment).
+    pub async fn bytes(&self, path: &str) -> Result<Vec<u8>, HttpError> {
+        let response = self
+            .client
+            .get(format!("{}{path}", self.base))
+            .send()
+            .await
+            .map_err(HttpError::Network)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(HttpError::Status(status, response.text().await.unwrap_or_default()));
+        }
+        response.bytes().await.map(|b| b.to_vec()).map_err(HttpError::Network)
+    }
+
     pub async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T, HttpError> {
         Self::read(self.client.post(format!("{}{path}", self.base)).json(body).send().await).await
     }

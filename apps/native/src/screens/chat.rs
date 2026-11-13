@@ -27,6 +27,7 @@ use rust_i18n::t;
 use serde_json::json;
 
 mod access;
+mod attachments;
 mod context;
 mod crew;
 
@@ -136,6 +137,9 @@ pub struct ChatScreen {
     builder: Option<BuilderMode>,
     /// The crew drawer (who is in the chat and what each does), and the agents whose card is open in it.
     crew_agent: Option<String>,
+    /// Attachments' pictures by id (None while one comes), and the one open in the viewer.
+    images: HashMap<String, Option<std::sync::Arc<Image>>>,
+    viewing: Option<crate::net::types::Attachment>,
     /// How full the next turn's context is (screens/chat/context.rs), read on open and after each turn.
     context: Option<crate::net::types::ContextUsage>,
     _subscriptions: Vec<Subscription>,
@@ -450,6 +454,8 @@ impl ChatScreen {
             answers: HashMap::new(),
             builder: None,
             crew_agent: None,
+            images: HashMap::new(),
+            viewing: None,
             context: None,
             _subscriptions: subscriptions,
         }
@@ -1035,20 +1041,8 @@ impl ChatScreen {
         let group = SharedString::from(format!("user-{}", m.id));
         let copied = self.copied.as_deref() == Some(&m.id);
         let (id, body) = (m.id.clone(), m.text.clone());
-        let files = m.attachments.iter().map(|a| {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(space::X1_5))
-                .h(px(tokens::CONTROL_H_SM))
-                .px(px(space::X2_5))
-                .rounded_full()
-                .bg(p.bg_control)
-                .text_size(px(12.5))
-                .text_color(p.text_secondary)
-                .child(icon(IconName::File, icon::XS))
-                .child(div().max_w(px(200.)).truncate().child(a.name.clone()))
-        });
+        let attachments = m.attachments.clone();
+        let files: Vec<AnyElement> = attachments.iter().map(|a| self.attachment(a, window, cx)).collect();
         div()
             .group(group.clone())
             .flex()
@@ -2421,6 +2415,7 @@ impl ChatScreen {
             .children(cards)
             .children(sent)
             .children(queue)
+            .children(self.who_continues(window, cx))
             .child(self.composer.clone())
     }
 }
@@ -2447,6 +2442,7 @@ impl ChatScreen {
         let bottom = self.bottom(window, cx);
         let editor = self.editor(window, cx);
         let crew = self.crew_drawer(window, cx);
+        let viewer = self.viewer(window, cx);
         div()
             .relative()
             .flex()
@@ -2464,6 +2460,7 @@ impl ChatScreen {
             .child(bottom)
             .children(editor)
             .children(crew)
+            .children(viewer)
     }
 }
 
