@@ -516,7 +516,7 @@ impl Composer {
             .flex()
             .flex_col()
             .gap(px(space::X1_5))
-            // With a menu open, the arrows, Tab and Esc are the menu's.
+            // With a menu open, the arrows, Enter, Tab and Esc are the menu's.
             .capture_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| {
                 if !open {
                     return;
@@ -525,6 +525,8 @@ impl Composer {
                     "down" => this.step(1, cx),
                     "up" => this.step(-1, cx),
                     "tab" => this.pick(None, window, cx),
+                    // Enter picks too, before the box can take it as "send".
+                    "enter" if !event.keystroke.modifiers.shift => this.pick(None, window, cx),
                     "escape" => {
                         this.menu = None;
                         cx.notify();
