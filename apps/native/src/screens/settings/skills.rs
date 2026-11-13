@@ -367,7 +367,7 @@ impl Settings {
                 store
                     .agents
                     .iter()
-                    .filter(|a| a.archived_at.is_none())
+                    .filter(|a| a.builtin.is_none() && a.archived_at.is_none())
                     .map(|a| SelectOption {
                         id: format!("agent:{}", a.id),
                         label: t!("scope.agent", name = a.name).into_owned().into(),
