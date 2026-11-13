@@ -189,33 +189,37 @@ impl ChatScreen {
         cx.notify();
     }
 
-    /// A turn's diff, fetched once (None while it comes).
-    fn turn_diff(&mut self, turn: &str, cx: &mut Context<Self>) -> Option<std::rc::Rc<TurnDiff>> {
+    /// A turn's diff, fetched once.
+    fn turn_diff(&mut self, turn: &str, cx: &mut Context<Self>) -> Remote<std::rc::Rc<TurnDiff>> {
         if let Some(known) = self.diffs.get(turn) {
             return known.clone();
         }
-        self.diffs.insert(turn.to_string(), None);
+        self.diffs.insert(turn.to_string(), Remote::Loading);
         let (http, turn) = (self.store.read(cx).http.clone(), turn.to_string());
         let path = format!("/api/turns/{turn}/diff");
         cx.spawn(async move |this, cx| {
-            match runtime::spawn(async move { http.get::<ChatsDiffSuccess>(&path).await }).await {
+            let got = runtime::spawn(async move { http.get::<ChatsDiffSuccess>(&path).await }).await;
+            let parsed = match got {
                 Ok(Ok(d)) => {
                     let files = d.files.into_iter().map(|f| {
                         let lines = diff::parse(&f.patch);
                         (f, lines)
                     });
-                    let parsed = TurnDiff { files: files.collect() };
-                    let _ = this.update(cx, |this, cx| {
-                        this.diffs.insert(turn, Some(std::rc::Rc::new(parsed)));
-                        cx.notify();
-                    });
+                    Remote::Ready(std::rc::Rc::new(TurnDiff { files: files.collect() }))
                 }
-                Ok(Err(e)) => eprintln!("diff: {e}"),
-                Err(_) => {}
-            }
+                Ok(Err(e)) => {
+                    eprintln!("diff: {e}");
+                    Remote::Failed
+                }
+                Err(_) => Remote::Failed,
+            };
+            let _ = this.update(cx, |this, cx| {
+                this.diffs.insert(turn, parsed);
+                cx.notify();
+            });
         })
         .detach();
-        None
+        Remote::Loading
     }
 
     /// The panel's width now (the preference, within what the window allows).
@@ -537,7 +541,15 @@ impl ChatScreen {
             })
             .collect();
         let shown: Vec<AnyElement> = match &diff {
-            None => vec![
+            Remote::Failed => vec![
+                div()
+                    .px(px(space::X2))
+                    .text_sm()
+                    .text_color(p.text_muted)
+                    .child(t!("common.loadFailed").into_owned())
+                    .into_any_element(),
+            ],
+            Remote::Loading => vec![
                 div()
                     .flex()
                     .items_center()
@@ -549,7 +561,7 @@ impl ChatScreen {
                     .child(t!("workspace.loadingDiff").into_owned())
                     .into_any_element(),
             ],
-            Some(d) => d
+            Remote::Ready(d) => d
                 .files
                 .iter()
                 .filter(|(f, _)| path.as_deref().is_none_or(|x| x == f.path))

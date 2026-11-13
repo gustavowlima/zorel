@@ -32,6 +32,7 @@ pub const MAX_FILE_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_OPTIONS: usize = 8;
 
 /// What the person sends: the text and the files chosen.
+#[derive(Clone)]
 pub struct Draft {
     pub text: String,
     pub files: Vec<PathBuf>,

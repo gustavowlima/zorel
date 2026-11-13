@@ -34,6 +34,7 @@ mod files;
 mod git;
 pub mod side;
 
+use crate::state::remote::Remote;
 use crate::{
     format,
     i18n::tn,
@@ -133,6 +134,8 @@ pub struct ChatScreen {
     model: Entity<ModelPicker>,
     /// Messages written while a reply runs: sent one at a time when the chat is idle.
     queue: Vec<Draft>,
+    /// The queue's head is on its way (the next waits for it, so two never leave at once).
+    draining: bool,
     /// What "Send now" did (an i18n key), shown for a few seconds.
     sent: Option<&'static str>,
     answers: HashMap<String, Entity<TextareaState>>,
@@ -140,8 +143,8 @@ pub struct ChatScreen {
     builder: Option<BuilderMode>,
     /// The crew drawer (who is in the chat and what each does), and the agents whose card is open in it.
     crew_agent: Option<String>,
-    /// Attachments' pictures by id (None while one comes), and the one open in the viewer.
-    images: HashMap<String, Option<std::sync::Arc<Image>>>,
+    /// Attachments' pictures by id, and the one open in the viewer.
+    images: HashMap<String, Remote<std::sync::Arc<Image>>>,
     viewing: Option<crate::net::types::Attachment>,
     /// The side panel (screens/chat/side.rs) while open, the turns' diffs fetched so far, its width and a drag of it.
     side: Option<side::Side>,
@@ -152,7 +155,7 @@ pub struct ChatScreen {
     shell_at: usize,
     browser: Option<Entity<crate::screens::browser::Browser>>,
     local_browser: Option<Entity<crate::screens::webview::LocalBrowser>>,
-    diffs: HashMap<String, Option<Rc<side::TurnDiff>>>,
+    diffs: HashMap<String, Remote<Rc<side::TurnDiff>>>,
     side_width: f32,
     resizing: Option<(f32, f32)>,
     /// How full the next turn's context is (screens/chat/context.rs), read on open and after each turn.
@@ -463,6 +466,7 @@ impl ChatScreen {
             undo_errors: HashMap::new(),
             model,
             queue: Vec::new(),
+            draining: false,
             sent: None,
             answers: HashMap::new(),
             builder: None,
@@ -754,47 +758,59 @@ impl ChatScreen {
         self.deliver(draft, window, cx);
     }
 
-    fn deliver(&mut self, draft: Draft, window: &mut Window, cx: &mut Context<Self>) {
+    /// Sends a message: first adds the agents it @mentions to the chat, then delivers it. Resolves to why it failed.
+    fn send(&self, draft: Draft, cx: &App) -> impl std::future::Future<Output = Result<(), String>> + use<> {
         let store = self.store.read(cx);
         let (http, rpc, chat_id) = (store.http.clone(), self.rpc.clone(), self.chat_id.clone());
-        let Draft { text, files } = draft;
-        let sent = text.clone();
-        let join = self.joining(&text, cx);
+        let join = self.joining(&draft.text, cx);
         let task = runtime::spawn(async move {
             if let Some(agent_ids) = join {
                 http.patch::<_, serde_json::Value>(&format!("/api/chats/{chat_id}"), &json!({ "agentIds": agent_ids }))
                     .await
                     .map_err(|_| t!("chat.addFailed").into_owned())?;
             }
-            crate::net::send::deliver(&http, &rpc, &chat_id, &text, files).await
+            crate::net::send::deliver(&http, &rpc, &chat_id, &draft.text, draft.files).await
         });
+        async move { task.await.unwrap_or_else(|_| Err(t!("chat.sendFailed").into_owned())) }
+    }
+
+    /// Sends what was typed; failed, the text goes back in the box with why.
+    fn deliver(&mut self, draft: Draft, window: &mut Window, cx: &mut Context<Self>) {
+        let typed = draft.text.clone();
+        let sent = self.send(draft, cx);
         cx.spawn_in(window, async move |this, cx| {
-            let failed = match task.await {
-                Ok(Ok(())) => None,
-                Ok(Err(msg)) => Some(msg),
-                Err(_) => Some(t!("chat.sendFailed").into_owned()),
-            };
+            let failed = sent.await.err();
             let _ = this.update_in(cx, |this, window, cx| match failed {
-                Some(msg) => this.composer.update(cx, |c, cx| c.restore(sent, msg, window, cx)),
+                Some(msg) => this.composer.update(cx, |c, cx| c.restore(typed, msg, window, cx)),
                 None => this.store.update(cx, |s, cx| s.reload_chats(cx)), // someone may have joined
             });
         })
         .detach();
     }
 
-    /// The chat is free: the next queued message goes.
+    /// The chat is free: the next queued message goes, one at a time. Failed, it stays at the queue's front.
     fn drain(&mut self, cx: &mut Context<Self>) {
-        if self.busy() || self.queue.is_empty() {
+        if self.draining || self.busy() || self.queue.is_empty() {
             return;
         }
+        self.draining = true;
         let draft = self.queue.remove(0);
-        let store = self.store.read(cx);
-        let (http, rpc, chat_id) = (store.http.clone(), self.rpc.clone(), self.chat_id.clone());
-        runtime::spawn(async move {
-            if let Err(e) = crate::net::send::deliver(&http, &rpc, &chat_id, &draft.text, draft.files).await {
-                eprintln!("queue: {e}");
-            }
-        });
+        let sent = self.send(draft.clone(), cx);
+        cx.spawn(async move |this, cx| {
+            let result = sent.await;
+            let _ = this.update(cx, |this, cx| {
+                this.draining = false;
+                match result {
+                    Ok(()) => this.store.update(cx, |s, cx| s.reload_chats(cx)),
+                    Err(e) => {
+                        eprintln!("queue: {e}");
+                        this.queue.insert(0, draft);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// "Send now": the queued message leaves the queue and joins the reply in progress (Claude, Codex, no files) or

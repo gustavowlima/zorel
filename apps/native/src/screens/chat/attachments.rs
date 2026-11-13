@@ -10,25 +10,34 @@ use crate::net::types::Attachment;
 const THUMB_H: f32 = 112.;
 
 impl ChatScreen {
-    /// An image's picture, fetched once (None while it comes, or if it couldn't).
-    fn picture(&mut self, a: &Attachment, cx: &mut Context<Self>) -> Option<Arc<Image>> {
+    /// An image's picture, fetched once.
+    fn picture(&mut self, a: &Attachment, cx: &mut Context<Self>) -> Remote<Arc<Image>> {
         if let Some(known) = self.images.get(&a.id) {
             return known.clone();
         }
-        let format = ImageFormat::from_mime_type(&a.mime)?;
-        self.images.insert(a.id.clone(), None);
+        let Some(format) = ImageFormat::from_mime_type(&a.mime) else {
+            return Remote::Failed;
+        };
+        self.images.insert(a.id.clone(), Remote::Loading);
         let (http, id) = (self.store.read(cx).http.clone(), a.id.clone());
         let path = format!("/api/attachments/{id}");
         cx.spawn(async move |this, cx| {
-            if let Ok(Ok(bytes)) = runtime::spawn(async move { http.bytes(&path).await }).await {
-                let _ = this.update(cx, |this, cx| {
-                    this.images.insert(id, Some(Arc::new(Image::from_bytes(format, bytes))));
-                    cx.notify();
-                });
-            }
+            let got = runtime::spawn(async move { http.bytes(&path).await }).await;
+            let picture = match got {
+                Ok(Ok(bytes)) => Remote::Ready(Arc::new(Image::from_bytes(format, bytes))),
+                Ok(Err(e)) => {
+                    eprintln!("attachment: {e}");
+                    Remote::Failed
+                }
+                Err(_) => Remote::Failed,
+            };
+            let _ = this.update(cx, |this, cx| {
+                this.images.insert(id, picture);
+                cx.notify();
+            });
         })
         .detach();
-        None
+        Remote::Loading
     }
 
     /// Opens an attachment in the app the system picks for it (a copy in the temporary folder).
@@ -63,8 +72,9 @@ impl ChatScreen {
     pub(super) fn attachment(&mut self, a: &Attachment, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = theme::palette(window);
         let id = SharedString::from(format!("attachment-{}", a.id));
-        if ImageFormat::from_mime_type(&a.mime).is_some() {
-            let picture = self.picture(a, cx);
+        // An image as a thumbnail; one that couldn't be read is a chip like any file.
+        let picture = self.picture(a, cx);
+        if !matches!(picture, Remote::Failed) {
             let shown = a.clone();
             return div()
                 .id(id)
@@ -78,8 +88,8 @@ impl ChatScreen {
                 .bg(p.bg_control)
                 .cursor_pointer()
                 .map(|d| match picture {
-                    Some(image) => d.child(img(image).h_full().object_fit(ObjectFit::Cover)),
-                    None => d
+                    Remote::Ready(image) => d.child(img(image).h_full().object_fit(ObjectFit::Cover)),
+                    _ => d
                         .flex()
                         .items_center()
                         .justify_center()
@@ -179,13 +189,18 @@ impl ChatScreen {
                         .justify_center()
                         .p(px(space::X6))
                         .child(match picture {
-                            Some(image) => img(image)
+                            Remote::Ready(image) => img(image)
                                 .max_w_full()
                                 .max_h_full()
                                 .object_fit(ObjectFit::Contain)
                                 .rounded(px(tokens::RADIUS_CARD))
                                 .into_any_element(),
-                            None => Loader::new("viewer-loading").size(icon::MD).into_any_element(),
+                            Remote::Loading => Loader::new("viewer-loading").size(icon::MD).into_any_element(),
+                            Remote::Failed => div()
+                                .text_sm()
+                                .text_color(p.text_muted)
+                                .child(t!("common.loadFailed").into_owned())
+                                .into_any_element(),
                         }),
                 )
                 .into_any_element(),
