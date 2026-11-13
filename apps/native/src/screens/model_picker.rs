@@ -729,9 +729,20 @@ impl ModelPicker {
     }
 }
 
-/// A provider's mark, or a neutral box for one without.
+/// The marks drawn in their own colours (the brands' logos); the rest are single-colour and follow the theme.
+const COLOURED: [&str; 5] = [
+    "providers/claude.svg",
+    "providers/codex.svg",
+    "providers/openrouter.svg",
+    "providers/gemini.svg",
+    "providers/antigravity.svg",
+];
+
+/// A provider's mark (its logo in colour when it has one), or a neutral box for one without.
 pub(crate) fn mark(provider: &str, size: f32, color: Rgba) -> AnyElement {
     match provider_mark(provider) {
+        // `svg()` paints one colour; a logo in colour is drawn as an image.
+        Some(path) if COLOURED.contains(&path) => img(path).size(px(size)).flex_none().into_any_element(),
         Some(path) => svg()
             .path(path)
             .size(px(size))
