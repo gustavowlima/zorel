@@ -331,16 +331,16 @@ fn list(
             cx,
         );
         let (open, dismiss, agent) = (on_session.clone(), dismiss.clone(), a.id.clone());
-        let who = div()
+        // The whole row opens the agent's session; Make lead and × keep their own presses.
+        let row = div()
             .id(id)
             .role(Role::Button)
             .aria_label(SharedString::from(t!("team.session").into_owned() + " · " + &a.name))
             .flex()
-            .flex_1()
-            .min_w_0()
             .items_center()
             .gap(px(space::X2_5))
-            .px(px(space::X2))
+            .pl(px(space::X2))
+            .pr(px(space::X1))
             .py(px(space::X1_5))
             .rounded(px(tokens::RADIUS_ROW))
             .bg(bg)
@@ -354,21 +354,13 @@ fn list(
                     .child(div().truncate().font_weight(FontWeight::MEDIUM).child(a.name.clone()))
                     .child(div().truncate().text_sm().text_color(p.text_muted).child(hint.clone())),
             )
+            .child(action)
+            .children(remove)
             .on_click(move |_, window, cx| {
                 dismiss(window, cx);
                 open(agent.clone(), window, cx);
             });
-        rows.push(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(space::X1))
-                .pr(px(space::X1))
-                .child(motion::track(who, &pointer))
-                .child(action)
-                .children(remove)
-                .into_any_element(),
-        );
+        rows.push(motion::track(row, &pointer).into_any_element());
     }
     let agents = agents_to_add(store, chat_id, window, cx);
     if !agents.is_empty() {

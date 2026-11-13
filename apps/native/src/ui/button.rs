@@ -225,7 +225,13 @@ impl RenderOnce for Button {
             .when(self.size == Size::Sm || self.size == Size::Xs, |b| b.text_sm())
             .font_weight(FontWeight::MEDIUM)
             .when(self.disabled, |b| b.opacity(0.5))
-            .when_some(self.on_click, |b, handler| b.on_click(handler))
+            // A button's press is its own: the row or card around it doesn't act too.
+            .when_some(self.on_click, |b, handler| {
+                b.on_click(move |e, window, cx| {
+                    cx.stop_propagation();
+                    handler(e, window, cx)
+                })
+            })
             .when_some(self.icon, |b, name| b.child(icon(name, icon_size).text_color(fg_now)))
             .when(self.stop, |b| {
                 b.child(div().size(px(icon_size * 0.7)).rounded(px(2.)).bg(fg_now))
