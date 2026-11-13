@@ -8,6 +8,8 @@
 mod connectors;
 mod processes;
 mod providers;
+mod servers;
+mod skills;
 
 use std::rc::Rc;
 
@@ -35,22 +37,32 @@ pub enum Section {
     General,
     Providers,
     Connectors,
+    Servers,
+    Skills,
+    Appearance,
     Processes,
 }
 
 impl Section {
-    pub const ALL: [Section; 4] = [
+    pub const ALL: [Section; 7] = [
         Section::General,
         Section::Providers,
         Section::Connectors,
+        Section::Servers,
+        Section::Skills,
+        Section::Appearance,
         Section::Processes,
     ];
 
+    /// Its i18n key under settings.* (and settings.hint.*).
     fn key(self) -> &'static str {
         match self {
             Section::General => "general",
-            Section::Providers => "providers",
+            Section::Providers => "accounts",
             Section::Connectors => "mcp",
+            Section::Servers => "servers",
+            Section::Skills => "skills",
+            Section::Appearance => "appearance",
             Section::Processes => "processes",
         }
     }
@@ -60,6 +72,9 @@ impl Section {
             Section::General => IconName::Settings,
             Section::Providers => IconName::Sparkles,
             Section::Connectors => IconName::Plug,
+            Section::Servers => IconName::SquareTerminal,
+            Section::Skills => IconName::Brain,
+            Section::Appearance => IconName::Sun,
             Section::Processes => IconName::Gauge,
         }
     }
@@ -73,8 +88,9 @@ pub struct Settings {
     section: Section,
     prefs: Option<Preferences>,
     providers: providers::Providers,
-    connectors: connectors::Connectors,
+    connectors: servers::Connectors,
     processes: processes::Processes,
+    skills: skills::Skills,
 }
 
 impl Settings {
@@ -87,7 +103,9 @@ impl Settings {
             providers: Default::default(),
             connectors: Default::default(),
             processes: Default::default(),
+            skills: Default::default(),
         };
+        this.load_connectors(cx);
         this.load_prefs(cx);
         this
     }
@@ -129,7 +147,7 @@ impl Settings {
         .detach();
     }
 
-    fn general(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn appearance(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = theme::palette(window);
         let local = Prefs::load();
         let theme_at = match local.theme.as_str() {
@@ -201,6 +219,36 @@ impl Settings {
             window,
             cx,
         );
+        group(
+            t!("appearance.title").into_owned(),
+            vec![
+                row(
+                    t!("appearance.theme").into_owned(),
+                    t!("appearance.themeHint").into_owned(),
+                    theme_pick.into_any_element(),
+                    p,
+                ),
+                row(
+                    t!("appearance.language").into_owned(),
+                    t!("appearance.languageHint").into_owned(),
+                    language.into_any_element(),
+                    p,
+                ),
+                row(
+                    t!("appearance.liveSteps").into_owned(),
+                    t!("appearance.liveStepsHint").into_owned(),
+                    steps,
+                    p,
+                ),
+            ],
+            p,
+        )
+        .into_any_element()
+    }
+
+    /// Zorel itself: what a new memory becomes, how many agents work at once, the version.
+    fn general(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let p = theme::palette(window);
         let prefs = self.prefs.clone();
         let approval_now = prefs.as_ref().map_or("review".to_string(), |p| {
             serde_json::to_value(p.memory_approval)
@@ -279,30 +327,6 @@ impl Settings {
             .flex()
             .flex_col()
             .gap(px(space::X8))
-            .child(group(
-                t!("appearance.title").into_owned(),
-                vec![
-                    row(
-                        t!("appearance.theme").into_owned(),
-                        t!("appearance.themeHint").into_owned(),
-                        theme_pick.into_any_element(),
-                        p,
-                    ),
-                    row(
-                        t!("appearance.language").into_owned(),
-                        t!("appearance.languageHint").into_owned(),
-                        language.into_any_element(),
-                        p,
-                    ),
-                    row(
-                        t!("appearance.liveSteps").into_owned(),
-                        t!("appearance.liveStepsHint").into_owned(),
-                        steps,
-                        p,
-                    ),
-                ],
-                p,
-            ))
             .child(group(
                 t!("settings.modelsTitle").into_owned(),
                 vec![row(
@@ -390,6 +414,31 @@ pub(crate) fn row(title: String, hint: String, control: AnyElement, p: &theme::t
         .into_any_element()
 }
 
+impl Settings {
+    /// What each section holds, for the menu: accounts, connectors on, servers added, skills in use.
+    fn counts(&self, cx: &App) -> Vec<(Section, usize)> {
+        let store = self.store.read(cx);
+        let servers = self.connectors.list.as_deref().unwrap_or_default();
+        let catalog = servers.iter().filter(|s| connectors::catalog_of(s).is_some()).count();
+        vec![
+            (Section::Providers, store.accounts.len()),
+            (Section::Connectors, catalog),
+            (Section::Servers, servers.len() - catalog),
+            (
+                Section::Skills,
+                store
+                    .memories
+                    .iter()
+                    .filter(|m| {
+                        matches!(m.kind, crate::net::types::MemoryKind::Skill)
+                            && !matches!(m.state, crate::net::types::MemoryState::Forgotten)
+                    })
+                    .count(),
+            ),
+        ]
+    }
+}
+
 impl Render for Settings {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::hot::call(|| self.view(window, cx))
@@ -400,6 +449,7 @@ impl Settings {
     fn view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let p = theme::palette(window);
         let current = self.section;
+        let counts = self.counts(cx);
         let nav: Vec<AnyElement> = Section::ALL
             .iter()
             .map(|&s| {
@@ -416,7 +466,14 @@ impl Settings {
                     .when(active, |d| d.bg(p.bg_control).font_weight(FontWeight::MEDIUM))
                     .hover(|d| d.bg(p.bg_control))
                     .child(icon(s.icon(), icon::MD).text_color(if active { p.text } else { p.text_muted }))
-                    .child(t!(format!("settings.{}", s.key())).into_owned())
+                    .child(div().flex_1().child(t!(format!("settings.{}", s.key())).into_owned()))
+                    .children(
+                        counts
+                            .iter()
+                            .find(|(x, _)| *x == s)
+                            .filter(|(_, n)| *n > 0)
+                            .map(|(_, n)| div().text_sm().text_color(p.text_muted).child(n.to_string())),
+                    )
                     .on_click(cx.listener(move |this, _, _, cx| this.open(s, cx)))
                     .into_any_element()
             })
@@ -425,6 +482,9 @@ impl Settings {
             Section::General => self.general(window, cx),
             Section::Providers => self.providers_view(window, cx),
             Section::Connectors => self.connectors_view(window, cx),
+            Section::Servers => self.servers_view(window, cx),
+            Section::Skills => self.skills_view(window, cx),
+            Section::Appearance => self.appearance(window, cx),
             Section::Processes => self.processes_view(window, cx),
         };
         div()
