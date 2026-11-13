@@ -730,7 +730,7 @@ impl ModelPicker {
 }
 
 /// A provider's mark, or a neutral box for one without.
-fn mark(provider: &str, size: f32, color: Rgba) -> AnyElement {
+pub(crate) fn mark(provider: &str, size: f32, color: Rgba) -> AnyElement {
     match provider_mark(provider) {
         Some(path) => svg()
             .path(path)

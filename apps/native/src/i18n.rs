@@ -8,9 +8,23 @@ const LANGUAGES: [&str; 2] = ["en", "pt-BR"];
 
 /// The system's language when Zorel has it, else English (packages/i18n: a Portuguese system gets pt-BR).
 pub fn init() {
-    let system = sys_locale::get_locale().unwrap_or_default().to_lowercase();
-    let lang = if system.starts_with("pt") { "pt-BR" } else { "en" };
-    rust_i18n::set_locale(lang);
+    set(&crate::state::prefs::Prefs::load().language);
+}
+
+/// Sets the interface language: "en", "pt-BR", or the system's ("system", empty). Texts change on the next paint.
+pub fn set(pref: &str) {
+    let lang = match pref {
+        "en" | "pt-BR" => pref.to_string(),
+        _ => {
+            let system = sys_locale::get_locale().unwrap_or_default().to_lowercase();
+            if system.starts_with("pt") {
+                "pt-BR".into()
+            } else {
+                "en".into()
+            }
+        }
+    };
+    rust_i18n::set_locale(&lang);
 }
 
 /// A plural message: `{one, other}` in the catalog, picked by the current language's rules, `%{count}` filled.

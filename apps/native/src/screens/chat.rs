@@ -2176,8 +2176,9 @@ impl ChatScreen {
             .collect();
         let summary = steps::summarize(&summed);
         // Open unless closed here (the key marks a closed live group).
-        let closed_key = format!("{key}-closed");
-        let open = !self.open.contains(&closed_key);
+        // Open by default (or folded, per Settings); pressing the head flips it.
+        let closed_key = format!("{key}-toggled");
+        let open = crate::state::prefs::steps_folded() == self.open.contains(&closed_key);
         let working = group
             .iter()
             .find(|s| matches!(s.status, WorkStepStatus::Running | WorkStepStatus::Waiting));

@@ -1,7 +1,6 @@
 // The sidebar's foot (parity/sidebar.md › Foot): Usage (a popover with every signed-in account's limit windows, the
 // account most at risk marked on the icon), Pause / Resume all agents, Settings. Folded, the same in a column.
-// ponytail: Settings and Usage's "See all" open their screens once those exist; until then Settings is disabled and
-// "See all" isn't offered.
+// ponytail: Usage's "See all" opens its screen once that exists; until then it isn't offered.
 use gpui_kit::{assets::IconName, component::popover::Popover, prelude::FluentBuilder, *};
 use rust_i18n::t;
 
@@ -228,7 +227,13 @@ impl Sidebar {
         .on_click(move |_, _, cx| store_entity.update(cx, |s, cx| s.set_paused(!paused, cx)));
         let settings = Button::icon_only("settings", IconName::Settings, t!("nav.settings").into_owned())
             .size(if folded { Size::Md } else { Size::Sm })
-            .disabled(true);
+            .on_click(cx.listener(|_, _, _, cx| {
+                cx.emit(crate::screens::sidebar::SidebarEvent::Navigate(
+                    crate::route::Route::Settings {
+                        section: crate::screens::settings::Section::General,
+                    },
+                ))
+            }));
         div()
             .flex()
             .flex_none()

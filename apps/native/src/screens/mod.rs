@@ -13,6 +13,7 @@ pub mod mentions;
 pub mod model_picker;
 pub mod palette;
 pub mod proposal;
+pub mod settings;
 pub mod sidebar;
 mod sidebar_actions;
 mod sidebar_foot;

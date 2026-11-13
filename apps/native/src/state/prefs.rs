@@ -5,6 +5,13 @@ use std::{collections::BTreeSet, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+/// Live steps start folded (Settings › Live steps off), read on every frame without touching the disk.
+pub static STEPS_FOLDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn steps_folded() -> bool {
+    STEPS_FOLDED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[derive(Default, Serialize, Deserialize, Clone, PartialEq, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Prefs {
@@ -18,6 +25,12 @@ pub struct Prefs {
     pub full_access_confirmed: bool,
     /// The chat's side panel width (px); 0: the default.
     pub side_width: f32,
+    /// "system" (or empty), "dark" or "light".
+    pub theme: String,
+    /// "system" (or empty), "en" or "pt-BR".
+    pub language: String,
+    /// A reply's live steps start folded (Settings › Live steps off).
+    pub live_steps_folded: bool,
 }
 
 fn file() -> Option<PathBuf> {
@@ -26,10 +39,12 @@ fn file() -> Option<PathBuf> {
 
 impl Prefs {
     pub fn load() -> Self {
-        file()
+        let prefs: Self = file()
             .and_then(|f| std::fs::read_to_string(f).ok())
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        STEPS_FOLDED.store(prefs.live_steps_folded, std::sync::atomic::Ordering::Relaxed);
+        prefs
     }
 
     pub fn save(&self) {

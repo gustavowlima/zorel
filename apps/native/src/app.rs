@@ -46,6 +46,8 @@ struct Root {
     agents: Option<Entity<Agents>>,
     /// The agent page open now (made per visit).
     agent_page: Option<Entity<crate::screens::agent_page::AgentPage>>,
+    /// Settings, made on first visit and kept.
+    settings: Option<Entity<crate::screens::settings::Settings>>,
     /// Build with AI: a fresh conversation with the Builder per visit.
     builder: Option<Entity<Builder>>,
     sidebar: Option<Entity<Sidebar>>,
@@ -96,6 +98,7 @@ impl Root {
             home: None,
             agents: None,
             agent_page: None,
+            settings: None,
             builder: None,
             sidebar: None,
             notifier: Notifier::default(),
@@ -235,6 +238,18 @@ impl Root {
                 }
             }
             Route::Agents => {}
+            Route::Settings { section } => {
+                if let Some(store) = self.store.clone() {
+                    let section = *section;
+                    match &self.settings {
+                        Some(s) => s.update(cx, |s, cx| s.open(section, cx)),
+                        None => {
+                            self.settings =
+                                Some(cx.new(|cx| crate::screens::settings::Settings::new(store, section, cx)))
+                        }
+                    }
+                }
+            }
             Route::Agent { id } => {
                 if let Some(store) = self.store.clone() {
                     use crate::screens::agent_page::{AgentPage, AgentPageEvent, Tab};
@@ -368,6 +383,7 @@ impl Root {
             Route::Home { .. } => self.home.clone().map(|h| h.into_any_element()),
             Route::Agents => self.agents.clone().map(|a| a.into_any_element()),
             Route::Agent { .. } => self.agent_page.clone().map(|a| a.into_any_element()),
+            Route::Settings { .. } => self.settings.clone().map(|s| s.into_any_element()),
             Route::Builder { .. } => self.builder.clone().map(|b| b.into_any_element()),
         };
         // Folded, the rail is narrower than the traffic lights: the title starts after them.
@@ -435,6 +451,7 @@ impl Root {
             Route::Inbox => Header::new(t!("inbox.title").into_owned()),
             Route::Agents => unreachable!("drawn above"),
             Route::Agent { id } => Header::new(t!("agents.title").into_owned()).context(store.agent_name(Some(id))),
+            Route::Settings { .. } => Header::new(t!("settings.title").into_owned()),
             Route::Builder { .. } => {
                 Header::new(t!("builder.title").into_owned()).context(t!("builder.subtitle").into_owned())
             }

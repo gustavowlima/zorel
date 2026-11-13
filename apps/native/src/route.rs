@@ -12,6 +12,10 @@ pub enum Route {
     },
     /// The agents: every one, by project.
     Agents,
+    /// Settings, on one section.
+    Settings {
+        section: crate::screens::settings::Section,
+    },
     /// An agent's page, on one of its tabs.
     Agent {
         id: String,
