@@ -3,7 +3,8 @@
 // (360 to 70% of the window, kept in the preferences), and the open tab's body. Changes lists the turns that
 // changed files, newest first: a turn opens to its files (status, path, +/−) and their diffs (ui/diff), fetched once
 // per turn; a file narrows the diffs to it. "View" on a reply's changes opens the panel on that turn.
-// ponytail: Pull request, Files, Browser and Terminal tabs come next (parity/chat.md › C); the + menu lists what exists.
+// Files: screens/chat/files.rs. ponytail: Pull request, Browser and Terminal come next (parity/chat.md › C); the +
+// menu lists what exists (folder-only tabs only with a folder).
 use super::*;
 
 use crate::{
@@ -18,21 +19,29 @@ const DEFAULT_WIDTH: f32 = 560.;
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Tab {
     Changes,
+    Files,
 }
 
 impl Tab {
-    const ALL: [Tab; 1] = [Tab::Changes];
+    const ALL: [Tab; 2] = [Tab::Changes, Tab::Files];
 
     fn label(self) -> String {
         match self {
             Tab::Changes => t!("workspace.changes").into_owned(),
+            Tab::Files => t!("workspace.files").into_owned(),
         }
     }
 
     fn icon(self) -> IconName {
         match self {
             Tab::Changes => IconName::PanelRight,
+            Tab::Files => IconName::Folder,
         }
+    }
+
+    /// Needs the project's folder.
+    fn folder_only(self) -> bool {
+        matches!(self, Tab::Files)
     }
 }
 
@@ -40,7 +49,7 @@ impl Tab {
 pub struct Side {
     tabs: Vec<Tab>,
     current: Tab,
-    focus: Option<(String, Option<String>)>,
+    pub(super) focus: Option<(String, Option<String>)>,
 }
 
 /// A turn's diff, each file's patch parsed once.
@@ -83,6 +92,16 @@ impl ChatScreen {
             .filter(|m| m.reverted_at.is_none())
             .flat_map(|m| m.changes.iter())
             .fold((0., 0.), |(a, r), c| (a + c.added, r + c.removed))
+    }
+
+    /// Whether the chat's project has a folder (Files, Pull request and Terminal need one).
+    fn has_folder(&self, cx: &App) -> bool {
+        let store = self.store.read(cx);
+        store
+            .chat(&self.chat_id)
+            .and_then(|c| c.project_id.as_deref())
+            .and_then(|id| store.projects.iter().find(|p| p.id == id))
+            .is_some_and(|p| p.path.is_some())
     }
 
     pub fn side_open(&self) -> bool {
@@ -247,9 +266,10 @@ impl ChatScreen {
                 .on_click(cx.listener(move |this, _, _, cx| this.open_tab(tab, cx)))
         });
         let view = cx.entity().downgrade();
+        let folder = self.has_folder(cx);
         let items: crate::ui::menu::Items = Rc::new(move || {
             let mut m = crate::ui::menu::Menu::default();
-            for tab in Tab::ALL {
+            for tab in Tab::ALL.into_iter().filter(|t| folder || !t.folder_only()) {
                 let view = view.clone();
                 m = m
                     .item(tab.label(), move |_, cx| {
@@ -293,6 +313,7 @@ impl ChatScreen {
             );
         let body = match current {
             Tab::Changes => self.changes_tab(window, cx),
+            Tab::Files => self.files_tab(window, cx),
         };
         // The left edge: a hairline that lights on hover, a wider grip to drag.
         let edge = div()
@@ -322,7 +343,11 @@ impl ChatScreen {
                 .h_full()
                 .child(edge)
                 .child(head)
-                .child(div().id("side-body").flex_1().min_h_0().overflow_y_scroll().child(body))
+                .child(match current {
+                    // Files scrolls its own tree and file.
+                    Tab::Files => div().id("side-body").flex_1().min_h_0().child(body),
+                    _ => div().id("side-body").flex_1().min_h_0().overflow_y_scroll().child(body),
+                })
                 .into_any_element(),
         )
     }

@@ -153,6 +153,8 @@ pub struct Composer {
     menu: Option<Menu>,
     large: bool,
     _subscription: Subscription,
+    /// Text to add at the end on the next frame (it needs the window to edit the box).
+    pending_append: Option<String>,
     /// Enter while the menu is open picks (screens/composer.rs › new).
     _enter: Subscription,
 }
@@ -214,6 +216,7 @@ impl Composer {
             large,
             _subscription: sub,
             _enter: enter,
+            pending_append: None,
         }
     }
 
@@ -232,6 +235,12 @@ impl Composer {
     }
 
     /// Sending failed: the text comes back and the reason shows under the box.
+    /// Adds a paragraph at the end of the box (a file's path, a terminal's selection) and focuses it.
+    pub fn append(&mut self, text: String, cx: &mut Context<Self>) {
+        self.pending_append = Some(text);
+        cx.notify();
+    }
+
     /// Puts text in the box (a rewound message) and focuses it.
     pub fn set_text(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
         self.text.update(cx, |t, cx| t.set_value(text, window, cx));
@@ -490,6 +499,16 @@ impl Render for Composer {
 impl Composer {
     // The render body, behind Subsecond's reload point (crate::hot).
     fn view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        if let Some(more) = self.pending_append.take() {
+            let now = self.text.read(cx).value().trim_end().to_string();
+            let next = if now.is_empty() {
+                more
+            } else {
+                format!("{now}\n\n{more}")
+            };
+            self.text.update(cx, |t, cx| t.set_value(next, window, cx));
+            self.focus(window, cx);
+        }
         let p = theme::palette(window);
         let chips: Vec<AnyElement> = self
             .files

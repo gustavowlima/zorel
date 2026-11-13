@@ -11,6 +11,7 @@ export const part1 = {
   },
   common: {
     cancel: "Cancelar",
+    reload: "Recarregar",
     save: "Salvar",
     delete: "Excluir",
     remove: "Remover",

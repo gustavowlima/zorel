@@ -133,7 +133,7 @@ impl Http {
 }
 
 /// JavaScript's encodeURIComponent: what the engine decodes the file name with.
-fn uri_encode(s: &str) -> String {
+pub fn uri_encode(s: &str) -> String {
     s.bytes()
         .map(|b| match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')' => {

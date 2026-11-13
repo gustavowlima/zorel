@@ -10,6 +10,7 @@
   },
   "common": {
     "cancel": "Cancelar",
+    "reload": "Recarregar",
     "save": "Salvar",
     "delete": "Excluir",
     "remove": "Remover",

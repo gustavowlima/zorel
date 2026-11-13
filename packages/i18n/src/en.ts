@@ -12,6 +12,7 @@ export const en = {
   },
   common: {
     cancel: "Cancel",
+    reload: "Reload",
     save: "Save",
     delete: "Delete",
     remove: "Remove",
