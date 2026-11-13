@@ -234,8 +234,9 @@ impl Root {
                     match &self.settings {
                         Some(s) => s.update(cx, |s, cx| s.open(section, cx)),
                         None => {
-                            self.settings =
-                                Some(cx.new(|cx| crate::screens::settings::Settings::new(store, section, cx)))
+                            let settings = cx.new(|cx| crate::screens::settings::Settings::new(store, section, cx));
+                            cx.observe(&settings, |_, _, cx| cx.notify()).detach(); // the strip follows its section
+                            self.settings = Some(settings)
                         }
                     }
                 }
@@ -455,7 +456,25 @@ impl Root {
                     None => header,
                 }
             }
-            Route::Settings { .. } => Header::new(t!("settings.title").into_owned()),
+            Route::Settings { .. } => {
+                let header = Header::new(t!("settings.title").into_owned());
+                match &self.settings {
+                    // Skills' action sits in the strip, beside the title's row.
+                    Some(settings) if settings.read(cx).section() == crate::screens::settings::Section::Skills => {
+                        let settings = settings.clone();
+                        header.trailing(
+                            Button::new("skills-new", t!("skills.new").into_owned())
+                                .icon(IconName::Plus)
+                                .variant(Variant::Primary)
+                                .size(btn::Size::Sm)
+                                .on_click(move |_, window, cx| {
+                                    crate::screens::settings::Settings::new_skill_dialog(&settings, window, cx)
+                                }),
+                        )
+                    }
+                    _ => header,
+                }
+            }
             Route::Builder { .. } => {
                 Header::new(t!("builder.title").into_owned()).context(t!("builder.subtitle").into_owned())
             }

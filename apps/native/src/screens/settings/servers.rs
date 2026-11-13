@@ -157,7 +157,9 @@ impl Settings {
         .detach();
     }
 
-    pub(super) fn servers_view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    /// Connectors you added yourself (any MCP server, local or remote), at the end of Settings › Connectors: their
+    /// list, the form while adding one, and "Add a custom connector".
+    pub(super) fn custom_connectors(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = theme::palette(window);
         if self.connectors.list.is_none() {
             self.connectors.list = Some(Vec::new());
@@ -399,87 +401,63 @@ impl Settings {
             .flex()
             .flex_col()
             .gap(px(space::X3))
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(p.text_muted)
-                    .child(t!("settings.customServers").into_owned()),
-            )
-            .when_some(self.connectors.error.clone(), |d, e| {
-                d.child(div().text_sm().text_color(p.danger).child(e))
-            })
-            .when(rows.is_empty() && !self.connectors.adding, |d| {
-                d.child(crate::ui::scene::inset(
-                    "mcp-empty",
-                    crate::ui::scene::Moment::Connect,
-                    t!("mcp.empty").into_owned(),
-                    Some(t!("mcp.emptyHint").into_owned().into()),
-                    window,
-                    cx,
-                ))
-            })
             .when(!rows.is_empty(), |d| {
-                d.child(super::list(String::new(), rows, space::X3, p))
+                d.child(super::list(
+                    t!("settings.customConnectors").into_owned(),
+                    rows,
+                    space::X3,
+                    p,
+                ))
             })
             .children(form)
             .when(!self.connectors.adding, |d| {
                 d.child(
-                    div()
-                        .flex()
-                        .gap(px(space::X2))
-                        .child(
-                            Button::new("mcp-add-local", t!("settings.addLocal").into_owned())
-                                .variant(Variant::Secondary)
-                                .size(Size::Sm)
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.connectors.adding = true;
-                                    this.connectors.remote = false;
-                                    cx.notify();
-                                })),
-                        )
-                        .child(
-                            Button::new("mcp-add-remote", t!("settings.addRemote").into_owned())
-                                .variant(Variant::Secondary)
-                                .size(Size::Sm)
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.connectors.adding = true;
-                                    this.connectors.remote = true;
-                                    cx.notify();
-                                })),
-                        ),
+                    div().flex().child(
+                        Button::new("mcp-add-custom", t!("settings.addCustom").into_owned())
+                            .icon(IconName::Plus)
+                            .variant(Variant::Secondary)
+                            .size(Size::Sm)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.connectors.adding = true;
+                                this.connectors.remote = false;
+                                cx.notify();
+                            })),
+                    ),
                 )
             })
-            // What each mode means.
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(space::X1_5))
-                    .pt(px(space::X4))
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(p.text_muted)
-                            .child(t!("mcp.modesTitle").into_owned()),
-                    )
-                    .children(MODES.iter().map(|(_, k)| {
-                        div()
-                            .flex()
-                            .gap(px(space::X4))
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .w(px(170.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child(t!(format!("mcp.modes.{k}")).into_owned()),
-                            )
-                            .child(
-                                div()
-                                    .text_color(p.text_secondary)
-                                    .child(t!(format!("mcp.modeHints.{k}")).into_owned()),
-                            )
-                    })),
-            )
+            // What each mode means (while adding one).
+            .when(self.connectors.adding, |d| {
+                d.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(space::X1_5))
+                        .pt(px(space::X4))
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(p.text_muted)
+                                .child(t!("mcp.modesTitle").into_owned()),
+                        )
+                        .children(MODES.iter().map(|(_, k)| {
+                            div()
+                                .flex()
+                                .gap(px(space::X4))
+                                .child(
+                                    div()
+                                        .flex_none()
+                                        .w(px(170.))
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .child(t!(format!("mcp.modes.{k}")).into_owned()),
+                                )
+                                .child(
+                                    div()
+                                        .text_color(p.text_secondary)
+                                        .child(t!(format!("mcp.modeHints.{k}")).into_owned()),
+                                )
+                        })),
+                )
+            })
             .into_any_element()
     }
 }

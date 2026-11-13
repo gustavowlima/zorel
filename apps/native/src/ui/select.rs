@@ -64,9 +64,16 @@ pub struct Select {
     /// The search field's placeholder (only past SEARCH_AT options).
     search: Option<SharedString>,
     on_pick: OnPick,
+    /// A form's field (the text fields' wash, hairline and height, the row's width), not a quiet toolbar choice.
+    filled: bool,
 }
 
 impl Select {
+    pub fn filled(mut self) -> Self {
+        self.filled = true;
+        self
+    }
+
     pub fn new(
         id: impl Into<ElementId>,
         name: impl Into<SharedString>,
@@ -82,6 +89,7 @@ impl Select {
             prefix: None,
             search: None,
             on_pick,
+            filled: false,
         }
     }
 
@@ -105,12 +113,15 @@ impl RenderOnce for Select {
             prefix: self.prefix,
             chosen,
             open: false,
+            filled: self.filled,
         };
+        let filled = self.filled;
         let (options, selected, on_pick, key) = (self.options, self.selected, self.on_pick, self.id.to_string());
         let enter_key = SharedString::from(format!("{key}-enter"));
         let search_key = SharedString::from(format!("{key}-search"));
         let placeholder = self.search.unwrap_or_else(|| self.name.clone());
         Popover::new(self.id)
+            .when(filled, |p| p.w_full())
             .anchor(Anchor::TopLeft)
             .offset(px(6.))
             .appearance(false)
@@ -179,6 +190,7 @@ struct Trigger {
     prefix: Option<IconName>,
     chosen: Option<SelectOption>,
     open: bool,
+    filled: bool,
 }
 
 impl Selectable for Trigger {
@@ -197,20 +209,22 @@ impl RenderOnce for Trigger {
         let p = theme::palette(window);
         let pointer = motion::pointer(&self.id, window, cx);
         let lit = pointer.read(cx).hovered || self.open;
+        let rest = if self.filled {
+            p.bg_field
+        } else {
+            Rgba {
+                a: 0.,
+                ..p.bg_control_hover
+            }
+        };
         let bg = motion::color(
             &self.id,
             "bg",
-            if lit {
-                p.bg_control_hover
-            } else {
-                Rgba {
-                    a: 0.,
-                    ..p.bg_control_hover
-                }
-            },
+            if lit && !self.filled { p.bg_control_hover } else { rest },
             window,
             cx,
         );
+        let filled = self.filled;
         let fg = motion::color(&self.id, "fg", if lit { p.text } else { p.text_secondary }, window, cx);
         let label = self.chosen.as_ref().map(|c| c.label.clone()).unwrap_or_default();
         let row = div()
@@ -222,18 +236,27 @@ impl RenderOnce for Trigger {
             .flex_none()
             .items_center()
             .gap(px(space::X1_5))
-            .h(px(tokens::CONTROL_H_SM))
             .px(px(space::X2_5))
-            .max_w(px(256.))
             .rounded(px(tokens::RADIUS_CONTROL))
             .bg(bg)
+            .map(|r| {
+                if filled {
+                    r.w_full().h(px(tokens::CONTROL_H)).border_1().border_color(if lit {
+                        p.text_dim
+                    } else {
+                        p.border_strong
+                    })
+                } else {
+                    r.h(px(tokens::CONTROL_H_SM)).max_w(px(256.))
+                }
+            })
             .text_sm()
             .text_color(fg)
             .when_some(self.prefix, |r, icon_name| r.child(icon(icon_name, icon::MD)))
             .when_some(self.chosen.as_ref().map(|c| c.mark.clone()), |r, m| {
                 r.children(mark(&format!("{}-mark", self.id), &m))
             })
-            .child(div().min_w_0().truncate().child(label))
+            .child(div().min_w_0().truncate().when(filled, |d| d.flex_1()).child(label))
             .child(
                 icon(IconName::ChevronDown, icon::XS)
                     .text_color(Rgba { a: 0.7, ..fg.into() })

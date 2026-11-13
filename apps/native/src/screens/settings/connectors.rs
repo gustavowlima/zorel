@@ -255,8 +255,10 @@ impl Settings {
         let rows: Vec<AnyElement> = connected
             .iter()
             .map(|(c, s)| {
-                let attention = self.connectors.refused.contains(&s.id)
-                    || (matches!(s.auth, McpServerAuth::Oauth) && !self.connectors.signed_in.contains(&s.id));
+                // Refused (expired or denied): sign in again; an OAuth one never signed in: finish signing in.
+                let refused = self.connectors.refused.contains(&s.id);
+                let unsigned = matches!(s.auth, McpServerAuth::Oauth) && !self.connectors.signed_in.contains(&s.id);
+                let attention = refused || unsigned;
                 let waiting = self.connectors.waiting.as_deref() == Some(s.id.as_str());
                 let open = self.connectors.managing.as_deref() == Some(s.id.as_str());
                 let mode_at = servers::MODES.iter().position(|(m, _)| *m == s.mode).unwrap_or(1);
@@ -278,11 +280,14 @@ impl Settings {
                         let (id, v) = (mode_id.clone(), v.to_string());
                         let _ = view.update(cx, |this, cx| this.patch_connector(id, json!({ "mode": v }), cx));
                     }),
-                );
+                )
+                .filled();
                 let status = if waiting {
                     (t!("connectors.waiting").into_owned(), p.text_muted)
-                } else if attention {
+                } else if refused {
                     (t!("connectors.attention").into_owned(), p.warning)
+                } else if unsigned {
+                    (t!("connectors.notSignedIn").into_owned(), p.warning)
                 } else {
                     (
                         format!(
@@ -363,6 +368,26 @@ impl Settings {
                                     .child(div().font_weight(FontWeight::MEDIUM).child(c.name))
                                     .child(div().truncate().text_sm().text_color(status.1).child(status.0)),
                             )
+                            .when(attention && !waiting, |d| {
+                                let id = s.id.clone();
+                                d.child(
+                                    Button::new(
+                                        SharedString::from(format!("conn-sign-in-{}", s.id)),
+                                        t!("connectors.signIn").into_owned(),
+                                    )
+                                    .variant(Variant::Primary)
+                                    .size(Size::Sm)
+                                    .on_click(cx.listener(
+                                        move |this, _, _, cx| {
+                                            // The provider's page opens; the row waits until the sign-in lands.
+                                            this.sign_in_connector(id.clone(), cx);
+                                            this.connectors.waiting = Some(id.clone());
+                                            this.watch_sign_in(cx);
+                                            cx.notify();
+                                        },
+                                    )),
+                                )
+                            })
                             .child(mode)
                             .child(
                                 Button::new(
@@ -536,6 +561,7 @@ impl Settings {
                     )
                     .child(div().grid().grid_cols(2).gap(px(space::X2_5)).children(cards)),
             )
+            .child(self.custom_connectors(window, cx))
             .into_any_element()
     }
 }

@@ -37,18 +37,16 @@ pub enum Section {
     General,
     Providers,
     Connectors,
-    Servers,
     Skills,
     Appearance,
     Processes,
 }
 
 impl Section {
-    pub const ALL: [Section; 7] = [
+    pub const ALL: [Section; 6] = [
         Section::General,
         Section::Providers,
         Section::Connectors,
-        Section::Servers,
         Section::Skills,
         Section::Appearance,
         Section::Processes,
@@ -60,7 +58,6 @@ impl Section {
             Section::General => "general",
             Section::Providers => "providers",
             Section::Connectors => "mcp",
-            Section::Servers => "servers",
             Section::Skills => "skills",
             Section::Appearance => "appearance",
             Section::Processes => "processes",
@@ -72,7 +69,6 @@ impl Section {
             Section::General => IconName::Settings,
             Section::Providers => IconName::Sparkles,
             Section::Connectors => IconName::Plug,
-            Section::Servers => IconName::SquareTerminal,
             Section::Skills => IconName::Brain,
             Section::Appearance => IconName::Sun,
             Section::Processes => IconName::Gauge,
@@ -96,6 +92,11 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// The section shown (the window's strip adds its action: "New skill" on Skills).
+    pub fn section(&self) -> Section {
+        self.section
+    }
+
     pub fn new(store: Entity<Store>, section: Section, cx: &mut Context<Self>) -> Self {
         cx.observe(&store, |_, _, cx| cx.notify()).detach();
         let mut this = Self {
@@ -184,7 +185,8 @@ impl Settings {
                 crate::i18n::set(v);
                 cx.refresh_windows();
             }),
-        );
+        )
+        .filled();
         let steps = switch(
             "settings-live-steps",
             String::new(),
@@ -250,7 +252,8 @@ impl Settings {
                     this.put_pref("memory-approval", json!({ "approval": v }), cx)
                 });
             }),
-        );
+        )
+        .filled();
         let count_select =
             |id: &'static str, path: &'static str, name: String, choices: &[u32], now: u32, cx: &mut Context<Self>| {
                 let view = cx.entity().downgrade();
@@ -275,6 +278,7 @@ impl Settings {
                         let _ = view.update(cx, |this, cx| this.put_pref(path, json!({ "value": n }), cx));
                     }),
                 )
+                .filled()
             };
         let at_once = count_select(
             "settings-max-running",
@@ -412,11 +416,9 @@ impl Settings {
     fn counts(&self, cx: &App) -> Vec<(Section, usize)> {
         let store = self.store.read(cx);
         let servers = self.connectors.list.as_deref().unwrap_or_default();
-        let catalog = servers.iter().filter(|s| connectors::catalog_of(s).is_some()).count();
         vec![
             (Section::Providers, store.accounts.len()),
-            (Section::Connectors, catalog),
-            (Section::Servers, servers.len() - catalog),
+            (Section::Connectors, servers.len()),
             (
                 Section::Skills,
                 store
@@ -475,7 +477,6 @@ impl Settings {
             Section::General => self.general(window, cx),
             Section::Providers => self.providers_view(window, cx),
             Section::Connectors => self.connectors_view(window, cx),
-            Section::Servers => self.servers_view(window, cx),
             Section::Skills => self.skills_view(window, cx),
             Section::Appearance => self.appearance(window, cx),
             Section::Processes => self.processes_view(window, cx),

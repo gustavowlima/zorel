@@ -57,6 +57,7 @@ impl AgentPage {
             current.map(|n| (n as i64).to_string()).unwrap_or_default(),
             pick,
         )
+        .filled()
     }
 
     pub(super) fn profile(&mut self, a: &Agent, window: &mut Window, _: &mut Context<Self>) -> AnyElement {

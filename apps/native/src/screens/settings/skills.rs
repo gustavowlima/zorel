@@ -1,5 +1,5 @@
 // Settings › Skills (apps/web/src/features/skills.tsx, the prototype's "Skills"): the procedures agents follow. On top
-// the switch that lets Claude Code and Codex use their own skills and "New skill"; then Zorel's own (proposals waiting
+// the switch that lets Claude Code and Codex use their own skills ("New skill" is in the window's strip, a dialog); then Zorel's own (proposals waiting
 // for you first, then the ones in use) and the SKILL.md files already on this computer (Claude Code, Codex, other
 // agents, plugins), each turned on or off for Zorel's agents. A row opens its skill in the section's place: Zorel's
 // with its steps and Keep / Discard or Archive; a file's with where it comes from, its switch and the file itself.
@@ -15,15 +15,15 @@ use crate::{
 };
 use gpui_kit::{
     base::input::{Textarea, TextareaState},
+    component::WindowExt as _,
     component::input::{Input, InputState},
 };
 
-/// What the section shows: the list, a new skill being written, or one skill open.
+/// What the section shows: the list, or one skill open.
 #[derive(Default, Clone, PartialEq)]
 enum Page {
     #[default]
     List,
-    New,
     Zorel(String),
     File(String),
 }
@@ -32,8 +32,6 @@ enum Page {
 pub struct Skills {
     files: Option<Vec<FileSkill>>,
     page: Page,
-    /// Where a new skill applies ("user", "project:<id>", "agent:<id>").
-    scope: String,
     /// The open file skill's SKILL.md, read from this computer (None: it couldn't be read).
     file_text: Option<(String, Option<Rc<Vec<markdown::Block>>>)>,
 }
@@ -145,7 +143,6 @@ impl Settings {
         }
         match self.skills.page.clone() {
             Page::List => self.skills_list(window, cx),
-            Page::New => self.new_skill(window, cx),
             Page::Zorel(id) => self.zorel_skill(&id, window, cx),
             Page::File(path) => self.file_skill(&path, window, cx),
         }
@@ -281,7 +278,7 @@ impl Settings {
             .flex()
             .flex_col()
             .gap(px(space::X8))
-            // On top: whether Claude Code and Codex use their own skills, and writing a new one.
+            // On top: whether Claude Code and Codex use their own skills ("New skill" sits in the window's strip).
             .child(group(
                 String::new(),
                 vec![row(
@@ -292,15 +289,6 @@ impl Settings {
                 )],
                 p,
             ))
-            .child(
-                div().flex().justify_end().child(
-                    Button::new("skills-new", t!("skills.new").into_owned())
-                        .icon(IconName::Plus)
-                        .variant(Variant::Secondary)
-                        .size(Size::Sm)
-                        .on_click(cx.listener(|this, _, _, cx| this.open_skill(Page::New, cx))),
-                ),
-            )
             .when(nothing, |d| {
                 d.child(crate::ui::scene::inset(
                     "skills-empty",
@@ -335,134 +323,6 @@ impl Settings {
             window,
             cx,
         )
-    }
-
-    /// Writing a skill: where it applies, its title and its steps.
-    fn new_skill(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let p = theme::palette(window);
-        let title = window.use_keyed_state("skill-new-title", cx, |window, cx| {
-            InputState::new(window, cx).placeholder(t!("knowledge.titleField").into_owned())
-        });
-        let steps = window.use_keyed_state("skill-new-steps", cx, |window, cx| {
-            let mut t = TextareaState::new(window, cx).placeholder(t!("knowledge.steps").into_owned());
-            t.set_auto_grow(8, 18, cx);
-            t
-        });
-        if self.skills.scope.is_empty() {
-            self.skills.scope = "user".into();
-        }
-        let options: Vec<SelectOption> = {
-            let store = self.store.read(cx);
-            std::iter::once(SelectOption {
-                id: "user".into(),
-                label: t!("scope.user").into_owned().into(),
-                mark: select::Mark::None,
-            })
-            .chain(store.projects.iter().map(|pr| SelectOption {
-                id: format!("project:{}", pr.id),
-                label: t!("scope.project", name = pr.name).into_owned().into(),
-                mark: select::Mark::None,
-            }))
-            .chain(
-                store
-                    .agents
-                    .iter()
-                    .filter(|a| a.builtin.is_none() && a.archived_at.is_none())
-                    .map(|a| SelectOption {
-                        id: format!("agent:{}", a.id),
-                        label: t!("scope.agent", name = a.name).into_owned().into(),
-                        mark: select::Mark::None,
-                    }),
-            )
-            .collect()
-        };
-        let view = cx.entity().downgrade();
-        let scope = Select::new(
-            "skill-new-scope",
-            t!("knowledge.scope").into_owned(),
-            options,
-            self.skills.scope.clone(),
-            Rc::new(move |v, _, cx| {
-                let v = v.to_string();
-                let _ = view.update(cx, |this, cx| {
-                    this.skills.scope = v;
-                    cx.notify();
-                });
-            }),
-        );
-        let ready = !title.read(cx).value().trim().is_empty() && !steps.read(cx).value().trim().is_empty();
-        let framed = |el: AnyElement| {
-            div()
-                .px(px(space::X2_5))
-                .py(px(space::X1_5))
-                .rounded(px(theme::tokens::RADIUS_CONTROL))
-                .border_1()
-                .border_color(p.border_strong)
-                .bg(p.bg_field)
-                .child(el)
-                .into_any_element()
-        };
-        let (t2, s2) = (title.clone(), steps.clone());
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(space::X5))
-            .child(self.back_to_skills(cx))
-            .child(
-                div()
-                    .text_lg()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(t!("knowledge.newSkill").into_owned()),
-            )
-            .child(crate::ui::drawer::field(
-                t!("knowledge.scope").into_owned(),
-                None,
-                div().flex().child(scope).into_any_element(),
-                window,
-            ))
-            .child(crate::ui::drawer::field(
-                t!("knowledge.titleField").into_owned(),
-                None,
-                framed(Input::new(&title).appearance(false).into_any_element()),
-                window,
-            ))
-            .child(crate::ui::drawer::field(
-                t!("knowledge.steps").into_owned(),
-                None,
-                framed(Textarea::new(&steps).into_any_element()),
-                window,
-            ))
-            .child(
-                div()
-                    .flex()
-                    .gap(px(space::X2))
-                    .child(
-                        Button::new("skill-new-create", t!("common.create").into_owned())
-                            .variant(Variant::Primary)
-                            .size(Size::Sm)
-                            .disabled(!ready)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                let title = t2.read(cx).value().trim().to_string();
-                                let text = s2.read(cx).value().trim().to_string();
-                                if title.is_empty() || text.is_empty() {
-                                    return;
-                                }
-                                let body = json!({ "scope": this.skills.scope, "kind": "skill", "title": title, "text": text });
-                                this.store
-                                    .update(cx, |s, cx| s.write(Method::Post, "/api/memories", body, cx).detach());
-                                t2.update(cx, |i, cx| i.set_value("", window, cx));
-                                s2.update(cx, |i, cx| i.set_value("", window, cx));
-                                this.open_skill(Page::List, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("skill-new-cancel", t!("common.cancel").into_owned())
-                            .variant(Variant::Ghost)
-                            .size(Size::Sm)
-                            .on_click(cx.listener(|this, _, _, cx| this.open_skill(Page::List, cx))),
-                    ),
-            )
-            .into_any_element()
     }
 
     /// A Zorel skill: its title, where it applies and where it came from, its steps, and what to do with it.
@@ -636,6 +496,128 @@ impl Settings {
                     }),
             )
             .into_any_element()
+    }
+}
+
+impl Settings {
+    /// "New skill" (the window's strip, on Skills): a dialog with where it applies, its title and its steps.
+    pub fn new_skill_dialog(settings: &Entity<Settings>, window: &mut Window, cx: &mut App) {
+        let store = settings.read(cx).store.clone();
+        let title = cx.new(|cx| InputState::new(window, cx).placeholder(t!("knowledge.titleField").into_owned()));
+        let steps = cx.new(|cx| {
+            let mut t = TextareaState::new(window, cx).placeholder(t!("knowledge.steps").into_owned());
+            t.set_auto_grow(8, 16, cx);
+            t
+        });
+        let scope = Rc::new(std::cell::RefCell::new("user".to_string()));
+        let options: Vec<SelectOption> = {
+            let s = store.read(cx);
+            std::iter::once(SelectOption {
+                id: "user".into(),
+                label: t!("scope.user").into_owned().into(),
+                mark: select::Mark::None,
+            })
+            .chain(s.projects.iter().map(|pr| SelectOption {
+                id: format!("project:{}", pr.id),
+                label: t!("scope.project", name = pr.name).into_owned().into(),
+                mark: select::Mark::None,
+            }))
+            .chain(
+                s.agents
+                    .iter()
+                    .filter(|a| a.builtin.is_none() && a.archived_at.is_none())
+                    .map(|a| SelectOption {
+                        id: format!("agent:{}", a.id),
+                        label: t!("scope.agent", name = a.name).into_owned().into(),
+                        mark: select::Mark::None,
+                    }),
+            )
+            .collect()
+        };
+        let focus = std::cell::Cell::new(true);
+        window.open_dialog(cx, move |dialog, window, cx| {
+            if focus.replace(false) {
+                title.focus_handle(cx).focus(window, cx);
+            }
+            let p = theme::palette(window);
+            let picked = scope.clone();
+            let pick = Select::new(
+                "skill-new-scope",
+                t!("knowledge.scope").into_owned(),
+                options.clone(),
+                scope.borrow().clone(),
+                Rc::new(move |v, window, _| {
+                    *picked.borrow_mut() = v.to_string();
+                    window.refresh();
+                }),
+            )
+            .filled();
+            let framed = |el: AnyElement| {
+                div()
+                    .px(px(space::X2_5))
+                    .py(px(space::X1_5))
+                    .rounded(px(theme::tokens::RADIUS_CONTROL))
+                    .border_1()
+                    .border_color(p.border_strong)
+                    .bg(p.bg_field)
+                    .child(el)
+                    .into_any_element()
+            };
+            let body = div()
+                .flex()
+                .flex_col()
+                .gap(px(space::X4))
+                .child(crate::ui::drawer::field(
+                    t!("knowledge.scope").into_owned(),
+                    None,
+                    div().w_full().child(pick).into_any_element(),
+                    window,
+                ))
+                .child(crate::ui::drawer::field(
+                    t!("knowledge.titleField").into_owned(),
+                    None,
+                    framed(Input::new(&title).appearance(false).into_any_element()),
+                    window,
+                ))
+                .child(crate::ui::drawer::field(
+                    t!("knowledge.steps").into_owned(),
+                    None,
+                    framed(Textarea::new(&steps).into_any_element()),
+                    window,
+                ));
+            let ready = !title.read(cx).value().trim().is_empty() && !steps.read(cx).value().trim().is_empty();
+            let (t2, s2, scope2, store2) = (title.clone(), steps.clone(), scope.clone(), store.clone());
+            crate::ui::dialog::sheet(
+                dialog,
+                window,
+                crate::ui::dialog::Width::Lg,
+                crate::ui::dialog::Sheet {
+                    title: t!("knowledge.newSkill").into_owned(),
+                    description: None,
+                    body: Some(body.into_any_element()),
+                    actions: vec![
+                        Button::new("cancel", t!("common.cancel").into_owned())
+                            .on_click(|_, window, cx| window.close_dialog(cx))
+                            .into_any_element(),
+                        Button::new("create", t!("common.create").into_owned())
+                            .variant(Variant::Primary)
+                            .disabled(!ready)
+                            .on_click(move |_, window, cx| {
+                                let title = t2.read(cx).value().trim().to_string();
+                                let text = s2.read(cx).value().trim().to_string();
+                                if title.is_empty() || text.is_empty() {
+                                    return;
+                                }
+                                let body =
+                                    json!({ "scope": *scope2.borrow(), "kind": "skill", "title": title, "text": text });
+                                window.close_dialog(cx);
+                                store2.update(cx, |s, cx| s.write(Method::Post, "/api/memories", body, cx).detach());
+                            })
+                            .into_any_element(),
+                    ],
+                },
+            )
+        });
     }
 }
 

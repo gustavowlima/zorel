@@ -433,10 +433,23 @@ impl Settings {
         samples.push((now, if metric == 0 { l.usage.memory } else { l.usage.cpu }));
         let peak = samples.iter().map(|(_, v)| *v).fold(0., f64::max);
         let top = (peak * 1.15).max(if metric == 0 { 64. * 1024. * 1024. } else { 10. });
+        // The day so far: from the first reading (or 24 hours ago) to now, so a young history isn't a sliver.
+        let start = samples.first().map_or(now - DAY_MS, |(at, _)| at.max(now - DAY_MS));
+        let span = (now - start).max(60_000.);
         let points: Vec<(f32, f32)> = samples
             .iter()
-            .map(|(at, v)| ((1. - (now - at) / DAY_MS) as f32, (v / top) as f32))
+            .map(|(at, v)| (((at - start) / span) as f32, (v / top) as f32))
             .collect();
+        let full_day = span >= DAY_MS - 30. * 60_000.;
+        let when = |at: f64| format::time(at, now, format::lang());
+        let (left, middle) = if full_day {
+            (
+                t!("processes.usage.ago").into_owned(),
+                t!("processes.usage.half").into_owned(),
+            )
+        } else {
+            (when(start), when(start + span / 2.))
+        };
         let color = if metric == 0 { p.series_7 } else { p.series_1 };
         let view = cx.entity().downgrade();
         let pick: crate::ui::segmented::OnPick = Rc::new(move |ix, _, cx| {
@@ -492,8 +505,8 @@ impl Settings {
                 div()
                     .flex()
                     .justify_between()
-                    .child(axis(t!("processes.usage.ago").into_owned()))
-                    .child(axis(t!("processes.usage.half").into_owned()))
+                    .child(axis(left))
+                    .child(axis(middle))
                     .child(axis(t!("processes.usage.now").into_owned())),
             )
             .when(self.processes.history.len() < 2, |d| {
