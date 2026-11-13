@@ -199,9 +199,7 @@ impl Settings {
                     .flex()
                     .flex_col()
                     .gap(px(space::X2))
-                    .py(px(space::X3))
-                    .border_b_1()
-                    .border_color(p.border)
+                    .py(px(space::X2_5))
                     .child(
                         div()
                             .flex()
@@ -249,9 +247,7 @@ impl Settings {
                     .flex()
                     .items_center()
                     .gap(px(space::X3))
-                    .py(px(space::X3))
-                    .border_b_1()
-                    .border_color(p.border)
+                    .py(px(space::X2_5))
                     .child(
                         div()
                             .flex()

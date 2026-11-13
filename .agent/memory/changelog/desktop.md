@@ -35,3 +35,4 @@
 2026-11-13 | Prefs global, Store::write, concurrent load, Remote<T>, one send path, chat/sidebar/agent page split under 1k lines | structural review found a prefs lost-update bug, lost queued messages, stuck spinners and 1k+ files
 2026-11-13 | page tabs in the window strip; empty states as illustration scenes | owner rule: tabs always in the header; pages keep the web's illustrations
 2026-11-13 | tabs on the strip's right, quiet; scene face normal eyes on a disc; dark only, theme choice removed | owner: tabs not harmonious, avatar odd and jagged, light theme off for now
+2026-11-13 | brand tiles (colour background, white logo) for providers and connectors; no dividers in lists, quiet ones in setting rows | owner rule: standard icons; UX review of the dividers

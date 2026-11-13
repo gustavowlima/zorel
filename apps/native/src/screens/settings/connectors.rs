@@ -5,6 +5,8 @@
 // once. Writes always wait for approval (mode "approve" on connect). Custom servers live in Settings › MCP servers.
 use super::*;
 
+use crate::assets::GRAPHITE;
+
 use crate::{
     net::types::{McpServer, McpServerAuth},
     ui::button::{Button, Size, Variant},
@@ -86,19 +88,37 @@ pub fn catalog_of(s: &McpServer) -> Option<&'static Connector> {
     CATALOG.iter().find(|c| s.url == c.url)
 }
 
-/// A connector's mark: its initial on a soft square (brand logos aren't bundled).
-fn monogram(name: &str, p: &theme::tokens::Palette) -> Div {
-    div()
-        .flex_none()
-        .size(px(24.))
-        .rounded(px(6.))
-        .bg(p.bg_control)
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_sm()
-        .font_weight(FontWeight::SEMIBOLD)
-        .child(name.chars().next().unwrap_or('?').to_string())
+/// Each connector's brand colour (Simple Icons' hex; a black or near-white brand on a tone that shows on the dark
+/// canvas behind a white logo).
+const TINTS: [(&str, u32); 22] = [
+    ("github", GRAPHITE),
+    ("notion", GRAPHITE),
+    ("linear", 0x5E6AD2),
+    ("atlassian", 0x0052CC),
+    ("sentry", 0x362D59),
+    ("vercel", GRAPHITE),
+    ("supabase", 0x3FCF8E),
+    ("stripe", 0x635BFF),
+    ("todoist", 0xE44332),
+    ("clickup", 0x7B68EE),
+    ("monday", 0xFF3D57),
+    ("airtable", 0x18BFFF),
+    ("intercom", 0x1F8DED),
+    ("canva", 0x00C4CC),
+    ("gamma", 0x6C47FF),
+    ("webflow", 0x146EF5),
+    ("wix", 0x0C6EFC),
+    ("paypal", 0x003087),
+    ("square", 0x3E4348),
+    ("huggingface", 0xFF9D00),
+    ("context7", GRAPHITE),
+    ("figma", 0xF24E1E),
+];
+
+/// A connector's tile: its brand colour with its logo (or initial) in white.
+fn mark(c: &Connector) -> AnyElement {
+    let tint = TINTS.iter().find(|(id, _)| *id == c.id).map_or(GRAPHITE, |(_, t)| *t);
+    crate::ui::brand::tile(crate::assets::connector_mark(c.id), c.name, tint, 24.)
 }
 
 impl Settings {
@@ -326,15 +346,13 @@ impl Settings {
                     .flex()
                     .flex_col()
                     .gap(px(space::X2))
-                    .py(px(space::X3))
-                    .border_b_1()
-                    .border_color(p.border)
+                    .py(px(space::X2_5))
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .gap(px(space::X3))
-                            .child(monogram(c.name, p))
+                            .child(mark(c))
                             .child(
                                 div()
                                     .flex()
@@ -448,7 +466,7 @@ impl Settings {
                             .flex()
                             .items_center()
                             .gap(px(space::X3))
-                            .child(monogram(c.name, p))
+                            .child(mark(c))
                             .child(
                                 div()
                                     .flex()

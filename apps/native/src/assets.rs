@@ -30,6 +30,104 @@ const PROVIDERS: [(&str, &[u8]); 8] = [
     ),
 ];
 
+/// The connectors' logos (assets/connectors, single colour, from Simple Icons, CC0), by asset path; a connector
+/// without one shows its initial.
+const CONNECTORS: [(&str, &[u8]); 19] = [
+    (
+        "connectors/github.svg",
+        include_bytes!("../assets/connectors/github.svg"),
+    ),
+    (
+        "connectors/notion.svg",
+        include_bytes!("../assets/connectors/notion.svg"),
+    ),
+    (
+        "connectors/linear.svg",
+        include_bytes!("../assets/connectors/linear.svg"),
+    ),
+    (
+        "connectors/atlassian.svg",
+        include_bytes!("../assets/connectors/atlassian.svg"),
+    ),
+    (
+        "connectors/sentry.svg",
+        include_bytes!("../assets/connectors/sentry.svg"),
+    ),
+    (
+        "connectors/vercel.svg",
+        include_bytes!("../assets/connectors/vercel.svg"),
+    ),
+    (
+        "connectors/supabase.svg",
+        include_bytes!("../assets/connectors/supabase.svg"),
+    ),
+    (
+        "connectors/stripe.svg",
+        include_bytes!("../assets/connectors/stripe.svg"),
+    ),
+    (
+        "connectors/todoist.svg",
+        include_bytes!("../assets/connectors/todoist.svg"),
+    ),
+    (
+        "connectors/clickup.svg",
+        include_bytes!("../assets/connectors/clickup.svg"),
+    ),
+    (
+        "connectors/airtable.svg",
+        include_bytes!("../assets/connectors/airtable.svg"),
+    ),
+    (
+        "connectors/intercom.svg",
+        include_bytes!("../assets/connectors/intercom.svg"),
+    ),
+    ("connectors/canva.svg", include_bytes!("../assets/connectors/canva.svg")),
+    (
+        "connectors/webflow.svg",
+        include_bytes!("../assets/connectors/webflow.svg"),
+    ),
+    ("connectors/wix.svg", include_bytes!("../assets/connectors/wix.svg")),
+    (
+        "connectors/paypal.svg",
+        include_bytes!("../assets/connectors/paypal.svg"),
+    ),
+    (
+        "connectors/square.svg",
+        include_bytes!("../assets/connectors/square.svg"),
+    ),
+    (
+        "connectors/huggingface.svg",
+        include_bytes!("../assets/connectors/huggingface.svg"),
+    ),
+    ("connectors/figma.svg", include_bytes!("../assets/connectors/figma.svg")),
+];
+
+/// A connector's logo, if it has one.
+pub fn connector_mark(id: &str) -> Option<&'static str> {
+    CONNECTORS
+        .iter()
+        .map(|(path, _)| *path)
+        .find(|path| path.strip_prefix("connectors/").and_then(|p| p.strip_suffix(".svg")) == Some(id))
+}
+
+/// A provider's tile colour (its brand's; a black brand on a dark graphite so it shows on the canvas).
+pub fn provider_tint(path: &str) -> u32 {
+    const TINTS: [(&str, u32); 8] = [
+        ("providers/claude.svg", 0xD97757),
+        ("providers/codex.svg", 0x10A37F),
+        ("providers/gemini.svg", 0x3186FF),
+        ("providers/opencode.svg", GRAPHITE),
+        ("providers/openrouter.svg", 0x6467F2),
+        ("providers/ollama.svg", GRAPHITE),
+        ("providers/antigravity.svg", 0x4285F4),
+        ("providers/lmstudio.svg", 0x4F46E5),
+    ];
+    TINTS.iter().find(|(p, _)| *p == path).map_or(GRAPHITE, |(_, c)| *c)
+}
+
+/// A black brand's tile: dark enough to read as black, light enough to stand out from the canvas.
+pub const GRAPHITE: u32 = 0x2A2A30;
+
 /// A provider's mark for a provider or a model id's prefix ("claude-cli" → claude); None for one without a mark.
 pub fn provider_mark(provider: &str) -> Option<&'static str> {
     const ALIASES: [(&str, &str); 5] = [
@@ -113,7 +211,12 @@ impl AssetSource for Assets {
         if path == LOGO {
             return Ok(Some(Cow::Borrowed(include_bytes!("../assets/logo.svg"))));
         }
-        if let Some(mark) = PROVIDERS.iter().find(|(p, _)| *p == path).map(|(_, bytes)| *bytes) {
+        if let Some(mark) = PROVIDERS
+            .iter()
+            .chain(CONNECTORS.iter())
+            .find(|(p, _)| *p == path)
+            .map(|(_, bytes)| *bytes)
+        {
             return Ok(Some(Cow::Borrowed(mark)));
         }
         let bytes = match ZorelIcons.load(path)? {

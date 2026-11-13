@@ -18,8 +18,12 @@ Parts of this project derive from:
 
 - Lobe Icons (https://github.com/lobehub/lobe-icons), MIT License, Copyright LobeHub.
   Used: provider logos (Claude, Codex, opencode, OpenRouter, Ollama) in
-  apps/web/src/ui/provider-icon.tsx, and in apps/native/assets/providers (the colour versions of Claude, Codex,
-  OpenRouter, Gemini and Antigravity), from @lobehub/icons-static-svg 1.102.0.
+  apps/web/src/ui/provider-icon.tsx and apps/native/assets/providers, from @lobehub/icons-static-svg 1.102.0.
+
+- Simple Icons (https://github.com/simple-icons/simple-icons), CC0-1.0.
+  Used: connector logos and brand colours in apps/native/assets/connectors and
+  apps/native/src/screens/settings/connectors.rs, from simple-icons 13.21.0. The brands remain their owners'
+  trademarks.
 
 - shadcn/ui (https://github.com/shadcn-ui/ui), MIT License, Copyright (c) 2023 shadcn.
   Used: components generated with the shadcn CLI and adapted (apps/web/src/ui/button.tsx,

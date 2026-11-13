@@ -359,12 +359,12 @@ impl Settings {
                 .flex()
                 .items_center()
                 .gap(px(space::X3))
-                .py(px(space::X3))
+                .py(px(space::X2_5))
                 .px(px(space::X2))
                 .rounded(px(tokens::RADIUS_ROW))
                 .cursor_pointer()
                 .hover(|d| d.bg(p.bg_control))
-                .child(crate::screens::model_picker::mark(pr.mark, 20., p.text))
+                .child(crate::screens::model_picker::mark(pr.mark, 28., p.text))
                 .child(
                     div()
                         .flex()
@@ -411,10 +411,10 @@ impl Settings {
             .flex_col()
             .gap(px(space::X8))
             .when(!on_rows.is_empty(), |d| {
-                d.child(group(t!("providers.connected").into_owned(), on_rows, p))
+                d.child(list(t!("providers.connected").into_owned(), on_rows, p))
             })
             .when(!off_rows.is_empty(), |d| {
-                d.child(group(
+                d.child(list(
                     if loading {
                         t!("settings.providers").into_owned()
                     } else {
@@ -461,17 +461,7 @@ impl Settings {
             .flex()
             .items_center()
             .gap(px(space::X4))
-            .child(
-                div()
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .justify_center()
-                    .size(px(48.))
-                    .rounded(px(tokens::RADIUS_CARD))
-                    .bg(p.bg_surface)
-                    .child(crate::screens::model_picker::mark(pr.mark, 26., p.text)),
-            )
+            .child(crate::screens::model_picker::mark(pr.mark, 48., p.text))
             .child(
                 div()
                     .flex()
@@ -651,7 +641,7 @@ impl Settings {
                 )
                 .into_any_element()
         });
-        group(t!("providers.models").into_owned(), blocks.collect(), p)
+        list(t!("providers.models").into_owned(), blocks.collect(), p)
     }
 
     /// One API key: whose, whether it's saved, and a field to add or replace it (or remove it).
@@ -680,7 +670,7 @@ impl Settings {
             .gap(px(space::X2))
             .py(px(space::X3))
             .border_b_1()
-            .border_color(p.border)
+            .border_color(divider(p))
             .child(
                 div()
                     .flex()
@@ -856,7 +846,7 @@ impl Settings {
             .gap(px(space::X2))
             .py(px(space::X3))
             .border_b_1()
-            .border_color(p.border)
+            .border_color(divider(p))
             .child(
                 div()
                     .flex()

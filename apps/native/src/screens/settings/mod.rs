@@ -339,6 +339,28 @@ impl Settings {
 }
 
 /// A titled group of setting rows, hairlines between them.
+/// The hairline between setting rows: quieter than a border (it groups a control with its row, nothing more).
+pub(crate) fn divider(p: &theme::tokens::Palette) -> Rgba {
+    crate::ui::motion::fade(p.border, 0.55)
+}
+
+/// A list of things to open (providers, connectors, skills): rows apart by space and their hover, no lines.
+pub(crate) fn list(title: String, rows: Vec<AnyElement>, p: &theme::tokens::Palette) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(space::X2))
+        .child(
+            div()
+                .text_sm()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(p.text_muted)
+                .child(title),
+        )
+        .child(div().flex().flex_col().gap(px(space::X0_5)).children(rows))
+}
+
+/// Setting rows (a control on the right of each): a quiet hairline between them.
 pub(crate) fn group(title: String, rows: Vec<AnyElement>, p: &theme::tokens::Palette) -> Div {
     div()
         .flex()
@@ -355,7 +377,7 @@ pub(crate) fn group(title: String, rows: Vec<AnyElement>, p: &theme::tokens::Pal
             div().flex().flex_col().children(
                 rows.into_iter()
                     .enumerate()
-                    .map(|(i, r)| div().when(i > 0, |d| d.border_t_1().border_color(p.border)).child(r)),
+                    .map(|(i, r)| div().when(i > 0, |d| d.border_t_1().border_color(divider(p))).child(r)),
             ),
         )
 }

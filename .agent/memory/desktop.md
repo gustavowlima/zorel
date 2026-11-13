@@ -47,6 +47,8 @@ updated: 2026-11-13
 - native theme (2026-11-13): dark only for now, no theme choice in Settings (owner); `theme::palette` always returns DARK.
 - native page rules (2026-11-13): a page's tabs always sit in the window strip on its right, quiet (no track, the chosen one on a soft pill: `Segmented::quiet`, `Header::tabs`, e.g. `Inbox::tabs`, `AgentPage::tabs` as ui/segmented), never inside the page, and no subtitle line above the content; Settings sections start with their content (no hint or intro paragraph on top). Empty states use the illustration scenes (ui/scene.rs, from the web's spec 018 Scene): `scene::empty` for a whole screen, `scene::inset` for a list inside a section; the face in a scene keeps its normal eyes (the expression eyes looked odd at that size) and sits on a disc of the background, not a border (borders on small circles come out jagged); the moment per page as on the web (inbox/changes allClear, agents team, chat chat, MCP connect, processes resting, skills notebook)
 
+- native brand icons (2026-11-13): every provider and connector shows as a tile (ui/brand.rs `tile`): its brand colour as the background, its logo in white (single-colour SVG: providers from Lobe Icons, connectors from Simple Icons CC0, credited in NOTICE); a black brand on GRAPHITE, a near-white one on its stronger tone; no logo, its initial. Lists of things to open (providers, connectors, skills, models) have no divider lines (spacing and hover); setting rows keep a quiet hairline (`settings::divider`).
+
 ## avoid
 
 - Playwright newPage/newContext in Electron: Target.createTarget not supported; tabs are created by main
