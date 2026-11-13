@@ -30,6 +30,14 @@ pub enum Note {
     },
 }
 
+/// A decided approval or question: the request, what was decided, and what you said with it.
+#[derive(Clone, Debug)]
+pub struct Receipt {
+    pub approval: Approval,
+    pub outcome: crate::net::types::SubscribeChatItemOutcome,
+    pub reason: Option<String>,
+}
+
 impl Note {
     pub fn at(&self) -> f64 {
         match self {
@@ -47,6 +55,8 @@ pub struct ChatLog {
     pub steps: Vec<WorkStep>,
     pub approvals: Vec<Approval>,
     pub notes: Vec<Note>,
+    /// What you decided in the turns running now (shown under their reply until it ends).
+    pub receipts: Vec<Receipt>,
     /// What each turn in progress is thinking (its words, when the engine shows them), and whether it is thinking
     /// now: from a reasoning sign until its next text or step.
     pub thought: HashMap<String, Thought>,
@@ -96,7 +106,21 @@ impl ChatLog {
                 self.approvals.retain(|a| a.id != approval.id);
                 self.approvals.push(approval);
             }
-            Event::ApprovalResolved { approval_id, .. } => self.approvals.retain(|a| a.id != approval_id),
+            Event::ApprovalResolved {
+                approval_id,
+                outcome,
+                reason,
+                ..
+            } => {
+                if let Some(at) = self.approvals.iter().position(|a| a.id == approval_id) {
+                    let approval = self.approvals.remove(at);
+                    self.receipts.push(Receipt {
+                        approval,
+                        outcome,
+                        reason,
+                    });
+                }
+            }
             Event::TurnCompleted { message, turn } => self.end_turn(turn, Some(message)),
             Event::TurnFailed { message, turn } | Event::Interrupted { message, turn } => self.end_turn(turn, message),
             Event::Status { status } => self.status = Some(status),
@@ -153,6 +177,8 @@ impl ChatLog {
     fn end_turn(&mut self, turn: Turn, message: Option<Message>) {
         self.partial.remove(&turn.id);
         self.thought.remove(&turn.id);
+        self.receipts
+            .retain(|r| r.approval.turn_id.as_deref() != Some(turn.id.as_str()));
         // A failover now lives on the saved message (its switches).
         self.notes
             .retain(|n| !matches!(n, Note::Failover { turn_id, .. } if *turn_id == turn.id));

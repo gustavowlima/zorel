@@ -26,6 +26,7 @@ use gpui_kit::{
 use rust_i18n::t;
 use serde_json::json;
 
+mod access;
 mod context;
 mod crew;
 
@@ -361,11 +362,17 @@ impl ChatScreen {
                     .is_some_and(|v| v.read(cx).busy() && v.read(cx).proposal().is_none());
                 let usage = chat.upgrade().and_then(|v| v.read(cx).context.clone());
                 let meter = context::meter(chat.clone(), usage, window);
+                let level = chat.upgrade().and_then(|v| {
+                    let v = v.read(cx);
+                    v.store.read(cx).chat(&v.chat_id).and_then(|c| c.access)
+                });
+                let access = access::chip(chat.clone(), level);
                 let chat = chat.clone();
                 div()
                     .flex()
                     .items_center()
                     .gap(px(space::X1))
+                    .child(access)
                     .child(meter)
                     .child(tools.clone())
                     .when(busy, |r| {
@@ -1329,6 +1336,155 @@ impl ChatScreen {
         .detach();
     }
 
+    /// A decided approval or question (the web's ReceiptCard): its outcome and what it was (or what you said), a
+    /// line that opens to the command it ran (with Copy), the folder and any other arguments.
+    fn receipt(&mut self, r: &crate::state::chat::Receipt, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        use crate::net::types::SubscribeChatItemOutcome as O;
+        let p = theme::palette(window);
+        let a = &r.approval;
+        let question = matches!(a.kind, crate::net::types::ApprovalKind::Question);
+        let ok = matches!(r.outcome, O::Approved | O::Always);
+        let word = match (r.outcome, question, ok) {
+            (O::Expired, _, _) => t!("approval.expired"),
+            (_, true, true) => t!("question.answered"),
+            (_, true, false) => t!("question.skipped"),
+            (_, false, true) => t!("approval.approved"),
+            (_, false, false) => t!("approval.denied"),
+        }
+        .into_owned();
+        let (mark, mark_color) = match (r.outcome, ok) {
+            (O::Expired, _) => (IconName::Clock, p.text_muted),
+            (_, true) => (IconName::CircleCheck, p.success),
+            (_, false) => (IconName::CircleX, p.text_muted),
+        };
+        let summary = if a.summary.is_empty() {
+            a.tool.clone()
+        } else {
+            a.summary.clone()
+        };
+        let command = if question {
+            String::new()
+        } else {
+            steps::command_of(&a.tool, &a.args)
+        };
+        let extra = (!question)
+            .then(|| steps::extra_args(&a.tool, &a.args, &command))
+            .flatten();
+        let key = format!("receipt-{}", a.id);
+        let open = self.open.contains(&key);
+        let toggle_key = key.clone();
+        let head = div()
+            .id(SharedString::from(key.clone()))
+            .role(Role::Button)
+            .aria_expanded(open)
+            .flex()
+            .items_center()
+            .gap(px(space::X2))
+            .h(px(28.))
+            .px(px(space::X2))
+            .rounded(px(tokens::RADIUS_CONTROL_SM))
+            .text_sm()
+            .text_color(p.text_muted)
+            .hover(|s| s.bg(p.bg_control))
+            .child(icon(mark, icon::XS).text_color(mark_color))
+            .child(div().flex_none().text_color(p.text_secondary).child(word))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .child(r.reason.as_ref().map_or(summary.clone(), |why| format!("“{why}”"))),
+            )
+            .child(icon(
+                if open {
+                    IconName::ChevronUp
+                } else {
+                    IconName::ChevronDown
+                },
+                icon::XS,
+            ))
+            .on_click(cx.listener(move |this, _, _, cx| this.toggle(toggle_key.clone(), cx)));
+        let body = open.then(|| {
+            let copied = self.copied.as_deref() == Some(key.as_str());
+            let to_copy = if command == a.tool {
+                extra.clone().unwrap_or_default()
+            } else {
+                command.clone()
+            };
+            let copy_key = key.clone();
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(space::X2))
+                .px(px(space::X3))
+                .py(px(space::X2_5))
+                .rounded(px(tokens::RADIUS_CARD))
+                .border_1()
+                .border_color(p.border)
+                .bg(p.bg_code)
+                .text_sm()
+                .when(question || !summary.contains(&command), |c| {
+                    c.child(div().text_color(p.text_secondary).child(summary.clone()))
+                })
+                .when(!command.is_empty(), |c| {
+                    c.child(
+                        div()
+                            .flex()
+                            .items_start()
+                            .gap(px(space::X2))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .font_family(MONO)
+                                    .text_color(p.text_secondary)
+                                    .child(command.clone()),
+                            )
+                            .child(
+                                Button::icon_only(
+                                    SharedString::from(format!("{key}-copy")),
+                                    if copied { IconName::Check } else { IconName::Copy },
+                                    if copied { t!("common.copied") } else { t!("common.copy") }.into_owned(),
+                                )
+                                .size(Size::Xs)
+                                .on_click(
+                                    cx.listener(move |this, _, _, cx| this.copy(copy_key.clone(), to_copy.clone(), cx)),
+                                ),
+                            ),
+                    )
+                })
+                .when_some(a.cwd.clone(), |c, cwd| {
+                    c.child(
+                        div()
+                            .text_color(p.text_muted)
+                            .child(t!("approval.folder", path = cwd).into_owned()),
+                    )
+                })
+                .when_some(extra.clone(), |c, extra| {
+                    c.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(space::X1))
+                            .child(
+                                div()
+                                    .text_color(p.text_muted)
+                                    .child(t!("approval.details").into_owned()),
+                            )
+                            .child(div().font_family(MONO).text_color(p.text_muted).child(extra)),
+                    )
+                })
+        });
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(space::X1))
+            .max_w(px(520.))
+            .child(head)
+            .children(body)
+            .into_any_element()
+    }
+
     /// A note in words (the web's TimelineNote).
     fn note_text(&self, i: usize, cx: &App) -> String {
         use crate::{net::types::SubscribeChatItemVia as Via, state::chat::Note};
@@ -1840,6 +1996,17 @@ impl ChatScreen {
                 }
                 Piece::Steps(group) => column.push(self.live_group(&format!("{turn_id}-g{n}"), &group, window, cx)),
             }
+        }
+        // What you decided in this turn: a line each, opening to what it ran.
+        let receipts: Vec<crate::state::chat::Receipt> = self
+            .log
+            .receipts
+            .iter()
+            .filter(|r| r.approval.turn_id.as_deref() == Some(turn_id))
+            .cloned()
+            .collect();
+        for r in &receipts {
+            column.push(self.receipt(r, window, cx));
         }
         // While it thinks: the last of its words, quiet, two lines at most (engines that show them).
         if thought.now && !proposal_out {

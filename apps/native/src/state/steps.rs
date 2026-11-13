@@ -257,3 +257,37 @@ mod tests {
         assert_eq!(ending(Some("interrupted")).map(|e| e.0), Some(Tone::Warning));
     }
 }
+
+/// What a decided tool call ran, for its receipt: its command or the path it touched, else the tool's name.
+pub fn command_of(tool: &str, args: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(args)
+        .ok()
+        .and_then(|v| {
+            ["command", "cmd", "file_path", "path"]
+                .iter()
+                .find_map(|k| v[*k].as_str().map(str::to_string))
+        })
+        .unwrap_or_else(|| tool.to_string())
+}
+
+/// Every argument, indented, when the command line doesn't already show them all (more than one, or any when
+/// only the tool's name was found).
+pub fn extra_args(tool: &str, args: &str, command: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(args).ok()?;
+    let keys = v.as_object()?.len();
+    (keys > usize::from(command != tool)).then(|| serde_json::to_string_pretty(&v).unwrap_or_default())
+}
+
+#[cfg(test)]
+mod receipt_tests {
+    use super::{command_of, extra_args};
+
+    #[test]
+    fn a_receipt_shows_the_command_and_only_the_arguments_it_hides() {
+        assert_eq!(command_of("run", r#"{"command":"bun test"}"#), "bun test");
+        assert_eq!(command_of("search", r#"{"query":"q"}"#), "search");
+        assert_eq!(extra_args("run", r#"{"command":"bun test"}"#, "bun test"), None);
+        assert!(extra_args("search", r#"{"query":"q"}"#, "search").is_some());
+        assert!(extra_args("edit", r#"{"file_path":"a.ts","old":"x"}"#, "a.ts").is_some());
+    }
+}

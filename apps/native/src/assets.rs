@@ -80,6 +80,8 @@ icon_assets!(
         GripVertical,
         Trash,
         CornerDownRight,
+        Shield,
+        ShieldAlert,
         X,
         X
     ]

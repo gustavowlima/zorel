@@ -14,6 +14,8 @@ pub struct Prefs {
     pub collapsed_sections: BTreeSet<String>,
     /// The sidebar's places in the person's order (ids like "nav-home"); empty: the default order.
     pub places: Vec<String>,
+    /// Full access was explained and confirmed once (it isn't asked again).
+    pub full_access_confirmed: bool,
 }
 
 fn file() -> Option<PathBuf> {
