@@ -22,18 +22,27 @@ pub enum Tab {
     Git,
     Files,
     Browser,
+    Yours,
     Terminal,
 }
 
 impl Tab {
-    const ALL: [Tab; 5] = [Tab::Changes, Tab::Git, Tab::Files, Tab::Browser, Tab::Terminal];
+    const ALL: [Tab; 6] = [
+        Tab::Changes,
+        Tab::Git,
+        Tab::Files,
+        Tab::Browser,
+        Tab::Yours,
+        Tab::Terminal,
+    ];
 
     fn label(self) -> String {
         match self {
             Tab::Changes => t!("workspace.changes").into_owned(),
             Tab::Git => t!("git.pullRequest").into_owned(),
             Tab::Files => t!("workspace.files").into_owned(),
-            Tab::Browser => t!("browser.title").into_owned(),
+            Tab::Browser => t!("browser.agents").into_owned(),
+            Tab::Yours => t!("browser.yours").into_owned(),
             Tab::Terminal => t!("workspace.terminal").into_owned(),
         }
     }
@@ -44,6 +53,7 @@ impl Tab {
             Tab::Git => IconName::GitPullRequest,
             Tab::Files => IconName::Folder,
             Tab::Browser => IconName::Globe,
+            Tab::Yours => IconName::MousePointerClick,
             Tab::Terminal => IconName::SquareTerminal,
         }
     }
@@ -119,6 +129,7 @@ impl ChatScreen {
 
     /// The header's toggle: opens on Changes, or closes.
     pub fn toggle_side(&mut self, cx: &mut Context<Self>) {
+        self.hide_native(cx);
         self.side = match self.side.take() {
             Some(_) => None,
             None => Some(Side {
@@ -320,6 +331,7 @@ impl ChatScreen {
                 Button::icon_only("side-close", IconName::X, t!("workspace.closePanel").into_owned())
                     .size(Size::Xs)
                     .on_click(cx.listener(|this, _, _, cx| {
+                        this.hide_native(cx);
                         this.side = None;
                         cx.notify();
                     })),
@@ -330,7 +342,17 @@ impl ChatScreen {
             Tab::Git => self.git_tab(window, cx),
             Tab::Terminal => self.terminal_tab(window, cx),
             Tab::Browser => self.browser_tab(window, cx),
+            Tab::Yours => self.yours_tab(window, cx),
         };
+        // The native page shows only while its tab is on screen and nothing covers the chat.
+        if current != Tab::Yours {
+            self.hide_native(cx);
+        } else if let Some(b) = &self.local_browser {
+            let covered = self.crew_agent.is_some()
+                || self.viewing.is_some()
+                || self.builder.as_ref().is_some_and(|m| m.editing.is_some());
+            b.update(cx, |b, _| b.covered = covered);
+        }
         // The left edge: a hairline that lights on hover, a wider grip to drag.
         let edge = div()
             .id("side-edge")
@@ -361,7 +383,9 @@ impl ChatScreen {
                 .child(head)
                 .child(match current {
                     // Files scrolls its own tree and file.
-                    Tab::Files | Tab::Terminal | Tab::Browser => div().id("side-body").flex_1().min_h_0().child(body),
+                    Tab::Files | Tab::Terminal | Tab::Browser | Tab::Yours => {
+                        div().id("side-body").flex_1().min_h_0().child(body)
+                    }
                     _ => div().id("side-body").flex_1().min_h_0().overflow_y_scroll().child(body),
                 })
                 .into_any_element(),
@@ -701,5 +725,42 @@ impl ChatScreen {
             self.browser = Some(cx.new(|cx| crate::screens::browser::Browser::new(http, store, chat, window, cx)));
         }
         div().size_full().children(self.browser.clone()).into_any_element()
+    }
+}
+
+impl ChatScreen {
+    /// "Your browser": the system's web view, made once and kept while the chat is open; a picked element goes to the
+    /// message box.
+    fn yours_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        if self.local_browser.is_none() {
+            let view = cx.entity().downgrade();
+            let on_pick: crate::screens::webview::OnPick = Rc::new(move |text, _, cx| {
+                let _ = view.update(cx, |this, cx| this.add_to_chat(text, cx));
+            });
+            self.local_browser = Some(cx.new(|cx| crate::screens::webview::LocalBrowser::new(on_pick, window, cx)));
+        }
+        div()
+            .size_full()
+            .children(self.local_browser.clone())
+            .into_any_element()
+    }
+
+    /// Hides the native page (the panel closed, another tab, the chat left).
+    pub fn hide_native(&self, cx: &App) {
+        if let Some(b) = &self.local_browser {
+            b.read(cx).hide();
+        }
+    }
+
+    /// Opens a page in "Your browser" (a server's address).
+    pub fn open_in_yours(&mut self, url: String, window: &mut Window, cx: &mut Context<Self>) {
+        if self.side.is_none() {
+            self.toggle_side(cx);
+        }
+        self.open_tab(Tab::Yours, cx);
+        self.yours_tab(window, cx);
+        if let Some(b) = &self.local_browser {
+            b.update(cx, |b, cx| b.go(&url, cx));
+        }
     }
 }

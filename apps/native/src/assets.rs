@@ -58,6 +58,7 @@ icon_assets!(
         Brain,
         MessageCircle,
         Plug,
+        MousePointerClick,
         PanelLeftClose,
         PanelLeftOpen,
         Bot,

@@ -924,6 +924,10 @@
       "other": "%{count} tabs"
     },
     "title": "Browser",
+    "agents": "Agents' browser",
+    "pick": "Pick an element to send to the chat",
+    "systemHint": "This system has no built-in web view here: pages open in your browser.",
+    "openSystem": "Open in your browser",
     "newTab": "New tab",
     "closeTab": "Close tab",
     "back": "Back",

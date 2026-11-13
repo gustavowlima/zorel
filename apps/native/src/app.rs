@@ -212,6 +212,12 @@ impl Root {
     }
 
     fn navigate(&mut self, route: Route, window: &mut Window, cx: &mut Context<Self>) {
+        // Leaving a chat: its native page (Your browser) mustn't float over the next screen.
+        if let Some((_, screen)) = &self.chat
+            && route != self.route
+        {
+            screen.read(cx).hide_native(cx);
+        }
         match &route {
             Route::Chat { id } => self.open_chat(id.clone(), window, cx),
             Route::Inbox => {

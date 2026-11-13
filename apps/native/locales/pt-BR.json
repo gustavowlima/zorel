@@ -924,6 +924,10 @@
       "other": "%{count} abas"
     },
     "title": "Navegador",
+    "agents": "Navegador dos agentes",
+    "pick": "Escolher um elemento para mandar à conversa",
+    "systemHint": "Este sistema não tem um navegador embutido aqui: as páginas abrem no seu navegador.",
+    "openSystem": "Abrir no seu navegador",
     "newTab": "Nova aba",
     "closeTab": "Fechar aba",
     "back": "Voltar",
