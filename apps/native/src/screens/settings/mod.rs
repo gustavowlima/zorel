@@ -54,7 +54,7 @@ impl Section {
         Section::Processes,
     ];
 
-    /// Its i18n key under settings.* (and settings.hint.*).
+    /// Its i18n key under settings.*.
     fn key(self) -> &'static str {
         match self {
             Section::General => "general",
@@ -488,12 +488,6 @@ impl Settings {
                             .flex()
                             .flex_col()
                             .gap(px(space::X6))
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(p.text_muted)
-                                    .child(t!(format!("settings.hint.{}", current.key())).into_owned()),
-                            )
                             .child(body),
                     ),
             )

@@ -493,12 +493,6 @@ impl Settings {
             .flex()
             .flex_col()
             .gap(px(space::X8))
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(p.text_muted)
-                    .child(t!("connectors.intro").into_owned()),
-            )
             .when_some(self.connectors.error.clone(), |d, e| {
                 d.child(div().text_sm().text_color(p.danger).child(e))
             })

@@ -410,12 +410,6 @@ impl Settings {
             .flex()
             .flex_col()
             .gap(px(space::X8))
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(p.text_muted)
-                    .child(t!("accounts.intro").into_owned()),
-            )
             .when(!on_rows.is_empty(), |d| {
                 d.child(group(t!("providers.connected").into_owned(), on_rows, p))
             })
