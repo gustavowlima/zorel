@@ -36,3 +36,4 @@
 2026-11-13 | page tabs in the window strip; empty states as illustration scenes | owner rule: tabs always in the header; pages keep the web's illustrations
 2026-11-13 | tabs on the strip's right, quiet; scene face normal eyes on a disc; dark only, theme choice removed | owner: tabs not harmonious, avatar odd and jagged, light theme off for now
 2026-11-13 | brand tiles (colour background, white logo) for providers and connectors; no dividers in lists, quiet ones in setting rows | owner rule: standard icons; UX review of the dividers
+2026-11-13 | settings groups as cards; skills create/view; processes 24h history (engine route + sampler) | owner: buttons lost without dividers, skills creation/view, processes with a 24h chart and personality

@@ -49,6 +49,8 @@ updated: 2026-11-13
 
 - native brand icons (2026-11-13): every provider and connector shows as a tile (ui/brand.rs `tile`): its brand colour as the background, its logo in white (single-colour SVG: providers from Lobe Icons, connectors from Simple Icons CC0, credited in NOTICE); a black brand on GRAPHITE, a near-white one on its stronger tone; no logo, its initial. Lists of things to open (providers, connectors, skills, models) have no divider lines (spacing and hover); setting rows keep a quiet hairline (`settings::divider`).
 
+- native settings design (2026-11-13): every Settings group is one card (`settings::list`/`group`: rows in a bg_surface card, inset hairlines), so a row's button reads with its row. Skills: native-skills switch on top, New skill (POST /api/memories kind skill), a page per skill (Zorel's steps, or the SKILL.md read from disk without front matter). Processes: mood + live memory/CPU, 24h chart (ui/chart.rs area) from GET /api/processes/history (engine samples every 5 min into <data>/usage-history.json), split by part. Zorel's own use includes the native app only when the app started the engine (ZOREL_PARENT_PID).
+
 ## avoid
 
 - Playwright newPage/newContext in Electron: Target.createTarget not supported; tabs are created by main
