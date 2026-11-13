@@ -115,6 +115,9 @@ const TINTS: [(&str, u32); 22] = [
     ("figma", 0xF24E1E),
 ];
 
+/// What a connector may do, as an icon (read only, write with your approval, write freely), in MODES' order.
+const MODE_ICONS: [IconName; 3] = [IconName::Eye, IconName::ShieldCheck, IconName::Zap];
+
 /// A connector's tile: its brand colour with its logo (or initial) in white.
 fn mark(c: &Connector) -> AnyElement {
     let tint = TINTS.iter().find(|(id, _)| *id == c.id).map_or(GRAPHITE, |(_, t)| *t);
@@ -324,22 +327,6 @@ impl Settings {
                     .size(Size::Xs),
                     items,
                 );
-                let finish = (attention && !waiting).then(|| {
-                    let id = s.id.clone();
-                    Button::new(
-                        SharedString::from(format!("conn-finish-{}", s.id)),
-                        t!("connectors.signIn").into_owned(),
-                    )
-                    .variant(Variant::Primary)
-                    .size(Size::Xs)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        // The provider's page opens; the card waits until the sign-in lands.
-                        this.sign_in_connector(id.clone(), cx);
-                        this.connectors.waiting = Some(id.clone());
-                        this.watch_sign_in(cx);
-                        cx.notify();
-                    }))
-                });
                 div()
                     .flex()
                     .flex_col()
@@ -373,6 +360,7 @@ impl Settings {
                             )
                             .child(gear),
                     )
+                    // Below: its state (a link to finish signing in when it needs one) and what it may do, as an icon.
                     .child(
                         div()
                             .flex()
@@ -383,18 +371,38 @@ impl Settings {
                             .border_color(super::divider(p))
                             .text_xs()
                             .child(div().size(px(6.)).rounded_full().bg(dot))
-                            .child(
-                                div()
-                                    .text_color(if attention { p.warning } else { p.text_secondary })
-                                    .child(state),
-                            )
+                            .map(|d| {
+                                if attention && !waiting {
+                                    let id = s.id.clone();
+                                    d.child(
+                                        div()
+                                            .id(SharedString::from(format!("conn-finish-{}", s.id)))
+                                            .text_color(p.warning)
+                                            .cursor_pointer()
+                                            .hover(|t| t.underline())
+                                            .child(state)
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                // The provider's page opens; the card waits until the sign-in lands.
+                                                this.sign_in_connector(id.clone(), cx);
+                                                this.connectors.waiting = Some(id.clone());
+                                                this.watch_sign_in(cx);
+                                                cx.notify();
+                                            })),
+                                    )
+                                } else {
+                                    d.child(div().text_color(p.text_secondary).child(state))
+                                }
+                            })
                             .child(div().flex_1())
                             .child(
-                                div()
-                                    .text_color(p.text_muted)
-                                    .child(t!(format!("mcp.modes.{mode_key}")).into_owned()),
-                            )
-                            .children(finish),
+                                Button::icon_only(
+                                    SharedString::from(format!("conn-mode-icon-{}", s.id)),
+                                    MODE_ICONS[mode_at],
+                                    t!(format!("mcp.modes.{mode_key}")).into_owned(),
+                                )
+                                .size(Size::Xs)
+                                .tooltip(t!(format!("mcp.modes.{mode_key}")).into_owned()),
+                            ),
                     )
                     .when_some(tested, |d, line| {
                         d.child(div().text_xs().text_color(p.text_secondary).child(line))

@@ -181,6 +181,8 @@ icon_assets!(
         NotebookPen,
         Unplug,
         Compass,
+        ShieldCheck,
+        Zap,
         SquarePen,
         GripVertical,
         Trash,
