@@ -186,9 +186,6 @@ impl Settings {
                     .flex_col()
                     .gap(px(space::X2))
                     .p(px(space::X3))
-                    .rounded(px(crate::theme::tokens::RADIUS_CARD))
-                    .border_1()
-                    .border_color(p.border)
                     .child(
                         div()
                             .flex()
@@ -421,7 +418,7 @@ impl Settings {
                     cx,
                 ))
             })
-            .children(rows)
+            .when(!rows.is_empty(), |d| d.child(super::list(String::new(), rows, space::X3, p)))
             .children(form)
             .when(!self.connectors.adding, |d| {
                 d.child(

@@ -344,42 +344,43 @@ pub(crate) fn divider(p: &theme::tokens::Palette) -> Rgba {
     crate::ui::motion::fade(p.border, 0.55)
 }
 
-/// A list of things to open (providers, connectors, skills): rows apart by space and their hover, no lines.
-pub(crate) fn list(title: String, rows: Vec<AnyElement>, p: &theme::tokens::Palette) -> Div {
+/// A list of things to open (providers): one card holding the rows, a hairline between them that starts after the
+/// rows' icons (`inset` px), so each row and its button read together without a table's look.
+pub(crate) fn list(title: String, rows: Vec<AnyElement>, inset: f32, p: &theme::tokens::Palette) -> Div {
+    let last = rows.len().saturating_sub(1);
     div()
         .flex()
         .flex_col()
         .gap(px(space::X2))
+        .when(!title.is_empty(), |d| {
+            d.child(
+                div()
+                    .text_sm()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(p.text_muted)
+                    .child(title),
+            )
+        })
         .child(
             div()
-                .text_sm()
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(p.text_muted)
-                .child(title),
+                .flex()
+                .flex_col()
+                .p(px(space::X1))
+                .rounded(px(theme::tokens::RADIUS_CARD))
+                .bg(p.bg_surface)
+                .border_1()
+                .border_color(p.border)
+                .children(rows.into_iter().enumerate().map(|(i, r)| {
+                    div().child(r).when(i < last, |d| {
+                        d.child(div().h(px(1.)).ml(px(inset)).mr(px(space::X2)).bg(divider(p)))
+                    })
+                })),
         )
-        .child(div().flex().flex_col().gap(px(space::X0_5)).children(rows))
 }
 
-/// Setting rows (a control on the right of each): a quiet hairline between them.
+/// Setting rows (a control on the right of each): the same card as `list`, a hairline between rows.
 pub(crate) fn group(title: String, rows: Vec<AnyElement>, p: &theme::tokens::Palette) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .gap(px(space::X2))
-        .child(
-            div()
-                .text_sm()
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(p.text_muted)
-                .child(title),
-        )
-        .child(
-            div().flex().flex_col().children(
-                rows.into_iter()
-                    .enumerate()
-                    .map(|(i, r)| div().when(i > 0, |d| d.border_t_1().border_color(divider(p))).child(r)),
-            ),
-        )
+    list(title, rows, space::X3, p)
 }
 
 /// One setting: its title and hint on the left, its control on the right.
@@ -389,6 +390,7 @@ pub(crate) fn row(title: String, hint: String, control: AnyElement, p: &theme::t
         .items_center()
         .gap(px(space::X6))
         .py(px(space::X3))
+        .px(px(space::X3))
         .child(
             div()
                 .flex()

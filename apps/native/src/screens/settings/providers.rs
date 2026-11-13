@@ -90,6 +90,9 @@ const PROVIDERS: [Provider; 8] = [
     },
 ];
 
+/// Where a provider row's text starts (its padding, its 28px tile, the gap): the hairline between rows starts there.
+const ROW_INSET: f32 = space::X2 + 28. + space::X3;
+
 /// What a provider has here (Settings › Providers).
 struct ProviderState {
     accounts: Vec<ProviderAccount>,
@@ -411,7 +414,7 @@ impl Settings {
             .flex_col()
             .gap(px(space::X8))
             .when(!on_rows.is_empty(), |d| {
-                d.child(list(t!("providers.connected").into_owned(), on_rows, p))
+                d.child(list(t!("providers.connected").into_owned(), on_rows, ROW_INSET, p))
             })
             .when(!off_rows.is_empty(), |d| {
                 d.child(list(
@@ -421,6 +424,7 @@ impl Settings {
                         t!("providers.others").into_owned()
                     },
                     off_rows,
+                    ROW_INSET,
                     p,
                 ))
             })
@@ -508,12 +512,12 @@ impl Settings {
                 div()
                     .flex()
                     .flex_col()
+                    .gap(px(space::X2))
                     .child(
                         div()
                             .flex()
                             .items_end()
                             .gap(px(space::X2))
-                            .pb(px(space::X1))
                             .child(
                                 div()
                                     .flex_1()
@@ -531,7 +535,7 @@ impl Settings {
                                     })),
                             ),
                     )
-                    .children(rows)
+                    .when(!rows.is_empty(), |d| d.child(list(String::new(), rows, space::X3, p)))
                     .into_any_element(),
             );
         }
@@ -602,6 +606,7 @@ impl Settings {
                 .flex_col()
                 .gap(px(space::X2))
                 .py(px(space::X3))
+                .px(px(space::X2))
                 .child(
                     div()
                         .flex()
@@ -641,7 +646,7 @@ impl Settings {
                 )
                 .into_any_element()
         });
-        list(t!("providers.models").into_owned(), blocks.collect(), p)
+        list(t!("providers.models").into_owned(), blocks.collect(), space::X3, p)
     }
 
     /// One API key: whose, whether it's saved, and a field to add or replace it (or remove it).
@@ -669,8 +674,7 @@ impl Settings {
             .flex_col()
             .gap(px(space::X2))
             .py(px(space::X3))
-            .border_b_1()
-            .border_color(divider(p))
+            .px(px(space::X3))
             .child(
                 div()
                     .flex()
@@ -845,8 +849,7 @@ impl Settings {
             .flex_col()
             .gap(px(space::X2))
             .py(px(space::X3))
-            .border_b_1()
-            .border_color(divider(p))
+            .px(px(space::X3))
             .child(
                 div()
                     .flex()

@@ -347,6 +347,7 @@ impl Settings {
                     .flex_col()
                     .gap(px(space::X2))
                     .py(px(space::X2_5))
+                    .px(px(space::X3))
                     .child(
                         div()
                             .flex()
@@ -515,19 +516,12 @@ impl Settings {
                 d.child(div().text_sm().text_color(p.danger).child(e))
             })
             .when(!rows.is_empty(), |d| {
-                d.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(p.text_muted)
-                                .pb(px(space::X1))
-                                .child(t!("settings.connected").into_owned()),
-                        )
-                        .children(rows),
-                )
+                d.child(list(
+                    t!("settings.connected").into_owned(),
+                    rows,
+                    space::X3 + 24. + space::X3,
+                    p,
+                ))
             })
             .child(
                 div()
