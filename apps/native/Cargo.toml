@@ -54,9 +54,3 @@ path = "src/main.rs"
 [package.metadata.cargo-machete]
 # Used only by the generated wire types (OUT_DIR/wire.rs), which cargo-machete doesn't read.
 ignored = ["regress"]
-
-# "Your browser" in the chat's side panel: the system's own web view (WKWebView, WebView2) as a child of the window,
-# for previewing the project and picking elements to send to the chat. Linux would need GTK; there the tab opens the
-# system browser instead.
-[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
-wry = { version = "0.56", default-features = false, features = ["os-webview"] }
