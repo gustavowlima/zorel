@@ -1198,7 +1198,7 @@ export const en = {
     connect: "Connect",
     reconnect: "Reconnect",
     attention: "Sign in again",
-    notSignedIn: "Sign-in not finished",
+    notSignedIn: "Finish setup",
     signIn: "Sign in",
     connected: "Connected",
     waiting: "Finish signing in, in your browser…",

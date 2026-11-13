@@ -501,7 +501,7 @@ export const part2 = {
     connect: "Conectar",
     reconnect: "Reconectar",
     attention: "Entrar de novo",
-    notSignedIn: "Falta terminar de entrar",
+    notSignedIn: "Concluir configuração",
     signIn: "Entrar",
     connected: "Conectado",
     waiting: "Conclua o login no navegador…",
