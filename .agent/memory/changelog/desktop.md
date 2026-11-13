@@ -31,3 +31,4 @@
 2026-11-12 | live drag reorder with grip; Pending renamed Notifications | owner: drag looked like a copy-paste; rename asked
 2026-11-12 | live thinking: server publishes reasoning words (Claude thinking deltas) as 'reasoning'; native shows 'Pensando' + last words, then 'Pensou por Xs'; face Waiting when a turn waits on you | user asked for thinking steps and the Builder looked busy while asking
 2026-11-12 | native mutations update the Store before the engine answers | deleting a chat took seconds to disappear
+2026-11-12 | native side panel tabs, terminal (alacritty_terminal), browser stream, agent page | chat parity (parity/chat.md › C) and T052
