@@ -153,25 +153,6 @@ impl Settings {
     fn appearance(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = theme::palette(window);
         let local = Prefs::get(cx).clone();
-        let theme_at = match local.theme.as_str() {
-            "dark" => 1,
-            "light" => 2,
-            _ => 0,
-        };
-        let themes = ["system", "dark", "light"];
-        let theme_pick = Segmented::new(
-            "settings-theme",
-            t!("appearance.theme").into_owned(),
-            themes
-                .iter()
-                .map(|k| SharedString::from(t!(format!("appearance.{k}")).into_owned()))
-                .collect(),
-            theme_at,
-            Rc::new(move |i, window, cx| {
-                Prefs::update(cx, |p| p.theme = themes[i].to_string());
-                theme::set_choice(themes[i], Some(window), cx);
-            }),
-        );
         let language = Select::new(
             "settings-language",
             t!("appearance.language").into_owned(),
@@ -219,12 +200,6 @@ impl Settings {
         group(
             t!("appearance.title").into_owned(),
             vec![
-                row(
-                    t!("appearance.theme").into_owned(),
-                    t!("appearance.themeHint").into_owned(),
-                    theme_pick.into_any_element(),
-                    p,
-                ),
                 row(
                     t!("appearance.language").into_owned(),
                     t!("appearance.languageHint").into_owned(),

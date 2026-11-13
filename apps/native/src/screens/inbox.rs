@@ -160,7 +160,7 @@ impl Inbox {
                 cx.notify();
             });
         });
-        Segmented::new("inbox-filter", t!("inbox.title").into_owned(), labels, selected, pick)
+        Segmented::new("inbox-filter", t!("inbox.title").into_owned(), labels, selected, pick).quiet()
     }
 
     // The render body, behind Subsecond's reload point (crate::hot).

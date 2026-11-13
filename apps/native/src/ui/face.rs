@@ -21,18 +21,6 @@ pub enum FaceState {
     Failed,
 }
 
-/// The eyes' expression in an illustration (ui/scene.rs): open, happy (two little arcs), asleep (two short lines),
-/// looking aside, looking up.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Eyes {
-    #[default]
-    Open,
-    Happy,
-    Asleep,
-    Aside,
-    Up,
-}
-
 /// An agent's face; `tone` picks its hue (one of six, in the agents' order).
 #[derive(IntoElement)]
 pub struct AgentFace {
@@ -40,7 +28,6 @@ pub struct AgentFace {
     tone: usize,
     size: f32,
     state: FaceState,
-    eyes: Eyes,
     /// A solid colour instead of the hue's tint, and the ring cut out of what's behind it (an illustration).
     solid: Option<(Rgba, Rgba)>,
 }
@@ -52,14 +39,8 @@ impl AgentFace {
             tone,
             size: 20.,
             state: FaceState::Idle,
-            eyes: Eyes::Open,
             solid: None,
         }
-    }
-
-    pub fn eyes(mut self, eyes: Eyes) -> Self {
-        self.eyes = eyes;
-        self
     }
 
     /// Filled with `color`, a ring of `cut` (the background behind it) around it.
@@ -203,33 +184,7 @@ impl RenderOnce for AgentFace {
             blinks.update(cx, |b, _| *b = (hovered, count));
         }
         let eye_h = s * tokens::EYE_H;
-        let eyes = self.eyes;
         let eye = |n: usize| {
-            // An expression is drawn as it is: no blink, no glance.
-            match eyes {
-                Eyes::Happy => {
-                    return div()
-                        .w(px(s * 0.22))
-                        .h(px(s * 0.11))
-                        .mt(px(-s * 0.04))
-                        .border_t_2()
-                        .border_l_2()
-                        .border_r_2()
-                        .border_color(p.eye)
-                        .rounded_t_full()
-                        .into_any_element();
-                }
-                Eyes::Asleep => {
-                    return div()
-                        .w(px(s * 0.2))
-                        .h(px((s * 0.05).max(1.5)))
-                        .mt(px(s * 0.04))
-                        .rounded_full()
-                        .bg(p.eye)
-                        .into_any_element();
-                }
-                Eyes::Open | Eyes::Aside | Eyes::Up => {}
-            }
             let e = div()
                 .w(px(s * tokens::EYE_W))
                 .h(px(eye_h))
@@ -270,19 +225,15 @@ impl RenderOnce for AgentFace {
             .justify_center()
             .size(px(s))
             .rounded_full()
-            .map(|f| match self.solid {
-                Some((color, cut)) => f.bg(color).border_3().border_color(cut),
-                None => f.bg(mix(hue, TINT, p.bg_raised)),
+            .bg(match self.solid {
+                Some((color, _)) => color,
+                None => mix(hue, TINT, p.bg_raised),
             })
             .child(
                 div()
                     .relative()
-                    .map(|d| match eyes {
-                        Eyes::Aside => d.left(px(s * tokens::EYE_W * 0.55)),
-                        Eyes::Up => d.top(px(-eye_h * 0.35)),
-                        Eyes::Happy | Eyes::Asleep => d,
-                        Eyes::Open => d.left(ox).top(oy),
-                    })
+                    .left(ox)
+                    .top(oy)
                     .flex()
                     .items_center()
                     .gap(px(s * tokens::EYE_GAP))
@@ -296,6 +247,21 @@ impl RenderOnce for AgentFace {
             .when(self.state == FaceState::Done, |f| f.child(mark(p.success, false)))
             .when(self.state == FaceState::Failed, |f| f.child(mark(p.danger, false)));
         let face = motion::track(face, &hover);
+        // Cut out of what's behind it: a disc of that colour under the face (a fill, smoothly edged; a thick border on
+        // a small circle comes out jagged).
+        let face: AnyElement = match self.solid {
+            Some((_, cut)) => div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .justify_center()
+                .size(px(s + 6.))
+                .rounded_full()
+                .bg(cut)
+                .child(face)
+                .into_any_element(),
+            None => face.into_any_element(),
+        };
         // Where it was drawn, so it knows where to look next frame.
         div()
             .flex_none()

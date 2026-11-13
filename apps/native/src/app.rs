@@ -69,11 +69,6 @@ impl Root {
             cx.notify();
         })
         .detach();
-        cx.observe_window_appearance(window, |_, window, cx| {
-            theme::follow_system(window, cx); // light/dark follows the system, for the kit's components too
-            cx.notify();
-        })
-        .detach();
         let (clicked, mut clicks) = tokio::sync::mpsc::unbounded_channel::<String>();
         cx.spawn_in(window, async move |this, cx| {
             while let Some(chat_id) = clicks.recv().await {

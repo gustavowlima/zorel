@@ -21,8 +21,6 @@ pub struct Prefs {
     pub full_access_confirmed: bool,
     /// The chat's side panel width (px); 0: the default.
     pub side_width: f32,
-    /// "system" (or empty), "dark" or "light".
-    pub theme: String,
     /// "system" (or empty), "en" or "pt-BR".
     pub language: String,
     /// A reply's live steps start folded (Settings › Live steps off).

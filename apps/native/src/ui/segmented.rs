@@ -24,9 +24,16 @@ pub struct Segmented {
     options: Vec<SharedString>,
     selected: usize,
     on_pick: OnPick,
+    /// No track: the options on the background, the chosen one on a soft pill (a page's tabs in the window strip).
+    quiet: bool,
 }
 
 impl Segmented {
+    pub fn quiet(mut self) -> Self {
+        self.quiet = true;
+        self
+    }
+
     pub fn new(
         id: impl Into<ElementId>,
         name: impl Into<SharedString>,
@@ -40,6 +47,7 @@ impl Segmented {
             options,
             selected,
             on_pick,
+            quiet: false,
         }
     }
 }
@@ -52,6 +60,7 @@ impl RenderOnce for Segmented {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let p = theme::palette(window);
         let key = self.id.to_string();
+        let quiet = self.quiet;
         let laid = window.use_keyed_state(ElementId::from(format!("{key}-laid")), cx, |_, _| Laid::default());
         let target = laid.read(cx).0.get(self.selected).copied();
         // The marker springs to the chosen option; before the first layout it is drawn on the option itself.
@@ -66,7 +75,7 @@ impl RenderOnce for Segmented {
                 .w(width)
                 .h(px(OPTION_H))
                 .rounded(px(tokens::RADIUS_SEG))
-                .bg(p.bg_control_active)
+                .bg(if quiet { p.bg_control } else { p.bg_control_active })
         });
         let measured = marker.is_some();
         let options = self.options.into_iter().enumerate().map(|(i, label)| {
@@ -87,7 +96,9 @@ impl RenderOnce for Segmented {
                 .h(px(OPTION_H))
                 .px(px(space::X2_5))
                 .rounded(px(tokens::RADIUS_SEG))
-                .when(on && !measured, |o| o.bg(p.bg_control_active))
+                .when(on && !measured, |o| {
+                    o.bg(if quiet { p.bg_control } else { p.bg_control_active })
+                })
                 .text_size(px(12.5))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(fg)
@@ -119,7 +130,7 @@ impl RenderOnce for Segmented {
             .gap(px(space::X0_5))
             .p(px(TRACK))
             .rounded(px(tokens::RADIUS_CONTROL))
-            .bg(p.bg_control)
+            .when(!quiet, |d| d.bg(p.bg_control))
             .children(marker)
             .children(options)
     }

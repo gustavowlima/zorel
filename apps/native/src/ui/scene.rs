@@ -1,16 +1,12 @@
 // Scenes (spec 018 illustrations, apps/web/src/ui/face.tsx › Scene): a quiet card holding the moment's icon, a second
-// card behind it, and one agent in the action blue docked on its corner whose eyes tell the mood. Neutrals plus the
+// card behind it, and one agent in the action blue docked on its corner. Neutrals plus the
 // accent only; the face floats 3px (still under reduced motion). `empty` is a whole screen with nothing yet: the scene
 // over a title and a hint, centred.
 use gpui_kit::{assets::IconName, prelude::FluentBuilder, *};
 
 use crate::{
     theme::{self, tokens},
-    ui::{
-        face::{AgentFace, Eyes},
-        icon::icon,
-        motion, space,
-    },
+    ui::{face::AgentFace, icon::icon, motion, space},
 };
 
 /// The moment a screen is in when it has nothing to show.
@@ -32,22 +28,22 @@ pub enum Moment {
 }
 
 impl Moment {
-    /// Its icon and the face's mood.
-    fn look(self) -> (IconName, Eyes) {
+    /// Its icon.
+    fn icon(self) -> IconName {
         match self {
-            Moment::AllClear => (IconName::Check, Eyes::Happy),
-            Moment::Resting => (IconName::Moon, Eyes::Asleep),
-            Moment::CalmDay => (IconName::Sun, Eyes::Happy),
-            Moment::Clock => (IconName::Timer, Eyes::Asleep),
-            Moment::Team => (IconName::Users, Eyes::Open),
-            Moment::Notebook => (IconName::NotebookPen, Eyes::Up),
-            Moment::Pages => (IconName::FileText, Eyes::Aside),
-            Moment::Connect => (IconName::Plug, Eyes::Open),
-            Moment::Search => (IconName::Search, Eyes::Aside),
-            Moment::Offline => (IconName::Unplug, Eyes::Asleep),
-            Moment::Lost => (IconName::Compass, Eyes::Up),
-            Moment::Meter => (IconName::Gauge, Eyes::Happy),
-            Moment::Chat => (IconName::MessageCircle, Eyes::Open),
+            Moment::AllClear => IconName::Check,
+            Moment::Resting => IconName::Moon,
+            Moment::CalmDay => IconName::Sun,
+            Moment::Clock => IconName::Timer,
+            Moment::Team => IconName::Users,
+            Moment::Notebook => IconName::NotebookPen,
+            Moment::Pages => IconName::FileText,
+            Moment::Connect => IconName::Plug,
+            Moment::Search => IconName::Search,
+            Moment::Offline => IconName::Unplug,
+            Moment::Lost => IconName::Compass,
+            Moment::Meter => IconName::Gauge,
+            Moment::Chat => IconName::MessageCircle,
         }
     }
 }
@@ -58,7 +54,7 @@ const FLOAT_MS: u64 = 3200;
 pub fn scene(id: impl Into<SharedString>, kind: Moment, large: bool, window: &Window, cx: &App) -> AnyElement {
     let p = theme::palette(window);
     let id: SharedString = id.into();
-    let (glyph, eyes) = kind.look();
+    let glyph = kind.icon();
     let (boxed, back_r, card_r, glyph_size, face) = if large {
         (80., tokens::RADIUS_ROW, tokens::RADIUS_CARD, 28., 24.)
     } else {
@@ -67,7 +63,6 @@ pub fn scene(id: impl Into<SharedString>, kind: Moment, large: bool, window: &Wi
     let face = div().absolute().right(px(-6.)).bottom(px(-6.)).child(
         AgentFace::new(ElementId::from(format!("{id}-face")), 0)
             .size(face)
-            .eyes(eyes)
             .solid(p.accent, p.bg_canvas),
     );
     let face: AnyElement = if cx.reduce_motion() {

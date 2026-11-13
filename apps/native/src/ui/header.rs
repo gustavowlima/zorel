@@ -59,7 +59,7 @@ impl Header {
     }
 
     /// Something on the right, in order.
-    /// The page's tabs, after the title (and its context).
+    /// The page's tabs, on the strip's right (before any trailing control).
     pub fn tabs(mut self, tabs: impl IntoElement) -> Self {
         self.tabs = Some(tabs.into_any_element());
         self
@@ -106,8 +106,9 @@ impl RenderOnce for Header {
             .when_some(self.context_element, |h, e| {
                 h.child(div().flex_none().ml(px(-space::X1_5)).child(e))
             })
-            .when_some(self.tabs, |h, t| h.child(div().flex_none().ml(px(space::X2)).child(t)))
             .child(div().flex_1())
+            // The page's tabs on the right, quiet on the strip's background.
+            .when_some(self.tabs, |h, t| h.child(div().flex_none().child(t)))
             .children(self.trailing)
     }
 }

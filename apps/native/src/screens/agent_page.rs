@@ -404,6 +404,7 @@ impl AgentPage {
             });
         });
         crate::ui::segmented::Segmented::new("agent-tabs", t!("agents.title").into_owned(), labels, selected, pick)
+            .quiet()
     }
 }
 
