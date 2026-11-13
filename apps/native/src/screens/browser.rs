@@ -135,6 +135,10 @@ pub struct Browser {
     /// Where the page was last painted (for clicks and the wheel).
     page: Rc<std::cell::Cell<Bounds<Pixels>>>,
     focus: FocusHandle,
+    /// Over the whole window, to drive it at a usable size (Esc leaves, unless the page has the keys).
+    full: bool,
+    /// A browser asked for (a reply's card) before its tabs arrived: shown when they do.
+    want: Option<String>,
     _reader: Task<()>,
     _previews: Task<()>,
     _subscription: Subscription,
@@ -191,6 +195,8 @@ impl Browser {
             follow: None,
             page: Rc::default(),
             focus: cx.focus_handle(),
+            full: false,
+            want: None,
             _reader: reader,
             _previews: previews,
             _subscription: sub,
@@ -275,6 +281,9 @@ impl Browser {
                         .map(|t| t.url.clone())
                         .unwrap_or_default();
                     self.follow = Some(if url == "about:blank" { String::new() } else { url });
+                    if let Some(owner) = self.want.take() {
+                        self.show(owner);
+                    }
                 }
                 Some("previews") => {
                     if let Some(map) = m["previews"].as_object() {
@@ -324,6 +333,22 @@ impl Browser {
         }
         let agent = agent_of(owner);
         self.store.read(cx).agent_name((agent != "assistant").then_some(agent))
+    }
+
+    /// An agent's browser asked for from a reply's card ("Take over", full screen): that browser, full screen or not.
+    pub fn focus_owner(&mut self, owner: String, full: bool, cx: &mut Context<Self>) {
+        self.full = full;
+        self.show(owner);
+        cx.notify();
+    }
+
+    /// Shows `owner`'s browser now, or once its tabs arrive.
+    fn show(&mut self, owner: String) {
+        if self.tabs.iter().any(|t| t.owner == owner) {
+            self.open_owner(&owner);
+        } else {
+            self.want = Some(owner);
+        }
     }
 
     /// Opening a card shows that browser's tab without taking it from the agents.
@@ -415,6 +440,39 @@ impl Browser {
 
 impl Render for Browser {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let body = self.body(window, cx);
+        if !self.full {
+            return body;
+        }
+        // Full screen: over the whole window, above everything else.
+        let p = theme::palette(window);
+        let size = window.viewport_size();
+        deferred(
+            anchored().position(point(px(0.), px(0.))).child(
+                div()
+                    .id("browser-full")
+                    .occlude()
+                    .w(size.width)
+                    .h(size.height)
+                    .flex()
+                    .flex_col()
+                    .bg(p.bg_canvas)
+                    .on_key_down(cx.listener(|this, e: &KeyDownEvent, _, cx| {
+                        if e.keystroke.key == "escape" {
+                            this.full = false;
+                            cx.notify();
+                        }
+                    }))
+                    .child(body),
+            ),
+        )
+        .with_priority(2)
+        .into_any_element()
+    }
+}
+
+impl Browser {
+    fn body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = theme::palette(window);
         if let Some(url) = self.follow.take() {
             let typing = self.address.read(cx).focus_handle(cx).is_focused(window);
@@ -559,6 +617,26 @@ impl Render for Browser {
                     .child(div().flex_1().child(Input::new(&self.address).appearance(false))),
             )
             .child(
+                Button::icon_only(
+                    "browser-full-toggle",
+                    if self.full {
+                        IconName::Minimize2
+                    } else {
+                        IconName::Maximize2
+                    },
+                    if self.full {
+                        t!("browser.exitFullScreen").into_owned()
+                    } else {
+                        t!("browser.fullScreen").into_owned()
+                    },
+                )
+                .size(Size::Xs)
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.full = !this.full;
+                    cx.notify();
+                })),
+            )
+            .child(
                 Button::new("browser-go", t!("browser.go").into_owned())
                     .variant(Variant::Ghost)
                     .size(Size::Sm)
@@ -571,6 +649,10 @@ impl Render for Browser {
                     })),
             );
         let page_bounds = self.page.clone();
+        // Full screen: as large as the window allows at the page's 16:10, so a position on it is one on the page.
+        let fit = self
+            .full
+            .then(|| px((f32::from(window.viewport_size().height) - 150.).max(200.) * 1.6));
         let page: AnyElement = if own.is_empty() {
             div()
                 .flex()
@@ -601,6 +683,7 @@ impl Render for Browser {
                 .track_focus(&self.focus)
                 .relative()
                 .w_full()
+                .when_some(fit, |d, w| d.max_w(w))
                 .map(|mut d| {
                     d.style().aspect_ratio = Some(16. / 10.);
                     d
@@ -729,6 +812,9 @@ impl Render for Browser {
                     .min_h_0()
                     .overflow_y_scroll()
                     .p(px(space::X2))
+                    .flex()
+                    .justify_center()
+                    .when(self.full, |d| d.items_center())
                     .child(page),
             )
             .when_some(status, |d, s| {

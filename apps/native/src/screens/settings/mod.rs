@@ -58,7 +58,7 @@ impl Section {
     fn key(self) -> &'static str {
         match self {
             Section::General => "general",
-            Section::Providers => "accounts",
+            Section::Providers => "providers",
             Section::Connectors => "mcp",
             Section::Servers => "servers",
             Section::Skills => "skills",
@@ -87,6 +87,8 @@ pub struct Settings {
     store: Entity<Store>,
     section: Section,
     prefs: Option<Preferences>,
+    /// The section's scroll (back to the top when the page in it changes).
+    scroll: ScrollHandle,
     providers: providers::Providers,
     connectors: servers::Connectors,
     processes: processes::Processes,
@@ -100,6 +102,7 @@ impl Settings {
             store,
             section,
             prefs: None,
+            scroll: ScrollHandle::new(),
             providers: Default::default(),
             connectors: Default::default(),
             processes: Default::default(),
@@ -494,24 +497,30 @@ impl Settings {
                     .children(nav),
             )
             .child(
-                div().id("settings-body").flex_1().min_w_0().overflow_y_scroll().child(
-                    div()
-                        .w_full()
-                        .max_w(px(760.))
-                        .mx_auto()
-                        .px(px(space::X8))
-                        .py(px(space::X6))
-                        .flex()
-                        .flex_col()
-                        .gap(px(space::X6))
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(p.text_muted)
-                                .child(t!(format!("settings.hint.{}", current.key())).into_owned()),
-                        )
-                        .child(body),
-                ),
+                div()
+                    .id("settings-body")
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.scroll)
+                    .child(
+                        div()
+                            .w_full()
+                            .max_w(px(760.))
+                            .mx_auto()
+                            .px(px(space::X8))
+                            .py(px(space::X6))
+                            .flex()
+                            .flex_col()
+                            .gap(px(space::X6))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(p.text_muted)
+                                    .child(t!(format!("settings.hint.{}", current.key())).into_owned()),
+                            )
+                            .child(body),
+                    ),
             )
     }
 }

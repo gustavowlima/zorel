@@ -30,6 +30,7 @@ use serde_json::json;
 
 mod access;
 mod attachments;
+mod browser_card;
 mod builder;
 mod context;
 mod crew;
@@ -165,6 +166,10 @@ pub struct ChatScreen {
     shells: Vec<Entity<crate::screens::terminal::Shell>>,
     shell_at: usize,
     browser: Option<Entity<crate::screens::browser::Browser>>,
+    /// The browser cards' pictures by owner, the owners a live card showed since the last refresh, and their loops.
+    browser_pictures: HashMap<String, std::sync::Arc<Image>>,
+    browser_shown: HashSet<String>,
+    browser_polls: HashMap<String, Task<()>>,
     diffs: HashMap<String, Remote<Rc<side::TurnDiff>>>,
     side_width: f32,
     resizing: Option<(f32, f32)>,
@@ -296,6 +301,9 @@ impl ChatScreen {
             shells: Vec::new(),
             shell_at: 0,
             browser: None,
+            browser_pictures: HashMap::new(),
+            browser_shown: HashSet::new(),
+            browser_polls: HashMap::new(),
             diffs: HashMap::new(),
             side_width: Self::initial_side_width(cx),
             resizing: None,

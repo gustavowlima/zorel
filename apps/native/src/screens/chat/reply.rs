@@ -109,6 +109,7 @@ impl ChatScreen {
         }
 
         column.extend(self.turn_changes(m, window, cx));
+        column.extend(self.browser_card(i, m, window, cx));
 
         // How it ended: a warning line, or the failure with its error.
         if let Some((tone, text)) = steps::ending(m.error.as_deref()) {

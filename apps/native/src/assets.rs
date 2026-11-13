@@ -78,6 +78,7 @@ icon_assets!(
         Wrench,
         Sparkles,
         Minimize2,
+        Maximize2,
         SquarePen,
         GripVertical,
         Trash,

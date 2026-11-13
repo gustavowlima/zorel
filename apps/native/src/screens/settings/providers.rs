@@ -7,7 +7,8 @@ use super::*;
 
 use crate::{
     labels::{pace_of, tone_of, window_label},
-    net::types::{KeyInfo, ProviderAccount, ProviderAccountKind},
+    net::types::{KeyInfo, ModelInfo, ProviderAccount},
+    theme::tokens,
     ui::button::{Button, Size, Variant},
 };
 use gpui_kit::component::input::{Input, InputState};
@@ -89,8 +90,74 @@ const PROVIDERS: [Provider; 8] = [
     },
 ];
 
+/// What a provider has here (Settings › Providers).
+struct ProviderState {
+    accounts: Vec<ProviderAccount>,
+    key: Option<KeyInfo>,
+    models: Vec<ModelInfo>,
+    running: bool,
+}
+
+impl ProviderState {
+    fn connected(&self) -> bool {
+        self.accounts.iter().any(|a| a.logged_in) || self.key.as_ref().is_some_and(|k| k.set) || self.running
+    }
+}
+
+/// One line under a provider's name: who is signed in, that a key is saved, or what is missing (a warning while a
+/// limit holds).
+fn summary(pr: &Provider, s: &ProviderState) -> (String, bool) {
+    if let Some(a) = s.accounts.iter().find(|a| a.limited_until.is_some()) {
+        let until = crate::format::time(
+            a.limited_until.unwrap_or_default(),
+            crate::format::now_ms(),
+            crate::format::lang(),
+        );
+        let who = a.identity.clone().unwrap_or_else(|| a.label.clone());
+        return (format!("{who} · {}", t!("failover.limitedUntil", time = until)), true);
+    }
+    let signed: Vec<&ProviderAccount> = s.accounts.iter().filter(|a| a.logged_in).collect();
+    if let Some(first) = signed.first() {
+        let name = t!(format!("providers.names.{}", pr.id)).into_owned();
+        let who = first
+            .identity
+            .clone()
+            .filter(|i| *i != name)
+            .unwrap_or_else(|| t!("accounts.signedIn").into_owned());
+        return if signed.len() > 1 {
+            (
+                crate::i18n::tn("providers.andMore", signed.len() as i64 - 1).replace("%{name}", &who),
+                false,
+            )
+        } else {
+            (who, false)
+        };
+    }
+    let cli = pr.account.is_none() && pr.key.is_none() && matches!(pr.id, "gemini" | "opencode");
+    let text = if s.key.as_ref().is_some_and(|k| k.set) {
+        t!("providers.keySaved")
+    } else if s.running {
+        if cli {
+            t!("providers.installed")
+        } else {
+            t!("providers.running")
+        }
+    } else if pr.account.is_some() {
+        t!("accounts.signedOut")
+    } else if pr.key.is_some() {
+        t!("providers.noKey")
+    } else if cli {
+        t!("providers.notInstalled")
+    } else {
+        t!("providers.notRunning")
+    };
+    (text.into_owned(), false)
+}
+
 #[derive(Default)]
 pub struct Providers {
+    /// The provider whose page is open (none: the list).
+    page: Option<&'static str>,
     keys: Option<Vec<KeyInfo>>,
     /// The API key being added or replaced.
     editing_key: Option<&'static str>,
@@ -226,83 +293,119 @@ impl Settings {
     }
 
     pub(super) fn providers_view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let p = theme::palette(window);
         if self.providers.keys.is_none() {
             self.providers.keys = Some(Vec::new());
             self.load_keys(cx);
         }
-        let (accounts, models) = {
-            let store = self.store.read(cx);
-            (store.accounts.clone(), store.models.clone())
-        };
-        let keys = self.providers.keys.clone().unwrap_or_default();
-        // Subscriptions, in the order Zorel uses them (the default first).
-        let mut subs: Vec<ProviderAccount> = accounts
+        match self.providers.page.and_then(|id| PROVIDERS.iter().find(|p| p.id == id)) {
+            Some(pr) => self.provider_page(pr, window, cx),
+            None => self.provider_list(window, cx),
+        }
+    }
+
+    /// What a provider has here: its accounts, its key, the models it offers and whether its server answers.
+    fn state_of(&self, pr: &Provider, cx: &App) -> ProviderState {
+        let store = self.store.read(cx);
+        let accounts: Vec<ProviderAccount> = pr
+            .account
+            .map(|id| store.accounts.iter().filter(|a| a.provider == id).cloned().collect())
+            .unwrap_or_default();
+        let key = pr.key.and_then(|k| {
+            self.providers
+                .keys
+                .as_deref()
+                .and_then(|keys| keys.iter().find(|x| x.name == k).cloned())
+        });
+        let models: Vec<ModelInfo> = store
+            .models
             .iter()
-            .filter(|a| matches!(a.kind, ProviderAccountKind::Subscription))
+            .filter(|m| pr.harnesses.contains(&m.provider.as_str()) && !m.id.ends_with("/…"))
             .cloned()
             .collect();
-        subs.sort_by_key(|a| !a.is_default);
-        let sub_rows: Vec<AnyElement> = subs.iter().map(|a| self.account_row(a, window, cx)).collect();
-        let add_items: crate::ui::menu::Items = {
-            let view = cx.entity().downgrade();
-            Rc::new(move || {
-                let mut m = crate::ui::menu::Menu::default();
-                for pr in PROVIDERS.iter().filter(|p| p.account.is_some()) {
-                    let (view, provider) = (view.clone(), pr.account.unwrap_or_default());
-                    let name = t!(format!("providers.names.{}", pr.id)).into_owned();
-                    let label = t!("settings.addAccountFor", name = name).into_owned();
-                    m = m.item(label, move |_, cx| {
-                        let name = name.clone();
-                        let _ = view.update(cx, |this, cx| this.add_account(provider, name, cx));
-                    });
-                }
-                m.build()
-            })
-        };
-        // API keys: one row per provider that takes one.
-        let key_rows: Vec<AnyElement> = PROVIDERS
-            .iter()
-            .filter_map(|pr| pr.key.map(|k| (pr, k)))
-            .map(|(pr, k)| self.key_row(pr, k, keys.iter().find(|x| x.name == k).cloned(), window, cx))
-            .collect();
-        // Local servers and agent CLIs: whether they answer.
-        let local_rows: Vec<AnyElement> = PROVIDERS
-            .iter()
-            .filter(|pr| pr.account.is_none() && pr.key.is_none())
-            .map(|pr| {
-                let available = models
-                    .iter()
-                    .filter(|m| pr.harnesses.iter().any(|h| m.id.starts_with(&format!("{h}/"))) && m.available)
-                    .count();
-                let name = t!(format!("providers.names.{}", pr.id)).into_owned();
-                let (state, color) = if available > 0 {
-                    (t!("providers.running"), p.success)
-                } else {
-                    (t!("providers.notRunning"), p.text_muted)
-                };
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(space::X3))
-                    .py(px(space::X3))
-                    .border_b_1()
-                    .border_color(p.border)
-                    .child(crate::screens::model_picker::mark(pr.mark, 18., p.text))
-                    .child(div().flex_1().font_weight(FontWeight::MEDIUM).child(name))
-                    .child(div().text_sm().text_color(color).child(state.into_owned()))
-                    .when(available > 0, |d| {
-                        d.child(
+        let running = pr.account.is_none() && pr.key.is_none() && models.iter().any(|m| m.available);
+        ProviderState {
+            accounts,
+            key,
+            models,
+            running,
+        }
+    }
+
+    /// Settings › Providers: the connected ones, then the others; each opens its page.
+    fn provider_list(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let p = theme::palette(window);
+        let loading = !self.store.read(cx).loaded;
+        let states: Vec<(&'static Provider, ProviderState)> =
+            PROVIDERS.iter().map(|pr| (pr, self.state_of(pr, cx))).collect();
+        let row = |pr: &'static Provider, s: &ProviderState, cx: &mut Context<Self>| -> AnyElement {
+            let on = s.connected();
+            let (hint, warning) = if loading {
+                (t!("providers.checking").into_owned(), false)
+            } else {
+                summary(pr, s)
+            };
+            let action = (!loading && !on)
+                .then(|| {
+                    if pr.account.is_some() {
+                        Some(t!("providers.signInAction"))
+                    } else {
+                        pr.key.map(|_| t!("providers.addKey"))
+                    }
+                })
+                .flatten();
+            let open = pr.id;
+            div()
+                .id(SharedString::from(format!("provider-{}", pr.id)))
+                .flex()
+                .items_center()
+                .gap(px(space::X3))
+                .py(px(space::X3))
+                .px(px(space::X2))
+                .rounded(px(tokens::RADIUS_ROW))
+                .cursor_pointer()
+                .hover(|d| d.bg(p.bg_control))
+                .child(crate::screens::model_picker::mark(pr.mark, 20., p.text))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .child(
                             div()
-                                .text_sm()
-                                .text_color(p.text_muted)
-                                .child(format!("· {available} {}", t!("providers.models").to_lowercase())),
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(t!(format!("providers.names.{}", pr.id)).into_owned()),
                         )
-                    })
-                    .into_any_element()
-            })
-            .collect();
-        let head = |title: String| div().text_sm().text_color(p.text_muted).pb(px(space::X1)).child(title);
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(space::X1_5))
+                                .text_sm()
+                                .text_color(if warning { p.warning } else { p.text_muted })
+                                .when(on && !warning, |d| {
+                                    d.child(div().size(px(6.)).rounded_full().bg(p.success))
+                                })
+                                .child(div().truncate().child(hint)),
+                        ),
+                )
+                .when_some(action, |d, label| {
+                    d.child(
+                        Button::new(
+                            SharedString::from(format!("provider-act-{}", pr.id)),
+                            label.into_owned(),
+                        )
+                        .variant(Variant::Secondary)
+                        .size(Size::Sm)
+                        .on_click(cx.listener(move |this, _, _, cx| this.open_provider(Some(open), cx))),
+                    )
+                })
+                .on_click(cx.listener(move |this, _, _, cx| this.open_provider(Some(open), cx)))
+                .into_any_element()
+        };
+        let (on, off): (Vec<_>, Vec<_>) = states.iter().partition(|(_, s)| !loading && s.connected());
+        let on_rows: Vec<AnyElement> = on.iter().map(|(pr, s)| row(pr, s, cx)).collect();
+        let off_rows: Vec<AnyElement> = off.iter().map(|(pr, s)| row(pr, s, cx)).collect();
         div()
             .flex()
             .flex_col()
@@ -313,10 +416,111 @@ impl Settings {
                     .text_color(p.text_muted)
                     .child(t!("accounts.intro").into_owned()),
             )
-            .when_some(self.providers.error.clone(), |d, e| {
-                d.child(div().text_sm().text_color(p.danger).child(e))
+            .when(!on_rows.is_empty(), |d| {
+                d.child(group(t!("providers.connected").into_owned(), on_rows, p))
             })
+            .when(!off_rows.is_empty(), |d| {
+                d.child(group(
+                    if loading {
+                        t!("settings.providers").into_owned()
+                    } else {
+                        t!("providers.others").into_owned()
+                    },
+                    off_rows,
+                    p,
+                ))
+            })
+            .into_any_element()
+    }
+
+    fn open_provider(&mut self, id: Option<&'static str>, cx: &mut Context<Self>) {
+        self.providers.page = id;
+        self.providers.editing_key = None;
+        self.scroll.set_offset(point(px(0.), px(0.)));
+        cx.notify();
+    }
+
+    /// A provider's page: whether it's connected and who uses it; its subscription sign-ins, its API key, or whether
+    /// its local server answers; and the models it offers.
+    fn provider_page(&mut self, pr: &'static Provider, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let p = theme::palette(window);
+        let s = self.state_of(pr, cx);
+        let name = t!(format!("providers.names.{}", pr.id)).into_owned();
+        let users = {
+            let store = self.store.read(cx);
+            store
+                .agents
+                .iter()
+                .filter(|a| {
+                    let harness = a.model.split('/').next().unwrap_or_default();
+                    pr.harnesses.contains(&harness)
+                })
+                .count()
+        };
+        let back = Button::new("provider-back", t!("settings.providers").into_owned())
+            .icon(IconName::ChevronLeft)
+            .variant(Variant::Ghost)
+            .size(Size::Sm)
+            .on_click(cx.listener(|this, _, _, cx| this.open_provider(None, cx)));
+        let connected = s.connected();
+        let head = div()
+            .flex()
+            .items_center()
+            .gap(px(space::X4))
             .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .size(px(48.))
+                    .rounded(px(tokens::RADIUS_CARD))
+                    .bg(p.bg_surface)
+                    .child(crate::screens::model_picker::mark(pr.mark, 26., p.text)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(space::X0_5))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(space::X2_5))
+                            .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).child(name.clone()))
+                            .child(
+                                div()
+                                    .px(px(space::X2))
+                                    .py(px(space::X0_5))
+                                    .rounded_full()
+                                    .text_xs()
+                                    .bg(if connected {
+                                        crate::ui::motion::fade(p.success, 0.15)
+                                    } else {
+                                        p.bg_control
+                                    })
+                                    .text_color(if connected { p.success } else { p.text_muted })
+                                    .child(if connected {
+                                        t!("providers.isConnected").into_owned()
+                                    } else {
+                                        t!("providers.notConnected").into_owned()
+                                    }),
+                            ),
+                    )
+                    .child(div().text_sm().text_color(p.text_muted).child(if users > 0 {
+                        crate::i18n::tn("providers.agentsUse", users as i64)
+                    } else {
+                        t!("providers.noAgentsUse").into_owned()
+                    })),
+            );
+        let mut sections: Vec<AnyElement> = Vec::new();
+        if let Some(provider) = pr.account {
+            let mut accounts = s.accounts.clone();
+            accounts.sort_by_key(|a| !a.is_default);
+            let rows: Vec<AnyElement> = accounts.iter().map(|a| self.account_row(a, window, cx)).collect();
+            let add_name = name.clone();
+            sections.push(
                 div()
                     .flex()
                     .flex_col()
@@ -325,33 +529,134 @@ impl Settings {
                             .flex()
                             .items_end()
                             .gap(px(space::X2))
-                            .child(div().flex_1().child(head(t!("settings.subscriptions").into_owned())))
-                            .child(crate::ui::menu::dropdown(
-                                "accounts-add",
-                                Button::new("accounts-add-btn", t!("accounts.add").into_owned())
+                            .pb(px(space::X1))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .text_sm()
+                                    .text_color(p.text_muted)
+                                    .child(t!("settings.subscriptions").into_owned()),
+                            )
+                            .child(
+                                Button::new("provider-add-account", t!("accounts.add").into_owned())
                                     .icon(IconName::Plus)
                                     .variant(Variant::Secondary)
-                                    .size(Size::Sm),
-                                add_items,
-                            )),
+                                    .size(Size::Sm)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.add_account(provider, add_name.clone(), cx)
+                                    })),
+                            ),
                     )
-                    .children(sub_rows),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(head(t!("settings.keys").into_owned()))
-                    .children(key_rows),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(head(t!("settings.local").into_owned()))
-                    .children(local_rows),
-            )
+                    .children(rows)
+                    .into_any_element(),
+            );
+        }
+        if let Some(k) = pr.key {
+            let row = self.key_row(pr, k, s.key.clone(), window, cx);
+            sections.push(group(t!("providers.apiKey").into_owned(), vec![row], p).into_any_element());
+        }
+        if pr.account.is_none() && pr.key.is_none() {
+            let (title, hint) = if s.running {
+                (t!("providers.running"), t!("providers.checkAgain"))
+            } else {
+                (t!("providers.notRunning"), t!("providers.checkAgain"))
+            };
+            let check = Button::new("provider-check", hint.into_owned())
+                .variant(Variant::Secondary)
+                .size(Size::Sm)
+                .on_click(cx.listener(|this, _, _, cx| this.store.update(cx, |s, cx| s.load(cx))))
+                .into_any_element();
+            sections.push(
+                group(
+                    t!("providers.server").into_owned(),
+                    vec![row(title.into_owned(), String::new(), check, p)],
+                    p,
+                )
+                .into_any_element(),
+            );
+        }
+        if !s.models.is_empty() {
+            sections.push(self.models_of(&s, p).into_any_element());
+        }
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(space::X6))
+            .child(div().child(back))
+            .child(head)
+            .when_some(self.providers.error.clone(), |d, e| {
+                d.child(div().text_sm().text_color(p.danger).child(e))
+            })
+            .children(sections)
             .into_any_element()
+    }
+
+    /// The models a provider offers, by harness, two columns; a harness with none available says why.
+    fn models_of(&self, s: &ProviderState, p: &theme::tokens::Palette) -> Div {
+        let mut harnesses: Vec<&str> = Vec::new();
+        for m in &s.models {
+            if !harnesses.contains(&m.provider.as_str()) {
+                harnesses.push(&m.provider);
+            }
+        }
+        let key_set = s.key.as_ref().is_some_and(|k| k.set);
+        let blocks = harnesses.into_iter().map(|h| {
+            let list: Vec<&ModelInfo> = s.models.iter().filter(|m| m.provider == h).collect();
+            let none = !list.iter().any(|m| m.available);
+            let why = if list
+                .first()
+                .is_some_and(|m| matches!(m.kind, crate::net::types::ModelInfoKind::Api))
+                && !key_set
+            {
+                t!("providers.needsKey")
+            } else {
+                t!("model.unavailable")
+            };
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(space::X2))
+                .py(px(space::X3))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(space::X2))
+                        .text_sm()
+                        .text_color(p.text_muted)
+                        .child(crate::labels::provider_label(h))
+                        .when(none, |d| {
+                            d.child(
+                                div()
+                                    .px(px(space::X1_5))
+                                    .rounded(px(tokens::RADIUS_CONTROL_SM))
+                                    .bg(p.bg_control)
+                                    .text_xs()
+                                    .child(why.into_owned()),
+                            )
+                        }),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap_y(px(space::X2))
+                        .children(list.iter().map(|m| {
+                            div()
+                                .w(relative(0.5))
+                                .pr(px(space::X6))
+                                .flex()
+                                .flex_col()
+                                .min_w_0()
+                                .child(div().truncate().child(m.name.clone().unwrap_or_else(|| m.id.clone())))
+                                .when_some(m.note.clone(), |d, n| {
+                                    d.child(div().truncate().text_sm().text_color(p.text_muted).child(n))
+                                })
+                        })),
+                )
+                .into_any_element()
+        });
+        group(t!("providers.models").into_owned(), blocks.collect(), p)
     }
 
     /// One API key: whose, whether it's saved, and a field to add or replace it (or remove it).

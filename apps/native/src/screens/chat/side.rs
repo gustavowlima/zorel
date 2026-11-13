@@ -26,13 +26,7 @@ pub enum Tab {
 }
 
 impl Tab {
-    const ALL: [Tab; 5] = [
-        Tab::Changes,
-        Tab::Git,
-        Tab::Files,
-        Tab::Browser,
-        Tab::Terminal,
-    ];
+    const ALL: [Tab; 5] = [Tab::Changes, Tab::Git, Tab::Files, Tab::Browser, Tab::Terminal];
 
     fn label(self) -> String {
         match self {
@@ -749,7 +743,7 @@ impl ChatScreen {
 
 impl ChatScreen {
     /// The Browser tab: the chat's browser view, made once and kept while the chat is open.
-    fn browser_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn browser_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if self.browser.is_none() {
             let (http, store, chat) = (
                 self.store.read(cx).http.clone(),
