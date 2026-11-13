@@ -323,7 +323,8 @@ impl ChatScreen {
     }
     pub fn new(chat_id: String, store: Entity<Store>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let rpc = store.read(cx).rpc.clone();
-        let scroller = cx.new(|cx| MessageScrollerState::new(0, cx));
+        // One row from the start: the placeholder (`rows: vec![Row::Empty]` below) until the history arrives.
+        let scroller = cx.new(|cx| MessageScrollerState::new(1, cx));
         let view = cx.entity().downgrade();
         let composer = cx.new(|cx| {
             let on_submit: crate::screens::composer::OnSubmit = Rc::new(move |draft, window, cx| {
@@ -385,7 +386,14 @@ impl ChatScreen {
             .detach();
         }
         let subscriptions = vec![
-            cx.observe(&store, |_, _, cx| cx.notify()), // names, hues, the chat's model
+            // Names, hues, the chat's model; the empty chat's hint follows who is in it (its height too).
+            cx.observe(&store, |this, _, cx| {
+                if this.rows == [Row::Empty] {
+                    this.relayout_all(cx);
+                } else {
+                    cx.notify();
+                }
+            }),
             cx.observe(&scroller, |_, _, cx| cx.notify()),
         ];
         let mut events = rpc.stream::<SubscribeChatItem>("subscribeChat", Some(json!({ "chatId": chat_id })));
@@ -549,6 +557,11 @@ impl ChatScreen {
         }
         self.shown.retain(|turn, _| self.log.partial.contains_key(turn));
         self.relayout(cx);
+        // The history arrived: rows drawn while loading (the empty chat's placeholder) change height with the same
+        // identity, so measure them again.
+        if snapshot {
+            self.relayout_all(cx);
+        }
         self.tick(cx);
         self.drain(cx);
         cx.notify();
@@ -791,7 +804,7 @@ impl ChatScreen {
             return div().into_any_element();
         };
         let (key, body) = match row {
-            Row::Empty => ("empty".to_string(), self.empty(window)),
+            Row::Empty => ("empty".to_string(), self.empty(window, cx)),
             Row::Intro => {
                 let store = self.store.read(cx);
                 let builder = store
@@ -860,11 +873,17 @@ impl ChatScreen {
         }
     }
 
-    fn empty(&self, window: &Window) -> AnyElement {
+    fn empty(&self, window: &Window, cx: &App) -> AnyElement {
         let p = theme::palette(window);
         if !self.loaded {
             return div().h(px(space::X14)).into_any_element();
         }
+        // With several agents: how to pick who answers.
+        let several = self
+            .store
+            .read(cx)
+            .chat(&self.chat_id)
+            .is_some_and(|c| c.agent_ids.len() > 1);
         div()
             .flex()
             .flex_col()
@@ -886,6 +905,16 @@ impl ChatScreen {
                     .text_color(p.text_muted)
                     .child(t!("chat.emptyHint").into_owned()),
             )
+            .when(several, |c| {
+                c.child(
+                    div()
+                        .max_w(px(360.))
+                        .text_center()
+                        .text_sm()
+                        .text_color(p.text_dim)
+                        .child(t!("team.mentionHint").into_owned()),
+                )
+            })
             .into_any_element()
     }
 
@@ -1852,9 +1881,7 @@ fn reply_frame(
     div()
         .flex()
         .gap(px(space::X3))
-        .when(!bare, |r| {
-            r.child(div().flex_none().w(px(28.)).children(face))
-        })
+        .when(!bare, |r| r.child(div().flex_none().w(px(28.)).children(face)))
         .child(
             div()
                 .flex()
