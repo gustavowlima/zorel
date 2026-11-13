@@ -1,6 +1,6 @@
 // Settings › MCP servers (apps/web/src/features/mcp.tsx, the prototype's "MCP servers"): the servers you added yourself
 // (not from the Connectors catalog), each with its kind and command or URL, its mode, a test that connects and lists
-// its tools, Sign in for OAuth ones, on/off and Remove; Add local server / Add remote server open the form (name, the
+// its tools, Sign in for OAuth ones, on/off and Remove; Add a custom connector opens a dialog (local or remote, name, the
 // command or URL, secrets as NAME=value kept in the system keychain); under it, what each mode means.
 use super::*;
 
@@ -10,6 +10,7 @@ use crate::{
 };
 use gpui_kit::{
     base::input::{Textarea, TextareaState},
+    component::WindowExt as _,
     component::input::{Input, InputState},
 };
 
@@ -17,8 +18,6 @@ use gpui_kit::{
 pub struct Connectors {
     pub(super) list: Option<Vec<McpServer>>,
     pub(super) tested: std::collections::HashMap<String, String>,
-    pub(super) adding: bool,
-    pub(super) remote: bool,
     pub(super) error: Option<String>,
     /// The catalog's state (screens/settings/connectors.rs): OAuth servers holding a token, ones refused, the
     /// sign-in open in the browser, the row being managed, the connector asking for a token.
@@ -121,8 +120,7 @@ impl Settings {
         .detach();
     }
 
-    fn add_connector(&mut self, name: String, target: String, env: String, cx: &mut Context<Self>) {
-        let remote = self.connectors.remote;
+    fn add_connector(&mut self, remote: bool, name: String, target: String, env: String, cx: &mut Context<Self>) {
         let env: serde_json::Map<String, Value> = env
             .lines()
             .filter_map(|l| l.split_once('='))
@@ -144,7 +142,6 @@ impl Settings {
             );
             let _ = this.update(cx, |this, cx| {
                 if ok {
-                    this.connectors.adding = false;
                     this.connectors.error = None;
                 } else {
                     this.connectors.error = Some(t!("mcp.updateFailed", name = "").into_owned());
@@ -294,108 +291,6 @@ impl Settings {
                     .into_any_element()
             })
             .collect();
-        let form = self.connectors.adding.then(|| {
-            let name = window.use_keyed_state("mcp-new-name", cx, |window, cx| {
-                InputState::new(window, cx).placeholder(t!("mcp.namePlaceholder").into_owned())
-            });
-            let target = window.use_keyed_state("mcp-new-target", cx, |window, cx| {
-                InputState::new(window, cx).placeholder(t!("mcp.commandHint").into_owned())
-            });
-            let env = window.use_keyed_state("mcp-new-env", cx, |window, cx| {
-                let mut t = TextareaState::new(window, cx).placeholder(t!("mcp.envHint").into_owned());
-                t.set_auto_grow(2, 6, cx);
-                t
-            });
-            let field = |label: String, el: AnyElement| {
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(space::X1))
-                    .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(label))
-                    .child(
-                        div()
-                            .px(px(space::X2_5))
-                            .py(px(space::X1_5))
-                            .rounded(px(crate::theme::tokens::RADIUS_CONTROL))
-                            .border_1()
-                            .border_color(p.border)
-                            .bg(p.bg_field)
-                            .child(el),
-                    )
-            };
-            let (n2, t2, e2) = (name.clone(), target.clone(), env.clone());
-            let view = cx.entity().downgrade();
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(space::X3))
-                .p(px(space::X4))
-                .rounded(px(crate::theme::tokens::RADIUS_CARD))
-                .border_1()
-                .border_color(p.border_strong)
-                .child(Segmented::new(
-                    "mcp-new-type",
-                    t!("mcp.type").into_owned(),
-                    vec![
-                        SharedString::from(t!("mcp.local").into_owned()),
-                        SharedString::from(t!("mcp.remote").into_owned()),
-                    ],
-                    usize::from(self.connectors.remote),
-                    Rc::new(move |i, _, cx| {
-                        let _ = view.update(cx, |this, cx| {
-                            this.connectors.remote = i == 1;
-                            cx.notify();
-                        });
-                    }),
-                ))
-                .child(field(
-                    t!("mcp.name").into_owned(),
-                    Input::new(&name).appearance(false).into_any_element(),
-                ))
-                .child(field(
-                    if self.connectors.remote {
-                        t!("mcp.url")
-                    } else {
-                        t!("mcp.command")
-                    }
-                    .into_owned(),
-                    Input::new(&target).appearance(false).into_any_element(),
-                ))
-                .child(field(
-                    t!("mcp.env").into_owned(),
-                    Textarea::new(&env).into_any_element(),
-                ))
-                .child(
-                    div()
-                        .flex()
-                        .justify_end()
-                        .gap(px(space::X2))
-                        .child(
-                            Button::new("mcp-cancel", t!("common.cancel").into_owned())
-                                .variant(Variant::Ghost)
-                                .size(Size::Sm)
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.connectors.adding = false;
-                                    cx.notify();
-                                })),
-                        )
-                        .child(
-                            Button::new("mcp-create", t!("mcp.add").into_owned())
-                                .variant(Variant::Primary)
-                                .size(Size::Sm)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    let (n, tg, e) = (
-                                        n2.read(cx).value().trim().to_string(),
-                                        t2.read(cx).value().trim().to_string(),
-                                        e2.read(cx).value().to_string(),
-                                    );
-                                    if !n.is_empty() && !tg.is_empty() {
-                                        this.add_connector(n, tg, e, cx);
-                                    }
-                                })),
-                        ),
-                )
-        });
         div()
             .flex()
             .flex_col()
@@ -408,55 +303,152 @@ impl Settings {
                     p,
                 ))
             })
-            .children(form)
-            .when(!self.connectors.adding, |d| {
-                d.child(
-                    div().flex().child(
-                        Button::new("mcp-add-custom", t!("settings.addCustom").into_owned())
-                            .icon(IconName::Plus)
-                            .variant(Variant::Secondary)
-                            .size(Size::Sm)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.connectors.adding = true;
-                                this.connectors.remote = false;
-                                cx.notify();
-                            })),
-                    ),
-                )
-            })
-            // What each mode means (while adding one).
-            .when(self.connectors.adding, |d| {
-                d.child(
+            .child(
+                div().flex().child(
+                    Button::new("mcp-add-custom", t!("settings.addCustom").into_owned())
+                        .icon(IconName::Plus)
+                        .variant(Variant::Secondary)
+                        .size(Size::Sm)
+                        .on_click(
+                            cx.listener(|_, _, window, cx| Settings::custom_connector_dialog(&cx.entity(), window, cx)),
+                        ),
+                ),
+            )
+            .into_any_element()
+    }
+}
+
+impl Settings {
+    /// "Add a custom connector": a dialog for any MCP server, local (a command) or remote (a URL), its name, the
+    /// environment it needs (secrets go to the system keychain), and what each permission means.
+    pub fn custom_connector_dialog(settings: &Entity<Settings>, window: &mut Window, cx: &mut App) {
+        let settings = settings.clone();
+        let name = cx.new(|cx| InputState::new(window, cx).placeholder(t!("mcp.namePlaceholder").into_owned()));
+        let target = cx.new(|cx| InputState::new(window, cx).placeholder(t!("mcp.commandHint").into_owned()));
+        let env = cx.new(|cx| {
+            let mut t = TextareaState::new(window, cx).placeholder(t!("mcp.envHint").into_owned());
+            t.set_auto_grow(2, 6, cx);
+            t
+        });
+        let remote = Rc::new(std::cell::Cell::new(false));
+        let focus = std::cell::Cell::new(true);
+        window.open_dialog(cx, move |dialog, window, cx| {
+            if focus.replace(false) {
+                name.focus_handle(cx).focus(window, cx);
+            }
+            let p = theme::palette(window);
+            let framed = |el: AnyElement| {
+                div()
+                    .px(px(space::X2_5))
+                    .py(px(space::X1_5))
+                    .rounded(px(crate::theme::tokens::RADIUS_CONTROL))
+                    .border_1()
+                    .border_color(p.border_strong)
+                    .bg(p.bg_field)
+                    .child(el)
+                    .into_any_element()
+            };
+            let pick = remote.clone();
+            let kind = Segmented::new(
+                "mcp-new-type",
+                t!("mcp.type").into_owned(),
+                vec![
+                    SharedString::from(t!("mcp.local").into_owned()),
+                    SharedString::from(t!("mcp.remote").into_owned()),
+                ],
+                usize::from(remote.get()),
+                Rc::new(move |i, window, _| {
+                    pick.set(i == 1);
+                    window.refresh();
+                }),
+            );
+            let modes = div()
+                .flex()
+                .flex_col()
+                .gap(px(space::X1_5))
+                .text_sm()
+                .child(div().text_color(p.text_muted).child(t!("mcp.modesTitle").into_owned()))
+                .children(MODES.iter().map(|(_, k)| {
                     div()
                         .flex()
-                        .flex_col()
-                        .gap(px(space::X1_5))
-                        .pt(px(space::X4))
+                        .gap(px(space::X4))
                         .child(
                             div()
-                                .text_sm()
-                                .text_color(p.text_muted)
-                                .child(t!("mcp.modesTitle").into_owned()),
+                                .flex_none()
+                                .w(px(150.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(t!(format!("mcp.modes.{k}")).into_owned()),
                         )
-                        .children(MODES.iter().map(|(_, k)| {
+                        .child(
                             div()
-                                .flex()
-                                .gap(px(space::X4))
-                                .child(
-                                    div()
-                                        .flex_none()
-                                        .w(px(170.))
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .child(t!(format!("mcp.modes.{k}")).into_owned()),
-                                )
-                                .child(
-                                    div()
-                                        .text_color(p.text_secondary)
-                                        .child(t!(format!("mcp.modeHints.{k}")).into_owned()),
-                                )
-                        })),
-                )
-            })
-            .into_any_element()
+                                .text_color(p.text_secondary)
+                                .child(t!(format!("mcp.modeHints.{k}")).into_owned()),
+                        )
+                }));
+            let body = div()
+                .flex()
+                .flex_col()
+                .gap(px(space::X4))
+                .child(div().flex().child(kind))
+                .child(crate::ui::drawer::field(
+                    t!("mcp.name").into_owned(),
+                    None,
+                    framed(Input::new(&name).appearance(false).into_any_element()),
+                    window,
+                ))
+                .child(crate::ui::drawer::field(
+                    if remote.get() { t!("mcp.url") } else { t!("mcp.command") }.into_owned(),
+                    None,
+                    framed(Input::new(&target).appearance(false).into_any_element()),
+                    window,
+                ))
+                .child(crate::ui::drawer::field(
+                    t!("mcp.env").into_owned(),
+                    None,
+                    framed(Textarea::new(&env).into_any_element()),
+                    window,
+                ))
+                .child(modes);
+            let ready = !name.read(cx).value().trim().is_empty() && !target.read(cx).value().trim().is_empty();
+            let (n2, t2, e2, r2, s2) = (
+                name.clone(),
+                target.clone(),
+                env.clone(),
+                remote.clone(),
+                settings.clone(),
+            );
+            crate::ui::dialog::sheet(
+                dialog,
+                window,
+                crate::ui::dialog::Width::Lg,
+                crate::ui::dialog::Sheet {
+                    title: t!("settings.addCustom").into_owned(),
+                    description: None,
+                    body: Some(body.into_any_element()),
+                    actions: vec![
+                        Button::new("cancel", t!("common.cancel").into_owned())
+                            .on_click(|_, window, cx| window.close_dialog(cx))
+                            .into_any_element(),
+                        Button::new("create", t!("mcp.add").into_owned())
+                            .variant(Variant::Primary)
+                            .disabled(!ready)
+                            .on_click(move |_, window, cx| {
+                                let (n, tg, e) = (
+                                    n2.read(cx).value().trim().to_string(),
+                                    t2.read(cx).value().trim().to_string(),
+                                    e2.read(cx).value().to_string(),
+                                );
+                                if n.is_empty() || tg.is_empty() {
+                                    return;
+                                }
+                                window.close_dialog(cx);
+                                let remote = r2.get();
+                                s2.update(cx, |this, cx| this.add_connector(remote, n, tg, e, cx));
+                            })
+                            .into_any_element(),
+                    ],
+                },
+            )
+        });
     }
 }
